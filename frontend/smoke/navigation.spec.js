@@ -108,23 +108,21 @@ test("no roles: every entry in one flat list, nothing under More", async ({ page
   await mainMenu(page).getByRole("link", { name: "Assets", exact: true }).click();
   await expect(page).toHaveURL(/\/asset-register$/);
   await expect(mainMenu(page).locator(".side-children")).toHaveCount(0);
-  // Its landing page has no links line: Parts and stock and Classes are tabs of the tree.
+  // Its landing page has no links line: Parts and stock and Classes are tabs of the tree, hidden for now.
   await expect(page.getByRole("navigation", { name: "The asset register" })).toHaveCount(0);
   await expect(mainMenu(page).getByRole("link", { name: /^(Parts and stock|Classes)$/ })).toHaveCount(0);
-  // Their old addresses open those tabs on everything, still under Assets.
-  await open(page, "/asset-register/parts");
-  await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=parts&scope=all(&|$)/);
-  await expect(page.getByRole("tab", { name: "Parts and stock" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByLabel("Show all parts")).toBeChecked();
-  await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
-  await open(page, "/asset-register/classes");
-  await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=classes&scope=all(&|$)/);
-  await expect(page.getByRole("tab", { name: "Classes" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByLabel("Show all classes")).toBeChecked();
-  await expect(page.getByRole("heading", { name: "Item classes" })).toBeVisible();
-  await open(page, "/systems/structure");
-  await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=parts&scope=all&show=structure(&|$)/);
-  await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
+  // Their old addresses land on the Explorer's Summary (no tab), still under Assets: nothing dead.
+  for (const old of ["/asset-register/parts", "/asset-register/classes", "/systems/structure"]) {
+    await open(page, old);
+    await expect(page).toHaveURL(/\/asset-register\/explorer(\?|$)/);
+    await expect(page).not.toHaveURL(/tab=(parts|classes)/);
+    await expect(page.getByRole("tab", { name: "Parts and stock" })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Classes" })).toHaveCount(0);
+    await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
+  }
+  // A stale address that names one of the hidden tabs shows Summary too.
+  await open(page, "/asset-register/explorer?tab=parts&scope=all");
+  await expect(page.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
   // Decisions opens on Strategy. Risk opens on, and lists, Condition monitoring;
   // a tracked fleet's page lights it and names it.
   await mainMenu(page).getByRole("link", { name: "Decisions", exact: true }).click();
@@ -277,8 +275,8 @@ test("the collapsed menu and the keyboard", async ({ page, request, problems }) 
 
 const PHONE_PAGES = [
   "/home", "/systems/rbds", "/asset-register", "/asset-register/explorer?arrange=positions", "/asset-register/explorer?arrange=locations",
-  "/items", "/asset-register/explorer?tab=rcm", "/asset-register/explorer?tab=parts&scope=all",
-  "/asset-register/explorer?tab=classes&scope=all", "/products", "/maintenance", "/data",
+  "/items", "/asset-register/explorer?tab=rcm", "/asset-register/parts",
+  "/asset-register/classes", "/products", "/maintenance", "/data",
   "/models", "/models/recurrent", "/strategy", "/risk", "/forecasts", "/reports", "/settings",
 ];
 

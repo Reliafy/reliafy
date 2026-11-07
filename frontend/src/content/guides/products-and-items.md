@@ -42,15 +42,13 @@ have no failure reports, signals, stock, work or due dates. Its tabs:
   - **Failure reports on the built items**: every report on the items built
     from it, with the item and the place in the design. A report is filed on
     an item's own tree, not on the design.
+  - **Bill of materials**: the parts list: the product's part and what it's
+    made of, as designed, with the quantities rolled up (no stock: stock is
+    kept for assets). **Change it…** opens the part's page.
   - **Analyses of this design**: the product's RBDs, **Make an RBD from this
     structure**, and a reliability prediction from its parts list.
 - **RCM** and **FME(C)A**: the design's maintenance programme and its failure
   modes. The items built from it carry the programme out.
-- **Parts**: the parts list. On the product's row, its part and what it's made
-  of; on any row, the parts on the parts lists of the positions there and
-  inside it. No stock: stock is kept for assets.
-- **Classes**: the position classes used there and inside it; tick **Show all
-  classes** for every class and the item classes.
 
 **Delete…** (in the product's row menu in its tree, or the bin on its row in
 Products) deletes the design and everything inside it. Items built from it stay. Its
