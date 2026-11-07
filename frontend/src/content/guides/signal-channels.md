@@ -17,19 +17,32 @@ trends and projected alarm dates work on it as they do on any other.
 This is in beta. A slow sensor, like a pressure transducer, works the same way
 without the spectrum.
 
-**The Signals tab in the Explorer is hidden for now.** Your channels and snapshots are
-kept and the API and commands below keep working, but the screens described here
-(the tab, its spectrum and its bands) aren't in the app at the moment. Links to a
-channel open its position's Summary.
+## Channels are rows of Measurements
+
+A channel lives with the hand-read measuring points on the same position. Open
+**Assets → Explorer**, pick the position (or item) and open the **Measurements**
+tab: each channel is a row, marked **Fed** because nobody reads it by hand. A
+smart plug's power on the *Filter pump* position sits beside the pressure and
+flow you read on your round. The row shows:
+
+- the **latest value** with its unit: the single value for a slow sensor, or
+  the overall RMS level of the latest burst for a vibration sensor;
+- its **state**: **Needs attention** when any of its watch bands or levels is
+  past its alarm limit, **OK** when all are inside, or *No bands* / *No data
+  yet*. **Needs attention** at the top of the tab lists only those rows (and the
+  points past or near a limit, or due a reading);
+- a **trend** of its recent values;
+- a **⋯** menu: **Open** goes to the channel's own page (its spectrum, bands
+  and settings), and **Edit bands…** opens that page at its watch bands.
+
+A fitted item has no row of its own: its channels show on the position it's
+fitted to, and go with the item when it moves.
 
 ## 1. Add a channel
 
-Open **Assets → Explorer**, pick the position or item the sensor is
-on, and open the **Signals** tab. A fitted item has no row of its own: pick
-the position it's fitted to, and its channels are under **On the fitted
-item** on that tab (they go with the item when it moves). Press **Add a
-channel** (or choose **Add a channel…** from the **⋯** menu at the top right of
-the panel) and give it:
+On the **Measurements** tab, choose **Add a sensor channel…** from the **⋯**
+menu at the top right of the panel (just under **Add a measuring point…**). It
+goes on the position or item you picked. Give it:
 
 - a **name** (for example *DE bearing*) and the **unit** the sensor reports (g,
   mm/s, kPa);
@@ -69,7 +82,7 @@ written out in full in `docs/signal-snapshots.md` in the app's repository.
 
 ### Or add one from a file
 
-No device yet? On the Signals tab press **Add a snapshot from a file** and choose a
+No device yet? On the channel's page press **Add a snapshot from a file** and choose a
 file from your logger:
 
 - **JSON** in the format above (one snapshot, or a list of up to 20);
@@ -88,7 +101,10 @@ only the first part. Nothing is sent until you press **Add the snapshot**.
 
 ## 3. Read the spectrum
 
-![The Signals tab: the spectrum of the latest snapshot against a baseline, and a watched band's level over time](/guides/img/signals-01-spectrum.png)
+Open the channel's page: click its name on the Measurements tab, or choose
+**Open** from its **⋯** menu.
+
+![A channel's page: the spectrum of the latest snapshot against a baseline, and a watched band's level over time](/guides/img/signals-01-spectrum.png)
 
 The **Spectrum** chart shows the amplitude at each frequency, in the sensor's
 unit, as the peak of a sine wave of that frequency. A steady 0.5 g shake at 50 Hz
@@ -117,11 +133,10 @@ that range from every snapshot, old and new, and draws it in **Level over time**
 
 - Choose **Running speed** under *Follow* to set the band in multiples of the
   machine's speed, so it stays on the 1× peak when the speed drifts.
-- The band is also a **measurement point** under *Summary → Measurements*. Give it
+- The band is also a **measurement point**, listed on the **Measurements** tab
+  (marked **Fed**) beside the channel itself and every other measuring point on
+  the row and everything inside it, hand-read ones too, worst first. Give it
   alarm limits there and a snapshot past the limit opens an inspection.
-  The **Measurements** tab lists it beside every other measuring point on the
-  row and everything inside it, hand-read ones too, worst first, so you can see
-  a whole system's readings and record new ones in one place.
 - **Every measuring point has a page of its own.** Click a point's name in the
   Measurements tab, or choose **Open** from its **⋯** menu. The page shows the
   latest reading against its alarm limits, a chart of the readings with the
@@ -133,7 +148,8 @@ that range from every snapshot, old and new, and draws it in **Level over time**
 
 ### Change a band, and set levels
 
-Press **Edit** beside a band to change its name, its range, or its levels.
+Choose **Edit bands…** from the channel's **⋯** menu on the Measurements tab (or
+scroll to *Watch bands and levels* on its page) and press **Edit** beside a band to change its name, its range, or its levels.
 
 ![Editing a band: its range and its warning and alarm levels](/guides/img/signals-03-edit-band.png)
 
@@ -201,7 +217,7 @@ from the first reading used, not from when the part was fitted.
 ## Running speed from another sensor
 
 A machine whose speed varies can have a **speed channel**: a second channel in rpm that
-sends single values. Open **Running speed** on the Signals tab and choose it under
+sends single values. Open **Running speed** on the channel's page and choose it under
 *Or take the speed from*. Each new snapshot then uses that channel's reading nearest
 in time (within an hour), and falls back to the fixed rpm if there is none. Send the
 speed reading before the burst or together with it: a speed that arrives later is not
@@ -210,8 +226,8 @@ applied to a snapshot already stored.
 ## A pressure sensor
 
 A slow pressure (a reading a minute, say) has no spectrum. Add a channel in kPa, send
-`{"tag": "...", "time": "...", "value": 190.4}`, and the Signals tab draws the
-readings. To trend it and set alarm limits, add a **level** with stat `value`
+`{"tag": "...", "time": "...", "value": 190.4}`: its row on the Measurements tab
+shows the latest value and trend, and its page draws the readings. To trend it and set alarm limits, add a **level** with stat `value`
 (`maintenance signals.add_level`): it becomes a measurement point like a band.
 For a very frequent slow sensor the plain readings feed
 (`POST /api/ingest/maintenance/readings`) is lighter, because it stores a number and
@@ -220,9 +236,9 @@ not a snapshot.
 ## What to keep in mind
 
 - Everything is kept for now, raw readings and spectra. A three-axis burst of
-  8,300 points is about 100 kB of raw readings plus its spectrum. The tab shows how
-  many snapshots the workspace holds and how much room they take. **Warn me at a
-  size** sets a level at which the tab reminds you; it deletes nothing.
+  8,300 points is about 100 kB of raw readings plus its spectrum. A channel's page
+  shows how many snapshots the workspace holds and how much room they take. **Warn
+  me at a size** sets a level at which the page reminds you; it deletes nothing.
 - Reliafy doesn't diagnose a fault. It shows the spectrum, keeps the history, and
   tells you when a band you chose changes.
 - A microphone records sound, which can include speech. Don't point one at people.

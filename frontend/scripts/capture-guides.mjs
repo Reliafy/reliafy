@@ -901,8 +901,8 @@ async function main() {
         await page.mouse.move(0, 0);
         await wait(600);
       } },
-    // --- Signal channels (Explorer › Signals): the spectrum, adding a snapshot from a file, editing a band.
-    { file: "signals-01-spectrum.png", url: `/asset-register/explorer?arrange=positions&sel=${fx.signals?.positionId}&tab=signals`, settle: 2500,
+    // --- Signal channels (a channel's own page): the spectrum, adding a snapshot from a file, editing a band.
+    { file: "signals-01-spectrum.png", url: `/asset-register/channels/${fx.signals?.channelId}`, settle: 2500,
       skip: () => (fx.signals ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=signals on a server that has it."),
       async act(page) {
         const spectrum = page.getByRole("region", { name: "Spectrum" });
@@ -912,7 +912,7 @@ async function main() {
         await page.getByRole("region", { name: "Level over time" }).locator(".js-plotly-plot").waitFor({ timeout: 20000 }); await wait(1500);
         await spectrum.evaluate((el) => el.scrollIntoView({ block: "start" })); await wait(600);
       } },
-    { file: "signals-02-add.png", url: `/asset-register/explorer?arrange=positions&sel=${fx.signals?.positionId}&tab=signals`, settle: 2500,
+    { file: "signals-02-add.png", url: `/asset-register/channels/${fx.signals?.channelId}`, settle: 2500,
       skip: () => (fx.signals ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=signals on a server that has it."),
       async act(page) {
         await page.getByRole("button", { name: "Add a snapshot from a file" }).click();
@@ -923,7 +923,7 @@ async function main() {
         await form.getByLabel(/^Axis names/).fill("X");
         await form.getByLabel(/^Time taken/).fill("2026-10-30T10:00"); await wait(800);
       } },
-    { file: "signals-03-edit-band.png", url: `/asset-register/explorer?arrange=positions&sel=${fx.signals?.positionId}&tab=signals`, settle: 2500,
+    { file: "signals-03-edit-band.png", url: `/asset-register/channels/${fx.signals?.channelId}`, settle: 2500,
       skip: () => (fx.signals ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=signals on a server that has it."),
       async act(page) {
         const bands = page.getByRole("region", { name: "Watch bands" });
