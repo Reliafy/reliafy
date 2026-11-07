@@ -46,6 +46,16 @@ from __future__ import annotations
 import inspect
 
 
+def refusal_text(exc):
+    """RePyability's reason, as the words it was raised with; a fixed
+    sentence when there are none fit to show (self-contained: "Download as
+    Python" copies it with the functions below)."""
+    text = exc.args[0] if exc.args and isinstance(exc.args[0], str) else ""
+    if not text.strip() or len(text) > 2000 or "Traceback (most recent call last)" in text:
+        return "RePyability doesn't take these common-cause groups into this figure yet."
+    return text.strip()
+
+
 def long_run_refusal(rbd, working_nodes=(), broken_nodes=()):
     """None when RePyability's long-run values take ``rbd``'s common-cause
     groups in (with these blocks pinned), else its reason."""
@@ -57,7 +67,7 @@ def long_run_refusal(rbd, working_nodes=(), broken_nodes=()):
         _ccf_groups._require_free_members(rbd, set(working_nodes or ()), set(broken_nodes or ()))
         _ccf_groups._require_ccf_long_run(rbd)
     except NotImplementedError as exc:
-        return str(exc)
+        return refusal_text(exc)
     return None
 
 
@@ -76,7 +86,7 @@ def common_cause_refusal(rbd, working_nodes=(), broken_nodes=(), state=None):
         _ccf_groups._require_groups_over_time(rbd, dict(state or {}))
         _ccf_groups._require_groups_simulated(rbd, state or None)
     except NotImplementedError as exc:
-        return str(exc)
+        return refusal_text(exc)
     return None
 
 
@@ -92,11 +102,11 @@ def frequency_refusal(rbd):
     try:
         _ccf_groups._require_ccf_frequencies(rbd)
     except NotImplementedError as exc:
-        return str(exc)
+        return refusal_text(exc)
     return None
 
 
-_EXPORTED = (long_run_refusal, common_cause_refusal, frequency_refusal)
+_EXPORTED = (refusal_text, long_run_refusal, common_cause_refusal, frequency_refusal)
 
 
 def export_source() -> str:

@@ -402,7 +402,7 @@ def validate(graph: dict, resolve_subsystem: Optional[Callable[[str], dict]] = N
             errors.append(f"No path of connections joins “{labels.get(spec['source'])}” to "
                           f"“{labels.get(spec['target'])}” yet. Connect them through the blocks.")
     except AnalysisError as exc:
-        errors.append(str(exc))
+        errors.append(client_message(exc))
     valid = not errors
     return {"valid": valid, "analytic": valid, "can_calculate": valid, "network": True,
             "errors": errors, "warnings": warnings_, "non_analytic_nodes": {}}
