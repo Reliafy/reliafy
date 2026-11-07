@@ -182,12 +182,12 @@ test("the RCM tab with a pin: the one table shows only the branch, its rows' men
   await expect(trow(`^Works plant ${tag}`)).toHaveCount(0);
   await expect(trow(`^Works line B ${tag}`)).toHaveCount(0);
   await expect(page.locator(".tt-top .tp-status")).toHaveText(/^3 positions · \d+ not analysed$/);
-  // A position's menu: Add function, the worksheet in and out, then Pin this branch (the pinned row: Show whole tree).
+  // A position's menu: Add function, the worksheet in and out, then Pin this branch (the pinned row: Show whole tree), Delete… last.
   await trow(`^Works pump A ${tag}`).locator(".tt-tree").click({ button: "right" });
-  await expect(rowMenu(page, `Works pump A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Isolate incomplete rows", "Pin this branch"]);
+  await expect(rowMenu(page, `Works pump A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Isolate incomplete rows", "Pin this branch", "Delete…"]);
   await page.keyboard.press("Escape");
   await trow(`^Works line A ${tag}`).locator(".tt-tree").click({ button: "right" });
-  await expect(rowMenu(page, `Works line A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Isolate incomplete rows", "Show whole tree"]);
+  await expect(rowMenu(page, `Works line A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Isolate incomplete rows", "Show whole tree", "Delete…"]);
   await page.keyboard.press("Escape");
   // A function's menu (with the mouse: Move to…, no Move up / down, a drag does them; Isolate before Delete).
   await trow(`^Function: Pump water ${tag}`).locator(".tt-tree").click({ button: "right" });
