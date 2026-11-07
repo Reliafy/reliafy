@@ -17,14 +17,16 @@ import { Highlight } from "./OutlineBits.jsx";
 import { ancestorsOf } from "../outlineTree.js";
 import {
   CATEGORY_LABEL, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, EVIDENT_LABEL, consequenceText, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
-  belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, checkCounts, decisionText, insideWords,
-  INTERVAL_OUTCOMES, intervalText, isCombination, memberEvidenceLine, moreTasks, nameOf, shownStatus, tasksOf, tasksTip, checkValue,
+  belowDecisionText, belowOf, decisionBody, belowPending, phoneLine, consequenceWords, checkCounts, decisionText, insideWords,
+  intervalText, isCombination, memberEvidenceLine, moreTasks, nameOf, shownStatus, tasksOf, tasksTip, checkValue,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import { modeAnswers } from "../decisionCheck.js";
 import RcmFunctionStandards from "./RcmFunctionStandards.jsx";
 import { COMPARATORS, COMPARATOR_LABEL, limitReads, limitWords } from "../rcmStandards.js";
 import RcmModeTasks from "./RcmModeTasks.jsx";
+import Modal from "./Modal.jsx";
+import EvidencePicker from "./EvidencePicker.jsx";
 import RcmNotes from "./RcmNotes.jsx";
 import RcmFunctionPdfs from "./RcmFunctionPdfs.jsx";
 import { hasNotes, hasNotesField, notesTip } from "../rcmNotes.js";
@@ -402,20 +404,17 @@ const toneOf = (text) => (/to decide|not analysed|no functional failure|no failu
 //   fmea       {on, opts, rcm}: the FME(C)A's fields on a failure mode (FmeaPanels.jsx), shown only when
 //              that tab is `on` (then first, and a function lists its failure modes, added directly
 //              under it); `opts` the action priority table (fmea.js readFmeaOptions); `rcm` the read
+//   options    the server's RCM options (step 3's chips, the evidence picker); workings: the
+//              function notes a decision can link (explorerRcm.js workingsFor)
 export function Details({
   r, display, whole = display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef, ops, links,
   expanded = false, onExpand = null, onCollapse = null, addStart = null, onSaid = null, onMove = null, fmea = null,
+  options = null, workings = [],
 }) {
   const level = LEVEL_OF[r.type];
   const d = r.ref.decision;
   const up = ancestorsOf(display, r.key).map((k) => display.rows.get(k)).filter(Boolean);
   const tasks = r.type === "mode" ? tasksOf(r.ref) : [];
-  // A failure mode's tasks (RcmModeTasks, the lines of its decision card) are
-  // where its tasks are changed; the decision's own task and interval stay as
-  // fields only while no task does the work (an action on failure, a decision
-  // written before tasks, the worksheet outside the Explorer).
-  const ownFields = !tasks.some((t) => t.id);
-  const sharedOwn = tasks[0]?.shared_with || 0;
   // "✓ Saved" by a field's label: a count per field that goes up on each save.
   const [saved, setSaved] = useState({});
   useEffect(() => setSaved({}), [r.key]);
@@ -525,7 +524,10 @@ export function Details({
       </Field>
     </>
   );
-  // The decision card's folded "Why": the evidence (Link evidence… when none), what it
+  // Link evidence… (step 3's Evidence and rationale): the evidence picker alone, in a small dialog.
+  const [linkingEvidence, setLinkingEvidence] = useState(false);
+  useEffect(() => setLinkingEvidence(false), [r.key]);
+  // Step 3's open "Evidence and rationale": the evidence (Link evidence… when none), what it
   // says, a combination's members' own evidence, and the decision notes.
   const decisionWhy = r.type === "mode" && d && (
     <>
@@ -533,7 +535,7 @@ export function Details({
         <span className="rw-evlabel">Evidence</span>
         {d.status === "unevidenced" ? (
           <>
-            None linked{!readOnly && <> · <button type="button" className="link" onClick={() => onDecision(r)}
+            None linked{!readOnly && ops?.decide && <> · <button type="button" className="link" onClick={() => setLinkingEvidence(true)}
                                                  title="Link the model, analysis, report or function notes behind this decision (optional)">Link evidence…</button></>}
           </>
         ) : (
@@ -545,6 +547,10 @@ export function Details({
               : d.artifact_link_path
                 ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
             {!d.status && !d.artifact_name && "None needed"}
+            {!readOnly && ops?.decide && (
+              <> · <button type="button" className="link" onClick={() => setLinkingEvidence(true)}
+                           title="Link other evidence, or none">Change evidence…</button></>
+            )}
           </>
         )}
       </div>
@@ -555,24 +561,10 @@ export function Details({
       {field("Decision notes", "dnotes", { area: true, optional: true })}
     </>
   );
-  // The decision's own task and interval (or run to failure's action on failure), edited in
-  // the card while no task does the work: open at once when a schedule has no task yet.
-  const ownTask = d && ownFields && !isCombination(d) && COLUMN.task.can(r) && !(readOnly && d.outcome === "rtf");
-  const ownInterval = d && ownFields && !isCombination(d) && COLUMN.interval.can(r);
-  const ownNeeded = !!(d && ownFields && !readOnly && !isCombination(d) && INTERVAL_OUTCOMES.has(d.outcome)
-    && (ops?.decide || !String(d.task || "").trim() || d.interval == null));
-  const ownBlock = r.type === "mode" && !readOnly && (ownTask || ownInterval) ? (
-    <>
-      {ownNeeded && ops?.decide && <p className="rw-fhelp">The decision schedules work, but no task does it yet: give it a task and an interval.</p>}
-      {ownTask && field(d.outcome === "rtf" ? "What's done on failure" : "Task", "task", { area: true, locked: sharedOwn > 0 && d.outcome !== "rtf" })}
-      {ownInterval && field("Interval", "interval", { locked: sharedOwn > 0 })}
-      {sharedOwn > 0 && (
-        <p className="rw-fhelp">
-          Shared with {sharedOwn} other failure mode{sharedOwn === 1 ? "" : "s"}: its name and interval are changed on the task, for all of them.
-        </p>
-      )}
-    </>
-  ) : null;
+  // Run to failure's action on failure, kept as you go in step 3 (a scheduled decision's task
+  // is a task card, or the task form while it has none: RcmModeTasks).
+  const ownBlock = r.type === "mode" && !readOnly && d?.outcome === "rtf" && COLUMN.task.can(r)
+    ? field("What's done on failure", "task", { area: true, optional: true, placeholder: "Corrective action on failure" }) : null;
   // The FME(C)A's two groups on a failure mode (FmeaPanels.jsx): each field
   // kept as you go, as the others are; the RPN and action priority previewed
   // from the scores as they're typed.
@@ -681,10 +673,14 @@ export function Details({
             {consequenceField}
           </Section>
         )}
+        {r.type === "mode" && linkingEvidence && d && (
+          <EvidenceDialog r={r} options={options} workings={workings} ops={ops} onClose={() => setLinkingEvidence(false)}
+                          onDone={() => { setLinkingEvidence(false); said("Saved the evidence."); }} />
+        )}
         {r.type === "mode" && (
           <Section title={fmea?.on ? "Proactive task or default action" : <Step n={3}>Proactive task or default action</Step>} label="Proactive task or default action" className="rw-step rw-decision">
             <RcmModeTasks key={`${r.key}:tasks`} r={r} ops={ops} readOnly={readOnly} addStart={startOf("task")} onSaid={said}
-                          onDecision={onDecision} why={decisionWhy} own={ownBlock} ownNeeded={ownNeeded} />
+                          options={options} why={decisionWhy} own={ownBlock} />
           </Section>
         )}
         {/* 3. The quieter things, last. */}
@@ -1030,5 +1026,48 @@ export function ColumnChooser({ cols, onCols, usual = DEFAULT_COLUMNS, columns =
         </div>
       )}
     </div>
+  );
+}
+
+// Step 3's Link evidence… (or Change evidence…): the evidence picker alone, in
+// a small dialog, the rest of the decision as it is. The evidence the outcome
+// expects (run to failure: its reason's) is offered as the Models kind; a
+// report or a function's notes go with any decision. Saved as the whole
+// decision with the new evidence (or none); a refusal shows here.
+function EvidenceDialog({ r, options, workings, ops, onClose, onDone }) {
+  const d = r.ref.decision;
+  const [value, setValue] = useState(d.evidence?.type && d.evidence?.id ? d.evidence : null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(null);
+  const outcomeOpt = options?.outcomes?.find((o) => o.id === d.outcome);
+  const expected = d.outcome === "rtf"
+    ? options?.rtf_bases?.find((b) => b.id === d.rtf_basis)?.expected_evidence || null
+    : outcomeOpt?.expected_evidence || null;
+  const analysisKind = expected === "strategy_analysis" ? (d.outcome === "failure_finding" ? "failure_finding" : "optimal_replacement") : null;
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    setFailed(null);
+    try {
+      await ops.decide(r, { consequence: r.ref.consequence || null,
+        decision: decisionBody(d, { evidence: value ? { type: value.type, id: value.id } : null }) });
+      onDone();
+    } catch (e) {
+      setBusy(false);
+      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
+    }
+  };
+  return (
+    <Modal title="Link evidence" onClose={onClose} locked={busy} trapFocus className="rw-evidence-dialog"
+           footer={(
+             <>
+               <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+               <button type="button" onClick={save} disabled={busy} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save"}</button>
+             </>
+           )}>
+      <p className="rw-fhelp">The model, analysis, report or function notes behind this decision (optional).</p>
+      <EvidencePicker expectedType={expected} analysisKind={analysisKind} value={value} onChange={setValue} workings={workings} />
+      {failed && <p className="field-error" role="alert">{failed}</p>}
+    </Modal>
   );
 }

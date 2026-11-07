@@ -3,7 +3,7 @@
 // check" on parents, no "No evidence" pill on each mode, and the Evidence
 // check column hidden until some failure mode has evidence linked (it stays in
 // the Columns menu, and ticking it on is remembered). The mode's panel still
-// offers a gentle "Link evidence…". The Not analysed chip says what analysed
+// offers a gentle "Link evidence…" (the evidence picker alone). The Not analysed chip says what analysed
 // means.
 //
 // The smoke server's workspace is shared by every spec (another one links
@@ -112,33 +112,32 @@ test("no evidence linked: no warnings, no Evidence check column; the column come
   await page.keyboard.press("Escape");
   await expect(table(page).getByRole("columnheader", { name: "Evidence check" })).toHaveCount(0);
 
-  // The mode's panel: no alarm, a gentle Link evidence… that opens the Decide dialog.
+  // The mode's panel: no alarm, a gentle Link evidence… that opens the evidence picker alone (not the Decide dialog).
   await modeRow.locator(".tt-tree").click();
   await modeRow.press("Enter");
   const panel = page.locator("aside.rw-panel");
   await expect(panel).toBeVisible();
-  // Said once, in the decision card's folded Why ("None linked"), not again as a chip by the title.
+  // Said once, in step 3's open Evidence and rationale ("None linked"), not again as a chip by the title.
   const decision = panel.getByRole("region", { name: "Proactive task or default action" });
-  await expect(decision).not.toContainText("None linked");
-  await decision.getByRole("button", { name: /^Evidence and rationale/ }).click();
-  await expect(decision.getByRole("button", { name: /^Evidence and rationale/ })).toHaveAttribute("aria-expanded", "true");
-  await expect(decision).toContainText("None linked");
+  const why = decision.getByRole("group", { name: "Evidence and rationale" });
+  await expect(why).toContainText("None linked");
+  await expect(decision.getByRole("button", { name: /^Evidence and rationale/ })).toHaveCount(0); // open, not folded
   await expect(panel.locator(".rw-chips-row")).not.toContainText("No evidence linked");
   // Quiet: never a warning.
   await expect(panel.locator(".chip-warning, .chip-danger")).toHaveCount(0);
-  await decision.getByRole("button", { name: "Link evidence…" }).scrollIntoViewIfNeeded();
+  await why.getByRole("button", { name: "Link evidence…" }).scrollIntoViewIfNeeded();
   await shot(page, "quiet-2-mode-panel-link-evidence");
-  await decision.getByRole("button", { name: "Link evidence…" }).click();
-  const dialog = page.getByRole("dialog").filter({ hasText: "Link the evidence" });
+  await why.getByRole("button", { name: "Link evidence…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Link evidence" });
   await expect(dialog).toBeVisible();
+  // Only the picker: none of the decision's questions.
+  await expect(dialog.getByRole("button", { name: "Evident" })).toHaveCount(0);
+  await expect(dialog.getByRole("radiogroup", { name: "Which task is worth doing?" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: /^Decision/ })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
-  // The card's ⋯ offers it too.
-  await decision.getByRole("button", { name: "Actions for the decision" }).click();
-  await page.getByRole("menu", { name: "Actions for the decision" }).getByRole("menuitem", { name: "Link evidence…" }).click();
-  await expect(dialog).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
+  // No ⋯ on the decision any more.
+  await expect(decision.getByRole("button", { name: "Actions for the decision" })).toHaveCount(0);
 
   // The Not analysed chip says what analysed means, in words.
   await page.getByRole("button", { name: /^Tree options/ }).click();

@@ -375,6 +375,70 @@ export function decisionWithMember(d, member) {
   return out;
 }
 
+// ---- step 3 edited in place (a failure mode's details) ------------------------
+// The failure mode's details choose the decision with one tap (RcmModeTasks:
+// "Which task is worth doing?"), so each tap sends the whole decision, built
+// here from the one it replaces. The notes go with it; the evidence too when
+// it fits any decision (a report or function notes) or the outcome hasn't
+// changed (a model fits the outcome it was linked for).
+
+const LINKED_EVIDENCE = new Set(["report", "working"]);
+const evidenceRef = (e) => (e?.type && e?.id ? { type: e.type, id: e.id } : null);
+
+// The task a scheduled outcome keeps when the decision changes to it: a
+// combination's member of the same kind, else the decision's own task, else
+// the first task linked to the mode (so changing the kind of task never drops
+// the task that does the work). Null for an outcome that schedules nothing.
+export function keptTask(d, tasks, outcome) {
+  if (!SCHEDULED_OUTCOMES.has(outcome)) return null;
+  const member = isCombination(d) ? d.outcomes.find((o) => o.outcome === outcome && o.task_id) : null;
+  return member?.task_id || d?.task_id || (tasks || []).find((t) => t.id)?.id || null;
+}
+
+// The decision with its outcome changed (rtfBasis for run to failure), as
+// the server takes it: a scheduled outcome adopts the task it keeps (by id,
+// so its name and interval stay as they are); run to failure keeps what's done
+// on failure when it was run to failure already.
+export function decisionWithOutcome(d, tasks, outcome, rtfBasis = null) {
+  const out = {};
+  const same = d && d.outcome === outcome && (outcome !== "rtf" || d.rtf_basis === rtfBasis);
+  const ev = evidenceRef(d?.evidence);
+  const task = keptTask(d, tasks, outcome);
+  if (task) out.outcomes = [{ outcome, task_id: task }];
+  else out.outcome = outcome;
+  if (outcome === "rtf") {
+    out.rtf_basis = rtfBasis;
+    if (d?.outcome === "rtf" && String(d.task || "").trim()) out.task = d.task;
+  }
+  if (String(d?.notes || "").trim()) out.notes = d.notes;
+  if (ev && (LINKED_EVIDENCE.has(ev.type) || same)) out.evidence = ev;
+  return out;
+}
+
+// The tasks that come off the failure mode when the decision changes to
+// `outcome` (null: the decision cleared): every task when nothing is
+// scheduled any more; from a combination, every task but the one kept. A plain
+// decision changing its kind of task keeps its tasks.
+export function tasksDropped(d, tasks, outcome) {
+  const live = (tasks || []).filter((t) => t.id);
+  if (!outcome || !SCHEDULED_OUTCOMES.has(outcome)) return live;
+  if (!isCombination(d)) return [];
+  const kept = keptTask(d, tasks, outcome);
+  return live.filter((t) => t.id !== kept);
+}
+
+// A scheduled decision with no task yet, given its task: a new one ({task,
+// interval, interval_unit}) or an existing one ({task_id}).
+export function decisionWithFirstTask(d, member) {
+  const ev = evidenceRef(d?.evidence);
+  const out = member.task_id
+    ? { outcomes: [{ outcome: d.outcome, task_id: member.task_id }] }
+    : { outcome: d.outcome, task: member.task, interval: member.interval, interval_unit: member.interval_unit };
+  if (String(d?.notes || "").trim()) out.notes = d.notes;
+  if (ev) out.evidence = ev;
+  return out;
+}
+
 // A decision as the server takes it back: the fields a decision is made of,
 // without the evidence check the server added. A combination goes back whole
 // (its members, the change applied to the first: the decision's own task), so

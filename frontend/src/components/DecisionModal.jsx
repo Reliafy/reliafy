@@ -1,8 +1,9 @@
-import { useId, useMemo, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
 import Select from "./Select.jsx";
 import Field from "./ui/Field.jsx";
+import TaskChoice from "./TaskChoice.jsx";
 import { TextArea } from "./ui/Controls.jsx";
 
 // Evidence that's linked, not checked: it goes with any decision.
@@ -12,8 +13,8 @@ const LINKED_ONLY = new Set(["report", "working"]);
 const Tick = () => <span className="choice-tick" aria-hidden="true">✓ </span>;
 import { saveErrorText } from "../confirm.js";
 import {
-  DEFAULT_OUTCOMES, INTERVAL_UNITS, NEEDS_INTERVAL, SCHEDULED, TASK_ORDER, analysisKindOf, checkDecision, combineChoices,
-  defaultAction, doctrineRefusal, extraBody, modeAnswers, pruneExtras, rememberUnit, startUnit, worthLine,
+  DEFAULT_OUTCOMES, INTERVAL_UNITS, NEEDS_INTERVAL, SCHEDULED, analysisKindOf, checkDecision, combineChoices,
+  defaultAction, extraBody, modeAnswers, pruneExtras, rememberUnit, startUnit,
 } from "../decisionCheck.js";
 
 // The first question's choices when the server's options don't carry them (an older server).
@@ -94,7 +95,6 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
   const hiddenKey = hidden === true ? "hidden" : hidden === false ? "evident" : null;
   const hiddenOpt = evidentHidden.find((o) => o.id === hiddenKey);
   const fallback = defaultAction(hidden, consequence);
-  const outcomeById = (o) => options.outcomes.find((x) => x.id === o);
 
   // RTF's expected evidence depends on the claimed basis.
   const rtfBasisOpt = options.rtf_bases.find((b) => b.id === rtfBasis);
@@ -105,34 +105,19 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
     ? (outcome === "failure_finding" ? "failure_finding" : "optimal_replacement")
     : null;
 
-  // The tasks in the diagram's order, then what's done if none is worth doing.
-  // One outcome tile with its one-line test; a second click unselects it.
-  const tile = (o, extra = "") => {
-    const line = worthLine(o.id, hidden, consequence) || o.hint;
-    return (
-      <div key={o.id} className={"decision-row" + extra}>
-        <button
-          type="button"
-          className={"option-tile" + (outcome === o.id ? " selected" : "")}
-          aria-pressed={outcome === o.id}
-          aria-describedby={`${id}-o-${o.id}`}
-          title={outcome === o.id ? "Click again to unselect" : undefined}
-          onClick={() => {
-            const next = outcome === o.id ? null : o.id;
-            setOutcome(next);
-            if (next !== "rtf") setRtfBasis(null);
-            setExtras((xs) => (next ? pruneExtras(next, xs) : []));
-            dropModel();
-          }}
-        >
-          <span className="option-title">{outcome === o.id && <Tick />}{o.label}</span>
-        </button>
-        <p className="decision-line" id={`${id}-o-${o.id}`}>{line}</p>
-      </div>
-    );
+  // A choice in question 3: a new outcome or basis drops a linked model that no longer fits.
+  const onTaskChoice = (next) => {
+    setNoTask(next.noTask);
+    if (next.outcome !== outcome) {
+      setOutcome(next.outcome);
+      setExtras((xs) => (next.outcome ? pruneExtras(next.outcome, xs) : []));
+      dropModel();
+    }
+    if (next.rtfBasis !== rtfBasis) {
+      setRtfBasis(next.rtfBasis);
+      dropModel();
+    }
   };
-  const taskTiles = useMemo(() => TASK_ORDER.map(outcomeById).filter(Boolean), [options.outcomes]); // eslint-disable-line react-hooks/exhaustive-deps
-  const otherTiles = useMemo(() => DEFAULT_OUTCOMES.map(outcomeById).filter(Boolean), [options.outcomes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fields = outcomeOpt?.fields || [];
   const check = checkDecision({ outcome, rtfBasis, task, interval, intervalUnit, notes, fields, extras, hidden, consequence }, { limits });
@@ -246,59 +231,17 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
       </div>
 
       <div className="decision-step">
-        <label className="field-label" id={`${id}-q3`}>3. Which task is worth doing?</label>
-        <div className="decision-list" role="group" aria-labelledby={`${id}-q3`}>
-          {/* Only what the doctrine allows here is shown (a failure-finding task on an
-              evident failure isn't offered at all). The default actions appear once "No
-              task is worth doing" is picked, or when the saved decision is one of them. */}
-          {taskTiles.filter((o) => !doctrineRefusal(hidden, consequence, [o.id])).map((o) => tile(o))}
-          <div className="decision-row decision-row-gap">
-            <button
-              type="button"
-              className={"option-tile" + (noTask ? " selected" : "")}
-              aria-pressed={noTask}
-              aria-describedby={`${id}-o-notask`}
-              title={noTask ? "Click again to unselect" : undefined}
-              onClick={() => {
-                const next = !noTask;
-                setNoTask(next);
-                // Leaving the task choice for the default actions (or back) clears what was picked.
-                setOutcome(null); setRtfBasis(null); setExtras([]); dropModel();
-              }}
-            >
-              <span className="option-title">{noTask && <Tick />}No task is worth doing</span>
-            </button>
-            <p className="decision-line" id={`${id}-o-notask`}>None of the tasks above reduces the risk enough, or costs less than the failures it prevents. Pick what's done instead.</p>
-          </div>
-          {noTask && otherTiles.filter((o) => !doctrineRefusal(hidden, consequence, [o.id])).map((o) => tile(o, " decision-row-indent"))}
-        </div>
-        {outcomeOpt && <p className="option-hint">{outcomeOpt.hint}</p>}
-        {fallback && (
+        {/* Question 3 as chip rows (TaskChoice, shared with a failure mode's details): only what
+            the doctrine allows here; the default actions once "No task is worth doing" is picked
+            (or the saved decision is one); run to failure's reason under it. */}
+        <TaskChoice n={3} options={options} hidden={hidden} consequence={consequence}
+                    value={{ outcome, noTask, rtfBasis }} onChange={onTaskChoice} />
+        {fallback && !noTask && (
           <p className="decision-default" role="note">
             <strong>{fallback.outcome ? "The default action: " : "Next: "}</strong>{fallback.text}
           </p>
         )}
       </div>
-
-      {outcome === "rtf" && (
-        <div className="decision-step">
-          <label className="field-label">Why run to failure?</label>
-          <div className="option-grid">
-            {options.rtf_bases.map((b) => (
-              <button
-                key={b.id}
-                type="button"
-                className={"option-tile" + (rtfBasis === b.id ? " selected" : "")}
-                aria-pressed={rtfBasis === b.id}
-                onClick={() => { setRtfBasis(b.id); dropModel(); }}
-              >
-                <span className="option-title">{rtfBasis === b.id && <Tick />}{b.label}</span>
-              </button>
-            ))}
-          </div>
-          {rtfBasisOpt && <p className="option-hint">{rtfBasisOpt.hint}</p>}
-        </div>
-      )}
 
       {(fields.includes("task") || fields.includes("interval")) && (
         <div className="decision-step">

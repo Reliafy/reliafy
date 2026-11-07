@@ -149,11 +149,15 @@ test("a click shows the details beside the table; a double-click on the name spr
     const m = (await rcmOf(request, p)).functions[0].failures[0].modes.find((x) => x.id === p.mode.id);
     return [m.text, m.effects, m.hidden, m.consequence];
   }).toEqual([`Bearing seizes early ${tag}`, "Pump stops; no flow to the tank", true, "operational"]);
-  // Step 3, no decision: the card says so, with one Decide…; no task lines, no add row, no ⋯ (Decide… first).
+  // Step 3, no decision: the chip row with nothing chosen, open now step 2 is answered (failure finding
+  // offered: the failure is hidden); no Decide…, no task cards, no add row, no ⋯.
   const todo = panel(page).getByRole("region", { name: "Proactive task or default action" });
-  await expect(todo).toContainText("No decision yet");
-  await expect(todo.getByRole("button", { name: "Decide…" })).toBeVisible();
-  await expect(todo.getByRole("listitem")).toHaveCount(0);
+  const which = todo.getByRole("radiogroup", { name: "Which task is worth doing?" });
+  await expect(which.getByRole("radio")).toHaveText([/On condition/, /Fixed interval/, /Failure finding/, /No task is worth doing/]);
+  await expect(which.getByRole("radio", { checked: true })).toHaveCount(0);
+  await expect(which.getByRole("radio", { name: /On condition/ })).toBeEnabled();
+  await expect(todo.getByRole("button", { name: "Decide…" })).toHaveCount(0);
+  await expect(todo.locator(".rim-cards > li")).toHaveCount(0);
   await expect(todo.getByRole("button", { name: /^Actions for/ })).toHaveCount(0);
   await expect(panel(page).getByRole("button", { name: /^Add (another|a) task/ })).toHaveCount(0);
   await expect(panel(page).getByRole("button", { name: "Save" })).toHaveCount(0); // no Save or Cancel: kept as you go
@@ -222,18 +226,20 @@ test("Open… and Add a task… in the row menu expand the details; Enter shows 
   await expect(panel(page).getByRole("heading", { name: `Seal leaks ${tag}` })).toBeFocused();
   expect(await isExpanded(page)).toBe(false);
 
-  // Add a task…: across the table, the Add another task dialog open on its kind; the two tasks listed.
+  // Add a task…: across the table, "Add another task" open in place on its kind; the two tasks listed.
   await sealRow.locator(".tp-nm").click({ button: "right" });
   await page.getByRole("menuitem", { name: "Add a task…" }).click();
   const tasks = panel(page).getByRole("region", { name: "Proactive task or default action" });
-  const add = page.getByRole("dialog", { name: "Add another task" });
+  const add = tasks.getByRole("group", { name: "Add another task" });
   await expect(add).toBeVisible();
   await expect(add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio").first()).toBeFocused();
   expect(await isExpanded(page)).toBe(true);
-  await expect(tasks.getByRole("listitem")).toHaveCount(2);
-  await page.keyboard.press("Escape");
+  await expect(tasks.locator(".rim-cards > li")).toHaveCount(2);
+  await page.keyboard.press("Escape"); // the form closes, the panel stays
   await expect(add).toHaveCount(0);
-  await expect(tasks.getByRole("listitem")).toHaveCount(2);
+  await expect(panel(page)).toBeVisible();
+  await expect(tasks.getByRole("button", { name: "+ Add another task" })).toBeVisible();
+  await expect(tasks.locator(".rim-cards > li")).toHaveCount(2);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expectHealthy(page, problems, { label: "rcm open from menu" });
 });
@@ -383,14 +389,24 @@ test("one order at every level: its notes under the title and chips, what's insi
     const howBad = panel(page).getByRole("region", { name: "Failure consequences" });
     await expect(howBad.getByRole("radiogroup")).toHaveCount(2);
     await expect(howBad.locator(".field-help")).toHaveCount(0);
-    // Step 3: one card; the decision said in it once (no heading line, Change… button, Evidence line or notes field outside it).
+    // Step 3, in place, top to bottom: the chip row (the decision, chosen), the task cards with their
+    // Edit and Remove links, the dashed add row (a redesign may sit beside one task), then the evidence and
+    // the decision notes, open. No ⋯, no Change….
     const todo = panel(page).getByRole("region", { name: "Proactive task or default action" });
-    await expect(todo.locator(".rim-dcard")).toHaveCount(1);
-    await expect(todo.getByRole("listitem").first()).toContainText(`On condition · Check the seal ${tag} · every 1 month`);
-    await expect(todo.getByRole("button", { name: /^Change/ })).toHaveCount(0);
-    await expect(todo.getByRole("button", { name: /^Add another task/ })).toHaveCount(0);
-    await expect(todo.getByRole("textbox", { name: /^Decision notes/ })).toHaveCount(0);
-    await expect(todo).not.toContainText("None linked");
+    await expect(todo.locator(".rim-step")).toHaveCount(1);
+    await expect(todo.getByRole("radiogroup", { name: "Which task is worth doing?" }).getByRole("radio", { name: /On condition/ }))
+      .toHaveAttribute("aria-checked", "true");
+    await expect(todo.locator(".rim-cards .rim-tname").first()).toHaveText(`On condition · Check the seal ${tag} · every 1 month`);
+    await expect(todo.getByRole("button", { name: `Edit “Check the seal ${tag}”` })).toBeVisible();
+    await expect(todo.getByRole("button", { name: `Remove “Check the seal ${tag}”` })).toBeVisible();
+    await expect(todo.getByRole("button", { name: /^Change…$|^Actions for/ })).toHaveCount(0);
+    await expect(todo.getByRole("button", { name: "+ Add another task" })).toBeVisible();
+    await expect(todo.getByRole("textbox", { name: /^Decision notes/ })).toBeVisible();
+    await expect(todo.getByRole("group", { name: "Evidence and rationale" })).toContainText("None linked");
+    expect(await todo.evaluate((el) => {
+      const at = (sel) => [...el.querySelectorAll("*")].indexOf(el.querySelector(sel));
+      return [at(".task-choice"), at(".rim-cards"), at(".rim-addrow"), at(".rim-whyopen")].every((v, i, a) => v >= 0 && (i === 0 || v > a[i - 1]));
+    })).toBe(true);
     const labels = await panel(page).locator(".rw-pbody .field-label").allInnerTexts();
     const at = (t) => labels.findIndex((x) => x.startsWith(t));
     // No "Under" field: where a mode sits is the breadcrumb, moved by drag or the row menu.
@@ -453,18 +469,21 @@ test("fields, chips, ⋯ and refusals: kept where you typed, the reason beside i
   await expect.poll(async () => (await rcmOf(request, p)).functions[0].failures[0].modes.find((m) => m.id === p.seal.id).consequence)
     .toBe("non_operational");
 
-  // The decision card's one ⋯ by keyboard: Enter opens it on its first item (Change…), with each
-  // task's Edit… and Remove… after the decision's own; Escape closes it back to the button.
-  const more = panel(page).getByRole("region", { name: "Proactive task or default action" }).getByRole("button", { name: "Actions for the decision" });
-  await more.focus();
-  await page.keyboard.press("Enter");
-  const menu = page.getByRole("menu", { name: "Actions for the decision" });
-  await expect(menu.getByRole("menuitem", { name: "Change…" })).toBeFocused();
-  await expect(menu.getByRole("menuitem", { name: `Edit “Replace the seal ${tag}”…` })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: `Remove “Replace the seal ${tag}”…` })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(menu).toHaveCount(0);
-  await expect(more).toBeFocused();
+  // Step 3's chips by keyboard: Tab lands on the chosen one; an arrow only moves (each choice is saved,
+  // so Enter or Space chooses), nothing sent. Each task's Edit and Remove are plain links on its card.
+  const step3 = panel(page).getByRole("region", { name: "Proactive task or default action" });
+  const which = step3.getByRole("radiogroup", { name: "Which task is worth doing?" });
+  let decisionPuts = 0;
+  page.on("request", (q) => { if (q.method() === "PUT" && q.url().includes(`/failure-modes/${p.seal.id}/decision`)) decisionPuts += 1; });
+  await which.getByRole("radio", { name: /On condition/ }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(which.getByRole("radio", { name: /Fixed interval/ })).toBeFocused();
+  await expect(which.getByRole("radio", { name: /Fixed interval/ })).toHaveAttribute("aria-checked", "false");
+  await expect(which.getByRole("radio", { name: /On condition/ })).toHaveAttribute("aria-checked", "true");
+  await page.waitForTimeout(300);
+  expect(decisionPuts).toBe(0);
+  await expect(step3.getByRole("button", { name: `Edit “Replace the seal ${tag}”` })).toBeVisible();
+  await expect(step3.getByRole("button", { name: `Remove “Replace the seal ${tag}”` })).toBeVisible();
 
   // A standard's limit: comparator, value and unit as one group, read back in words.
   await trow(page, `^Performance standard: At 3 bar ${tag}`).locator(".tp-nm").click();

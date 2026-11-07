@@ -789,8 +789,8 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-notes-hint { margin: 0 0 6px; }
 
 /* A failure mode's three steps (Derryn, 9 Nov 2026): "1. Failure effects", "2. Failure consequences",
-   "3. Proactive task or default action", each compact, each opening on a hairline. The decision is one card:
-   its lines, one ⋯, and the evidence and notes folded behind "Why". */
+   "3. Proactive task or default action", each compact, each opening on a hairline. Step 3 is edited in place:
+   its chip rows, the task cards (Edit, Remove), a dashed add row, then the evidence and notes, open. */
 .rw-step { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); min-width: 0; }
 .rw-stepn { color: var(--acc); font-variant-numeric: tabular-nums; }
 .rw-step .psec-head { min-height: 24px; }
@@ -820,7 +820,28 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rim-whybody { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line2); padding-top: 8px; min-width: 0; }
 .rim-whybody .rw-dwhy { margin: 0; }
 @media (prefers-reduced-motion: reduce) { .rim-chev { transition: none; } }
+.rim-step { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.rim-step .task-choice { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.rim-step .task-choice .rw-eyebrow { gap: 4px; }
+.rim-step .task-choice .rw-eyebrow .field-label { font-size: var(--fs-12); }
+.rim-step .task-choice .field-help { margin: 0; }
+.rim-cards .rim-chead { align-items: baseline; }
+.rim-cards .rim-tacts { margin-left: auto; }
+.rim-step .rim-tform { background: var(--surf); }
+.rim-adding { padding: 0; }
+.rim-adding > .rim-tform { border: 0; }
+button.rim-addrow {
+  align-self: stretch; justify-content: flex-start; min-height: 36px; padding: 0 12px; border: 1px dashed var(--line);
+  border-radius: var(--r-sm); background: transparent; color: var(--acc); font-weight: 500; box-shadow: none;
+}
+button.rim-addrow:hover:not(:disabled) { border-color: var(--acc); background: transparent; color: var(--acc); }
+.rim-whyopen { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line2); padding-top: 8px; min-width: 0; }
+.rim-whyopen h4.rim-before { margin: 0; font-size: var(--fs-13); font-weight: 600; color: var(--muted); }
+.rim-whyopen .rw-dwhy { margin: 0; }
+.decision-modal .task-choice { display: flex; flex-direction: column; gap: 10px; }
 @media (max-width: 600px) {
   .rim-whybtn, .rim-done { min-height: 36px; }
+  .rim-cards .rim-chead { flex-wrap: wrap; }
+  .rim-cards .rim-tacts .link { min-height: 36px; }
   .rim-line .rim-tevery { white-space: normal; }
 }

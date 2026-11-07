@@ -1470,6 +1470,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                addStart={addStart} onSaid={say}
                onMove={fmeaOn ? null : (r, { task = false } = {}) => (task ? setMoving({ taskFrom: r.key }) : setMoving({ src: dragSource(whole, r.key) }))}
                onClose={closeDetails} fmea={fmeaPanel}
+               options={options} workings={detailsRow.type === "mode" ? workingsFor(rcm, detailsRow.ref.id) : []}
                onSelect={(k, o) => (o?.notes ? openNotes(k) : reveal(k))} />
     </div>
   ) : fmeaPosRow && fmeaPos ? (
