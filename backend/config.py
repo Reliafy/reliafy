@@ -326,6 +326,10 @@ MAINTENANCE_DB_PATH = os.environ.get("MAINTENANCE_DB_PATH") or os.path.expanduse
 # the app rather than linked; each is at most 20 MB). The bytes live beside the
 # event log: in MongoDB for a deployment, so keep this well within its storage.
 MAINTENANCE_DOCUMENT_BYTES = int(float(os.environ.get("MAINTENANCE_DOCUMENT_MB") or 100) * 1024 * 1024)
+# Changes one maintenance workspace may start per minute (anything more is
+# refused with "Too many changes in the last minute"). The smoke suite raises
+# it: several browsers editing one workspace at once go past the usual 600.
+MAINTENANCE_WRITES_PER_MINUTE = int(os.environ.get("MAINTENANCE_WRITES_PER_MINUTE") or 600)
 # Where the graph projected from the log lives (docs/maintenance-graph.md):
 # "sqlite" (the default: in this process, in memory for a mongo log) or
 # "neo4j" (one shared graph in Neo4j: every read is a round trip to it, so only

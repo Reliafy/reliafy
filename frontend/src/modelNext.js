@@ -60,6 +60,18 @@ export function nextStepLink(step, id, { unit = "" } = {}) {
   return null;
 }
 
+// Only the latest of several requests counts: each call starts one and
+// returns a check that stays true until the next call. A saved model picked
+// while an earlier pick (the page's own first choice) is still loading must
+// not be overwritten when that earlier reply lands last.
+export function latestOnly() {
+  let n = 0;
+  return () => {
+    const mine = ++n;
+    return () => mine === n;
+  };
+}
+
 // The model id a link carries (``?model=``), or null.
 export function modelFromSearch(search) {
   const id = new URLSearchParams(search || "").get("model");

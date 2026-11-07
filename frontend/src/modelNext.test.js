@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   STEP_LABELS, STEP_WHAT, analysisName, graphWithModel, modelFromSearch, nextStepLink, nextStepsFor, plainName,
-  preferredModel, savedModelRef, stepsFor,
+  latestOnly, preferredModel, savedModelRef, stepsFor,
 } from "./modelNext.js";
 
 test("nextStepsFor: which tools take which kind of model", () => {
@@ -105,4 +105,22 @@ test("graphWithModel: an existing diagram keeps its wiring and unit; the block w
   assert.deepEqual(graph.nodes.at(-1).position, { x: 250, y: 310 });
   // The saved graph itself is untouched.
   assert.equal(saved.nodes.length, 4);
+});
+
+test("latestOnly: a pick made while the first choice loads isn't overwritten by it", async () => {
+  const start = latestOnly();
+  const chosen = [];
+  const pick = async (id, delay) => {
+    const current = start();
+    await new Promise((r) => setTimeout(r, delay));
+    if (current()) chosen.push(id);
+  };
+  // The page's own first choice (slow), then the user's pick (fast).
+  await Promise.all([pick("newest", 30), pick("sample", 5)]);
+  assert.deepEqual(chosen, ["sample"]);
+  // Each start makes the earlier checks false; the latest stays true.
+  const a = start();
+  const b = start();
+  assert.equal(a(), false);
+  assert.equal(b(), true);
 });

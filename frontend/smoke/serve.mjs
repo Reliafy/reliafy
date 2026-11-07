@@ -23,6 +23,9 @@ Object.assign(env, {
   // The single-user mode's fixed user, made an operator so /admin is tested too.
   ADMIN_EMAILS: "dev@local",
   PUSH_ERROR_ALERTS: "false",
+  // Several workers edit the one workspace at once: past the usual 600 changes
+  // a minute the server would refuse them ("Too many changes in the last minute").
+  MAINTENANCE_WRITES_PER_MINUTE: "100000",
   MPLBACKEND: "Agg",
   PYTHONUNBUFFERED: "1",
 });

@@ -365,8 +365,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // each function in that order; the tree itself stays as it is.
   const order = useMemo(() => (fmeaOn && fsort ? fmeaOrder(display, fsort) : null), [fmeaOn, fsort, display]);
   const { list, index } = useMemo(() => flatten(display, open, filter, order), [display, open, filter, order]);
+  // A row asked for (?sel=, a link, a new row) that's in the tree is the one
+  // shown, even before the effect below reveals it: else the first row is shown
+  // for a render and its panels ask for the wrong row's data.
+  const want = pending.current != null && display.rows.has(pending.current) ? pending.current : null;
   const focus = rcmOn && rcmFocus && display.rows.has(rcmFocus) ? rcmFocus
-    : display.rows.has(selected[mode]) ? selected[mode] : list[0]?.key ?? null;
+    : want ?? (display.rows.has(selected[mode]) ? selected[mode] : list[0]?.key ?? null);
   const focusRow = focus != null ? display.rows.get(focus) : null;
   // The position the selection is on (a function, failure or mode: its position).
   const selPos = isRcmRow(focusRow) ? positionOf(focusRow) : focus;
