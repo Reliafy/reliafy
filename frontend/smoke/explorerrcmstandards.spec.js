@@ -187,8 +187,9 @@ test("the Details panel adds in place (Enter, Esc, leaving the box, several in a
   await details.getByRole("heading", { level: 3, name: "Performance standards" }).click();
   await expect(list.getByRole("listitem")).toHaveCount(4);
   await expect(list.getByRole("listitem").nth(0)).toContainText("At least 50 L/s");
-  const fn = await (await request.get(`${M}/functions/${p.fn.id}`)).json();
-  expect(fn.standards.map((st) => st.text)).toEqual(["At least 50 L/s", "At 4 bar", "Below 60 °C", "Under 70 dB"]);
+  // The list shows the new one at once; the save may still be on its way.
+  await expect.poll(async () => (await (await request.get(`${M}/functions/${p.fn.id}`)).json()).standards.map((st) => st.text))
+    .toEqual(["At least 50 L/s", "At 4 bar", "Below 60 °C", "Under 70 dB"]);
   await expectHealthy(page, problems, { label: "rcm standards details" });
 });
 

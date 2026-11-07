@@ -428,8 +428,10 @@ test("add the sample truck from the Explorer's menu", async ({ page, request, pr
   await ask.getByRole("button", { name: "Add another copy" }).click();
   await expect(page).toHaveURL(/tab=rcm/);
   await expect(page.locator(".tt-msg.ok")).toHaveText("Added the sample truck.");
+  // The message shows as soon as the copy is added; the panel moves to it once
+  // the tree has been read again (until then it still shows the one kept above).
+  await expect(page.locator(".tt-h1").first()).toHaveText(/^Delivery truck \(sample \d+\)$/);
   const name = (await page.locator(".tt-h1").first().textContent()).trim();
-  expect(name).toMatch(/^Delivery truck \(sample \d+\)$/);
   const grid = page.getByRole("treegrid", { name: /and their RCM/ });
   await expect(grid.getByRole("row", { name: /Stop the vehicle within the rated distance/ }).first()).toBeVisible();
   await expect(grid.getByRole("row", { name: /Wheel-bearing failure — legacy run-to-failure plan/ }).first()).toBeVisible();

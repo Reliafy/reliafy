@@ -122,7 +122,10 @@ test("isolate at 1, 2, 3 levels and everything: the rest closed but on show, the
   await row(page, `Works line B ${tag}`).click();
   await row(page, `Works line B ${tag}`).press("Shift+F10");
   const kmenu = rowMenu(page, `Works line B ${tag}`);
+  // The menu puts the focus on its first item as it opens: wait for that, so it doesn't take it back from Isolate.
+  await expect(kmenu.getByRole("menuitem").first()).toBeFocused();
   await kmenu.getByRole("menuitem", { name: "Isolate" }).focus();
+  await expect(kmenu.getByRole("menuitem", { name: "Isolate" })).toBeFocused();
   await page.keyboard.press("ArrowRight");
   await expect(sub.getByRole("menuitem", { name: "With 1 level open" })).toBeFocused();
   await page.keyboard.press("ArrowLeft"); // back to Isolate

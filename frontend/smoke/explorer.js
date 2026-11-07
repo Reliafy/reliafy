@@ -1,4 +1,5 @@
 // Shared by the Explorer's smoke specs (Assets › Explorer).
+import { expect } from "@playwright/test";
 
 // The panel about the row picked. On a wide screen its heading (the way up,
 // the name, the actions) and its tabs sit in the slim rows over the tree, the
@@ -160,4 +161,42 @@ export async function pickPlace(dlg, key, name) {
   const item = dlg.getByRole("tree", { name: "Where it goes" }).locator(`[role="treeitem"][data-key="${key}"]`);
   await item.click();
   return item;
+}
+
+// Bring a row of the tree (or the RCM tab's table) into view and return it.
+// The tree draws only the rows near its scroll (it's windowed), and every
+// Explorer spec plants its own rows on the one server, so late in a full run a
+// test's row can sit far down the tree, out of the rows drawn, and a locator
+// for it never resolves. If `row` isn't drawn yet, this scrolls the tree's
+// pane from the top, a pane at a time, until it is (retrying, so a row that's
+// still coming after a click is waited for), then scrolls it on screen. It
+// only scrolls: nothing is opened, picked or filtered. `row` is a locator for
+// one row (a treeitem, or a row of the treegrid).
+export async function reveal(page, row, { timeout = 10_000 } = {}) {
+  await expect(async () => {
+    if (!(await row.count())) {
+      const pane = page.locator(".tp-scroll").first();
+      await pane.evaluate((el) => {
+        el.scrollTop = 0;
+        el.dispatchEvent(new Event("scroll"));
+      });
+      for (;;) {
+        await page.waitForTimeout(30); // the rows drawn follow the scroll on the next frame
+        if (await row.count()) break;
+        const moved = await pane.evaluate((el) => {
+          const before = el.scrollTop;
+          el.scrollTop = before + Math.max(40, el.clientHeight - 40);
+          el.dispatchEvent(new Event("scroll"));
+          return el.scrollTop !== before;
+        });
+        if (!moved) {
+          await page.waitForTimeout(30);
+          break;
+        }
+      }
+    }
+    expect(await row.count(), "the row is drawn in the tree").toBeGreaterThan(0);
+  }).toPass({ timeout });
+  await row.first().scrollIntoViewIfNeeded();
+  return row;
 }
