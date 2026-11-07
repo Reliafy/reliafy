@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   addSampleProduct, addSampleTruck as postSampleTruck, getFmeaExcelBlob, getMaintenanceTree, getPositionRcm, getRcmOptions,
-  hasFmeaExcel, listMaintenanceItems,
+  hasFmeaExcel, listMaintenanceItems, restoreTree,
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
@@ -62,7 +62,9 @@ import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, 
 import { EXPLORER_LABEL } from "../navigation.js";
 import { isolateItems, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
 import { canIsolate, depthWords, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen } from "../treeIsolate.js";
-import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals.jsx";
+import { MoveModal, RenameModal } from "../components/TreeRowModals.jsx";
+import { DeleteTreeModal } from "../components/DeleteTree.jsx";
+import { DELETE_KIND, undoneText } from "../treeDelete.js";
 import NewFailureReportModal from "../components/NewFailureReportModal.jsx";
 import usePhone from "../usePhone.js";
 import {
@@ -252,6 +254,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       .catch((e) => setError({ text: e.message, notAllowed: e.status === 404 || e.status === 403 }));
   }, [root]);
   useEffect(() => load(), [load]);
+  // A delete made on a full page (position, location, item) comes here with its
+  // toast and Undo (the router's state), shown once.
+  useEffect(() => {
+    const d = location.state?.deleted;
+    if (!d) return;
+    setToast({ text: d.text, restore: { kind: d.kind, id: d.id, name: d.name }, at: Date.now() });
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The RCM tab: the RCM read into the tree, and what's being worked on.
   const askText = useAskText();
@@ -307,7 +317,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // failure modes picked to move together, the toast with Undo after a move,
   // the Move to… dialog, and the words said to screen readers.
   const [picked, setPicked] = useState(() => new Set());
-  const [toast, setToast] = useState(null); // {text, undo, extra, show, at, busy}
+  // A delete's toast has restore ({kind, id, name}) in place of undo.
+  const [toast, setToast] = useState(null); // {text, undo, extra, show, at, busy, restore}
   const [moving, setMoving] = useState(null); // {src} or {taskFrom}: the Move to… dialog
   // A move asking what its tasks by use count there: {need, choose, cancel}.
   const [measuring, setMeasuring] = useState(null);
@@ -315,7 +326,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const announce = useCallback((text) => setSpoken((was) => (was === text ? `${text}\u00a0` : text)), []);
   useEffect(() => {
     if (!toast || toast.busy) return undefined;
-    const t = setTimeout(() => setToast((x) => (x === toast ? null : x)), toast.undo ? 12000 : 5000);
+    const t = setTimeout(() => setToast((x) => (x === toast ? null : x)), toast.undo || toast.restore ? 12000 : 5000);
     return () => clearTimeout(t);
   }, [toast]);
   const wantItems = mode === "items";
@@ -793,8 +804,24 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       announce(`Not moved: ${e.message}`);
     });
   };
+  const undoDelete = async (t) => {
+    setToast({ ...t, busy: true });
+    try {
+      const answer = await restoreTree(t.restore.kind, t.restore.id);
+      pending.current = t.restore.id;
+      load();
+      const text = undoneText({ ...answer, name: t.restore.name });
+      setToast({ text, undo: null, at: Date.now() });
+      announce(text);
+    } catch (e) {
+      const why = e.status === 422 ? refusalText(e) : saveErrorText(e, { offline: offline() });
+      setToast({ text: `Couldn't undo it: ${why}`, undo: null, tone: "error", at: Date.now() });
+      announce(`Couldn't undo it: ${why}`);
+    }
+  };
   const undoMove = async () => {
     const t = toast;
+    if (t?.restore && !t.busy) return undoDelete(t);
     if (!t?.undo?.length || t.busy) return;
     setToast({ ...t, busy: true });
     try {
@@ -815,7 +842,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     }
   };
   useEffect(() => {
-    if (!toast?.undo?.length) return undefined;
+    if (!toast?.undo?.length && !toast?.restore) return undefined;
     const onKey = (e) => {
       if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "z") return;
       if (e.target.closest?.("input, textarea, select, [contenteditable='true']") || hasOpenLayer(document)) return;
@@ -881,7 +908,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (id === "tree-new") {
         setNewParent(r.key);
         setModal(r.type === "loc" ? "location" : "position");
-      } else if (id === "tree-rename" || id === "tree-move" || id === "tree-retire") setRowModal({ kind: id.slice(5), row: r });
+      } else if (id === "tree-rename" || id === "tree-move" || id === "tree-delete") setRowModal({ kind: id.slice(5), row: r });
       else if (id === "report-new") setReportFor({ id: r.key, name: r.ref.name, select: r.key });
       else if (id === "pin") pinTo(r.key, { select: true });
       else if (id.startsWith("isolate:")) isolateAt(r, id === "isolate:all" ? "all" : Number(id.slice(8)));
@@ -1634,7 +1661,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       {toast && (
         <div className={"rcm-toast" + (toast.tone === "error" ? " error" : "")}>
           <span>{toast.text}</span>
-          {toast.undo?.length > 0 && (
+          {(toast.undo?.length > 0 || (toast.restore && !toast.undo)) && (
             <button type="button" className="secondary sm" onClick={undoMove} disabled={toast.busy}
                     title="Undo (Ctrl+Z or Cmd+Z)">{toast.busy ? "Undoing…" : "Undo"}</button>
           )}
@@ -1673,12 +1700,20 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                    onClose={() => setRowModal(null)}
                    onDone={(to) => rowChanged(rowModal.row, { text: to ? `Moved it inside “${to}”.` : "Moved it to the top level." })} />
       )}
-      {rowModal?.kind === "retire" && (
-        <RetireModal row={rowModal.row} onClose={() => setRowModal(null)}
-                     onDone={() => rowChanged(rowModal.row, {
-                       select: rowModal.row.ref.parent_id && display.rows.has(rowModal.row.ref.parent_id) ? rowModal.row.ref.parent_id : null,
-                       text: `Retired “${rowModal.row.ref.name}”.`,
-                     })} />
+      {rowModal?.kind === "delete" && (
+        <DeleteTreeModal kind={DELETE_KIND[rowModal.row.type]} id={rowModal.row.key} name={rowModal.row.ref.name}
+                         onClose={() => setRowModal(null)}
+                         onDone={(answer, done) => {
+                           // The tree read again, the row it was inside picked, and the toast with Undo.
+                           const row = rowModal.row;
+                           const up = row.ref.parent_id && display.rows.has(row.ref.parent_id) ? row.ref.parent_id : null;
+                           setRowModal(null);
+                           if (up != null) pending.current = up;
+                           load();
+                           setToast({ text: done.text, restore: { kind: done.kind, id: done.id, name: done.name }, at: Date.now() });
+                           announce(`${done.text} Press Control Z to undo.`);
+                           if (up != null) setTimeout(() => document.getElementById(`tp-${up}`)?.focus({ preventScroll: true }), 300);
+                         }} />
       )}
       {reportFor && (
         <NewFailureReportModal positionId={reportFor.id} positionName={reportFor.name} today={data?.today || ""}

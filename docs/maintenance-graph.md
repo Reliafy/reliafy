@@ -703,9 +703,19 @@ connections), each projected by `_flag("retired")`; `<node>.restored`
 refuses a retire while something depends on the thing (fitted, located,
 placed, stocked, listed, an open work order, a task going by a point) and a
 restore while what it needs is still retired (its parent, its subject, its
-failure mode), so the graph is consistent after either. `positions retire` and
-`locations retire` take `cascade`: the live subtree goes too, deepest first,
-after every node is checked. Reads leave retired locations, items, parts,
+failure mode), so the graph is consistent after either. `positions retire`,
+`locations retire` and `items retire` take `cascade`: a delete
+(`tree_delete.py`), which never refuses. The live subtree goes (a location's
+locations inside and the positions located at them, with everything inside
+those); items fitted there are taken out (`item.removed`, reason `other`) and
+kept; open work orders are cancelled; tasks and work packages are retired.
+It's built from those existing events, plus `tree.deleted` (a `Deletion` node
+recording everything it took, numbered `n` per workspace) so that `restore`
+with `cascade` undoes it as a unit: `fitment.reinstated` reopens a fitment the
+delete ended, `work_order.uncancelled` puts a work order back at the status
+it had, and `tree.restored` marks the record. What changed since (an item
+fitted elsewhere) is skipped and listed. `dry_run` with `cascade` counts what
+would go and writes nothing. Reads leave retired locations, items, parts,
 makers and points out of lists and matches; a direct read answers with
 `retired: true`.
 

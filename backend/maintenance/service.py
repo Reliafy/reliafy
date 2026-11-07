@@ -62,6 +62,8 @@ from backend.maintenance.products import PROJECTORS as _PRODUCT_PROJECTORS
 from backend.maintenance.products import ProductOps
 from backend.maintenance.progression import ProgressionOps
 from backend.maintenance.signals import SignalOps
+from backend.maintenance.tree_delete import PROJECTORS as _TREE_DELETE_PROJECTORS
+from backend.maintenance.tree_delete import TreeDeleteOps
 
 logger = logging.getLogger(__name__)
 
@@ -2563,7 +2565,7 @@ PROJECTORS = {
 
 # ---- the domain ------------------------------------------------------------------
 
-class Maintenance(SignalOps, ProgressionOps, ProductOps):
+class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -7044,11 +7046,18 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps):
             self._emit("note.appended", appended)
         return self.item(item_id)
 
-    def retire_item(self, item_id: str, reason="") -> dict:
+    def retire_item(self, item_id: str, reason="", cascade: bool = False, dry_run: bool = False) -> dict:
         """Take an item out of use for good (disposed of, scrapped, sold): it stays in
         the history and in every fitment it had. It can't be fitted anywhere, have no
         open work order, and no live position inside it (an engine's turbo slots). Its
-        own tasks are retired with it (reported) and come back with it."""
+        own tasks are retired with it (reported) and come back with it. With
+        ``cascade`` it's a delete (tree_delete.py): it's taken out if fitted, the
+        positions inside it go with everything inside those, open work orders are
+        cancelled, and nothing refuses. ``dry_run`` (with cascade) only counts."""
+        if cascade:
+            self._get(item_id, "Item")
+            return self.delete_preview("item", item_id) if dry_run else {
+                **self.delete_tree("item", item_id, reason), "retired": item_id}
         item = self._get(item_id, "Item")
         if item.get("retired"):
             raise Invalid("That item was already retired.")
@@ -7068,9 +7077,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps):
         self._emit("item.retired", {"id": item_id, "on": self.today(), "reason": _text(reason, "reason")})
         return {"retired": item_id, "tasks_retired": tasks}
 
-    def restore_item(self, item_id: str) -> dict:
+    def restore_item(self, item_id: str, cascade: bool = False) -> dict:
         """Bring a retired item back (not fitted anywhere: fit or place it next), with
-        the tasks retired with it."""
+        the tasks retired with it. ``cascade``: undo its latest delete (refitted where
+        it was, with everything that went with it)."""
+        if cascade:
+            self._get(item_id, "Item")
+            return {**self.restore_deletion(item_id), **self.item(item_id)}
         item = self._get(item_id, "Item")
         self._not_retired(item)
         self._emit("item.restored", {"id": item_id, "on": self.today()})
@@ -8828,52 +8841,40 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps):
                 for pkg in self.s.inn(self.org, position_id, "PLANNED_FOR") if not pkg.get("retired")]
         return why
 
-    def retire_position(self, position_id: str, reason="", cascade: bool = False) -> dict:
-        """Take a position out of the plant (it stays in the history). Nothing may be
-        fitted to it, and no position inside it still in use, unless ``cascade``:
-        then the live positions inside it go too (deepest first), after every one
-        has been checked; with any of them blocked nothing is retired."""
+    def retire_position(self, position_id: str, reason="", cascade: bool = False, dry_run: bool = False) -> dict:
+        """Take a position out of the plant (it stays in the history). Without
+        ``cascade`` nothing may be fitted to it, and no position inside it still in
+        use. With ``cascade`` it's a delete (tree_delete.py): everything inside goes
+        and nothing refuses: items fitted there are taken out (kept), open work
+        orders cancelled, tasks retired. ``dry_run`` (with cascade) only counts."""
         p = self._get(position_id, "Position")
+        if cascade:
+            return self.delete_preview("position", position_id) if dry_run else {
+                **(out := self.delete_tree("position", position_id, reason)), "retired": position_id,
+                "links_removed": out["links"], "also_retired": out["positions_retired"][:-1]}
         if p.get("retired"):
             raise Invalid("That position was already retired.")
         reason = _text(reason, "reason")
-        order: list[str] = []  # deepest first
-        if cascade:
-            stack, seen = [position_id], set()
-            while stack:
-                pid = stack.pop()
-                if pid in seen:
-                    continue
-                seen.add(pid)
-                order.append(pid)
-                stack.extend(c["id"] for c in self._live_children(pid, "Position"))
-            order.reverse()
-            if len(order) > MAX_COPY_NODES:
-                raise Invalid(f"More than {MAX_COPY_NODES} positions would be retired at once: retire the systems "
-                              "inside it one at a time.")
-            blockers = [w for pid in order for w in self._position_retire_blockers(pid, named=True)]
-            if blockers:
-                raise Invalid(" ".join(blockers[:5]))
-        else:
-            if self._live_children(position_id, "Position"):
-                raise Invalid("Positions inside it are still in use. Retire or move them first, or retire with "
-                              "cascade true to retire them with it.")
-            blockers = self._position_retire_blockers(position_id)
-            if blockers:
-                raise Invalid(" ".join(blockers))
-            order = [position_id]
-        links = 0
-        for pid in order:
-            # Its functional failures stop explaining failures above it: those links go.
-            links += sum(self._drop_links(ff["id"], causes=False)
-                         for fn in self._functions_of(pid) for ff in self._failures_of(fn["id"]))
-            self._emit("position.retired", {"id": pid, "on": self.today(), "reason": reason})
-        return {"retired": position_id, "links_removed": links,
-                **({"also_retired": [pid for pid in order if pid != position_id]} if cascade else {})}
+        if self._live_children(position_id, "Position"):
+            raise Invalid("Positions inside it are still in use. Retire or move them first, or retire with "
+                          "cascade true to delete them with it.")
+        blockers = self._position_retire_blockers(position_id)
+        if blockers:
+            raise Invalid(" ".join(blockers))
+        if dry_run:
+            return self.delete_preview("position", position_id)
+        links = sum(self._drop_links(ff["id"], causes=False)
+                    for fn in self._functions_of(position_id) for ff in self._failures_of(fn["id"]))
+        self._emit("position.retired", {"id": position_id, "on": self.today(), "reason": reason})
+        return {"retired": position_id, "links_removed": links}
 
-    def restore_position(self, position_id: str) -> dict:
+    def restore_position(self, position_id: str, cascade: bool = False) -> dict:
         """Bring a retired position back into the plant. Its parent (a position or an
-        item) must be in use; the tasks and failure modes it had stay as they were."""
+        item) must be in use; the tasks and failure modes it had stay as they were.
+        ``cascade``: undo its latest delete, everything that took with it."""
+        if cascade:
+            self._get(position_id, "Position")
+            return {**self.restore_deletion(position_id), **self.position(position_id)}
         p = self._get(position_id, "Position")
         self._not_retired(p)
         parent = self._parent(position_id)
@@ -8929,46 +8930,43 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps):
                 for pkg in self.s.inn(self.org, location_id, "PLANNED_AT") if not pkg.get("retired")]
         return why
 
-    def retire_location(self, location_id: str, reason="", cascade: bool = False) -> dict:
-        """Take a location out of use (it stays in the history). Nothing may be there:
-        no live position located at it, no item placed there, no stock on hand, no
-        open work order; and no location inside it in use, unless ``cascade`` (then
-        they go too, deepest first, all or nothing). Its own tasks (rounds) are
-        retired with it and come back with it."""
+    def retire_location(self, location_id: str, reason="", cascade: bool = False, dry_run: bool = False) -> dict:
+        """Take a location out of use (it stays in the history). Without ``cascade``
+        nothing may be there: no live position located at it, no item placed there,
+        no stock on hand, no open work order, no location inside it in use; its own
+        tasks (rounds) are retired with it and come back with it. With ``cascade``
+        it's a delete (tree_delete.py): the locations inside and the positions
+        located at any of them go too, with everything inside those, and nothing
+        refuses. ``dry_run`` (with cascade) only counts."""
         loc = self._get(location_id, "Location")
+        if cascade:
+            return self.delete_preview("location", location_id) if dry_run else {
+                **(out := self.delete_tree("location", location_id, reason)), "retired": location_id,
+                "also_retired": out["locations_retired"][:-1]}
         if loc.get("retired"):
             raise Invalid("That location was already retired.")
         reason = _text(reason, "reason")
-        order: list[str] = []
-        if cascade:
-            stack, seen = [location_id], set()
-            while stack:
-                lid = stack.pop()
-                if lid in seen:
-                    continue
-                seen.add(lid)
-                order.append(lid)
-                stack.extend(c["id"] for c in self._live_children(lid, "Location"))
-            order.reverse()
-        else:
-            if self._live_children(location_id, "Location"):
-                raise Invalid("Locations inside it are still in use. Retire or move them first, or retire with "
-                              "cascade true to retire them with it.")
-            order = [location_id]
-        blockers = [w for lid in order for w in self._location_retire_blockers(lid)]
+        if self._live_children(location_id, "Location"):
+            raise Invalid("Locations inside it are still in use. Retire or move them first, or retire with "
+                          "cascade true to delete them with it.")
+        blockers = self._location_retire_blockers(location_id)
         if blockers:
             raise Invalid(" ".join(blockers[:5]))
+        if dry_run:
+            return self.delete_preview("location", location_id)
         tasks = []
-        for lid in order:
-            for task in self._tasks_on(lid):
-                self._emit("task.retired", {"id": task["id"], "on": self.today(), "reason": "Its location was retired."})
-                tasks.append(task["id"])
-            self._emit("location.retired", {"id": lid, "on": self.today(), "reason": reason})
-        return {"retired": location_id, "tasks_retired": tasks,
-                **({"also_retired": [lid for lid in order if lid != location_id]} if cascade else {})}
+        for task in self._tasks_on(location_id):
+            self._emit("task.retired", {"id": task["id"], "on": self.today(), "reason": "Its location was retired."})
+            tasks.append(task["id"])
+        self._emit("location.retired", {"id": location_id, "on": self.today(), "reason": reason})
+        return {"retired": location_id, "tasks_retired": tasks}
 
-    def restore_location(self, location_id: str) -> dict:
-        """Bring a retired location back, with the rounds retired with it."""
+    def restore_location(self, location_id: str, cascade: bool = False) -> dict:
+        """Bring a retired location back, with the rounds retired with it.
+        ``cascade``: undo its latest delete, everything that took with it."""
+        if cascade:
+            self._get(location_id, "Location")
+            return {**self.restore_deletion(location_id), **self.location(location_id)}
         loc = self._get(location_id, "Location")
         self._not_retired(loc)
         parent = self._parent(location_id)
@@ -12078,5 +12076,7 @@ def summary(m: Maintenance) -> dict:
 PROJECTORS.update(_SIGNAL_PROJECTORS)
 # Products (Nov 2026): design trees and the items built from them (products.py).
 PROJECTORS.update(_PRODUCT_PROJECTORS)
+# Deleting a branch of the tree and undoing it (Nov 2026, tree_delete.py).
+PROJECTORS.update(_TREE_DELETE_PROJECTORS)
 
 PROJECTION_VERSION = 5

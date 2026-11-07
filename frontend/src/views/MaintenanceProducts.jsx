@@ -4,8 +4,8 @@
 // structure (the Explorer on its design), Parts list (its part's bill of
 // materials), Items (built from it, and Build an item), Failure reports (rolled
 // up across the items) and Analysis (its RBDs).
-import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   addSampleProduct, generatePositionRbd, getPartStructure, getProduct, listProductItems, listProducts, listRbds,
 } from "../api.js";
@@ -13,7 +13,8 @@ import { SectionHeader, ShowMe } from "../components/SectionPage.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import Tabs from "../components/ui/Tabs.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
-import { PlusIcon } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions } from "../components/LibRows.jsx";
+import { DeleteTreeModal, DeletedToast } from "../components/DeleteTree.jsx";
 import { fmtDate } from "../components/MaintenanceParts.jsx";
 import { RollupCard, StructureTree } from "../components/MaintenanceStructure.jsx";
 import { PageTitle } from "../components/usePageTitle.js";
@@ -54,9 +55,20 @@ export default function MaintenanceProducts() {
   const [error, setError] = useState(null);
   const [query, setQuery] = useState("");
   const [modal, setModal] = useState(false);
+  // Delete… on a row (or on a product's page, arriving here): its design with
+  // everything inside it ({id, name}), then the toast with Undo. Items built
+  // from it stay.
+  const [deleting, setDeleting] = useState(null);
+  const location = useLocation();
+  const [deleted, setDeleted] = useState(() => location.state?.deleted || null);
   useEffect(() => {
+    // Shown once: a reload of the page doesn't bring the toast back.
+    if (location.state?.deleted) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const reload = useCallback(() => {
     listProducts().then((d) => setRows(d.products || [])).catch((e) => setError(e.message));
   }, []);
+  useEffect(() => reload(), [reload]);
   const sample = useSampleProduct((r) => navigate(productPath(r.product?.id || r.position.id)));
   const visible = (rows || []).filter((p) => matches(query, p.name, p.description, p.part?.part_number));
   const newProduct = <button onClick={() => setModal(true)}><PlusIcon /> New product</button>;
@@ -92,7 +104,7 @@ export default function MaintenanceProducts() {
           </div>
           <div className="lib maint-scroll">
             <table className="lib-table pp-table">
-              <thead><tr><th>Product</th><th>Revision</th><th className="num">Items built</th><th className="num">Open failure reports</th></tr></thead>
+              <thead><tr><th>Product</th><th>Revision</th><th className="num">Items built</th><th className="num">Open failure reports</th><th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {visible.map((p) => (
                   <tr key={p.id} className="lib-row" onClick={() => navigate(productPath(p.id))}>
@@ -108,6 +120,7 @@ export default function MaintenanceProducts() {
                     <td className="num" data-label="Open failure reports">{p.open_reports > 0
                       ? <Link to={productPath(p.id, "reports")} onClick={(e) => e.stopPropagation()}>{p.open_reports}</Link>
                       : <span className="lib-date">0</span>}</td>
+                    <RowActions item={p} onDelete={() => setDeleting(p)} />
                   </tr>
                 ))}
               </tbody>
@@ -117,6 +130,11 @@ export default function MaintenanceProducts() {
         </>
       )}
       {modal && <NewProductModal onClose={() => setModal(false)} onDone={(p) => navigate(productPath(p.id))} />}
+      {deleting && (
+        <DeleteTreeModal kind="position" id={deleting.id} name={deleting.name} onClose={() => setDeleting(null)}
+                         onDone={(answer, done) => { setDeleting(null); setDeleted(done); reload(); }} />
+      )}
+      {deleted && <DeletedToast key={deleted.id} deleted={deleted} onClose={() => setDeleted(null)} onRestored={reload} />}
     </div>
   );
 }
@@ -133,6 +151,7 @@ export function ProductDetail() {
   const [version, setVersion] = useState(0);
   const [building, setBuilding] = useState(false);
   const [said, setSaid] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   useEffect(() => {
     getProduct(id).then(setProduct).catch((e) => setError(e));
   }, [id, version]);
@@ -162,6 +181,7 @@ export function ProductDetail() {
           .filter(Boolean).join(" · ")}
         id={product.id}
         primary={<button onClick={() => setBuilding(true)}>Build an item</button>}
+        menu={<button className="ovm-item danger" onClick={() => setDeleting(true)}>Delete…</button>}
       />
       {said && <p className="pp-said" role="status">{said}</p>}
       <Tabs tabs={PRODUCT_TABS} value={tab} onChange={setTab} label="Product" className="pp-tabs" />
@@ -173,7 +193,16 @@ export function ProductDetail() {
     setVersion((v) => v + 1);
     navigate(productPath(id, "items"), { replace: true });
   };
-  const modal = building && <BuildItemModal product={product} onClose={() => setBuilding(false)} onDone={built} />;
+  const modal = (
+    <>
+      {building && <BuildItemModal product={product} onClose={() => setBuilding(false)} onDone={built} />}
+      {deleting && (
+        // The design and everything inside it (items built from it stay): Products shows the toast with Undo.
+        <DeleteTreeModal kind="position" id={product.id} name={product.name} onClose={() => setDeleting(false)}
+                         onDone={(answer, done) => navigate(PRODUCTS_PATH, { state: { deleted: done } })} />
+      )}
+    </>
+  );
 
   if (tab === "structure") {
     return (

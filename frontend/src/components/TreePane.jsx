@@ -8,6 +8,7 @@ import { ARRANGEMENTS, CHIPS, CHIP_MARK, PANE, clampWidth, markersOf, nextGutter
 import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensItem } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
+import { isDeleteKey } from "../treeDelete.js";
 
 // The asset tree as a second-level menu beside the site menu: the outline
 // (indent, arrow, name, at most three markers), with the search box and the
@@ -431,6 +432,15 @@ export default function TreePane({
       if (act) {
         e.preventDefault();
         rowMenu.onAction(fr, act);
+        return;
+      }
+    }
+    // Delete or Backspace on a row its menu can delete: the Delete… dialog (not while typing).
+    if (fr && rowMenu && isDeleteKey(e) && !e.target.closest("button, a")) {
+      const del = itemsFor(focus).find((a) => a.id === "tree-delete");
+      if (del && !del.disabled) {
+        e.preventDefault();
+        rowMenu.onAction(fr, "tree-delete");
         return;
       }
     }

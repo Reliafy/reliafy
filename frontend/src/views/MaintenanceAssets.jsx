@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { listMaintenancePlaces } from "../api.js";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
-import { PlusIcon } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions } from "../components/LibRows.jsx";
+import { DeleteTreeModal, DeletedToast } from "../components/DeleteTree.jsx";
 import { fmtDate } from "../components/MaintenanceParts.jsx";
 import { NewLocationModal } from "./MaintenanceLists.jsx";
 import {
@@ -23,9 +24,18 @@ export default function MaintenanceAssets() {
   const [query, setQuery] = useState("");
   const [modal, setModal] = useState(false);
   const [error, setError] = useState(null);
+  // Delete… on a row: the asset with everything at it ({id, name}), then the toast with Undo.
+  const [deleting, setDeleting] = useState(null);
+  const location = useLocation();
+  const [deleted, setDeleted] = useState(() => location.state?.deleted || null);
   useEffect(() => {
+    // Shown once: a reload of the page doesn't bring the toast back.
+    if (location.state?.deleted) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const reload = useCallback(() => {
     listMaintenancePlaces().then(setView).catch((e) => setError(e.message));
   }, []);
+  useEffect(() => reload(), [reload]);
 
   const places = view?.places || [];
   const rest = view?.not_placed;
@@ -69,7 +79,8 @@ export default function MaintenanceAssets() {
             <table className="lib-table maint-assets">
               <thead>
                 <tr><th>Asset</th><th className="num">Positions</th><th className="num">Items</th>
-                  <th className="num">Open work</th><th>Due in {view.horizon_days} days</th></tr>
+                  <th className="num">Open work</th><th>Due in {view.horizon_days} days</th>
+                  <th><span className="sr-only">Actions</span></th></tr>
               </thead>
               <tbody>
                 {visible.map((p) => (
@@ -88,6 +99,7 @@ export default function MaintenanceAssets() {
                               aria-label={`${p.open_work_orders} open work order${p.open_work_orders === 1 ? "" : "s"} at ${p.name}`}>{p.open_work_orders}</Link>
                       : <span className="lib-date">0</span>}</td>
                     <td data-label={`Due in ${view.horizon_days} days`}><Due row={p} /></td>
+                    <RowActions item={p} onDelete={() => setDeleting(p)} />
                   </tr>
                 ))}
                 {rest?.positions > 0 && (
@@ -102,6 +114,7 @@ export default function MaintenanceAssets() {
                     <td className="num" data-label="Items">{rest.items}</td>
                     <td className="num" data-label="Open work">{rest.open_work_orders || <span className="lib-date">0</span>}</td>
                     <td data-label={`Due in ${view.horizon_days} days`}><Due row={rest} /></td>
+                    <td />
                   </tr>
                 )}
               </tbody>
@@ -110,6 +123,11 @@ export default function MaintenanceAssets() {
           </div>
         </>
       )}
+      {deleting && (
+        <DeleteTreeModal kind="location" id={deleting.id} name={deleting.name} onClose={() => setDeleting(null)}
+                         onDone={(answer, done) => { setDeleting(null); setDeleted(done); reload(); }} />
+      )}
+      {deleted && <DeletedToast key={deleted.id} deleted={deleted} onClose={() => setDeleted(null)} onRestored={reload} />}
       {modal && <NewLocationModal asset locations={[]} onClose={() => setModal(false)}
                                   onDone={(l) => navigate(placePath(l.id))} />}
     </div>

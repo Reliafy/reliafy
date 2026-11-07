@@ -19,6 +19,7 @@ import {
 import { costText, costValue, roughDateValue } from "../maintenanceFields.js";
 import { itemWhere } from "../maintenanceLocations.js";
 import { explorerPath } from "../assetTree.js";
+import { DeleteTreeModal } from "../components/DeleteTree.jsx";
 import { EXPLORER_LABEL } from "../navigation.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
 import { MeasurementsCard } from "./MaintenancePosition.jsx";
@@ -79,6 +80,7 @@ export default function MaintenanceItem() {
           </>
         }
         primary={<button onClick={() => setModal("edit")}>Edit details</button>}
+        menu={<button className="ovm-item danger" onClick={() => setModal("delete")}>Delete…</button>}
       />
       {error && <div className="card error">{error}</div>}
 
@@ -182,6 +184,11 @@ export default function MaintenanceItem() {
         )}
       </section>
 
+      {modal === "delete" && (
+        // Gone (taken out if fitted, the positions on it with it): the Explorer shows the toast with Undo.
+        <DeleteTreeModal kind="item" id={item.id} name={item.name} onClose={() => setModal(null)}
+                         onDone={(answer, done) => navigate(explorerPath("items"), { state: { deleted: done } })} />
+      )}
       {modal === "edit" && <EditItemModal item={item} onClose={() => setModal(null)} onDone={(d) => { setItem(d); setModal(null); }} />}
       {modal === "more" && <DetailsModal item={item} onClose={() => setModal(null)} onDone={(d) => { setItem(d); setModal(null); }} />}
       {modal === "move" && <MoveModal item={item} onClose={() => setModal(null)} onDone={(d) => { setItem(d); setModal(null); }} />}

@@ -38,6 +38,10 @@ failure rates are placeholders.
   and the place in the design.
 - **Analysis**: the product's RBDs, and **Make an RBD from this structure**.
 
+**Delete…** (in the page's **⋯** menu, or the bin on its row in Products)
+deletes the design and everything inside it. Items built from it stay. Its
+history stays, and **Undo** in the message that follows brings it back.
+
 ## Items
 
 **Items** lists every serial-numbered thing, built from a product or not,

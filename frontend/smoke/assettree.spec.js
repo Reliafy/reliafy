@@ -128,13 +128,13 @@ test("the Summary: facts, work as rows, what's inside sorted, and the row's own 
   // The row's own changes at the foot.
   await expect(panel.getByRole("button", { name: "Rename…" })).toBeVisible();
 
-  // The motor: its task as a row with an Overdue chip; Retire greyed with the reason.
+  // The motor: its task as a row with an Overdue chip; Delete… offered (a delete takes the item out).
   await inside.getByRole("button", { name: `Tree motor ${tag}` }).click();
   await expect(panel.getByRole("heading", { name: `Tree motor ${tag}` })).toBeVisible();
   const work = panel.getByRole("region", { name: "Work" });
   await expect(work.getByText("Grease")).toBeVisible();
   await expect(work.getByText("Overdue", { exact: true })).toBeVisible();
-  await expect(panel.getByRole("button", { name: /^Retire…/ })).toBeDisabled();
+  await expect(panel.getByRole("button", { name: /^Delete…/ })).toBeEnabled();
   await expectHealthy(page, problems, { label: "the Summary tab" });
 });
 

@@ -405,7 +405,9 @@ and each has a restore: positions / locations / items / tasks / failure_modes / 
 item_classes restore, measurements restore_point, item_classes restore_condition, topology reconnect / \
 restore_group, attachments restore_document. Retiring is refused while something depends on the thing (fitted, \
 located, placed, stocked, listed, an open work order, a task going by it): the refusal says what to do first; \
-positions and locations retire a whole subtree with cascade true. Not undoable, by design: voiding, \
+positions / locations / items retire with cascade true deletes the thing and everything inside it, never \
+refused (fitted items taken out and kept, open work orders cancelled, tasks retired; dry_run true counts it \
+first, to show the user), and restore with cascade true undoes that delete as a unit. Not undoable, by design: voiding, \
 correcting, merging, cancelling and closing, removing a photo or a kept PDF (bytes gone), removing a function \
 or functional failure (re-add them). Delete only on the user's say-so, naming the thing.
 - Clearing a field: '' for text, [] for a list, 0 for a second limit, clear_* flags and clear lists for numbers \

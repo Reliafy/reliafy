@@ -242,9 +242,11 @@ POSITIONS: Table = {
     "copy": ("position_id name", "parent_id", """Copy a position and everything inside it (positions, failure
         modes, tasks, parts lists, locations set on them; not items, stock or work orders) under a new name.
         Repeat it to build many like structures; then update the copy's location_id if it's elsewhere."""),
-    "retire": ("position_id", "reason cascade", """Take it out of the plant (kept in the history). Nothing fitted,
-        no work order open; cascade true retires the live positions inside it too (all or nothing)."""),
-    "restore": ("position_id", "", "Bring a retired position back (its parent must be in use)."),
+    "retire": ("position_id", "reason cascade dry_run", """Take it out of the plant (kept in the history). Nothing
+        fitted, no work order open. cascade true deletes it with everything inside: items fitted there are taken
+        out (kept), open work orders cancelled, tasks retired; dry_run true only counts what would go."""),
+    "restore": ("position_id", "cascade", """Bring a retired position back (its parent must be in use); cascade
+        true undoes its latest delete with everything that took."""),
     "out_of_service": ("position_id reason", "until start", "Out of service (being rebuilt, drained) from start (today) until a date, or open-ended: its tasks aren't due or late meanwhile."),
     "back_in_service": ("position_id", "", "Back in service now."),
     "add_sample_truck": ("", "again", """Copy the sample delivery truck, with its RCM, into the tree; once
@@ -285,9 +287,11 @@ ITEMS: Table = {
                "manufacture_date replacement_cost warranty location_id on", """An item that isn't fitted
         anywhere: a spare in a store (location_id places it there, on = since when), one on order. part_id (the
         make and model) fills in what isn't given. To fit one as you make it: maintenance fitments.fit."""),
-    "retire": ("item_id", "reason", """Dispose of it (scrapped, sold): kept in the history and every fitment it
-        had. Not while fitted or with open work orders; its own tasks are retired with it."""),
-    "restore": ("item_id", "", "Bring a retired item back (with the tasks retired with it)."),
+    "retire": ("item_id", "reason cascade dry_run", """Dispose of it (scrapped, sold): kept in the history and
+        every fitment it had. Not while fitted or with open work orders; its own tasks are retired with it.
+        cascade true deletes it anyway (taken out, positions inside it go); dry_run true only counts."""),
+    "restore": ("item_id", "cascade", """Bring a retired item back (with the tasks retired with it); cascade true
+        undoes its latest delete."""),
     "out_of_service": ("item_id reason", "until start", "Out of service (being rebuilt, drained) from start (today) until a date, or open-ended: its tasks aren't due or late meanwhile."),
     "back_in_service": ("item_id", "", "Back in service now."),
     "update": ("item_id", "name serial part_number manufacturer model notes append_note nameplate purchase_date "
@@ -559,9 +563,11 @@ LOCATIONS: Table = {
         a location_id."""),
     "update": ("location_id", "name description parent_id move_to_top_level", """Rename it, change its
         description, or move it inside another (parent_id) or to the top level."""),
-    "retire": ("location_id", "reason cascade", """Take a place out of use (kept in the history): nothing located,
-        placed or stocked there, no open work; cascade true takes the locations inside it too."""),
-    "restore": ("location_id", "", "Bring a retired location back (with the rounds retired with it)."),
+    "retire": ("location_id", "reason cascade dry_run", """Take a place out of use (kept in the history): nothing
+        located, placed or stocked there, no open work. cascade true deletes it with the locations inside and
+        the positions located there (and all inside them); dry_run true only counts."""),
+    "restore": ("location_id", "cascade", """Bring a retired location back (with the rounds retired with it);
+        cascade true undoes its latest delete."""),
 }
 
 PARTS: Table = {
@@ -1258,9 +1264,9 @@ def register() -> None:
         if action == "copy":
             return run(m.copy_position, position_id, name, parent_id)
         if action == "retire":
-            return run(m.retire_position, position_id, reason or "", bool(cascade))
+            return run(m.retire_position, position_id, reason or "", bool(cascade), bool(dry_run))
         if action == "restore":
-            return run(m.restore_position, position_id)
+            return run(m.restore_position, position_id, bool(cascade))
         if action == "out_of_service":
             return run(m.take_out_of_service, position_id, reason, until, start)
         if action == "back_in_service":
@@ -1335,7 +1341,7 @@ def register() -> None:
                               "{attribute name: value}, e.g. {'Flow': 45, 'Head': '32 m', 'Shaft seal': "
                               "'mechanical seal'}. Numbers in the attribute's unit (convert first); '' or "
                               "null clears one."))] = None,
-                          reason: str | None = None,
+                          reason: str | None = None, cascade: bool | None = None, dry_run: bool | None = None,
                           until: Annotated[str | None, Field(description=(
                               "out_of_service: the return date (none: open-ended)."))] = None,
                           start: Annotated[str | None, Field(description=(
@@ -1358,9 +1364,9 @@ def register() -> None:
                 return m.item(made["id"])
             return run(go)
         if action == "retire":
-            return run(m.retire_item, item_id, reason or "")
+            return run(m.retire_item, item_id, reason or "", bool(cascade), bool(dry_run))
         if action == "restore":
-            return run(m.restore_item, item_id)
+            return run(m.restore_item, item_id, bool(cascade))
         if action == "out_of_service":
             return run(m.take_out_of_service, item_id, reason, until, start)
         if action == "back_in_service":
@@ -1952,7 +1958,8 @@ def register() -> None:
     def maintenance_locations(action: _choice(LOCATIONS), ctx: Context, location_id: str | None = None,
                               name: str | None = None, parent_id: str | None = None,
                               description: str | None = None, move_to_top_level: bool | None = None,
-                              reason: str | None = None, cascade: bool | None = None) -> dict[str, Any]:
+                              reason: str | None = None, cascade: bool | None = None,
+                              dry_run: bool | None = None) -> dict[str, Any]:
         """Locations: the physical tree (sites, areas, buildings, rooms, substations, stores), separate
         from the positions (the functional tree). Positions get a location_id; unfitted items are placed
         at one (maintenance items.place)."""
@@ -1960,9 +1967,9 @@ def register() -> None:
         if action == "create":
             return run(m.create_location, name, parent_id, description or "")
         if action == "retire":
-            return run(m.retire_location, location_id, reason or "", bool(cascade))
+            return run(m.retire_location, location_id, reason or "", bool(cascade), bool(dry_run))
         if action == "restore":
-            return run(m.restore_location, location_id)
+            return run(m.restore_location, location_id, bool(cascade))
         kwargs = {k: v for k, v in (("name", name), ("description", description)) if v is not None}
         if parent_id or move_to_top_level:
             kwargs["parent_id"] = None if move_to_top_level else parent_id
