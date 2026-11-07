@@ -291,7 +291,9 @@ def test_over_rest(env):
                     headers=headers)
     assert r.status_code == 422 and "no write action" in r.json()["detail"]
     r = client.post("/api/v1/maintenance/apply/run", json={}, headers=headers)
-    assert r.status_code == 404
+    # No write route there: 404 with no frontend build (CI), 405 with one (the
+    # SPA shell's GET catch-all then owns the path; see backend/main.py).
+    assert r.status_code in (404, 405)
     listing = client.get("/api/v1/tools", headers=headers).json()
     tool = next(t for t in listing["tools"] if t["name"] == "maintenance")
     apply = next(a for a in tool["actions"] if a["action"] == "apply")

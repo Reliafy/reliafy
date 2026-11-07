@@ -112,13 +112,16 @@ function Summary({ row, display, today, onSelect, version, actions }) {
 // `above(key)` says which crumbs are above the pinned row (a click there moves
 // the pin up, `onCrumb` decides). `pin` ({on, onClick}): the pin button for
 // the row (pinned now when `on`), or null where it can't be pinned.
+// `heading`: the name's heading level, 1 on the Explorer's own page; 2 where
+// the tree sits inside a page with its own h1 (a product's).
 export function SlimHeader({
   display, row, onSelect, onCrumb = onSelect, above = null, pin = null, fullScreenButton, headingRef, meta, actions, message,
-  primaryOpen = false,
+  primaryOpen = false, heading = 1,
 }) {
   const crumbs = ancestorsOf(display, row.key).map((k) => ({ key: k, label: display.rows.get(k).ref.name, above: !!above?.(k) }));
   const full = fullPagePath(row);
   const p = row.ref;
+  const H = heading === 2 ? "h2" : "h1";
   return (
     <div className="tt-bar-head">
       <div className="tt-name">
@@ -139,7 +142,7 @@ export function SlimHeader({
           </div>
         )}
         <div className="tt-name-row">
-          <h1 className="tt-h1"><span ref={headingRef} tabIndex={-1} className="td-title">{p.name || "(no name)"}</span></h1>
+          <H className="tt-h1"><span ref={headingRef} tabIndex={-1} className="td-title">{p.name || "(no name)"}</span></H>
           {p.tag && <code className="tt-tag">{p.tag}</code>}
           {meta}
         </div>
@@ -170,7 +173,7 @@ export function HeaderTabs({ row, tab, onTab }) {
 
 const TreeDetail = forwardRef(function TreeDetail({
   display, row, today, onSelect, onCrumb, above, pin, back, version, empty, tab, onTab, fullScreenButton, headless = false, actions = [],
-  reports = null,
+  reports = null, heading = 1,
 }, headingRef) {
   if (!row) return <div className="td">{back}{empty}</div>;
   const tabs = tabsFor(row);
@@ -181,7 +184,7 @@ const TreeDetail = forwardRef(function TreeDetail({
       {!headless && (
         <div className="td-head">
           <SlimHeader display={display} row={row} onSelect={onSelect} onCrumb={onCrumb || onSelect} above={above} pin={pin}
-                      fullScreenButton={fullScreenButton} headingRef={headingRef}
+                      fullScreenButton={fullScreenButton} headingRef={headingRef} heading={heading}
                       meta={KIND[row.type] ? <span className="tt-kind">{KIND[row.type]}</span> : null} primaryOpen />
           <HeaderTabs row={row} tab={tab} onTab={onTab} />
         </div>

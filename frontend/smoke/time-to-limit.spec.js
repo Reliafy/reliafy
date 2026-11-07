@@ -58,7 +58,8 @@ test("Time to the limit: too few readings gives a message and fits a phone", asy
   const p = await plant(request, "B", 3);
   await page.setViewportSize({ width: 400, height: 800 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=signals`);
-  await page.getByText("Ttl pump B", { exact: true }).click();
+  // The row in the tree (the tabs' "For …" line names it too).
+  await page.getByLabel("Positions").getByText("Ttl pump B", { exact: true }).click();
   const panel = page.getByRole("region", { name: "Time to the limit" });
   await expect(panel.getByRole("status").first()).toContainText("at least 6", { timeout: 15_000 });
   await expect(panel.locator(".js-plotly-plot")).toHaveCount(0);
