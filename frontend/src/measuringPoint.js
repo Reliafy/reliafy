@@ -1,4 +1,4 @@
-// A measuring point's own page (/asset-register/points/:id) and the readings
+// A measuring point in full (the Explorer's Measurements tab, &point=) and the readings
 // table it shares with the Explorer's Readings dialog. Pure functions, tested
 // in measuringPoint.test.js. The point is GET /api/maintenance/points/:id, as
 // Maintenance.point gives it: latest reading, limits, status, the rate (a

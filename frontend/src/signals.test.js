@@ -185,7 +185,8 @@ test("limit lines name their kind in words as well as colour", () => {
 
 test("a channel's link opens its own page (the Signals tab is hidden), at its bands when asked", async () => {
   const { channelPath } = await import("./signals.js");
-  assert.equal(channelPath({ id: "c1", position: { id: "p1" } }), "/asset-register/channels/c1");
+  // In the Explorer's Measurements tab, its position picked; a bare id goes to the old address (it redirects).
+  assert.equal(channelPath({ id: "c1", position: { id: "p1" } }), "/asset-register/explorer?arrange=positions&sel=p1&tab=measurements&channel=c1");
+  assert.equal(channelPath({ id: "c1", position: { id: "p1" } }, { bands: true }).endsWith("&channel=c1#bands"), true);
   assert.equal(channelPath("c 2", { bands: true }), "/asset-register/channels/c%202#bands");
-  assert.ok(!channelPath({ id: "c1" }).includes("tab="));
 });

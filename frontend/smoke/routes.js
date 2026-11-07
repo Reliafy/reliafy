@@ -101,11 +101,12 @@ export const DETAIL_IDS = {
   "/asset-register/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
   "/maintenance/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
   "/asset-register/parts/:id": ["/api/maintenance/parts", list("parts")],
-  // A measuring point: every one added (the sample product's items' hour meters, and the
+  // A measuring point's earlier own page (it now redirects into the Explorer's
+  // Measurements tab, &point=): every one added (the sample product's items' hour meters, and the
   // smoke test position's condition point that smoke/seed.js adds), from the event log.
   "/asset-register/points/:id": ["/api/maintenance/events?type=point.added&limit=500",
     (body) => (body.events || []).map((e) => ({ id: e.payload?.id })).filter((x) => x.id)],
-  // A signal channel: smoke/seed.js adds a smart plug's power channel on the smoke test position.
+  // A signal channel's earlier own page (now the Measurements tab's &channel=): smoke/seed.js adds a smart plug's power channel on the smoke test position.
   "/asset-register/channels/:id": ["/api/maintenance/signals/channels", list("channels")],
 };
 

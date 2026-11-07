@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { listMeasurementPoints, updateMeasurementPoint } from "../api.js";
+import { listMeasurementPoints } from "../api.js";
 import { branchOf } from "../explorerTabs.js";
-import { Field, FormModal, fmtDate } from "./MaintenanceParts.jsx";
+import { fmtDate } from "./MaintenanceParts.jsx";
+import { ChannelPane, LimitsModal, PointView } from "./MeasurementViews.jsx";
 import { PlusIcon } from "./LibRows.jsx";
 import Chip from "./ui/Chip.jsx";
 import RowMenu from "./RowMenu.jsx";
 import { readingWhen } from "../maintenanceReadings.js";
 import {
-  branchQuery, latestNote, pointChip, pointHref, pointMenu, pointPagePath, pointSubline, pointsCsv, readMeasurementsQuery,
+  VIEW_PARAMS, branchQuery, latestNote, pointChip, pointHref, pointMenu, pointPagePath, pointSubline, pointsCsv, readMeasurementsQuery,
   recentValues, recordedBy, rowAction,
   channelChip, channelMenu, channelSubline, channelValues, isFed, measurementRows, rowNeedsAttention,
 } from "../measurementsTab.js";
@@ -29,8 +30,10 @@ import "./MeasurementsPanel.css";
 // chip, a small trend, and a ⋯ menu. The detail a row would otherwise carry
 // (which limit, the limits, the reading's note) is in tooltips and the
 // readings history, so the list stays scannable. Clicking a row opens its
-// readings. The filter (?only=attention) and the point whose readings are open
-// (?point=) are in the address, so a link opens the tab as it was. Where the
+// readings. The filter (?only=attention), the point whose readings are open
+// (?readings=), and a point or channel open in full (?point=, ?channel=: its
+// name or "Open" in its ⋯ menu; MeasurementViews.jsx) are in the address, so a
+// link opens the tab as it was. Where the
 // panel is narrow (a phone) each point becomes a block. A new point: the
 // dashed "+ Add a measuring point" row over the list, or the panel heading's
 // "…" (given through `onMenu`), which also exports the points shown as CSV.
@@ -38,23 +41,29 @@ import "./MeasurementsPanel.css";
 // Signal channels (sensors that send snapshots: a vibration sensor, a smart
 // plug's power) are rows of the same list, marked "Fed" like a feed's points:
 // the latest level, the state of its watch bands, the recent trend, and a ⋯
-// menu (Open: its own page with the spectrum; Edit bands…). The heading's "…"
+// menu (Open: in full in the tab, with the spectrum; Edit bands…). The heading's "…"
 // adds one ("Add a sensor channel…").
 
 function useMeasurementsQuery() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const set = (key, value) => {
+  const set = (key, value, { push = false, hash = location.hash } = {}) => {
     const next = new URLSearchParams(location.search);
     if (value) next.set(key, value);
     else next.delete(key);
-    navigate(`${location.pathname}?${next}${location.hash}`, { replace: true, state: location.state });
+    navigate(`${location.pathname}?${next}${hash}`, { replace: !push, state: location.state });
   };
   return {
     ...readMeasurementsQuery(params),
     setAttention: (on) => set("only", on ? "attention" : null),
-    setPoint: (id) => set("point", id),
+    setReadings: (id) => set("readings", id),
+    // Back to the list from a point or channel open in full (a new history entry, so Back returns to it).
+    closeView: () => {
+      const next = new URLSearchParams(location.search);
+      for (const k of VIEW_PARAMS) next.delete(k);
+      navigate(`${location.pathname}?${next}`, { state: location.state });
+    },
   };
 }
 
@@ -104,24 +113,6 @@ const MoreIcon = () => (
   </svg>
 );
 
-// A condition point's alarm limits: either may be left blank (no limit that side).
-export function LimitsModal({ point, onClose, onDone }) {
-  const str = (v) => (v == null ? "" : String(v));
-  const [above, setAbove] = useState(str(point.alarm_above));
-  const [below, setBelow] = useState(str(point.alarm_below));
-  const num = (v) => (v.trim() === "" ? null : Number(v));
-  const bad = above.trim() !== "" && below.trim() !== "" && Number(below) >= Number(above);
-  const u = point.unit ? ` (${point.unit})` : "";
-  return (
-    <FormModal title={`Limits: ${point.name}`} submitLabel="Save" canSubmit={!bad} onClose={onClose}
-               onSubmit={async () => onDone(await updateMeasurementPoint(point.id, { alarm_above: num(above), alarm_below: num(below) }))}>
-      <p className="lib-date">An alarm when a reading goes past either limit. Leave one blank for no limit on that side.</p>
-      <Field label={`Alarm above${u}`}><input type="number" inputMode="decimal" step="any" autoFocus value={above} onChange={(e) => setAbove(e.target.value)} /></Field>
-      <Field label={`Alarm below${u}`}><input type="number" inputMode="decimal" step="any" value={below} onChange={(e) => setBelow(e.target.value)} /></Field>
-      {bad && <p className="lib-date" role="alert">The low alarm must be below the high alarm.</p>}
-    </FormModal>
-  );
-}
 
 // Not read by hand: a sensor channel, a feed's point, or one worked out from a channel.
 const FedChip = () => <Chip tone="neutral" className="ms-fed" title="Fed automatically: nobody reads it by hand">Fed</Chip>;
@@ -164,8 +155,16 @@ function ChannelRow({ ch, branchy, fittedAt, picked, onOpen, onMenu, onContextMe
   );
 }
 
-export default function MeasurementsPanel({ row, display, today, onMenu = null }) {
+// The tab: the list, or (with ?point= or ?channel=) one point or channel in
+// full, with a link back to the list.
+export default function MeasurementsPanel(props) {
   const q = useMeasurementsQuery();
+  if (q.point) return <PointView key={q.point} id={q.point} onBack={q.closeView} onMenu={props.onMenu} />;
+  if (q.channel) return <ChannelPane key={q.channel} id={q.channel} onBack={q.closeView} onMenu={props.onMenu} />;
+  return <MeasurementsList {...props} q={q} />;
+}
+
+function MeasurementsList({ row, display, today, onMenu = null, q }) {
   const navigate = useNavigate();
   const branch = useMemo(() => branchOf(display, row.key), [display, row.key]);
   const ask = useMemo(() => branchQuery(display, branch), [display, branch]);
@@ -190,7 +189,7 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
   const shown = sorted && (q.attention ? sorted.filter((r) => rowNeedsAttention(r, today)) : sorted);
   const attention = sorted ? sorted.filter((r) => rowNeedsAttention(r, today)).length : 0;
   const branchy = branch.pos.size + branch.item.size + branch.loc.size > 1;
-  const open = q.point && points?.find((p) => p.id === q.point);
+  const open = q.readings && points?.find((p) => p.id === q.readings);
   // A point is added to the picked position or item (a place has none of its own).
   const target = row.type === "pos" ? { kind: "position", id: row.key } : row.type === "item" ? { kind: "item", id: row.key } : null;
   const done = () => { setModal(null); load(); };
@@ -212,9 +211,9 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
   ]);
 
   const act = (id, p) => {
-    if (id === "page") navigate(pointPagePath(p.id));
+    if (id === "page") navigate(pointPagePath(p));
     else if (id === "record") setModal({ read: p });
-    else if (id === "history") q.setPoint(p.id);
+    else if (id === "history") q.setReadings(p.id);
     else if (id === "limits") setModal({ limits: p });
     else if (id === "open") navigate(pointHref(p));
     else if (id === "work-order") navigate(`/maintenance/work-orders/${p.alarm_work_order.id}`);
@@ -298,13 +297,13 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
                 const rowTitle = action === "history" ? "Open its readings" : action === "record" ? "Record its first reading" : action === "open" ? `Open its ${p.position?.id ? "position" : "item"}` : undefined;
                 return (
                   <tr key={p.id} id={`ms-${p.id}`}
-                      className={"ms-row" + (action ? " ms-clickable" : "") + (q.point === p.id || menu?.point?.id === p.id ? " ms-picked" : "")}
+                      className={"ms-row" + (action ? " ms-clickable" : "") + (q.readings === p.id || menu?.point?.id === p.id ? " ms-picked" : "")}
                       onClick={() => openRow(p)} title={rowTitle}
                       onContextMenu={(e) => { e.preventDefault(); setMenu({ point: p, at: { x: e.clientX, y: e.clientY } }); }}>
                     <td className="ms-point">
                       {/* The name opens the point's own page; the rest of the row its readings (or first reading). */}
                       <span className="ms-name-line">
-                        <Link className="ms-name" to={pointPagePath(p.id)} title={`${p.name}: open its page`}
+                        <Link className="ms-name" to={pointPagePath(p)} title={`${p.name}: open its page`}
                               onClick={(e) => e.stopPropagation()}>{p.name}</Link>
                         {isFed(p) && <FedChip />}
                       </span>
@@ -371,7 +370,7 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
                         }} />
       )}
       {open && open.source === "manual" && (
-        <ReadingsModal point={open} onClose={() => { q.setPoint(null); load(); }} />
+        <ReadingsModal point={open} onClose={() => { q.setReadings(null); load(); }} />
       )}
     </div>
   );

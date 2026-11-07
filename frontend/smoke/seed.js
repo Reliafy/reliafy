@@ -71,7 +71,7 @@ export default async function seed(config) {
     await post(`${m}/positions/${position_id}/fit`, { item_id: item.id });
     await post(`${m}/work-orders`, { position_id, title: "Smoke test inspection" });
     // A hand-read condition point with alarm limits and a few readings, one voided: its
-    // own page (/asset-register/points/:id) draws the chart and the readings table.
+    // full view (the Measurements tab's &point=) draws the chart and the readings table.
     const vib = await post(`${m}/positions/${position_id}/points`, {
       name: "Smoke test vibration", kind: "condition", unit: "mm/s", alarm_above: 7.1, alarm_below: 0.5 });
     const dayAgo = (days) => new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
@@ -82,7 +82,7 @@ export default async function seed(config) {
     const typo = (last.readings || [])[1];
     if (typo?.id) await post(`${m}/readings/${typo.id}/void`, { reason: "smoke test" });
     // A fed sensor channel beside it (a smart plug's power, single values) with a level to
-    // watch: a row of the Explorer's Measurements tab, and its own page (/asset-register/channels/:id).
+    // watch: a row of the Explorer's Measurements tab, and its full view (&channel=).
     const plug = await post(`${m}/signals/channels`, { position_id, name: "Smoke test pump power", unit: "W", tag: "smoke.plug" });
     await post(`${m}/signals/channels/${plug.id}/levels`, { name: "Smoke test power level", stat: "value", alarm_above: 900 });
     for (const [hours, value] of [[30, 610], [20, 640], [10, 655]]) {

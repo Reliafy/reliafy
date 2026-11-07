@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { VIEW_PARAMS } from "../measurementsTab.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   addSampleProduct, getFmeaExcelBlob, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
@@ -390,7 +391,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (!data || selPos == null || pending.current || tab === "summary") return;
     if (params.get("sel") === selPos) return;
     // Another row: a report open in the Failure reports tab was the last row's.
-    setQuery_((q) => { q.set("sel", selPos); q.delete("report"); });
+    // A point or channel open in full in the Measurements tab was the last row's too.
+    setQuery_((q) => { q.set("sel", selPos); q.delete("report"); for (const k of VIEW_PARAMS) q.delete(k); });
   }, [data, selPos, params, setQuery_, tab]);
 
   // Opening the RCM tab opens the position picked down to its failure modes
@@ -477,6 +479,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (toTable) q.set("arrange", "positions");
       // The report open in the Failure reports tab goes with the tab.
       if (t !== "reports") q.delete("report");
+      // So does a point or channel open in full in the Measurements tab.
+      if (t !== "measurements") for (const k of VIEW_PARAMS) q.delete(k);
     });
   };
 
