@@ -1,5 +1,5 @@
 import { Suspense, forwardRef, lazy, useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { getMaintenancePosition } from "../api.js";
 import Tabs from "./ui/Tabs.jsx";
 import FailureReportsPanel from "./FailureReportsPanel.jsx";
@@ -115,14 +115,18 @@ function Summary({ row, display, today, onSelect, version, actions }) {
 // ?scope=all (Show all …), ?show= and ?class=: the Parts and stock and
 // Classes tabs' own, kept in the address so a link (and the old pages'
 // addresses, redirects.js) opens them as they were.
+// The address changes in place, keeping its state (on a phone, the panel open
+// as its own screen).
 function useTabQuery() {
-  const [params, setParams] = useSearchParams();
-  const set = (key, value) => setParams((q) => {
-    const next = new URLSearchParams(q);
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const set = (key, value) => {
+    const next = new URLSearchParams(location.search);
     if (value) next.set(key, value);
     else next.delete(key);
-    return next;
-  }, { replace: true });
+    navigate(`${location.pathname}?${next}${location.hash}`, { replace: true, state: location.state });
+  };
   return {
     all: params.get("scope") === "all", setAll: (on) => set("scope", on ? "all" : null),
     show: params.get("show") || "list", setShow: (v) => set("show", v === "list" ? null : v),

@@ -20,12 +20,18 @@ const shot = async (page, name) => {
 };
 const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 // A tab of the panel: on a phone the tabs row shows whole tabs only, so one
-// out of view is reached from the keyboard, as a person would with the arrows.
+// out of view is reached with the row's right arrow, as a person would.
 const pickTab = async (page, name) => {
   const tab = page.getByRole("tab", { name, exact: true });
-  if (await tab.isVisible()) return tab.click();
-  await page.locator("[role=tab][aria-selected=true]").focus();
-  for (let i = 0; i < 8 && (await tab.getAttribute("aria-selected")) !== "true"; i++) await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Summary", exact: true })).toBeVisible();
+  for (let i = 0; i < 6; i++) {
+    try {
+      await tab.click({ timeout: 1500 });
+      break;
+    } catch {
+      await page.getByRole("button", { name: "Scroll tabs right" }).first().click();
+    }
+  }
   return expect(tab).toHaveAttribute("aria-selected", "true");
 };
 
@@ -353,6 +359,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await shot(page, `${width}-tab-classes-all`);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
     expect(sel).toBeTruthy();
-    await expectHealthy(page, problems, { label: `parts and classes tabs ${width}` });
+    // On a phone the panel is the screen (the tree, with its title, is behind it).
+    await expectHealthy(page, problems, { label: `parts and classes tabs ${width}`, root: width < 600 ? ".td" : "main" });
   });
 }

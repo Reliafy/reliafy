@@ -96,8 +96,10 @@ export const DETAIL_IDS = {
   // A product: smoke/seed.js adds the sample UAV product.
   "/products/:id": ["/api/maintenance/products", list("products")],
   "/asset-register/locations/:id": ["/api/maintenance/locations", list("locations")],
-  // A class's old address (it opens the Explorer's Classes tab on that class).
+  // A class's old addresses (they open the Explorer's Classes tab on that
+  // class: the name is in the target's query, so they name their own ids).
   "/asset-register/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
+  "/maintenance/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
   "/asset-register/parts/:id": ["/api/maintenance/parts", list("parts")],
 };
 
