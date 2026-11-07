@@ -7,6 +7,8 @@ import ConnectedAppsPanel from "../components/ConnectedAppsPanel.jsx";
 import McpOnRequest from "../components/McpOnRequest.jsx";
 import TeamInvites from "../components/TeamInvites.jsx";
 import TimeZonePicker from "../components/TimeZonePicker.jsx";
+import { RolesCard } from "../components/RolePicker.jsx";
+import CurrencyPicker from "../components/CurrencyPicker.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { initials } from "../components/Sidebar.jsx";
 import Button from "../components/ui/Button.jsx";
@@ -22,6 +24,7 @@ import {
 } from "../api.js";
 import { AUTH_DISABLED } from "../firebase.js";
 import Tabs from "../components/ui/Tabs.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
 
 const TABS = [
   { id: "general", label: "General" },
@@ -155,7 +158,7 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { billing } = useAppConfig();
-  const { personalTimeZone, savePersonalTimeZone } = useWorkspace();
+  const { personalTimeZone, savePersonalTimeZone, personalCurrency, savePersonalCurrency } = useWorkspace();
 
   const initial = new URLSearchParams(location.search).get("tab");
   const [tab, setTab] = useState(TABS.some((t) => t.id === initial) ? initial : "general");
@@ -170,8 +173,9 @@ export default function SettingsPage() {
       setSamplesBusy("");
     }
   };
+  const confirm = useConfirm();
   const onRemoveAll = async () => {
-    if (!window.confirm("Remove all sample data from your workspace? The samples stay available to restore any time.")) return;
+    if (!(await confirm({ title: "Remove all sample data?", body: "The sample datasets, models, diagrams and studies leave your workspace. Your own work isn't touched, and Restore sample data brings them back any time.", confirmLabel: "Remove samples" }))) return;
     setSamplesBusy("remove");
     try {
       await removeSamples();
@@ -205,12 +209,23 @@ export default function SettingsPage() {
             </div>
           </Card>
 
+          {/* What do you do: shapes the menu's order and what Home leads with. */}
+          <RolesCard style={{ marginTop: "1rem" }} />
+
           <Card style={{ marginTop: "1rem" }}>
             <CardHeader
               title="Time zone"
               subtitle="Where your personal workspace is. Today, due dates and overdue follow its calendar; not set, they follow UTC. A team's is on its Team page."
             />
             <TimeZonePicker value={personalTimeZone} onSave={savePersonalTimeZone} />
+          </Card>
+
+          <Card style={{ marginTop: "1rem" }}>
+            <CardHeader
+              title="Currency"
+              subtitle="The symbol in front of costs in your personal workspace (replacement costs, the shutdown calendar, RBD costs, spares). It's only a label: nothing is converted. A team's is on its Team page."
+            />
+            <CurrencyPicker value={personalCurrency} onSave={savePersonalCurrency} />
           </Card>
 
           <TeamInvites style={{ marginTop: "1rem" }} />

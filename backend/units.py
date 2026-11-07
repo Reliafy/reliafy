@@ -16,6 +16,7 @@ these tables elsewhere.
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 # Spellings of the same time unit, so "Hours", "hrs" and "h" compare equal.
@@ -67,6 +68,34 @@ def unit_in_text(unit) -> str:
     as blank. Labels, headers and the ``unit`` field stay canonical."""
     text = str(unit or "").strip()
     return text.lower() if normalize_unit(text) in CANONICAL_UNITS else text
+
+
+_SINGULAR_WORD = re.compile(r"^(.*?)([A-Za-z]{4,})$", re.S)
+_NOT_PLAIN_PLURAL = re.compile(r"(ss|us|is|ies|ses|xes|zes|ches|shes)$", re.I)
+
+
+def singular_unit(unit) -> str:
+    """A plural unit read for exactly one: "hours" → "hour", "flight hours"
+    → "flight hour". Only the last word changes, and only a plain word of
+    four or more letters ending in a single "s"; anything that might not be
+    a plain plural ("kWh", "ms", "Celsius", "batteries") is left alone. The
+    frontend's twin is singularUnit in frontend/src/format.js."""
+    text = str(unit or "")
+    m = _SINGULAR_WORD.match(text)
+    if not m:
+        return text
+    word = m.group(2)
+    if not word.lower().endswith("s") or _NOT_PLAIN_PLURAL.search(word):
+        return text
+    return m.group(1) + word[:-1]
+
+
+def with_unit(number_text: str, unit) -> str:
+    """A formatted number and its unit for a sentence: ("1", "hours") →
+    "1 hour", ("2", "hours") → "2 hours"; no unit, just the number."""
+    if not unit:
+        return number_text
+    return f"{number_text} {singular_unit(unit) if number_text == '1' else unit}"
 
 
 def canonical_results_unit(results):

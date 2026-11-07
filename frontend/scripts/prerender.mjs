@@ -28,6 +28,12 @@ const template = readFileSync(join(dist, "index.html"), "utf8");
 const escape = (s) =>
   String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
 
+// The shell's default title and description, between the head-meta
+// comments in index.html (or just its <title>, if the comments are gone).
+const HEAD_META = template.includes("<!-- /head-meta -->")
+  ? /<!-- head-meta[\s\S]*?<!-- \/head-meta -->/
+  : /<title>[\s\S]*?<\/title>/;
+
 let count = 0;
 for (const route of routes()) {
   const html = render(route.path);
@@ -62,8 +68,9 @@ for (const route of routes()) {
   ].join("\n    ");
 
   let page = template
-    // Replace the shell <title> with the per-page head block.
-    .replace(/<title>[\s\S]*?<\/title>/, head)
+    // Replace the shell's default title and description (the head-meta
+    // block in index.html) with the per-page head block.
+    .replace(HEAD_META, head)
     .replace('<div id="root"></div>', `<div id="root">${html}</div>`);
 
   const outDir = join(dist, "static", route.path === "/" ? "." : route.path.slice(1));
@@ -97,8 +104,8 @@ const feedCount = feedData.length;
 
 // Dated pages for the server's date gate (path -> YYYY-MM-DD, UTC), and the
 // updates for the scheduled What's new send (the image has no source files),
-// the posts' titles for the monthly content report, and the blog posts for
-// the admin page's publishing calendar.
+// and the posts' titles and blog posts for operator tooling (a content
+// report and a publishing calendar).
 writeFileSync(
   join(dist, "content.json"),
   JSON.stringify(

@@ -43,6 +43,7 @@ from backend.services import recurrent as recurrent_service
 from backend.services import spares
 from backend.services.strategy import _model_from_params, StrategyError
 from backend.units import unit_in_text
+from backend.errors import client_message, client_reason
 
 
 class FleetNotFound(KeyError):
@@ -55,7 +56,7 @@ class FleetValidationError(ValueError):
 
 METHODS = ("renewals", "single")
 # What a fleet's model_id is (Fleet.model_kind, see backend.schema): a plain
-# life distribution, a regression life model or an ALT model (first failures,
+# life distribution, a regression non-repairable model or an ALT model (first failures,
 # each item at its own covariates or stress, #234), or a recurrent-event
 # (repairable-system) model whose every failure is counted (#235).
 MODEL_KINDS = FLEET_MODEL_KINDS
@@ -263,7 +264,7 @@ def _clean_items(items) -> list[dict]:
 def create_fleet(db, name: str, model_id: str, owner_id: str, model_kind: str | None = None) -> Fleet:
     """A new fleet on ``model_id``. ``model_kind`` says which collection it's
     in: "alt" (an ALT model), "recurrent" (a recurrent-event model), or "life"
-    (the default) for a saved life model — stored as "regression" when that
+    (the default) for a saved non-repairable model — stored as "regression" when that
     model is a regression model."""
     if not (name or "").strip():
         raise FleetValidationError("The fleet needs a name.")
@@ -287,7 +288,7 @@ def create_fleet(db, name: str, model_id: str, owner_id: str, model_kind: str | 
     else:
         model = models_service.get_model(db, model_id, owner_id)
         if model is None:
-            raise FleetValidationError("Life model not found.")
+            raise FleetValidationError("Non-repairable model not found.")
         if (model.results or {}).get("kind") == "regression":
             model_kind = "regression"
             settings["method"] = "single"
@@ -385,13 +386,13 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
         return _compute_recurrent(db, fleet, owners, spares_opts)
     if kind == "alt":
         return _compute_covariate(db, fleet, owners, None, item_periods, spares_opts)
-    # "life" or "regression": a saved life model. Its own fit decides which
+    # "life" or "regression": a saved non-repairable model. Its own fit decides which
     # forecast runs, so a fleet stored as "life" on a model that is now a
     # regression model (or the reverse) still forecasts correctly.
     model = models_service.get_model(db, fleet.model_id, owners)
     if model is None:
         return {"status": "stale",
-                "reason": "The linked life model no longer exists."}
+                "reason": "The linked non-repairable model no longer exists."}
     results = model.results or {}
     if results.get("kind") == "regression":
         return _compute_covariate(db, fleet, owners, model, item_periods, spares_opts)
@@ -403,7 +404,7 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
             results.get("distribution_id"), results.get("params"), results.get("extras")
         )
     except StrategyError as exc:
-        return {"status": "stale", "reason": str(exc)}
+        return {"status": "stale", "reason": client_message(exc)}
 
     settings = fleet.settings or {}
     periods = int(settings.get("periods", 12))
@@ -445,7 +446,7 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
                 dist, ages, rates, periods, items, item_periods=item_periods, unit=base["unit"],
                 limits=_period_limits(settings, items, ages, rates, periods))}
         except StrategyError as exc:
-            return {"status": "stale", "reason": str(exc)}
+            return {"status": "stale", "reason": client_message(exc)}
     else:
         out = {**base, **_forecast_renewals(dist, ages, uses, rates, periods, items)}
     for row, (rate, basis) in zip(out["per_item"], chosen):
@@ -486,7 +487,7 @@ def _live_covariate_model(db, fleet: Fleet, owners, model):
         fields = [{"name": s["column"], "label": s.get("label") or s["column"], "type": "number",
                    "default": None} for s in stresses]
         info = {"model_name": doc.name, "model_id": doc.id, "model_kind": "alt",
-                "unit": results.get("unit", ""), "model_url": f"/modelling/alt/{doc.id}",
+                "unit": results.get("unit", ""), "model_url": f"/models/alt/{doc.id}",
                 "notice": results.get("no_finite_maximum")}
         return live, fields, info
     try:
@@ -497,7 +498,7 @@ def _live_covariate_model(db, fleet: Fleet, owners, model):
         return stale("The linked regression model can't be evaluated (its dataset is no longer available).")
     results = model.results or {}
     info = {"model_name": model.name, "model_id": model.id, "model_kind": "regression",
-            "unit": results.get("unit", ""), "model_url": f"/modelling/m/{model.id}",
+            "unit": results.get("unit", ""), "model_url": f"/models/m/{model.id}",
             "notice": results.get("no_finite_maximum")}
     return entry["model"], list(entry.get("fields") or []), info
 
@@ -584,7 +585,7 @@ def _compute_covariate(db, fleet: Fleet, owners, model, item_periods: bool, spar
     try:
         rows = _covariate_rows(fields, settings, items)
     except StrategyError as exc:
-        return {**base, "status": "stale", "reason": str(exc)}
+        return {**base, "status": "stale", "reason": client_message(exc)}
     if not items:
         return {**base, "expected": 0.0, "interval": [0.0, 0.0], "interval_level": INTERVAL_LEVEL,
                 "per_item": [], "per_period": [0.0] * periods,
@@ -603,10 +604,11 @@ def _compute_covariate(db, fleet: Fleet, owners, model, item_periods: bool, spar
             live, ages, rates, periods, items, Z=Z, item_periods=item_periods, unit=info["unit"],
             limits=_period_limits(settings, items, ages, rates, periods))}
     except StrategyError as exc:
-        return {**base, "status": "stale", "reason": str(exc)}
+        return {**base, "status": "stale", "reason": client_message(exc)}
     except Exception as exc:  # noqa: BLE001 - SurPyval refusing these values
+        reason = client_reason(exc, "the model refused these values", where="fleet forecast")
         return {**base, "status": "stale",
-                "reason": f"The linked model couldn't be evaluated at these items' conditions: {exc}"}
+                "reason": f"The linked model couldn't be evaluated at these items' conditions: {reason}"}
     if notes:
         out["warnings"] = [*notes, *(out.get("warnings") or [])]
     for row, values, (rate, basis) in zip(out["per_item"], rows, chosen):
@@ -937,9 +939,10 @@ def _spares_or_reason(opts, method, model, ages, rates, periods, label, *, Z=Non
     try:
         return spares_answer(opts, method, model, ages, rates, periods, label, Z=Z)
     except StrategyError as exc:
-        return {"status": "error", "reason": str(exc)}
+        return {"status": "error", "reason": client_message(exc)}
     except Exception as exc:  # noqa: BLE001 - a model refusing these values
-        return {"status": "error", "reason": f"The spares answer couldn't be worked out: {exc}"}
+        reason = client_reason(exc, "the model refused these values", where="fleet spares")
+        return {"status": "error", "reason": f"The spares answer couldn't be worked out: {reason}"}
 
 
 def _amount(v: float, label: str) -> str:

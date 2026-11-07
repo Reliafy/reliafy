@@ -9,6 +9,32 @@
 import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
+  ["GET", "/api/extensions"], // optional extensions' pages (an empty list without any)
+  // Reliability prediction: the parts count, the saved predictions, a product's parts list.
+  ["POST", "/api/predictions/compute"],
+  ["POST", "/api/predictions"],
+  ["GET", "/api/predictions"],
+  ["GET", "/api/predictions/smoke"],
+  ["GET", "/api/predictions/from-product/smoke"],
+  ["POST", "/api/v1/analyse/prediction"],
+  // Maintainability prediction: the calculator, the saved predictions, a product's lines.
+  ["POST", "/api/maintainability/analyse"],
+  ["GET", "/api/maintainability/predictions"],
+  ["GET", "/api/maintainability/products/smoke/lines"],
+  // "Add the sample UAV product" (Products; the Explorer's "Open the sample UAV product").
+  ["POST", "/api/maintenance/sample-product"],
+  // A dataset's measurements part (docs/datasets.md): add, paste, remove, split, life data for readings alone.
+  ["PUT", "/api/datasets/smoke/measurements"],
+  ["PUT", "/api/datasets/smoke/measurements/paste"],
+  ["DELETE", "/api/datasets/smoke/measurements"],
+  ["POST", "/api/datasets/smoke/split"],
+  ["PUT", "/api/datasets/smoke/life"],
+  ["POST", "/api/alt/models/smoke/diagnostics"], // the accelerated life page's Diagnostics checks
+  ["GET", "/api/me/roles"], // what the user does: the menu's order and Home's cards
+  ["GET", "/api/v1/support/replies"], // operator support replies (mounted before the generic /api/v1 routes)
+  ["GET", "/api/public-links"], // Reports: every shared link
+  ["POST", "/api/maintenance/documents/upload"], // PDFs kept in maintenance
+  ["GET", "/api/maintenance/documents/smoke/file"],
   ["POST", "/api/test-planning/sequential"], // Test planning
   ["POST", "/api/test-planning/life"],
   ["POST", "/api/test-planning/accelerated"],
@@ -16,19 +42,52 @@ const SIGNED_IN = [
   ["POST", "/api/test-planning/simulate"],
   ["POST", "/api/strategy/calendar-replacement"], // replacement over a shutdown calendar
   ["POST", "/api/strategy/calendar-next"],
+  ["POST", "/api/rbd-jobs/smoke/cancel"], // cancel a long calculation
+  ["GET", "/api/fault-trees"], // System models › Fault trees
+  ["POST", "/api/fault-trees/analyse"],
   ["POST", "/api/maintenance/photos/smoke/move"], // a photo on several places
   ["GET", "/api/maintenance/parts/levels"], // #435
   ["POST", "/api/maintenance/parts/import-bom"], // #435
   ["GET", "/api/maintenance/classes/forecast"], // #407
   ["POST", "/api/maintenance/graph/query"], // #423
   ["GET", "/api/maintenance/graph/schema"], // #423
+  ["GET", "/api/maintenance/graph/design"], // the Data model page
   ["GET", "/api/maintenance/conditions"], // #428
+  ["GET", "/api/maintenance/rcm"], // the RCM in the Explorer's tree
+  ["GET", "/api/maintenance/positions/smoke/rcm"], // a position's RCM
+  ["GET", "/api/maintenance/failure-reports"], // the Explorer's Failure reports tab
+  ["POST", "/api/maintenance/failure-reports"],
+  // Products: design trees and the items built from them (the Products and Items pages).
+  ["GET", "/api/maintenance/products"],
+  ["POST", "/api/maintenance/products"],
+  ["GET", "/api/maintenance/products/smoke"],
+  ["GET", "/api/maintenance/products/smoke/items"],
+  ["POST", "/api/maintenance/products/smoke/build"],
+  ["DELETE", "/api/maintenance/products/smoke/design"],
+  ["PUT", "/api/maintenance/positions/smoke/design"],
+  ["GET", "/api/maintenance/positions/smoke/design-rollup"],
+  ["GET", "/api/maintenance/items/overview"],
+  ["PUT", "/api/maintenance/failure-modes/smoke/decision"],
+  ["GET", "/api/maintenance/tasks/smoke/measurement"], // what a task by use counts (its dialog, a move's question)
   ["GET", "/api/maintenance/overview"],
+  ["GET", "/api/maintenance/tree"], // the asset tree pane
+  ["GET", "/api/maintenance/places"], // Assets: the top-level places
   ["GET", "/api/maintenance/work-orders"],
+  ["GET", "/api/maintenance/packages"], // work packages: tasks done on one visit
+  ["GET", "/api/maintenance/packages/propose"],
+  ["GET", "/api/maintenance/packages/smoke"],
+  ["POST", "/api/maintenance/packages"],
+  ["PATCH", "/api/maintenance/packages/smoke"],
+  ["POST", "/api/maintenance/packages/smoke/tasks"],
+  ["DELETE", "/api/maintenance/packages/smoke/tasks/smoke"],
+  ["POST", "/api/maintenance/packages/smoke/pause"],
+  ["POST", "/api/maintenance/positions/smoke/out-of-service"], // tasks not due while it's out of service
+  ["POST", "/api/maintenance/items/smoke/back-in-service"],
+  ["PUT", "/api/maintenance/work-orders/smoke/lines/smoke"], // a package line's mark, saved during the visit
   ["GET", "/api/rbd-runs"],
   ["POST", "/api/rbds/import"],
   ["GET", "/api/rbds"],
-  ["GET", "/api/rcm/studies"],
+  ["GET", "/api/maintenance/rcm/options"], // the decision dialog's vocabulary
   ["GET", "/api/fleet/fleets"],
   ["GET", "/api/strategy/analyses"],
   ["GET", "/api/models"],
@@ -84,4 +143,18 @@ test("an unknown API route is a 404", async ({ request }) => {
   const res = await request.get("/api/no-such-route-smoke");
   expect(res.status()).toBe(404);
   expect(await noRoute(res)).toBe(true);
+});
+
+// Without extensions the app has no operator page: an old /admin link is the
+// server's ordinary 404 page. (Signed in, single-user runs only: a deployed
+// site answers /api/extensions with 401 here.)
+test("without extensions, /admin is a not-found page", async ({ request }) => {
+  const res = await request.get("/api/extensions");
+  test.skip(res.status() !== 200, "needs a signed-in (single-user) run");
+  const { mounts } = await res.json();
+  test.skip(mounts.length > 0, "an extension is installed");
+  const page = await request.get("/admin");
+  expect(page.status()).toBe(404);
+  expect(await page.text()).toContain("Page not found");
+  expect((await request.get("/api/admin/stats")).status()).toBe(404);
 });

@@ -8,23 +8,16 @@ import Chip from "../components/ui/Chip.jsx";
 import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import ScrollCue from "../components/ui/ScrollCue.jsx";
+import { CAPPED_KINDS } from "../plan.js";
 
 // AI usage is denominated in "credits" — users never see a dollar balance.
 // (Internally 1 credit == 1 cent; only pack purchase prices show as dollars.)
 const credits = (cents) => (cents || 0).toLocaleString();
 
-// Capped artifact kinds, in display order. Keys match `caps` / `usage` in the
-// GET /api/billing response (backend/services/billing.py usage_summary).
-const ARTIFACTS = [
-  ["Datasets", "datasets"],
-  ["Models", "models"],
-  ["RBDs", "rbds"],
-  ["Degradation models", "degradation_models"],
-  ["Tracked items", "tracked_items"],
-  ["RCM studies", "rcm_studies"],
-  ["Fleet forecasts", "fleets"],
-  ["Outage logs", "outage_logs"],
-];
+// Capped artifact kinds, in display order: [label, key]. Keys match `caps` /
+// `usage` in the GET /api/billing response (backend/services/billing.py
+// usage_summary); the list itself is shared with the pricing copy (plan.js).
+const ARTIFACTS = CAPPED_KINDS.map(([key, label]) => [label, key]);
 
 export default function BillingPage() {
   const location = useLocation();
@@ -238,7 +231,8 @@ export default function BillingPage() {
           )}
           {!isPro && !showCompare && !isAdmin && (
             <p className="muted-line">
-              Pro lifts the free-tier limits on saved datasets, models, and RBDs
+              Pro lifts the free-tier limits on everything you save: datasets, models, RBDs, fault trees,
+              predictions and more
               {ai && proCredits && ` — and includes ${proCredits} AI credits every month`}.
             </p>
           )}

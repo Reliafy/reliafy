@@ -4,11 +4,14 @@ import AltLibrary from "./AltLibrary.jsx";
 import { listAltModels, deleteAltModel } from "../api.js";
 import { PlusIcon, itemName } from "../components/LibRows.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
+import { StorageCapNotice } from "../components/StorageCap.jsx";
 
 const HELP = { guide: "accelerated-life-testing" };
 
-// Modelling › Accelerated life: ALT models. The fit flow lives on its own
-// page (/modelling/alt/new).
+// Models › Accelerated life: ALT models. The fit flow lives on its own
+// page (/models/alt/new).
 export default function AltHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
@@ -17,11 +20,9 @@ export default function AltHome() {
   const refresh = () => listAltModels().then((r) => setModels(r.models)).catch(() => setModels([]));
   useEffect(() => { refresh(); }, []);
 
+  const confirm = useConfirm();
   const onDelete = async (m) => {
-    const msg = m.is_sample
-      ? `Remove the sample “${itemName(m)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete “${m.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(m, "model", { name: itemName(m) })))) return;
     try {
       await deleteAltModel(m.id);
       refresh();
@@ -30,11 +31,11 @@ export default function AltHome() {
     }
   };
 
-  const newModel = <button onClick={() => navigate("/modelling/alt/new")}><PlusIcon /> New model</button>;
+  const newModel = <button onClick={() => navigate("/models/alt/new")}><PlusIcon /> New model</button>;
   return (
     <div className="app">
       <SectionHeader
-        section="modelling"
+        section="models"
         title="Accelerated life"
         purpose={<>Failure times at elevated stress, extrapolated to your use level. Planning a test first?{" "}
           <Link to="/strategy/test-planning/accelerated">Plan an accelerated test</Link>.</>}
@@ -44,10 +45,11 @@ export default function AltHome() {
       />
 
       {error && <div className="card error">{error}</div>}
+      <StorageCapNotice kind="models" one="saved model" many="saved models" refreshKey={models} />
 
       <AltLibrary
         models={models}
-        onOpen={(id) => navigate(`/modelling/alt/${id}`)}
+        hrefFor={(id) => `/models/alt/${id}`}
         onDelete={onDelete}
         help={HELP}
         empty={{

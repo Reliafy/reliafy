@@ -35,13 +35,12 @@ COLLECTION = "reports"
 # Items a report can hold: every kind with a public page, in the order the
 # picker lists them.
 ITEM_KINDS = {
-    "models": "Life model",
+    "models": "Non-repairable model",
     "recurrent_models": "Recurrent-event model",
     "degradation_models": "Degradation model",
     "rbds": "Block diagram",
     "strategy_analyses": "Strategy analysis",
     "fleets": "Fleet forecast",
-    "rcm_studies": "RCM study",
     "datasets": "Dataset",
 }
 

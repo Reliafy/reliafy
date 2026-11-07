@@ -5,15 +5,18 @@ import { ACCENT, sentence } from "../plotTheme.js";
 import Logo from "../components/Logo.jsx";
 import { useAuth } from "../AuthProvider.jsx";
 import ResultView from "../components/ResultView.jsx";
+import JointResultView from "../components/JointResultView.jsx";
+import ModelFrame from "../components/model/ModelFrame.jsx";
+import { answerParts } from "../modelFrame.js";
+import { degradationAnswer } from "../degradationFrame.js";
 import DegradationResultView from "../components/DegradationResultView.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
+import { recurrentAnswer } from "../recurrentResults.js";
 import ReplacementResult from "../components/ReplacementResult.jsx";
 import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
 import DemoTestResult from "../components/DemoTestResult.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
-import RcmTree from "../components/RcmTree.jsx";
-import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import PublicRbd from "../components/PublicRbd.jsx";
 import ReportView from "./PublicReport.jsx";
 import { getPublicArtifact, unlockPublicLink } from "../api.js";
@@ -32,16 +35,17 @@ import "./PublicPage.css";
 // (PublicPage.css, printFit.js).
 
 const KIND_LABEL = {
-  models: "Fitted life model",
+  models: "Fitted non-repairable model",
   datasets: "Dataset",
   degradation_models: "Degradation model",
   strategy_analyses: "Strategy analysis",
-  rcm_studies: "RCM study",
   fleets: "Fleet failure forecast",
   rbds: "Reliability block diagram",
   recurrent_models: "Repairable model",
   reports: "Report",
 };
+
+const art = (data) => data.artifact || {};
 
 const fmt = (v, dp = 1) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: dp });
@@ -52,7 +56,7 @@ function FleetView({ a }) {
   return (
     <>
       {f.status === "stale" && (
-        <div className="card note">{f.reason || "The linked life model is unavailable."}</div>
+        <div className="card note">{f.reason || "The linked non-repairable model is unavailable."}</div>
       )}
       {f.status === "ok" && (
         <div className="stats">
@@ -116,14 +120,28 @@ function FleetView({ a }) {
   );
 }
 
-function Body({ collection, a, token, unlock }) {
+function Body({ collection, a, token, unlock, framed = false }) {
   switch (collection) {
-    case "models":
-      return <div className="card"><ResultView result={a.results} name={a.name} /></div>;
-    case "degradation_models":
-      return <div className="card"><DegradationResultView results={a.results} name={a.name} /></div>;
-    case "recurrent_models":
-      return <div className="card"><RecurrentResultView results={a.results} name={a.name} /></div>;
+    case "models": {
+      // A condition and life model is shared from the models collection too.
+      const view = a.kind === "joint"
+        ? <JointResultView results={a.results} name={a.name} />
+        : <ResultView result={a.results} name={a.name} split={a.results?.split || null} />;
+      if (framed) return view;
+      // A model in a report: the same tabs, in a card of their own height.
+      return <div className="card mf-card mf-standalone">{view}</div>;
+    }
+    case "degradation_models": {
+      const view = <DegradationResultView results={a.results} name={a.name} />;
+      // A shared page: the model frame's tabs; a model in a report: the same
+      // tabs, in a card of their own height.
+      return framed ? view : <div className="card mf-card mf-standalone">{view}</div>;
+    }
+    case "recurrent_models": {
+      const view = <RecurrentResultView results={a.results} name={a.name} />;
+      // Framed on its own share page; in a report, the same tabs in a card of their own height.
+      return framed ? view : <div className="card mf-card mf-standalone">{view}</div>;
+    }
     case "strategy_analyses":
       return (
         <div className="card">
@@ -138,22 +156,19 @@ function Body({ collection, a, token, unlock }) {
         <div className="card">
           {a.preview?.length ? (
             <>
-              <div className="ds-section-h">Preview · first {a.preview.length} rows</div>
+              <div className="ds-section-h">{a.measurements ? "Life data · " : "Preview · "}first {a.preview.length} rows</div>
               <PreviewTable columns={a.preview_columns} rows={a.preview} />
             </>
           ) : (
             <p className="muted-line">No preview available.</p>
           )}
+          {a.measurements?.preview?.length > 0 && (
+            <>
+              <div className="ds-section-h">Measurements · first {a.measurements.preview.length} of {a.measurements.n_rows.toLocaleString()} readings</div>
+              <PreviewTable columns={a.measurements.preview_columns} rows={a.measurements.preview} />
+            </>
+          )}
         </div>
-      );
-    case "rcm_studies":
-      return (
-        <>
-          {a.rollup && <RollupBadges rollup={a.rollup} />}
-          <div className="card" style={{ marginTop: "0.8rem" }}>
-            <RcmTree functions={a.functions || []} readOnly onChange={() => {}} onEditDecision={() => {}} />
-          </div>
-        </>
       );
     case "fleets":
       return <FleetView a={a} />;
@@ -321,7 +336,41 @@ export default function PublicArtifact() {
             <ReportView report={data.artifact} sharedBy={data.shared_by} Item={Body} />
           </div>
         )}
-        {data && data.collection !== "reports" && (
+        {data && data.collection === "models" && (
+          // A shared model: the model page's frame, read-only (no actions).
+          <ModelFrame
+            className="public-app"
+            crumbs={[{ label: `${art(data).kind === "joint" ? "Condition and life model" : KIND_LABEL.models} · shared by ${data.shared_by}` }]}
+            title={data.artifact.name}
+            answer={answerParts(art(data).kind === "joint" ? { ...art(data).results, kind: "joint" } : art(data).results,
+                                { split: art(data).results?.split || null })}
+          >
+            <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} framed />
+          </ModelFrame>
+        )}
+        {data && data.collection === "degradation_models" && (
+          // A shared degradation model: the same frame, read-only.
+          <ModelFrame
+            className="public-app"
+            crumbs={[{ label: `${KIND_LABEL.degradation_models} · shared by ${data.shared_by}` }]}
+            title={data.artifact.name}
+            answer={degradationAnswer(data.artifact.results)}
+          >
+            <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} framed />
+          </ModelFrame>
+        )}
+        {data && data.collection === "recurrent_models" && (
+          // A shared repairable model: the model page's frame, read-only.
+          <ModelFrame
+            className="public-app"
+            crumbs={[{ label: `${KIND_LABEL.recurrent_models} · shared by ${data.shared_by}` }]}
+            title={data.artifact.name}
+            answer={recurrentAnswer(art(data).results || {})}
+          >
+            <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} framed />
+          </ModelFrame>
+        )}
+        {data && data.collection !== "reports" && data.collection !== "models" && data.collection !== "degradation_models" && data.collection !== "recurrent_models" && (
           <div className="app public-app">
             <header>
               <div>

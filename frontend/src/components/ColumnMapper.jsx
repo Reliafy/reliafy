@@ -37,7 +37,7 @@ const FIXED = { "-1": "Found failed (left-censored)", 2: "Interval" };
 // ``failureMode`` offers the failure-mode column (#177: the fit wizard only);
 // ``timeVarying`` (#60) is the layout of an item's rows when covariates change over time.
 export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitChange, facts = {},
-                                      timeVarying = null, failureMode = false }) {
+                                      timeVarying = null, failureMode = false, renderUnit = null }) {
   const usingInterval = !!mapping.xl || !!mapping.xr;
   const options = (none) => [{ value: "", label: none }, ...columns];
 
@@ -72,7 +72,9 @@ export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitC
     </label>
   );
 
-  const unitField = onUnitChange && (
+  // ``renderUnit``: the caller's own unit field (the fit flow's, which
+  // requires a unit or an explicit "No unit").
+  const unitField = renderUnit ? renderUnit() : onUnitChange && (
     <label className="ds-field ds-unit">
       <span className="ds-label">Unit</span>
       <input

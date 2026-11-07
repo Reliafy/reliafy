@@ -3,7 +3,7 @@ title: "Add a common-cause group"
 task: "How do I couple redundant components that share a failure cause?"
 category: "Reliability block diagrams"
 prerequisites: "An RBD with two or more redundant components that share a cause."
-related_href: "/rbds/b"
+related_href: "/systems/b"
 related_label: "Open the RBD builder"
 order: 31
 ---
@@ -79,7 +79,7 @@ that themselves take time, for one, the PFDavg includes the group while the
 other figures leave it out for now.
 
 A note on symmetry: the β-factor model assumes the grouped units are
-*identical*. If their life models differ, Reliafy flags it when you validate —
+*identical*. If their non-repairable models differ, Reliafy flags it when you validate —
 give them the same model for a result that means anything.
 
 ## Read the impact

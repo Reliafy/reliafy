@@ -375,15 +375,12 @@ def append_dataset_rows(db, dataset_id: str, uid: str, rows_df: pd.DataFrame, re
 
 def _read_csv_body(body: bytes) -> pd.DataFrame:
     """A text/csv body as a DataFrame, within the CSV shape limits."""
-    from backend.fitting import FitError, read_csv_capped
+    from backend.fitting import FitError, read_csv_bytes
 
     try:
-        return read_csv_capped(io.BytesIO(body),
-                               width_text=bytes(body[:1024 * 1024]).decode("utf-8", "replace"))
+        return read_csv_bytes(bytes(body), what="the CSV body")
     except FitError as exc:
         raise IngestError(str(exc))
-    except Exception as exc:
-        raise IngestError(f"Couldn't parse the CSV body: {exc}")
 
 
 def rows_from_request(content_type: str, body: bytes, json_keys: tuple[str, ...]) -> list[dict]:

@@ -1,14 +1,14 @@
 ---
-title: "Fit your first life model from a CSV"
+title: "Fit your first non-repairable model from a CSV"
 task: "How do I turn a spreadsheet of failure times into a fitted reliability model?"
 category: "Getting started"
 prerequisites: "A CSV with a column of failure times. Censored units are welcome but not required."
-related_href: "/modelling/new"
+related_href: "/models/new"
 related_label: "Fit a model"
 order: 1
 ---
 
-Everything else in Reliafy is built on a fitted life model, so this is the place
+Everything else in Reliafy is built on a fitted non-repairable model, so this is the place
 to start. The input is modest: a column of numbers saying how long things lasted.
 The output is a distribution you can ask questions of — what fraction survive to
 5,000 hours, when will 10% have failed, what's the mean life, and is this thing
@@ -52,8 +52,10 @@ censoring covers most real cases.
 ## Loading it in
 
 Reliafy opens on [Home](/home): what changed, what needs attention and your
-recent work, with **Start here** cards while your workspace is new. From there,
-go to **Modelling → Life models** and press **New model**, then choose **Upload a
+recent work, with **Start here** cards while your workspace is new. (Tell it
+what you do under [Settings](/settings) → **What do you do?** and the menu puts
+what you use first, and Home leads with it.) From there,
+go to **Modelling → Models → Non-repairable** and press **New model**, then choose **Upload a
 CSV or Excel file** (or **Paste values**). The fit runs in four steps, shown
 along the bottom: **Source**, **Data**, **Model** and **Result**. For the
 source, drop a CSV or Excel file straight onto the page, paste a column of
@@ -63,9 +65,14 @@ re-uploading.
 
 ![The new-model flow: drop a CSV or pick a saved dataset](/guides/img/fit-01-new.png)
 
-If your file has no header row, upload it under [Modelling › Data](/modelling/data) → **New dataset** and
+If your file has no header row, upload it under [Data](/data) → **New dataset** and
 tick **No header row**: Reliafy names the columns `col 1`, `col 2`, … so the
 first row stays data rather than being eaten as titles.
+
+A dataset can also carry **measurements**: readings taken on the same units
+over time (vibration, wear), one row per reading. They sit beside the life data
+on the dataset's page, on its **Measurements** tab, and feed a
+[condition and life model](/guides/condition-based-risk).
 
 ## Mapping the columns
 
@@ -76,7 +83,9 @@ words. You only need the ones your data has:
 - **Failed or still running?** — the censoring column. Reliafy lists the values
   it finds, with how many rows have each, and you mark each one **Failed** or
   **Still running**. For the sample *Pump field returns*, `0` is 18 failures and
-  `1` is 7 pumps still running.
+  `1` is 7 pumps still running. If most units come out as still running, the
+  step says so and offers **Swap the flags**: many spreadsheets use `1` for
+  failed.
 - **Count** — if one row represents several identical units.
 - **Failure mode** — when units fail in more than one way: each mode is treated as a competing risk (see [competing risks](/guides/competing-risks)).
 - Under **Advanced: interval and truncated data**, the earliest and latest
@@ -87,7 +96,8 @@ words. You only need the ones your data has:
 
 Set the **Unit** here too. It's guessed from the column name where it can be,
 and it flows through to every chart and result afterwards, so it stops you
-comparing a model in hours against one in cycles later on.
+comparing a model in hours against one in cycles later on. A unit is optional:
+leave it blank, or tick **No unit (just numbers)** if the times really have none.
 
 ## Choosing a distribution
 
@@ -95,7 +105,15 @@ Then, in the **Model** step, pick the model. Weibull is the default. If you
 don't know which distribution you want — and often you genuinely don't — choose
 **Best fit (auto)** and Reliafy will fit every candidate
 and keep the one with the lowest AIC, showing you the full ranking so you can
-see how close the runners-up were.
+see how close the runners-up were. **Rank by** changes the score: **AICc** for
+few failures (under about 40), **BIC** to favour simpler distributions, or the
+negative log-likelihood, which charges nothing for extra parameters and so
+always leans to the most flexible. The ranking shows each candidate's number of
+parameters and how far it is behind the best; **within 2, the data can't tell
+them apart**, so prefer the one with fewer parameters. Distributions that can't
+be fitted to your data (a negative time, say) are skipped, and the ranking says
+which and why. Reliafy also warns when a three-parameter winner rests on very
+few failures.
 
 If you do want to choose: **Weibull** is the workhorse and handles wear-out,
 infant mortality and random failure through its shape parameter. **Exponential**
@@ -107,19 +125,34 @@ regression models when failure depends on covariates like temperature or load.
 
 ## Reading the fit
 
-The result has two tabs, **Probability plot** and **Calculator**, with a panel
-beside the plot:
+The answer comes first, in one line under the model's name: the failure
+pattern, the shape β with its interval, the B10 life with its lower bound, the
+mean life and the data. Under it are five tabs, each fitting on the screen:
+**Probability plot**, **Calculator**, **Model characteristics**,
+**Diagnostics** and **Data**. **Use this model**, top right, opens a list of the
+tools that take this model: a replacement interval, a fleet forecast, a
+demonstration test and a block in an RBD, each with a line on what you get
+there.
+
+The panel beside the probability plot has:
 
 - **Parameters** — each fitted parameter with its 95% interval, the number of
-  observations, and **Fit statistics** (the AIC, which opens the log-likelihood,
-  AIC, AICc and BIC, and a comparison with every other distribution).
-- **Life** — the B1, B5, B10 and B50 lives and the mean life (MTTF), each with
-  its lower confidence bound, and a **Requirement** row to check a B-life
-  requirement against them.
-- A short **verdict** on what the fit means: for a Weibull, wear-out,
-  early-life failures or random failures, judged on β's interval.
+  observations, and **Fit statistics** (the AIC, which opens the Diagnostics
+  tab).
+- **Failure pattern** — what the fit means in a word: for a Weibull, wear-out,
+  early-life failures or random failures, judged on β's interval. Click it for
+  the reading in a sentence. (For a distribution with no shape to read, such as
+  the lognormal, the row gives the **Median life** instead.)
 
-![A fitted Weibull model: probability plot, parameters, B-lives and the verdict](/guides/img/fit-02-result.png)
+The **Model characteristics** tab has the mean life (MTTF) and the B-lives (B1,
+B5, B10 and B50), each with its lower bound at one confidence you choose.
+**Diagnostics** asks whether you can trust the fit: the fitted curve over the
+data's own estimate, a P-P plot of where the failures fell against where the
+model expects them, the ranking of every other distribution on the same data,
+and the fit statistics (log-likelihood, AIC, AICc and BIC). **Data** lists the
+failures, how the model was fitted and every parameter.
+
+![A fitted Weibull model: probability plot, parameters and the failure pattern](/guides/img/fit-02-result.png)
 
 The **probability plot** is the one to look at first. It puts your data on paper
 where a good fit is a straight line. If the points track the line, the
@@ -141,13 +174,15 @@ number worth understanding**:
   to make sense.
 
 That single parameter often changes the maintenance decision more than anything
-else on the page, which is why the verdict card spells it out. The bearings'
-whole interval sits above 1, so the card reads *Wear-out: β is above 1 at 95%
-confidence*.
+else on the page, which is why the panel spells it out. The bearings' whole
+interval sits above 1, so the **Failure pattern** row reads *Wear-out*, and
+clicking it says *β is above 1 at 95% confidence*.
 
 The **Calculator** tab lets you ask the model direct questions: reliability (or
-any other function) at a given time, or the time by which a given fraction will
-have failed — each with a confidence bound, stated in words. The
+any other function) at a given time, or, with **Time at reliability**, the time
+by which a given fraction will have failed — the B-lives, with **B1**, **B5**,
+**B10** and **B50** one click each. Every answer comes with a confidence bound,
+stated in words. The
 [B-lives and confidence bounds](/guides/b-lives-and-confidence-bounds) guide
 reads them in detail.
 
@@ -155,7 +190,9 @@ reads them in detail.
 
 ## Where to go next
 
-Press **Save model** and it becomes available everywhere else: as a block in a
+Name the model in the "This fit isn't saved yet" bar above the result and
+press **Save this model** (**Save this model and its data** for a file you
+uploaded). It then becomes available everywhere else: as a block in a
 [reliability block diagram](/guides/build-an-rbd), as the input to an
 [optimal replacement interval](/guides/optimal-replacement-interval), as the
 basis of a [fleet failure forecast](/guides/forecast-fleet-failures-and-spares),

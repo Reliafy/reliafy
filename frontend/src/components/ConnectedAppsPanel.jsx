@@ -7,6 +7,7 @@ import { useCopyId } from "./CopyId.jsx";
 import Button from "./ui/Button.jsx";
 import Card, { CardHeader } from "./ui/Card.jsx";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import { useConfirm } from "./ConfirmProvider.jsx";
 
 // No app yet: how to connect Claude, with the MCP address to copy.
 function ConnectClaude() {
@@ -46,8 +47,9 @@ export default function ConnectedAppsPanel() {
   }, []);
   useEffect(() => refresh(), [refresh]);
 
+  const confirm = useConfirm();
   const onRevoke = async (g) => {
-    if (!window.confirm(`Disconnect “${g.client_name}”? It will lose access to your Reliafy account straight away.`)) return;
+    if (!(await confirm({ title: "Disconnect this app?", body: `“${g.client_name}” loses access to your Reliafy account straight away. You can connect it again later.`, confirmLabel: "Disconnect app" }))) return;
     setBusy(g.id);
     setError(null);
     try {

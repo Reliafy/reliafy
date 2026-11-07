@@ -193,7 +193,7 @@ def test_it_follows_the_register_and_is_kept_until_the_next_change(m):
 
 def test_bad_requests_are_refused(m):
     _pumps(m)
-    with pytest.raises(Invalid, match="Fit a life model"):
+    with pytest.raises(Invalid, match="Fit a non-repairable model"):
         forecast.class_forecast(m, "Pump")
     _model(m, "Pump")
     with pytest.raises(Invalid):

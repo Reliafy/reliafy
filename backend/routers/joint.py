@@ -1,4 +1,4 @@
-"""Condition monitoring models (joint models of readings and failures) API.
+"""Condition and life models (joint models of readings and failures) API.
 
 Saved in ``models`` with ``kind: "joint"`` (see ``backend.services.joint``).
 The fit is Pro and heavy: with the compute queue configured it answers 202
@@ -23,6 +23,7 @@ from backend.services import models as models_service
 from backend.services import samples as samples_service
 from backend.services import shares as shares_service
 from backend.services.access import AccessCtx, get_access
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -67,19 +68,21 @@ def options(ctx: AccessCtx = Depends(get_access)) -> dict:
 
 @router.post("/joint/check")
 def check(body: dict = Body(...), session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
-    """Read the two tables as a fit would and say what it would take: units,
-    failures, running units, readings, and any readings that match no unit.
-    Free, quick and saves nothing."""
+    """Read the dataset's two parts as a fit would and say what it would
+    take: units, failures, running units, readings, and any readings that
+    match no unit. Free, quick and saves nothing."""
     try:
         return JSONResponse(content=joint_service.check(session, body, ctx.write_owner))
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @router.post("/joint/models")
 def fit_model(body: dict = Body(...), session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
-    """Fit and save a condition monitoring model (Pro). ``body``:
-    ``name``, ``lifetimes_dataset_id``, ``readings_dataset_id``, ``mapping``
+    """Fit and save a condition and life model (Pro). ``body``:
+    ``name``, ``dataset_id`` (its life data with its measurements, or one
+    table holding both; a body may still name ``lifetimes_dataset_id`` and
+    ``readings_dataset_id`` as before), ``mapping``
     ``{id, x | xl+xr, c, tl?}``, ``readings_mapping`` ``{id, age, value}``,
     ``covariates``, ``hazard_covariates?``, ``path_covariates?`` (a list, or
     ``{path parameter: [...]}``), ``path_model``, ``unit``, ``marker?``,
@@ -99,7 +102,7 @@ def fit_model(body: dict = Body(...), session=Depends(get_session), ctx: AccessC
         status, payload = joint_service.start_fit(session, uid=ctx.uid, owners=ctx.write_owner, body=body,
                                                   save=True, owner_id=ctx.write_owner)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Joint model fit failed")
         return JSONResponse(status_code=500, content={"detail": "The fit failed. The error has been logged."})
@@ -148,7 +151,7 @@ def update_model(model_id: str, body: dict = Body(...), session=Depends(get_sess
     except models_service.ModelNotFound:
         return JSONResponse(status_code=404, content=NOT_FOUND)
     except ValueError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=_detail(models_service.get_model(session, model_id), ctx))
 
 
@@ -182,7 +185,7 @@ def unit_view(model_id: str, unit_id: str, session=Depends(get_session),
     try:
         return JSONResponse(content=joint_service.unit_view(model, unit_id))
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @router.post("/joint/models/{model_id}/predict")
@@ -196,7 +199,7 @@ def predict(model_id: str, body: dict = Body(...), session=Depends(get_session),
     try:
         return JSONResponse(content=joint_service.predict(model, body))
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @router.get("/joint/models/{model_id}/export.py")
@@ -212,5 +215,5 @@ def export_python(model_id: str, session=Depends(get_session), ctx: AccessCtx = 
     try:
         filename, source = joint_service.export_python(session, model, [*ctx.read_owners, model.owner_id])
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return python_download(filename, source)

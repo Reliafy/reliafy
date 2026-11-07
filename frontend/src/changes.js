@@ -67,7 +67,7 @@ export function forecastDetail(f) {
 
 const STATUS = {
   supported: "supported", contradicted: "contradicted", inconclusive: "inconclusive",
-  unevidenced: "unevidenced", stale: "stale",
+  unevidenced: "unevidenced", stale: "stale", partly: "partly evidenced",
 };
 
 export function rcmDetail(e) {
@@ -104,13 +104,13 @@ export function changeRows(data) {
       detail: forecastDetail(f), at: null });
   }
   for (const e of data.rcm_evidence || []) {
-    rows.push({ key: `rcm-${e.study_id}-${e.mode}-${e.evidence_url}`, kind: "RCM evidence",
-      tone: e.status === "contradicted" ? "danger" : null, name: e.study, url: e.url,
+    rows.push({ key: `rcm-${e.position_id}-${e.mode}-${e.evidence_url}`, kind: "RCM evidence",
+      tone: e.status === "contradicted" ? "danger" : null, name: e.position, url: e.url,
       detail: rcmDetail(e), at: e.at });
   }
   for (const s of (data.simulations || []).filter((x) => x.moved)) {
     rows.push({ key: `sim-${s.id}`, kind: "Simulation moved", tone: null, name: s.name,
-      url: s.before?.run_id ? `/rbds/runs/compare?ids=${s.before.run_id},${s.run_id}` : `/rbds/runs/${s.run_id}`,
+      url: s.before?.run_id ? `/systems/runs/compare?ids=${s.before.run_id},${s.run_id}` : `/systems/runs/${s.run_id}`,
       detail: simulationDetail(s), at: s.at });
   }
   for (const n of data.new || []) {

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { groupProblem, pickerGroups, withGroup } from "./moreModels.js";
+import { CRITERION_CHOICES, CRITERION_HELP, familyApplies, frailtyFitOptions, groupProblem, pickerGroups,
+  withGroup } from "./moreModels.js";
 
 const plain = [
   { id: "best" }, { id: "weibull" }, { id: "geometric", discrete: true },
@@ -34,4 +35,19 @@ test("Group by rides on the mapping for frailty models only", () => {
   assert.match(groupProblem({ frailty: true }, ""), /Group by/);
   assert.equal(groupProblem({ frailty: true }, "site"), null);
   assert.equal(groupProblem({ id: "weibull" }, ""), null);
+});
+
+test("the frailty family is sent only for a parametric frailty model, and only when not the default", () => {
+  const weibull = { id: "weibull_frailty", frailty: true };
+  assert.deepEqual(frailtyFitOptions(weibull, { frailty_family: "lognormal" }), { frailty_family: "lognormal" });
+  assert.equal(frailtyFitOptions(weibull, { frailty_family: "gamma" }), null);
+  assert.equal(frailtyFitOptions(weibull, {}), null);
+  assert.equal(frailtyFitOptions({ id: "cox_frailty", frailty: true }, { frailty_family: "lognormal" }), null);
+  assert.equal(frailtyFitOptions({ id: "weibull_ph" }, { frailty_family: "lognormal" }), null);
+  assert.equal(familyApplies(null), false);
+});
+
+test("Best fit's scores are the four the server knows", () => {
+  assert.deepEqual(CRITERION_CHOICES.map((c) => c.value), ["aic", "aic_c", "bic", "neg_ll"]);
+  for (const c of CRITERION_CHOICES) assert.ok(CRITERION_HELP[c.value]);
 });

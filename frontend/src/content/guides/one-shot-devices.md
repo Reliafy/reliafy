@@ -3,7 +3,7 @@ title: "Model a one-shot device (reliability per demand)"
 task: "My relief valve has to open when called on. How reliable is it per demand?"
 category: "Life data modelling"
 prerequisites: "How many times the device was called on (demands) and how many times it failed, as one count or one row per batch."
-related_href: "/modelling/new?mode=perdemand"
+related_href: "/models/new?mode=perdemand"
 related_label: "Create a per-demand model"
 order: 11
 ---
@@ -18,7 +18,7 @@ them into a failure probability per demand with exact confidence bounds.
 
 ## Enter the counts
 
-Go to **Modelling → Life models**, press **New model**, choose **Enter
+Go to **Modelling → Models → Non-repairable**, press **New model**, choose **Enter
 parameters** and pick **Per-demand (Binomial)** from the distributions. Give
 the model a name.
 
@@ -31,7 +31,7 @@ To read the counts from a file instead, choose **From a dataset** and pick a
 dataset with one row per batch, then its **Demands column**, **Failures
 column** and an optional **Batch name**.
 
-Set the **Confidence (%)** for the bounds. The line under the form previews the
+Set the **Confidence** for the bounds, as a percentage (90, not 0.9). The line under the form previews the
 answer as you type.
 
 ![The per-demand form: three batches of demands and failures, at 90% confidence](/guides/img/demand-01-new.png)
@@ -84,6 +84,6 @@ come from genuinely different designs or duties, model them separately.
 - A protective device that fails *while idle* and is only found at a proof
   test needs a test interval rather than a per-demand figure: see
   [verify a safety function](/guides/verify-a-safety-function) and
-  **Strategy → Failure finding**.
+  **Decisions → Strategy → Failure finding**.
 - To plan how many demands a test needs to show a reliability, see
   [check a requirement and plan a test](/guides/check-a-requirement-and-plan-a-test).

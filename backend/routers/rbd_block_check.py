@@ -14,6 +14,7 @@ from backend.services import models as models_service
 from backend.services import rbd_block_check
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -35,7 +36,7 @@ def check_block_mean(
     try:
         result = rbd_block_check.check_mean(node, resolve_model, unit or "")
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to check a block's mean")
         return JSONResponse(status_code=500, content={"detail": "Failed to check the block. The error has been logged."})

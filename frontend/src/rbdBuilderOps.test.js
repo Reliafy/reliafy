@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { allInstant, chainPairs, setInstantRepair, trackSelection } from "./rbdBuilderOps.js";
+import { allInstant, chainPairs, clearSpot, setInstantRepair, trackSelection } from "./rbdBuilderOps.js";
 
 test("trackSelection: clicks keep their order; a box select has none", () => {
   let s = trackSelection(undefined, ["c3"]);
@@ -39,4 +39,20 @@ test("instant repair for the whole diagram", () => {
   const off = setInstantRepair(on, false);
   assert.equal(off[2].data.instant_repair, undefined);
   assert.equal(allInstant([{ id: "input", type: "input" }]), false);
+});
+
+test("clearSpot: a block added unwired never lands on top of another", () => {
+  const nodes = [
+    { id: "c1", position: { x: 0, y: 0 }, width: 171, height: 95 },
+    { id: "c2", position: { x: 0, y: 119 }, width: 171, height: 95 },
+  ];
+  // Free: kept.
+  assert.deepEqual(clearSpot(nodes, { x: 400, y: 0 }), { x: 400, y: 0 });
+  // On c1 (and c2 below it): moved down past both.
+  const p = clearSpot(nodes, { x: 20, y: 10 });
+  assert.equal(p.x, 20);
+  assert.ok(p.y >= 119 + 95, `landed at ${p.y}`);
+  // Unmeasured nodes use a block's drawn size; no position asked, none given.
+  assert.notDeepEqual(clearSpot([{ id: "c1", position: { x: 0, y: 0 } }], { x: 0, y: 0 }), { x: 0, y: 0 });
+  assert.equal(clearSpot(nodes, undefined), undefined);
 });

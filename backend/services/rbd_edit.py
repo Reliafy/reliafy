@@ -1,4 +1,4 @@
-"""Batched, atomic edits to a saved RBD graph (the MCP ``rbd edit`` tool).
+"""Batched, atomic edits to a saved RBD graph (the MCP ``change rbd_edit`` tool).
 
 An agent changes a diagram by sending a short list of operations instead of
 re-sending the whole graph. :func:`apply_ops` applies them in order to a copy
@@ -22,7 +22,7 @@ Ops (plain dicts, already shape-checked by the MCP layer's pydantic models)::
 
 Layout: whenever an op changes which nodes exist or how they connect, the
 whole diagram is re-laid out with :func:`rbd_graph.layout_graph` — the same
-layered left-to-right layout ``rbd create`` gives a new diagram (and the
+layered left-to-right layout ``change rbd_create`` gives a new diagram (and the
 builder's Auto-arrange), so new and rewired blocks never overlap. Positions
 can't simply be cleared: the builder loads saved nodes as they are and needs
 one on every node (only the public page falls back to auto-layout). A batch
@@ -313,16 +313,13 @@ class _Editor:
                         raise EditError(str(exc)) from None
                 elif key in ("preventive", "inspection"):
                     # A block has a schedule or proof tests, not both: the new
-                    # one replaces the other (and the RCM link it carried).
+                    # one replaces the other.
                     data.pop("inspection" if key == "preventive" else "preventive", None)
-                    data.pop("rcm_source", None)
                     data[key] = value
                 else:
                     data[key] = value
             for key in clear:
                 data.pop(key, None)
-                if key in ("preventive", "inspection"):
-                    data.pop("rcm_source", None)
             if data.get("covariate_schedules") and ({"covariate_schedules", "model"} & set(changes)):  # #52
                 from backend.services import rbd_tvc
 

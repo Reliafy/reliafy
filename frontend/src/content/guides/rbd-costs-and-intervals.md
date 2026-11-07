@@ -3,7 +3,7 @@ title: "Cost a repairable system and choose its maintenance intervals"
 task: "What does this system cost to own, how often should we service it, and which change saves the most?"
 category: "Reliability block diagrams"
 prerequisites: "A repairable diagram with life and repair models on its blocks, and rough costs: repairs, parts, a planned service, an hour of lost production."
-related_href: "/rbds"
+related_href: "/systems/rbds"
 related_label: "Open your RBDs"
 order: 37
 ---
@@ -32,8 +32,7 @@ Double-click a block. A repairable block has these sections:
   or **Condition-based** (inspected, and replaced when the chance of failing
   before the next inspection is too high). Give how often (**Replace
   every**), how long it takes (**Takes**; blank is instant) and the **Cost
-  per replacement**. **Fill from RCM study…** copies a task from an
-  [RCM study](/guides/rcm-study).
+  per replacement**.
 - **Costs**: **Repair cost** and **Parts cost** per failure, **Block
   downtime** (a cost while this block is down, even if the system is up) and
   the **Purchase price**. A per-failure cost can be a **range**.
@@ -55,7 +54,7 @@ days, weeks, months or years).
 **Crews and groups…** in the same menu sets how many **Repair crews** work at
 once (blank is unlimited) and each maintenance group's **Set-up cost per
 stop**. With fewer crews than jobs, a failed block waits for a crew. That is
-realistic, but for most life models it means the figures are simulated
+realistic, but for most non-repairable models it means the figures are simulated
 rather than exact.
 
 ## 3. Read the cost of ownership

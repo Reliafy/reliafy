@@ -296,7 +296,7 @@ def _same_saved_model(model: dict, saved_model) -> bool:
         current = rbd_graph.normalize_model({"saved_model_id": model_id}, "block", saved_model)
     except import_guard.ImportBudgetExceeded:
         raise
-    except Exception:  # noqa: BLE001 - unreadable or not a life model
+    except Exception:  # noqa: BLE001 - unreadable or not a non-repairable model
         return False
     if current.get("distribution_id") != model.get("distribution_id"):
         return False
@@ -490,12 +490,12 @@ class _Converter:
 
     def finish_notes(self) -> None:
         for label, why in self.blocks_without:
-            self.note(f"“{label}” was imported without a life model — {why}. Set it before analysing.")
+            self.note(f"“{label}” was imported without a non-repairable model — {why}. Set it before analysing.")
         if self.fitted:
             self.note(f"{_names(self.fitted)} use fitted models: Reliafy keeps their parameters, not the fit's "
                       "covariance (so no confidence band until you link a saved fit).")
 
-    # -- life models ------------------------------------------------------
+    # -- non-repairable models ------------------------------------------------------
     def life(self, d, label: str, what: str = "life") -> tuple[Optional[dict], Optional[str]]:
         """``(builder model, None)`` or ``(None, why it can't be read)``."""
         if not isinstance(d, dict):

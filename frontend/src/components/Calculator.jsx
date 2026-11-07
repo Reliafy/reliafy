@@ -7,9 +7,11 @@ import Plot from "./Plot.jsx";
 import { COLORWAY, bandPair, pointMarker, referenceShape } from "../plotTheme.js";
 import { confidenceAt, evaluateAt, lifeAt } from "../api.js";
 import { formatNumber, formatPercent } from "../format.js";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
 import { boundWords, timeAtValue } from "../lifeResults.js";
-import RegressionLife from "./RegressionLife.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import Chip from "./ui/Chip.jsx";
 import { unitInText } from "./unitText.js";
 
 // The calculator's inputs (covariate combinations, active function, evaluation
@@ -27,14 +29,14 @@ export function initCalcState(functions) {
   return {
     series: functions ? [{ id: 0, values, curves: functions.curves, error: null }] : [],
     active: "sf",
-    t: x.length ? Number(mid.toPrecision(4)) : 0,
+    // A round example time (1000, not 996.2): only the starting input.
+    t: x.length ? Number(mid.toPrecision(2)) : 0,
     condAge: "", // conditional survival age s
     xMin: "", // blank = auto-range from the data
     xMax: "",
     // Confidence bounds config + the last-fetched band of each series, by its
     // id (keyed to avoid refetching): a regression model has one per
-    // covariate combination (#54). 90% one-sided lower by default, as the
-    // life card's B-lives (#288).
+    // covariate combination (#54). 90% one-sided lower by default (#288).
     ci: { level: 90, bound: "lower", bands: {} },
     // "value": a function at a time; "time": the time at a reliability (#288).
     mode: "value",
@@ -51,6 +53,8 @@ const tint = (hex) => {
   return m ? `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},0.12)` : undefined;
 };
 const MAX_SERIES = 6;
+// The usual B-lives, one click each in "Time at reliability": [R %, label].
+const B_LIVES = [[99, "B1"], [95, "B5"], [90, "B10"], [50, "B50"]];
 
 // Linear interpolation of y at xq from the (x, y) grid; null y points are
 // treated as gaps. Returns null outside the grid or across a gap.
@@ -162,11 +166,56 @@ function CovariateCombos({ series, covariates, onUpdate, onRemove, onAdd, canAdd
   );
 }
 
+// The covariates as one compact row above the chart: the first combination's
+// values typed in place; with several combinations, each as a chip (its
+// colour and values), edited in the larger view.
+function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, labelOf }) {
+  const multi = series.length > 1;
+  const first = series[0];
+  return (
+    <div className="calc-cov-row" role="group" aria-label="Covariates">
+      <span className="calc-cov-row-label">{multi ? "Combinations" : "At"}</span>
+      {multi ? (
+        <span className="calc-cov-combos">
+          {series.map((s, i) => (
+            <Chip key={s.id} dot={COLORS[i % COLORS.length]} onClick={onEdit} title="Edit the combinations">
+              {labelOf(s)}
+            </Chip>
+          ))}
+        </span>
+      ) : first && covariates.map((c) => (
+        <label className="calc-cov" key={c.name}>
+          <span>{c.stratum ? `${c.name} (stratum)` : withUnit(c.name, c.unit)}</span>
+          {c.type === "category" ? (
+            <Select value={first.values[c.name]} onChange={(v) => onUpdate(first.id, c.name, v)} options={c.options} />
+          ) : (
+            <input type="number" step="any" value={first.values[c.name]}
+                   onChange={(e) => onUpdate(first.id, c.name, e.target.value)} />
+          )}
+        </label>
+      ))}
+      <span className="calc-cov-actions">
+        {multi && (
+          <button type="button" className="secondary sm" onClick={onEdit} aria-haspopup="dialog">Edit ✎</button>
+        )}
+        {canAdd && (
+          <button type="button" className="secondary sm" onClick={multi ? onAdd : () => { onAdd(); onEdit(); }}
+                  title="Overlay the curve at other covariate values">
+            + Compare another
+          </button>
+        )}
+      </span>
+      {series.map((s) => s.error && <span className="combo-err" key={s.id}>{s.error}</span>)}
+    </div>
+  );
+}
+
 // Calculator tab: chart any of the reliability functions and read them off at a
 // chosen t. For regression models you can add several covariate combinations,
-// each re-evaluated by the backend and overlaid on the chart.
+// each re-evaluated by the backend and overlaid on the chart. ``fill``: the
+// chart fills the tab's height (the model page's frame).
 export default function Calculator({ functions, unit, params, state, setState, nextIdRef, name = null,
-                                     paramLabel = null }) {
+                                     paramLabel = null, fill = false }) {
   const { meta, evaluate_path: evaluatePath } = functions;
   const tLabel = unit ? `t (${unit})` : "t";
   const covariates = functions.covariates || [];
@@ -175,8 +224,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const defaults = () =>
     Object.fromEntries(covariates.map((c) => [c.name, c.default]));
 
-  // Side-rail collapse + "edit in a larger view" modal (local UI only).
-  const [railOpen, setRailOpen] = useState(true);
+  // The axes dialog and the covariate combinations' larger view (local UI only).
   const [covModal, setCovModal] = useState(false);
   const [axisOpen, setAxisOpen] = useState(false);
 
@@ -211,13 +259,20 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const xHiNum = xMax !== "" && !Number.isNaN(Number(xMax)) ? Number(xMax) : null;
   const manualX = xLoNum != null || xHiNum != null;
   const evalRange = manualX ? { xMin: xLoNum, xMax: xHiNum } : undefined;
+  // The axis now, beside its button: "Auto", or the range that's set.
+  const axisUnit = unit ? ` ${unitInText(unit)}` : "";
+  const axisWords = !manualX ? "Auto"
+    : `${xLoNum != null ? formatNumber(xLoNum) : "auto"} to ${xHiNum != null ? formatNumber(xHiNum) : "auto"}${axisUnit}`;
 
   // Confidence bounds — plain, discrete and non-parametric models, and a
   // parametric regression model at each covariate combination (#54); Cox PH
   // has none (``bands_note`` says why). Computed by SurPyval's cb() on demand.
   const confidencePath = functions.confidence_path;
-  const ciLevel = Number(ci.level);
-  const ciValid = confidencePath && ciLevel > 0 && ciLevel < 100;
+  // Percentages typed as 90 (percent.js): 0.9 is asked about, not taken as 0.9%.
+  const pcts = readPercents("calculator", { reliability: String(rTarget ?? ""), level: String(ci.level ?? "") });
+  const ciOk = pcts.checks.level.state === "ok";
+  const ciLevel = ciOk ? pcts.checks.level.percent : Number(ci.level);
+  const ciValid = confidencePath && ciOk;
   const ciAlpha = 1 - ciLevel / 100;
   const bands = ci.bands || {};
   const banded = hasCov ? series : series.slice(0, 1);
@@ -248,15 +303,15 @@ export default function Calculator({ functions, unit, params, state, setState, n
   // from the life path; without one (regression, or parameters only), read
   // off the curve, with no bound.
   const lifePath = functions.life_path;
-  const rNum = Number(rTarget);
-  const rValid = rTarget !== "" && rNum > 0 && rNum < 100;
+  const rValid = pcts.checks.reliability.state === "ok";
+  const rNum = rValid ? pcts.checks.reliability.percent : Number(rTarget);
   const tarBound = ci.bound === "none" ? "lower" : ci.bound;
   // A regression model's time is the first combination's (#54).
   const tarCovariates = hasCov ? series[0]?.values : null;
   const tarKey = `${rNum}|${ciLevel}|${tarBound}|${tarCovariates ? JSON.stringify(tarCovariates) : ""}`;
   const tar = state.tar || {};
   useEffect(() => {
-    if (!timeMode || !lifePath || !rValid || !(ciLevel > 0 && ciLevel < 100)) return undefined;
+    if (!timeMode || !lifePath || !rValid || !ciOk) return undefined;
     if (tar.key === tarKey && (tar.data || tar.error)) return undefined;
     const id = setTimeout(() => {
       lifeAt(lifePath, {
@@ -560,7 +615,18 @@ export default function Calculator({ functions, unit, params, state, setState, n
         </table>
       ) : null}
 
-      <Plot data={traces} layout={layout} download={`${name || "Model"} — ${activeLabel}`} />
+      {hasCov && (
+        <CovariateRow
+          series={series}
+          covariates={covariates}
+          onUpdate={updateValue}
+          onAdd={addSeries}
+          canAdd={series.length < MAX_SERIES}
+          onEdit={() => setCovModal(true)}
+          labelOf={labelOf}
+        />
+      )}
+      <Plot data={traces} layout={layout} download={`${name || "Model"} — ${activeLabel}`} fill={fill} />
         </div>
 
         <div className="calc-side-rail">
@@ -579,17 +645,18 @@ export default function Calculator({ functions, unit, params, state, setState, n
                   ]}
                 />
                 {timeMode ? (
-                  <label className="calc-t">
-                    <span>Reliability %</span>
-                    <input
-                      type="number" inputMode="decimal"
-                      value={rTarget}
-                      min={0.01}
-                      max={99.99}
-                      step="any"
-                      onChange={(e) => setRTarget(e.target.value)}
-                    />
-                  </label>
+                  <>
+                  <PercentField label="Reliability" value={String(rTarget ?? "")} onChange={setRTarget}
+                    check={pcts.checks.reliability} />
+                  <div className="chip-row calc-blives" role="group" aria-label="B-lives">
+                    {B_LIVES.map(([r, b]) => (
+                      <Chip key={b} tone={rNum === r ? "accent" : "neutral"} onClick={() => setRTarget(r)}
+                            aria-pressed={rNum === r} title={`Reliability ${r}%: the ${b} life`}>
+                        {b}
+                      </Chip>
+                    ))}
+                  </div>
+                  </>
                 ) : (
                 <>
                 <label className="calc-t">
@@ -642,104 +709,23 @@ export default function Calculator({ functions, unit, params, state, setState, n
                       />
                     </label>
                     {ci.bound !== "none" && (
-                      <label className="calc-t">
-                        <span>Confidence level %</span>
-                        <input
-                          type="number" inputMode="decimal"
-                          value={ci.level}
-                          min={1}
-                          max={99.9}
-                          step="any"
-                          onChange={(e) => setCi({ level: e.target.value })}
-                        />
-                      </label>
+                      <PercentField label="Confidence level" value={String(ci.level ?? "")}
+                        onChange={(v) => setCi({ level: v })} check={pcts.checks.level} />
                     )}
                   </>
                 )}
                 {!confidencePath && functions.bands_note && (
                   <p className="calc-note">{functions.bands_note}</p>
                 )}
-                <details className="calc-axis" open={axisOpen} onToggle={(e) => setAxisOpen(e.currentTarget.open)}>
-                  <summary>Axis</summary>
-                  <div className="calc-axis-body">
-                    <label className="calc-cov">
-                      <span>Min{unit ? ` (${unit})` : ""}</span>
-                      <input
-                        type="number"
-                        step="any"
-                        placeholder="auto"
-                        value={xMin}
-                        onChange={(e) => setXMin(e.target.value)}
-                      />
-                    </label>
-                    <label className="calc-cov">
-                      <span>Max{unit ? ` (${unit})` : ""}</span>
-                      <input
-                        type="number"
-                        step="any"
-                        placeholder="auto"
-                        value={xMax}
-                        onChange={(e) => setXMax(e.target.value)}
-                      />
-                    </label>
-                    {(xMin !== "" || xMax !== "") && (
-                      <button
-                        type="button"
-                        className="secondary calc-axis-reset"
-                        onClick={() => { setXMin(""); setXMax(""); }}
-                      >
-                        Reset to auto
-                      </button>
-                    )}
-                  </div>
-                </details>
+                <div className="calc-axis">
+                  <button type="button" className="secondary calc-axis-btn" onClick={() => setAxisOpen(true)}
+                          aria-haspopup="dialog">
+                    Axes
+                  </button>
+                  <span className="calc-axis-now">{axisWords}</span>
+                </div>
               </div>
             </div>
-            {hasCov && (
-            <aside className={"calc-rail-card calc-cov-rail" + (railOpen ? "" : " collapsed")}>
-            <div className="calc-cov-rail-head">
-              <button
-                type="button"
-                className="cov-rail-toggle"
-                onClick={() => setRailOpen((o) => !o)}
-                aria-expanded={railOpen}
-              >
-                <span>{railOpen ? "▾" : "▸"}</span> Covariates
-              </button>
-              <button
-                type="button"
-                className="cov-rail-expand"
-                title="Edit in a larger view"
-                aria-label="Edit covariates in a larger view"
-                onClick={() => setCovModal(true)}
-              >
-                ⤢
-              </button>
-            </div>
-            {railOpen && (
-              <div className="calc-cov-rail-body">
-                <CovariateCombos
-                  series={series}
-                  covariates={covariates}
-                  onUpdate={updateValue}
-                  onRemove={removeSeries}
-                  onAdd={addSeries}
-                  canAdd={series.length < MAX_SERIES}
-                />
-              </div>
-            )}
-            </aside>
-            )}
-            {hasCov && (functions.life_path || functions.life_note) && (
-              <RegressionLife
-                path={functions.life_path}
-                note={functions.life_note}
-                values={series[0]?.values}
-                level={ciValid ? ciLevel : 90}
-                unit={unit}
-                dot={multi ? COLORS[0] : null}
-              />
-            )}
             {params && params.length > 0 && (
               <div className="calc-rail-card calc-rail-params">
                 <div className="gofh">Parameters</div>
@@ -763,6 +749,44 @@ export default function Calculator({ functions, unit, params, state, setState, n
           </div>
       </div>
 
+      {axisOpen && (
+        <Modal
+          title="Axes"
+          className="modal-sm calc-axis-modal"
+          onClose={() => setAxisOpen(false)}
+          footer={
+            <div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+              {manualX && (
+                <button type="button" className="secondary" onClick={() => { setXMin(""); setXMax(""); }}>
+                  Reset to auto
+                </button>
+              )}
+              <button type="button" onClick={() => setAxisOpen(false)}>Done</button>
+            </div>
+          }
+        >
+          <fieldset className="calc-axis-group">
+            <legend>Time axis{unit ? ` (${unitInText(unit)})` : ""}</legend>
+            <p className="muted-line">
+              Where the chart starts and ends. Leave a box blank and it fits the model's curves.
+              {evaluatePath ? " The curves are worked out again over the range you set." : ""}
+              {" "}It changes as you type.
+            </p>
+            <div className="calc-axis-body">
+              <label className="calc-cov">
+                <span>From</span>
+                <input type="number" inputMode="decimal" step="any" placeholder="auto" value={xMin}
+                       onChange={(e) => setXMin(e.target.value)} />
+              </label>
+              <label className="calc-cov">
+                <span>To</span>
+                <input type="number" inputMode="decimal" step="any" placeholder="auto" value={xMax}
+                       onChange={(e) => setXMax(e.target.value)} />
+              </label>
+            </div>
+          </fieldset>
+        </Modal>
+      )}
       {hasCov && covModal && (
         <Modal
           title="Covariate combinations"

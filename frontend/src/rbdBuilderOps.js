@@ -58,6 +58,25 @@ export const STEP_Y = 150;
 // A block's size before React Flow has measured it (a component's, as drawn).
 const BLOCK = { w: 171, h: 95 };
 const JUNCTION_W = 26;
+
+// A clear spot for a block added unwired (Add block > Component on a diagram
+// that already has blocks): the spot asked for, moved down a row at a time
+// until it overlaps no block already there. A block dropped on top of
+// another was hidden under it (the selected one draws above), so the add
+// looked as if it had done nothing.
+export function clearSpot(nodes, pos, size = BLOCK) {
+  if (!pos) return pos;
+  const gap = 12;
+  const hits = (p) => nodes.some((n) => {
+    const w = n.width ?? BLOCK.w;
+    const h = n.height ?? BLOCK.h;
+    const { x, y } = n.positionAbsolute ?? n.position ?? { x: 0, y: 0 };
+    return p.x < x + w + gap && x < p.x + size.w + gap && p.y < y + h + gap && y < p.y + size.h + gap;
+  });
+  let p = pos;
+  for (let i = 0; i < 50 && hits(p); i++) p = { x: p.x, y: p.y + size.h + gap * 2 };
+  return p;
+}
 const PAD = 16;
 
 const isEnd = (n) => n?.type === "input" || n?.type === "output";
@@ -103,14 +122,26 @@ export function downstreamOf(edges, ids) {
 }
 
 // Place ``node`` at ``pos`` without covering another block: first by moving
-// the ``shift`` blocks right a step (to make room downstream), then, if
-// something is still in the way, by moving the new block down a row.
+// the ``shift`` blocks (those downstream) right, then, if something is still
+// in the way, by moving the new block down a row. The downstream blocks move
+// right a step if the new block covers anything, and as many steps as it
+// takes to keep each of them to the right of the new block, whatever row
+// they're on: otherwise Output is left behind and the line to it loops back.
 function place(nodes, node, pos, shift = new Set()) {
   let moved = nodes;
   const others = () => moved.filter((n) => n.id !== node.id);
   const box = { ...pos, ...sizeOf(node) };
-  if (shift.size && others().some((n) => overlap(box, boxOf(n)))) {
-    moved = moved.map((n) => (shift.has(n.id) ? { ...n, position: { x: n.position.x + STEP_X, y: n.position.y } } : n));
+  if (shift.size) {
+    const behind = moved.filter((n) => shift.has(n.id) && n.id !== node.id)
+      .map((n) => box.x + box.w + PAD - n.position.x);
+    const steps = Math.max(
+      others().some((n) => overlap(box, boxOf(n))) ? 1 : 0,
+      ...behind.map((d) => Math.ceil(d / STEP_X)),
+    );
+    if (steps > 0) {
+      const dx = steps * STEP_X;
+      moved = moved.map((n) => (shift.has(n.id) ? { ...n, position: { x: n.position.x + dx, y: n.position.y } } : n));
+    }
   }
   for (let i = 0; i < 40 && others().some((n) => overlap(box, boxOf(n))); i += 1) box.y += STEP_Y;
   return { nodes: moved, position: { x: box.x, y: box.y } };
@@ -232,6 +263,20 @@ export function insertOnEdge({ nodes, edges }, edgeIdToSplit, block) {
       link(e, block.id, v.id, taken),
     ]),
   };
+}
+
+// The first block on a new diagram (only Input and Output, nothing joined):
+// it goes between them, wired Input → block → Output, as if inserted on a
+// line from one to the other. Null when the diagram already has anything
+// else, so the block is added unwired where asked.
+export function insertFirst({ nodes, edges }, block, look = {}) {
+  if (edges.length) return null;
+  const input = nodes.find((n) => n.type === "input");
+  const output = nodes.find((n) => n.type === "output");
+  if (!input || !output || nodes.some((n) => !isEnd(n))) return null;
+  const line = { ...look, id: `e-${input.id}-${output.id}`, source: input.id, target: output.id };
+  const out = insertOnEdge({ nodes, edges: [line] }, line.id, block);
+  return out.edges.length === 2 ? out : null;
 }
 
 // Parallel, alongside a block or a line of blocks (``order``, first to

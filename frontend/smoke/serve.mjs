@@ -20,9 +20,16 @@ Object.assign(env, {
   AUTH_DISABLED: "true",
   MAINTENANCE_ENABLED: "true",
   MAINTENANCE_STORE: "mongo",
-  // The single-user mode's fixed user, made an operator so /admin is tested too.
+  // The single-user mode's fixed user, made an operator, so operator-only
+  // behaviour (and any installed extension's operator pages) is tested too.
   ADMIN_EMAILS: "dev@local",
   PUSH_ERROR_ALERTS: "false",
+  // The app as published: optional extensions installed in this Python aren't
+  // loaded, unless SMOKE_EXTENSIONS=true (an extension's own smoke tests).
+  EXTENSIONS_DISABLED: process.env.SMOKE_EXTENSIONS === "true" ? "false" : "true",
+  // Several workers edit the one workspace at once: past the usual 600 changes
+  // a minute the server would refuse them ("Too many changes in the last minute").
+  MAINTENANCE_WRITES_PER_MINUTE: "100000",
   MPLBACKEND: "Agg",
   PYTHONUNBUFFERED: "1",
 });

@@ -2,7 +2,7 @@
 title: "Find the optimal replacement interval"
 task: "How often should I replace this component to minimise cost?"
 category: "Maintenance strategy"
-prerequisites: "A fitted life model, and the cost of a planned replacement versus an unplanned failure."
+prerequisites: "A fitted non-repairable model, and the cost of a planned replacement versus an unplanned failure."
 related_href: "/strategy/replacement"
 related_label: "Open optimal replacement"
 order: 20
@@ -20,8 +20,9 @@ the two costs, you can find it rather than argue about it.
 
 ## What you need
 
-Go to **Strategy → Optimal replacement**, or press **Find a replacement
-interval** under **Use this model** on a saved model's page. It opens on **Saved
+Go to **Decisions → Strategy → Optimal replacement**, or, on a saved model's page, press
+**Use this model** and choose **Find the best replacement interval** (a
+wear-out model also offers it when you click its **Failure pattern**). It opens on **Saved
 model** with that model (or the one you used last) chosen and its time unit
 filled in; pick another, or choose **Parameters** to type a distribution's
 parameters. Then supply two numbers:
@@ -75,11 +76,11 @@ the plant is down anyway costs little; stopping the plant between shuts to do it
 costs more. So the real question becomes: *at each shut, is this part old enough
 to change now, or will it last to the next one?*
 
-That's the **Shutdown calendar** mode. On **Strategy → Optimal replacement**,
+That's the **Shutdown calendar** mode. On **Decisions → Strategy → Optimal replacement**,
 switch the **Replacement mode** from **Age replacement** to
 [Shutdown calendar](/strategy/replacement?mode=calendar), then give it:
 
-- **Life model** — a saved model, or **Parameters** to type a distribution, and
+- **Non-repairable model** — a saved model, or **Parameters** to type a distribution, and
   the **Model time unit** (days, weeks, months, …), so the shut dates can be
   turned into model time.
 - **Shuts** — each with what **Replacing at it costs** and when it comes: every
@@ -134,6 +135,6 @@ year, rather than when to replace one item, that's
 And if you're deciding among several candidate policies, save each analysis —
 Reliafy keeps them under Strategy so you can compare and cite
 them later, which matters when someone asks in six months why the interval is
-what it is. An [RCM study](/rcm) can cite a saved analysis as the evidence for a
-failure mode's maintenance task: see
-[running an RCM study](/guides/rcm-study).
+what it is. An RCM decision on your asset tree can cite a saved analysis as the
+evidence for a failure mode's maintenance task: see
+[building RCM on your asset tree](/guides/rcm-on-your-asset-tree).

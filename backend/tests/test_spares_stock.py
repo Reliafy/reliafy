@@ -351,12 +351,12 @@ def test_fleet_spares_over_mcp(env):
     from backend.tests.test_fleet_alerts import _mcp_fleet
 
     fid = _mcp_fleet(env)
-    out = _ok(_call(env.token[A], "strategy", {"action": "fleet_forecast", "fleet_id": fid,
+    out = _ok(_call(env.token[A], "analyse", {"action": "fleet_forecast", "fleet_id": fid,
                                                "spares": {"lead_time": 3, "stock": 0}}))
     sp = out["forecast"]["spares"]
     assert sp["status"] == "ok" and sp["lead_time"] == 3 and sp["risk_at_stock"] >= 0 and sp["summary"]
-    plain = _ok(_call(env.token[A], "strategy", {"action": "fleet_forecast", "fleet_id": fid}))
+    plain = _ok(_call(env.token[A], "analyse", {"action": "fleet_forecast", "fleet_id": fid}))
     assert "spares" not in plain["forecast"]
-    bad = _call(env.token[A], "strategy", {"action": "fleet_forecast", "fleet_id": fid,
+    bad = _call(env.token[A], "analyse", {"action": "fleet_forecast", "fleet_id": fid,
                                            "spares": {"lead_time": -1}})
     assert "lead time" in _err(bad)

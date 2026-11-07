@@ -20,6 +20,10 @@ MONGODB_TIMEOUT_MS = int(os.environ.get("MONGODB_TIMEOUT_MS", "3000"))
 # Upload ceiling for CSV datasets. Raw bytes are stored inside the Mongo
 # document, whose hard limit is 16MB — stay well under it.
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
+# A dataset's two tables (its life data and its measurements) live in one
+# document: together they stay under this, so the document (with its columns,
+# checksums and preview-free metadata) never nears Mongo's 16 MB.
+MAX_DATASET_BYTES = int(os.environ.get("MAX_DATASET_BYTES", str(12 * 1024 * 1024)))
 # Shape limits for a CSV read into a DataFrame (uploads and stored datasets).
 # Life data is long and narrow; these sit far above any real dataset while
 # keeping one parse's memory bounded.
@@ -69,6 +73,19 @@ if AUTH_DISABLED and os.environ.get("K_SERVICE"):
         "Single-user mode is for local and self-hosted installs only; unset "
         "AUTH_DISABLED for this deployment."
     )
+
+# A private test site: when ALLOWED_EMAILS is set (comma-separated), only those
+# verified addresses may use the API; every other signed-in account gets a 403.
+# Empty (the default) leaves sign-in open, as on reliafy.com.
+ALLOWED_EMAILS = {
+    e.strip().lower()
+    for e in os.environ.get("ALLOWED_EMAILS", "").split(",")
+    if e.strip()
+}
+
+# Shows the menu's placeholder entries (pages not built yet) so its structure
+# can be tried; set on a private test site only. Off by default.
+MENU_PREVIEW = _truthy(os.environ.get("MENU_PREVIEW"))
 
 # ---- Client address ----------------------------------------------------------
 # Rate limits and the visitor hash key on the client IP taken from
@@ -125,6 +142,15 @@ ADMIN_EMAILS = {
     if e.strip()
 }
 
+# Operator support replies (POST /api/v1/support/replies): replies to mail sent
+# to the support inbox, sent over the SMTP settings above. Inert without SMTP.
+SUPPORT_FROM = os.environ.get("SUPPORT_FROM", "hello@reliafy.com").strip()
+SUPPORT_FROM_NAME = os.environ.get("SUPPORT_FROM_NAME", "Reliafy support").strip()
+# A blind copy of every reply, so the sent reply shows in the support inbox.
+# Set it empty to send no copy.
+SUPPORT_COPY_TO = os.environ.get("SUPPORT_COPY_TO", "hello@reliafy.com").strip()
+SUPPORT_REPLIES_PER_HOUR = _int("SUPPORT_REPLIES_PER_HOUR", 20)
+
 # Salt for the daily visitor hash in first-party analytics. Any stable value
 # works; setting a private one in prod stops anyone recomputing hashes from
 # guessed (day, ip, ua) tuples.
@@ -144,10 +170,15 @@ FREE_MAX_RBDS = _int("FREE_MAX_RBDS", 1)
 # Degradation/RUL is the flagship feature: free gets a taste, Pro gets fleets.
 FREE_MAX_DEGRADATION_MODELS = _int("FREE_MAX_DEGRADATION_MODELS", 1)
 FREE_MAX_TRACKED_ITEMS = _int("FREE_MAX_TRACKED_ITEMS", 3)
-FREE_MAX_RCM_STUDIES = _int("FREE_MAX_RCM_STUDIES", 1)
 FREE_MAX_FLEETS = _int("FREE_MAX_FLEETS", 1)
 # Outage logs (an RBD's observed up/down history, issue #159).
 FREE_MAX_OUTAGE_LOGS = _int("FREE_MAX_OUTAGE_LOGS", 1)
+# Fault trees built by hand (backend/services/fault_trees.py), as many as RBDs.
+FREE_MAX_FAULT_TREES = _int("FREE_MAX_FAULT_TREES", 1)
+# Saved reliability and maintainability predictions, likewise as many as RBDs:
+# enough to do one useful study each on Free.
+FREE_MAX_RELIABILITY_PREDICTIONS = _int("FREE_MAX_RELIABILITY_PREDICTIONS", 1)
+FREE_MAX_MAINTAINABILITY_PREDICTIONS = _int("FREE_MAX_MAINTAINABILITY_PREDICTIONS", 1)
 
 # Retired Agent plan (US$2/month, MCP only; sold briefly in October 2026, no
 # longer offered — MCP is part of Pro). Existing subscribers keep these caps,
@@ -157,9 +188,11 @@ AGENT_MAX_MODELS = _int("AGENT_MAX_MODELS", 50)
 AGENT_MAX_RBDS = _int("AGENT_MAX_RBDS", 25)
 AGENT_MAX_DEGRADATION_MODELS = _int("AGENT_MAX_DEGRADATION_MODELS", 10)
 AGENT_MAX_TRACKED_ITEMS = _int("AGENT_MAX_TRACKED_ITEMS", 50)
-AGENT_MAX_RCM_STUDIES = _int("AGENT_MAX_RCM_STUDIES", 10)
 AGENT_MAX_FLEETS = _int("AGENT_MAX_FLEETS", 5)
 AGENT_MAX_OUTAGE_LOGS = _int("AGENT_MAX_OUTAGE_LOGS", 10)
+AGENT_MAX_FAULT_TREES = _int("AGENT_MAX_FAULT_TREES", 25)
+AGENT_MAX_RELIABILITY_PREDICTIONS = _int("AGENT_MAX_RELIABILITY_PREDICTIONS", 25)
+AGENT_MAX_MAINTAINABILITY_PREDICTIONS = _int("AGENT_MAX_MAINTAINABILITY_PREDICTIONS", 25)
 # Availability (Monte-Carlo) simulation is not part of the Agent plan: it stays
 # Pro (billing.premium_compute_allowed) on every surface.
 
@@ -174,7 +207,7 @@ MCP_AGENT_DAILY_CALLS = _int("MCP_AGENT_DAILY_CALLS", 2000)
 # keeps the web instance billed until the platform's own timeout.
 MCP_REQUEST_TIMEOUT_S = _int("MCP_REQUEST_TIMEOUT_S", 60)
 # The MCP connector's on/off switch (backend/services/mcp_switch.py) is kept
-# in the database and set from the Admin page. MCP_ENABLED overrides it:
+# in the database (app_settings). MCP_ENABLED overrides it:
 # true forces MCP on, false forces it off; unset (or anything else) leaves
 # it to the stored switch, whose default is off on the cloud and on for a
 # self-hosted install (billing off).
@@ -304,6 +337,14 @@ MAINTENANCE_STORE = (os.environ.get("MAINTENANCE_STORE") or "auto").strip().lowe
 MAINTENANCE_DB_PATH = os.environ.get("MAINTENANCE_DB_PATH") or os.path.expanduser(
     "~/.reliafy/maintenance.sqlite"
 )
+# How many MB of PDFs one maintenance workspace may keep (documents stored in
+# the app rather than linked; each is at most 20 MB). The bytes live beside the
+# event log: in MongoDB for a deployment, so keep this well within its storage.
+MAINTENANCE_DOCUMENT_BYTES = int(float(os.environ.get("MAINTENANCE_DOCUMENT_MB") or 100) * 1024 * 1024)
+# Changes one maintenance workspace may start per minute (anything more is
+# refused with "Too many changes in the last minute"). The smoke suite raises
+# it: several browsers editing one workspace at once go past the usual 600.
+MAINTENANCE_WRITES_PER_MINUTE = int(os.environ.get("MAINTENANCE_WRITES_PER_MINUTE") or 600)
 # Where the graph projected from the log lives (docs/maintenance-graph.md):
 # "sqlite" (the default: in this process, in memory for a mongo log) or
 # "neo4j" (one shared graph in Neo4j: every read is a round trip to it, so only
@@ -460,7 +501,7 @@ RBD_RUN_PRO_TTL_DAYS = _int("RBD_RUN_PRO_TTL_DAYS", 90)
 # max instances × concurrency; the queue's max concurrent dispatches).
 COMPUTE_MACHINE = (os.environ.get("COMPUTE_MACHINE") or "").strip() or "compute"
 COMPUTE_PARALLEL_JOBS = _int("COMPUTE_PARALLEL_JOBS", 2)
-# MCP rbd_analysis analyze waits this long for a queued simulation before answering
+# MCP analyse rbd waits this long for a queued simulation before answering
 # with the job id (the agent then calls get kind job).
 MCP_JOB_WAIT_S = _float("MCP_JOB_WAIT_S", 20.0)
 
@@ -494,8 +535,8 @@ LIFECYCLE_CRON_SA = (os.environ.get("LIFECYCLE_CRON_SA") or "").strip() or None
 # One scheduled job, POST /internal/content/run, called by Cloud Scheduler
 # with an OIDC token (same check as the lifecycle job): it emails an approved
 # What's new (frontmatter `send: auto`) — a test copy to the operators on the
-# Friday before, the list at 10:00 Brisbane on its date — and the operators'
-# monthly content report on the 1st. See ops/content-pipeline.md.
+# Friday before, the list at 10:00 Brisbane on its date — and runs any steps
+# installed extensions add. See ops/content-pipeline.md.
 # Either of the first two unset = the endpoint refuses every call.
 CONTENT_CRON_AUDIENCE = (os.environ.get("CONTENT_CRON_AUDIENCE") or "").strip() or None
 CONTENT_CRON_SA = (os.environ.get("CONTENT_CRON_SA") or "").strip() or None
@@ -508,7 +549,7 @@ UPDATE_EMAIL_EXCLUDE = {
     for e in os.environ.get("UPDATE_EMAIL_EXCLUDE", "").split(",")
     if e.strip()
 }
-# Who gets the test copies and the monthly report (comma-separated);
+# Who gets the test copies (comma-separated);
 # defaults to ADMIN_EMAILS.
 CONTENT_OPERATOR_EMAILS = sorted(
     {e.strip().lower() for e in os.environ.get("CONTENT_OPERATOR_EMAILS", "").split(",") if e.strip()}

@@ -25,7 +25,7 @@ HORIZON_DAYS = 14
 
 
 def _digest(work_orders: list[dict], overdue: list[dict], proposals=(), short_spares=(),
-            forecast_short=(), below_reorder=()) -> tuple[str, str]:
+            forecast_short=(), below_reorder=(), skipped=()) -> tuple[str, str]:
     n = len(work_orders)
     parts = [f"{n} new work order{'s' if n != 1 else ''}"] if n else []
     if proposals:
@@ -35,13 +35,17 @@ def _digest(work_orders: list[dict], overdue: list[dict], proposals=(), short_sp
     for w in work_orders:
         where = (w.get("subject") or w.get("position") or {}).get("name", "")
         lines.append(f"  #{w['number']} {w['title']} ({where}), due {w.get('due') or 'now'}")
+    if skipped:
+        lines += ["", "Tasks that couldn't get a work order (the others did):"]
+        for k in skipped[:10]:
+            lines.append(f"  {k['task']['name']}: {k['why']}")
     if overdue:
         lines += ["", f"Overdue: {len(overdue)} task{'s' if len(overdue) != 1 else ''}."]
         for t in overdue[:10]:
             lines.append(f"  {t['name']} ({(t.get('subject') or t.get('position') or {}).get('name', '')}), "
                          f"due {t['next_due']}")
     if proposals:
-        lines += ["", "The records changed a life model, and it proposes:"]
+        lines += ["", "The records changed a non-repairable model, and it proposes:"]
         for pr in proposals:
             to = pr.get("proposed")
             change = f"every {to['interval']:g} {to['unit']}" if to else "run to failure"
@@ -75,13 +79,20 @@ def _run_org(db, store, org: str, result: dict, dry_run: bool, email_service) ->
     """The daily run for one organisation: its work orders, refits and digest."""
     m = Maintenance(store, org, "scheduler", limited=False, time_zone=time_zones.of_owner(db, org))
     if dry_run:
-        due = [t for t in m.due_tasks(HORIZON_DAYS) if not t["open_work_order"]]
+        # A task in an active work package goes on its package's work order, not its own.
+        due = [t for t in m.due_tasks(HORIZON_DAYS)
+               if not t["open_work_order"] and not (t.get("package") or {}).get("active")]
         result["orgs"] += 1
-        result["work_orders"] += len(due)
+        result["work_orders"] += len(due) + m.packages_due(HORIZON_DAYS)
         return
-    made = m.generate_work_orders(HORIZON_DAYS)
+    # Each task stands alone: one that can't have its work order is reported in
+    # the result and the digest, and the rest still get theirs.
+    generated = m.generate(HORIZON_DAYS)
+    made, skipped = generated["work_orders"], generated["skipped"]
     result["orgs"] += 1
     result["work_orders"] += len(made)
+    if skipped:
+        result["skipped_tasks"] = result.get("skipped_tasks", 0) + len(skipped)
     before = {pr["id"] for pr in m.proposals("pending")}
     try:
         refitted = loop.refit_stale(m, db)
@@ -105,7 +116,8 @@ def _run_org(db, store, org: str, result: dict, dry_run: bool, email_service) ->
     except Exception:  # noqa: BLE001 - a forecast that fails mustn't stop the digest
         logger.exception("maintenance forecast for the digest failed for %s", org)
         forecast_short, below_reorder = [], []
-    subject, body = _digest(made, overdue, new_proposals, m.critical_spares_short(), forecast_short, below_reorder)
+    subject, body = _digest(made, overdue, new_proposals, m.critical_spares_short(), forecast_short, below_reorder,
+                            skipped)
     email_service.send(user["email"], subject, body)
     result["emails"] += 1
 

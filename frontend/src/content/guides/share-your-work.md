@@ -3,7 +3,7 @@ title: "Share models and diagrams with other people"
 task: "How do I show a colleague my analysis, or work on it as a team?"
 category: "Getting started"
 prerequisites: "Something saved — a model, diagram, or analysis."
-related_href: "/modelling"
+related_href: "/models"
 related_label: "Open saved models"
 order: 45
 ---
@@ -14,8 +14,8 @@ situations.
 
 ## A public link — for people who don't have Reliafy
 
-Open any saved model, diagram, or analysis, open the **⋯** menu at the top right
-of the page and choose **Share**. Under **Public links**, give the link a label if
+Open any saved model, diagram, or analysis and choose **Share**: on a model's
+page it's a button at the top right; elsewhere it's in the **⋯** menu there. Under **Public links**, give the link a label if
 you like ("for the client"), choose when it **Expires**, and press **Create public
 link**. You get a URL that anyone can open, with no account and no sign-in,
 showing a read-only view of the result, with the analyses it relies on.
@@ -50,6 +50,12 @@ to print. **Draft notes** has the assistant word the introduction from the
 items' saved figures (it uses AI credits); read it through before publishing,
 and it flags any figure it can't find in the saved results.
 
+### Everything you've shared, in one place
+
+[Reports](/reports) in the menu lists your reports (open one to edit it, or
+press **New report** to start one there), your saved analyses, and every live
+share link with what it shows, so you can see at a glance what's out there.
+
 ## Sharing with a named person — for a specific colleague
 
 In the same dialog, **Share with (email)** shares that one artifact with someone
@@ -66,7 +72,7 @@ together.
 
 Create one from the workspace switcher at the top right (**＋ New team…**), and everything created
 inside it belongs to the team rather than to you — datasets, models, diagrams,
-studies. Members see it all, and the switcher moves you between your personal
+analyses. Members see it all, and the switcher moves you between your personal
 workspace and any teams you belong to.
 
 Invite people from the [team's settings](/team) by email address. They join when they

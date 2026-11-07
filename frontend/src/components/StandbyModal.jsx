@@ -9,17 +9,17 @@ import { BlockNameField, MeanEcho } from "./LifeModelModal.jsx";
 import RbdMeanCheck from "./RbdMeanCheck.jsx";
 
 // In a repairable diagram (#156) the block is a standby group of identical
-// units: the duty unit and its spares each fail by the life model and are
+// units: the duty unit and its spares each fail by the non-repairable model and are
 // repaired by the repair-time model, each failed unit a job for the
 // diagram's repair crews — or, "repaired one unit at a time", for the
 // group's own single repairer. It takes costs (per unit failure) and a crew
 // priority, not scheduled maintenance.
 
-// Configure a standby-redundancy block: the active unit's life model, the
+// Configure a standby-redundancy block: the active unit's non-repairable model, the
 // number of spares, and how the idle spares age — cold (not at all), warm (at a
 // fraction of the running rate, the dormancy factor) or hot (like a running
 // unit). Cold standby also takes the start-success probability and an optional
-// separate life model for the spares.
+// separate non-repairable model for the spares.
 const KINDS = [
   { id: "cold", label: "Cold", hint: "Idle spares don't age; each must start when switched in." },
   { id: "warm", label: "Warm", hint: "Idle spares age at a fraction of the running rate, and can fail before they're needed." },
@@ -119,7 +119,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
       <section className="rbd-dlg-sec">
         <h3>Failure</h3>
         <ModelPicker
-          label="Each unit's life model"
+          label="Each unit's non-repairable model"
           value={model}
           onChange={setModel}
           rbdBlock

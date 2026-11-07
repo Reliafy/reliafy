@@ -14,7 +14,7 @@ persisted (normalised) graph and returns:
   standby switching and sub-systems' insides aren't expanded — a block is one
   event here.
 
-Pure graph work: no life models are read, so it also describes a diagram
+Pure graph work: no non-repairable models are read, so it also describes a diagram
 whose blocks still need one. Sizes are bounded (:data:`MAX_BLOCKS`,
 :data:`MAX_CUT_SETS`); past them the field is ``None``.
 """
@@ -238,7 +238,7 @@ def _product(lists: list[list[frozenset]]) -> list[frozenset]:
 
 def structure_line(graph: dict) -> Optional[str]:
     """Just the one-line structure of :func:`describe` (no cut sets): for
-    rbd create / rbd edit results (#265). ``None`` when it can't be given."""
+    change rbd_create / change rbd_edit results (#265). ``None`` when it can't be given."""
     return describe(graph, cut_sets=False)["structure"]
 
 

@@ -7,7 +7,7 @@ import { ShowMeHow } from "./Walkthrough.jsx";
 import { openGuide } from "./HelpButton.jsx";
 import { getWalkthrough } from "../walkthroughs.js";
 import { SampleGroups } from "./LibRows.jsx";
-import { SECTIONS } from "../sections.js";
+import { useNavCrumbs } from "../RolesProvider.jsx";
 
 // One template for every section's landing page and its children's pages:
 //
@@ -19,7 +19,7 @@ import { SECTIONS } from "../sections.js";
 //            one empty state that points at the samples and the guide.
 //
 // A section's own landing page has no label above its title; a child page
-// (Modelling › Life models) shows its section there, linked.
+// (Models › Non-repairable) shows its menu entry there, linked.
 
 // "Show me how": the section's walkthrough when it has one (it opens a sample
 // and points at each step), else its how-to guide in the Help drawer.
@@ -36,14 +36,15 @@ export function ShowMe({ help, children = "Show me how" }) {
   );
 }
 
-//   section  key in SECTIONS: set on a child page, so its section shows above the title
+//   section  the menu entry's id (navigation.js): on a child page its label
+//            shows above the title, linked (none on the entry's landing page)
 //   title, purpose, help ({ walkthrough?, guide? }), primary, actions, menu
 export function SectionHeader({ section, title, purpose, help, primary, actions, menu, children }) {
-  const parent = section ? SECTIONS[section] : null;
+  const crumbs = useNavCrumbs(section);
   return (
     <PageHeader
       className="section-header"
-      crumbs={parent ? [{ label: parent.label, to: parent.to }] : []}
+      crumbs={section ? crumbs : []}
       title={title}
       meta={(purpose || help) && (
         <span className="sh-purpose">
@@ -62,13 +63,16 @@ export function SectionHeader({ section, title, purpose, help, primary, actions,
 
 // The one starter banner a section may show: an icon, a title, a line, and a
 // link (or a button) to start.
-export function SectionStarter({ icon, title, body, to, state, onClick, cta = "Start" }) {
+// ``terms``: an optional quieter line after the plain description (a
+// standard's vocabulary, for the people who search for it).
+export function SectionStarter({ icon, title, body, terms, to, state, onClick, cta = "Start" }) {
   return (
     <div className="sif-card section-starter">
       {icon && <span className="sif-card-ic">{icon}</span>}
       <div className="sif-card-body">
         <b>{title}</b>
         <span>{body}</span>
+        {terms && <small className="sif-card-terms">{terms}</small>}
       </div>
       {to ? (
         <Link className="sif-card-cta" to={to} state={state} onClick={onClick}>{cta} →</Link>
@@ -107,11 +111,13 @@ export function SectionEmpty({ title, body, action, help }) {
 //   className extra class on the table's wrapper (e.g. "ds-lib")
 //   tagsOf    optional (row) => its tags: chips that filter the list (a row must
 //             have every chip that's on)
+//   initialType a type to filter by on arrival (a link's ?kind=)
 export function SectionList({
   rows, noun, fields, types, typeOf, tagsOf, head, render, empty, help, placeholder, className = "",
+  initialType = "",
 }) {
   const [query, setQuery] = useState("");
-  const [type, setType] = useState("");
+  const [type, setType] = useState(initialType || "");
   const [on, setOn] = useState([]);
   if (rows === null || rows === undefined) return <div className="card empty">Loading…</div>;
   if (!rows.length) return <SectionEmpty {...empty} help={help} />;
@@ -144,13 +150,14 @@ export function SectionList({
           </div>
         )}
         <span className="grow" />
-        {present.length > 1 && (
+        {(present.length > 1 || type) && (
           <Select
             className="section-type-filter"
             ariaLabel="Type"
             value={type}
             onChange={setType}
-            options={[{ value: "", label: "All types" }, ...present]}
+            options={[{ value: "", label: "All types" }, ...(type && !present.some((t) => t.value === type)
+              ? [...present, ...types.filter((t) => t.value === type)] : present)]}
           />
         )}
         <ListSearch value={query} onChange={setQuery} placeholder={placeholder || `Search ${many}…`} />

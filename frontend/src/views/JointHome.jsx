@@ -4,14 +4,16 @@ import { listJointModels, deleteJointModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import { CATEGORY } from "../plotTheme.js";
 import Chip from "../components/ui/Chip.jsx";
-import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const JOINT_COLOR = CATEGORY.blue;
 const HELP = { guide: "condition-based-risk" };
 
-// Condition monitoring models (joint models of readings and failures): the
-// list, like the other model types'. The fit lives on /modelling/joint/new.
+// Condition and life models (joint models of readings and failures): the
+// list, like the other model types'. The fit lives on /models/joint/new.
 export default function JointHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
@@ -20,11 +22,9 @@ export default function JointHome() {
   const refresh = () => listJointModels().then((r) => setModels(r.models)).catch(() => setModels([]));
   useEffect(() => { refresh(); }, []);
 
+  const confirm = useConfirm();
   const onDelete = async (m) => {
-    const msg = m.is_sample
-      ? `Remove the sample “${itemName(m)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete “${m.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(m, "model", { name: itemName(m) })))) return;
     try {
       await deleteJointModel(m.id);
       refresh();
@@ -33,13 +33,13 @@ export default function JointHome() {
     }
   };
 
-  const open = (id) => navigate(`/modelling/joint/${id}`);
-  const newModel = <button onClick={() => navigate("/modelling/joint/new")}><PlusIcon /> New model</button>;
+  const pathOf = (id) => `/models/joint/${id}`;
+  const newModel = <button onClick={() => navigate("/models/joint/new")}><PlusIcon /> New model</button>;
 
   return (
     <div className="app">
       <SectionHeader
-        section="modelling"
+        section="models"
         title="Remaining life from condition readings"
         purpose="Combine readings (vibration, wear, oil debris) and failure history to see each unit's risk and remaining life."
         help={HELP}
@@ -52,8 +52,8 @@ export default function JointHome() {
         fields={(m) => [m.name, m.marker, m.path_model]}
         help={HELP}
         empty={{
-          title: "No condition monitoring models yet",
-          body: "Fit one from two tables: your units (each one's age at failure, or now, and whether it failed) and their readings (unit, age, value).",
+          title: "No condition and life models yet",
+          body: "Fit one from a dataset holding your units' life data (each one's age at failure, or now, and whether it failed) and their measurements (unit, age, value).",
           action: newModel,
         }}
         head={[
@@ -65,10 +65,10 @@ export default function JointHome() {
           <th key="a"><span className="sr-only">Actions</span></th>,
         ]}
         render={(m) => (
-          <tr key={m.id} className="lib-row" onClick={() => open(m.id)}>
+          <tr key={m.id} className="lib-row" onClick={rowOpen(navigate, pathOf(m.id))}>
             <td>
               <div className="lib-name">
-                {itemName(m)}
+                <RowLink to={pathOf(m.id)}>{itemName(m)}</RowLink>
                 {m.shared_by && <Chip title={`Shared by ${m.shared_by}`}>Shared</Chip>}
               </div>
             </td>
@@ -78,7 +78,7 @@ export default function JointHome() {
             <td className="lib-n lib-opt">{(m.n_items ?? 0).toLocaleString()}</td>
             <td className="lib-n lib-opt">{(m.n_running ?? 0).toLocaleString()}</td>
             <td className="lib-date lib-opt">{relativeTime(m.created_at)}</td>
-            <RowActions item={m} onOpen={() => open(m.id)} onDelete={() => onDelete(m)} />
+            <RowActions item={m} to={pathOf(m.id)} onDelete={() => onDelete(m)} />
           </tr>
         )}
       />

@@ -32,9 +32,10 @@ on the [What's new](https://reliafy.com/whats-new) page.
 - **Degradation & RUL** — fit per-unit degradation paths to a failure
   threshold, then track in-service items and predict when each will cross it
   (remaining useful life with credible intervals).
-- **RCM studies** — Function → Functional failure → Failure mode worksheets
-  where every maintenance decision links to the analysis that justifies it,
-  re-validated live (supported / contradicted / inconclusive).
+- **RCM on your asset tree** — functions → functional failures → failure
+  modes on each position, where every maintenance decision links to the
+  analysis that justifies it, re-validated live (supported / contradicted /
+  inconclusive).
 - **Maintenance strategy** — rank candidate distributions against your data,
   compare two designs head-to-head, and find the cost-optimal
   preventive-replacement interval.
@@ -62,6 +63,7 @@ to explore.
 | `MONGODB_DB` | `reliafy` | Database name. |
 | `SEED_SAMPLES` | `true` | Seed shared sample datasets/models/RBDs on startup (idempotent). |
 | `PORT` | `8000` | Port the server listens on. |
+| `MAINTENANCE_WRITES_PER_MINUTE` | `600` | Changes one Maintenance workspace may start per minute; more are refused with "Too many changes in the last minute". |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | _(unset)_ | Optional: set your own provider key to enable the built-in **AI assistant** on your instance (with `AI_PROVIDER` = `anthropic` (default) or `openai`, and optional `AI_MODEL`). Without a key the assistant is hidden. |
 
 The frontend build has one flag: `VITE_AUTH_DISABLED=true` (a Docker build arg
@@ -154,6 +156,7 @@ env reference for operators:
 | `AI_PROVIDER`, `AI_MODEL`, `AI_MARKUP` | The metered assistant's provider/model/markup. |
 | `PRO_MONTHLY_CREDIT_CENTS` | AI credit included with each month of Pro (granted per paid invoice; default 1000). |
 | `ADMIN_EMAILS` | Comma-separated operator emails with full access regardless of payment (no plan caps, AI not credit-checked). |
+| `EXTENSIONS_DISABLED` | `true` skips optional extensions: installed packages in the `reliafy.extensions` entry-point group that add API routes and pages (see `backend/extensions.py`). Nothing installed, nothing changes. |
 | `PUSHOVER_TOKEN`, `PUSHOVER_USER` | Operator push notifications (new signups, crashes) via [Pushover](https://pushover.net). Unset → falls back to email, then to a log line. |
 | `PUSH_ERROR_ALERTS` | Push an alert when the server hits an unexpected error (default on wherever Pushover is configured). Throttled: same fault once per 30 min, 8 per hour. Set `false` to keep a dev machine quiet. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` | Outbound email for team invites and share notifications. Unset → every send is a logged no-op. |

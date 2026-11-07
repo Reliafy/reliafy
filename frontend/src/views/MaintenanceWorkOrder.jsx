@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import {
   addPartUsed, addWorkCost, cancelWorkOrder, checkWorkItem, closeWorkOrder, getWorkOrder, listMaintenanceLocations,
   listMaintenanceParts, logLabour, removeWorkEntry,
@@ -12,6 +13,8 @@ import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { partChoices, stockText } from "../maintenanceSpares.js";
 import { actionKinds, itemAtText, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
+import { tooLong } from "../maintenanceText.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const STATUS_LABELS = {
   open: "open", planned: "planned", in_progress: "in progress", waiting: "waiting", closed: "closed", cancelled: "cancelled",
@@ -38,11 +41,12 @@ export default function MaintenanceWorkOrder() {
   }, [id]);
   useEffect(() => refresh(), [refresh]);
 
-  if (error && !wo) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !wo) return <div className="app"><LoadFailed header error={error} notFound="Work order not found." to="/maintenance" label="Back to Maintenance" /></div>;
   if (!wo) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   return (
     <div className="app">
+      <PageTitle name={wo && `#${wo.number} ${wo.title}`} />
       <PageHeader
         crumbs={[{ label: "Maintenance", to: "/maintenance" },
           ...(wo.subject ? [{ label: wo.subject.name, to: subjectPath(wo.subject) }] : [])]}
@@ -73,7 +77,7 @@ export default function MaintenanceWorkOrder() {
       {wo.warranty && (
         <div className="maint-ask">
           <p><strong>Under warranty.</strong>{" "}
-            {wo.warranty.item && <Link to={`/maintenance/items/${wo.warranty.item.id}`}>{wo.warranty.item.name}</Link>}
+            {wo.warranty.item && <Link to={`/asset-register/items/${wo.warranty.item.id}`}>{wo.warranty.item.name}</Link>}
             {" "}was in warranty when this was raised (until {fmtDate(wo.warranty.ends_on)}). Check the warranty before paying for the work.</p>
           {wo.warranty.coverage && <p className="lib-date">Covers: {wo.warranty.coverage}</p>}
           {wo.warranty.terms && <p className="lib-date" style={{ whiteSpace: "pre-wrap" }}>{wo.warranty.terms}</p>}
@@ -103,7 +107,7 @@ export default function MaintenanceWorkOrder() {
               <input type="checkbox" checked={c.done} disabled={["closed", "cancelled"].includes(wo.status)}
                      onChange={async (e) => setWo(await checkWorkItem(wo.id, i, e.target.checked))} />
               <span style={c.done ? { textDecoration: "line-through", color: "var(--muted)" } : null}>
-                {c.position_id ? <Link to={`/maintenance/positions/${c.position_id}`}>{c.text}</Link> : c.text}</span>
+                {c.position_id ? <Link to={`/asset-register/positions/${c.position_id}`}>{c.text}</Link> : c.text}</span>
             </label>
           ))}
         </section>
@@ -301,9 +305,9 @@ function EditWorkOrder({ wo, onClose, onDone }) {
   const [planned, setPlanned] = useState(wo.planned_for || "");
   const [trade, setTrade] = useState(wo.trade || "");
   return (
-    <FormModal title="Edit work order" submitLabel="Save" canSubmit={!!title.trim()} onClose={onClose}
+    <FormModal title="Edit work order" submitLabel="Save" canSubmit={!!title.trim() && !tooLong(title)} onClose={onClose}
                onSubmit={async () => onDone(await updateWorkOrder(wo.id, { title, due, assignee, planned_for: planned, trade }))}>
-      <Field label="Title"><input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
+      <Field label="Title" text={title} hint="put the detail in the notes"><input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
       <Field label="Who may do it: trade, licence or competency"><input value={trade} placeholder="e.g. Licensed electrician"
              onChange={(e) => setTrade(e.target.value)} /></Field>
       <Field label="Assigned to"><input value={assignee} placeholder="a name" onChange={(e) => setAssignee(e.target.value)} /></Field>

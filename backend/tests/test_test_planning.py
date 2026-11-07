@@ -303,26 +303,26 @@ def test_simulation_queues_a_job(client, monkeypatch):  # noqa: F811
 
 def test_mcp_actions(env):  # noqa: F811
     tok = env.token[A]
-    seq = _ok(_call(tok, "life_data_analysis", {"action": "plan_sequential_test", "mtbf": 1000,
+    seq = _ok(_call(tok, "analyse", {"action": "plan_sequential_test", "mtbf": 1000,
                                                 "design_mtbf": 2000, "unit": "hours", "failures_seen": 0,
                                                 "time_seen": 5000}))
     assert seq["decision"]["verdict"] == "accept" and seq["boundaries"][0]["failures"] == 0
     assert "oc_curve" not in seq
-    att = _ok(_call(tok, "life_data_analysis", {"action": "plan_sequential_test", "method": "attribute",
+    att = _ok(_call(tok, "analyse", {"action": "plan_sequential_test", "method": "attribute",
                                                 "reliability": 0.9, "design_reliability": 0.97}))
     assert len(att["boundaries"]) < att["max_units"]  # stepped rows, not one per unit
-    life = _ok(_call(tok, "life_data_analysis", {"action": "plan_life_test", "params": WEIBULL, "units": 30,
+    life = _ok(_call(tok, "analyse", {"action": "plan_life_test", "params": WEIBULL, "units": 30,
                                                  "censor_time": 500}))
     assert life["n"] == 30 and "curve" not in life
-    alt = _ok(_call(tok, "life_data_analysis", {"action": "plan_accelerated_test", "life_params": ARRHENIUS,
+    alt = _ok(_call(tok, "analyse", {"action": "plan_accelerated_test", "life_params": ARRHENIUS,
                                                 "shape": 2, "use_stress": [323], "high_stress": 393, "units": 40,
                                                 "censor_time": 1000}))
     assert [r["units"] for r in alt["rows"]] and "fractions" not in alt
-    cmp_ = _ok(_call(tok, "life_data_analysis", {"action": "plan_comparison", "kind": "logrank",
+    cmp_ = _ok(_call(tok, "analyse", {"action": "plan_comparison", "kind": "logrank",
                                                  "solve_for": "sample_size", "hazard_ratio": 0.6,
                                                  "event_probability": 0.5}))
     assert cmp_["events"] == 121
-    assert "must be above" in _err(_call(tok, "life_data_analysis", {"action": "plan_sequential_test",
+    assert "must be above" in _err(_call(tok, "analyse", {"action": "plan_sequential_test",
                                                                      "mtbf": 1000, "design_mtbf": 500}))
     guide = _ok(_call(tok, "guide", {"topic": "test_planning"}))
     assert "plan_sequential_test" in guide["guide"]

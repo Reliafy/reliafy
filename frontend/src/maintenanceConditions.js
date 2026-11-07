@@ -23,7 +23,7 @@ export function conditionKindText(c) {
 export function sourcePath(source) {
   if (!source) return null;
   const base = { Location: "locations", Position: "positions", Item: "items" }[source.kind];
-  return base ? `/maintenance/${base}/${source.id}` : null;
+  return base ? `/asset-register/${base}/${source.id}` : null;
 }
 
 // Where a condition that applies, or is excluded, comes from: "set here", "from Site".

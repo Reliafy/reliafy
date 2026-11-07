@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import { getMaintenancePart, getPartStructure, getPartWhereUsed } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import {
@@ -7,6 +8,7 @@ import {
 } from "../components/MaintenanceStructure.jsx";
 import { positionsPlanSummary, qtyNumber } from "../maintenanceStructure.js";
 import "./Maintenance.css";
+import { PageTitle } from "../components/usePageTitle.js";
 
 // One catalogue part (#435): its details and indenture level, its structure (the
 // parts it's made of, expand and collapse), the quantities rolled up, and where it's
@@ -27,7 +29,7 @@ export default function MaintenancePart() {
   }, [id]);
   useEffect(() => { setMade(null); load(); }, [load]);
 
-  if (error && !part) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !part) return <div className="app"><LoadFailed header error={error} notFound="Part not found." to="/asset-register/parts" label="See all parts and stock" /></div>;
   if (!part || !structure || !used) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const lines = structure.tree.children || [];
@@ -37,8 +39,9 @@ export default function MaintenancePart() {
   };
   return (
     <div className="app">
+      <PageTitle name={part && `${part.part_number} ${part.name}`} />
       <PageHeader
-        crumbs={[{ label: "Maintenance", to: "/maintenance" }, { label: "Parts", to: "/maintenance/parts" }]}
+        crumbs={[{ label: "Assets", to: "/asset-register" }, { label: "Parts and stock", to: "/asset-register/parts" }]}
         title={`${part.part_number} ${part.name}`}
         meta={[part.level, part.manufacturer_entry?.name || part.manufacturer, `${qtyNumber(part.on_hand)} on hand`]
           .filter(Boolean).join(" · ")}
@@ -58,7 +61,7 @@ export default function MaintenancePart() {
           <dt>On hand</dt><dd>{qtyNumber(part.on_hand)}{part.stock.length > 0 && (
             <span className="lib-date"> · {part.stock.map((s) => `${s.location.name}: ${qtyNumber(s.quantity)}`).join(", ")}</span>)}</dd>
           <dt>Items of it</dt><dd>{part.items}</dd>
-          {part.superseded_by && <><dt>Superseded by</dt><dd><Link to={`/maintenance/parts/${part.superseded_by.id}`}>{part.superseded_by.part_number}</Link></dd></>}
+          {part.superseded_by && <><dt>Superseded by</dt><dd><Link to={`/asset-register/parts/${part.superseded_by.id}`}>{part.superseded_by.part_number}</Link></dd></>}
           {part.notes && <><dt>Notes</dt><dd>{part.notes}</dd></>}
         </dl>
       </section>
@@ -82,7 +85,7 @@ export default function MaintenancePart() {
                            onEdit={(line) => setModal({ line })} onRemove={remove} />
           </>
         )}
-        {made && <p className="lib-date">{positionsPlanSummary(made)}{made.top && <> <Link to={`/maintenance/positions/${made.top}`}>Open the top one</Link>.</>}</p>}
+        {made && <p className="lib-date">{positionsPlanSummary(made)}{made.top && <> <Link to={`/asset-register/positions/${made.top}`}>Open the top one</Link>.</>}</p>}
       </section>
 
       {lines.length > 0 && <RollupCard structure={structure} />}

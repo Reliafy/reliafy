@@ -13,6 +13,7 @@ from backend.db import get_session
 from backend.services import rbd_network, rbd_phases
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -42,7 +43,7 @@ def phased_mission(
         return JSONResponse(content=rbd_phases.analyze_for_owner(session, graph, ctx.read_owners,
                                                                  covariates=covariates or None))
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to analyse a phased mission")
         return JSONResponse(status_code=500, content={
@@ -68,7 +69,7 @@ def network_reliability(
             session, graph, ctx.read_owners, t=_time(t), t_max=_time(t_max) or None,
             covariates=covariates or None))
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to analyse a network")
         return JSONResponse(status_code=500, content={

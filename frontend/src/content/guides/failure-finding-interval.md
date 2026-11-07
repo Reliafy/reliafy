@@ -2,7 +2,7 @@
 title: "Set a failure-finding (proof-test) interval"
 task: "How often should I test a protective device whose failure I can't see until it's needed?"
 category: "Maintenance strategy"
-prerequisites: "A life model of the protective device, as a saved fit or a failure rate you can type in, and the availability you need from it."
+prerequisites: "A non-repairable model of the protective device, as a saved fit or a failure rate you can type in, and the availability you need from it."
 related_href: "/strategy/failure-finding"
 related_label: "Open failure finding"
 order: 23
@@ -17,12 +17,12 @@ test for it.
 A failure-finding interval answers *how often to test*. Test too rarely and the
 device spends too long broken without anyone knowing. Test too often and you
 pay for tests that find nothing. Reliafy works the interval out from the
-device's life model and the availability you need from it.
+device's non-repairable model and the availability you need from it.
 
 ## Enter the device's life
 
-Open **Strategy → Failure finding**. Under **Life model of the hidden
-function**, choose where the life model comes from:
+Open **Decisions → Strategy → Failure finding**. Under **Non-repairable model of the hidden
+function**, choose where the non-repairable model comes from:
 
 - **Saved model** — a fit from your own failure data.
 - **Parameters** — a distribution and its parameters typed in, for a handbook
@@ -33,10 +33,12 @@ Choose **Parameters**, set the **Distribution** to **Exponential**, and enter
 the **Failure rate λ**. For a trip that fails, on average, once a year (8,760
 hours), that's 1 ÷ 8,760 = 0.000114 per hour.
 
-Then set the **Target availability (%)**: the fraction of time the device must
-be able to work when demanded. 99% is a common starting point; your safety
-study may set a stricter one. Add the **Unit** (hours here) so the answer reads
-in it, and press **Compute**.
+Then set the **Target availability**, as a percentage: the share of time the
+device must be able to work when demanded. 99 is a common starting point; your
+safety study may set a stricter one. Type 99, not 0.99: a value of 1 or less
+asks "Did you mean 99%?" before anything is computed. A saved model brings its
+time unit; with parameters typed in, add the **Unit** (hours here) so the
+answer reads in it. Press **Compute**.
 
 ![The failure-finding interval: test every 175 hours for 99% availability](/guides/img/ff-01-result.png)
 
@@ -77,12 +79,12 @@ Press **Save analysis** under the answer, give it a name, and press **Save**.
 The result is recomputed on the server from your inputs and stored, and it
 appears on the [Strategy](/strategy) page.
 
-A saved failure-finding analysis is the evidence an RCM study expects for a
-*Failure-finding task*. In the study's decision dialog, choose the failure mode's
-consequence (**Hidden**), the decision **Failure-finding task**, the task and its
-interval, and link this analysis. The decision then reads **Supported**: *Check
-every ~175 hours for 99% availability.* See
-[running an RCM study](/guides/rcm-study).
+A saved failure-finding analysis is the evidence an RCM decision expects for a
+*Failure-finding task*. On the Explorer's **RCM** tab, open the failure mode's
+decision dialog and choose its consequence (**Hidden**), the decision
+**Failure-finding task**, the task and its interval, and link this analysis. The
+decision then reads **Supported**: *Check every ~175 hours for 99%
+availability.* See [building RCM on your asset tree](/guides/rcm-on-your-asset-tree).
 
 Keep the units the same in both places. If the task interval is in days and the
 analysis is in hours, the decision is marked inconclusive rather than converted.
@@ -94,7 +96,7 @@ replace it, not when to test it: see
 [find the optimal replacement interval](/guides/optimal-replacement-interval).
 
 For a repairable system that is repaired as it fails and overhauled from time
-to time, the **Overhaul** tab of a recurrent model finds the overhaul interval
+to time, **Plan ahead › Overhaul interval** on a repairable model finds the overhaul interval
 that costs least. See [repairable systems](/guides/recurrent-events).
 
 For a safety instrumented function, where several devices vote and each has its

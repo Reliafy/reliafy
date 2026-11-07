@@ -2,7 +2,7 @@
 
 The RBD builder (``frontend/src/views/RbdBuilder.jsx``) produces a React Flow
 graph — a list of ``nodes`` and ``edges`` — where each component node carries a
-SurPyval life model (a distribution id plus its parameters). This module turns
+SurPyval non-repairable model (a distribution id plus its parameters). This module turns
 that graph into a :class:`repyability.rbd.non_repairable_rbd.NonRepairableRBD`
 and computes:
 
@@ -45,6 +45,7 @@ from repyability import LoadSharingModel
 from repyability.non_repairable import NonRepairable
 from repyability.rbd.standby_node import StandbyModel
 from repyability.utils.wrappers import conditional_survival
+from backend.errors import client_message
 
 # Number of points on the reliability time grid.
 _GRID_POINTS = 200
@@ -270,7 +271,7 @@ def _build_distribution(
     resolve_model=None,
     cov_values: Optional[dict] = None,
 ):
-    """Build a frozen SurPyval distribution from a node's life model.
+    """Build a frozen SurPyval distribution from a node's non-repairable model.
 
     ``model`` is the object the picker stores on a node: ``distribution_id`` and
     an ordered list of ``{name, value}`` params. Parameters are reordered to the
@@ -278,7 +279,7 @@ def _build_distribution(
     correct regardless of the order they arrive in.
     """
     if not model:
-        raise AnalysisError(f"{where} has no life model — set one to analyse.")
+        raise AnalysisError(f"{where} has no non-repairable model — set one to analyse.")
     # A node can reference a saved proportional-hazards / regression model,
     # whose reliability depends on covariate values supplied at calc time.
     if model.get("kind") == "regression":
@@ -363,7 +364,7 @@ def _loadshare_model(data: dict, label: str, resolve_model=None):
     except Exception as exc:  # RePyability validates the AFT unit
         raise AnalysisError(
             f"{label}: {exc} — load-sharing needs an accelerated-failure-time (AFT) "
-            "life model with the load as its covariate.") from exc
+            "non-repairable model with the load as its covariate.") from exc
 
 
 def _standby_model(data: dict, label: str, resolve_model=None, cov_values=None):
@@ -512,7 +513,7 @@ def _node_reliability(
 def _repyability_message(exc: Exception) -> str:
     """RePyability's structural errors, reworded where they'd mean nothing to
     a user."""
-    text = str(exc)
+    text = client_message(exc)
     if "no paths through" in text.lower():
         return ("there's no path from the input to the output that satisfies every k-of-n (vote) node. "
                 "Check each vote node's n against the branches wired into it.")
@@ -645,7 +646,7 @@ def _build_rbd(
     labels: dict[Any, str] = {}
     node_types: dict[Any, str] = {}
     # Manual what-if overrides: nodes pinned working/failed keep their real
-    # life model in the RBD but are forced perfectly reliable/unreliable via
+    # non-repairable model in the RBD but are forced perfectly reliable/unreliable via
     # RePyability's native ``working_nodes``/``broken_nodes`` arguments.
     working_nodes: set = set()
     broken_nodes: set = set()
@@ -673,7 +674,7 @@ def _build_rbd(
                 node, resolve_subsystem, visited, resolve_model, covariates
             )
         except AnalysisError:
-            # A pinned node is overridden anyway, so it needs no life model of
+            # A pinned node is overridden anyway, so it needs no non-repairable model of
             # its own — stand in with a placeholder (never actually evaluated).
             if not pinned:
                 raise
@@ -833,7 +834,7 @@ def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
 
     if sc.get("is_missing_distributions"):
         errors.append(
-            "These nodes have no life model: "
+            "These nodes have no non-repairable model: "
             f"{names('nodes_with_no_reliability_distribution')}."
         )
     # k-of-n problems are reported by :func:`_koon_checks` (with labels, and
@@ -898,7 +899,7 @@ def validate_graph(
         )
 
     # Build each node's reliability, collecting per-node problems (a missing
-    # life model, bad parameters, an unresolved sub-system). Failed nodes get a
+    # non-repairable model, bad parameters, an unresolved sub-system). Failed nodes get a
     # placeholder so the structural checks below can still run.
     reliabilities: dict[Any, Any] = {}
     k: dict[Any, int] = {}
@@ -919,7 +920,7 @@ def validate_graph(
             reliabilities[nid] = PerfectReliability  # a broken copy (reported above)
             continue
         # A node pinned working/failed is overridden in analysis, so it needs
-        # no life model — don't flag one as missing here.
+        # no non-repairable model — don't flag one as missing here.
         pinned = (node.get("data") or {}).get("state") in ("working", "failed")
         try:
             reliability, k_required = _node_reliability(
@@ -932,7 +933,7 @@ def validate_graph(
             # A repairable diagram's standby group is no StandbyModel: the
             # non-repairable arrangement's limits (#84) don't apply to it.
             if not pinned and not (graph.get("repairable") and getattr(exc, "nonrepairable_only", False)):
-                errors.append(str(exc))
+                errors.append(client_message(exc))
             reliabilities[nid] = PerfectReliability  # structural placeholder
 
     errors.extend(_io_errors(graph))
@@ -978,7 +979,7 @@ def validate_graph(
             # e.g. a k-out-of-n setting that leaves no path through the system.
             errors.append(f"The diagram can't be solved as drawn: {_repyability_message(exc)}")
         except Exception as exc:  # pragma: no cover - defensive
-            errors.append(f"The diagram could not be analysed: {exc}")
+            errors.append(f"The diagram could not be analysed: {client_message(exc)}")
 
     warnings.extend(design_warnings(graph, labels))
     from backend.services import rbd_standby
@@ -1004,7 +1005,7 @@ def validate_graph(
             if ntype not in ("component", "standby"):
                 errors.append(
                     f"“{lbl}” isn't supported in a repairable diagram — availability "
-                    "uses component and standby blocks (each with a life model and a "
+                    "uses component and standby blocks (each with a non-repairable model and a "
                     "repair time) and k-of-n gates. Switch to a non-repairable diagram to use it.")
             elif ntype == "standby" and data.get("state") not in ("working", "failed") and not data.get("repair"):
                 errors.append(
@@ -1049,7 +1050,7 @@ def validate_graph(
         }
 
     # Non-repairable (reliability): common-cause groups should couple identical
-    # (symmetric) components — warn if the members' life models differ.
+    # (symmetric) components — warn if the members' non-repairable models differ.
     for msg in _ccf_symmetry_warnings(graph, labels):
         warnings.append(msg)
     basis_errors, basis_warnings = _ccf_basis_checks(graph, labels)
@@ -1074,7 +1075,7 @@ def validate_graph(
 
 
 def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:
-    """Warn when a block's saved life model was fitted in a different time unit
+    """Warn when a block's saved non-repairable model was fitted in a different time unit
     from the diagram's. Parameters are read in the diagram's unit, so e.g. a
     model fitted in months dropped into an hours diagram is off by ~730x.
     Nothing is converted; blank units on either side are unknown, not a
@@ -1103,10 +1104,12 @@ def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:
 
 
 _REDUNDANCY_WORDS = re.compile(r"\b(duty|stand-?by|spare|back-?up|redundant)\b", re.I)
-# A trailing unit identifier: "Pump A", "Pump-2", "P2", "Train ii", "Fan left".
-_UNIT_SUFFIX = re.compile(
-    r"^(?P<stem>.*?[a-z0-9])(?:[\s\-_#/.]+(?P<tok>[a-h]|\d+|i{1,3}|iv|left|right|port|starboard|north|"
-    r"south|east|west|primary|secondary|upper|lower)|(?P<num>\d+))$")
+# A trailing unit identifier: "Pump A", "Pump-2", "P2", "Train ii", "Fan left":
+# a token after separators, or a number straight after the name.
+_UNIT_TOKEN = re.compile(r"[a-h]|\d+|i{1,3}|iv|left|right|port|starboard|north|"
+                         r"south|east|west|primary|secondary|upper|lower")
+_UNIT_SEPARATORS = "-_#/."
+_STEM_END = frozenset("abcdefghijklmnopqrstuvwxyz0123456789")
 _BLOCK_TYPES = ("component", "series", "parallel", "standby", "subsystem", "loadshare")
 #: The builder's own names for a new block ("Component 3"): not a user's
 #: naming, so no sign of a redundant pair (#289).
@@ -1116,15 +1119,59 @@ _AUTO_LABEL = re.compile(r"^\s*component\s+\d+\s*$", re.I)
 _REDUNDANT_TYPES = ("parallel", "standby", "loadshare")
 
 
+def _drop_parentheticals(text: str) -> str:
+    """``text`` with each "(...)" replaced by a space; an unclosed "(" stays."""
+    out, i = [], 0
+    while True:
+        start = text.find("(", i)
+        end = text.find(")", start + 1) if start >= 0 else -1
+        if end < 0:
+            out.append(text[i:])
+            return "".join(out)
+        out.append(text[i:start] + " ")
+        i = end + 1
+
+
+def _unit_split(s: str) -> Optional[tuple[str, str]]:
+    """``(stem, unit)`` when ``s`` ends in a unit identifier (``_UNIT_TOKEN``
+    after separators, or digits straight after the name), else None. The
+    shortest stem ending in a letter or digit wins. Read by hand from the
+    end, so the time taken grows only with the label's length."""
+    def is_sep(ch: str) -> bool:
+        return ch.isspace() or ch in _UNIT_SEPARATORS
+
+    n, found, unit = len(s), None, None
+    # A token after separators: the trailing run of non-separators.
+    j = n
+    while j > 0 and not is_sep(s[j - 1]):
+        j -= 1
+    i = j
+    while i > 0 and is_sep(s[i - 1]):
+        i -= 1
+    if j < n and i < j and i > 0 and s[i - 1] in _STEM_END and _UNIT_TOKEN.fullmatch(s[j:]):
+        found, unit = i, s[j:]
+    # Digits straight after the name ("p2"): the earliest split leaving only digits.
+    d = n
+    while d > 0 and s[d - 1].isdecimal():
+        d -= 1
+    for k in range(max(d, 1), n):
+        if found is not None and k >= found:
+            break
+        if s[k - 1] in _STEM_END:
+            found, unit = k, s[k:]
+            break
+    return None if found is None else (s[:found], unit)
+
+
 def _label_stem(label: str) -> tuple[str, Optional[str]]:
     """``(stem, unit suffix)`` of a block label, ignoring parentheticals and
     redundancy words: "Pump B (standby)" -> ("pump", "b")."""
-    s = re.sub(r"\([^)]*\)", " ", str(label or "").lower())
+    s = _drop_parentheticals(str(label or "").lower())
     s = re.sub(r"\s+", " ", _REDUNDANCY_WORDS.sub(" ", s)).strip(" -_#/.")
-    m = _UNIT_SUFFIX.match(s)
-    if not m:
+    split = _unit_split(s)
+    if split is None:
         return s, None
-    return m.group("stem").strip(" -_#/."), m.group("tok") or m.group("num")
+    return split[0].strip(" -_#/."), split[1]
 
 
 def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> list:
@@ -1180,7 +1227,7 @@ def design_warnings(graph: dict, labels: Optional[dict] = None) -> list:
 
 def _ccf_symmetry_warnings(graph: dict, labels: dict) -> list:
     """Beta-factor common cause assumes symmetric groups (identical member
-    models). Warn when a group's members carry different life models."""
+    models). Warn when a group's members carry different non-repairable models."""
     out = []
     by_id = {n.get("id"): (n.get("data") or {}) for n in (graph.get("nodes") or [])}
 
@@ -1201,7 +1248,7 @@ def _ccf_symmetry_warnings(graph: dict, labels: dict) -> list:
         if len(keys) > 1:
             names = ", ".join(labels.get(m, str(m)) for m in members)
             out.append(
-                f"Common-cause group ({names}) mixes different life models. The "
+                f"Common-cause group ({names}) mixes different non-repairable models. The "
                 "beta-factor model assumes identical redundant components, so give "
                 "them the same model for a meaningful result.")
     return out
@@ -1918,7 +1965,7 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
 
     # Per-node reliability over the same grid (skip pure voting gates, which
     # are perfectly reliable and not informative to plot). A pinned node shows
-    # the constant it's forced to (1 working, 0 failed), not its life model.
+    # the constant it's forced to (1 working, 0 failed), not its non-repairable model.
     node_payloads = []
     for nid in rbd.nodes:
         if node_types.get(nid) == "knode":
@@ -2215,7 +2262,7 @@ def _always_up():
 
 def _repair_distribution(data: dict, label: str, resolve_model=None):
     """Build a component's time-to-repair distribution from its ``repair`` spec
-    (same shape as a life model: distribution_id + params). Repairable
+    (same shape as a non-repairable model: distribution_id + params). Repairable
     components must have one."""
     spec = data.get("repair")
     if not spec:
@@ -2230,7 +2277,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
                           capacity: Optional[dict] = None):
     """Translate a builder graph into a RepairableRBD (availability).
 
-    Supports component nodes (each a life model + repair, with costs and
+    Supports component nodes (each a non-repairable model + repair, with costs and
     maintenance), standby groups (#156) and k-of-n voting gates; other node
     types raise a clear error. The diagram's repair crews and maintenance
     groups (#156, #157) are passed on, and its common-cause groups (#226):
@@ -2504,11 +2551,14 @@ _CCF_NOT_IDENTICAL = re.compile(r"^The members of a CCF group, \[(.*?)\], must b
 # Reliafy user can't make (#186) — and count a crew's jobs as "components"
 # (each unit of a standby group is one). Relayed without the call, and
 # naming what the count is.
-_PY_CALL = re.compile(r",?\s+with\s+availability\((?:demand=\.\.\.)?\)(?:\s+or\s+cost\(\))?")
+# Matched from the literal "with", then widened by hand over the whitespace
+# (and one comma) before it, so the time taken grows only with the text's length.
+_PY_CALL = re.compile(r"with\s+availability\((?:demand=\.\.\.)?\)(?:\s+or\s+cost\(\))?")
 # What followed the call, still agreeing with it ("by simulation, with
 # availability() or cost(), which take any"): one simulation takes it.
 _WHICH_TAKE = re.compile(r"\bsimulation, which take\b")
-_CREW_JOBS = re.compile(r"(\d+) repair crew\(s\) for (\d+) components\b")
+# Matched from the literal text; the crew count before it is read by hand.
+_CREW_JOBS = re.compile(r" repair crew\(s\) for (\d+) components\b")
 
 
 def plain_reason(text):
@@ -2517,9 +2567,45 @@ def plain_reason(text):
     returned as is. Idempotent, so saved results can be cleaned again."""
     if not isinstance(text, str):
         return text
-    text = hide_engine_names(_WHICH_TAKE.sub("simulation, which takes", _PY_CALL.sub("", text)))
-    return _CREW_JOBS.sub(lambda m: f"{m.group(1)} repair crew{'s' if m.group(1) != '1' else ''} for "
-                                    f"{m.group(2)} repair jobs (each unit of a standby group is one)", text)
+    text = hide_engine_names(_WHICH_TAKE.sub("simulation, which takes", _drop_py_calls(text)))
+    return _crew_jobs(text)
+
+
+def _drop_py_calls(text: str) -> str:
+    """``text`` without RePyability's ", with availability() or cost()" (the
+    whitespace before "with" is required; a comma before that goes too)."""
+    out, pos = [], 0
+    for m in _PY_CALL.finditer(text):
+        start = m.start()
+        while start > pos and text[start - 1].isspace():
+            start -= 1
+        if start == m.start():
+            continue
+        if start > pos and text[start - 1] == ",":
+            start -= 1
+        out.append(text[pos:start])
+        pos = m.end()
+    out.append(text[pos:])
+    return "".join(out)
+
+
+def _crew_jobs(text: str) -> str:
+    """"N repair crew(s) for M components" as "N repair crews for M repair jobs
+    (each unit of a standby group is one)"."""
+    out, pos = [], 0
+    for m in _CREW_JOBS.finditer(text):
+        start = m.start()
+        while start > pos and text[start - 1].isdecimal():
+            start -= 1
+        if start == m.start():
+            continue
+        crews = text[start:m.start()]
+        out.append(text[pos:start])
+        out.append(f"{crews} repair crew{'s' if crews != '1' else ''} for "
+                   f"{m.group(1)} repair jobs (each unit of a standby group is one)")
+        pos = m.end()
+    out.append(text[pos:])
+    return "".join(out)
 
 
 def plain_reasons(payload: dict) -> dict:
@@ -3321,7 +3407,7 @@ def _availability_horizon(graph: dict, state: Optional[dict] = None) -> float:
     keep = set(settle)
     try:
         # Graph only (no model resolver), so the exported script computes the
-        # very same horizon; saved life models carry their parameters inline.
+        # very same horizon; saved non-repairable models carry their parameters inline.
         rbd, _, _, working, broken = _build_repairable_rbd(graph)
         probs = rbd._probabilities_with_overrides(
             rbd.node_availability(), working, broken)
@@ -3553,7 +3639,7 @@ def _availability_routes(graph: dict, with_status: bool = False):
         rbd, labels, *_ = _build_repairable_rbd(graph)
         summary = _routes_summary(rbd.analysis_routes(), labels, _priced(rbd))
     except AnalysisError as exc:
-        refusal = str(exc) if _is_ccf_identity_refusal(exc) else None
+        refusal = client_message(exc) if _is_ccf_identity_refusal(exc) else None
         return (None, None, refusal) if with_status else None
     except Exception:  # noqa: BLE001 - only a label; Calculate reports problems
         return (None, None, None) if with_status else None
@@ -3672,7 +3758,7 @@ def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float]
                 else:
                     cost_note = (summary.get("expected_cost") or {}).get("reason")
     except NotImplementedError as exc:
-        return simulation_only(_with_labels(str(exc), labels))
+        return simulation_only(_with_labels(client_message(exc), labels))
     except (ValueError, TypeError) as exc:
         # A current state the blocks can't be in (a repair longer than it can
         # last, say): the user's input, not a bug.

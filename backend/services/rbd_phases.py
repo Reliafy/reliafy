@@ -42,6 +42,7 @@ import math
 import warnings
 from typing import Any, Callable, Optional
 
+from backend.errors import client_message
 from backend.services import rbd_repeats
 from backend.services.rbd_analysis import AnalysisError
 
@@ -55,12 +56,12 @@ SIM_MISSIONS = 20_000
 SIM_SEED = 1
 SIM_CONFIDENCE = 0.95
 
-STRESS_NOTE = ("Each block keeps one life model through the whole mission: a stress level per phase isn't "
+STRESS_NOTE = ("Each block keeps one non-repairable model through the whole mission: a stress level per phase isn't "
                "modelled.")
 #: With covariate schedules (#52): those blocks follow their schedule through
 #: the phases (it is a function of mission time); the others keep one model.
 SCHEDULE_NOTE = ("Blocks with a covariate schedule follow it through the mission, so their stress changes "
-                 "with time as the schedule says; the other blocks keep one life model throughout.")
+                 "with time as the schedule says; the other blocks keep one non-repairable model throughout.")
 
 
 class PhaseError(ValueError):
@@ -157,7 +158,7 @@ def carry(graph: dict, out: dict) -> None:
 
 
 def apply_set(graph: dict, op: dict) -> list[str]:
-    """rbd edit's ``set`` of ``phases`` ([] clears them): what was done, in
+    """change rbd_edit's ``set`` of ``phases`` ([] clears them): what was done, in
     words. Raises :class:`backend.services.rbd_graph.GraphError`."""
     from backend.services.rbd_graph import GraphError
 
@@ -191,7 +192,7 @@ def validation_warnings(graph: dict) -> list[str]:
     try:
         phases = parse_phases(graph.get("phases"))
     except PhaseError as exc:
-        return [f"Phased mission: {exc}"]
+        return [f"Phased mission: {client_message(exc)}"]
     if graph.get("repairable"):
         return ["Phased mission: phases apply to a non-repairable diagram; this one is repairable, so its "
                 "phases aren't analysed."]

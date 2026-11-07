@@ -1,6 +1,6 @@
 // Plain names for SurPyval's parameters (#299, #311): "Scale α (hours)",
 // "Failure rate λ (per hour)", "Shape β" — never `alpha` or `failure_rate`.
-// Shared by the life model page's side panel and the block dialog's inputs.
+// Shared by the non-repairable model page's side panel and the block dialog's inputs.
 import { MORE_PARAMS } from "./moreModels.js";
 import { unitInText } from "./components/unitText.js";
 

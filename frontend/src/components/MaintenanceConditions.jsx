@@ -13,6 +13,7 @@ import { subtreeIds } from "../maintenanceItemClasses.js";
 import {
   conditionImportSummary, conditionKindText, conditionText, pickable, sourcePath, sourceText,
 } from "../maintenanceConditions.js";
+import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 
 // ---- on a location, position or item ----------------------------------------------------------
 
@@ -127,7 +128,7 @@ function ConditionModal({ target, view, entry, onClose, onDone }) {
       {!entry && (
         <Field label="Condition">
           {register === null ? <span className="lib-date">Loading…</span> : register.length === 0 ? (
-            <span className="lib-date">The register is empty: add conditions on the <Link to="/maintenance/classes">Classes</Link> page first.</span>
+            <span className="lib-date">The register is empty: add conditions on the <Link to="/asset-register/classes">Classes</Link> page first.</span>
           ) : (
             <select autoFocus value={conditionId} onChange={(e) => setConditionId(e.target.value)}>
               <option value="">Choose…</option>
@@ -322,9 +323,9 @@ function NewConditionModal({ parentId, conditions, onClose, onDone }) {
   const [f, setF] = useState({ name: "", parent_id: parentId, kind: "presence", unit: "", code: "", description: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
-    <FormModal title="New condition" submitLabel="Create" canSubmit={!!f.name.trim()} onClose={onClose}
+    <FormModal title="New condition" submitLabel="Create" canSubmit={!!f.name.trim() && !tooLong(f.name)} onClose={onClose}
                onSubmit={async () => onDone(await createCondition(f))}>
-      <Field label="Name"><input autoFocus value={f.name} placeholder="e.g. Outdoor, Seawater, Zone 1" onChange={set("name")} /></Field>
+      <Field label="Name" text={f.name} hint={DESCRIPTION_HINT}><input autoFocus value={f.name} placeholder="e.g. Outdoor, Seawater, Zone 1" onChange={set("name")} /></Field>
       <Field label="Inside"><ConditionPicker conditions={conditions} value={f.parent_id} emptyLabel="Nothing (top level)"
                                              onChange={(v) => setF({ ...f, parent_id: v })} /></Field>
       <KindFields f={f} setF={setF} />
@@ -338,9 +339,9 @@ function EditConditionModal({ c, onClose, onDone }) {
   const [f, setF] = useState({ name: c.name, kind: c.kind, unit: c.unit, code: c.code, description: c.description });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
-    <FormModal title={`Edit ${c.name}`} submitLabel="Save" canSubmit={!!f.name.trim()} onClose={onClose}
+    <FormModal title={`Edit ${c.name}`} submitLabel="Save" canSubmit={!!f.name.trim() && !tooLong(f.name)} onClose={onClose}
                onSubmit={async () => onDone(await updateCondition(c.id, f))}>
-      <Field label="Name"><input value={f.name} onChange={set("name")} /></Field>
+      <Field label="Name" text={f.name} hint={DESCRIPTION_HINT}><input value={f.name} onChange={set("name")} /></Field>
       <KindFields f={f} setF={setF} />
       <Field label="Code"><input value={f.code} onChange={set("code")} /></Field>
       <Field label="Description"><input value={f.description} onChange={set("description")} /></Field>

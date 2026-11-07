@@ -6,6 +6,7 @@ import { relativeTime } from "../instrument.js";
 import Button from "./ui/Button.jsx";
 import Card, { CardHeader } from "./ui/Card.jsx";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import { useConfirm } from "./ConfirmProvider.jsx";
 
 // What a token may do. Each token carries a subset; a token created before
 // scopes existed carries all three.
@@ -72,8 +73,9 @@ export default function ApiAccessPanel() {
     }
   };
 
+  const confirm = useConfirm();
   const onRevoke = async (t) => {
-    if (!window.confirm(`Revoke “${t.name}” (${t.prefix}…)? Scripts using it will stop working.`)) return;
+    if (!(await confirm({ title: "Revoke this token?", body: `Scripts and tools using “${t.name}” (${t.prefix}…) stop working straight away. This can't be undone; you can make a new token any time.`, confirmLabel: "Revoke token" }))) return;
     await revokeApiToken(t.id);
     refresh();
   };

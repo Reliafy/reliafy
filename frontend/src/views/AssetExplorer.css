@@ -1,0 +1,1420 @@
+/* Operate › Assets › Explorer: the tree pane beside the site
+   menu, and the detail panel filling the rest (AssetExplorer, TreePane,
+   TreeDetail). */
+
+.tx {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+/* ---- the pane ---------------------------------------------------------------- */
+
+.tp {
+  position: sticky;
+  top: 59px;
+  flex: none;
+  /* Below the app's header (59 px): the page itself doesn't scroll for the tree. */
+  height: calc(100vh - 59px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surf);
+  border-right: 1px solid var(--line);
+  min-width: 0;
+}
+
+/* The tree folded away (Ctrl+\, the Summary tab): a thin rail with » to bring
+   it back, its slim rows and the panel beside it where they were. */
+.tt-cell.tt-rail {
+  padding: 0;
+  justify-content: center;
+}
+.tt-cell.tt-rail > * { flex: none; }
+.tp-railcol {
+  flex: none;
+  border-top: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+
+.tp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px 12px 0;
+}
+
+.tp-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tp-title-row > :not(.tp-title):not(.tt-title) { flex: none; }
+
+.tp-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-16);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The tree pane's small icon buttons (« fold, » unfold), and the panel
+   heading's two controls (the "…" menu and Full screen) on every tab: one
+   look, 30 × 30 (36 on a phone). */
+.tp button.tp-icon-btn,
+.tt-actions button.tp-icon-btn {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--surf);
+  color: var(--muted);
+  box-shadow: none;
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+
+.tp button.tp-icon-btn:hover:not(:disabled),
+.tt-actions button.tp-icon-btn:hover:not(:disabled) {
+  background: var(--surf-2);
+  color: var(--ink);
+}
+
+/* The fold and show-the-tree buttons keep their « and » (Derryn, 8 Nov 2026):
+   the menu rail's toggle has the "sidebar" glyph, the tree its chevrons, so
+   the two controls are told apart. */
+
+/* Positions or Locations (ArrangeSwitch): a two-way switch in the heading,
+   the one on filled. Greyed where the tab is by position (it says why). */
+.tp-arrange {
+  display: inline-flex;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--surf);
+}
+.tp .tp-arrange button.tp-arrange-btn {
+  min-height: 0;
+  height: 100%;
+  padding: 0 9px;
+  border: none;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--surf);
+  color: var(--muted);
+  box-shadow: none;
+  font-size: var(--fs-13);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.tp .tp-arrange button.tp-arrange-btn:first-child { border-left: none; }
+.tp .tp-arrange button.tp-arrange-btn:hover:not(.on):not([aria-disabled="true"]) { background: var(--acc-hover); color: var(--ink); }
+.tp .tp-arrange button.tp-arrange-btn.on { background: var(--acc-t); color: var(--acc-d); font-weight: 600; }
+.tp .tp-arrange button.tp-arrange-btn:focus-visible { outline: 2px solid var(--acc); outline-offset: -3px; }
+.tp-arrange.is-off { opacity: 0.55; }
+/* The icons stand in for the labels where the tree pane is narrow (below). */
+.tp-arrange-ico { display: none; flex: none; }
+.tp .tp-arrange.is-off button.tp-arrange-btn { cursor: default; }
+
+/* The search line: the filter box, then the ⋯ menu beside it. */
+.tp-search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.tp-search-row .tp-filter { flex: 1 1 auto; min-width: 0; }
+
+/* Adding at the top level: the tree's quiet last row. */
+.tp-addrow-line {
+  display: flex;
+  align-items: stretch;
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--line2);
+}
+.tp button.tp-addrow {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 26px; /* under the top-level names */
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.tp button.tp-addrow:hover:not(:disabled) { background: var(--acc-hover); color: var(--acc-d); }
+.tp button.tp-addrow:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+.tp button.tp-addrow:disabled { opacity: 0.55; cursor: default; }
+.tp-addrow-plus { flex: none; width: 14px; text-align: center; font-size: 15px; line-height: 1; }
+.tp-addrow-nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+.tp .ovm-trigger {
+  min-height: 30px;
+  height: 30px;
+  padding: 0 6px;
+}
+
+.tp-notice {
+  margin: 0;
+  font-size: var(--fs-13);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.tp-status {
+  margin: 0;
+  padding: 0 0 6px;
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.tp-scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-top: 1px solid var(--line);
+  overscroll-behavior: contain;
+}
+
+.tp-body {
+  position: relative;
+}
+
+.tp-pins {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: 0;
+  overflow: visible;
+}
+
+.tp-pins-in {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+
+.tp-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 8px 0 6px;
+  font-size: 13.5px;
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+  border-bottom: 1px solid var(--line2); /* a line between rows on every tab, as on the RCM tab */
+}
+
+.tp-row:hover {
+  background: var(--acc-hover);
+}
+
+.tp-row.focus {
+  background: var(--acc-t);
+  box-shadow: inset 3px 0 0 var(--acc);
+}
+
+.tp-row:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--acc);
+}
+
+.tp-row.pin {
+  position: relative;
+  background: var(--surf-2);
+  border-bottom: 1px solid var(--line2);
+}
+
+/* Pinned rows cover the rows scrolling under them: an opaque fill. */
+.tp-row.pin.focus {
+  background: linear-gradient(var(--acc-t), var(--acc-t)), var(--surf);
+}
+
+.tp-pins-in .tp-row:last-child {
+  box-shadow: 0 3px 6px -2px rgba(20, 23, 28, 0.14);
+}
+
+.tp-row.grp .tp-nm {
+  font-weight: 600;
+}
+
+.tp-row.dim .tp-nm {
+  color: var(--muted);
+}
+
+.tp-indent {
+  flex: none;
+}
+
+.tp-ic {
+  flex: none;
+  color: var(--muted);
+  margin-right: 3px;
+}
+
+.tp-nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 30px;
+  flex: 0 1 auto;
+}
+
+.tp-mk {
+  margin-left: auto;
+  padding-left: 6px;
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  flex: none;
+}
+
+.tp-mini {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-mini.overdue,
+.tp-mini.alarm {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger-line);
+}
+
+.tp-mini.open {
+  background: var(--acc-t);
+  color: var(--acc-d);
+  border-color: var(--acc-line);
+}
+
+/* A row with something inside counts everything inside: drawn dashed. */
+.tp-mini.inside {
+  background: transparent;
+  border-style: dashed;
+  font-weight: 500;
+}
+
+.tp-empty {
+  padding: 24px 14px;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  text-align: center;
+  font-size: var(--fs-14);
+}
+
+.tp-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -4px;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 4;
+  touch-action: none;
+}
+
+.tp-edge:hover,
+.tp-edge:focus-visible {
+  outline: none;
+  background: linear-gradient(90deg, transparent 3px, var(--acc) 3px, var(--acc) 5px, transparent 5px);
+}
+
+/* ---- the detail panel ---------------------------------------------------------- */
+
+/* A wide screen: beside the tree in the pane, under its heading and tabs (the
+   slim rows over both), scrolling on its own so the page never moves. */
+.tx-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border-top: 1px solid var(--line);
+  padding: 16px 32px 56px;
+}
+
+.td .page-header {
+  margin-bottom: 6px;
+}
+
+.td-title {
+  outline: none;
+}
+
+.td-title:focus-visible {
+  box-shadow: var(--focus);
+  border-radius: 4px;
+}
+
+.td .crumb button.crumb-link {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  color: var(--acc);
+  font-weight: 500;
+  font-size: inherit;
+}
+
+.td .crumb button.crumb-link:hover:not(:disabled) {
+  background: none;
+  text-decoration: underline;
+}
+
+
+.td-error p {
+  margin: 0 0 10px;
+}
+
+.td .td-back {
+  margin-bottom: 10px;
+}
+
+/* ---- phone: the tree is the screen; picking a row slides to the detail ---------- */
+
+@media (max-width: 720px) {
+  .tx.phone {
+    display: block;
+  }
+  .tx.phone .tp {
+    position: static;
+    width: auto;
+    height: calc(100dvh - 58px);
+    border-right: 0;
+  }
+  .tx.phone .tx-detail {
+    display: none;
+    overflow: visible;
+    border-top: 0;
+    padding: 16px 16px 48px;
+  }
+  .tx.phone.show-detail .tp {
+    display: none;
+  }
+  .tx.phone.show-detail .tx-detail {
+    display: block;
+  }
+  .tx.phone .tp-row {
+    font-size: 15px;
+    padding-right: 12px;
+  }
+  .tx.phone .tp-chev,
+  .tx.phone .tp-chev-sp {
+    width: 34px;
+    height: 34px;
+  }
+  .tx.phone .tp-mini {
+    min-width: 22px;
+    height: 20px;
+    font-size: 12px;
+  }
+  .tx.phone .tp button.tp-icon-btn,
+  .tx.phone .tt-actions button.tp-icon-btn {
+    min-width: 36px;
+    height: 36px;
+  }
+  .td .page-header .head-actions {
+    width: 100%;
+  }
+}
+
+.tp-row.pin:hover {
+  background: linear-gradient(var(--acc-hover), var(--acc-hover)), var(--surf-2);
+}
+
+.tp-empty .card {
+  margin: 0;
+  text-align: center;
+}
+
+.tp-empty .section-empty-action {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* ---- the panel's tabs; the RCM tab: the tree and the RCM as one table ------------ */
+
+.td-tabs {
+  margin: 0 0 12px;
+}
+a.rw-cklink {
+  text-decoration: none;
+}
+button.rw-cklink {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.rw-cklink:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+  border-radius: 999px;
+}
+.tp-mini.rcm {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--line);
+  font-weight: 500;
+}
+
+/* The column headers: on the Summary tab the tree's own label (so its rows sit
+   at the same height on both tabs), on the RCM tab every column's. */
+.tt-head {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  min-width: 100%;
+  background: var(--surf-2);
+  border-bottom: 1px solid var(--line);
+}
+.tt-h {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.tt-h.num { justify-content: flex-end; }
+.tt-h-tree {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surf-2);
+  padding-left: 12px;
+}
+.tp-table .tt-h-tree,
+.tx:not(.phone) .tt-h-tree { border-right: 1px solid var(--line); }
+.tt-h.rw-fill { flex: 1 0 auto; justify-content: flex-end; overflow: visible; }
+/* The last cell only fills what's left: no width of its own, so a table
+   fitted to its pane doesn't overflow it by the cell's padding. */
+.tt-h.rw-fill:empty, .tp-row.tt > .rw-fill { padding: 0; min-width: 0; }
+.tt-h .rw-cols .rw-btn, .tt-h .rw-cols > button { min-height: 22px; padding: 0 8px; font-size: var(--fs-12); }
+
+/* A wide screen, both tabs: the pane is the page's width, with two slim rows
+   over the tree (TreePane): the bar (the tree's title, then the panel's
+   heading: the way up over the name, and the actions) and under it the search
+   box, then the panel's tabs. Each row's first cell is as wide as the tree
+   column, so the rows line up with the tree and the table's columns; on the
+   Summary tab the panel's page is beside the tree, on the RCM tab the table's
+   columns. The frame is the same on both, so switching tabs moves nothing in
+   it. */
+.tx:not(.phone) .tp {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* The Summary tab's tree: exactly as wide as the RCM tab's tree column (its
+   scrollbar beside it, the gutter always kept), each row edged as that
+   column's cells are, and the edge drawn down the empty space under the rows. */
+.tx:not(.phone) .tp:not(.tp-table) .tp-scroll {
+  flex: none;
+  scrollbar-gutter: stable;
+  box-shadow: inset -1px 0 0 var(--line);
+}
+.tx:not(.phone) .tp:not(.tp-table) .tp-row {
+  right: auto;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line2); /* as the RCM tab's rows: the same line, the text at the same height */
+}
+/* The RCM and FME(C)A tabs: the fold button stays in its place, greyed (the
+   tree is the table's first column there), so the header reads the same. */
+.tp button.tp-fold.is-off:disabled { opacity: 0.4; cursor: default; }
+.tp-table .tp-scroll { scrollbar-gutter: stable; }
+.tt-top {
+  position: relative;
+  z-index: 8; /* the Columns list opens over the table's sticky headers */
+  flex: none;
+  min-width: 0;
+}
+.tt-bar,
+.tt-row2 {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.tt-bar {
+  min-height: 48px;
+  border-bottom: 1px solid var(--line);
+}
+.tt-cell {
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border-right: 1px solid var(--line);
+  min-width: 0;
+}
+.tt-cell > * { flex: 1 1 auto; min-width: 0; }
+/* A tree pane under 420 px (its default is 320): the Positions / Locations
+   switch shows icons, the labels in their names and tooltips, so the counts
+   beside it have room. */
+.tt-cell { container: ttcell / inline-size; }
+@container ttcell (max-width: 420px) {
+  .tp .tp-arrange button.tp-arrange-btn { padding: 0 8px; }
+  .tp-arrange-lbl { display: none; }
+  .tp-arrange-ico { display: block; }
+}
+.tt-headslot {
+  flex: 1 1 auto;
+  align-self: stretch;
+  display: flex;
+  min-width: 0;
+  container: tthead / inline-size;
+}
+/* Over the tree, the heading is one line on every tab: the name shrinks
+   (cut with an ellipsis) beside the two controls, so the rows under it don't
+   move when the tab changes. */
+.tt-headslot .tt-bar-head { flex-wrap: nowrap; }
+.tt-headslot .tt-name { flex: 1 1 0; min-width: 4em; }
+.tt-bar-head {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap; /* a narrow window: the actions go under, never off the edge */
+  column-gap: 12px;
+  min-width: 0;
+  padding: 0 12px 0 6px;
+}
+/* The tabs under the heading fill their row's height; the active one's
+   underline is the row's bottom edge. */
+.tabs-strip.tt-tabs {
+  flex: none;
+  margin: 0;
+  display: flex;
+  align-self: stretch;
+}
+.tt-tabs .scroll-cue-body { display: flex; }
+.tt-tabs .tabs { background: none; align-items: stretch; }
+.tt-tabs .tab { display: flex; align-items: center; padding: 0 12px; }
+.tt-tabs .tab:first-child { padding-left: 6px; }
+.tt-name {
+  flex: 1 1 9em; /* narrower than this and the actions go under */
+  min-width: 9em;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 3px 0;
+}
+.tt-sub { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.tt-sub .tt-crumb { flex: 0 1 auto; }
+/* The way up, small: each step shrinks (the nearest one last) so every step
+   stays on show and can be clicked; the full name is in its tooltip. */
+.tt-crumb {
+  display: flex;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-12);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.tt-crumb > span { display: flex; flex: 0 4 auto; min-width: 2em; }
+.tt-crumb > span:last-child { flex-shrink: 1; min-width: 3em; }
+.tt-crumb .crumb-sep { flex: none; white-space: pre; }
+.tt-crumb button.crumb-link {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: inherit;
+}
+.tt-crumb button.crumb-link:hover:not(:disabled) {
+  background: none;
+  color: var(--acc);
+  text-decoration: underline;
+}
+.tt-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.tt-h1 {
+  flex: 0 1 auto;
+  margin: 0;
+  min-width: 4em;
+  font-size: var(--fs-16);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tt-tag {
+  flex: 0 3 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+.tt-rollup { flex: none; display: inline-flex; }
+/* The heading's two controls, the same on every tab: the "…" menu and Full
+   screen (tp-icon-btn, above), 8 px apart. The column chooser the menu opens
+   hangs from their right edge. */
+.tt-actions {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+.tt-actions > .rw-cols { position: absolute; right: 0; top: 100%; }
+/* Square: the icon centred in 30 × 30, border included (36 on a phone). */
+.tt-actions button.tp-icon-btn { width: 30px; min-height: 30px; padding: 0; gap: 0; }
+.tt-actions button.tp-icon-btn svg { width: 16px; height: 16px; }
+.tt-kind { flex: none; font-size: var(--fs-12); color: var(--muted); }
+
+/* The Summary tab's heading: the same two slim rows as the RCM tab's (the way
+   up over the name, the actions; then the tabs), over the panel. */
+.td-head {
+  margin: 0 -32px 16px;
+  padding: 0 20px 0 26px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surf);
+}
+.td-head .tt-bar-head { padding: 0; min-height: 48px; border-bottom: 1px solid var(--line2); }
+.td-head .tt-h1 { font-size: var(--fs-20); }
+.td-head .tt-tabs { min-height: 40px; }
+.td-head .tt-tabs .tab:first-child { padding-left: 0; }
+.td > .td-head:first-child { margin-top: -22px; }
+.td-head .tt-crumb button.crumb-link { color: var(--muted); }
+.td-head .tt-crumb button.crumb-link:hover:not(:disabled) { color: var(--acc); }
+@media (max-width: 720px) {
+  .tx.phone .td-head { margin: 0 -16px 14px; padding: 0 16px; }
+  .tx.phone .td > .td-head:first-child { margin-top: -16px; }
+  /* The whole name on a phone (it wraps), the two controls beside it. */
+  .tx.phone .td-head .tt-name { flex: 1 1 0; min-width: 0; }
+  .tx.phone .td-head .tt-name-row { flex-wrap: wrap; white-space: normal; }
+  .tx.phone .td-head .tt-actions { align-self: flex-start; }
+}
+/* Full screen is the icon here, both ways (its name, and the F key, in the
+   tooltip and for screen readers). */
+.tt-actions .full-screen-word {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+.tt-row2 {
+  gap: 10px;
+  min-height: 40px;
+  padding-right: 12px;
+  align-items: stretch;
+}
+.tt-row2 .tt-cell .tp-filter { align-self: center; }
+.tt-row2 .tp-filter input { padding: 5px 0; }
+.tt-tabslot {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  padding-left: 6px;
+}
+.tt-row2 .tp-notice { flex: none; align-self: center; }
+/* The tree's title, with a short message under it only when there is one. */
+.tt-title {
+  flex: 1 1 0; /* a message's length never squeezes the buttons beside it */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.tt-title .tp-title { line-height: 1.25; }
+.tt-title .tp-status {
+  padding: 0;
+  line-height: 1.3;
+}
+.tp-table .tp-body { min-width: 100%; }
+.tt-msg {
+  flex: 0 1 auto;
+  max-width: 60%;
+  margin: 0;
+  line-height: 1.3;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--fs-12);
+  color: var(--ok);
+}
+.tt-msg.error { color: var(--danger); font-weight: 600; }
+/* A save that didn't go through: the whole of what to do comes first; the
+   way up beside it gives way (its steps are cut short, their names in their
+   tooltips). */
+.tt-msg.error { flex: 0 0 auto; max-width: 100%; }
+.tt-main {
+  position: relative; /* the table's scroll shadows sit over it */
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+/* The soft shadows on a side of the table with more to scroll to (TreePane
+   places them and sets how strong): on the left at the tree column's edge, on
+   the right at the scroll area's. None when everything fits. */
+.tt-shade {
+  position: absolute;
+  top: 0;
+  width: 16px;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 7;
+  transition: opacity 0.12s linear;
+}
+.tt-shade-l { background: linear-gradient(to right, var(--scroll-shade), transparent); }
+.tt-shade-r { background: linear-gradient(to left, var(--scroll-shade), transparent); }
+.tt-main > .tp-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tp-table .tp-scroll {
+  overflow-x: auto;
+}
+/* The table's scrollbars: always on show and thick enough to see and grab
+   (a 1 px overlay bar said nothing about the columns off to the side). */
+/* The vertical bar always there (its own track, rather than a kept gutter:
+   with a styled bar, Chrome stops the sideways scroll a gutter short). */
+.tx:not(.phone) .tp-table .tp-scroll { overflow-y: scroll; scrollbar-gutter: auto; }
+.tx:not(.phone) .tp-table .tp-scroll::-webkit-scrollbar { width: 12px; height: 12px; }
+.tx:not(.phone) .tp-table .tp-scroll::-webkit-scrollbar-track { background: var(--surf-2); }
+.tx:not(.phone) .tp-table .tp-scroll::-webkit-scrollbar-corner { background: var(--surf-2); }
+.tx:not(.phone) .tp-table .tp-scroll::-webkit-scrollbar-thumb {
+  background: var(--faint);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 6px;
+}
+.tx:not(.phone) .tp-table .tp-scroll::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
+@supports not selector(::-webkit-scrollbar) {
+  .tx:not(.phone) .tp-table .tp-scroll { scrollbar-width: auto; scrollbar-color: var(--faint) var(--surf-2); }
+}
+.tp-table .tp-row.tt {
+  right: auto;
+  min-width: 100%;
+  padding: 0;
+  gap: 0;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line2);
+  background: var(--surf);
+}
+.tt-tree {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 8px 0 6px;
+  min-width: 0;
+  background: var(--surf);
+  border-right: 1px solid var(--line);
+  overflow: hidden;
+}
+/* The tree cell is sticky: the row's other cells slide under it, so its fill
+   must be opaque in every state, or their text shows through its name. A
+   state's tint (hover, the row picked) is laid over the row's own solid
+   colour, never on its own: the tints are see-through. */
+.tp-row.tt:hover, .tp-row.tt:hover .tt-tree { background: linear-gradient(var(--acc-hover), var(--acc-hover)), var(--surf); }
+.tp-row.tt.focus, .tp-row.tt.focus .tt-tree { background: linear-gradient(var(--acc-t), var(--acc-t)), var(--surf); }
+.tp-row.tt.focus .tt-tree { box-shadow: inset 3px 0 0 var(--acc); }
+/* Keyboard focus: the row's ring is drawn under its cells, so the tree cell
+   draws its part of it (top, bottom and left) itself. */
+.tp-row.tt:focus-visible .tt-tree { box-shadow: inset 2px 0 0 var(--acc), inset 0 2px 0 var(--acc), inset 0 -2px 0 var(--acc); }
+.tp-row.tt.focus:focus-visible .tt-tree { box-shadow: inset 3px 0 0 var(--acc), inset 0 2px 0 var(--acc), inset 0 -2px 0 var(--acc); }
+.tp-row.tt.tt-fn .tp-nm { font-weight: 600; }
+.tp-row.tt.tt-fail .tp-nm { font-weight: 500; }
+.tp-row.tt.pin, .tp-row.tt.pin .tt-tree { background: var(--surf-2); }
+.tp-row.tt .rw-c { font-size: 13px; }
+.tp-row.tt .tp-ic.rw-ic { margin: 0 4px 0 1px; }
+.tt-fn .tp-ic { color: var(--acc-d); }
+.tt-fail .tp-ic, .tt-unassigned .tp-ic { color: var(--warn); }
+.tt-side {
+  flex: none;
+  /* A little narrower on a laptop, so the table beside it still shows its
+     main columns (failure effects, consequence, decision, task). */
+  width: clamp(300px, 25vw, 360px);
+  display: flex;
+  padding: 8px;
+  border-left: 1px solid var(--line);
+  background: var(--bg);
+  min-height: 0;
+}
+.tt-side > .rw-panel {
+  flex: 1 1 auto;
+  width: auto;
+}
+/* The details expanded: the tree column stays (TreePane sets its width) and
+   the panel takes the rest of the table's room. */
+.tt-main.tt-expanded > .tp-scroll { flex: none; }
+.tt-main.tt-expanded > .tt-side { flex: 1 1 auto; width: auto; min-width: 0; padding: 8px 10px; }
+.tt-side > .rw-panel-empty { flex: 1 1 auto; }
+.tp-tabs {
+  margin: 2px 0 0;
+}
+
+/* Full screen (F; Esc leaves): the tree and the panel cover the screen, the
+   app's menu and header out of sight, as the RBD editor's full screen. */
+.tx.is-full {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  align-items: stretch;
+}
+.tx.is-full .tp {
+  top: 0;
+  height: 100vh;
+  height: 100dvh;
+}
+.tx.is-full.phone .tx-detail {
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+}
+
+/* A phone: the tree is the screen; on the RCM tab each row is two lines. */
+@media (max-width: 720px) {
+  /* The rows pinned at the top cover the rows scrolling under them: a clear
+     edge, so a row half under them reads as under, not cut. */
+  .tx.phone .tp-pins-in .tp-row:last-child {
+    border-bottom-color: var(--line);
+    box-shadow: 0 4px 8px -3px rgba(20, 23, 28, 0.22);
+  }
+  /* The same height as the Summary tab's tree (the details open as a sheet over it). */
+  .tx.phone .tp-table .tp-scroll {
+    overflow-x: hidden;
+  }
+  /* Its first line where the Summary tab's one line is (the row picked stays
+     put when the tab changes), the second under it. */
+  .tx.phone .tp-row.tt {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    padding-top: 4px;
+    right: 0;
+  }
+  .tt-l1 {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    min-width: 0;
+    padding: 0 10px 0 6px;
+  }
+  .tt-l1 .tp-nm { flex: 0 1 auto; }
+  .tt-st { margin-left: auto; flex: none; }
+  /* Markers and the status side by side at the row's end (the status's own
+     auto margin would split the room and leave the markers mid-row). */
+  .tt-l1 .tp-mk ~ .tt-st { margin-left: 4px; }
+  /* Room for a whole line of 12 px text under the 36 px first line (its
+     touch targets' height, the text centred higher), so descenders
+     ("analysed yet") aren't cut: it starts 2 px into the first line's box. */
+  .tt-l2 {
+    flex: none;
+    margin-top: -2px;
+    font-size: var(--fs-12);
+    line-height: 15px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 10px;
+  }
+}
+
+/* A row's ⋯ button (its menu: the same as a right-click), at the end of the
+   tree cell. Shown on the row picked (so the menu is easy to find), on hover,
+   on keyboard focus and while its menu is open; always on a touch screen or a
+   narrow one, where there's no right-click. */
+.tt-more {
+  flex: none;
+  margin-left: auto;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  min-height: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+}
+.tp-mk + .tt-more, .tt-st + .tt-more { margin-left: 2px; }
+.tt-more:hover:not(:disabled), .tt-more.open { background: var(--acc-t); color: var(--acc); }
+.tp-row:hover .tt-more, .tp-row:focus-visible .tt-more, .tp-row.focus .tt-more,
+.tp-row.menu-open .tt-more { opacity: 1; }
+.tx.phone .tt-more { opacity: 1; width: 36px; height: 36px; }
+@media (hover: none), (max-width: 700px) {
+  .tt-more { opacity: 1; }
+}
+/* The row of the position picked, on the RCM tab, when it has no functions
+   yet: how to start, across its columns. */
+.tp-row.tt .rw-c.tt-empty-hint {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  color: var(--muted);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The FME(C)A tab: a parent row's "3 of 5 scored" in its first text column,
+   running on over the blank text columns beside it (TreePane sizes it). */
+.tp-row.tt .rw-c.tt-rollup-c { overflow: visible; }
+.tt-rollup-t {
+  flex: none;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A row's menu: the app's menu look (.ovm-menu), placed at the pointer. */
+.ovm-menu.row-menu {
+  position: fixed;
+  right: auto;
+  z-index: 95; /* over the details sheet on a phone (90), under dialogs (100) */
+  min-width: 200px;
+}
+.row-menu .ovm-item:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; background: var(--acc-t); color: var(--acc); }
+.row-menu .ovm-item.danger:focus-visible { background: var(--danger-bg); color: var(--danger); }
+/* An item that can't be used now: greyed, with the reason under it. */
+.row-menu .ovm-item.off { color: var(--subtle); cursor: not-allowed; }
+.row-menu .ovm-item.off:hover, .row-menu .ovm-item.off:focus-visible { background: var(--surf-2, transparent); color: var(--muted); }
+/* A submenu (Isolate ›): its item has the arrow at its end; beside the menu
+   on a wide screen, in place under its item on a phone. The arrow is drawn,
+   not text (no alt text: the item's name stays "Isolate"). */
+.row-menu .ovm-item.row-menu-parent { display: flex; align-items: center; gap: 12px; }
+.row-menu-parent::after { content: "›" / ""; margin-left: auto; color: var(--muted); }
+.row-menu-parent.inline::after { content: "▸" / ""; }
+.row-menu-parent.inline.open::after { content: "▾" / ""; }
+.row-menu .ovm-item.row-menu-parent.open { background: var(--acc-t); color: var(--acc); }
+.ovm-menu.row-submenu { z-index: 96; min-width: 190px; }
+.row-menu-inline { display: flex; flex-direction: column; gap: 2px; padding-left: 14px; }
+.row-menu .ovm-item.row-menu-radio { display: flex; align-items: center; gap: 6px; }
+.row-menu-tick { display: inline-block; width: 1em; color: var(--acc); }
+.row-menu-why { display: block; max-width: 260px; margin-top: 2px; font-size: var(--fs-12); color: var(--muted); white-space: normal; line-height: 1.35; }
+
+/* The tree's ⋯ menu (TreeControlsMenu), beside the filter box: the levels,
+   Close everything, Show only, the pane's other actions; it stays open while you
+   change several. The button shows how many things aren't as usual. */
+.tp button.tm-trigger { position: relative; }
+.tm-trigger.changed { border-color: var(--acc-line); color: var(--acc-d); }
+.tm-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--acc);
+  color: var(--on-fill);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--surf);
+}
+.ovm-menu.tm-menu {
+  position: fixed;
+  right: auto;
+  z-index: 70;
+  width: 280px;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  gap: 0;
+  padding: 6px;
+}
+.tm-sec { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; }
+.tm-label {
+  padding: 2px 6px 3px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--muted);
+}
+.tm-note { margin: 0; padding: 6px; font-size: var(--fs-12); color: var(--muted); }
+.tm-seg {
+  display: flex;
+  margin: 0 4px 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.tm-menu button.tm-seg-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 4px;
+  border: none;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--surf);
+  color: var(--ink);
+  box-shadow: none;
+  font-size: var(--fs-13);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  justify-content: center;
+  text-align: center;
+}
+.tm-menu button.tm-seg-btn:first-child { border-left: none; }
+.tm-menu button.tm-seg-btn:hover:not(:disabled) { background: var(--acc-hover); color: var(--ink); }
+.tm-menu button.tm-seg-btn.on { background: var(--acc-t); color: var(--acc-d); font-weight: 600; }
+.tm-menu .tm-item { display: flex; align-items: center; gap: 8px; min-height: 30px; }
+.tm-menu .tm-item.on { font-weight: 600; }
+.tm-tick {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surf);
+  color: var(--on-fill);
+}
+.tm-tick.on { background: var(--acc); border-color: var(--acc); }
+.tm-sep { height: 1px; margin: 4px 2px; background: var(--line); }
+.tm-foot { display: flex; gap: 4px; }
+.tm-menu .tm-reset { flex: 1 1 auto; min-width: 0; color: var(--acc-d); font-weight: 600; }
+.tm-menu .tm-done { flex: none; width: auto; margin-left: auto; justify-content: center; font-weight: 600; }
+.tm-menu button:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+.tm-menu button.tm-seg-btn:focus-visible { outline-offset: -3px; }
+@media (max-width: 720px), (hover: none) {
+  .tm-menu button.tm-seg-btn, .tm-menu .tm-item { min-height: 40px; }
+  .tx.phone .tp button.tm-trigger { min-width: 44px; height: 44px; }
+}
+/* A phone: the heading's switch and the search line's ⋯ are 44 px targets;
+   the add row is as tall as the rows (44 px). */
+@media (max-width: 720px) {
+  .tx.phone .tp-arrange { height: auto; }
+  .tx.phone .tp .tp-arrange button.tp-arrange-btn { height: 44px; min-width: 44px; padding: 0 12px; font-size: 14px; }
+  .tx.phone .tp-filter input { padding: 11px 0; }
+  .tx.phone .tp button.tp-addrow { font-size: 15px; padding-left: 40px; }
+}
+
+/* ---- a pinned branch ------------------------------------------------------- */
+/* No row of its own: on a wide screen the tree's column header says it (the
+   pin, "Pinned: <name>" cut short with its path in the tooltip, and a compact
+   ✕ to show everything), on both tabs alike. */
+.tt-h-tree .tt-pinned {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  color: var(--ink);
+  font-weight: 500;
+}
+.tt-pinned > svg { flex: none; color: var(--acc); }
+.tt-pinned-nm {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tt-pinned-nm strong { font-weight: 600; }
+.tt-h-tree button.tt-pinned-x {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 22px;
+  min-height: 0;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  box-shadow: none;
+  color: var(--muted);
+  font-size: var(--fs-12);
+  line-height: 1;
+  cursor: pointer;
+}
+.tt-h-tree button.tt-pinned-x:hover { background: var(--acc-t); border-color: var(--acc); color: var(--acc); }
+/* On a touch screen, as big as the header allows. */
+@media (hover: none) {
+  .tt-h-tree button.tt-pinned-x { width: 36px; height: 28px; }
+}
+.tt-pinned-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  color: var(--ink);
+}
+/* On a phone (no column header) the pinned row itself: the pin before its
+   name, and the ✕ at its end, always shown, a 36 px target. */
+.tp-pinmark { flex: none; display: inline-flex; color: var(--acc); margin-right: 4px; }
+.tp-row button.tp-unpin {
+  flex: none;
+  margin-left: auto;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--acc);
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+.tp-row button.tp-unpin:hover { background: var(--acc-t); }
+.tp-mk + .tp-unpin, .tt-st + .tp-unpin, .tp-unpin + .tt-more { margin-left: 2px; }
+
+/* The empty tree's "New here? Open the sample UAV product" card. */
+.ae-sample {
+  margin: 1.25rem auto 0;
+  max-width: 34rem;
+  padding: 0.75rem 1rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-sm);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+}
+.ae-sample p { margin: 0; }
+/* The two samples' buttons side by side (one under the other on a phone). */
+.ae-sample-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* A functional failure caused by lower ones: its reference rows and the ↑ n marker. */
+.tp-row.tt.tt-cause .tp-nm { font-weight: 400; }
+.tt-cause .tp-ic { color: var(--acc); }
+.tp-on {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+.tp-mini.up { background: transparent; color: var(--muted); border-color: var(--line); font-weight: 500; }
+.tp-mini.up.go { cursor: pointer; }
+.tp-mini.up.go:hover { color: var(--acc); border-color: var(--acc-line); }
+.rw-below { color: var(--muted); }
+.rw-below.rw-todo { color: inherit; }
+@media (max-width: 720px) {
+  /* Its position is on the row's second line. */
+  .tt-l1 .tp-on { display: none; }
+}
+
+/* A performance standard as a level of the RCM tree: its rows, the muted
+   "No standard" heading (the function's failures that breach no one
+   standard), and the quiet "no failure yet" marker on a standard with none. */
+.tp-row.tt.tt-std .tp-nm { font-weight: 500; }
+.tt-std .tp-ic { color: var(--std); }
+.tp-row.tt.tt-nostd .tp-nm { font-weight: 500; color: var(--muted); }
+.tt-nostd .tp-ic, .tt-nostd .tp-ic.rw-ic-std { color: var(--muted); }
+.tp-mini.nofail {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--line);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ---- Rearranging the RCM tree by drag and drop (a wide screen) ----------------
+   Nothing moves while dragging: the marks are drawn over the row (its ::after,
+   no border or margin added), the dragged count and what will happen float
+   over the page, and the grip sits in the row's indent. */
+.tp-row.tt.movable .tt-tree { cursor: grab; }
+.tp-row.tt .tt-task-drag { cursor: grab; }
+.tt-grip {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 6px;
+  color: var(--muted, #6b7280);
+  opacity: 0;
+  pointer-events: none;
+  line-height: 0;
+}
+.tp-row.tt.movable:hover .tt-grip, .tp-row.tt.movable.focus .tt-grip { opacity: 0.75; }
+.tp-row.tt.picked, .tp-row.tt.picked .tt-tree { background: linear-gradient(var(--acc-t), var(--acc-t)), linear-gradient(var(--acc-t), var(--acc-t)), var(--surf); }
+.tp-row.tt.picked .tt-tree { box-shadow: inset 3px 0 0 var(--acc); }
+.tp-row.tt.dragged .tt-tree > * { opacity: 0.45; }
+.tp-row.drop-into::after, .tp-row.drop-before::after, .tp-row.drop-after::after, .tp-row.drop-no::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.tp-row.drop-into::after { top: 0; bottom: 0; box-shadow: inset 0 0 0 2px var(--acc); background: var(--acc-t); }
+.tp-row.drop-before::after { top: -2px; height: 4px; border-radius: 2px; background: var(--acc); }
+.tp-row.drop-after::after { bottom: -2px; height: 4px; border-radius: 2px; background: var(--acc); }
+.tp-row.drop-no::after { top: 0; bottom: 0; box-shadow: inset 0 0 0 2px var(--danger); }
+html.rcm-dragging, html.rcm-dragging * { cursor: grabbing !important; user-select: none !important; }
+html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !important; }
+.rcm-ghost {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  max-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--surf);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-overlay);
+  font-size: 12.5px;
+  line-height: 1.35;
+  white-space: normal;
+}
+.rcm-ghost-what { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.rcm-ghost-n {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--acc);
+  color: #fff;
+  font-size: 11.5px;
+}
+.rcm-ghost-say { color: var(--muted, #6b7280); }
+.rcm-ghost.is-no { border-color: var(--danger); }
+.rcm-ghost.is-no .rcm-ghost-say { color: var(--danger); }
+.rcm-toast {
+  position: fixed;
+  z-index: 900;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* Its own width (not half the screen's, which is all left: 50% leaves it). */
+  width: max-content;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 8px 8px 8px 14px;
+  border-radius: 8px;
+  background: var(--surf);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-overlay);
+  font-size: 13.5px;
+}
+.rcm-toast.error { border-color: var(--danger); color: var(--danger); }
+.rcm-toast > span { flex: 1 1 auto; min-width: 0; }
+.rcm-toast button { flex: none; }
+.rcm-toast-x { background: none; border: 0; color: inherit; padding: 4px 8px; min-height: 32px; cursor: pointer; }
+.rcm-move-say { margin: 4px 0 0; color: var(--muted, #6b7280); }
+.rcm-move-say.no { color: var(--danger); }
+/* The Move to… picker: the tree with the RCM in it, the places it can't go greyed. */
+.rcm-move-tree {
+  position: relative; list-style: none; margin: 0; padding: 4px 0; max-height: min(52vh, 420px); overflow: auto;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surf);
+}
+.rcm-mt-row {
+  display: flex; align-items: center; gap: 6px; min-height: 36px; padding-right: 8px; cursor: pointer;
+  border-radius: 6px; margin: 0 4px; color: var(--ink); min-width: 0;
+}
+.rcm-mt-row:hover { background: var(--acc-hover); }
+.rcm-mt-row:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+.rcm-mt-row.picked { background: var(--acc-t); box-shadow: inset 3px 0 0 var(--acc); font-weight: 600; }
+.rcm-mt-row.no { color: var(--faint); cursor: default; }
+.rcm-mt-row.no:hover { background: none; }
+.rcm-mt-row .tp-ic { flex: none; }
+.rcm-mt-name { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.3; padding: 6px 0; }
+.rcm-mt-here { flex: none; font-size: var(--fs-12); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; }
+button.rcm-mt-arrow, span.rcm-mt-arrow {
+  flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: 0; background: none; box-shadow: none; min-height: 0; color: var(--muted); border-radius: 6px;
+}
+button.rcm-mt-arrow svg { transition: transform 0.12s; }
+button.rcm-mt-arrow.open svg { transform: rotate(90deg); }
+button.rcm-mt-arrow:hover:not(:disabled) { background: var(--surf-2); }
+
+/* The markers' key: each Show only filter in the tree's ⋯ menu with the
+   marker it matches, at its end. */
+.tm-menu .tm-item .tm-mark { margin-left: auto; }
+
+/* A phone: the tabs over the tree name the row they're for. */
+.tp-tabs-wrap { min-width: 0; }
+.tp-tabs-for {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-tabs-for strong { color: var(--ink); font-weight: 600; }

@@ -19,7 +19,7 @@ const BANDS = [
 // Step survival curve for a non-parametric estimate (KM/NA/FH/Turnbull),
 // with a 95% confidence band where available. ``estimate.bands`` (fits from
 // #85 on) adds the simultaneous bands, chosen under the chart.
-export default function SurvivalPlot({ estimate, unit, download = null }) {
+export default function SurvivalPlot({ estimate, unit, download = null, fill = false }) {
   const { x = [], R = [], cb_lower = [], cb_upper = [], bands = {} } = estimate || {};
   const [which, setWhich] = useState("pointwise");
   const options = BANDS.filter((b) => b.value === "pointwise" || bands[b.value]);
@@ -48,6 +48,7 @@ export default function SurvivalPlot({ estimate, unit, download = null }) {
           showlegend: hasBand,
         }}
         download={download}
+        fill={fill}
       />
       {options.length > 1 && (
         <div className="plot-option-row">

@@ -135,7 +135,7 @@ def test_bad_next_service_and_unknown_kind(session):
     with pytest.raises(fs.FleetValidationError, match="Recurrent model not found"):
         fs.create_fleet(session, "F", "nope", A, "recurrent")
     # A life-model id isn't a recurrent model, and vice versa.
-    with pytest.raises(fs.FleetValidationError, match="Life model not found"):
+    with pytest.raises(fs.FleetValidationError, match="Non-repairable model not found"):
         fs.create_fleet(session, "F", model.id, A)
 
 
@@ -180,7 +180,7 @@ def test_api_create_share_and_isolation(client):
     assert r.status_code == 200, r.text
     fid = r.json()["id"]
     assert r.json()["model_kind"] == "recurrent"
-    # A recurrent id isn't a life model.
+    # A recurrent id isn't a non-repairable model.
     assert client.post("/api/fleet/fleets", json={"name": "x", "model_id": mid}).status_code == 422
 
     r = client.put(f"/api/fleet/fleets/{fid}/items", json={
@@ -217,12 +217,12 @@ def test_mcp_fleet_forecast_and_delete_guard(env):
                      [{"name": "P1", "current_use": 200, "next_service_at": 260}], tm.A)
     listed = tm._ok(tm._call(env.token[tm.A], "list", {"kind": "fleets"}))["fleets"]
     assert listed[0]["model_kind"] == "recurrent"
-    out = tm._ok(tm._call(env.token[tm.A], "strategy", {"action": "fleet_forecast", "fleet_id": fleet.id}))
+    out = tm._ok(tm._call(env.token[tm.A], "analyse", {"action": "fleet_forecast", "fleet_id": fleet.id}))
     assert out["fleet"]["model_kind"] == "recurrent" and out["forecast"]["method"] == "repairable"
     lam = CrowAMSAA.from_params([ALPHA, BETA]).cif
     assert out["forecast"]["expected"] == pytest.approx(float(lam(300) - lam(200)), rel=1e-12)
     assert out["forecast"]["per_item"][0]["prob_before_service"] == pytest.approx(
         1 - np.exp(-float(lam(260) - lam(200))), rel=1e-12)
-    msg = tm._err(tm._call(env.token[tm.A], "models", {"action": "delete", "model_id": model.id}))
+    msg = tm._err(tm._call(env.token[tm.A], "change", {"action": "model_delete", "model_id": model.id}))
     assert "can't be deleted" in msg and "Pumps" in msg
     assert env.db.recurrent_models.find_one({"_id": model.id}) is not None

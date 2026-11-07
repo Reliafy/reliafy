@@ -1,9 +1,11 @@
 import { useMemo, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
+import { ErrorNotice } from "./StorageCap.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import { SPREADSHEET_ACCEPT, isSpreadsheetFile, pasteDataset, uploadDataset } from "../api.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import DatasetPartInput, { EMPTY_PART, PART_WORDS, partHasData, submitPart } from "./DatasetPartInput.jsx";
 import { fileStem, firstRowIsData, parsePreview } from "../datasetGuess.js";
 import "./Datasets.css";
 
@@ -49,7 +51,10 @@ function ListField({ f, v, onChange, disabled, placeholder, broadcast, bad }) {
   );
 }
 
-export default function NewDatasetModal({ onClose, onCreated }) {
+// ``withMeasurements``: also offer the dataset's measurements (readings on
+// the same units), added to the dataset right after it is created. ``open``
+// starts with that section open (the condition and life page).
+export default function NewDatasetModal({ onClose, onCreated, withMeasurements = true, measurementsOpen = false }) {
   // Opens on the dropzone; "paste or type" switches to entering data.
   const [step, setStep] = useState("upload"); // upload | enter
   const [enterMode, setEnterMode] = useState("paste"); // paste | form
@@ -62,6 +67,21 @@ export default function NewDatasetModal({ onClose, onCreated }) {
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef(null);
   const { chooseSheet, modal: sheetModal } = useSpreadsheet();
+  // The measurements, when given: added once the dataset exists. If that
+  // second step fails the dataset still exists, so the error says so and the
+  // button opens it.
+  const [measurements, setMeasurements] = useState(EMPTY_PART);
+  const [measOpen, setMeasOpen] = useState(measurementsOpen);
+  const [created, setCreated] = useState(null);
+  const addMeasurements = async (ds, typedName) => {
+    if (!withMeasurements || !partHasData(measurements)) return onCreated(ds, typedName);
+    try {
+      onCreated(await submitPart(ds.id, "measurements", measurements), typedName);
+    } catch (e) {
+      setCreated({ ds, typedName });
+      throw new Error(`The dataset was created, but its measurements weren't added: ${e.message}`);
+    }
+  };
 
   // upload: the picked file, previewed before it's created. A CSV keeps its
   // text for the preview; an Excel workbook its chosen sheet (the sheet picker
@@ -113,16 +133,16 @@ export default function NewDatasetModal({ onClose, onCreated }) {
     setBusy(true); setError(null);
     try {
       const { file, excel } = picked;
-      onCreated(await uploadDataset(file, name.trim() || undefined, excel ? false : noHeader, excel || null), name.trim());
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+      await addMeasurements(await uploadDataset(file, name.trim() || undefined, excel ? false : noHeader, excel || null), name.trim());
+    } catch (e) { setError(e); } finally { setBusy(false); }
   };
 
   // --- paste ---
   const pasteValid = name.trim() && preview && preview.nCols > 1;
   const onPaste = async () => {
     setBusy(true); setError(null);
-    try { onCreated(await pasteDataset(name.trim(), text, noHeader), name.trim()); }
-    catch (e) { setError(e.message); } finally { setBusy(false); }
+    try { await addMeasurements(await pasteDataset(name.trim(), text, noHeader), name.trim()); }
+    catch (e) { setError(e); } finally { setBusy(false); }
   };
 
   // --- form ---
@@ -170,21 +190,36 @@ export default function NewDatasetModal({ onClose, onCreated }) {
       );
       const csv = [header, ...rows].join("\n");
       const file = new File([csv], `${name.trim() || "dataset"}.csv`, { type: "text/csv" });
-      onCreated(await uploadDataset(file, name.trim() || undefined), name.trim());
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+      await addMeasurements(await uploadDataset(file, name.trim() || undefined), name.trim());
+    } catch (e) { setError(e); } finally { setBusy(false); }
   };
 
   // ---- footer: Back on the left (entering data), the one primary on the right ----
   const enter = step === "enter";
   const valid = enter ? (enterMode === "paste" ? pasteValid : formValid) : !!picked;
   const run = enter ? (enterMode === "paste" ? onPaste : onForm) : onUpload;
-  const footer = (
+  const footer = created ? (
+    <button className="ds-foot-primary" onClick={() => onCreated(created.ds, created.typedName)}>Open the dataset</button>
+  ) : (
     <>
       {enter && <button className="secondary" onClick={() => go("upload")} disabled={busy}>Back</button>}
       <button className="ds-foot-primary" onClick={run} disabled={!valid || busy}>
         {busy ? "Creating…" : "Create dataset"}
       </button>
     </>
+  );
+
+  // The optional second table: readings on the dataset's units.
+  const measurementsBox = withMeasurements && (
+    <details className="ds-more ds-meas" open={measOpen || partHasData(measurements) || undefined}
+             onToggle={(e) => setMeasOpen(e.target.open)}>
+      <summary>Add measurements for these units (optional)</summary>
+      <div className="ds-more-body">
+        <p className="hint" style={{ margin: 0 }}>{PART_WORDS.measurements.hint}</p>
+        <DatasetPartInput value={measurements} onChange={setMeasurements} label="readings"
+                          placeholder={PART_WORDS.measurements.placeholder} disabled={busy} />
+      </div>
+    </details>
   );
 
   const noHeaderBox = (excelNote) => (
@@ -255,11 +290,12 @@ export default function NewDatasetModal({ onClose, onCreated }) {
               </label>
               {filePreview && <PreviewTable columns={filePreview.columns} rows={filePreview.preview} />}
               {picked.text != null && noHeaderBox(false)}
+              {measurementsBox}
             </>
           )}
           <input ref={fileRef} type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} hidden
                  onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />
-          {error && <div className="error">{error}</div>}
+          <ErrorNotice error={error} />
           {sheetModal}
         </div>
       )}
@@ -298,6 +334,7 @@ export default function NewDatasetModal({ onClose, onCreated }) {
                 </div>
               ) : text.trim() ? <p className="hint">Add a header row and at least one data row.</p> : null}
               {noHeaderBox(false)}
+              {measurementsBox}
             </>
           ) : (
             <div className="ds-form">
@@ -328,9 +365,10 @@ export default function NewDatasetModal({ onClose, onCreated }) {
               {hasValue && !lengthsMatch && (
                 <p className="hint">Each list needs one value per unit: {rowCount} here.</p>
               )}
+              {measurementsBox}
             </div>
           )}
-          {error && <div className="error">{error}</div>}
+          <ErrorNotice error={error} />
         </div>
       )}
     </Modal>

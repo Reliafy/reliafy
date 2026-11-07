@@ -21,6 +21,7 @@ from backend.services import public_links as links_service
 from backend.services import rbds as rbds_service
 from backend.services.method_labels import generic_engine_fields
 from backend.services.rbd_analysis import AnalysisError
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -45,7 +46,7 @@ def create_link(
             password=password, generate_password=generate_password,
         )
     except links_service.PublicLinkError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     return JSONResponse(content=links_service.public(link))
 
 
@@ -82,7 +83,7 @@ def update_link(
             remove_password=bool(changes.get("remove_password")),
         )
     except links_service.PublicLinkError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     if link is None:
         return JSONResponse(status_code=404, content={"detail": "Link not found."})
     return JSONResponse(content=links_service.public(link))
@@ -100,14 +101,13 @@ def revoke_link(
 # Detail handlers per collection, replayed under the guest ctx. Imported
 # lazily inside the endpoint to avoid circular imports at module load.
 def _detail_handler(collection: str):
-    from backend.routers import degradation, fleet, models, rbds, rcm, recurrent, strategy
+    from backend.routers import degradation, fleet, models, rbds, recurrent, strategy
 
     return {
         "models": models.get_model,
         "datasets": models.get_dataset,
         "degradation_models": degradation.get_model,
         "strategy_analyses": strategy.get_analysis,
-        "rcm_studies": rcm.get_study,
         "fleets": fleet.get_fleet,
         "rbds": rbds.get_rbd,
         "recurrent_models": recurrent.get_model,
@@ -162,7 +162,7 @@ def _with_rbd_analysis(session, payload: dict, rbd_id: str, owner_id: str, ctx) 
             analysis = rbds_service.analyze_graph(session, graph, [*ctx.read_owners, owner_id])
         error = None
     except AnalysisError as exc:
-        analysis, error = None, str(exc)
+        analysis, error = None, client_message(exc)
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to analyse public RBD")
         analysis, error = None, "This diagram couldn't be analysed."

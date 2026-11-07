@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import useMenuDismiss from "../components/useMenuDismiss.js";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import ReactFlow, {
   Background,
   Controls,
@@ -30,7 +30,7 @@ import RbdTargets from "../components/RbdTargets.jsx";
 import RbdCostsModal from "../components/RbdCostsModal.jsx";
 import RbdCrewsModal from "../components/RbdCrewsModal.jsx";
 import { applyBlockExtras } from "../components/RbdBlockCosts.jsx";
-import ValidationPanel, { graphSignature } from "../components/RbdValidation.jsx";
+import ValidationPanel, { emptyStatus, graphSignature } from "../components/RbdValidation.jsx";
 import {
   saveRbd, getRbd, validateRbd, downloadRbdPython, PYTHON_EXPORT_TIP, downloadRbdJson, JSON_EXPORT_TIP,
 } from "../api.js";
@@ -57,7 +57,7 @@ import Chip from "../components/ui/Chip.jsx";
 import Switch from "../components/ui/Switch.jsx";
 import { formatPercent } from "../format.js";
 import {
-  allInstant, chainPairs, inPlaceItems, insertAfter, insertAlongside, insertOnEdge, setInstantRepair, trackSelection,
+  allInstant, chainPairs, clearSpot, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
 } from "../rbdBuilderOps.js";
 import { safetyStarter } from "../rbdSafetyStarter.js";
 // Phased missions and undirected networks (#160).
@@ -67,6 +67,12 @@ import RbdNetworkPanel, { NetworkOnlyNote } from "../components/RbdNetworkPanel.
 import { MISSION_KEYS, missionFields, undirectedEdges } from "../rbdMission.js";
 import { graphWithModel, plainName } from "../modelNext.js";
 import Tabs from "../components/ui/Tabs.jsx";
+import useFullScreen from "../components/useFullScreen.js";
+import FullScreenButton from "../components/FullScreenButton.jsx";
+import { hasOpenLayer, isFullScreenKey } from "../fullScreen.js";
+import { rbdSaveSnapshot, rbdSaveStatus } from "../rbdSaveState.js";
+import { RBDS_LABEL, RBDS_PATH } from "../navigation.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -211,11 +217,15 @@ const EDGE_OPTIONS = {
 // page's size), and never zooms out so far that the text is unreadable: past
 // that a large diagram is a pan away.
 const FIT_OPTIONS = { padding: 0.02, minZoom: 0.45, maxZoom: 0.75, duration: 300 };
-// The sized canvas (see sizeCanvas): its least height, the room kept above
-// and below the diagram for the zoom controls, and the frame below it (the
-// page's bottom padding).
-const CANVAS_MIN = 300;
-const CANVAS_PAD = 24;
+// On a phone the whole diagram fits on load, however small that makes it: a
+// diagram cut off at both edges looks broken, and a pinch zooms in.
+const PHONE_CANVAS = 600;
+function fitOptionsFor(width) {
+  return width && width <= PHONE_CANVAS ? { ...FIT_OPTIONS, minZoom: 0.2 } : FIT_OPTIONS;
+}
+// The sized canvas (see sizeCanvas): its least height (the unsized canvas's
+// own) and the frame below it (the page's bottom padding).
+const CANVAS_MIN = 440;
 const FRAME_BOTTOM = 20;
 
 // A repairable diagram's crews, groups and safety settings (#156, #157): the
@@ -316,7 +326,7 @@ function ValidationStatus({ validation, stale, validating, onValidate }) {
   const warnings = validation.warnings?.length || 0;
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   const [tone, icon, text] = validation.empty
-    ? ["todo", "+", "Nothing to check"]
+    ? ["todo", emptyStatus(validation).icon, emptyStatus(validation).text]
     : !validation.valid
     ? ["bad", "✕", `Not valid${errors ? ` · ${plural(errors, "problem")}` : ""}`]
     : warnings
@@ -346,7 +356,7 @@ function ValidationStatus({ validation, stale, validating, onValidate }) {
 // Shared samples are stored with a "(sample)" suffix; the header says so with a chip.
 const SAMPLE_SUFFIX = /\s*\(sample\)\s*$/i;
 
-function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab, addModel = null, onModelAdded }) {
+function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab, addModel = null, onModelAdded, onLoadError }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [menu, setMenu] = useState(null); // { kind, x, y, flow?, id? }
@@ -421,6 +431,19 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
   const [checkedSig, setCheckedSig] = useState(null);
   const idRef = useRef(1);
   const wrapper = useRef(null);
+  // The diagram the route last loaded (an id, or the imported graph): loaded
+  // once each. A save sets it to the saved id, so the route catching up with
+  // the save doesn't load the diagram again.
+  const loadedRef = useRef(null);
+  // Full screen (the toolbar and canvas cover the screen). One Builder either
+  // way: only its container's classes change, so nothing on the canvas resets.
+  const builderRef = useRef(null);
+  const fullBtnRef = useRef(null); // the button on show: on the canvas, or Exit in the toolbar
+  const { full, toggle: toggleFull, exit: exitFull } = useFullScreen(builderRef, { returnFocus: fullBtnRef });
+  // Saved or not, for the full-screen status (the page's title is hidden there):
+  // the diagram as last opened or saved, against the canvas now.
+  const [savedSnap, setSavedSnap] = useState(null);
+  const rebaseRef = useRef(true);
   // Always-current snapshot of the canvas, so the AI assistant can read the
   // live diagram via the bridge without stale-closure issues.
   const liveRef = useRef({ nodes: [], edges: [], unit: "" });
@@ -434,11 +457,11 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
   // is in the flow with a size (a second at most).
   const fitViewRef = useRef(fitView);
   fitViewRef.current = fitView;
-  // The canvas is as tall as the diagram needs at the zoom that fits its
-  // width, so a wide, flat diagram has no band of empty canvas above and
-  // below it; between CANVAS_MIN and the frame. A phone, or a diagram with
-  // next to nothing on it (room to build), keeps the whole frame. Returns
-  // whether the canvas could be measured (not while its tab is hidden).
+  // The canvas runs down to the bottom of the frame (never under CANVAS_MIN),
+  // so a wide, flat diagram doesn't leave the page empty below the card; the
+  // fit then centres it. A phone, or a diagram with next to nothing on it
+  // (room to build), keeps the whole frame. Returns whether the canvas could
+  // be measured (not while its tab is hidden).
   const [canvasH, setCanvasH] = useState(null);
   const sizedRef = useRef(false);
   const sizeCanvas = useCallback(() => {
@@ -450,19 +473,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       setCanvasH(null);
       return true;
     }
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (const n of placed) {
-      const p = n.positionAbsolute || n.position;
-      x0 = Math.min(x0, p.x);
-      x1 = Math.max(x1, p.x + n.width);
-      y0 = Math.min(y0, p.y);
-      y1 = Math.max(y1, p.y + n.height);
-    }
-    const k = 1 + FIT_OPTIONS.padding;
-    const zoom = Math.min(FIT_OPTIONS.maxZoom, Math.max(FIT_OPTIONS.minZoom, W / ((x1 - x0) * k)));
-    const want = Math.ceil((y1 - y0) * k * zoom) + 2 * CANVAS_PAD;
     const room = window.innerHeight - el.getBoundingClientRect().top - FRAME_BOTTOM;
-    setCanvasH(Math.round(Math.max(CANVAS_MIN, Math.min(want, room))));
+    setCanvasH(Math.round(Math.max(CANVAS_MIN, room)));
     return true;
   }, [getNodes]);
   const fitWhenMeasured = useCallback((expected) => {
@@ -474,7 +486,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       if ((ready && frames > 0) || frames > 60) {
         sizedRef.current = sizeCanvas();
         // Fit once React Flow has seen the canvas's new height.
-        window.requestAnimationFrame(() => window.requestAnimationFrame(() => fitViewRef.current(FIT_OPTIONS)));
+        window.requestAnimationFrame(() => window.requestAnimationFrame(
+          () => fitViewRef.current(fitOptionsFor(wrapper.current?.clientWidth))));
       } else {
         frames += 1;
         window.requestAnimationFrame(attempt);
@@ -511,6 +524,20 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     [nodes, edges, rbdUnit, repairable, ccfGroups, costsField]
   );
   const validationStale = validation != null && sig !== checkedSig;
+  const saveGraph = useMemo(
+    () => ({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }),
+    [nodes, edges, rbdUnit, repairable, ccfGroups, costsField]
+  );
+  useEffect(() => {
+    if (!rebaseRef.current) return;
+    rebaseRef.current = false;
+    setSavedSnap(rbdSaveSnapshot(saveGraph));
+  }, [saveGraph]);
+  const saveStatus = useMemo(() => {
+    if (!full) return null;
+    const dirty = savedSnap != null && rbdSaveSnapshot(saveGraph) !== savedSnap;
+    return rbdSaveStatus({ savedId: savedRbdId, readOnly: savedRbdReadOnly, dirty });
+  }, [full, saveGraph, savedSnap, savedRbdId, savedRbdReadOnly]);
 
   const runValidate = useCallback(async () => {
     setValidating(true);
@@ -627,6 +654,19 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [tab, modal, menu, connectSelected]);
+
+  // Full screen is the Builder's: another tab (the results) shows on the page.
+  useEffect(() => {
+    if (tab !== "builder") exitFull();
+  }, [tab, exitFull]);
+  // Entering or leaving full screen fits the diagram to the new size (and,
+  // back on the page, sizes the canvas to it again).
+  const fullSeen = useRef(full);
+  useEffect(() => {
+    if (fullSeen.current === full) return;
+    fullSeen.current = full;
+    fitWhenMeasured();
+  }, [full, fitWhenMeasured]);
 
   // Clear the transient "connected N links" note after a moment.
   useEffect(() => {
@@ -900,6 +940,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     async (name, asNew = false) => {
       const graph = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField };
       const saved = await saveRbd(name, graph, asNew ? null : savedRbdId, asNew ? null : savedRbdUpdatedAt);
+      loadedRef.current = saved.id;
+      setSavedSnap(rbdSaveSnapshot(graph));
       setSavedRbdId(saved.id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(saved.updated_at || null);
@@ -925,7 +967,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       await onSaveRbd(savedRbdName);
       setConnectHint("Saved.");
     } catch (e) {
-      setSaveError(e.message);
+      setSaveError(e);
       setTab("builder");
       setModal("saverbd");
     }
@@ -965,6 +1007,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(updatedAt);
       setSavedRbdReadOnly(readOnly);
+      rebaseRef.current = true;
       fitWhenMeasured(loadedNodes);
     },
     [setNodes, setEdges, fitWhenMeasured]
@@ -997,11 +1040,12 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     setSavedRbdName("");
     setSavedRbdUpdatedAt(null);
     setSavedRbdReadOnly(false);
+    rebaseRef.current = true;
     fitWhenMeasured(INITIAL_NODES);
   }, [setNodes, setEdges, fitWhenMeasured]);
 
   // Replace the canvas with an assistant-provided graph: normalise it (handles,
-  // edge styling, life models) and lay it out left-to-right, then keep the new
+  // edge styling, non-repairable models) and lay it out left-to-right, then keep the new
   // id counter clear of any ids it introduced.
   const applyGraph = useCallback((graph) => {
     const norm = normalizeRbdGraph(graph);
@@ -1045,11 +1089,12 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
   // Load the saved RBD named in the route (once per id); a route with no id is
   // a fresh diagram — or one just imported from another tool's file, which
   // opens unsaved (Save keeps it, under the usual plan limits).
-  const loadedRef = useRef(null);
   useEffect(() => {
     if (rbdId && loadedRef.current !== rbdId) {
       loadedRef.current = rbdId;
-      openRbd(rbdId, addModel).catch(() => {});
+      // A diagram that isn't there (a mistyped or old link) must not look
+      // like an empty, lost diagram: the page says so instead.
+      openRbd(rbdId, addModel).catch((err) => onLoadError?.(err));
     } else if (!rbdId && imported?.graph && loadedRef.current !== imported) {
       loadedRef.current = imported;
       loadGraph(imported.graph, null, imported.name || "");
@@ -1058,9 +1103,9 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       loadGraph(graphWithModel(null, addModel).graph, null, "");
       onModelAdded?.(plainName(addModel.name), true);
     }
-  }, [rbdId, imported, openRbd, loadGraph, addModel, onModelAdded]);
+  }, [rbdId, imported, openRbd, loadGraph, addModel, onModelAdded, onLoadError]);
 
-  // Assign a life model (saved or from parameters) to the node the modal targets.
+  // Assign a non-repairable model (saved or from parameters) to the node the modal targets.
   const setNodeModel = useCallback(
     ({ model, repair, extras, label }) => {
       setNodes((nds) =>
@@ -1223,6 +1268,19 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     return () => window.removeEventListener("keydown", onKey);
   }, [tab, modal, renaming, rename]);
 
+  // F toggles full screen, on the same terms as C (not while typing, nor with
+  // a menu or dialog open, nor with a modifier down: Cmd/Ctrl+F still finds).
+  useEffect(() => {
+    if (tab !== "builder" || modal || menu || renaming) return undefined;
+    const onKey = (e) => {
+      if (!isFullScreenKey(e) || hasOpenLayer(document)) return;
+      e.preventDefault();
+      toggleFull();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, modal, menu, renaming, toggleFull]);
+
   // "+ Add block" (#299): the block lands in the middle of the canvas in view,
   // a step down and right of the last one so a few in a row don't stack.
   const addOffset = useRef(0);
@@ -1231,8 +1289,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     if (!r) return undefined;
     const step = (addOffset.current++ % 5) * 40;
     const p = screenToFlowPosition({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
-    return { x: p.x - 80 + step, y: p.y - 30 + step };
-  }, [screenToFlowPosition]);
+    return clearSpot(nodes, { x: p.x - 80 + step, y: p.y - 30 + step });
+  }, [screenToFlowPosition, nodes]);
 
   // "+ Add block" in place (#282): with a block, a line of blocks or a
   // connection selected, the new component is wired in — after the block or
@@ -1268,6 +1326,31 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         : `Added ${block.data.label} alongside the ${choice.ids.length} selected blocks, in parallel.`
     );
   }, [nodes, edges, repairable, network, newId, setNodes, setEdges, fitWhenMeasured]);
+
+  // "+ Add block > Component": on a new diagram (only Input and Output) the
+  // first block is wired Input → block → Output and selected, so "add after"
+  // and "add alongside" build on a connected diagram; otherwise it lands in
+  // the middle of the canvas, unwired, as before.
+  const addComponentFromMenu = useCallback(() => {
+    const n = idRef.current;
+    const block = {
+      id: `c${n}`,
+      type: "component",
+      data: { label: `Component ${n}`, model: null, ...(repairable && allInstant(nodes) ? { instant_repair: true } : {}) },
+      position: { x: 0, y: 0 },
+      ...HORIZONTAL,
+    };
+    const out = insertFirst({ nodes, edges }, block, EDGE_OPTIONS);
+    if (!out) {
+      addComponent(centrePos());
+      return;
+    }
+    idRef.current += 1;
+    setNodes(out.nodes);
+    setEdges(out.edges);
+    fitWhenMeasured([block]);
+    setConnectHint(`Added ${block.data.label} between Input and Output, in series.`);
+  }, [nodes, edges, repairable, addComponent, centrePos, setNodes, setEdges, fitWhenMeasured]);
 
   // The toolbar's Safety function switch (#298): on, the diagram is a
   // repairable safety function (its results lead with PFDavg and the SIL);
@@ -1343,7 +1426,13 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     <RbdRenameContext.Provider value={rename}>
     <div className="rbd-shell">
     <Tabs tabs={RBD_TABS} value={tab} onChange={setTab} label="Diagram views" className="rbd-tabs" />
-    <div className="rbd-builder" style={{ display: tab === "builder" ? undefined : "none" }}>
+    <div
+      ref={builderRef}
+      className={"rbd-builder" + (full ? " is-full" : "")}
+      style={{ display: tab === "builder" ? undefined : "none" }}
+      role={full ? "region" : undefined}
+      aria-label={full ? "Diagram editor, full screen" : undefined}
+    >
     {/* One row above the canvas (#314): the diagram's settings on the left;
         Validate, Save ▾ and ⋯ on the right. On a phone the settings move into ⋯. */}
     <div className="rbd-toolbar">
@@ -1362,7 +1451,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
             <div className="rbd-menu-sep" role="separator" />
           </>
         )}
-        <button className="ovm-item" onClick={() => addComponent(centrePos())}>Component</button>
+        <button className="ovm-item" onClick={addComponentFromMenu}>Component</button>
         <button className="ovm-item" onClick={() => addKNode(centrePos(), 1, 2)}
                 title="Merge parallel branches back into one — any branch is enough">
           Junction
@@ -1452,7 +1541,17 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           <option value={u} key={u} />
         ))}
       </datalist>
+      <div className="rbd-tb-flash" role="status" title={connectHint || undefined}>{connectHint}</div>
       <div className="rbd-toolbar-actions">
+        {/* Full screen hides the page's title: the diagram's name and whether
+            it's saved stay in sight here. */}
+        {full && saveStatus && (
+          <span className={`rbd-full-status is-${saveStatus.tone}`} title={saveStatus.title} role="status">
+            <span className="rbd-full-name">{(savedRbdName || "").replace(SAMPLE_SUFFIX, "") || "Untitled RBD"}</span>
+            <span className="rbd-full-dot" aria-hidden="true" />
+            <span className="rbd-full-saved">{saveStatus.text}</span>
+          </span>
+        )}
         <ValidationStatus
           validation={validation}
           stale={validationStale}
@@ -1561,12 +1660,15 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           </button>
         </ToolbarMenu>
       </div>
+      {/* In full screen, Exit is the toolbar's last button, always on show.
+          (The way in is on the canvas's corner: the toolbar is full.) */}
+      {full && <FullScreenButton ref={fullBtnRef} full onClick={toggleFull} />}
     </div>
     <div
-      className={"rbd-canvas" + (canvasH ? " is-sized" : "")}
+      className={"rbd-canvas" + (canvasH && !full ? " is-sized" : "")}
       data-wt="rbd-canvas"
       ref={wrapper}
-      style={canvasH ? { height: canvasH } : undefined}
+      style={canvasH && !full ? { height: canvasH } : undefined}
     >
       <ReactFlow
         nodes={nodes}
@@ -1588,7 +1690,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         multiSelectionKeyCode={["Meta", "Control", "Shift"]}
         defaultEdgeOptions={EDGE_OPTIONS}
         fitView
-        fitViewOptions={FIT_OPTIONS}
+        fitViewOptions={fitOptionsFor(typeof window !== "undefined" ? window.innerWidth : 0)}
         minZoom={0.2}
         proOptions={{ hideAttribution: true }}
       >
@@ -1602,6 +1704,11 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           </div>
         )}
         </Panel>
+        {!full && (
+          <Panel position="top-right" className="rbd-full-panel">
+            <FullScreenButton ref={fullBtnRef} full={false} onClick={toggleFull} compact />
+          </Panel>
+        )}
         <Background gap={22} />
         <Controls showInteractive={false} onFitView={() => fitWhenMeasured()} />
         {/* Only for a large diagram (#314): on a small one it covers blocks. */}
@@ -1688,7 +1795,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
                         closeMenu();
                       }}
                     >
-                      {menu.repeat ? "Edit life model (original)" : "Edit life model"}
+                      {menu.repeat ? "Edit non-repairable model (original)" : "Edit non-repairable model"}
                     </button>
                     {(menu.nodeType === "series" ||
                       menu.nodeType === "parallel") && (
@@ -1850,15 +1957,12 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         </div>
       )}
 
-      {/* One short line until the first connection (#314); the C shortcut's
-          feedback flashes here too. */}
-      {(connectHint || edges.length === 0) && (
+      {/* One short line until the first connection (#314). What an action
+          did flashes in the toolbar, off the canvas, so it never covers the
+          blocks it talks about. */}
+      {edges.length === 0 && (
         <div className="rbd-hint">
-          {connectHint ? (
-            <span className="rbd-hint-flash">{connectHint}</span>
-          ) : (
-            "Add blocks with + Add block or a right-click · select a block or a line first to wire it in · drag to connect · double-click to edit"
-          )}
+          Add blocks with + Add block or a right-click · select a block or a line first to wire it in · drag to connect · double-click to edit
         </div>
       )}
 
@@ -2056,7 +2160,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         onView={() => {
           setTab("builder");
           // Once the canvas is shown again (it can't be fitted while hidden).
-          window.setTimeout(() => fitView(FIT_OPTIONS), 60);
+          window.setTimeout(() => fitView(fitOptionsFor(wrapper.current?.clientWidth || window.innerWidth)), 60);
         }}
       />
       )}
@@ -2120,10 +2224,47 @@ export default function RbdBuilder() {
   }, [navigate, location.pathname]);
   const [meta, setMeta] = useState({});
   const [tab, setTab] = useState("builder");
+  const [loadError, setLoadError] = useState(null); // { id, missing, message }
+  const onLoadError = useCallback((err) => setLoadError({
+    id, missing: err?.status === 404 || err?.status === 403, message: err?.message,
+  }), [id]);
+  // One Builder per diagram opened: a new route gets a fresh one, but the
+  // route catching up with the Builder's own save (a new diagram's first
+  // save, or Save as new) keeps it, so the canvas, its view and full screen
+  // carry on as they were.
+  const routeKey = id || (starter ? `starter-${location.key}` : "new");
+  const keyRef = useRef({ route: routeKey, gen: 0, savedId: null });
+  const keys = keyRef.current;
+  if (keys.route !== routeKey) {
+    if (!(id && id === keys.savedId)) keys.gen += 1;
+    keys.route = routeKey;
+    keys.savedId = null;
+  }
+  if (loadError && loadError.id === id) {
+    return (
+      <div className="app">
+        <PageTitle name={loadError.missing ? "Diagram not found" : "Couldn't open this diagram"} />
+        <PageHeader crumbs={[{ label: RBDS_LABEL, to: RBDS_PATH }]}
+                    title={loadError.missing ? "Diagram not found" : "Couldn't open this diagram"} />
+        <div className="card" role="alert">
+          <p style={{ marginTop: 0 }}>
+            {loadError.missing
+              ? "There's no diagram at this address. It may have been deleted, or the link may be mistyped."
+              : `Something stopped the diagram loading: ${loadError.message || "an unknown error"}. Try again in a moment.`}
+          </p>
+          <p style={{ marginBottom: 0 }}>
+            <Link to={RBDS_PATH}>See your RBDs</Link> · <Link to="/systems/b">Start a new diagram</Link>
+          </p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={"app rbd-app" + (tab === "builder" ? "" : " rbd-app-scroll")}>
+      <PageTitle name={(meta.name || "").replace(SAMPLE_SUFFIX, "")} />
       <PageHeader
-        crumbs={[{ label: "RBDs", to: "/rbds" }]}
+        className="rbd-header"
+        crumbs={[{ label: RBDS_LABEL, to: RBDS_PATH }]}
         title={(meta.name || "").replace(SAMPLE_SUFFIX, "") || (id ? "" : "Untitled RBD")}
         badges={SAMPLE_SUFFIX.test(meta.name || "") && <Chip>Sample</Chip>}
         id={meta.id || id}
@@ -2172,20 +2313,22 @@ export default function RbdBuilder() {
       <div className="card rbd-wrap">
         <ReactFlowProvider>
           <Builder
-            key={id || (starter ? `starter-${location.key}` : "new")}
+            key={`builder-${keys.gen}`}
             rbdId={id}
             imported={imported}
-            onNew={() => navigate("/rbds/b")}
-            onOpenLibrary={() => navigate("/rbds")}
+            onNew={() => navigate("/systems/b")}
+            onOpenLibrary={() => navigate(RBDS_PATH)}
             onSaved={(savedId) => {
+              keyRef.current.savedId = savedId;
               // Saved: the "added as a block — not saved yet" note no longer holds.
               setAdded(null);
-              navigate(`/rbds/b/${savedId}`, { replace: true });
+              navigate(`/systems/b/${savedId}`, { replace: true });
             }}
             onMeta={setMeta}
             onTab={setTab}
             addModel={addModel}
             onModelAdded={onModelAdded}
+            onLoadError={onLoadError}
           />
         </ReactFlowProvider>
       </div>

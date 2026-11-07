@@ -24,6 +24,7 @@ from backend.maintenance.service import (
     MAX_CONDITION_DEPTH, MAX_CONDITIONS, Invalid, Maintenance, _key, _text, new_id,
 )
 from backend.maintenance.taxonomy import MAX_TEXT, SHOWN, _path
+from backend.errors import client_message
 
 FORMAT = "reliafy-conditions"
 
@@ -139,7 +140,7 @@ def plan(m: Maintenance, rows: list[dict]) -> dict:
                            "fields": {"unit": unit, "code": _text(r.get("code"), "code"),
                                       "description": _text(r.get("description"), "description")}}
         except Invalid as err:
-            errors.append({"row": r.get("row"), "error": str(err)})
+            errors.append({"row": r.get("row"), "error": client_message(err)})
     # Parents named only in a path are made too, with just their name.
     for key in list(wanted):
         for depth in range(1, len(key)):

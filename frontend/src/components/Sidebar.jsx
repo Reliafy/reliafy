@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { NAV, activeNav } from "../sections.js";
 import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import Modal from "./Modal.jsx";
 import { publicUrl } from "../firebase.js";
-import { getMaintenanceAccess } from "../api.js";
+import { useRoles } from "../RolesProvider.jsx";
+import { activeTrail, childActive } from "../navigation.js";
+import ExtensionNavItems from "./ExtensionNavItems.jsx";
+import { SidebarIcon } from "./icons.jsx";
 
 const SignOutIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -21,62 +23,6 @@ export function initials(user) {
   return letters.toUpperCase();
 }
 
-// Collapsible left navigation — the Instrument "Workspace" rail.
-// Icons mirror the Instrument design (1.7px hairline strokes).
-const ModellingIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M3 7c3 0 3 10 6 10s3-14 6-14 3 8 6 8" />
-  </svg>
-);
-
-const RbdIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="3" y="4" width="6" height="6" rx="1" />
-    <rect x="15" y="4" width="6" height="6" rx="1" />
-    <rect x="9" y="14" width="6" height="6" rx="1" />
-    <path d="M9 7h6M6 10v4M18 10v4" />
-  </svg>
-);
-
-const StrategyIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <circle cx="12" cy="12" r="8.5" />
-    <path d="M12 12l4-2.5M12 12v4.5" />
-    <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
-  </svg>
-);
-
-const FleetIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M3 16V7a1 1 0 0 1 1-1h9v10" />
-    <path d="M13 9h4l3 3.5V16h-2.5" />
-    <circle cx="7.5" cy="17.5" r="1.8" />
-    <circle cx="16.5" cy="17.5" r="1.8" />
-    <path d="M9.3 17.5h5.4M3 16h2.7" />
-  </svg>
-);
-
-const RcmSectionIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="5" y="4" width="14" height="17" rx="2" />
-    <path d="M9 4V3h6v1" />
-    <path d="m8.5 12 2 2 4-4.5" />
-  </svg>
-);
-
-const MaintenanceIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.5 17.3a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.1-.4-.4-2.1z" />
-  </svg>
-);
-
-const AgentIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="4" y="7" width="16" height="12" rx="2" />
-    <path d="M12 7V4M9 12h.01M15 12h.01M9 16h6" />
-  </svg>
-);
-
 const ApiIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M8 9l-4 3 4 3M16 9l4 3-4 3M13 6l-2 12" />
@@ -86,6 +32,12 @@ const NewsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />
     <path d="M19 16v4M17 18h4" />
+  </svg>
+);
+const GraphIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="8" r="2.5" /><circle cx="10" cy="18" r="2.5" />
+    <path d="M8.4 6.6l7.2 1M16.6 10.1l-5.1 6M7 8.3l2.2 7.3" />
   </svg>
 );
 const SettingsIcon = () => (
@@ -101,27 +53,89 @@ const BillingIcon = () => (
   </svg>
 );
 
-const HomeIcon = () => (
+// The menu's icons, by entry id (navigation.js). Instrument hairline strokes.
+const icon = (paths) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M3.5 11 12 4l8.5 7" />
-    <path d="M5.5 9.5V20h13V9.5" />
-    <path d="M10 20v-5.5h4V20" />
+    {paths}
   </svg>
 );
-
-// The menu itself is data (sections.js, with its tests); here each section
-// gets its icon. A section's children show under it while it's the current
-// section; the current page is highlighted, the child when there is one.
 const ICONS = {
-  home: <HomeIcon />,
-  modelling: <ModellingIcon />,
-  rbds: <RbdIcon />,
-  strategy: <StrategyIcon />,
-  fleet: <FleetIcon />,
-  rcm: <RcmSectionIcon />,
-  maintenance: <MaintenanceIcon />,
-  agent: <AgentIcon />,
+  home: icon(<><path d="M4 11.5 12 5l8 6.5" /><path d="M6 10v9h12v-9" /><path d="M10 19v-5h4v5" /></>),
+  // A design: a blueprint sheet with its frame.
+  products: icon(<><rect x="4" y="4" width="16" height="16" rx="1.5" /><path d="M8 8h8M8 12h5M8 16h3M15 13l3 3-3 3" /></>),
+  // Serial-numbered things: tags.
+  items: icon(<><path d="M4 4h7l9 9-7 7-9-9z" /><circle cx="8.5" cy="8.5" r="1.4" /></>),
+  assets: icon(<><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z" /><path d="M4 7.5 12 12l8-4.5M12 12v9" /></>),
+  maintenance: icon(<path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.5 17.3a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.1-.4-.4-2.1z" />),
+  modelling: icon(<path d="M3 7c3 0 3 10 6 10s3-14 6-14 3 8 6 8" />),
+  decisions: icon(<><circle cx="12" cy="12" r="8.5" /><path d="M12 12l4-2.5M12 12v4.5" /><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" /></>),
+  reports: icon(<><path d="M7 3h7l4 4v14H7z" /><path d="M14 3v4h4M10 12h5M10 16h5" /></>),
+  agent: icon(<><rect x="4" y="7" width="16" height="12" rx="2" /><path d="M12 7V4M9 12h.01M15 12h.01M9 16h6" /></>),
 };
+const MoreIcon = () => icon(<><circle cx="6" cy="12" r="1.2" fill="currentColor" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /><circle cx="18" cy="12" r="1.2" fill="currentColor" /></>);
+
+// An entry's children (or a group's entries), each linked and lit when it's
+// where the page is. `trail` is activeTrail's answer for the page.
+function SubList({ items, trail, pathname, level = 2 }) {
+  return (
+    <div className={"side-children" + (level === 3 ? " side-grandchildren" : "")}>
+      {items.map((c) => {
+        const isEntry = !!c.id;
+        const here = isEntry ? trail.entry === c : trail.child === c;
+        // An entry is lit on its pages that no child of it names (its landing
+        // page, a detail page); otherwise the child is.
+        const lit = here && !(isEntry && trail.child);
+        return (
+          <div key={c.id || c.to}>
+            <Link
+              to={c.to}
+              className={"side-subitem" + (lit ? " active" : "")}
+              aria-current={pathname === c.to && (!isEntry || !trail.child || trail.child.to !== c.to) ? "page" : undefined}
+            >
+              {c.label}
+            </Link>
+            {isEntry && here && c.children?.length > 0 && (
+              <SubList items={c.children} trail={trail} pathname={pathname} level={3} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// One top-level entry, with what's under it while it's the current one: a
+// group's entries (and the current entry's children), or an entry's children.
+// The entry is lit when nothing under it is (and always on the collapsed rail,
+// where what's under it is hidden).
+function MenuEntry({ entry, collapsed, pathname, trail }) {
+  const active = trail.top === entry;
+  const below = entry.entries || entry.children || [];
+  const lit = active && (collapsed || (!entry.entries && !trail.child));
+  return (
+    <div>
+      <Link
+        to={entry.to}
+        className={"side-item" + (lit ? " active" : "")}
+        aria-current={pathname === entry.to && !entry.entries && !trail.child ? "page" : undefined}
+        title={entry.label}
+      >
+        <span className="side-icon">{ICONS[entry.id]}</span>
+        {!collapsed && <span className="side-label">{entry.label}</span>}
+      </Link>
+      {!collapsed && active && below.length > 0 && <SubList items={below} trail={trail} pathname={pathname} />}
+    </div>
+  );
+}
+
+// The entries, in one flat list (no section headings).
+function MenuGroups({ entries, collapsed, pathname, trail }) {
+  return (
+    <div className="side-group">
+      {entries.map((e) => <MenuEntry key={e.id} entry={e} collapsed={collapsed} pathname={pathname} trail={trail} />)}
+    </div>
+  );
+}
 
 const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -132,20 +146,21 @@ const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1
 export default function Sidebar({ collapsed, onToggle, phone = false, open = false, onClose }) {
   const asideRef = useRef(null);
   const { user, signOut } = useAuth();
-  const { ai, billing, reliability_agent: agentEnabled, maintenance: maintenanceEnabled } = useAppConfig();
+  const { ai, billing, reliability_agent: agentEnabled } = useAppConfig();
   // Credits only buy AI use; without it the page is plain billing.
   const billingLabel = ai || agentEnabled ? "Billing & credits" : "Billing";
-  // The Reliability Agent surface is behind a feature flag (hidden until ready).
-  const [maintenanceAllowed, setMaintenanceAllowed] = useState(false);
-  useEffect(() => {
-    if (!maintenanceEnabled) return;
-    getMaintenanceAccess().then((a) => setMaintenanceAllowed(!!a.allowed));
-  }, [maintenanceEnabled]);
-  const items = NAV.filter((it) => (it.gate !== "agent" || agentEnabled)
-    && (it.gate !== "maintenance" || (maintenanceEnabled && maintenanceAllowed)));
+  // The menu (navigation.js): what the user's roles use, then "More".
+  const { menu, has } = useRoles();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const current = activeNav(pathname);
+  // Where the page is in the menu (the longest match over everything shown).
+  const trail = activeTrail([...menu.main, ...menu.more], pathname);
+  // "More" opens by itself when the page shown is one of its entries.
+  const moreActive = menu.more.includes(trail.top);
+  const [moreOpen, setMoreOpen] = useState(moreActive);
+  useEffect(() => {
+    if (moreActive) setMoreOpen(true);
+  }, [moreActive]);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -227,49 +242,45 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
           <button
             className="sidebar-toggle"
             onClick={onToggle}
-            title={collapsed ? "Expand menu" : "Collapse menu"}
-            aria-label={collapsed ? "Expand menu" : "Collapse menu"}
+            title={collapsed ? "Show the menu" : "Hide the menu"}
+            aria-label={collapsed ? "Show the menu" : "Hide the menu"}
           >
-            {collapsed ? "»" : "«"}
+            <SidebarIcon />
           </button>
         )}
       </div>
-      <nav className="sidebar-nav">
-        {items.map((it) => {
-          const sectionActive = current.section === it.key;
-          return (
-            <div key={it.to}>
-              <Link
-                to={it.to}
-                className={"side-item" + (sectionActive && (collapsed || !current.child) ? " active" : "")}
-                aria-current={sectionActive && !current.child && pathname === it.to ? "page" : undefined}
-                title={it.label}
-              >
-                <span className="side-icon">{ICONS[it.key]}</span>
-                {!collapsed && <span className="side-label">{it.label}</span>}
-              </Link>
-              {!collapsed && it.children && sectionActive && (
-                <div className="side-children">
-                  {it.children.map((c) => (
-                    <Link
-                      key={c.to}
-                      to={c.to}
-                      className={"side-subitem" + (current.child === c.to ? " active" : "")}
-                      aria-current={pathname === c.to ? "page" : undefined}
-                    >
-                      {c.label}
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+      <nav className="sidebar-nav" aria-label="Main">
+        <MenuGroups entries={menu.main} collapsed={collapsed} pathname={pathname} trail={trail} />
+        {menu.more.length > 0 && (
+          <>
+            <button
+              type="button"
+              className={"side-item side-more" + (moreActive && !moreOpen ? " active" : "")}
+              aria-expanded={moreOpen}
+              aria-controls="side-more"
+              onClick={() => setMoreOpen((o) => !o)}
+              aria-label="More"
+              title={moreOpen ? "Hide the rest of the menu" : "More: the rest of the menu"}
+            >
+              <span className="side-icon"><MoreIcon /></span>
+              {!collapsed && <span className="side-label">More</span>}
+              {!collapsed && <span className="side-more-caret" aria-hidden="true">{moreOpen ? "▴" : "▾"}</span>}
+            </button>
+            {moreOpen && (
+              <div id="side-more" className="side-more-list">
+                <MenuGroups entries={menu.more} collapsed={collapsed} pathname={pathname} trail={trail} />
+              </div>
+            )}
+          </>
+        )}
+        {/* Pages added by optional extensions for this section; nothing when
+            none is installed or the user isn't in a page's audience. */}
+        <ExtensionNavItems section="workspace" collapsed={collapsed} />
       </nav>
 
       <div className="side-grow" />
 
-      {!collapsed && <div className="side-label-group">Account</div>}
+      {!collapsed && <div className="side-section side-section-account">Account</div>}
       <NavLink
         to="/settings"
         className={({ isActive }) => "side-item" + (isActive ? " active" : "")}
@@ -288,6 +299,19 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
           {!collapsed && <span className="side-label">{billingLabel}</span>}
         </NavLink>
       )}
+      {/* The Data model page: for graph-access users, and in the menu only where
+          the menu preview is on (anyone with access can open /data-model). */}
+      {has.graph && has.preview && (
+        <NavLink
+          to="/data-model"
+          className={({ isActive }) => "side-item" + (isActive ? " active" : "")}
+          title="Data model — the kinds of thing your maintenance graph holds and how they connect"
+        >
+          <span className="side-icon"><GraphIcon /></span>
+          {!collapsed && <span className="side-label">Data model</span>}
+        </NavLink>
+      )}
+      <ExtensionNavItems section="account" collapsed={collapsed} />
       <a
         className="side-item"
         href="/api-docs"

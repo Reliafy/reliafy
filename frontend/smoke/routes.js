@@ -4,6 +4,7 @@
 // line in DETAIL_IDS below saying where its ids come from: until it has one,
 // its test fails and says so.
 import { readFileSync } from "node:fs";
+import { MOVED, fillMoved } from "../src/redirects.js";
 
 const src = (file) => readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8");
 
@@ -34,7 +35,9 @@ function productPaths() {
 const GATE_FLAGS = { agentEnabled: "reliability_agent", maintenanceEnabled: "maintenance", billing: "billing" };
 
 // The signed-in app's pages, minus the catch-all; `flag` is the /api/config
-// capability a gated route needs (the test skips it when that's off).
+// capability a gated route needs (the test skips it when that's off). The
+// earlier addresses (src/redirects.js) are routes too: `redirect`, with the
+// `target` they go to.
 export function appRoutes() {
   const shell = routesIn("AppShell.jsx").map((r) => ({ ...r, flag: r.gate ? GATE_FLAGS[r.gate] : null }));
   for (const r of shell) {
@@ -45,7 +48,8 @@ export function appRoutes() {
   const top = routesIn("App.jsx")
     .filter((r) => !r.gate && r.path !== "/*")
     .map((r) => ({ ...r, flag: null, root: "#root" }));
-  return [...shell, ...top].filter((r) => r.path !== "*");
+  const moved = MOVED.map((m) => ({ path: m.path, target: m.to, gate: null, flag: null, redirect: true }));
+  return [...shell, ...top, ...moved].filter((r) => r.path !== "*");
 }
 
 // The public pages (cloud builds only: App.jsx gates them on !AUTH_DISABLED).
@@ -55,7 +59,7 @@ export function publicRoutes() {
 
 export const hasParam = (path) => path.includes("/:");
 
-// Fill a route's parameter: "/modelling/m/:id" + "abc" -> "/modelling/m/abc".
+// Fill a route's parameter: "/models/m/:id" + "abc" -> "/models/m/abc".
 export const fill = (path, id) => path.replace(/:\w+/, encodeURIComponent(id));
 
 // Where each app route with a parameter gets its records (each `{id, ...}`):
@@ -66,46 +70,72 @@ export const fill = (path, id) => path.replace(/:\w+/, encodeURIComponent(id));
 export const MAX_IDS = 12;
 const list = (key, field = "id") => (body) => (body[key] || []).map((x) => ({ ...x, id: x[field] }));
 export const DETAIL_IDS = {
-  "/modelling/m/:id": ["/api/models", list("models")],
-  "/modelling/degradation/:id": ["/api/degradation/models", list("models")],
-  "/modelling/recurrent/:id": ["/api/recurrent/models", list("models")],
-  "/modelling/alt/:id": ["/api/alt/models", list("models")],
-  // A condition-based risk model: smoke/seed.js fits one.
-  "/modelling/joint/:id": ["/api/joint/models", list("models")],
-  "/rbds/b/:id": ["/api/rbds", list("rbds")],
-  "/rbds/runs/:runId": ["/api/rbd-runs", list("runs", "run_id")],
-  "/modelling/data/:id": ["/api/datasets", list("datasets")],
-  // An old dataset link: redirects to /modelling/data/<id>.
-  "/datasets/d/:id": ["/api/datasets", list("datasets")],
+  "/models/m/:id": ["/api/models", list("models")],
+  "/models/degradation/:id": ["/api/degradation/models", list("models")],
+  "/models/recurrent/:id": ["/api/recurrent/models", list("models")],
+  "/models/alt/:id": ["/api/alt/models", list("models")],
+  // A condition and life model: smoke/seed.js fits one.
+  "/models/joint/:id": ["/api/joint/models", list("models")],
+  "/systems/b/:id": ["/api/rbds", list("rbds")],
+  "/systems/runs/:runId": ["/api/rbd-runs", list("runs", "run_id")],
+  // A fault tree: the sample quadcopter tree is seeded.
+  "/systems/fault-trees/:id": ["/api/fault-trees", list("fault_trees")],
+  "/data/:id": ["/api/datasets", list("datasets")],
   "/strategy/analyses/:id": ["/api/strategy/analyses", list("analyses")],
-  "/fleet/tracking/:fleetId": ["/api/fleet/tracked", list("fleets")],
-  "/fleet/forecasts/:id": ["/api/fleet/fleets", list("fleets")],
-  "/rcm/studies/:id": ["/api/rcm/studies", list("studies")],
-  "/maintenance/positions/:id": ["/api/maintenance/overview", list("tree")],
+  // A reliability prediction (the sample parts count).
+  "/predictions/:id": ["/api/predictions", list("predictions")],
+  // A maintainability prediction: the sample quadcopter's.
+  "/maintainability/:id": ["/api/maintainability/predictions", list("predictions")],
+  "/risk/:fleetId": ["/api/fleet/tracked", list("fleets")],
+  "/forecasts/:id": ["/api/fleet/fleets", list("fleets")],
+  "/asset-register/positions/:id": ["/api/maintenance/overview", list("tree")],
+  // The FME(C)A print view: the same positions.
+  "/asset-register/positions/:id/fmea": ["/api/maintenance/overview", list("tree")],
   "/maintenance/work-orders/:id": ["/api/maintenance/work-orders", list("work_orders")],
-  "/maintenance/items/:id": ["/api/maintenance/items", list("items")],
-  "/maintenance/locations/:id": ["/api/maintenance/locations", list("locations")],
+  "/asset-register/items/:id": ["/api/maintenance/items", list("items")],
+  // A product: smoke/seed.js adds the sample UAV product.
+  "/products/:id": ["/api/maintenance/products", list("products")],
+  "/asset-register/locations/:id": ["/api/maintenance/locations", list("locations")],
+  // A class's old addresses (they open the Explorer's Classes tab on that
+  // class: the name is in the target's query, so they name their own ids).
+  "/asset-register/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
   "/maintenance/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
-  "/maintenance/parts/:id": ["/api/maintenance/parts", list("parts")], // #435
-  // An old bookmark: redirects to the tracking list whatever the id.
-  "/strategy/tracking/:modelId": [null, () => [{ id: "any-old-id" }]],
+  "/asset-register/parts/:id": ["/api/maintenance/parts", list("parts")],
+  // A measuring point: every one added (the sample product's items' hour meters, and the
+  // smoke test position's condition point that smoke/seed.js adds), from the event log.
+  "/asset-register/points/:id": ["/api/maintenance/events?type=point.added&limit=500",
+    (body) => (body.events || []).map((e) => ({ id: e.payload?.id })).filter((x) => x.id)],
+  // A signal channel: smoke/seed.js adds a smart plug's power channel on the smoke test position.
+  "/asset-register/channels/:id": ["/api/maintenance/signals/channels", list("channels")],
 };
+
+// An earlier address with an id takes its records from the page it moved to;
+// one whose new page has no id (an old tracking bookmark) opens with any id.
+export function idSource(route) {
+  if (DETAIL_IDS[route.path]) return DETAIL_IDS[route.path];
+  if (route.redirect && route.target) {
+    if (hasParam(route.target)) return DETAIL_IDS[route.target];
+    return [null, () => [{ id: "any-old-id" }]];
+  }
+  return undefined;
+}
 
 // Pages that draw a chart: the test waits for a Plotly plot on these (true,
 // or a test of the record shown). The chart library loads with the first page
 // that needs it, so a broken chart chunk shows up here.
 const CHART_PAGES = {
-  "/modelling/m/:id": true,
-  "/modelling/degradation/:id": true,
-  "/modelling/recurrent/:id": true,
-  "/modelling/alt/:id": true,
-  "/modelling/joint/:id": true,
-  "/fleet/forecasts/:id": true,
-  "/fleet/tracking/:fleetId": true,
-  // A class with a fitted model shows its failure forecast (#407).
-  "/maintenance/classes/:name": (cls) => Boolean(cls.model),
+  // A per-demand model is one probability, with no chart.
+  "/models/m/:id": (model) => model.kind !== "per_demand",
+  "/models/degradation/:id": true,
+  "/models/recurrent/:id": true,
+  "/models/alt/:id": true,
+  "/models/joint/:id": true,
+  "/forecasts/:id": true,
+  "/risk/:fleetId": true,
   // A failure-finding analysis is one interval: no chart.
   "/strategy/analyses/:id": (analysis) => analysis.kind !== "failure_finding",
+  // A prediction's Pareto, once a line has a part type.
+  "/predictions/:id": (prediction) => prediction.assigned > 0,
 };
 
 export function expectsChart(path, record = {}) {
@@ -113,14 +143,24 @@ export function expectsChart(path, record = {}) {
   return typeof rule === "function" ? rule(record) : Boolean(rule);
 }
 
-// Old addresses that must keep working after the menu moved them (#nav):
-// [opened, where it lands]. Emails, shares and API or MCP results saved
-// before the move carry the old ones.
-export const REDIRECTS = [
-  ["/", "/home"],
-  ["/modelling/models", "/modelling"],
-  ["/datasets", "/modelling/data"],
-  ["/datasets/list", "/modelling/data"],
-  ["/datasets/d/sample-ds-bearings", "/modelling/data/sample-ds-bearings"],
-  ["/datasets/d/sample-ds-bearings?compare=arm", "/modelling/data/sample-ds-bearings?compare=arm"],
+// Where an earlier address lands: `from` with an id filled in (and any
+// query or #hash) goes to its new page with the same id, query and hash.
+export function landing(route, id, suffix = "") {
+  const params = {};
+  for (const name of route.path.match(/:\w+/g) || []) params[name.slice(1)] = encodeURIComponent(id);
+  // The path only: a target's own query (?arrange=items) isn't part of it.
+  return fillMoved(route.target, params).split("?")[0] + suffix;
+}
+
+// A few earlier addresses with a query or #hash, which must survive the move.
+export const REDIRECTS_WITH_QUERY = [
+  ["/datasets/d/sample-ds-bearings?compare=arm", "/data/sample-ds-bearings?compare=arm"],
+  ["/modelling/new?mode=paste", "/models/new?mode=paste"],
+  ["/modelling/m/sample-model-bearings-weibull?from=email#bounds", "/models/m/sample-model-bearings-weibull?from=email#bounds"],
+  // A study's old address lands on the Explorer's RCM tab: the tab is the target's own query, then the rest.
+  ["/rcm/studies/sample-rcm-truck?from=email", "/asset-register/explorer?tab=rcm&from=email"],
+  ["/maintenance/rcm/sample-rcm-truck?from=email", "/asset-register/explorer?tab=rcm&from=email"],
+  ["/strategy/demonstration-test?model=sample-model-bearings-weibull", "/strategy/test-planning?model=sample-model-bearings-weibull"],
+  ["/asset-register/positions?place=none", "/asset-register/explorer?arrange=positions&place=none"],
+  ["/maintenance/locations#top", "/asset-register/explorer?arrange=locations#top"],
 ];

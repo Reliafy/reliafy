@@ -163,7 +163,7 @@ def _fleet(payload: dict) -> list[str]:
             _add(lines, "Likely range (P10–P90)", f"{num(lo)} to {num(hi)}")
         _add(lines, "Horizon", f"{f.get('periods')} {f.get('period_label') or 'periods'}")
         _add(lines, "Items", num(f.get("n_items")))
-        _add(lines, "Life model", f.get("model_name"))
+        _add(lines, "Non-repairable model", f.get("model_name"))
     elif f.get("reason"):
         _add(lines, "Forecast", f.get("reason"))
     return lines
@@ -195,17 +195,6 @@ def _rbd(payload: dict) -> list[str]:
     return lines
 
 
-def _rcm(payload: dict) -> list[str]:
-    roll = payload.get("rollup") or {}
-    lines: list[str] = []
-    _add(lines, "System", payload.get("system"))
-    _add(lines, "Failure modes", num(roll.get("modes")))
-    _add(lines, "Decisions made", num(roll.get("decided")))
-    _add(lines, "Decisions supported by evidence", num(roll.get("supported")))
-    _add(lines, "Decisions the evidence contradicts", num(roll.get("contradicted")))
-    return lines
-
-
 def _dataset(payload: dict) -> list[str]:
     lines: list[str] = []
     _add(lines, "Rows", num(payload.get("n_rows")))
@@ -220,7 +209,6 @@ _BY_COLLECTION = {
     "strategy_analyses": _strategy,
     "fleets": _fleet,
     "rbds": _rbd,
-    "rcm_studies": _rcm,
     "datasets": _dataset,
 }
 

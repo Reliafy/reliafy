@@ -8,7 +8,12 @@ import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
-import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
+import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
+import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
+import { RBDS_TITLE } from "../navigation.js";
+import { ErrorNotice, StorageCapNotice } from "../components/StorageCap.jsx";
+import { isCapRefusal } from "../plan.js";
 
 const HELP = { walkthrough: "rbd", guide: "build-an-rbd" };
 
@@ -30,11 +35,12 @@ const CopyIcon = () => (
 );
 const ImportIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
+    {/* An upload arrow (into Reliafy), not a download one. */}
+    <path d="M12 16V4m0 0 4 4m-4-4-4 4" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
   </svg>
 );
 
-// Landing page for the RBDs section: list saved diagrams, open or create new.
+// Modelling › System models › RBDs: the saved block diagrams; open one or create a new one.
 export default function RbdHome() {
   const navigate = useNavigate();
   const [rbds, setRbds] = useState(null);
@@ -47,7 +53,7 @@ export default function RbdHome() {
   const [excelMapping, setExcelMapping] = useState(null); // {file, message}: a workbook to map by hand
 
   // Open an imported diagram in the builder, unsaved (the builder's Save keeps it).
-  const openImported = (d) => navigate("/rbds/b", { state: { imported: d } });
+  const openImported = (d) => navigate("/systems/b", { state: { imported: d } });
 
   const onImportFile = async (e) => {
     const file = e.target.files?.[0];
@@ -81,11 +87,10 @@ export default function RbdHome() {
 
   useEffect(() => refresh(), [refresh]);
 
+  const confirm = useConfirm();
+  const askText = useAskText();
   const onDelete = async (r) => {
-    const msg = r.is_sample
-      ? `Remove the sample “${itemName(r)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete RBD “${r.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(r, "diagram", { name: itemName(r) })))) return;
     try {
       await deleteRbd(r.id);
       refresh();
@@ -104,14 +109,14 @@ export default function RbdHome() {
       await duplicateRbd(r.id, `${itemName(r)} (copy)`);
       refresh();
     } catch (err) {
-      setError(err.message);
+      setError(err); // past the Free limit: the upgrade card
     } finally {
       setDuplicating(null);
     }
   };
 
-  const open = (id) => navigate(`/rbds/b/${id}`);
-  const newDiagram = <button onClick={() => navigate("/rbds/b")}><PlusIcon /> New diagram</button>;
+  const pathOf = (id) => `/systems/b/${id}`;
+  const newDiagram = <button onClick={() => navigate("/systems/b")}><PlusIcon /> New diagram</button>;
 
   return (
     <div className="app">
@@ -123,8 +128,8 @@ export default function RbdHome() {
         onChange={onImportFile}
       />
       <SectionHeader
-        title="RBDs"
-        purpose="Reliability block diagrams: system reliability, availability and importance."
+        title={RBDS_TITLE}
+        purpose="Your systems as block diagrams: reliability, availability and what matters most."
         help={HELP}
         actions={
           <button
@@ -150,7 +155,12 @@ export default function RbdHome() {
 
       <SafetyStarterCard />
 
-      {error && <div className="card error">{error}</div>}
+      <ErrorNotice error={error} className="card error" />
+      {/* At the Free limit: what it is and the upgrade link (the refusal card
+          above says the same after a refused copy, so one card at a time). */}
+      {!isCapRefusal(error) && (
+        <StorageCapNotice kind="rbds" one="saved RBD" many="saved RBDs" refreshKey={rbds} />
+      )}
 
       {excelMapping && (
         <RbdExcelImportModal
@@ -206,17 +216,17 @@ export default function RbdHome() {
           <th key="a"><span className="sr-only">Actions</span></th>,
         ]}
         render={(r) => (
-          <tr key={r.id} className="lib-row" onClick={() => open(r.id)}>
+          <tr key={r.id} className="lib-row" onClick={rowOpen(navigate, pathOf(r.id))}>
             <td>
               <div className="lib-name">
-                {itemName(r)}
+                <RowLink to={pathOf(r.id)}>{itemName(r)}</RowLink>
                 {r.shared_by && <Chip title={`Shared by ${r.shared_by}`}>Shared</Chip>}
               </div>
             </td>
             <td className="lib-n lib-opt">{(r.n_nodes ?? 0).toLocaleString()}</td>
             <td className="lib-n lib-opt">{(r.n_edges ?? 0).toLocaleString()}</td>
             <td className="lib-date lib-opt">{relativeTime(r.updated_at || r.created_at)}</td>
-            <RowActions item={r} onOpen={() => open(r.id)} onDelete={() => onDelete(r)}>
+            <RowActions item={r} to={pathOf(r.id)} onDelete={() => onDelete(r)}>
               <button className="act" title="Duplicate" aria-label="Duplicate" disabled={duplicating === r.id}
                       onClick={(e) => { e.stopPropagation(); onDuplicate(r); }}>
                 <CopyIcon />
@@ -224,10 +234,14 @@ export default function RbdHome() {
               {!r.read_only && (
                 <button className="act" title="Rename" aria-label="Rename" onClick={async (e) => {
                   e.stopPropagation();
-                  const name = window.prompt("Diagram name", r.name);
-                  if (name && name.trim() && name.trim() !== r.name) {
-                    await renameRbd(r.id, name.trim());
-                    refresh();
+                  const name = changedText(await askText(renamePrompt({ kind: "diagram", name: r.name })), r.name);
+                  if (name) {
+                    try {
+                      await renameRbd(r.id, name);
+                      refresh();
+                    } catch (err) {
+                      setError(err.message);
+                    }
                   }
                 }}>
                   <PencilIcon />

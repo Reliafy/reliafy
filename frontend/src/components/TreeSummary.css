@@ -1,0 +1,101 @@
+/* The Explorer's Summary tab (TreeSummary.jsx): the RCM details panel's
+   patterns. One column at a readable width; 14 px text; sections 16 px
+   apart with a quiet line between (.psec); label/value card; rows with chips. */
+.td-sum {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  max-width: 760px;
+  font-size: var(--fs-14);
+}
+.td-quiet { color: var(--muted); font-size: var(--fs-13); }
+p.td-quiet { margin: 0; }
+.td-sum .td-status { display: flex; }
+.td-sum .td-status .chip { white-space: normal; text-align: left; }
+
+/* Long text: a few lines, then "Show all". */
+.clampl { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.clampl-text {
+  margin: 0; min-width: 0; max-width: 100%;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--clamp-lines, 2); line-clamp: var(--clamp-lines, 2); overflow: hidden;
+}
+.clampl-text.open { display: block; -webkit-line-clamp: unset; line-clamp: none; overflow: visible; }
+.clampl button.clampl-more { font-size: var(--fs-13); min-height: 24px; padding: 0; }
+.td-sum .td-desc .clampl-text { color: var(--muted); font-size: var(--fs-14); line-height: 1.45; }
+/* The status chips sit right under the slim head; the description under them. */
+.td-sum .td-desc { margin-top: calc(-1 * var(--sp-2)); }
+
+/* Facts: label/value rows in a small bordered card (the model page's Parameters card). */
+.td-kv { margin: 0; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf); padding: var(--sp-2) var(--sp-3); }
+.td-kv > div { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: var(--sp-2); padding: 4px 0; }
+.td-kv > div + div { border-top: 1px solid var(--line2); }
+.td-kv dt { color: var(--muted); font-size: var(--fs-13); line-height: 20px; }
+.td-kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; line-height: 20px; }
+.td-sub { display: block; font-size: var(--fs-12); }
+
+/* Lists as rows: a title, a meta line, chips at the right. */
+.td-group { display: flex; flex-direction: column; gap: var(--sp-1); }
+.td-group + .td-group { margin-top: var(--sp-2); }
+.td-sublabel { margin: 0; font-size: var(--fs-13); font-weight: 500; color: var(--muted); }
+.td-rows {
+  list-style: none; margin: 0; padding: 0;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf);
+}
+.td-row { display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); min-width: 0; }
+.td-row + .td-row { border-top: 1px solid var(--line2); }
+.td-row.is-go { cursor: pointer; }
+.td-row.is-go:hover { background: var(--surf-2); }
+.td-row > .tp-ic { flex: none; margin-top: 3px; color: var(--muted); }
+.td-row-main { flex: 1 1 auto; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.td-row-title { font-size: var(--fs-14); line-height: 20px; overflow-wrap: anywhere; }
+.td-row-title a { text-decoration: none; }
+.td-row-title a:hover { text-decoration: underline; }
+.td-row-meta { font-size: var(--fs-12); color: var(--muted); overflow-wrap: anywhere; }
+.td-row-chips { flex: 0 1 auto; justify-content: flex-end; margin-top: 1px; }
+.td-row button.td-go { font-size: var(--fs-14); font-weight: 500; color: var(--ink); text-align: left; text-decoration: none; padding: 0; overflow-wrap: anywhere; }
+.td-row button.td-go:hover:not(:disabled) { color: var(--acc); text-decoration: underline; }
+.td-row a:focus-visible, .td-row button.td-go:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; border-radius: 2px; }
+a.td-more { align-self: flex-start; font-size: var(--fs-13); }
+
+/* The sort beside "Directly inside". */
+.td-sort { margin-left: auto; }
+.td-sort .ctl.td-sort-sel { min-height: var(--ctl-h-sm); padding: 2px 28px 2px 8px; font-size: var(--fs-13); width: auto; max-width: 12rem; }
+
+/* The row's own changes: small, at the foot; Retire as red text. */
+.td-foot { display: flex; flex-wrap: wrap; gap: var(--sp-2); border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
+.td-foot button.td-danger { color: var(--danger); margin-left: auto; }
+.td-foot button.td-danger:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger); }
+
+@media (max-width: 600px) {
+  .td-kv > div { grid-template-columns: 6.5rem minmax(0, 1fr); }
+  .td-row { flex-wrap: wrap; }
+  .td-row-chips { flex-basis: 100%; justify-content: flex-start; padding-left: 22px; }
+  .td-row:not(:has(> .tp-ic)) .td-row-chips { padding-left: 0; }
+  .td-row-chips:empty { display: none; }
+  .td-foot button { min-height: 40px; }
+  .td-sort .ctl.td-sort-sel { min-height: 40px; font-size: var(--fs-16); }
+}
+
+/* The Parts and stock and Classes tabs (TreeDetail): the pages they were, at
+   the panel's text size, their tables scrolling inside the panel. */
+.td-tab-page {
+  font-size: 0.875rem;
+}
+.td-tab-page .maint-section {
+  font-size: 1rem;
+  margin: 16px 0 8px;
+}
+.td-tab-page .td-tab-check {
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+.td-tab-page .td-tab-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.td-tab-page .card {
+  font-size: 0.875rem;
+}

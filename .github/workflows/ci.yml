@@ -9,12 +9,19 @@ on:
 
 # Third-party actions are pinned to commit SHAs (the version tag each was
 # resolved from is in the comment). The jobs only read the repository.
+# A newer push to the same pull request cancels its older, out-of-date run;
+# pushes to a branch and scheduled runs are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -25,13 +32,14 @@ jobs:
       # pillow-heif encodes the tests' HEIC photos; the app only decodes (pi-heif, in the lock).
       - run: pip install --require-hashes -r requirements.lock && pip install --no-deps "firebase-admin==7.7.0" && pip install pytest==9.1.1 pytest-xdist==3.8.0 pillow-heif==1.8.1
       # RePyability isn't in requirements.txt: like the Dockerfile, install the
-      # pinned commit (v0.15) --no-deps so it can't re-resolve surpyval from PyPI.
-      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@af15a3eccd4806cafed95a0c8fa9b0d1ebcc4010"
+      # pinned commit (v0.16) --no-deps so it can't re-resolve surpyval from PyPI.
+      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@c552cc44349a6f21d68a01aa1c342dec50d3b893"
       # The slowest tests are listed, so a slower run says where the time went.
       - run: pytest backend/tests -n auto --dist loadfile --durations=40
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -49,9 +57,15 @@ jobs:
   # Browser smoke tests (#123): every page of an auth-disabled build, served by
   # the backend with the samples seeded, opens and draws; RBD imports, a fit and
   # an RBD calculation run end to end (frontend/smoke, `npm run smoke`).
+  # The suite is split into three shards that run side by side: one runner took
+  # over 15 minutes for the whole suite by November 2026 and was cut off.
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -61,7 +75,7 @@ jobs:
           cache-dependency-path: requirements.lock
       # The backend's packages as the backend job (and the Dockerfile) install them.
       - run: pip install --require-hashes -r requirements.lock && pip install --no-deps "firebase-admin==7.7.0"
-      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@af15a3eccd4806cafed95a0c8fa9b0d1ebcc4010"
+      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@c552cc44349a6f21d68a01aa1c342dec50d3b893"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
@@ -69,7 +83,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci && npx playwright install --with-deps --only-shell chromium
         working-directory: frontend
-      - run: npm run smoke
+      - run: npm run smoke -- --shard=${{ matrix.shard }}/3
         working-directory: frontend
         env:
           SMOKE_PYTHON: python
@@ -78,7 +92,7 @@ jobs:
       - if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: smoke-report
+          name: smoke-report-${{ matrix.shard }}
           path: |
             frontend/playwright-report/
             frontend/test-results/

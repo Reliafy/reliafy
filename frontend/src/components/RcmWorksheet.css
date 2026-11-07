@@ -1,0 +1,789 @@
+/* The RCM worksheet's pieces (RcmWorksheet.jsx): its cells, the cell editor,
+   the details panel and the column chooser, as the Explorer's RCM tab draws
+   them in its table (TreePane). The `.rw` grid rules are the outline grid the
+   pieces were made for; the Explorer's own grid is `.tt-*` (TreePane.css). */
+
+/* ---- the worksheet ------------------------------------------------------------ */
+
+.rw {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.rw > * { flex: none; }
+
+.rw-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.rw-filter { flex: 1 1 260px; max-width: 380px; }
+.rw-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+.rw button.rw-btn { min-height: 30px; padding: 0 12px; font-size: var(--fs-13); }
+
+.rw button.tp-icon-btn {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--surf);
+  color: var(--muted);
+  box-shadow: none;
+}
+.rw button.tp-icon-btn:hover:not(:disabled) { background: var(--surf-2); color: var(--ink); }
+
+.rw-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.rw button.rw-chip {
+  flex: none;
+  min-height: 26px;
+  padding: 1px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surf);
+  color: var(--ink);
+  box-shadow: none;
+  font-size: var(--fs-12);
+  font-weight: 500;
+}
+.rw button.rw-chip:hover:not(:disabled) { border-color: var(--acc); background: var(--acc-hover); }
+.rw button.rw-chip.on { background: var(--acc-t); border-color: var(--acc-line); color: var(--acc-d); font-weight: 600; }
+.rw-chip-n { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: 2px; }
+.rw-chip.on .rw-chip-n { color: inherit; }
+
+.rw-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+.rw-legend, .rw-status {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+.rw-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.rw-legend > span { display: inline-flex; align-items: center; gap: 4px; }
+.rw-legend .rw-ic { margin: 0; }
+.rw-status { font-variant-numeric: tabular-nums; }
+.rw-msg.ok { color: var(--ok); }
+.rw-msg.error { color: var(--danger); font-weight: 600; }
+
+/* The column chooser. */
+.rw-cols { position: relative; }
+.rw-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  width: 240px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 8px;
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-overlay);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rw-pop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+.rw-pop-item:hover { background: var(--acc-hover); }
+.rw-pop-item input { margin: 0; }
+.rw button.rw-pop-reset { align-self: flex-start; margin: 6px 6px 2px; font-size: var(--fs-13); }
+.rw-sig { color: var(--faint); font-weight: 500; }
+
+/* The grid and the panel beside it. */
+.rw-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+  position: relative;
+}
+.rw-grid {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  overscroll-behavior: contain;
+}
+
+.rw-head {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  min-width: 100%;
+  background: var(--surf-2);
+  border-bottom: 1px solid var(--line);
+}
+.rw-h {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 6px 0 8px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--muted);
+  min-width: 0;
+}
+.rw-h.num { justify-content: flex-end; }
+.rw-h.rw-name { position: sticky; left: 0; z-index: 2; background: var(--surf-2); padding-left: 12px; border-right: 1px solid var(--line); }
+.rw button.rw-hs {
+  border: 0;
+  background: none;
+  box-shadow: none;
+  padding: 4px 2px;
+  min-height: 0;
+  font: inherit;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.rw button.rw-hs:hover { color: var(--ink); background: none; }
+.rw-h[aria-sort] { color: var(--ink); }
+.rw-rz {
+  position: absolute;
+  right: -4px;
+  top: 6px;
+  bottom: 6px;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 3;
+  border-right: 1px solid var(--line);
+  outline: none;
+}
+.rw-rz:hover, .rw-rz:focus-visible { border-right: 2px solid var(--acc); }
+.rw-h.rw-name .rw-rz { right: -5px; border-right-color: transparent; }
+
+.rw-pins { position: sticky; z-index: 5; height: 0; overflow: visible; }
+.rw-pins-in { position: absolute; left: 0; top: 0; min-width: 100%; }
+.rw-body { position: relative; min-width: 100%; }
+
+.rw-row {
+  position: absolute;
+  left: 0;
+  min-width: 100%;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line2);
+  background: var(--surf);
+  font-size: var(--fs-14);
+  cursor: pointer;
+  outline: none;
+}
+.rw-row.pin { position: relative; background: var(--surf-2); border-bottom-color: var(--line); }
+.rw-pins-in .rw-row:last-child { box-shadow: 0 3px 6px -2px rgba(20, 23, 28, 0.14); }
+/* The name cell is sticky and pinned rows cover the rows under them: both
+   need an opaque fill, so the hover tint goes over the row's solid colour. */
+.rw-row:hover, .rw-row:hover .rw-name { background: linear-gradient(var(--acc-hover), var(--acc-hover)), var(--surf); }
+.rw-row.rw-fn, .rw-row.rw-fn .rw-name { background: var(--surf-2); }
+.rw-row.rw-fn .rw-nm { font-weight: 600; }
+.rw-row.rw-fail .rw-nm { font-weight: 500; }
+.rw-row.focus, .rw-row.focus .rw-name { background: linear-gradient(var(--acc-t), var(--acc-t)), var(--surf); }
+.rw-row.focus { box-shadow: inset 3px 0 0 var(--acc); }
+.rw-row:focus-visible { box-shadow: inset 0 0 0 2px var(--acc); z-index: 1; }
+.rw-row.dim .rw-nm { color: var(--muted); }
+.rw-row.pin .rw-name { background: var(--surf-2); }
+
+.rw-c {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.rw-c.num { justify-content: flex-end; font-variant-numeric: tabular-nums; }
+.rw-c.can:hover { box-shadow: inset 0 0 0 1px var(--line); cursor: text; }
+.rw-fill { flex: 1 0 0; }
+.rw-name {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surf);
+  padding-left: 8px;
+  border-right: 1px solid var(--line);
+  gap: 2px;
+}
+.rw-indent { flex: none; }
+.rw-chev { cursor: pointer; }
+.rw-ic { flex: none; color: var(--muted); margin: 0 4px 0 1px; }
+.rw-fn .rw-ic { color: var(--acc-d); }
+.rw-fail .rw-ic { color: var(--warn); }
+.rw-ic-task { margin: 0 2px 0 0; }
+/* The performance standard's glyph is teal wherever it is drawn (tree rows,
+   the details header, a function's list); a missing standard row keeps its
+   muted colour (.tt-nostd, which is more specific). */
+.rw-ic.rw-ic-std, .rw-klist li > .rw-ic.rw-ic-std, .tp-ic.rw-ic-std { color: var(--std); }
+.rw-nm, .rw-txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rw-nm { flex: 0 1 auto; }
+.rw-task { display: inline-flex; align-items: center; max-width: 100%; }
+.rw-task-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rw-task .rw-more { flex: none; margin-left: 4px; white-space: nowrap; color: var(--muted); }
+.rw-blank { color: var(--muted); font-style: italic; }
+.rw-sum { color: var(--muted); font-size: var(--fs-12); overflow: hidden; text-overflow: ellipsis; }
+.rw-todo {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border: 1px dashed var(--warn-line);
+  border-radius: 999px;
+  color: var(--warn);
+  background: var(--warn-bg);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.rw button.rw-todo-btn { min-height: 0; box-shadow: none; cursor: pointer; }
+.rw button.rw-todo-btn:hover { border-style: solid; }
+.rw-done { color: var(--ok); }
+.rw-checks { display: inline-flex; gap: 6px; font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
+.rw-ck { font-weight: 600; white-space: nowrap; }
+.rw-ck.contradicted { color: var(--danger); }
+.rw-ck.unsure { color: var(--warn); }
+.rw-ck.stale { color: var(--muted); }
+.rw-ck.supported { color: var(--ok); }
+/* A decision with no evidence linked: quiet, not a warning. */
+.rw-quiet { color: var(--muted); }
+.rw-c .chip { flex: none; }
+
+/* A cell being edited. */
+.rw-edit-wrap { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
+.rw .rw-edit {
+  flex: 1;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--surf);
+  min-width: 0;
+  width: 100%;
+  height: calc(100% - 6px);
+  min-height: 22px;
+  padding: 0 6px;
+  font-size: var(--fs-13);
+  border: 1px solid var(--acc);
+  border-radius: var(--r-sm);
+  box-shadow: var(--focus);
+}
+.rw-unit { color: var(--muted); font-size: var(--fs-12); flex: none; }
+/* A function's text being typed in its cell: the counter at its end. */
+.rw-count { font-size: var(--fs-12); margin-left: 0; }
+.rw-flabel-count { display: flex; align-items: baseline; gap: 8px; }
+.rw-flabel-count .char-count { font-weight: 500; }
+.rw-flabel-count .char-count.near, .rw-flabel-count .char-count.over { font-weight: 600; }
+.rw-field textarea[aria-invalid="true"], .rw-field input[aria-invalid="true"], .rw .rw-edit[aria-invalid="true"] { border-color: var(--danger); }
+
+.rw-empty {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 64px;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+.rw-empty p { margin: 0 0 10px; }
+
+/* Compact rows. */
+.rw.compact .rw-row { font-size: 13px; }
+.rw.compact .rw-c .chip { line-height: 16px; }
+
+/* The details panel: 14 px text throughout (link-buttons inherit it), 13 px
+   muted labels, 12 px help and errors. */
+.rw-panel {
+  flex: none;
+  width: 340px;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  font-size: var(--fs-14);
+}
+.rw-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rw-panel-kind { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-13); color: var(--muted); font-weight: 600; }
+/* Expand / Back to table and Close: icon buttons, the word in the label and tooltip. */
+.rw button.rw-x { width: 30px; height: 30px; min-height: 0; padding: 0; justify-content: center; color: var(--muted); }
+.rw button.rw-x:hover:not(:disabled) { color: var(--ink); }
+.rw button.rw-x:focus-visible { outline: none; box-shadow: var(--focus); }
+.rw button.rw-x svg { width: 16px; height: 16px; }
+/* The way up: one muted line, the nearest kept and those above folded into
+   "…" when they don't fit (Crumbs); each cut short with an ellipsis if need be. */
+.rw-crumbs { flex: none; display: flex; flex-wrap: nowrap; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; font-size: var(--fs-13); color: var(--muted); }
+.rw-crumbs.all { flex-wrap: wrap; }
+.rw-crumbs button.link {
+  display: block; flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
+  color: var(--muted); font-weight: 400; text-decoration: none;
+}
+.rw-crumbs button.link:last-child { flex: 0 1 auto; min-width: min(100%, 8em); }
+.rw-crumbs.all button.link { flex: 0 1 auto; min-width: 0; }
+.rw-crumbs button.link:hover:not(:disabled) { color: var(--acc); text-decoration: underline; }
+.rw-crumbs button.link:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+.rw-crumbs button + button::before { content: "›"; color: var(--subtle); margin-right: 6px; }
+/* A long description: two lines at most (the whole of it is in the tooltip,
+   and in the Description field below). */
+.rw-panel-title {
+  margin: 0; font-size: var(--fs-16); line-height: 1.35; outline: none; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+  flex: none; /* clipped, it would otherwise shrink to nothing in the panel's column */
+}
+.rw-inside { margin: 0; font-size: var(--fs-13); color: var(--muted); }
+.rw-fields { display: flex; flex-direction: column; gap: var(--sp-3); }
+.rw-field { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+/* One label style (as the model and RBD dialogs): 13 px, 500, muted;
+   "optional" quieter beside it, not in brackets. */
+.rw-flabel { font-size: var(--fs-13); font-weight: 500; color: var(--muted); }
+.rw-opt { font-weight: 400; color: var(--subtle); margin-left: 4px; }
+.rw-fin { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.rw-fin input, .rw-fin textarea { flex: 1; min-width: 0; width: 100%; }
+/* One control style for every input, textarea and select in the panel (and
+   its add and edit forms): white, a 1 px line, 34 px tall, 14 px text. */
+/* :where keeps it at no weight, so a control with a class of its own (the
+   working's editor) keeps its own size. */
+:where(.rw-panel) :where(input:not([type="checkbox"], [type="radio"], [type="file"]), textarea) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: var(--fs-14);
+  line-height: 1.4;
+  color: var(--ink);
+  background: var(--surf);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.rw-panel select { box-sizing: border-box; min-width: 0; max-width: 100%; min-height: 34px; font-size: var(--fs-14); padding: 6px 30px 6px 10px; line-height: 1.4; }
+.rw-panel :is(input, textarea)::placeholder { color: var(--subtle); }
+:where(.rw-panel) :where(input:not([type="checkbox"], [type="radio"], [type="file"]), textarea):hover:not(:focus, [readonly]) { border-color: var(--faint); }
+.rw-panel :is(input, textarea, select):focus { outline: none; border-color: var(--acc); box-shadow: var(--focus); }
+.rw-panel :is(input, textarea, select)[aria-invalid="true"] { border-color: var(--danger); background-color: var(--danger-bg); }
+/* Textareas start at one line and grow with their text (useAutoGrow where
+   the browser can't size them itself); no resize handle. */
+:where(.rw-panel) :where(textarea) { resize: none; field-sizing: content; overflow: hidden; display: block; width: 100%; }
+.rw-field select { max-width: 100%; }
+.rw-fval { font-size: var(--fs-14); overflow-wrap: anywhere; }
+.rw-fhelp { font-size: var(--fs-12); color: var(--muted); }
+/* One error style: 12 px, 500, red, a round "!" before it (so it isn't told
+   by colour alone). */
+.rw-ferr, .rw-panel .tm-err {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: var(--fs-12); color: var(--danger); font-weight: 500; line-height: 1.4; margin: 0;
+}
+.rw-ferr::before, .rw-panel .tm-err::before {
+  content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
+  border-radius: 50%; background: var(--danger); color: var(--on-fill); font-size: 10px; font-weight: 700; line-height: 1;
+}
+.rw-decision { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
+.rw-decision h3 { margin: 0; font-size: var(--fs-14); font-weight: 600; }
+.rw-dline { margin: 0; font-size: var(--fs-14); }
+.rw-evidence { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: var(--fs-13); }
+.rw-evidence p { margin: 0; flex-basis: 100%; color: var(--muted); }
+p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
+.rw-decision > button { align-self: flex-start; }
+.rw-panel-acts { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
+
+/* The panel's head: its kind, then Expand (or Back to table) and Close. */
+.rw-panel-btns { display: flex; gap: 6px; flex: none; }
+/* Its body: one column, at every width (expanded, it only gets a readable
+   width), in one order at every level: what's inside it (each list ending in
+   its own "+ Add"), then this level's own fields, then the quieter things at
+   the foot, smaller and muted. Each block opens on a hairline. */
+.rw-pbody { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.rw-own, .rw-foot { border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
+.rw-foot { display: flex; flex-direction: column; gap: var(--sp-3); }
+.rw-foot-note { margin: 0; }
+.rw-foot .rw-checkable { margin: 0; padding-top: 0; border-top: 0; }
+.rw-foot > .rw-limit { border-top: 0; padding-top: 0; }
+.rw-panel.is-expanded { padding: 16px 20px 20px; gap: 12px; }
+.rw-panel.is-expanded > .rw-panel-head,
+.rw-panel.is-expanded > .rw-crumbs,
+.rw-panel.is-expanded > .rw-panel-title,
+.rw-panel.is-expanded > .rw-inside,
+.rw-panel.is-expanded > .rw-pbody,
+.rw-panel.is-expanded > .rw-panel-acts { width: 100%; max-width: 760px; box-sizing: border-box; }
+.rw-panel.is-expanded > .rw-pbody { gap: 16px; }
+.rw-panel.is-expanded .rw-panel-title { font-size: var(--fs-20); -webkit-line-clamp: 3; line-clamp: 3; }
+.rw-fstatus { margin: 0; font-size: var(--fs-13); color: var(--muted); }
+/* A performance standard's structured limit, when it applies and its source. */
+.rw-limit { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.rw-limit legend { padding: 0; margin-bottom: 2px; }
+/* "Limit" heads its own group of fields: a small section heading, not a label. */
+.rw-legend-h { font-size: var(--fs-14); font-weight: 600; color: var(--ink); }
+.rw-limit-row { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.rw-limit-row > .rw-field { flex: 1 1 120px; min-width: 0; }
+.rw-limit-row select { width: 100%; }
+/* What's inside the row, each a link that shows it in the panel. */
+.rw-kids { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
+.rw-kids h3 { margin: 0; font-size: var(--fs-14); }
+.rw-klist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rw-klist li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
+.rw-kgo { display: inline-flex; align-items: center; gap: 4px; text-align: left; overflow-wrap: anywhere; min-width: 0; }
+.rw-kgo .rw-ic { flex: none; }
+.rw-panel.sheet :is(input, textarea, select) { font-size: var(--fs-16); } /* no zoom on focus */
+.rw-panel.sheet button.rw-x { width: 40px; height: 40px; }
+
+/* A failure mode's decision (its Decision section): the decision in words, its
+   evidence, then its tasks (RcmModeTasks.jsx), one row each, with the add row
+   and the edit form in place. */
+.rw-dsum { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rw-dwords { margin: 0; font-size: var(--fs-14); overflow-wrap: anywhere; }
+.rw-dsum .rw-evlabel { color: var(--muted); }
+.rw-members { margin: 0; padding-left: 1.1em; font-size: var(--fs-13); }
+.rim-tasks { display: flex; flex-direction: column; gap: 8px; }
+.rim-tasks h4.rim-before { margin: 0; font-size: var(--fs-13); font-weight: 600; color: var(--muted); }
+.rim-tkind { font-weight: 600; }
+.rim-tev { margin: 0; padding-left: 20px; font-size: var(--fs-13); color: var(--muted); overflow-wrap: anywhere; }
+.rim-addform { border: 0; padding: 0; }
+.rim-addform .rim-use { align-self: flex-start; font-size: var(--fs-13); }
+.rim-addform .ctl-group > input[type="number"] { width: 6.5rem; }
+.rim-tlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rim-tlist li { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.rim-tmain { display: flex; align-items: flex-start; gap: 6px; min-width: 0; font-size: var(--fs-14); }
+.rim-tmain .rw-ic { flex: none; margin-top: 3px; }
+.rim-tbody { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.rim-tinst { font-size: var(--fs-13); color: var(--muted); white-space: pre-wrap; }
+/* Two lines, "Show all" for the rest. */
+.rim-tinst.clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.rim-tmore { align-self: flex-start; font-size: var(--fs-13); }
+.rim-tacts { display: flex; gap: 10px; flex: none; }
+.rim-tacts .link { font-size: var(--fs-13); min-height: 28px; }
+.rim-tadd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.rim-tform { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-sm); min-width: 0; }
+.rim-tform h4 { margin: 0; font-size: var(--fs-14); font-weight: 600; }
+.rim-tform .rw-fhelp { margin: 0; }
+.rim-thint { color: var(--warn); }
+.rim-trow { display: flex; flex-wrap: wrap; gap: var(--sp-3); min-width: 0; }
+/* A task's trigger (When an event happens): its fields grouped, the checkbox on one line. */
+.rim-trigger { display: flex; flex-direction: column; gap: var(--sp-3); margin: 0; padding: 0; border: 0; min-width: 0; }
+.rim-trigger .rim-check { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-14); }
+.rim-trow > .rw-field { flex: 1 1 140px; }
+.rim-trow .rw-fin { display: flex; gap: 6px; }
+.rim-trow input[type="number"] { width: 6.5rem; flex: 1 1 5rem; }
+.rim-trow .rw-fin select { flex: 1 1 auto; }
+.rim-tform-acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+@media (max-width: 600px) {
+  .rim-tlist li { flex-wrap: wrap; }
+  .rim-tacts .link { min-height: 36px; }
+}
+
+/* ---- phone ---------------------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  .rw-filter { flex-basis: 100%; max-width: none; }
+  .rw-tools { margin-left: 0; }
+  .rw-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .rw-legend { display: none; }
+}
+
+.rw.phone .rw-grid { border-radius: var(--r-sm); }
+.rw.phone .rw-row {
+  right: 0;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  font-size: var(--fs-14);
+}
+.rw.phone .rw-l1 { display: flex; align-items: center; height: 32px; padding-right: 8px; min-width: 0; }
+.rw.phone .rw-l1 .rw-name { flex: 1 1 auto; position: static; border: 0; background: none; padding-left: 6px; min-width: 0; }
+.rw.phone .rw-row.focus .rw-name, .rw.phone .rw-row:hover .rw-name { background: none; }
+.rw.phone .rw-st { flex: none; display: flex; gap: 4px; }
+.rw.phone .rw-l2 {
+  height: 20px;
+  padding-right: 10px;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rw.phone .rw-chev, .rw.phone .rw-chev-sp { width: 30px; height: 30px; }
+.rw.phone .rw-main { gap: 0; }
+/* The phone sheet sits over the page and the menu drawer (70) but under every
+   dialog (.overlay, 100) and dropdown (200): the dialogs it opens (Decide…,
+   Link a cause…, confirms) must come up on top of it, not greyed out behind. */
+.rw-panel.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  max-height: 78dvh;
+  z-index: 90;
+  border-radius: var(--r) var(--r) 0 0;
+  box-shadow: var(--shadow-overlay);
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.rw-scrim { position: fixed; inset: 0; z-index: 89; background: var(--scrim); }
+
+/* ---- a function's PDFs, at the end of its notes and rationale (RcmFunctionPdfs.jsx) ---- */
+
+.rw-fpdfs { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; min-width: 0; }
+.rw-fpdfs p { margin: 0; }
+.rw-basis-links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-13); }
+.rw-basis-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rw-basis-attach { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf-2); }
+.rw-basis-file { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rw-basis-filename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+.rw-pdfs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.rw-pdf { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; font-size: var(--fs-13); }
+.rw-pdf-mark { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .03em; color: var(--on-fill); background: var(--danger); border-radius: 3px; padding: 2px 4px; }
+.rw-pdf-title { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; flex: 0 1 auto; }
+.rw-pdf-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rw-pdf .ovm { margin-left: auto; }
+.rw-pdf .ovm-trigger { min-height: 28px; padding: 0 6px; }
+
+/* The rendered Markdown: headings kept small; tables and code scroll inside
+   their own blocks, so a wide one never widens the panel. */
+.rw-md { font-size: var(--fs-13); line-height: 1.5; overflow-wrap: anywhere; min-width: 0; }
+.rw-md > :first-child { margin-top: 0; }
+.rw-md > :last-child { margin-bottom: 0; }
+.rw-md h1, .rw-md h2, .rw-md h3, .rw-md h4, .rw-md h5, .rw-md h6 { font-size: var(--fs-13); margin: 10px 0 4px; }
+.rw-md p, .rw-md ul, .rw-md ol, .rw-md blockquote { margin: 0 0 8px; }
+.rw-md ul, .rw-md ol { padding-left: 20px; }
+.rw-md blockquote { padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); }
+.rw-md pre { margin: 0 0 8px; padding: 8px; overflow-x: auto; background: var(--surf-2); border-radius: var(--r-sm); max-width: 100%; }
+.rw-md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
+.rw-md table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0 0 8px; }
+.rw-md th, .rw-md td { border: 1px solid var(--line); padding: 3px 7px; text-align: left; white-space: nowrap; }
+.rw-md th { background: var(--surf-2); }
+
+/* A failure mode's tasks in the Details (its decision's own first). */
+.rw-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-13); }
+.rw-tasks li { display: flex; align-items: flex-start; gap: 6px; overflow-wrap: anywhere; }
+.rw-tasks .rw-ic { flex: none; margin-top: 3px; }
+
+/* A function's performance standards as a list (RcmFunctionStandards.jsx), in
+   the function's Details. */
+.rfs { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
+.rfs h3 { margin: 0; font-size: var(--fs-14); }
+.rfs-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-14); }
+.rfs-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.rfs-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.rfs-acts { display: flex; gap: 8px; flex: none; }
+.rfs-acts .link { font-size: var(--fs-13); min-height: 28px; }
+.rfs-hint { margin: 0; }
+.rfs-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.rfs-form { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-sm); min-width: 0; }
+.rfs-form h4 { margin: 0; font-size: var(--fs-14); font-weight: 600; }
+.rfs-form .rw-fhelp { margin: 0; }
+.rfs-fold { align-self: flex-start; font-size: var(--fs-13); }
+.rfs-limit { display: flex; flex-direction: column; gap: 8px; }
+.rfs-limit input { max-width: 100%; }
+.rfs-split { margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 6px; }
+.rfs-split li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rfs-split li input { flex: 1 1 200px; min-width: 0; }
+.rfs-split li.dropped input { text-decoration: line-through; color: var(--muted); }
+.rfs .rim-tform-acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.rfs .rim-trow { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+@media (max-width: 600px) {
+  .rfs-list li { flex-wrap: wrap; }
+  .rfs-acts .link { min-height: 36px; }
+}
+
+/* ---- the panel's head, title and cards (shared Field, Section, chips) ------------ */
+
+/* The head: the kind and its icon buttons; "in ‹the way up›"; the title (the
+   description, a click edits it); the status chips. */
+.rw-panel-top { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.rw-panel.is-expanded > .rw-panel-top { width: 100%; max-width: 760px; box-sizing: border-box; }
+.rw-grab { align-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: -4px 0 2px; flex: none; }
+.rw-in { flex: none; color: var(--muted); }
+.rw-crumbs .rw-in + button::before { content: none; }
+.rw-title-btn {
+  all: unset; box-sizing: border-box; display: block; width: 100%; cursor: text; border-radius: var(--r-sm);
+  margin: -2px -6px; padding: 2px 6px; width: calc(100% + 12px);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.rw-panel.is-expanded .rw-title-btn { -webkit-line-clamp: 3; line-clamp: 3; }
+.rw-title-btn:hover { background: var(--acc-hover); box-shadow: inset 0 0 0 1px var(--line); }
+.rw-title-btn:focus-visible { box-shadow: var(--focus); }
+.rw-panel-title:has(> .rw-title-btn) { display: block; -webkit-line-clamp: unset; line-clamp: unset; overflow: visible; }
+.rw-title-edit .ctl.rw-title-box { font-size: var(--fs-16); font-weight: 600; line-height: 1.35; }
+.rw-title-edit .ctl.rw-title-box.big { font-size: var(--fs-20); }
+.rw-chips-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+.rw-sec-note { margin: -4px 0 0; }
+.rw-limit { border-top: 1px solid var(--line2); padding-top: var(--sp-4); }
+.rw-fields > .field + .rw-limit, .rw-fields > .rw-limit:first-child { border-top: 0; padding-top: 0; }
+
+/* The decision as label/value rows, as on the model page's cards. */
+.rw-card { margin: 0; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 12px; background: var(--surf); }
+.rw-dcard > div { display: grid; grid-template-columns: 6.5rem 1fr; gap: 8px; padding: 3px 0; font-size: var(--fs-13); }
+.rw-dcard dt { color: var(--muted); }
+.rw-dcard dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.rw-dcard .rw-evidence { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: var(--fs-13); }
+.rw-dwhy { margin: 4px 0 0; font-size: var(--fs-12); color: var(--muted); }
+
+/* What's inside: one row each, the icon, the name (a link) and a meta line. */
+.rw-klist li { flex-wrap: nowrap; align-items: flex-start; gap: 6px; }
+.rw-klist li > .rw-ic { flex: none; margin-top: 3px; color: var(--muted); }
+.rw-kbody { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.rw-kgo { font-size: var(--fs-14); }
+
+/* The footer: add inside (left), delete as red text (right; it asks first). */
+.rw-panel-acts { justify-content: space-between; align-items: center; }
+.rw-panel.is-expanded > .rw-panel-acts { width: 100%; max-width: 760px; box-sizing: border-box; }
+.rw-panel-acts button.rw-del { margin-left: auto; color: var(--danger); }
+.rw-panel-acts button.rw-del:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger); }
+.rw-panel-acts button.rw-del:focus-visible { outline: none; box-shadow: var(--focus); }
+
+/* A task card: the name, chips for its interval and kind, its instructions
+   folded to two lines, ⋯ for Edit and Remove; Edit opens the form in the
+   card, with an accent border. */
+.rim-tlist { gap: var(--sp-2); }
+.rim-tlist li.rim-card { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.rim-card { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; background: var(--surf); min-width: 0; }
+.rim-card.editing { border-color: var(--acc-line); box-shadow: 0 0 0 1px var(--acc-line); padding: 0; }
+.rim-card.editing > .rim-tform { border: 0; }
+.rim-chead { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+.rim-chead .rw-ic { flex: none; margin-top: 3px; }
+.rim-tname { flex: 1 1 auto; min-width: 0; font-weight: 600; font-size: var(--fs-14); overflow-wrap: anywhere; }
+.rim-chead .more-btn { margin: -5px -6px -5px 0; flex: none; }
+.rim-chips { display: flex; flex-wrap: wrap; gap: 4px; padding-left: 20px; }
+.rim-card .rim-tinst { padding-left: 20px; }
+.rim-card .rim-tmore { margin-left: 20px; }
+.rim-tadd { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.rim-tform-acts { align-items: center; }
+.rim-why { margin: 0 auto 0 0; font-size: var(--fs-12); color: var(--muted); min-width: 0; flex: 1 1 10rem; }
+.rim-trow > .field { flex: 1 1 140px; min-width: 0; }
+
+/* A performance standard's row: a grip to drag it, the text and its limit,
+   ⋯ for Edit, Move up / down and Remove. */
+.rfs-list { gap: 0; }
+.rfs-list li.rfs-row { display: flex; align-items: flex-start; gap: 6px; padding: 6px 4px; border-bottom: 1px solid var(--line2); border-radius: var(--r-sm); position: relative; }
+.rfs-list li.rfs-row:last-child { border-bottom: 0; }
+.rfs-list li.rfs-row:hover { background: var(--acc-hover); }
+.rfs-list li.rfs-row.editing { display: block; padding: 0; border: 0; background: none; }
+.rfs-list li.rfs-row.dragging { opacity: 0.5; }
+.rfs-list li.rfs-row.drop-before::before, .rfs-list li.rfs-row.drop-after::after {
+  content: ""; position: absolute; left: 0; right: 0; height: 3px; border-radius: 2px; background: var(--acc);
+}
+.rfs-list li.rfs-row.drop-before::before { top: -2px; }
+.rfs-list li.rfs-row.drop-after::after { bottom: -2px; }
+.rfs-grip { flex: none; display: inline-flex; align-items: center; color: var(--faint); cursor: grab; margin-top: 2px; }
+.rfs-grip svg { width: 14px; height: 14px; }
+.rfs-main { flex: 1 1 auto; }
+.rfs-text { font-size: var(--fs-14); }
+.rfs-list .more-btn { flex: none; margin: -4px 0; }
+/* The ⋯ shows on hover or focus on a wide screen; always on a touch screen. */
+@media (hover: hover) and (pointer: fine) {
+  .rfs-row .more-btn:not([aria-expanded="true"]) { opacity: 0; }
+  .rfs-row:hover .more-btn, .rfs-row:focus-within .more-btn, .rfs-row .more-btn:focus-visible { opacity: 1; }
+}
+.rfs-add { flex-direction: column; align-items: flex-start; gap: 8px; }
+.rfs-add .add-row { align-self: stretch; }
+
+.rw-panel .reads-as { margin-top: -4px; }
+.rw-panel.sheet .rw-title-btn { -webkit-line-clamp: 3; line-clamp: 3; }
+
+/* Under a cell being edited: the consequence chips, or why a value wasn't kept. */
+.rw-pop-under {
+  position: fixed; z-index: 95; max-width: min(320px, calc(100vw - 16px));
+  display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: var(--r-sm);
+  background: var(--surf); border: 1px solid var(--line); box-shadow: var(--shadow-overlay);
+}
+.rw-pop-under:has(> .rw-cell-why:only-child) { border-color: var(--danger); }
+.rw-cell-why {
+  display: flex; align-items: flex-start; gap: 6px; font-size: var(--fs-12); font-weight: 500; line-height: 1.4; color: var(--danger);
+  white-space: normal; overflow-wrap: anywhere;
+}
+.rw-cell-why::before {
+  content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
+  border-radius: 50%; background: var(--danger); color: var(--on-fill); font-size: 10px; font-weight: 700; line-height: 1;
+}
+.rw .rw-edit[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-line); }
+.rw-edit-chips { outline: none; }
+/* The limit's comparator: as wide as "between (between)" needs, no wider. */
+.ctl-group > select.ctl.rw-cmp, .rfs-limit .ctl-group > select.ctl { flex: 0 0 6.5rem; width: 6.5rem; }
+/* Touch targets on a phone: the footer's buttons and the title at 40 px. */
+.rw-panel.sheet .rw-panel-acts button { min-height: 40px; }
+.rw-panel.sheet .rw-title-btn { min-height: 40px; }
+
+/* The new row of each list (the add row, pressed): the same row as the ones
+   above it, its text a box. A standard keeps the grip's column, blank. */
+.rfs-list li.rfs-row.rfs-new { background: none; }
+.rfs-list li.rfs-new .rfs-grip { width: 14px; }
+.rw-klist li.rw-knew > .rw-ic { margin-top: 7px; }
+/* The new task row: one frame (the card; the name box sits borderless inside
+   it and the card takes the focus ring), the icon in line with the text, and
+   on a wide panel "name ........ every [ 6 ] [hours]" on one line. */
+.rim-tlist li.rim-card.rim-new { flex-direction: row; flex-wrap: nowrap; align-items: flex-start; gap: 8px; padding: 6px 10px; }
+.rim-tlist li.rim-card.rim-new:has(.ia-box:focus) { border-color: var(--acc); box-shadow: var(--focus); }
+.rim-tlist li.rim-new > .rw-ic { flex: none; margin: 7px 0 0; }
+.rim-tlist li.rim-new > .ia-main { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.rim-tlist li.rim-new .ctl.ia-box, .rim-tlist li.rim-new .ctl.ia-box:focus {
+  flex: 1 1 12rem; width: auto; min-width: 0; padding-left: 0; border-color: transparent; border-radius: 0; box-shadow: none; background: transparent;
+}
+.rim-tlist li.rim-new .ia-main > .field-error, .rim-tlist li.rim-new .ia-main > .field-help { flex: 0 0 100%; }
+.rim-every { display: flex; flex: none; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-13); color: var(--muted); }
+.rim-every .ctl-group { flex: none; min-width: 0; }
+.rim-every .ctl-group > input[type="number"] { flex: none; width: 4.5ch; min-width: 0; padding-left: 8px; padding-right: 4px; text-align: right; -moz-appearance: textfield; appearance: textfield; }
+.rim-every input[type="number"]::-webkit-inner-spin-button, .rim-every input[type="number"]::-webkit-outer-spin-button { display: none; -webkit-appearance: none; margin: 0; }
+@media (max-width: 600px) {
+  /* Two tidy lines: the name, then every + number + unit. */
+  .rim-tlist li.rim-new > .rw-ic { margin-top: 13px; }
+  .rim-tlist li.rim-new .ctl.ia-box, .rim-tlist li.rim-new .ctl.ia-box:focus { flex: 1 1 100%; }
+  .rim-every { flex: 1 1 100%; }
+  .rim-every .ctl-group > input[type="number"] { width: 5ch; }
+}
+/* A performance standard's limit as data, folded: one quiet line at the panel's foot. */
+.rw-checkable { margin: var(--sp-4) 0 0; padding-top: var(--sp-3); border-top: 1px solid var(--line2); font-size: var(--fs-13); color: var(--muted); overflow-wrap: anywhere; }
+.rw-checkable button.link { min-height: 32px; }
+
+/* ---- notes and rationale ------------------------------------------------------------ */
+
+/* The note mark after a row's name (NotesMark): quiet, fixed size, never shrunk. */
+.rw-note-mark {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; margin-left: 4px; color: var(--muted);
+}
+.tt-tree .rw-note-mark { margin-left: 6px; }
+/* The section in the details (RcmNotes.jsx): the first section, directly below the title's chips,
+   with the shared heading; empty, its prompt and the dashed add row. */
+.rw-notes { min-width: 0; margin-top: var(--sp-2); }
+.rw-notes-prompt { margin: 0; line-height: 1.4; }
+/* A function's notes (Markdown, as they hold the working): about six lines folded, Show all for the rest. */
+.rw-notes-md:not(.open) { max-height: 9em; overflow: hidden; }
+.rw-notes-hint { margin: 0 0 6px; }

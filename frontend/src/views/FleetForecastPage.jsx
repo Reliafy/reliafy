@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import Plot from "../components/Plot.jsx";
 import { ACCENT, INK, sentence } from "../plotTheme.js";
 import Select from "../components/Select.jsx";
 import FleetAlertsCard from "../components/FleetAlertsCard.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
+import { useAskText } from "../components/ConfirmProvider.jsx";
+import { changedText, renamePrompt } from "../confirm.js";
 import { getFleet, putFleetItems, renameFleet } from "../api.js";
 import { toCsv } from "../csv.js";
 import Chip from "../components/ui/Chip.jsx";
@@ -17,6 +20,7 @@ import { unitInText } from "../components/unitText.js";
 import { itemsWithoutUsage, usageInputValue } from "../fleetUsage.js";
 import ScrollCue from "../components/ui/ScrollCue.jsx";
 import FleetSparesCard from "../components/FleetSparesCard.jsx";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const METHOD_OPTIONS = [
   { value: "renewals", label: "Failures with replacement", hint: "Failed items are replaced and can fail again — spares demand." },
@@ -87,6 +91,7 @@ export default function FleetForecastPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [conflict, setConflict] = useState(false);
+  const askText = useAskText();
   // The assumptions line opens into its form (#311); a new forecast starts open.
   const [editing, setEditing] = useState(false);
 
@@ -105,7 +110,7 @@ export default function FleetForecastPage() {
   };
   useEffect(load, [id]);
 
-  if (error && !fleet) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !fleet) return <div className="app"><LoadFailed header error={error} notFound="Forecast not found." to="/forecasts" label="See all forecasts" /></div>;
   if (!fleet || !settings) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const readOnly = fleet.read_only;
@@ -121,8 +126,8 @@ export default function FleetForecastPage() {
   const fieldLabel = (f) => f.label || f.name;
   const fleetDefault = (f) => (blank(fleetCovariates[f.name]) ? f.default : fleetCovariates[f.name]);
   const modelUrl = forecast.model_url
-    || (fleet.model_kind === "alt" ? `/modelling/alt/${fleet.model_id}`
-      : repairable ? `/modelling/recurrent/${fleet.model_id}` : `/modelling/m/${fleet.model_id}`);
+    || (fleet.model_kind === "alt" ? `/models/alt/${fleet.model_id}`
+      : repairable ? `/models/recurrent/${fleet.model_id}` : `/models/m/${fleet.model_id}`);
   const single = (settings.method || "renewals") === "single";
   const showService = single && !repairable && !blank(settings.warranty_periods);
   const nameById = Object.fromEntries(items.map((it) => [it.id, it.name]));
@@ -181,10 +186,10 @@ export default function FleetForecastPage() {
   };
 
   const onRename = async () => {
-    const name = window.prompt("Forecast name", fleet.name);
-    if (!name || !name.trim() || name.trim() === fleet.name) return;
+    const name = changedText(await askText(renamePrompt({ kind: "forecast", name: fleet.name })), fleet.name);
+    if (!name) return;
     try {
-      const updated = await renameFleet(id, name.trim());
+      const updated = await renameFleet(id, name);
       setFleet((f) => ({ ...f, name: updated.name }));
     } catch (err) {
       setError(err.message);
@@ -245,7 +250,7 @@ export default function FleetForecastPage() {
   const hideProb = showAnswer && !dirty && (forecast.per_item || []).length > 0
     && (forecast.per_item || []).every((r) => r.prob_any > 0.95);
 
-  // One line of assumptions under the header; Edit opens the form (#311).
+  // One line of assumptions under the header; "Change settings" opens the form (#311).
   // Missing usage keeps the form open: it's the next step.
   const formOpen = !readOnly && (editing || noUsage > 0);
   const methodText = repairable
@@ -268,8 +273,9 @@ export default function FleetForecastPage() {
 
   return (
     <div className="app">
+      <PageTitle name={fleet && itemName(fleet)} />
       <PageHeader
-        crumbs={[{ label: "Fleet" }, { label: "Failure forecasts", to: "/fleet" }]}
+        crumbs={[{ label: "Forecasts", to: "/forecasts" }]}
         title={itemName(fleet)}
         badges={
           <>
@@ -309,7 +315,7 @@ export default function FleetForecastPage() {
           <span><span className="fleet-assume-k">Assumes</span> {assumptions.join(" · ")}</span>
           {!readOnly && noUsage === 0 && (
             <button className="secondary sm" onClick={() => setEditing((v) => !v)} aria-expanded={editing}>
-              {editing ? "Done" : "Edit"}
+              {editing ? "Hide settings" : "Change settings"}
             </button>
           )}
         </div>
@@ -328,7 +334,7 @@ export default function FleetForecastPage() {
 
       {forecast.status === "stale" && (
         <div className="card upgrade-nudge">
-          <p>{forecast.reason || "The linked life model is unavailable."}</p>
+          <p>{forecast.reason || "The linked non-repairable model is unavailable."}</p>
         </div>
       )}
 
@@ -536,7 +542,10 @@ export default function FleetForecastPage() {
               <thead>
                 <tr>
                   <th>Item</th>
-                  <th className="num" style={{ width: 90 }}>Expected failures</th>
+                  <th className="num" style={{ width: 90 }}
+                      title="From the simulation, to 2 significant figures: items with the same inputs can still differ slightly.">
+                    Expected failures
+                  </th>
                   {!hideProb && <th className="num" style={{ width: 100 }}>{repairable ? "P(≥1 failure)" : "P(failure)"}</th>}
                   <th className="num" style={{ width: 130 }}>Current use{unit ? ` (${unit})` : ""}</th>
                   <th className="num" style={{ width: 120 }} title={`Usage per ${settingsWord}; blank uses the fleet's ${asText(settings.default_rate || 0)}`}>
@@ -563,7 +572,7 @@ export default function FleetForecastPage() {
                                  onChange={(e) => setItem(idx, "name", e.target.value)} />
                         )}
                       </td>
-                      <td className="num fleet-expected">{r.expected === undefined || itemFiguresStale ? "—" : formatNumber(r.expected)}</td>
+                      <td className="num fleet-expected">{r.expected === undefined || itemFiguresStale ? "—" : formatNumber(r.expected, { sig: 2 })}</td>
                       {!hideProb && (
                         <td className="num">{r.prob_any === undefined || itemFiguresStale ? "—" : formatPercent(r.prob_any)}</td>
                       )}

@@ -78,10 +78,10 @@ def test_auth_is_the_mcp_model(env):
     assert r.status_code == 403 and "ingest" in r.json()["detail"]
     assert env.post("/api/v1/list/models").status_code == 200
     # A read-only token reads and calculates but can't write.
-    assert env.post("/api/v1/strategy/optimal_replacement", {
+    assert env.post("/api/v1/analyse/optimal_replacement", {
         "distribution_id": "weibull", "params": WEIBULL, "planned_cost": 100, "unplanned_cost": 1000},
         token=env.read_only).status_code == 200
-    r = env.post("/api/v1/models/save", {"name": "x", "distribution": "weibull", "params": WEIBULL},
+    r = env.post("/api/v1/change/model_save", {"name": "x", "distribution": "weibull", "params": WEIBULL},
                  token=env.read_only)
     assert r.status_code == 403 and "write" in r.json()["detail"]
 
@@ -99,7 +99,7 @@ def test_a_token_without_api_access_is_402_and_a_free_session_gets_the_allowance
         "uid": FREE, "email": "free@example.org", "email_verified": True})
     monkeypatch.setattr(config, "MCP_FREE_MONTHLY_CALLS", 2)
     session = {"Authorization": "Bearer firebase-id-token"}
-    r = env.client.post("/api/v1/life_data_analysis/fit", json=FIT, headers=session)
+    r = env.client.post("/api/v1/analyse/fit", json=FIT, headers=session)
     assert r.status_code == 402 and "Pro" in r.json()["detail"]  # fitting is Pro-only, not counted
     assert env.client.post("/api/v1/guide", json={}, headers=session).status_code == 200  # never counted
     assert env.client.post("/api/v1/list/models", json={}, headers=session).status_code == 200
@@ -113,10 +113,10 @@ def test_operators_and_self_hosted_have_everything(env, monkeypatch):
 
     monkeypatch.setattr(config, "BILLING_ENABLED", True)
     monkeypatch.setattr(config, "ADMIN_EMAILS", {"op@example.org"})
-    assert env.post("/api/v1/life_data_analysis/fit", FIT, uid=OP).status_code == 200
+    assert env.post("/api/v1/analyse/fit", FIT, uid=OP).status_code == 200
     monkeypatch.setattr(config, "BILLING_ENABLED", False)
     monkeypatch.setattr(config, "AUTH_DISABLED", True)
-    assert env.client.post("/api/v1/life_data_analysis/fit", json=FIT).status_code == 200  # no token needed
+    assert env.client.post("/api/v1/analyse/fit", json=FIT).status_code == 200  # no token needed
 
 
 # ---- calls -----------------------------------------------------------------------
@@ -132,18 +132,19 @@ GRAPH = {"nodes": [{"id": "input", "type": "input"},
 
 
 def test_results_are_the_mcp_results(env):
-    mid = env.post("/api/v1/models/save", {"name": "Handbook", "distribution": "weibull",
-                                           "params": WEIBULL}).json()["model_id"]
-    rid = env.post("/api/v1/rbd/create", {"name": "Two pumps", **GRAPH}).json()["id"]
+    mid = env.post("/api/v1/change/model_save", {"name": "Handbook", "distribution": "weibull",
+                                                 "params": WEIBULL}).json()["model_id"]
+    rid = env.post("/api/v1/change/rbd_create", {"name": "Two pumps", **GRAPH}).json()["id"]
+    assert env.post("/api/v1/rbd/create", {"name": "x", **GRAPH}).status_code == 404  # earlier names are gone
     calls = [
         ("guide", None, {"topic": "units"}),
         ("list", "models", {}),
         ("get", "model", {"id": mid}),
-        ("life_data_analysis", "reliability_at", {"model_id": mid, "times": [100, 500]}),
-        ("life_data_analysis", "fit", FIT),
-        ("strategy", "optimal_replacement", {"distribution_id": "weibull", "params": WEIBULL,
+        ("analyse", "reliability_at", {"model_id": mid, "times": [100, 500]}),
+        ("analyse", "fit", FIT),
+        ("analyse", "optimal_replacement", {"distribution_id": "weibull", "params": WEIBULL,
                                              "planned_cost": 100, "unplanned_cost": 1000}),
-        ("rbd_analysis", "analyze", {"rbd_id": rid}),
+        ("analyse", "rbd", {"rbd_id": rid}),
     ]
 
     async def over_mcp(client):
@@ -164,25 +165,24 @@ def test_results_are_the_mcp_results(env):
 
 
 def test_a_sample_of_every_tool(env):
-    ds = env.post("/api/v1/datasets/upload", {"name": "Bearings", "csv": "hours,c\n120,0\n340,0\n510,1\n700,0"})
+    ds = env.post("/api/v1/change/dataset_upload", {"name": "Bearings", "csv": "hours,c\n120,0\n340,0\n510,1\n700,0"})
     assert ds.status_code == 200, ds.text
-    saved = env.post("/api/v1/models/save", {"name": "Handbook", "distribution": "weibull", "params": WEIBULL})
+    saved = env.post("/api/v1/change/model_save", {"name": "Handbook", "distribution": "weibull", "params": WEIBULL})
     assert saved.status_code == 200 and saved.json()["model_id"]
     mid = saved.json()["model_id"]
-    assert env.post("/api/v1/life_data_analysis/reliability_at", {"model_id": mid, "times": [500]}).status_code == 200
-    r = env.post("/api/v1/repairable_analysis/next_failure", {"model_id": "nope", "age": 10})
+    assert env.post("/api/v1/analyse/reliability_at", {"model_id": mid, "times": [500]}).status_code == 200
+    r = env.post("/api/v1/analyse/next_failure", {"model_id": "nope", "age": 10})
     assert r.status_code == 404 and "not found" in r.json()["detail"]
-    rbd = env.post("/api/v1/rbd/create", {"name": "Two pumps", **GRAPH})
+    rbd = env.post("/api/v1/change/rbd_create", {"name": "Two pumps", **GRAPH})
     assert rbd.status_code == 200, rbd.text
-    up = env.post("/api/v1/uploads/create", {"purpose": "dataset", "filename": "x.csv"})
+    up = env.post("/api/v1/change/upload_create", {"purpose": "dataset", "filename": "x.csv"})
     assert up.status_code == 200 and up.json()["upload_id"]
-    assert env.post("/api/v1/rcm/create", {"name": "Pump RCM"}).status_code == 200
-    link = env.post("/api/v1/sharing/create_link", {"kind": "model", "id": mid})
+    link = env.post("/api/v1/change/share_link", {"kind": "model", "id": mid})
     assert link.status_code == 200, link.text
-    r = env.post("/api/v1/fleet/create_alert", {"fleet_id": "nope", "kind": "above", "threshold": 2})
+    r = env.post("/api/v1/change/fleet_create_alert", {"fleet_id": "nope", "kind": "above", "threshold": 2})
     assert r.status_code in (404, 422) and "fleet" in r.json()["detail"].lower(), r.text  # a one-action tool
-    assert env.post("/api/v1/upgrade_link").status_code in (200, 422)
-    assert env.post("/api/v1/models/delete", {"model_id": mid}).status_code == 200
+    assert env.post("/api/v1/get/upgrade_link").status_code in (200, 422)
+    assert env.post("/api/v1/change/model_delete", {"model_id": mid}).status_code == 200
     # Scoped like MCP: B can't see A's dataset.
     assert env.post("/api/v1/get/dataset", {"id": ds.json()["id"]}, uid=B).status_code == 404
 
@@ -192,9 +192,10 @@ def test_errors(env):
     assert r.status_code == 404 and "/api/v1/tools" in r.json()["detail"]
     r = env.post("/api/v1/get/nope")
     assert r.status_code == 404 and "model" in r.json()["detail"]
-    r = env.post("/api/v1/life_data_analysis/fit", {"data": "x"})
-    assert r.status_code == 422 and r.json()["detail"].startswith("data:")
-    r = env.post("/api/v1/strategy/optimal_replacement", {"distribution_id": "weibull", "params": WEIBULL})
+    r = env.post("/api/v1/analyse/fit", {"data": "x"})
+    assert r.status_code == 422 and "data: Input should be a valid list" in r.json()["detail"]
+    assert "args" not in r.json()["detail"]  # over REST the arguments are the body
+    r = env.post("/api/v1/analyse/optimal_replacement", {"distribution_id": "weibull", "params": WEIBULL})
     assert r.status_code == 422 and "needs planned_cost" in r.json()["detail"]
     r = env.post("/api/v1/get/model", {"kind": "rbd", "id": "x"})
     assert r.status_code == 422 and "path" in r.json()["detail"]
@@ -210,7 +211,7 @@ def test_heavy_calls_share_the_mcp_heavy_slots(env, monkeypatch):
     from backend import mcp_server
 
     monkeypatch.setattr(mcp_server, "MCP_USER_HEAVY", 0)
-    r = env.post("/api/v1/life_data_analysis/fit", FIT)
+    r = env.post("/api/v1/analyse/fit", FIT)
     assert r.status_code == 429 and "running at once" in r.json()["detail"]
     assert env.post("/api/v1/list/models").status_code == 200  # not heavy
 
@@ -246,7 +247,7 @@ def test_the_old_routes_are_unchanged(env):
     r = env.client.post("/api/v1/datasets", headers=_auth(env.token[A]), json={
         "name": "D", "csv": "hours,failed\n120,1\n340,1\n510,0\n700,1"})
     assert r.status_code == 200 and r.json()["n_rows"] == 4
-    mid = env.post("/api/v1/models/save", {"name": "H", "distribution": "weibull", "params": WEIBULL}).json()["model_id"]
+    mid = env.post("/api/v1/change/model_save", {"name": "H", "distribution": "weibull", "params": WEIBULL}).json()["model_id"]
     r = env.client.get(f"/api/v1/models/{mid}", headers=_auth(env.token[A]))
     assert r.status_code == 200 and r.json()["id"] == mid
 
@@ -271,17 +272,56 @@ def maint(env, monkeypatch, tmp_path):
 
 
 def test_maintenance_tools_only_for_its_users(maint):
-    r = maint.post("/api/v1/maintenance_overview")
+    r = maint.post("/api/v1/maintenance/overview")
     assert r.status_code == 200 and "summary" in r.json()
-    assert maint.post("/api/v1/maintenance_overview", uid=B).status_code == 404
-    pos = maint.post("/api/v1/maintenance_positions/create", {"name": "Pump A"})
+    assert maint.post("/api/v1/maintenance/overview", uid=B).status_code == 404
+    pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump A"})
     assert pos.status_code == 200, pos.text
     tools_a = {t["name"] for t in maint.client.get("/api/v1/tools", headers=_auth(maint.token[A])).json()["tools"]}
     tools_b = {t["name"] for t in maint.client.get("/api/v1/tools", headers=_auth(maint.token[B])).json()["tools"]}
-    assert "maintenance_positions" in tools_a and not any(t.startswith("maintenance_") for t in tools_b)
-    assert "maintenance_graph_query" not in tools_a  # graph queries: a narrower audience still
+    assert "maintenance" in tools_a and not any(t.startswith("maintenance") for t in tools_b)
+    spec_a = maint.client.get("/api/v1/openapi.json", headers=_auth(maint.token[A])).json()
+    assert "/api/v1/maintenance/positions.create" in spec_a["paths"]
+    assert "/api/v1/maintenance/graph_query" not in spec_a["paths"]  # graph queries: a narrower audience still
     spec_b = maint.client.get("/api/v1/openapi.json", headers=_auth(maint.token[B])).json()
-    assert not any("/maintenance_" in p for p in spec_b["paths"])
+    assert not any("/maintenance/" in p for p in spec_b["paths"] if p != "/api/v1/maintenance/photos")
+
+
+def test_maintenance_names_over_the_limit_say_what_to_do(maint):
+    pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Filter"}).json()
+    r = maint.post("/api/v1/maintenance/tasks.create", {"position_id": pos["id"], "name": "x" * 397, "interval": 1})
+    assert r.status_code >= 400
+    assert "The task's name is at most 200 characters; this one is 397. Shorten it and put the detail in the " \
+           "task's instructions." in r.text
+    r = maint.post("/api/v1/maintenance/work_orders.generate", {})
+    assert r.status_code == 200 and r.json()["skipped"] == [] and r.json()["work_orders"] == []
+
+
+def test_maintenance_move_a_measurement_point_over_rest(maint):
+    a = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump A"}).json()
+    b = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump B"}).json()
+    point = maint.post("/api/v1/maintenance/measurements.add_point",
+                       {"position_id": a["id"], "name": "Run hours", "kind": "counter", "unit": "hours"}).json()
+    r = maint.post("/api/v1/maintenance/measurements.move_point", {"point_id": point["id"], "position_id": b["id"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["from_position_id"] == a["id"]
+    spec = maint.client.get("/api/v1/openapi.json", headers=_auth(maint.token[A])).json()
+    assert "/api/v1/maintenance/measurements.move_point" in spec["paths"]
+    r = maint.post("/api/v1/maintenance/measurements.move_point", {"point_id": point["id"]})
+    assert r.status_code >= 400 and "position_id" in r.text
+
+
+def test_a_task_raised_by_a_logged_event_over_rest(maint):
+    pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Pool"}).json()
+    task = maint.post("/api/v1/maintenance/tasks.create", {
+        "position_id": pos["id"], "name": "Check stabiliser", "trigger": {"kind": "event", "event_type": "Overflow"}})
+    assert task.status_code == 200, task.text
+    assert task.json()["on_event"] and task.json()["next_due"] is None
+    r = maint.post("/api/v1/maintenance/positions.log_event", {"position_id": pos["id"], "event_type": "overflow"})
+    assert r.status_code == 200, r.text
+    assert [w["task"]["id"] for w in r.json()["work_orders_raised"]] == [task.json()["id"]]
+    r = maint.post("/api/v1/maintenance/tasks.update", {"task_id": task.json()["id"], "clear_trigger": True})
+    assert r.status_code == 200 and r.json()["trigger"] is None
 
 
 def _jpeg() -> bytes:
@@ -304,7 +344,7 @@ def test_photos_over_the_api(maint, monkeypatch):
     from backend.maintenance import photos
     from backend.services import usage
 
-    pid = maint.post("/api/v1/maintenance_positions/create", {"name": "Pump A"}).json()["id"]
+    pid = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump A"}).json()["id"]
     hdr = {**_auth(maint.token[A]), "Content-Type": "image/jpeg"}
     r = maint.client.post(f"/api/v1/maintenance/photos?target_id={pid}&caption=Front", content=_jpeg(), headers=hdr)
     assert r.status_code == 200, r.text
@@ -316,7 +356,7 @@ def test_photos_over_the_api(maint, monkeypatch):
     files = {"file": ("p.png", _png(), "image/png")}
     r = maint.client.post(f"/api/v1/maintenance/photos?target_id={pid}", files=files, headers=_auth(maint.token[A]))
     assert r.status_code == 200, r.text
-    view = maint.post("/api/v1/maintenance_view_photo", {"photo_id": photo_id})
+    view = maint.post("/api/v1/maintenance/view_photo", {"photo_id": photo_id})
     assert view.status_code == 200 and view.json()["content"][0]["type"] == "image"
 
     bad = maint.client.post(f"/api/v1/maintenance/photos?target_id={pid}", content=b"%PDF nope", headers=hdr)
@@ -374,7 +414,7 @@ def test_parity_every_mcp_action_has_rest_openapi_and_cli(maint, monkeypatch):
     from backend import mcp_server
     from backend.maintenance import mcp_tools
 
-    tables = {**mcp_server.TABLES, **{k: v for k, v in mcp_tools.TABLES.items() if k in mcp_tools.TOOL_NAMES}}
+    tables = {**mcp_server.TABLES, **mcp_tools.TOOL_TABLES}
     from_tables = {(tool, a) for tool, (_, table) in tables.items() for a in table}
     assert from_tables - actions == set(), "MCP actions REST doesn't route"
     assert {t for t, a in actions if a is None} == {t.name for t in tools if t.name not in tables}
@@ -405,7 +445,7 @@ def test_parity_every_mcp_action_has_rest_openapi_and_cli(maint, monkeypatch):
 def test_spec_is_valid_and_public_safe(env):
     spec = env.client.get("/api/v1/openapi.json").json()  # no credentials: the core tools
     assert spec["openapi"].startswith("3.1")
-    assert "/api/v1/life_data_analysis/fit" in spec["paths"]
+    assert "/api/v1/analyse/fit" in spec["paths"]
     assert not any(p.startswith("/api/v1/maintenance_") for p in spec["paths"])
     schemas = spec["components"]["schemas"]
     import json
@@ -418,13 +458,13 @@ def test_spec_is_valid_and_public_safe(env):
     # Built only from the public tool definitions: no private names.
     for word in ("accelerator", "mojo", "planning repo", "partner"):
         assert word not in text.lower(), word
-    op = spec["paths"]["/api/v1/life_data_analysis/fit"]["post"]
+    op = spec["paths"]["/api/v1/analyse/fit"]["post"]
     assert op["x-reliafy-pro-only"] and op["x-reliafy-heavy"] and op["x-reliafy-scope"] == "read"
 
 
 def test_report_a_problem_and_check_it(env):
     r = env.post("/api/v1/report_problem/report", {"kind": "missing_capability", "summary": "No way to undo a fit",
-                                                   "tool": "models", "trying": "refit with other columns"})
+                                                   "tool": "change", "trying": "refit with other columns"})
     assert r.status_code == 200, r.text
     rid = r.json()["report_id"]
     assert env.post("/api/v1/report_problem/status", {"report_id": rid}).json()["status"] == "new"
@@ -432,3 +472,21 @@ def test_report_a_problem_and_check_it(env):
     # Only operators triage or update.
     assert env.post("/api/v1/report_problem/update", {"report_id": rid, "status": "fixed"}).status_code in (400, 403, 422)
     assert env.post("/api/v1/report_problem/triage").status_code in (400, 403, 422)
+
+
+def test_maintenance_decide_with_hidden_over_rest(maint):
+    """failure_modes.decide's hidden argument over REST, as over MCP (the action table makes both), and the
+    RCM decision diagram's refusal."""
+    pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Trip"}).json()
+    mode = maint.post("/api/v1/maintenance/failure_modes.add", {"position_id": pos["id"], "text": "Trip dead"}).json()
+    r = maint.post("/api/v1/maintenance/failure_modes.decide", {
+        "failure_mode_id": mode["id"], "hidden": True, "consequence": "safety",
+        "decision": {"outcome": "failure_finding", "task": "Test the trip", "interval": 6, "interval_unit": "months"}})
+    assert r.status_code == 200, r.text
+    assert r.json()["hidden"] is True and r.json()["consequence"] == "safety"
+    r = maint.post("/api/v1/maintenance/failure_modes.decide", {
+        "failure_mode_id": mode["id"], "hidden": False, "decision": {"outcome": "rtf", "rtf_basis": "random"}})
+    assert r.status_code >= 400 and "can't be run to failure" in r.text
+    spec = maint.client.get("/api/v1/openapi.json", headers=_auth(maint.token[A])).json()
+    body = spec["paths"]["/api/v1/maintenance/failure_modes.decide"]["post"]["requestBody"]["content"]
+    assert "hidden" in str(body) or "hidden" in str(spec["components"])

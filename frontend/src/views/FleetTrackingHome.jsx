@@ -6,8 +6,12 @@ import { listTrackedFleets, createTrackedFleet, deleteTrackedFleet, listDegradat
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
-import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { unitInText } from "../components/unitText.js";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
+import { useRoles } from "../RolesProvider.jsx";
+import WatchedBandsNote from "../components/WatchedBandsNote.jsx";
 
 
 const fmt = (v) =>
@@ -34,10 +38,12 @@ function HealthChips({ tracking }) {
 
 const HELP = { guide: "degradation-modelling" };
 
-// Fleet › Degradation tracking: the tracked fleets: one row per degradation model with its live
-// health rollup. Opening a row goes to that model's tracking page.
+// Risk › Condition monitoring: the items in service, tracked against a
+// degradation model, a fleet per row with its live health rollup. Opening a
+// row goes to that fleet's page (its items, readings and remaining life).
 export default function FleetTrackingHome() {
   const navigate = useNavigate();
+  const { noteUse } = useRoles();
   const [fleets, setFleets] = useState(null);
   const [models, setModels] = useState([]);
   const [error, setError] = useState(null);
@@ -49,9 +55,13 @@ export default function FleetTrackingHome() {
 
   const refresh = useCallback(() => {
     listTrackedFleets()
-      .then((d) => setFleets(d.fleets || []))
+      .then((d) => {
+        setFleets(d.fleets || []);
+        // A workspace with fleets of its own uses Risk: show it in the menu.
+        if ((d.fleets || []).some((f) => !f.is_sample)) noteUse("risk");
+      })
       .catch((e) => setError(e.message));
-  }, []);
+  }, [noteUse]);
   useEffect(() => refresh(), [refresh]);
 
   const openCreate = async () => {
@@ -73,7 +83,8 @@ export default function FleetTrackingHome() {
     setCreateError(null);
     try {
       const fleet = await createTrackedFleet(name.trim(), pickedId);
-      navigate(`/fleet/tracking/${fleet.id}`);
+      noteUse("risk");
+      navigate(`/risk/${fleet.id}`);
     } catch (err) {
       setCreateError(err.message);
     } finally {
@@ -81,11 +92,9 @@ export default function FleetTrackingHome() {
     }
   };
 
+  const confirm = useConfirm();
   const onDelete = async (f) => {
-    const msg = f.is_sample
-      ? `Remove the sample “${itemName(f)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete fleet “${f.name}” and its tracked items?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(f, "fleet", { name: itemName(f), extra: "with its tracked items" })))) return;
     try {
       await deleteTrackedFleet(f.id);
       refresh();
@@ -94,20 +103,21 @@ export default function FleetTrackingHome() {
     }
   };
 
-  const open = (id) => navigate(`/fleet/tracking/${id}`);
+  const pathOf = (id) => `/risk/${id}`;
   const newTracked = <button onClick={openCreate}><PlusIcon /> New tracked fleet</button>;
 
   return (
     <div className="app">
       <SectionHeader
-        section="fleet"
-        title="Degradation tracking"
-        purpose="Each item's remaining life against a degradation model; open a fleet to log inspections."
+        section="risk"
+        title="Condition monitoring"
+        purpose="Items in service: latest condition, predicted remaining life and alarms."
         help={HELP}
         primary={newTracked}
       />
 
       {error && <div className="card error">{error}</div>}
+      <WatchedBandsNote />
 
       <SectionList
         rows={fleets}
@@ -117,7 +127,7 @@ export default function FleetTrackingHome() {
         empty={{
           title: "Nothing tracked yet",
           body: <>Name a fleet, pick the degradation model it runs against, and register the items you have in
-            service — or <Link to="/modelling/degradation" className="evidence-link">fit a model</Link> first.</>,
+            service — or <Link to="/models/degradation" className="evidence-link">fit a model</Link> first.</>,
           action: newTracked,
         }}
         head={[
@@ -130,10 +140,10 @@ export default function FleetTrackingHome() {
           <th key="a"><span className="sr-only">Actions</span></th>,
         ]}
         render={(f) => (
-          <tr key={f.id} className="lib-row" onClick={() => open(f.id)}>
+          <tr key={f.id} className="lib-row" onClick={rowOpen(navigate, pathOf(f.id))}>
             <td>
               <div className="lib-name">
-                {itemName(f)}
+                <RowLink to={pathOf(f.id)}>{itemName(f)}</RowLink>
                 {f.shared_by && <Chip title={`Shared by ${f.shared_by}`}>Shared</Chip>}
               </div>
             </td>
@@ -150,7 +160,7 @@ export default function FleetTrackingHome() {
                 : "—"}
             </td>
             <td className="lib-date lib-opt">{relativeTime(f.updated_at || f.created_at)}</td>
-            <RowActions item={f} onOpen={() => open(f.id)} onDelete={() => onDelete(f)} />
+            <RowActions item={f} to={pathOf(f.id)} onDelete={() => onDelete(f)} />
           </tr>
         )}
       />
@@ -196,7 +206,7 @@ export default function FleetTrackingHome() {
             </label>
             <p className="muted-line">
               One model can back any number of fleets. Don't have a model yet?{" "}
-              <Link to="/modelling/degradation" className="evidence-link" onClick={() => setModalOpen(false)}>
+              <Link to="/models/degradation" className="evidence-link" onClick={() => setModalOpen(false)}>
                 Fit a degradation model
               </Link>{" "}
               from your inspection history first.

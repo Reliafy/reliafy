@@ -214,7 +214,7 @@ def test_export_names_blocks_without_a_model_but_not_pinned_ones():
     graph = {"nodes": [_node("input", "input", "Input"), _node("a", "component", "Empty"),
                        _node("b", "component", "Pinned", state="working"), _node("output", "output", "Output")],
              "edges": _edges(("input", "a"), ("a", "b"), ("b", "output"))}
-    with pytest.raises(rbd_json.ExportError, match="“Empty” has no life model"):
+    with pytest.raises(rbd_json.ExportError, match="“Empty” has no non-repairable model"):
         rbd_json.to_document(graph, "x")
     graph["nodes"][1]["data"]["model"] = _w(100, 2)
     doc = rbd_json.to_document(graph, "x")
@@ -476,7 +476,7 @@ def test_what_reliafy_cant_hold_is_listed_and_left_without_a_model():
     assert "“c” was imported without" not in notes
     c = next(n for n in d.graph["nodes"] if n["id"] == "c" or n["data"].get("label") == "c")
     assert c["data"]["model"]["distribution_id"] == "uniform"
-    assert "“deg” was imported without a life model — its model is a degrading" in notes
+    assert "“deg” was imported without a non-repairable model — its model is a degrading" in notes
     # Two of three running (#84): a standby block with k = 2 and one spare.
     two = next(n for n in d.graph["nodes"] if n["data"].get("label") == "two")
     assert two["type"] == "standby" and two["data"]["k"] == 2 and two["data"]["spares"] == 1
@@ -625,7 +625,7 @@ def test_import_of_someone_elses_export_draws_their_subsystem_in_place(client):
 
 
 # ---------------------------------------------------------------------------
-# MCP: rbd_analysis export_json, and uploads import_rbd takes it back
+# MCP: analyse rbd_export_json, and change import_rbd takes it back
 # ---------------------------------------------------------------------------
 def test_mcp_export_and_import(env):
     from backend.services import rbds as rbds_service
@@ -634,19 +634,19 @@ def test_mcp_export_and_import(env):
     sub = _save(env.db, "Drive train", copy.deepcopy(SUB), A)
     plant = _save(env.db, "Plant", _plant(sub.id), A)
 
-    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "export_json", "rbd_id": plant.id}))
+    out = _ok(_call(env.token[A], "analyse", {"action": "rbd_export_json", "rbd_id": plant.id}))
     assert out["filename"] == "plant.json" and out["notes"] and "rbd_from_json" in out["load"]
     assert json.loads(out["json"])["reliafy"]["name"] == "Plant"
 
-    back = _ok(_call(env.token[A], "uploads", {"action": "import_rbd", "content": out["json"], "name": "Plant copy"}))
+    back = _ok(_call(env.token[A], "change", {"action": "import_rbd", "content": out["json"], "name": "Plant copy"}))
     [item] = back["diagrams"]
     assert back["saved"] and item["import_notes"] == []
     saved = rbds_service.get_rbd(env.db, item["id"], [A])
     assert saved.name == "Plant copy" and saved.graph == rbd_graph.normalize_graph(_plant(sub.id))
 
     # B can't read A's diagram, nor A's sub-system: it is drawn in place.
-    assert "not found" in _err(_call(env.token[B], "rbd_analysis", {"action": "export_json",
+    assert "not found" in _err(_call(env.token[B], "analyse", {"action": "rbd_export_json",
                                                                     "rbd_id": plant.id})).lower()
-    back = _ok(_call(env.token[B], "uploads", {"action": "import_rbd", "content": out["json"],
+    back = _ok(_call(env.token[B], "change", {"action": "import_rbd", "content": out["json"],
                                                "format": "repyability"}))
     assert any("drawn in place" in n for n in back["diagrams"][0]["import_notes"])

@@ -1,7 +1,7 @@
 ---
 title: "Censored data and suspensions: why your MTBF is probably wrong"
 description: "Most reliability datasets are dominated by units that haven't failed. Ignore those suspensions and your life estimates come out 2× wrong or worse. Here's what censoring is, with a worked example of the damage."
-cta_text: "Reliafy fits Weibull and other life models by maximum likelihood with right-, left-, and interval-censored data — upload a CSV, mark the suspensions, and read the plot. Free to start."
+cta_text: "Reliafy fits Weibull and other non-repairable models by maximum likelihood with right-, left-, and interval-censored data — upload a CSV, mark the suspensions, and read the plot. Free to start."
 cta_label: "Fit a model with your suspensions counted"
 cta_href: "/weibull-analysis-software"
 ---

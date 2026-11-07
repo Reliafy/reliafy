@@ -21,7 +21,7 @@ export const SHEET_MAX_WIDTH = 600;
 export const WALKTHROUGHS = {
   fit: {
     title: "Fit a model",
-    route: "/modelling/new?dataset=sample-ds-bearings",
+    route: "/models/new?dataset=sample-ds-bearings",
     steps: [
       {
         target: ['[data-wt="fit-data"] .ds-summary', '[data-wt="fit-data"]'],
@@ -39,7 +39,7 @@ export const WALKTHROUGHS = {
       },
       {
         target: ['[data-wt="fit-result"] .gof-card', '[data-wt="fit-result"]'],
-        text: "The answer: a shape β above 1 means failures rise with age; name the model and save it to use in Strategy and Fleet.",
+        text: "The answer: a shape β above 1 means failures rise with age; name the model and save it to use in Strategy and Forecasts.",
         wait: 15000,
       },
     ],
@@ -50,7 +50,7 @@ export const WALKTHROUGHS = {
     steps: [
       {
         target: '[data-wt="repl-model"]',
-        text: "Start from a life model: here, the bearing sample's Weibull fit.",
+        text: "Start from a non-repairable model: here, the bearing sample's Weibull fit.",
       },
       {
         target: '[data-wt="repl-costs"]',
@@ -63,14 +63,14 @@ export const WALKTHROUGHS = {
       },
       {
         target: '[data-wt="repl-result"]',
-        text: "The answer: the age to replace at and what it saves against running to failure; save it to cite in an RCM study.",
+        text: "The answer: the age to replace at and what it saves against running to failure; save it to cite as evidence in your RCM.",
         wait: 15000,
       },
     ],
   },
   rbd: {
     title: "Build a block diagram",
-    route: "/rbds/b/sample-rbd-pump-station",
+    route: "/systems/b/sample-rbd-pump-station",
     steps: [
       {
         target: '[data-wt="rbd-canvas"]',
@@ -95,35 +95,13 @@ export const WALKTHROUGHS = {
       },
     ],
   },
-  rcm: {
-    title: "An RCM study",
-    route: "/rcm/studies/sample-rcm-truck",
-    steps: [
-      {
-        target: '[data-wt="rcm-function"]',
-        text: "A study starts from what the system must do, its functions, and then the ways each one can fail.",
-      },
-      {
-        target: '[data-wt="rcm-mode"]',
-        text: "Each failure mode gets a decision: inspect its condition, replace on a schedule, check a hidden function, or run to failure.",
-      },
-      {
-        target: '[data-wt="rcm-evidence"]',
-        text: "Link a decision to its evidence, a saved model or analysis, and Reliafy checks that the evidence backs it.",
-      },
-      {
-        target: '[data-wt="rcm-checks"]',
-        text: "The checks run each time you open the study: here one run-to-failure call is contradicted, because its own model shows wear-out.",
-      },
-    ],
-  },
   fleet: {
     title: "A fleet forecast",
-    route: "/fleet/forecasts/sample-fleet-trucks",
+    route: "/forecasts/sample-fleet-trucks",
     steps: [
       {
         target: '[data-wt="fleet-model"]',
-        text: "A forecast runs every item in a fleet against one life model, here the bearing Weibull.",
+        text: "A forecast runs every item in a fleet against one non-repairable model, here the bearing Weibull.",
       },
       {
         target: '[data-wt="fleet-assume"]',
@@ -142,7 +120,7 @@ export const WALKTHROUGHS = {
   },
 };
 
-export const WALKTHROUGH_IDS = ["fit", "replacement", "rbd", "rcm", "fleet"];
+export const WALKTHROUGH_IDS = ["fit", "replacement", "rbd", "fleet"];
 
 export function getWalkthrough(id) {
   return Object.prototype.hasOwnProperty.call(WALKTHROUGHS, id) ? WALKTHROUGHS[id] : null;
@@ -280,7 +258,7 @@ export function rectInView(rect, viewport, inset = 0) {
   return rect.top >= 0 && rect.top + Math.min(rect.height, 80) <= viewport.height - inset;
 }
 
-// The admin report's step funnel for one walkthrough's row ({ steps: {"1": n,
+// A walkthrough's step funnel from a traffic report row ({ steps: {"1": n,
 // …} }): how many runs reached each of its steps, in order, zeros included.
 export function stepFunnel(row, id) {
   const wt = getWalkthrough(id);

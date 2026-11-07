@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import {
   addFailureMode,
   addPastFitment,
-  applyRcmToPosition,
   fitMaintenanceItem,
   listMaintenanceItems,
   mergeFailureMode,
@@ -11,13 +11,10 @@ import {
   getMaintenanceOverview,
   getMaintenancePosition,
   listMaintenanceLocations,
-  listRcmStudies,
   openWorkOrder,
   addMeasurementPoint,
   addItemMeasurementPoint,
   recordMeasurementReading,
-  correctMeasurementReading,
-  voidMeasurementReading,
   connectPositions,
   createRedundancyGroup,
   disconnectPositions,
@@ -27,7 +24,6 @@ import {
   setGroupDuty,
   correctMaintenanceFitment,
   removeMaintenanceItem,
-  retireMaintenancePosition,
   updateMaintenancePosition,
   voidMaintenanceFitment,
   addPositionPart,
@@ -36,7 +32,7 @@ import {
   updatePositionPart,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
-import { PlusIcon } from "../components/LibRows.jsx";
+import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
 import {
   DocumentsCard, FailureModePicker, Field, FormModal, LifeTable, LocationPicker, OUTCOME_LABELS,
   PositionPicker,
@@ -46,12 +42,20 @@ import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import { roughDateValue } from "../maintenanceFields.js";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
 import Modal from "../components/Modal.jsx";
-import { isStruck, liveReadings, readingClock, readingStatusText, readingWhen } from "../maintenanceReadings.js";
+import { liveReadings, readingWhen } from "../maintenanceReadings.js";
+import ReadingsTable from "../components/ReadingsTable.jsx";
+import { READINGS_INTRO } from "../measuringPoint.js";
+import { pointPagePath } from "../measurementsTab.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { PART_ROLES, roleLabel, stockText } from "../maintenanceSpares.js";
 import { TasksCard } from "../components/MaintenanceTasks.jsx";
 import { ConditionsCard, ConnectionConditions } from "../components/MaintenanceConditions.jsx";
 import "./Maintenance.css";
+import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
+import { PageTitle } from "../components/usePageTitle.js";
+import { productPath } from "../products.js";
+import { DeleteTreeModal } from "../components/DeleteTree.jsx";
+import { explorerPath } from "../assetTree.js";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
 // here), its work orders, and the life data its fitments give.
@@ -73,27 +77,27 @@ export default function MaintenancePosition() {
     setModal("child");
   };
 
-  if (error && !p) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !p) return <div className="app"><LoadFailed header error={error} notFound="Position not found." to="/asset-register" label="See all assets" /></div>;
   if (!p) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   return (
     <div className="app">
+      <PageTitle name={p?.name} />
       <PageHeader
-        crumbs={[{ label: "Maintenance", to: "/maintenance" }, ...p.path.map((a) => ({
-          label: a.name, to: a.kind === "Item" ? `/maintenance/items/${a.id}` : `/maintenance/positions/${a.id}` }))]}
+        crumbs={[{ label: "Assets", to: "/asset-register" }, ...p.path.map((a) => ({
+          label: a.name, to: a.kind === "Item" ? `/asset-register/items/${a.id}` : `/asset-register/positions/${a.id}` }))]}
         title={p.name}
         meta={[p.tag, p.position_class, p.description].filter(Boolean).join(" · ") || "Position"}
         id={p.id}
         menu={
           <>
             <button className="ovm-item" onClick={() => setModal("edit")}>Edit position</button>
-            <button className="ovm-item" onClick={() => setModal("retire")}>Retire position</button>
+            <button className="ovm-item danger" onClick={() => setModal("delete")}>Delete…</button>
           </>
         }
         actions={
           <>
             <button className="secondary" onClick={openChild}><PlusIcon /> Position inside</button>
-            <button className="secondary" onClick={() => setModal("rcm")}>Apply an RCM study</button>
           </>
         }
         primary={<button onClick={() => setModal("wo")}>New work order</button>}
@@ -105,13 +109,16 @@ export default function MaintenancePosition() {
           <h2>Fitted</h2>
           {p.fitted ? (
             <button className="secondary" onClick={() => setModal("remove")}>Remove</button>
+          ) : p.in_design ? (
+            // A product's design: nothing is fitted here; its items are built from it.
+            <Link to={productPath(p.in_design.id, "items")}>The items built from {p.in_design.name}</Link>
           ) : (
             <button onClick={() => setModal("fit")}>Fit an item</button>
           )}
         </div>
         {p.fitted ? (
           <p>
-            <strong>{p.fitted.item ? <Link to={`/maintenance/items/${p.fitted.item.id}`}>{p.fitted.item.name}</Link> : "?"}</strong>
+            <strong>{p.fitted.item ? <Link to={`/asset-register/items/${p.fitted.item.id}`}>{p.fitted.item.name}</Link> : "?"}</strong>
             {p.fitted.item?.serial && <span className="lib-date"> · serial {p.fitted.item.serial}</span>}
             <span className="lib-date"> · since {fmtDated(p.fitted.from, p.fitted.from_precision)}</span>
           </p>
@@ -129,11 +136,11 @@ export default function MaintenancePosition() {
         </div>
         {p.location ? (
           <p>
-            <Link to={`/maintenance/locations/${p.location.id}`}>{p.location.display}</Link>
+            <Link to={`/asset-register/locations/${p.location.id}`}>{p.location.display}</Link>
             {p.location.inherited && p.location.inherited_from && (
               <span className="lib-date">
                 {" · "}{p.location.inherited_from.kind === "Item" ? "from " : "inherited from "}
-                <Link to={`/maintenance/${p.location.inherited_from.kind === "Item" ? "items" : "positions"}/${p.location.inherited_from.id}`}>
+                <Link to={`/asset-register/${p.location.inherited_from.kind === "Item" ? "items" : "positions"}/${p.location.inherited_from.id}`}>
                   {p.location.inherited_from.name}</Link>
                 {p.location.inherited_from.kind === "Item" ? ", the item it's inside" : ""}
               </span>
@@ -171,7 +178,7 @@ export default function MaintenancePosition() {
       <TasksCard subject={{ kind: "position", id: p.id, name: p.name }} tasks={p.tasks} itemTasks={p.item_tasks || []}
                  modes={p.failure_modes} counters={p.measurements.filter((mp) => mp.kind === "counter")}
                  onChanged={refresh}
-                 emptyText="No scheduled tasks. Add one (from the maker's manual, a regulation or your own practice), or apply an RCM study whose decisions have intervals." />
+                 emptyText="No scheduled tasks. Add one (from the maker's manual, a regulation or your own practice), or decide the position's failure modes on the Explorer's RCM tab: a decision with an interval schedules its task." />
 
       <MeasurementsCard measurements={p.measurements} target={{ kind: "position", id: p.id }} onChanged={refresh} />
 
@@ -186,9 +193,9 @@ export default function MaintenancePosition() {
             <thead><tr><th>#</th><th>Title</th><th>Type</th><th>Trade</th><th>Status</th><th>Opened</th><th>Closed</th></tr></thead>
             <tbody>
               {p.work_orders.map((w) => (
-                <tr key={w.id} className="lib-row" onClick={() => navigate(`/maintenance/work-orders/${w.id}`)}>
+                <tr key={w.id} className="lib-row" onClick={rowOpen(navigate, `/maintenance/work-orders/${w.id}`)}>
                   <td>{w.number}</td>
-                  <td>{w.title}{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
+                  <td><RowLink to={`/maintenance/work-orders/${w.id}`}>{w.title}</RowLink>{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
                   <td>{w.type}</td><td className="lib-date">{w.trade || "—"}</td><td>{w.status}</td>
                   <td className="lib-date">{fmtDate(w.opened)}</td><td className="lib-date">{fmtDate(w.closed)}</td>
                 </tr>
@@ -204,7 +211,7 @@ export default function MaintenancePosition() {
           <button className="secondary" onClick={() => setModal({ mode: {} })}><PlusIcon /> Add failure mode</button>
         </div>
         {p.failure_modes.length === 0 ? (
-          <p className="lib-date">None yet. They come from an RCM study, are added here, or are recorded when
+          <p className="lib-date">None yet. They are added here or on the Explorer's RCM tab, or are recorded when
             something fails.</p>
         ) : (
           <div className="maint-scroll"><table className="lib-table">
@@ -215,8 +222,8 @@ export default function MaintenancePosition() {
                   <td>{m.text}{m.ad_hoc && <> <span className="maint-badge" title="Recorded at a failure: confirm it or merge it into another">ad hoc</span></>}</td>
                   <td className="lib-date">{m.failure || "—"}</td>
                   <td className="lib-date">{m.consequence || "—"}</td>
-                  <td className="lib-date">{OUTCOME_LABELS[m.outcome] || "—"}</td>
-                  <td>{!m.from_rcm && <button className="crumb-link" onClick={() => setModal({ mode: m })}>Edit</button>}</td>
+                  <td className="lib-date">{(m.outcomes?.length > 1 ? m.outcomes : [m.outcome]).map((o) => OUTCOME_LABELS[o]).filter(Boolean).join(" + ") || "—"}</td>
+                  <td><button className="crumb-link" onClick={() => setModal({ mode: m })}>Edit</button></td>
                 </tr>
               ))}
             </tbody>
@@ -244,19 +251,17 @@ export default function MaintenancePosition() {
         <section className="card">
           <div className="maint-head"><h2>Positions inside</h2></div>
           <ul className="maint-list">
-            {p.children.map((c) => <li key={c.id}><Link to={`/maintenance/positions/${c.id}`}>{c.name}</Link></li>)}
+            {p.children.map((c) => <li key={c.id}><Link to={`/asset-register/positions/${c.id}`}>{c.name}</Link></li>)}
           </ul>
         </section>
       )}
 
       {modal === "location" && <LocationModal p={p} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal === "edit" && <EditPositionModal p={p} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
-      {modal === "retire" && (
-        <FormModal title={`Retire ${p.name}`} submitLabel="Retire" onClose={() => setModal(null)}
-                   onSubmit={async () => { await retireMaintenancePosition(p.id, ""); navigate("/maintenance"); }}>
-          <p>It leaves the plant tree and stops scheduling tasks. Its history stays. Nothing may be fitted,
-            nothing inside it in use, and no work order open.</p>
-        </FormModal>
+      {modal === "delete" && (
+        // Gone from the tree with everything inside it: the Explorer shows the toast with Undo.
+        <DeleteTreeModal kind="position" id={p.id} name={p.name} onClose={() => setModal(null)}
+                         onDone={(answer, done) => navigate(explorerPath("positions"), { state: { deleted: done } })} />
       )}
       {modal?.mode && <FailureModeModal p={p} mode={modal.mode} onClose={() => setModal(null)}
                                         onDone={() => { setModal(null); refresh(); }} />}
@@ -264,14 +269,13 @@ export default function MaintenancePosition() {
       {modal?.fix && <FixModal row={modal.fix} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal === "fit" && <FitModal positionId={id} onClose={() => setModal(null)} onDone={(d) => { setP(d); setModal(null); }} />}
       {modal === "remove" && <RemoveModal position={p} onClose={() => setModal(null)} onDone={(d) => { setP(d); setModal(null); }} />}
-      {modal === "rcm" && <ApplyRcmModal positionId={id} onClose={() => setModal(null)} onDone={(d) => { setP(d.position); setModal(null); }} />}
       {modal === "wo" && (
         <NewWorkOrderModal positionId={id} onClose={() => setModal(null)}
                            onDone={(wo) => navigate(`/maintenance/work-orders/${wo.id}`)} />
       )}
       {modal === "child" && (
         <NewPositionModal positions={positions} parentId={id} onClose={() => setModal(null)}
-                          onCreated={(c) => navigate(`/maintenance/positions/${c.id}`)} />
+                          onCreated={(c) => navigate(`/asset-register/positions/${c.id}`)} />
       )}
     </div>
   );
@@ -416,34 +420,14 @@ function PastFitmentModal({ p, onClose, onDone }) {
   );
 }
 
-function ApplyRcmModal({ positionId, onClose, onDone }) {
-  const [studies, setStudies] = useState(null);
-  const [studyId, setStudyId] = useState("");
-  useEffect(() => {
-    listRcmStudies().then((d) => setStudies(d.studies || [])).catch(() => setStudies([]));
-  }, []);
-  return (
-    <FormModal title="Apply an RCM study" submitLabel="Apply" canSubmit={!!studyId} onClose={onClose}
-               onSubmit={async () => onDone(await applyRcmToPosition(positionId, studyId))}>
-      <p className="lib-date">Adds the study's failure modes and scheduled tasks here. Applying it again picks up changes.</p>
-      <Field label="RCM study">
-        <select value={studyId} onChange={(e) => setStudyId(e.target.value)}>
-          <option value="">{studies === null ? "Loading…" : "Choose a study"}</option>
-          {(studies || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-      </Field>
-    </FormModal>
-  );
-}
-
 function NewWorkOrderModal({ positionId, onClose, onDone }) {
   const [title, setTitle] = useState("");
   const [type, setType] = useState("corrective");
   const [due, setDue] = useState("");
   return (
-    <FormModal title="New work order" submitLabel="Open work order" canSubmit={!!title.trim()} onClose={onClose}
+    <FormModal title="New work order" submitLabel="Open work order" canSubmit={!!title.trim() && !tooLong(title)} onClose={onClose}
                onSubmit={async () => onDone(await openWorkOrder({ position_id: positionId, title, type, due: due || null }))}>
-      <Field label="What needs doing"><input autoFocus value={title} placeholder="e.g. No hot water" onChange={(e) => setTitle(e.target.value)} /></Field>
+      <Field label="What needs doing" text={title} hint="add the detail to the notes once it's open"><input autoFocus value={title} placeholder="e.g. No hot water" onChange={(e) => setTitle(e.target.value)} /></Field>
       <Field label="Type">
         <select value={type} onChange={(e) => setType(e.target.value)}>
           <option value="corrective">Corrective (something's wrong)</option>
@@ -462,9 +446,14 @@ function LocationModal({ p, onClose, onDone }) {
   const [locations, setLocations] = useState(null);
   const own = p.location && !p.location.inherited ? p.location.id : "";
   const [to, setTo] = useState(own);
+  // A product's design is placed in its own layout only; a built item's positions at
+  // the places you look after or the item's own locations.
+  const layout = p.layout;
   useEffect(() => {
-    listMaintenanceLocations().then((d) => setLocations(d.locations || [])).catch(() => setLocations([]));
-  }, []);
+    const reads = layout?.kind === "design" ? [listMaintenanceLocations(layout.of)]
+      : layout?.kind === "unit" ? [listMaintenanceLocations(layout.of), listMaintenanceLocations()] : [listMaintenanceLocations()];
+    Promise.all(reads).then((all) => setLocations(all.flatMap((d) => d.locations || []))).catch(() => setLocations([]));
+  }, [layout?.kind, layout?.of]);
   const above = p.path.length > 0;
   return (
     <FormModal title={`Where is ${p.name}?`} submitLabel="Save" canSubmit={to !== own} onClose={onClose}
@@ -477,7 +466,11 @@ function LocationModal({ p, onClose, onDone }) {
         <LocationPicker locations={locations} value={to} onChange={(v) => setTo(v || "")}
                         emptyLabel={above ? "Not set here (where the position above it is)" : "Not set"} />
       </Field>
-      {locations?.length === 0 && <p className="lib-date">No locations yet: add them under Locations.</p>}
+      {locations?.length === 0 && (
+        <p className="lib-date">{layout?.kind === "design"
+          ? "No locations in the product's layout yet: add them on the product's page, by Locations."
+          : "No locations yet: add them under Locations."}</p>
+      )}
     </FormModal>
   );
 }
@@ -486,9 +479,9 @@ function EditPositionModal({ p, onClose, onDone }) {
   const [f, setF] = useState({ name: p.name, tag: p.tag || "", position_class: p.position_class || "", description: p.description || "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
-    <FormModal title="Edit position" submitLabel="Save" canSubmit={!!f.name.trim()} onClose={onClose}
+    <FormModal title="Edit position" submitLabel="Save" canSubmit={!!f.name.trim() && !tooLong(f.name)} onClose={onClose}
                onSubmit={async () => onDone(await updateMaintenancePosition(p.id, f))}>
-      <Field label="Name"><input value={f.name} onChange={set("name")} /></Field>
+      <Field label="Name" text={f.name} hint={DESCRIPTION_HINT}><input value={f.name} onChange={set("name")} /></Field>
       <Field label="Tag"><input value={f.tag} onChange={set("tag")} /></Field>
       <Field label="Class (to compare like positions)"><input value={f.position_class} onChange={set("position_class")} /></Field>
       <Field label="Description"><input value={f.description} onChange={set("description")} /></Field>
@@ -542,7 +535,7 @@ function PartsListCard({ p, onChanged }) {
       {error && <div className="card error">{error}</div>}
       {list.length === 0 ? (
         <p className="lib-date">No parts listed. Add the part that replaces what's fitted, and the kits and
-          consumables its maintenance uses, from the <Link to="/maintenance/parts">parts catalogue</Link>.</p>
+          consumables its maintenance uses, from the <Link to="/asset-register/parts">parts catalogue</Link>.</p>
       ) : (
         <div className="maint-scroll"><table className="lib-table">
           <thead><tr><th>Part</th><th>Role</th><th>Per job</th><th>Stock</th><th>Compatibility notes</th><th><span className="sr-only">Change</span></th></tr></thead>
@@ -601,7 +594,7 @@ function PartEntryModal({ p, entry, onClose, onDone }) {
       {!entry && (
         <Field label="Part">
           {catalogue === null ? <span className="lib-date">Loading…</span> : catalogue.length === 0 ? (
-            <span className="lib-date">The catalogue is empty: add parts on the <Link to="/maintenance/parts">Parts</Link> page first.</span>
+            <span className="lib-date">The catalogue is empty: add parts on the <Link to="/asset-register/parts">Parts</Link> page first.</span>
           ) : (
             <select autoFocus value={f.part_id} onChange={set("part_id")}>
               <option value="">Choose…</option>
@@ -666,13 +659,13 @@ function ConnectionsCard({ p, onChanged }) {
       ) : (
         <ul className="maint-list">
           {upstream.map((c) => (
-            <li key={c.id}>From <Link to={`/maintenance/positions/${c.from.id}`}>{c.from.name}</Link>
+            <li key={c.id}>From <Link to={`/asset-register/positions/${c.from.id}`}>{c.from.name}</Link>
               <span className="lib-date"> · {c.kind}{c.medium ? `, ${c.medium}` : ""}</span>{" "}
               <ConnectionConditions connection={c} name={`${c.from.name} → ${p.name}`} onChanged={onChanged} />{" "}
               <button className="crumb-link" onClick={() => act(() => disconnectPositions(c.id))}>remove</button></li>
           ))}
           {downstream.map((c) => (
-            <li key={c.id}>To <Link to={`/maintenance/positions/${c.to.id}`}>{c.to.name}</Link>
+            <li key={c.id}>To <Link to={`/asset-register/positions/${c.to.id}`}>{c.to.name}</Link>
               <span className="lib-date"> · {c.kind}{c.medium ? `, ${c.medium}` : ""}</span>{" "}
               <ConnectionConditions connection={c} name={`${p.name} → ${c.to.name}`} onChanged={onChanged} />{" "}
               <button className="crumb-link" onClick={() => act(() => disconnectPositions(c.id))}>remove</button></li>
@@ -777,12 +770,12 @@ function RbdCard({ p, onChanged }) {
       <div className="maint-head">
         <h2>Reliability block diagram</h2>
         <div className="maint-row" style={{ marginTop: 0 }}>
-          {rbdId && <Link to={`/rbds/b/${rbdId}`}>Open the RBD</Link>}
+          {rbdId && <Link to={`/systems/b/${rbdId}`}>Open the RBD</Link>}
           <button onClick={make} disabled={busy}>{busy ? "Generating…" : rbdId ? "Regenerate from the plant" : "Generate from the plant"}</button>
         </div>
       </div>
       {error && <div className="card error">{error}</div>}
-      <p className="lib-date">The positions inside {p.name} become blocks, wired by their connections, with redundancy groups as k of n. Blocks take their class's fitted life model.</p>
+      <p className="lib-date">The positions inside {p.name} become blocks, wired by their connections, with redundancy groups as k of n. Blocks take their class's fitted non-repairable model.</p>
       {result?.notes?.length > 0 && <ul className="maint-list">{result.notes.map((n, i) => <li key={i} className="lib-date">{n}</li>)}</ul>}
     </section>
   );
@@ -869,12 +862,12 @@ export function MeasurementsCard({ measurements, target, onChanged }) {
   );
 }
 
-function PointModal({ target, onClose, onDone }) {
+export function PointModal({ target, onClose, onDone }) {
   const [f, setF] = useState({ name: "", kind: "condition", unit: "", source: "manual", tag: "", alarm_above: "", alarm_below: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const counter = f.kind === "counter";
   return (
-    <FormModal title="Add a measurement" submitLabel="Add" canSubmit={(counter ? !!f.unit : !!f.name.trim()) && (f.source === "manual" || !!f.tag.trim())}
+    <FormModal title="Add a measurement" submitLabel="Add" canSubmit={(counter ? !!f.unit : !!f.name.trim()) && !tooLong(f.name) && (f.source === "manual" || !!f.tag.trim())}
                onClose={onClose} onSubmit={async () => onDone(await (target.kind === "item" ? addItemMeasurementPoint : addMeasurementPoint)(target.id, {
                  ...f, alarm_above: counter ? null : f.alarm_above, alarm_below: counter ? null : f.alarm_below,
                }))}>
@@ -884,7 +877,7 @@ function PointModal({ target, onClose, onDone }) {
           <option value="counter">Counts use (run hours, cycles, km)</option>
         </select>
       </Field>
-      <Field label="Name"><input value={f.name} placeholder={counter ? "e.g. Hour meter" : "e.g. Vibration"} onChange={set("name")} /></Field>
+      <Field label="Name" text={f.name}><input value={f.name} placeholder={counter ? "e.g. Hour meter" : "e.g. Vibration"} onChange={set("name")} /></Field>
       {counter ? (
         <Field label="Counts"><select value={f.unit} onChange={set("unit")}>
           <option value="">Choose…</option>
@@ -913,7 +906,7 @@ function PointModal({ target, onClose, onDone }) {
   );
 }
 
-function PointReadingModal({ point, onClose, onDone }) {
+export function PointReadingModal({ point, onClose, onDone }) {
   const [value, setValue] = useState("");
   const [on, setOn] = useState(today());
   // The time of day it was read, now by default: clear it when it isn't known.
@@ -929,80 +922,23 @@ function PointReadingModal({ point, onClose, onDone }) {
   );
 }
 
-// A manual point's readings, newest first, with the ones struck out or corrected
-// marked. A reading entered by mistake is voided; a wrong value or date is
-// corrected (the original is kept, struck out). Both need a reason.
-function ReadingsModal({ point: initial, onClose }) {
+// A manual point's readings, newest first (the table its own page shows too),
+// with the ones struck out or corrected marked, and a link to the point's page
+// (its chart, limits and trend). A reading entered by mistake is voided; a
+// wrong value or date is corrected (the original is kept, struck out). Both
+// need a reason.
+export function ReadingsModal({ point: initial, onClose }) {
   const [point, setPoint] = useState(initial);
-  const [edit, setEdit] = useState(null); // { id, mode: "void" | "correct", value, on, reason }
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const unit = point.unit ? ` ${point.unit}` : "";
-  const start = (r, mode) => {
-    setError(null);
-    setEdit({ id: r.id, mode, value: String(r.value), on: r.on || r.at.slice(0, 10), time: readingClock(r), reason: "" });
-  };
-  const save = async () => {
-    setBusy(true); setError(null);
-    try {
-      setPoint(edit.mode === "void"
-        ? await voidMeasurementReading(edit.id, edit.reason)
-        : await correctMeasurementReading(edit.id, { value: Number(edit.value), on: edit.on,
-          at: edit.time ? `${edit.on}T${edit.time}` : undefined, reason: edit.reason }));
-      setEdit(null);
-    } catch (e) { setError(e.message); }
-    setBusy(false);
-  };
-  const set = (k) => (e) => setEdit({ ...edit, [k]: e.target.value });
   return (
-    <Modal title={`Readings: ${point.name}`} onClose={onClose} locked={busy}
-           footer={<button className="secondary" onClick={onClose} disabled={busy}>Done</button>}>
-      {error && <div className="card error">{error}</div>}
-      <p className="lib-date">The latest {point.readings.length}. Struck-out readings stay here, marked; rates, due dates
-        and alarms leave them out.</p>
-      <div className="maint-scroll">
-        <table className="lib-table">
-          <thead><tr><th>Read on</th><th>Value</th><th>What happened</th><th /></tr></thead>
-          <tbody>
-            {point.readings.map((r) => (
-              <tr key={r.id}>
-                <td className={isStruck(r) ? "maint-reading-struck" : ""}>{readingWhen(r, fmtDate)}</td>
-                <td className={isStruck(r) ? "maint-reading-struck" : ""}>{r.value}{unit}</td>
-                <td className="lib-date">{readingStatusText(r, fmtDate) || r.note || ""}</td>
-                <td>{!isStruck(r) && (
-                  <div className="maint-row" style={{ marginTop: 0 }}>
-                    <button className="crumb-link" onClick={() => start(r, "correct")}>Correct</button>
-                    <button className="crumb-link" onClick={() => start(r, "void")}>Void</button>
-                  </div>
-                )}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <Modal title={`Readings: ${point.name}`} onClose={onClose} className="readings-modal"
+           footer={<button className="secondary" onClick={onClose}>Done</button>}>
+      <div className="rt-modal-head">
+        <p className="lib-date">{READINGS_INTRO}</p>
+        <Link className="rt-open-page" to={pointPagePath(point.id)}>Open the full page</Link>
       </div>
-      {edit && (
-        <div className="maint-action">
-          <div className="rcm-form">
-            {edit.mode === "correct" && <>
-              <Field label={`Right value${unit ? ` (${point.unit})` : ""}`}>
-                <input type="number" inputMode="decimal" step="any" value={edit.value} onChange={set("value")} />
-              </Field>
-              <Field label="Really read on"><input type="date" value={edit.on} max={today()} onChange={set("on")} /></Field>
-              <Field label="At (optional)"><input type="time" value={edit.time} onChange={set("time")} /></Field>
-            </>}
-            <Field label={edit.mode === "void" ? "Why it's struck out" : "Why it's corrected"}>
-              <input autoFocus value={edit.reason} placeholder={edit.mode === "void" ? "e.g. entered twice" : "e.g. an old reading entered as today"}
-                     onChange={set("reason")} />
-            </Field>
-          </div>
-          <div className="maint-row">
-            <button onClick={save} disabled={busy || !edit.reason.trim() || (edit.mode === "correct" && edit.value === "")}>
-              {busy ? "Saving…" : edit.mode === "void" ? "Void the reading" : "Save the correction"}
-            </button>
-            <button className="secondary" onClick={() => setEdit(null)} disabled={busy}>Cancel</button>
-          </div>
-        </div>
-      )}
+      {point.readings.length
+        ? <ReadingsTable point={point} onChanged={setPoint} idPrefix="rdm" />
+        : <div className="card empty">No readings yet.</div>}
     </Modal>
   );
 }

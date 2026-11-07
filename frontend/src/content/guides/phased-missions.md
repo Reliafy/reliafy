@@ -2,8 +2,8 @@
 title: "Model a mission in phases"
 task: "My system needs different equipment at different stages of a mission: how likely is the whole mission to succeed?"
 category: "Reliability block diagrams"
-prerequisites: "A non-repairable diagram with life models on its blocks, and the mission's stages with their durations."
-related_href: "/rbds"
+prerequisites: "A non-repairable diagram with non-repairable models on its blocks, and the mission's stages with their durations."
+related_href: "/systems/rbds"
 related_label: "Open your RBDs"
 order: 35
 ---
@@ -24,7 +24,7 @@ landing gear.
 
 ## Set up the phases
 
-Phases belong to a non-repairable diagram. Open it from **RBDs**, open the
+Phases belong to a non-repairable diagram. Open it from **Modelling → System models → RBDs**, open the
 **⋯** menu at the right of the toolbar and choose **Phased mission…**.
 
 For each phase, give a **Name** and a **Duration** in the diagram's unit.
@@ -83,7 +83,7 @@ answer says so and gives a 95% interval. **Edit phases** reopens the editor.
 - Phases apply to non-repairable diagrams only. In a repairable diagram
   failed blocks are repaired, which a phased mission doesn't model, and the
   menu item isn't offered.
-- Each block keeps one life model for the whole mission. A higher stress in
+- Each block keeps one non-repairable model for the whole mission. A higher stress in
   one phase (a harder take-off, say) isn't modelled.
 - A network diagram ignores its phases.
 

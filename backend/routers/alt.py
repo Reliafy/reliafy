@@ -20,6 +20,7 @@ from backend.services import access as access_service
 from backend.services import shares as shares_service
 from backend.services.access import AccessCtx, get_access
 from backend.schema import AltModelDoc
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -138,7 +139,7 @@ def fit_preview(
             stress_units=spec.get("stress_units"),
         )
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except HTTPException:
         raise
     except Exception:  # pragma: no cover - defensive
@@ -175,6 +176,10 @@ def save_model(
     if denied is not None:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
+    if (ctx.is_personal and not billing_service.is_admin_user(ctx.user)
+            and billing_service.would_exceed_cap(session, ctx.uid, "models")):
+        return JSONResponse(status_code=402, content={
+            "detail": billing_service.cap_message(session, ctx.uid, "models"), "code": "cap", "upgrade": True})
     denied = datasets_service.upload_denial(session, ctx, dataset_id, file)
     if denied is not None:
         status, payload = denied
@@ -188,7 +193,7 @@ def save_model(
         doc = alt_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "alt_models", doc.id, ctx)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except HTTPException:
         raise
     except Exception:  # pragma: no cover - defensive
@@ -279,7 +284,7 @@ def evaluate(
     except alt_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @router.post("/alt/models/{model_id}/bounds")
@@ -311,4 +316,28 @@ def bounds(
     except alt_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+
+
+@router.post("/alt/models/{model_id}/diagnostics")
+def diagnostics(
+    model_id: str,
+    use_stress: list[float] | None = Body(default=None, embed=True),
+    session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """The model page's Diagnostics checks for a saved ALT model: whether the
+    shape is the same at every tested level, whether the levels follow the
+    life model, how the other life models compare (AIC) and how far
+    ``use_stress`` (optional) lies from the tested stresses. About half a
+    second (the model is refitted several times); nothing resamples."""
+    doc, _ = access_service.fetch_readable(session, "alt_models", AltModelDoc, model_id, ctx)
+    if doc is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        out = alt_service.diagnose(session, model_id, [*ctx.read_owners, doc.owner_id],
+                                   use_stress=list(use_stress) if use_stress else None)
+        return JSONResponse(content=out)
+    except alt_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    except (FitError, ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})

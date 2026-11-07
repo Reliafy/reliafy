@@ -1,42 +1,25 @@
 import { useRef, useState } from "react";
+import Plot from "./Plot.jsx";
 import ProbabilityPlot from "./ProbabilityPlot.jsx";
 import SurvivalPlot from "./SurvivalPlot.jsx";
 import Calculator, { initCalcState } from "./Calculator.jsx";
-import GoodnessOfFit from "./GoodnessOfFit.jsx";
-import ModelValidation from "./ModelValidation.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
-import CiNote from "./CiNote.jsx";
 import CompetingRisksResult from "./CompetingRisksResult.jsx";
 import LifeAside, { paramView } from "./LifeSummary.jsx";
-import { ResultDetails } from "./ui/ResultSummary.jsx";
+import ModelCharacteristics from "./ModelCharacteristics.jsx";
 import { distColor } from "../instrument.js";
-import { formatNumber } from "../format.js";
-import { bestFitSentence, compareRows } from "../lifeResults.js";
 import Chip from "./ui/Chip.jsx";
-import { TvcCalculator, TvcCoefficients, initTvcState } from "./TvcResult.jsx";
-import { FlexibleSurvival, RegressionCoefficients } from "./MoreModelPanels.jsx";
-import Tabs from "./ui/Tabs.jsx";
+import { TvcCalculator, initTvcState } from "./TvcResult.jsx";
+import { FlexibleSurvival } from "./MoreModelPanels.jsx";
 import ScrollCue from "./ui/ScrollCue.jsx";
-
-// The fit statistics open from the panel beside the plot.
-const DISTRIBUTION_TABS = [
-  { id: "plot", label: "Probability plot" },
-  { id: "calc", label: "Calculator" },
-];
-const NONPARAMETRIC_TABS = [
-  { id: "survival", label: "Survival curve" },
-  { id: "calc", label: "Calculator" },
-];
-// Royston-Parmar (#179): its curve over the data's Kaplan-Meier curve.
-const FLEXIBLE_TABS = [
-  { id: "survival", label: "Survival curve" },
-  { id: "calc", label: "Calculator" },
-];
-// Discrete distributions have no probability paper, so no probability plot.
-const DISCRETE_TABS = [
-  { id: "calc", label: "Calculator" },
-  { id: "gof", label: "Fit quality" },
-];
+import { ModelTabs } from "./model/ModelFrame.jsx";
+import { PlotCard, PlotPanel } from "./model/ModelLayouts.jsx";
+import Effects from "./model/Effects.jsx";
+import Diagnostics from "./model/Diagnostics.jsx";
+import DataTab from "./model/DataTab.jsx";
+import { COLORWAY } from "../plotTheme.js";
+import { modelTabs, pmfFromCurves, resolveTab } from "../modelFrame.js";
+import { unitInText } from "./unitText.js";
 
 const pct = (v) => `${(v * 100).toFixed(v < 0.1 ? 2 : 1)}%`;
 
@@ -50,12 +33,12 @@ const baselineOf = (result) => ({
 // Models saved before #233 carry a Wilson 95% interval and no confidence /
 // method; newer ones carry exact (Clopper-Pearson) bounds at their confidence,
 // the one-sided reliability bound and, from several batches, the batches.
-// What a per-demand figure is for. Failure finding takes a life model over
+// What a per-demand figure is for. Failure finding takes a non-repairable model over
 // time, not a per-demand probability, so do not point there.
 const PER_DEMAND_USE = "For one-shot and protective equipment: the chance it works when called on. "
-  + "A failure-finding interval needs a life model over time instead.";
+  + "A failure-finding interval needs a non-repairable model over time instead.";
 
-function PerDemandPanel({ result }) {
+export function PerDemandPanel({ result }) {
   const d = result.per_demand || {};
   const color = distColor(result.distribution);
   const exact = d.method === "exact";
@@ -132,58 +115,78 @@ function PerDemandPanel({ result }) {
   );
 }
 
-const REGRESSION_TABS = [
-  { id: "coef", label: "Coefficients" },
-  { id: "calc", label: "Calculator" },
-  { id: "gof", label: "Fit quality" },
-  { id: "check", label: "Validation" },
-];
 
-// Presentational result panel for a fit (used for both fresh and saved
-// models). The tabs come first; the plot sits beside a panel with the
-// parameters, the data and a one-line reading (#311); the rest is folded
-// under Details.
+// A discrete fit's first tab: the chance of failing at each count, the
+// model's against the data's own (the Kaplan-Meier step at that count),
+// beside the usual panel.
+function ChanceByCount({ result, split, modelId, onStats, name }) {
+  const k = result.counts;
+  const model = k ? k.k.map((c, i) => ({ k: c, p: k.pmf[i] })) : pmfFromCurves(result.functions?.curves);
+  const u = result.unit ? unitInText(result.unit) : "count";
+  const traces = [
+    ...(k ? [{ type: "bar", x: k.k, y: k.observed, name: "The data", marker: { color: "rgba(20,23,28,0.3)" },
+               hovertemplate: "%{x}: %{y:.1%} (data)<extra></extra>" }] : []),
+    { type: "scatter", mode: "lines+markers", x: model.map((m) => m.k), y: model.map((m) => m.p), name: "The model",
+      line: { color: COLORWAY[0], width: 2 }, marker: { size: 6, color: COLORWAY[0] },
+      hovertemplate: "%{x}: %{y:.1%} (model)<extra></extra>" },
+  ];
+  return (
+    <PlotPanel
+      plot={
+        <PlotCard title={`Chance of failing at each ${u.replace(/s$/, "")}`}>
+          <Plot fill data={traces} download={`${name || result.distribution} — chance by count`}
+                layout={{ bargap: 0.25, showlegend: true, xaxis: { title: { text: `Failed at (${u})` } },
+                          yaxis: { title: { text: "Chance of failing there" }, tickformat: ".0%", rangemode: "tozero" },
+                          legend: { x: 1, xanchor: "right", y: 1, yanchor: "top", bgcolor: "rgba(255,255,255,0.85)" } }} />
+        </PlotCard>
+      }
+      side={<LifeAside result={result} split={split} modelId={modelId} onStats={onStats} showUse={false} />}
+    />
+  );
+}
+
+// Presentational result for a fit (fresh, saved, shared or a sample): the
+// model frame's tab row and the tab's body (components/model/). The page
+// around it gives the header (ModelFrame).
 // ``modelId`` (a saved model) lets a regression model saved before its
 // validation scores existed fetch them. ``split`` ({ failed, running, other })
 // is the data's failure / still-running count when the caller has the data.
 // ``compare`` (() => Promise<selection>) runs Best fit's comparison on the
 // same data; ``onPick(distributionId)`` refits with another distribution
 // (#293) — both optional. ``onUse`` (() => Promise<saved id>, a fit not
-// saved yet) lets "Use this model" save it first (#294).
+// saved yet) lets "Use this model" save it first (#294). ``datasetId``: the
+// data it was fitted to, for the Data tab. ``tab`` / ``onTab``: the open tab
+// (a page keeps it in its address); without them the view keeps its own.
 export default function ResultView(props) {
-  if (props.result.kind === "per_demand") return <PerDemandPanel result={props.result} />;
-  // Life data by failure mode (#177) has its own tabs and panel; a separate
-  // component, so a change of kind remounts rather than reorders hooks.
-  if (props.result.kind === "competing_risks") return <CompetingRisksResult result={props.result} name={props.name} />;
+  if (props.result.kind === "per_demand") {
+    return <ModelTabs tabs={[]}><PerDemandPanel result={props.result} /></ModelTabs>;
+  }
+  // Life data by failure mode (#177) has tabs of its own in the same frame; a
+  // separate component, so a change of kind remounts rather than reorders hooks.
+  if (props.result.kind === "competing_risks") {
+    return <CompetingRisksResult result={props.result} name={props.name} datasetId={props.datasetId || null}
+                                 tab={props.tab} onTab={props.onTab || null} />;
+  }
   return <LifeResult {...props} />;
 }
 
 function LifeResult({ result, modelId = null, name = null, split = null, compare = null, onPick = null,
-                     onUse = null }) {
+                     datasetId = null, tab: wanted = undefined, onTab = null }) {
   const isRegression = result.kind === "regression";
-  const isNonparametric = result.kind === "nonparametric";
-  const isDiscrete = result.kind === "discrete";
-  const isFlexible = result.kind === "flexible";
-  // Params-only models (created from parameters, no data) have no probability
-  // plot or goodness-of-fit — just the functions.
-  const hasPlot = !!result.plot;
-  const defaultTab = isRegression
-    ? (result.functions ? "calc" : "coef")
-    : isNonparametric || isFlexible
-    ? "survival"
-    : isDiscrete
-    ? "calc"
-    : hasPlot
-    ? "plot"
-    : "calc";
-  const [tab, setTab] = useState(defaultTab);
+  const tabs = modelTabs(result) || [];
+  const [own, setOwn] = useState(() => resolveTab(tabs, wanted));
+  const tab = resolveTab(tabs, wanted !== undefined && onTab ? wanted : own);
+  const setTab = (id) => {
+    setOwn(id);
+    onTab?.(id);
+  };
 
   // The Calculator tab unmounts when you switch away, so its inputs live here
   // and survive tab switches. When the result itself changes in place (e.g.
   // fitting another model in the workspace) reset them for the new model.
   const [calc, setCalc] = useState(() => initCalcState(result.functions));
   const calcNextId = useRef(1);
-  // One confidence for the life card's bounds and the calculator's (#288).
+  // One confidence for the calculator's bounds and the mean life's (#288).
   const level = Number(calc.ci.level);
   const setLevel = (v) => setCalc((st) => ({ ...st, ci: { ...st.ci, level: v } }));
   // Covariates that change over time (#60): the schedule calculator's inputs.
@@ -194,192 +197,86 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
     setTvcCalc(result.tvc ? initTvcState(result) : null);
     setCalc(initCalcState(result.functions));
     calcNextId.current = 1;
-    setTab(defaultTab);
+    setOwn(resolveTab(modelTabs(result) || [], null));
   }
 
-  let tabs = isFlexible
-    ? FLEXIBLE_TABS
-    : isNonparametric
-    ? NONPARAMETRIC_TABS
-    : isRegression
-    ? REGRESSION_TABS
-    : isDiscrete
-    ? DISCRETE_TABS
-    : DISTRIBUTION_TABS;
-  if (!result.functions) tabs = tabs.filter((t) => t.id !== "calc");
-  // Units' covariates follow paths, so the fixed-covariate scores don't apply.
-  if (result.tvc) tabs = tabs.filter((t) => t.id !== "check");
-  if (!isNonparametric && !isDiscrete && !isFlexible && !hasPlot)
-    tabs = tabs.filter((t) => t.id !== "plot" && t.id !== "gof");
-
-  // PH models show their baseline parameters in the calculator's side rail;
-  // every other kind leads with the answer card.
-  const paramsInRail = isRegression && !!result.functions;
+  const has = (id) => tabs.some((t) => t.id === id);
+  // "B-lives: use Time at reliability": the Calculator in that mode.
+  const showBLives = has("calc") && !result.tvc ? () => { setCalc((st) => ({ ...st, mode: "time" })); setTab("calc"); } : null;
+  const toCalc = has("calc") ? () => setTab("calc") : null;
+  const onStats = has("diag") ? () => setTab("diag") : null;
   const bestFit = (result.selection?.candidates?.length || 0) > 1;
+  const label = name || result.distribution;
 
-  // The adjustments a fit used, in words (a mixture's own settings aren't).
-  const optionWords = result.options
-    ? [
-        result.options.offset && "3-parameter offset",
-        result.options.lfp && "limited failure population",
-        result.options.zi && "zero-inflated",
-        result.options.fixed &&
-          `fixed ${Object.entries(result.options.fixed).map(([k, v]) => `${k} = ${v}`).join(", ")}`,
-      ].filter(Boolean)
-    : [];
-  let selectionNote = null;
-  if (bestFit) {
-    // In words (#293): the best, the ones the data can't tell from it, the
-    // rest. Mixtures on (#236): the summary says which criterion decided.
-    selectionNote = result.selection.summary ||
-      bestFitSentence(compareRows(result.selection.candidates, result.selection.criterion || "aic"));
+  let body = null;
+  switch (tab) {
+    case "plot":
+      body = (
+        <PlotPanel
+          plot={<PlotCard><ProbabilityPlot fill plot={result.plot} unit={result.unit} download={`${label} — probability plot`} /></PlotCard>}
+          side={<LifeAside result={result} split={split} bestFit={bestFit} compare={compare} onPick={onPick}
+                           modelId={modelId} onStats={onStats} showUse={false} />}
+        />
+      );
+      break;
+    case "survival":
+      body = result.kind === "flexible" ? (
+        <FlexibleSurvival result={result} split={split} name={name} modelId={modelId} onStats={onStats} />
+      ) : (
+        <PlotPanel
+          plot={<PlotCard><SurvivalPlot fill estimate={result.estimate} unit={result.unit} download={`${label} — survival curve`} /></PlotCard>}
+          side={<LifeAside result={result} split={split} modelId={modelId} showUse={false} />}
+        />
+      );
+      break;
+    case "chance":
+      body = <ChanceByCount result={result} split={split} modelId={modelId} onStats={onStats} name={name} />;
+      break;
+    case "effects":
+      body = <Effects result={result} name={label} split={split} />;
+      break;
+    case "calc":
+      body = result.tvc ? (
+        <TvcCalculator result={result} state={tvcCalc} setState={setTvcCalc} name={label} fill />
+      ) : (
+        <Calculator
+          fill
+          functions={result.functions}
+          unit={result.unit}
+          params={result.params_only ? result.params : null}
+          state={calc}
+          setState={setCalc}
+          nextIdRef={calcNextId}
+          name={label}
+          paramLabel={isRegression ? (p) => paramView(baselineOf(result), p).label : null}
+        />
+      );
+      break;
+    case "chars":
+      body = (
+        <ModelCharacteristics result={result} level={level} onLevel={setLevel} onBLives={showBLives}
+                              calc={calc} tvc={tvcCalc} onCalc={toCalc} />
+      );
+      break;
+    case "diag":
+      body = <Diagnostics result={result} name={label} compare={compare} onPick={onPick} modelId={modelId} />;
+      break;
+    case "data":
+      body = <DataTab result={result} split={split} datasetId={datasetId} />;
+      break;
+    default:
   }
-
-  // Everything the answer card leaves out, folded under Details: parameters
-  // past the two tiles (with their intervals), how the model was chosen and
-  // fitted, and what this kind of model can't show.
-  const params = result.params || [];
-  const extra = result.extra_params || [];
-  const moreParams = !isRegression && !hasPlot && !isNonparametric && (params.length > 2 || extra.length > 0);
-  const details = !isRegression && (
-    moreParams || optionWords.length > 0 || selectionNote || isNonparametric || isDiscrete || isFlexible ||
-    result.params_only || result.mixture > 1
-  );
 
   return (
-    <>
-      <NoMaximumNotice notice={result.no_finite_maximum} style={{ margin: "0 0 12px" }} />
-      {/* Best fit picked a two-mode mixture (#236): say what the modes are. */}
-      {result.mixture_summary && (
-        <p className="mixture-summary">{result.mixture_summary}</p>
+    <ModelTabs
+      tabs={tabs}
+      value={tab}
+      onChange={setTab}
+      before={result.no_finite_maximum && (
+        <div className="mf-before"><NoMaximumNotice notice={result.no_finite_maximum} style={{ margin: 0 }} /></div>
       )}
-      {isRegression && !paramsInRail && (
-        <>
-          <div className="params">
-            {params.map((p) => (
-              <div className="stat" key={p.name}>
-                <div className="value">{formatNumber(p.value, { sig: 4 })}</div>
-                <div className="name">{p.name}</div>
-                {p.ci && (
-                  <div className="param-ci">
-                    95% CI [{formatNumber(p.ci[0])}, {formatNumber(p.ci[1])}]
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          <CiNote params={params} note={result.ci_note} />
-        </>
-      )}
-      <Tabs tabs={tabs} value={tab} onChange={setTab} label="Result views" />
-
-      <div className="tab-panel">
-        {tab === "survival" && isFlexible && (
-          <FlexibleSurvival result={result} split={split} level={level} onLevel={setLevel} name={name}
-                            modelId={modelId} />
-        )}
-        {tab === "survival" && !isFlexible && (
-          <div className="detail-panel life-panel">
-            <div className="plotwrap">
-              <SurvivalPlot estimate={result.estimate} unit={result.unit}
-                            download={`${name || result.distribution} — survival curve`} />
-            </div>
-            <LifeAside result={result} split={split} level={level} onLevel={setLevel}
-                       modelId={modelId} name={name} onUse={onUse} />
-          </div>
-        )}
-        {tab === "plot" && (
-          <div className="detail-panel life-panel">
-            <div className="plotwrap">
-              <ProbabilityPlot plot={result.plot} unit={result.unit}
-                               download={`${name || result.distribution} — probability plot`} />
-            </div>
-            {!isRegression && (
-              <LifeAside result={result} split={split} bestFit={bestFit} level={level} onLevel={setLevel}
-                         compare={compare} onPick={onPick} modelId={modelId} name={name} onUse={onUse} />
-            )}
-          </div>
-        )}
-        {tab === "calc" && result.tvc && (
-          <TvcCalculator result={result} state={tvcCalc} setState={setTvcCalc} name={name || result.distribution} />
-        )}
-        {tab === "calc" && !result.tvc && (
-          <Calculator
-            functions={result.functions}
-            unit={result.unit}
-            params={paramsInRail || (!isRegression && !hasPlot && !isNonparametric) ? result.params : null}
-            state={calc}
-            setState={setCalc}
-            nextIdRef={calcNextId}
-            name={name || result.distribution}
-            paramLabel={isRegression ? (p) => paramView(baselineOf(result), p).label : null}
-          />
-        )}
-        {tab === "coef" && (result.tvc ? <TvcCoefficients result={result} />
-          : <RegressionCoefficients result={result} />)}
-        {tab === "gof" && (
-          <GoodnessOfFit gof={result.gof} n={result.n} note={result.gof_note} bestFit={bestFit} />
-        )}
-        {tab === "check" && (
-          <ModelValidation validation={result.validation} diagnostics={result.diagnostics}
-                           residualsPath={result.functions?.residuals_path} modelId={modelId}
-                           unit={result.unit} />
-        )}
-      </div>
-
-      {details && (
-        <ResultDetails>
-          {moreParams && (
-            <ScrollCue className="rs-table-wrap">
-              <table className="mini-table">
-                <thead><tr><th>Parameter</th><th>Estimate</th><th>95% interval</th></tr></thead>
-                <tbody>
-                  {params.map((p) => {
-                    const v = paramView(result, p);
-                    return <tr key={p.name}><td>{v.label}</td><td>{v.value}</td><td>{v.ci || "—"}</td></tr>;
-                  })}
-                  {extra.map((p) => (
-                    <tr key={p.name}><td>{p.name}</td><td>{formatNumber(p.value)}</td><td>—</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </ScrollCue>
-          )}
-          {selectionNote && <p className="rs-note">{selectionNote}</p>}
-          {optionWords.length > 0 && <p className="rs-note">Fit options: {optionWords.join(" · ")}</p>}
-          {result.mixture > 1 && (
-            <p className="rs-note">
-              A mixture has no covariance matrix, so it reports no confidence bounds — judge it on
-              the AIC against a single fit.
-            </p>
-          )}
-          {isNonparametric && (
-            <p className="rs-note">
-              Non-parametric empirical estimate — no distribution assumed, so no fitted parameters
-              or goodness-of-fit.
-            </p>
-          )}
-          {isFlexible && (
-            <p className="rs-note">
-              Royston-Parmar spline with {result.spline?.n_terms ?? 3} terms on the log cumulative hazard. Its
-              coefficients have no physical meaning on their own: read the curve, drawn over the data's own
-              Kaplan-Meier curve. Its AIC compares with the plain distributions' on the same data.
-            </p>
-          )}
-          {isDiscrete && (
-            <p className="rs-note">
-              Discrete distribution — fitted to whole-count life data (cycles, shocks or demands to
-              failure). There's no probability plot.
-            </p>
-          )}
-          {result.params_only && (
-            <p className="rs-note">
-              Created from parameters — reliability functions and life metrics are available;
-              there's no probability plot without data.
-            </p>
-          )}
-        </ResultDetails>
-      )}
-    </>
+    >
+      {body}
+    </ModelTabs>
   );
 }

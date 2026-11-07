@@ -13,6 +13,7 @@ so that ``frontend/dist`` exists and can be served as static files.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -46,6 +47,7 @@ from backend.fitting import (
 from backend.auth import get_current_user
 from backend.routers import auth as auth_router
 from backend.routers import maintenance as maintenance_router
+from backend.routers import maintainability as maintainability_router
 from backend.routers import models as models_router
 from backend.routers import rbds as rbds_router
 from backend.routers import rbd_jobs as rbd_jobs_router
@@ -53,6 +55,7 @@ from backend.routers import rbd_block_check as rbd_block_check_router
 from backend.routers import rbd_compare as rbd_compare_router
 from backend.routers import rbd_runs as rbd_runs_router
 from backend.routers import rbd_fault_tree as rbd_fault_tree_router
+from backend.routers import fault_trees as fault_trees_router
 from backend.routers import rbd_design as rbd_design_router
 from backend.routers import rbd_allocation as rbd_allocation_router
 from backend.routers import rbd_capacity as rbd_capacity_router
@@ -73,25 +76,27 @@ from backend.routers import degradation_induced as degradation_induced_router
 from backend.routers import recurrent as recurrent_router
 from backend.routers import alt as alt_router
 from backend.routers import joint as joint_router
-from backend.routers import rcm as rcm_router
 from backend.routers import excel as excel_router
 from backend.routers import teams as teams_router
 from backend.routers import shares as shares_router
 from backend.routers import telemetry as telemetry_router
-from backend.routers import admin as admin_router
 from backend.routers import fleet as fleet_router
 from backend.routers import public as public_router
 from backend.routers import reports as reports_router
 from backend.routers import ingest as ingest_router
 from backend.routers import public_api as public_api_router
 from backend.routers import api_tools as api_tools_router
+from backend.routers import support as support_router
 from backend.routers import email_prefs as email_prefs_router
 from backend.routers import walkthroughs as walkthroughs_router
 from backend.routers import lifecycle as lifecycle_router
 from backend.routers import content_jobs as content_jobs_router
+from backend.routers import extensions as extensions_router
 from backend.routers import feeds as feeds_router
+from backend.routers import library as library_router
 from backend.routers import oauth as oauth_router
 from backend.routers import outage_logs as outage_logs_router
+from backend.routers import predictions as predictions_router
 from backend.routers import uploads as uploads_router
 from backend.routers import compare_groups as compare_groups_router
 from backend.routers import regression_diagnostics as regression_diagnostics_router
@@ -99,6 +104,7 @@ from backend.routers import tvc as tvc_router
 from backend.routers import workspace_changes as workspace_changes_router
 from backend.services import content_gate
 from backend.services import datasets as datasets_service
+from backend.errors import client_message
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -223,6 +229,7 @@ app.include_router(rbd_compare_router.router)
 app.include_router(rbd_block_check_router.router)
 app.include_router(rbd_runs_router.router)
 app.include_router(rbd_fault_tree_router.router)
+app.include_router(fault_trees_router.router)
 app.include_router(rbd_design_router.router)
 app.include_router(rbd_allocation_router.router)
 app.include_router(rbd_capacity_router.router)
@@ -235,6 +242,8 @@ app.include_router(rbd_measures_router.router)
 app.include_router(rbd_missions_router.router)
 app.include_router(rbd_tvc_router.router)
 app.include_router(strategy_router.router)
+# Maintainability prediction: the calculator, saved predictions, a product's lines.
+app.include_router(maintainability_router.router)
 app.include_router(test_planning_router.router)
 app.include_router(compare_groups_router.router)
 app.include_router(regression_diagnostics_router.router)
@@ -248,7 +257,6 @@ app.include_router(degradation_induced_router.router)
 app.include_router(recurrent_router.router)
 app.include_router(alt_router.router)
 app.include_router(joint_router.router)
-app.include_router(rcm_router.router)
 app.include_router(maintenance_router.router)
 app.include_router(maintenance_router.public_router)
 app.add_exception_handler(maintenance_router.WriteDenied, maintenance_router.write_denied_handler)
@@ -256,12 +264,13 @@ app.include_router(excel_router.router)
 app.include_router(teams_router.router)
 app.include_router(shares_router.router)
 app.include_router(telemetry_router.router)
-app.include_router(admin_router.router)
 app.include_router(fleet_router.router)
 app.include_router(public_router.router)
 app.include_router(reports_router.router)
 app.include_router(ingest_router.router)
 app.include_router(public_api_router.router)
+# Operator support replies (fixed /api/v1/support routes, before the generic ones).
+app.include_router(support_router.router)
 # Every MCP tool action over REST (POST /api/v1/{tool}/{action}), its OpenAPI
 # spec and the REST-only photo upload. After public_api: its fixed /api/v1
 # routes win over the generic {tool}/{action} ones.
@@ -279,6 +288,15 @@ app.include_router(workspace_changes_router.router)
 app.include_router(uploads_router.router)
 # RSS: served (date-filtered) before the SPA catch-all below.
 app.include_router(feeds_router.router)
+app.include_router(library_router.router)
+# Reliability prediction: a parts count from the library's handbook rates.
+app.include_router(predictions_router.router)
+# Optional extensions (backend/extensions.py): the pages they add, and their
+# own routes. Nothing installed: an empty list, and no other routes.
+app.include_router(extensions_router.router)
+from backend import extensions as _extensions  # noqa: E402
+
+_extensions.load(app)
 
 # MCP (Model Context Protocol) server for AI assistants — token-authed, and
 # registered before the SPA catch-all so GET/POST/DELETE /mcp reach it.
@@ -324,6 +342,8 @@ def app_config() -> dict:
         "mcp": mcp_switch.enabled(get_db()),
         # Reliafy Maintenance (local only for now).
         "maintenance": bool(config.MAINTENANCE_ENABLED),
+        # Placeholder menu entries, on a private test site only.
+        "menu_preview": bool(config.MENU_PREVIEW),
     }
 
 
@@ -353,7 +373,7 @@ def columns_endpoint(
             out["hint"] = HEADER_PREVIEW_HINT
         return JSONResponse(content=out)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @app.get("/api/distributions")
@@ -455,6 +475,8 @@ def fit_endpoint(
     how: str | None = Form(default=None),
     c_invert: str | None = Form(default=None),
     include_mixtures: str | None = Form(default=None),
+    criterion: str | None = Form(default=None),
+    frailty_family: str | None = Form(default=None),
     c_map: str | None = Form(default=None),
     covariate_units: str | None = Form(default=None),
     cox: str | None = Form(default=None),
@@ -496,7 +518,8 @@ def fit_endpoint(
             )
         options = options_from_form(
             offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
-            include_mixtures=include_mixtures, c_map=c_map,
+            include_mixtures=include_mixtures, c_map=c_map, criterion=criterion,
+            frailty_family=frailty_family,
         )
         options = regression_diagnostics.with_cox_form(options, cox)  # Cox ties / strata / cluster (#61)
         result = fit(
@@ -512,7 +535,7 @@ def fit_endpoint(
             "Fit refused: distribution=%s covariates=%s mapping=%s — %s",
             distribution, list(z or []), {k: v for k, v in mapping.items() if v}, exc,
         )
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except HTTPException:
         raise
     except Exception:  # pragma: no cover - defensive
@@ -558,7 +581,7 @@ def evaluate_endpoint(
             content={"detail": "Model not found — re-fit to use the calculator."},
         )
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @app.post("/api/confidence/{model_id}")
@@ -585,7 +608,7 @@ def confidence_endpoint(
             content={"detail": "Model not found — re-fit to compute confidence bounds."},
         )
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except (ValueError, TypeError):
         return JSONResponse(status_code=422, content={"detail": "Invalid confidence settings."})
 
@@ -611,7 +634,7 @@ def life_endpoint(
             content={"detail": "Model not found — re-fit to compute B-lives."},
         )
     except (ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc) or "Invalid life request."})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid life request.")})
 
 
 # ---------------------------------------------------------------------------
@@ -622,12 +645,21 @@ FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 
 def contained_path(path: Path, root: Path) -> Path | None:
-    """``path`` resolved, or None if it resolves outside ``root``."""
+    """``path`` resolved, or None if it resolves outside ``root``.
+
+    Written as a real path plus a prefix test on it (rather than
+    ``Path.resolve`` and ``is_relative_to``, which mean the same) so that
+    code scanners see the check."""
     try:
-        resolved = path.resolve()
+        base = os.path.realpath(root)
+        resolved = os.path.realpath(path)
     except (OSError, RuntimeError, ValueError):
         return None
-    return resolved if resolved.is_relative_to(root.resolve()) else None
+    if resolved.startswith(os.path.join(base, "")):
+        return Path(resolved)
+    if resolved == base:
+        return Path(base)
+    return None
 
 
 # The first path segment of every route the React app draws itself
@@ -636,7 +668,8 @@ def contained_path(path: Path, root: Path) -> Path | None:
 # Any other path that isn't a built file or a prerendered page is a real 404
 # (#118): crawlers and agents asking for /llms.txt-style paths used to get the
 # shell with a 200. Under the public roots below, a cloud build can also tell
-# a page that doesn't exist (#374).
+# a page that doesn't exist (#374). Pages added by installed extensions
+# (backend/extensions.py) get the shell too; without them, their paths are 404s.
 SPA_ROOTS = frozenset({
     # Public pages (cloud builds) and sign-in.
     "blog", "whats-new", "learn", "guides", "reference", "api-docs", "p", "terms", "privacy",
@@ -644,15 +677,21 @@ SPA_ROOTS = frozenset({
     "weibull-analysis-software", "rcm-software", "reliability-block-diagram-software",
     "reliability-analysis-software",
     # The signed-in app.
-    "home", "modelling", "rbds", "datasets", "strategy", "fleet", "agent", "rcm", "team", "settings",
-    "tokens", "admin", "billing", "changes", "maintenance",
+    "home", "products", "items", "systems", "asset-register", "maintenance", "data", "models", "strategy",
+    "forecasts", "predictions", "reports",
+    "maintainability",
+    "agent", "team", "settings", "tokens", "billing", "changes", "data-model",
+    # Placeholder pages (frontend/src/plannedPages.js).
+    "requirements", "failures", "risk",
+    # Its earlier addresses, which redirect (frontend/src/redirects.js).
+    "modelling", "rbds", "datasets", "fleet", "rcm",
 })
 
 
 def is_spa_route(full_path: str) -> bool:
     """Whether ``full_path`` (no leading slash) is one of the app's routes."""
     first = full_path.strip("/").split("/", 1)[0]
-    return first == "" or first in SPA_ROOTS
+    return first == "" or first in SPA_ROOTS or first in _extensions.page_roots()
 
 
 # Public pages that a cloud build prerenders, every one of them (#374):
@@ -788,7 +827,7 @@ def spa_response(full_path: str, dist: Path, share_live=None) -> Response:
     (``/blog/<slug>``, ``/learn/<slug>``…) gets the shell with a 404, so the
     app's own "not found" page shows; anything else under a content root
     (``/terms/x``, ``/blog/a/b``) gets the plain 404 page. The app's own
-    routes with ids (``/modelling/m/<id>``…) keep the shell and a 200: only
+    routes with ids (``/models/m/<id>``…) keep the shell and a 200: only
     the browser knows whether the signed-in user has that id. With
     ``share_live`` (the live app passes :func:`share_link_live`), a share page
     ``/p/<token>`` whose link is unknown, expired or revoked gets the shell

@@ -20,6 +20,7 @@ from backend.services import access as access_service
 from backend.services import shares as shares_service
 from backend.services.access import AccessCtx, get_access
 from backend.schema import DegradationModelDoc
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -114,6 +115,17 @@ def _resolve_dataset(session, ctx: AccessCtx, dataset_id, file):
     raise FitError("Provide a CSV file or a dataset_id.")
 
 
+def _readings_frame(session, ctx: AccessCtx, dataset_id, contents):
+    """``preview_frame`` reading a saved dataset's measurements part when it
+    has one (its readings), else its one table."""
+    if dataset_id:
+        dataset = datasets_service.get_dataset(session, dataset_id, owner_id=ctx.write_owner)
+        if dataset is None:
+            raise FitError("Dataset not found.")
+        return datasets_service.load_measurements(dataset), dataset.id
+    return datasets_service.preview_frame(session, ctx.write_owner, None, contents)
+
+
 def _spec_from_form(i, x, y, threshold, path, distribution, population_method, unit, measurement_unit) -> dict:
     return {
         "mapping": {"i": i, "x": x, "y": y},
@@ -146,7 +158,7 @@ def fit_preview(
     CSV is parsed in memory (``dataset_id`` is null) and stored on save."""
     try:
         contents = read_upload(file) if (file is not None and not dataset_id) else None
-        df, preview_dataset_id = datasets_service.preview_frame(session, ctx.write_owner, dataset_id, contents)
+        df, preview_dataset_id = _readings_frame(session, ctx, dataset_id, contents)
         spec = _spec_from_form(i, x, y, threshold, path, distribution, population_method, unit, measurement_unit)
         payload, _ = degradation_fit.fit(
             df, spec["mapping"], spec["threshold"], spec["path"],
@@ -154,7 +166,7 @@ def fit_preview(
             spec["unit"], spec["measurement_unit"],
         )
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except HTTPException:
         raise
     except Exception:  # pragma: no cover - defensive
@@ -193,7 +205,7 @@ def save_model(
         doc = degradation_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "degradation_models", doc.id, ctx)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except HTTPException:
         raise
     except Exception:  # pragma: no cover - defensive
@@ -323,7 +335,7 @@ def create_item(
     except degradation_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=_item_summary(item, ctx))
 
 
@@ -378,7 +390,7 @@ def item_prediction_at_confidence(
     except degradation_service.ItemNotFound:
         return JSONResponse(status_code=404, content={"detail": "Item not found."})
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=pred)
 
 
@@ -403,7 +415,7 @@ def add_measurement(
     except degradation_service.ItemNotFound:
         return JSONResponse(status_code=404, content={"detail": "Item not found."})
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=_item_summary(item, ctx))
 
 

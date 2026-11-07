@@ -526,16 +526,22 @@ CONVENTIONS = [
     "Redundancy: (position)-[:IN_GROUP]->(g:RedundancyGroup {k}); k of the members are needed.",
     "Tasks, work orders and measurement points: (x)-[:ON]->(position | item | location); (w)-[:FOR]->(task); "
     "(task)-[:MITIGATES]->(FailureMode)<-[:CAN_FAIL_AS]-(position).",
+    "RCM: (position)-[:PERFORMS]->(Function)-[:FAILS_AS]->(FunctionalFailure)-[:CAUSED_BY]->(FailureMode); "
+    "(Function)-[:FAILS_DIRECTLY_AS]->(FailureMode) for a mode with no functional failure yet (an FMEA row); "
+    "(effect:FunctionalFailure)-[:RESULTS_FROM]->(cause:FunctionalFailure), the cause on the same tree as the "
+    "effect (usually inside it). Skip coalesce(x.removed, false) functions and functional failures. "
+    "A mode's FME(C)A scores "
+    "(severity, occurrence, detection, cause, failure_rate, mode_ratio, loss_probability...) are on the node.",
     "Parts: (listing:PartListing)-[:LISTED_AT]->(position), (listing)-[:LISTS]->(part); (s:Stock)-[:OF]->(part), "
     "(s)-[:AT]->(location); (part)-[:SUPERSEDED_BY]->(part); (part)-[:INTERCHANGEABLE]->(part).",
     "Product structure: (assembly:Part)-[r:CONTAINS]->(component:Part), one line per pair, its qty (how many in one "
     "assembly) and ref in r.props (JSON text); no loops. part.level is its indenture level. Whole BOM below a part: "
-    "(top)-[:CONTAINS]->{1,}(x); totals multiply along the path, so take them from maintenance_get kind "
-    "part_structure.",
+    "(top)-[:CONTAINS]->{1,}(x); totals multiply along the path, so take them from maintenance get.part_structure "
+    ".",
     "Conditions: (x)-[r:EXPOSED_TO]->(c:Condition) where a location, position, item or connection is exposed to "
     "c, (x)-[:NOT_EXPOSED_TO]->(c) where one inherited from above is excluded; conditions nest by PART_OF; skip "
     "c.retired. These are only what's set on x itself: what x inherits (from the locations around it, the "
-    "positions above it, a fitted item's position) comes from maintenance_get kind conditions. The value and note "
+    "positions above it, a fitted item's position) comes from maintenance get.conditions. The value and note "
     "are in the relationship's stored record (r.props, as JSON text).",
     "Variable-length paths: quantified patterns, e.g. (l:Location)-[:PART_OF]->{0,}(root); for the shortest "
     "route, MATCH p = SHORTEST 1 (a)(...)+(b).",
@@ -667,6 +673,27 @@ WITH CASE WHEN mf IS NOT NULL THEN mf.name WHEN it.manufacturer <> '' THEN it.ma
 RETURN manufacturer, count(DISTINCT it) AS items,
        sum(CASE WHEN f.end_reason = 'failure' THEN 1 ELSE 0 END) AS failures
 ORDER BY failures DESC, manufacturer"""},
+    {"name": "failure_causes",
+     "question": "Everything below that a functional failure results from, through every level, by position, "
+                 "with each cause's own failure modes.",
+     "params": {"id": "<a functional failure id>"},
+     "cypher": """MATCH (f:FunctionalFailure {ns: $ns, org: $org, id: $id})-[:RESULTS_FROM]->{1,}(c:FunctionalFailure)
+WHERE NOT coalesce(c.removed, false)
+WITH DISTINCT c
+MATCH (c)<-[:FAILS_AS]-(:Function)<-[:PERFORMS]-(p:Position)
+OPTIONAL MATCH (c)-[:CAUSED_BY]->(fm:FailureMode)
+WHERE NOT coalesce(fm.retired, false) AND fm.merged_into IS NULL
+RETURN p.name AS position, c.text AS failure, collect(fm.text) AS modes, count(fm) AS mode_count
+ORDER BY position, failure"""},
+    {"name": "failure_effects",
+     "question": "What a functional failure ends up causing, up the tree, by position.",
+     "params": {"id": "<a functional failure id>"},
+     "cypher": """MATCH (c:FunctionalFailure {ns: $ns, org: $org, id: $id})<-[:RESULTS_FROM]-{1,}(f:FunctionalFailure)
+WHERE NOT coalesce(f.removed, false)
+WITH DISTINCT f
+MATCH (f)<-[:FAILS_AS]-(:Function)<-[:PERFORMS]-(p:Position)
+RETURN p.name AS position, f.text AS failure
+ORDER BY position, failure"""},
 ]
 
 

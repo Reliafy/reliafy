@@ -4,7 +4,7 @@ A Python port of ``frontend/src/rbdGraph.js`` (``normalizeRbdGraph`` /
 ``compactGraph``) so programmatic callers — the MCP server — speak the same
 compact node format as the in-app assistant and get diagrams that open on the
 builder canvas exactly as if the assistant had drawn them: input/output
-handles, fleshed-out life models and a tidy left-to-right layered layout.
+handles, fleshed-out non-repairable models and a tidy left-to-right layered layout.
 
 Compact node (what an assistant writes and reads)::
 
@@ -33,7 +33,7 @@ component node with ``"repeat_of": "<id of the component it repeats>"`` and
 no model of its own (see :mod:`backend.services.rbd_repeats`).
 
 A node may instead carry the persisted ``data: {...}`` object; both are
-accepted. ``model.saved_model_id`` references a saved plain life model; it is
+accepted. ``model.saved_model_id`` references a saved plain non-repairable model; it is
 resolved (owner-scoped) into the same shape the builder's model picker stores.
 A repairable diagram may carry ``"costs": {"downtime_rate": 500, "horizon":
 87600}`` (see :mod:`backend.services.rbd_maintenance` for the cost and
@@ -56,7 +56,7 @@ NODE_TYPES = ("input", "output", "component", "series", "parallel", "knode", "st
 
 _ARROW = {"type": "arrowclosed", "width": 18, "height": 18}
 #: Repairable block fields beyond the models (#99/#100), carried as given.
-MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection", "rcm_source",
+MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection",
                     "maintenance_group", "crew_priority", "repair_one_at_a_time", "repair_quality")
 #: Diagram-level settings of a repairable diagram (#99, #156, #157), carried as given.
 DIAGRAM_KEYS = ("costs", "repair_crews", "maintenance_groups", "safety_function", "target_sil")
@@ -413,7 +413,7 @@ def _saved_model(model_id: str, where: str, resolve_saved_model, joint_unit=None
             "kind": "joint",
             "modelId": saved.id,
             "name": saved.name,
-            "distribution": "Condition monitoring",
+            "distribution": "Condition and life",
             "unit": r.get("unit") or "",
             "joint_unit": _joint_unit(joint_unit, saved, where),
         }
@@ -500,7 +500,7 @@ def _inline_disagrees(model: dict, saved: dict) -> bool:
 
 
 def normalize_model(model, where: str, resolve_saved_model=None) -> dict:
-    """A compact life model (inline, or a ``saved_model_id``) in the persisted shape."""
+    """A compact non-repairable model (inline, or a ``saved_model_id``) in the persisted shape."""
     return _model(model, where, resolve_saved_model)
 
 
@@ -548,7 +548,7 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
             raise GraphError(f"{where}: {exc}") from None
         if data["covariate_schedules"] is None:
             del data["covariate_schedules"]
-    for key in ("costs", "preventive", "inspection", "rcm_source", "repair_quality"):
+    for key in ("costs", "preventive", "inspection", "repair_quality"):
         if data.get(key) is not None and not isinstance(data[key], dict):
             raise GraphError(f"{where}: {key} must be an object.")
     if isinstance(data.get("repair_quality"), dict) and data["repair_quality"].get("model", "perfect") == "perfect" \
@@ -712,7 +712,7 @@ def compact_graph(graph: dict) -> dict:
 
 
 def placeholder_labels(graph: dict) -> list[str]:
-    """Labels of blocks whose life model is a guessed placeholder."""
+    """Labels of blocks whose non-repairable model is a guessed placeholder."""
     return [
         (n.get("data") or {}).get("label") or n.get("id")
         for n in graph.get("nodes") or []

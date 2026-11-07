@@ -5,6 +5,7 @@ import pytest
 
 from backend.maintenance.service import PROJECTORS, Invalid, Maintenance
 from backend.maintenance.store import GraphStore
+from backend.tests.rcm_tree import position_with_rcm
 
 
 @pytest.fixture()
@@ -12,8 +13,8 @@ def m():
     return Maintenance(GraphStore(":memory:", PROJECTORS), "user-w", "tester")
 
 
-class _Study:
-    id, name, system = "s", "HWS RCM", "Hot water"
+class _Rcm:
+    name = "Hot water"
     functions = [{"id": "f", "text": "Hot water", "failures": [{"id": "ff", "text": "None", "modes": [
         {"id": "m1", "text": "Anode depleted", "consequence": "operational",
          "decision": {"outcome": "fixed_interval", "interval": 1, "interval_unit": "days",
@@ -21,7 +22,7 @@ class _Study:
 
 
 def test_task_checklist_travels_to_its_work_order(m):
-    pos = m.position_from_rcm(_Study())["position"]
+    pos = position_with_rcm(m, _Rcm.functions, _Rcm.name)["position"]
     task = pos["tasks"][0]
     m.update_task(task["id"], instructions="Isolate power and water first.",
                   checklist=["Isolate power", "Drain 10 L", "Fit anode", "Refill and bleed"])

@@ -10,7 +10,9 @@ the policy can be checked against real traffic before it is enforced. Only
 What the policy allows, and why:
 
 * scripts: our own bundle, plus ``apis.google.com`` (Firebase Auth loads the
-  Google API loader for its sign-in popup).
+  Google API loader for its sign-in popup), and ``blob:`` only when an
+  installed extension adds pages (their modules are fetched with the user's
+  credentials and run from a ``blob:`` URL, backend/extensions.py).
 * styles: our own CSS, Google Fonts' stylesheet, and inline styles (React and
   Plotly set ``style`` attributes).
 * fonts: Google Fonts (``fonts.gstatic.com``).
@@ -18,7 +20,8 @@ What the policy allows, and why:
   images), and any ``https:`` source (Google profile photos; markdown images).
 * connections: our own API, the Firebase Auth / Secure Token REST endpoints,
   and ``CSP_CONNECT_EXTRA`` (the cross-origin SSE stream host).
-* frames: the Firebase auth domain's sign-in iframe (``CSP_FRAME_EXTRA``).
+* frames: the Firebase auth domain's sign-in iframe (``CSP_FRAME_EXTRA``), and
+  ``blob:`` (a maintenance PDF shown in the browser's own viewer).
 * workers: ``blob:`` (libraries that spin up inline workers).
 * forms post only to ourselves; no plugins; ``<base>`` pinned to ourselves.
 
@@ -37,11 +40,14 @@ def content_security_policy() -> str:
     connect = ["'self'", "https://identitytoolkit.googleapis.com",
                "https://securetoken.googleapis.com", "https://www.googleapis.com",
                "https://apis.google.com", *config.CSP_CONNECT_EXTRA]
-    frames = ["'self'", "https://accounts.google.com", "https://apis.google.com",
+    frames = ["'self'", "blob:", "https://accounts.google.com", "https://apis.google.com",
               *config.CSP_FRAME_EXTRA]
+    from backend import extensions
+
+    scripts = ["'self'", "https://apis.google.com"] + (["blob:"] if extensions.has_pages() else [])
     directives = {
         "default-src": ["'self'"],
-        "script-src": ["'self'", "https://apis.google.com"],
+        "script-src": scripts,
         "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         "font-src": ["'self'", "data:", "https://fonts.gstatic.com"],
         "img-src": ["'self'", "data:", "blob:", "https:"],

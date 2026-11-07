@@ -172,7 +172,7 @@ R(t) = 1 / (1 + exp((t − μ)/σ))
 
 **Use it as** a Normal alternative when the tails look too heavy for Gaussian.
 **Watch out:** same real-line support caveat as Normal, and it's uncommon as a
-primary life model — usually it appears as a regression baseline.
+primary non-repairable model — usually it appears as a regression baseline.
 
 ## rayleigh
 

@@ -141,7 +141,7 @@ def test_share_email(client, sent):
     client.post("/api/shares", json={"collection": "models", "artifact_id": mid, "email": "b@x.com"})
     assert sent[-1]["to"] == "b@x.com"
     assert "shared" in sent[-1]["subject"].lower()
-    assert f"/modelling/m/{mid}" in sent[-1]["body"]
+    assert f"/models/m/{mid}" in sent[-1]["body"]
     # Duplicate share doesn't re-send.
     n = len(sent)
     client.post("/api/shares", json={"collection": "models", "artifact_id": mid, "email": "b@x.com"})
@@ -158,79 +158,11 @@ def test_email_noop_when_unconfigured():
 # ---- Telemetry + admin stats -------------------------------------------------------
 
 def test_telemetry_endpoints(client):
-    assert client.post("/api/client-error", json={"message": "boom", "stack": "x", "path": "/rcm"}).status_code == 200
+    assert client.post("/api/client-error", json={"message": "boom", "stack": "x", "path": "/asset-register/explorer"}).status_code == 200
     assert client.post("/api/metrics/event", json={"name": "pageview", "path": "/"}).status_code == 200
 
 
-def test_admin_stats_gated(client, monkeypatch):
-    from backend import config
-
-    client.act_as(A)
-    assert client.get("/api/admin/stats").status_code == 403
-    monkeypatch.setattr(config, "ADMIN_EMAILS", {"a@x.com"})
-    data = client.get("/api/admin/stats").json()
-    assert data["users_total"] >= 1
-    assert set(data["artifacts"]) == {
-        "datasets", "models", "rbds", "degradation_models",
-        "tracked_items", "tracked_fleets", "strategy_analyses", "rcm_studies", "fleets",
-    }
-
-
-def test_admin_signups_gated_and_minimal(client, monkeypatch):
-    from datetime import datetime, timedelta, timezone
-
-    from backend import config
-
-    now = datetime.now(timezone.utc)
-    client.db.users.insert_many([
-        {"_id": "new-pro", "email": "p@x.com", "name": "P", "plan": "pro",
-         "plan_until": now + timedelta(days=20), "stripe_customer_id": "cus_1",
-         "created_at": now - timedelta(days=1), "last_login": now - timedelta(hours=5)},
-        {"_id": "new-free", "email": "f@x.com", "name": "F",
-         "created_at": now - timedelta(days=3), "last_login": now - timedelta(days=3)},
-        {"_id": "old", "email": "o@x.com", "created_at": now - timedelta(days=40)},
-    ])
-    # A usage event later than the last sign-in is the last activity.
-    client.db.usage_events.insert_one({"uid": "new-free", "ts": now - timedelta(hours=1), "channel": "app"})
-
-    client.act_as(A)
-    assert client.get("/api/admin/signups").status_code == 403
-    monkeypatch.setattr(config, "ADMIN_EMAILS", {"a@x.com"})
-    data = client.get("/api/admin/signups?days=7").json()
-    assert data["days"] == 7 and data["count"] >= 2
-    rows = {r["email"]: r for r in data["signups"]}
-    assert "o@x.com" not in rows
-    # Newest first, and only what an operator needs: no ids, names or Stripe fields.
-    assert [r["email"] for r in data["signups"]][:2] == ["p@x.com", "f@x.com"]
-    assert all(set(r) == {"email", "plan", "joined", "last_active"} for r in data["signups"])
-    assert rows["p@x.com"]["plan"] == "pro" and rows["f@x.com"]["plan"] == "free"
-    last = datetime.fromisoformat(rows["f@x.com"]["last_active"])
-    assert abs((last - (now - timedelta(hours=1))).total_seconds()) < 5
-    # The window is clamped.
-    assert client.get("/api/admin/signups?days=5000").json()["days"] == 365
-
-
 # ---- Optimistic locking + attribution ----------------------------------------------
-
-def test_rcm_tree_conflict_409(client):
-    client.act_as(A)
-    sid = client.post("/api/rcm/studies", json={"name": "S"}).json()["id"]
-    tree = {"functions": [{"text": "Fn", "failures": []}]}
-    first = client.put(f"/api/rcm/studies/{sid}/tree", json=tree)
-    assert first.status_code == 200
-    loaded_at = first.json()["updated_at"]
-
-    # A save carrying the current stamp succeeds and bumps updated_at.
-    r = client.put(f"/api/rcm/studies/{sid}/tree",
-                   json={**tree, "expected_updated_at": loaded_at})
-    assert r.status_code == 200
-    # Reusing the stale stamp now conflicts.
-    r = client.put(f"/api/rcm/studies/{sid}/tree",
-                   json={**tree, "expected_updated_at": loaded_at})
-    assert r.status_code == 409 and r.json()["code"] == "conflict"
-    # Without the precondition it's last-write-wins (backwards compatible).
-    assert client.put(f"/api/rcm/studies/{sid}/tree", json=tree).status_code == 200
-
 
 def test_rbd_conflict_and_attribution(client):
     client.act_as(A)
@@ -279,15 +211,6 @@ def test_saves_within_a_millisecond_still_conflict(client, monkeypatch, gap_us):
                                            "expected_updated_at": ok.json()["updated_at"]})
     assert again.status_code == 200
     assert client.db.rbds.find_one({"_id": saved["id"]})["name"] == "D4"
-
-    # The same for an RCM study's tree (and a fleet's items: same helpers).
-    sid = client.post("/api/rcm/studies", json={"name": "S"}).json()["id"]
-    tree = {"functions": [{"text": "Fn", "failures": []}]}
-    first = client.put(f"/api/rcm/studies/{sid}/tree", json=tree).json()["updated_at"]
-    assert client.put(f"/api/rcm/studies/{sid}/tree",
-                      json={**tree, "expected_updated_at": first}).status_code == 200
-    r = client.put(f"/api/rcm/studies/{sid}/tree", json={**tree, "expected_updated_at": first})
-    assert r.status_code == 409
 
 
 def test_conditional_write_catches_a_save_racing_the_check(client, monkeypatch):

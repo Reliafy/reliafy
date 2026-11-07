@@ -9,11 +9,9 @@ import {
   listMaintenanceLocations,
   listMaintenanceWorkOrders,
   setMaintenanceSettings,
-  listRcmStudies,
-  maintenanceFromRcm,
 } from "../api.js";
 import { SectionHeader } from "../components/SectionPage.jsx";
-import { PlusIcon } from "../components/LibRows.jsx";
+import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
 import {
   DueChip, Field, FormModal, LocationPicker, PositionPicker, Proposals, flatten, fmtDate,
 } from "../components/MaintenanceParts.jsx";
@@ -21,6 +19,7 @@ import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { browserTimeZone, shouldSuggestTimeZone } from "../workspaceDate.js";
 import { itemAtText, subjectBadge, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
+import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 
 // One quiet line when the workspace has no time zone and this device isn't on
 // UTC: the dates here follow UTC until it's set.
@@ -38,13 +37,13 @@ function TimeZoneNudge({ zone }) {
   );
 }
 
-// Reliafy Maintenance home: what's due, open work orders, and the plant as a
-// tree of positions with what's fitted in each.
+// Maintenance: proposed changes, critical spares short, what's due and
+// the open work orders. (The positions tree is AssetExplorer.)
 export default function MaintenanceHome() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [modal, setModal] = useState(null); // "position" | "rcm"
+  const [modal, setModal] = useState(null); // "position" | "import"
   const [generating, setGenerating] = useState(false);
 
   const [digest, setDigest] = useState(null);
@@ -94,12 +93,8 @@ export default function MaintenanceHome() {
     <div className="app">
       <SectionHeader
         title="Maintenance"
-        purpose="Your plant as positions, what's fitted in each, the tasks from your RCM studies, and the work done."
-        actions={<>
-          <button className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>
-          <button className="secondary" onClick={() => setModal("rcm")}>From an RCM study</button>
-        </>}
-        primary={<button onClick={() => setModal("position")}><PlusIcon /> New position</button>}
+        purpose="What's due from your scheduled tasks, the work orders, and the changes proposed."
+        actions={<button className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>}
       />
       {error && <div className="card error">{error}</div>}
       {data && <TimeZoneNudge zone={data.time_zone} />}
@@ -108,9 +103,11 @@ export default function MaintenanceHome() {
       ) : data.tree.length === 0 ? (
         <div className="card empty">
           <h2>Nothing here yet</h2>
-          <p>Start from an RCM study (its system becomes a position, with the study's tasks), or add a position by hand.</p>
+          <p>
+            Add a position by hand, or build the tree on the <Link to="/asset-register/explorer">Explorer</Link>, where
+            each position's RCM gives it its tasks.
+          </p>
           <div className="maint-row" style={{ justifyContent: "center", marginTop: "1rem" }}>
-            <button className="secondary" onClick={() => setModal("rcm")}>From an RCM study</button>
             <button onClick={() => setModal("position")}><PlusIcon /> New position</button>
           </div>
         </div>
@@ -121,12 +118,12 @@ export default function MaintenanceHome() {
             <section className="card">
               <div className="maint-head">
                 <h2>Critical spares short</h2>
-                <Link to="/maintenance/parts" className="lib-date">Parts and stock</Link>
+                <Link to="/asset-register/parts" className="lib-date">Parts and stock</Link>
               </div>
               <ul className="maint-list">
                 {data.critical_spares.map((v) => (
                   <li key={v.id}>
-                    <Link to={`/maintenance/positions/${v.position.id}`}>{v.position.name}</Link>: {v.part.part_number} {v.part.name}
+                    <Link to={`/asset-register/positions/${v.position.id}`}>{v.position.name}</Link>: {v.part.part_number} {v.part.name}
                     <span className={v.usable_on_hand > 0 ? "lib-date" : "maint-overdue"}> · {v.usable_on_hand} usable, keep {v.min_on_hand}</span>
                     {v.use_instead && <span className="lib-date"> · use {v.use_instead.part_number} instead</span>}
                   </li>
@@ -146,7 +143,7 @@ export default function MaintenanceHome() {
             {data.due.length === 0 ? (
               <p className="lib-date">Nothing due.</p>
             ) : (
-              <table className="lib-table">
+              <div className="maint-scroll"><table className="lib-table">
                 <thead><tr><th>Task</th><th>On</th><th>Due</th><th>Work order</th></tr></thead>
                 <tbody>
                   {data.due.map((t) => (
@@ -160,7 +157,7 @@ export default function MaintenanceHome() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </section>
 
@@ -184,9 +181,9 @@ export default function MaintenanceHome() {
                 <thead><tr><th>#</th><th>Title</th><th>On</th><th>Location</th><th>Type</th><th>Trade</th><th>Due</th></tr></thead>
                 <tbody>
                   {openWork.map((w) => (
-                    <tr key={w.id} className="lib-row" onClick={() => navigate(`/maintenance/work-orders/${w.id}`)}>
+                    <tr key={w.id} className="lib-row" onClick={rowOpen(navigate, `/maintenance/work-orders/${w.id}`)}>
                       <td>{w.number}</td>
-                      <td>{w.title}{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
+                      <td><RowLink to={`/maintenance/work-orders/${w.id}`}>{w.title}</RowLink>{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
                       <td><SubjectCell subject={w.subject} at={w.item_at} link={false} /></td>
                       <td className="lib-date">{w.location?.name || "—"}</td>
                       <td>{w.type}</td>
@@ -199,17 +196,6 @@ export default function MaintenanceHome() {
             )}
           </section>
 
-          <section className="card">
-            <div className="maint-head">
-              <h2>Positions</h2>
-              <span className="lib-date">
-                {data.summary.positions} positions · {data.summary.items} items · {data.summary.tasks} tasks
-              </span>
-            </div>
-            <ul className="maint-tree">
-              {data.tree.map((node) => <TreeNode key={node.id} node={node} />)}
-            </ul>
-          </section>
           {digest !== null && (
             <label className="maint-row lib-date" style={{ gap: "0.5rem" }}>
               <input type="checkbox" checked={digest} onChange={(e) => toggleDigest(e.target.checked)} />
@@ -223,17 +209,10 @@ export default function MaintenanceHome() {
         <NewPositionModal
           positions={positions}
           onClose={() => setModal(null)}
-          onCreated={(p) => navigate(`/maintenance/positions/${p.id}`)}
+          onCreated={(p) => navigate(`/asset-register/positions/${p.id}`)}
         />
       )}
       {modal === "import" && <ImportModal onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
-      {modal === "rcm" && (
-        <FromRcmModal
-          positions={positions}
-          onClose={() => setModal(null)}
-          onCreated={(r) => navigate(`/maintenance/positions/${r.position.id}`)}
-        />
-      )}
     </div>
   );
 }
@@ -252,25 +231,6 @@ function SubjectCell({ subject, at, link = true }) {
   );
 }
 
-function TreeNode({ node }) {
-  return (
-    <li>
-      <div className="maint-node">
-        <Link to={`/maintenance/positions/${node.id}`} className="maint-node-name">{node.name}</Link>
-        {node.tag && <span className="lib-date">{node.tag}</span>}
-        <span className="maint-node-item">{node.item
-          ? <Link to={`/maintenance/items/${node.item.id}`}>{node.item.name}</Link>
-          : <span className="lib-date">nothing fitted</span>}</span>
-        {node.next_due && <span className="lib-date">next due {fmtDate(node.next_due)}</span>}
-        {node.open_work_orders > 0 && <span className="maint-badge">{node.open_work_orders} open</span>}
-      </div>
-      {node.children.length > 0 && (
-        <ul>{node.children.map((c) => <TreeNode key={c.id} node={c} />)}</ul>
-      )}
-    </li>
-  );
-}
-
 export function NewPositionModal({ positions, parentId = null, onClose, onCreated }) {
   const [name, setName] = useState("");
   const [tag, setTag] = useState("");
@@ -280,13 +240,14 @@ export function NewPositionModal({ positions, parentId = null, onClose, onCreate
     <FormModal
       title="New position"
       submitLabel="Create position"
-      canSubmit={!!name.trim()}
+      pendingLabel="Adding…"
+      canSubmit={!!name.trim() && !tooLong(name)}
       onClose={onClose}
       onSubmit={async () => onCreated(await createMaintenancePosition({
         name, tag, position_class: positionClass, parent_id: parent,
       }))}
     >
-      <Field label="Name">
+      <Field label="Name" text={name} hint={DESCRIPTION_HINT}>
         <input autoFocus value={name} placeholder="e.g. Hot water system" onChange={(e) => setName(e.target.value)} />
       </Field>
       <Field label="Inside">
@@ -302,41 +263,7 @@ export function NewPositionModal({ positions, parentId = null, onClose, onCreate
   );
 }
 
-function FromRcmModal({ positions, onClose, onCreated }) {
-  const [studies, setStudies] = useState(null);
-  const [studyId, setStudyId] = useState("");
-  const [parent, setParent] = useState(null);
-  useEffect(() => {
-    listRcmStudies().then((d) => setStudies(d.studies || [])).catch(() => setStudies([]));
-  }, []);
-  return (
-    <FormModal
-      title="From an RCM study"
-      submitLabel="Create position"
-      canSubmit={!!studyId}
-      onClose={onClose}
-      onSubmit={async () => onCreated(await maintenanceFromRcm(studyId, parent))}
-    >
-      <p className="lib-date">
-        The study's system becomes a position. Its failure modes come with it, and every decision with an
-        interval becomes a scheduled task.
-      </p>
-      <Field label="RCM study">
-        <select value={studyId} onChange={(e) => setStudyId(e.target.value)}>
-          <option value="">{studies === null ? "Loading…" : "Choose a study"}</option>
-          {(studies || []).map((s) => (
-            <option key={s.id} value={s.id}>{s.name}{s.system ? ` (${s.system})` : ""}</option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Inside">
-        <PositionPicker positions={positions} value={parent} onChange={setParent} />
-      </Field>
-    </FormModal>
-  );
-}
-
-function ImportModal({ onClose, onDone }) {
+export function ImportModal({ onClose, onDone }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const check = async () => setPreview(await importMaintenanceSheet(file, true));

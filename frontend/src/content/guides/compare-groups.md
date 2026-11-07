@@ -3,7 +3,7 @@ title: "Find out whether a change made a difference"
 task: "Is the new supplier, design or site really better, or is the difference just luck?"
 category: "Life data modelling"
 prerequisites: "A dataset with a time column and a column that says which group each unit is in (supplier, site, design revision). A status column if some units are still running."
-related_href: "/datasets"
+related_href: "/data"
 related_label: "Open your datasets"
 order: 8
 ---
@@ -24,7 +24,7 @@ Reliafy answers that three ways:
 
 ## Compare the groups in a dataset
 
-Open the dataset under [Modelling → Data](/modelling/data) and press **Compare groups** at the
+Open the dataset under [Data](/data) and press **Compare groups** at the
 top of the page. The panel on the right asks for:
 
 - **Time column**: the time to failure or removal.
@@ -119,8 +119,8 @@ would count one unit many times. Fit a
 
 ## Compare two items
 
-**Strategy → Compare two models** puts **Item A** against **Item B**. Each side
-is either a **Model** (a saved life model, or one you enter) or **Data
+**Decisions → Strategy → Compare two models** puts **Item A** against **Item B**. Each side
+is either a **Model** (a saved non-repairable model, or one you enter) or **Data
 (non-parametric)**, a CSV of times with an optional censor column. Name each
 side, set the **Unit**, and press **Compare**.
 
@@ -142,7 +142,7 @@ judging a change. Choose the kind of comparison:
 
 **Before and after a change (one fleet).** The same fleet's failure rate before
 the change against after it. Enter **Failures before the change**, **Operating
-time before**, and the **Drop in failure rate to detect (%)**. Then choose what
+time before**, and the **Drop in failure rate to detect** (a percentage). Then choose what
 to solve for:
 
 - **Operating time needed**: how long to run after the change. With 40 failures
@@ -156,7 +156,7 @@ Operating time is the fleet's total: ten units for 100 hours is 1,000 hours.
 
 **Old and new side by side (two groups).** Old and new units running over the
 same period, judged by the log-rank test. Enter the **Drop in failure rate to
-detect (%)** and the **Share of units failing during the study (%)**. To see a
+detect** and the **Share of units failing during the study**, both as percentages. To see a
 failure rate 40% lower with 80% power at 95% confidence, you need about **121
 failures**: 121 new and 121 old units if half of them fail during the study.
 

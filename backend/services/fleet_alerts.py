@@ -426,7 +426,7 @@ def render(fleet: Fleet, rule: dict, previous, baseline, new_value: float, when,
     settings = fleet.settings or {}
     label = settings.get("period_label", "months")
     horizon = _periods(settings.get("periods", 12), label)
-    link = email_service._app_url(f"/fleet/forecasts/{fleet.id}")
+    link = email_service._app_url(f"/forecasts/{fleet.id}")
     manage = f"{link}#alerts"
     stamp = when.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     via = reason or "a usage update received via the API"

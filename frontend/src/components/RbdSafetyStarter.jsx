@@ -9,22 +9,25 @@ const ShieldIcon = () => (
   </svg>
 );
 
-// "Verify a safety function (SIL / PFDavg)" (#298): the RBD and Strategy
-// pages' starter banner. It opens the starter diagram — sensors voting 1oo2,
-// a logic solver and a final element — in safety mode, unsaved.
+// "Verify a safety function" (#298): the RBD and Strategy pages' starter
+// banner. It opens the starter diagram — sensors voting 1oo2, a logic solver
+// and a final element — in safety mode, unsaved. Plain words first; the
+// standard's terms follow on a quieter line, for the people who search for
+// them.
 export default function SafetyStarterCard() {
   return (
     <SectionStarter
       icon={<ShieldIcon />}
-      title="Verify a safety function (SIL / PFDavg)"
+      title="Verify a safety function"
       body={<>
-        Sensors voting 1oo2, a logic solver and a final element: the PFDavg, the SIL it reaches (IEC 61511) and
-        which element dominates.{" "}
+        Two sensors where either one can trip the plant, a logic box and a shut-off valve: how likely the trip is to
+        fail when it's needed, the safety level that reaches and which part matters most.{" "}
         <button type="button" className="link" onClick={() => openGuide("verify-a-safety-function")}>
           How it works
         </button>
       </>}
-      to="/rbds/b"
+      terms="In the standard's terms: 1oo2 voting, PFDavg and SIL (IEC 61511)."
+      to="/systems/b"
       state={{ starter: "safety" }}
       cta="Open the starter"
     />

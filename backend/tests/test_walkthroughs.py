@@ -47,7 +47,7 @@ def client(monkeypatch):
 def _event(client, name, **extra):
     return client.post(
         "/api/metrics/event",
-        json={"name": name, "path": "/modelling/new", **extra},
+        json={"name": name, "path": "/models/new", **extra},
         headers={"user-agent": "Mozilla/5.0", "x-forwarded-for": "203.0.113.7"},
     )
 
@@ -72,11 +72,11 @@ def test_events_stored_with_walkthrough_and_step(client):
     assert _event(client, "walkthrough_step", walkthrough="fit", step=1).status_code == 200
     assert _event(client, "walkthrough_step", walkthrough="fit", step=2).status_code == 200
     assert _event(client, "walkthrough_completed", walkthrough="fit", step=4).status_code == 200
-    assert _event(client, "walkthrough_skipped", walkthrough="rcm", step=2).status_code == 200
+    assert _event(client, "walkthrough_skipped", walkthrough="fleet", step=2).status_code == 200
     docs = list(client.db.metrics_events.find({}, {"_id": 0, "name": 1, "walkthrough": 1, "step": 1}))
     assert {"name": "walkthrough_step", "walkthrough": "fit", "step": 2} in docs
     assert {"name": "walkthrough_started", "walkthrough": "fit"} in docs
-    assert {"name": "walkthrough_skipped", "walkthrough": "rcm", "step": 2} in docs
+    assert {"name": "walkthrough_skipped", "walkthrough": "fleet", "step": 2} in docs
     # Privacy as for every event: nothing identifies the client directly.
     blob = str(list(client.db.metrics_events.find({})))
     assert "203.0.113.7" not in blob and "Mozilla" not in blob
@@ -100,34 +100,6 @@ def test_other_events_ignore_walkthrough_fields(client):
     assert _event(client, "first_run_rbd", walkthrough="rbd", step=3).status_code == 200
     doc = client.db.metrics_events.find_one({})
     assert doc["name"] == "first_run_rbd" and "walkthrough" not in doc and "step" not in doc
-
-
-def test_admin_traffic_counts_per_walkthrough(client):
-    for _ in range(3):
-        _event(client, "walkthrough_started", walkthrough="fit")
-        _event(client, "walkthrough_step", walkthrough="fit", step=1)
-    _event(client, "walkthrough_step", walkthrough="fit", step=2)
-    _event(client, "walkthrough_step", walkthrough="fit", step=2)
-    _event(client, "walkthrough_completed", walkthrough="fit", step=4)
-    _event(client, "walkthrough_skipped", walkthrough="fit", step=2)
-    _event(client, "walkthrough_started", walkthrough="fleet")
-    _event(client, "first_run_rbd")
-
-    client.act_as(B)
-    assert client.get("/api/admin/traffic").status_code == 403
-    client.act_as(A)
-    data = client.get("/api/admin/traffic?days=7").json()
-    rows = {r["key"]: r for r in data["walkthroughs"]}
-    assert list(rows) == ["fit", "replacement", "rbd", "rcm", "fleet"]
-    fit = rows["fit"]
-    assert (fit["started"], fit["completed"], fit["skipped"]) == (3, 1, 1)
-    assert fit["steps"] == {"1": 3, "2": 2}
-    assert fit["completion_rate"] == pytest.approx(1 / 3, abs=1e-4)
-    assert rows["fleet"]["started"] == 1 and rows["fleet"]["completion_rate"] == 0
-    assert rows["rbd"] == {"key": "rbd", "started": 0, "completed": 0, "skipped": 0,
-                           "steps": {}, "completion_rate": None}
-    # Said once: walkthrough events are in their own table, not the event list.
-    assert data["events"] == [{"key": "first_run_rbd", "count": 1}]
 
 
 def test_auto_start_once_per_user(client):
@@ -162,10 +134,10 @@ def test_summarise_ignores_unknown_and_malformed():
 
     rows = summarise([
         {"name": "walkthrough_started", "walkthrough": "gone"},
-        {"name": "walkthrough_step", "walkthrough": "rcm", "step": "2"},
-        {"name": "walkthrough_step", "walkthrough": "rcm", "step": 2},
+        {"name": "walkthrough_step", "walkthrough": "fleet", "step": "2"},
+        {"name": "walkthrough_step", "walkthrough": "fleet", "step": 2},
         {"name": "pageview"},
     ])
-    rcm = next(r for r in rows if r["key"] == "rcm")
-    assert rcm["steps"] == {"2": 1} and rcm["started"] == 0
+    fleet = next(r for r in rows if r["key"] == "fleet")
+    assert fleet["steps"] == {"2": 1} and fleet["started"] == 0
     assert sum(r["started"] for r in rows) == 0

@@ -3,7 +3,7 @@ title: "Verify a safety function (SIL / PFDavg)"
 task: "How do I check that a safety instrumented function reaches its SIL?"
 category: "Reliability block diagrams"
 prerequisites: "The function's elements, their dangerous undetected failure rates (λDU) and proof-test intervals."
-related_href: "/rbds"
+related_href: "/systems/rbds"
 related_label: "Open the RBDs page"
 order: 33
 ---
@@ -20,8 +20,8 @@ between redundant channels and their common cause.
 
 ## Start from the starter
 
-On the Modelling, RBDs or Strategy page, choose **Verify a safety function
-(SIL / PFDavg) → Open the starter**. It opens a diagram, unsaved, of the usual
+On the RBDs or Strategy page, choose **Verify a safety function →
+Open the starter**. It opens a diagram, unsaved, of the usual
 shape:
 
 - two pressure transmitters voting **1oo2** (either one can trip), in a
@@ -53,7 +53,7 @@ Double-click a block to open it, or double-click its name to rename it in place
   the block by it.
 - **Failure** — the dangerous undetected failures. Enter them as a **Mean**
   (the mean time to a dangerous failure, 1/λDU) or as **Parameters**
-  (Exponential, failure rate λ per hour). In a safety function the life model is
+  (Exponential, failure rate λ per hour). In a safety function the non-repairable model is
   labelled λDU.
 - **Proof test** — how often the element is tested, when its first test is (to
   stagger redundant channels' tests) and the test's coverage (below 100% when

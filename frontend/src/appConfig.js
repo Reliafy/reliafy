@@ -7,7 +7,7 @@
 // finally failed). `mcp` is the MCP connector's switch: on unless the server
 // says it's off (it's on for every self-hosted install by default).
 export const DEFAULT_CONFIG = {
-  auth: true, ai: false, billing: false, reliability_agent: false, mcp: true, loaded: false,
+  auth: true, ai: false, billing: false, reliability_agent: false, mcp: true, menu_preview: false, loaded: false,
 };
 
 // Who to ask for the MCP connector while it's switched off.
@@ -20,8 +20,9 @@ export function settledConfig(fetched) {
 }
 
 // What the app shell does with a path no route matched. Routes gated on the
-// config (/billing, /agent) aren't registered until it loads, so redirecting
-// before then would send a direct load of /billing to /modelling.
-export function unmatchedRoute(config) {
-  return config.loaded ? "redirect" : "wait";
+// config (/billing, /agent) aren't registered until it loads, nor extension
+// pages until their list has (`extensionsLoaded`), so redirecting before then
+// would send a direct load of /billing to /home.
+export function unmatchedRoute(config, extensionsLoaded = true) {
+  return config.loaded && extensionsLoaded ? "redirect" : "wait";
 }
