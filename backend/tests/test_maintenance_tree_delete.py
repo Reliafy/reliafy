@@ -59,8 +59,8 @@ def test_the_preview_counts_what_goes_and_writes_nothing(m):
     assert out["items_unfitted"] == 1 and out["positions_on_unfitted_items"] == 1
     assert out["tasks"] == 1 and out["open_work_orders"] == 1 and out["work_packages"] == 1
     assert out["functions"] == 1 and out["failure_modes"] == 1 and out["links"] == 1
-    assert out["summary"] == ("Delete Propulsion and everything inside it? 3 positions, 1 fitted item (kept, "
-                              "unfitted), 1 task, 1 open work order (cancelled). Its history stays in the log.")
+    assert out["summary"] == ("Delete Propulsion and everything inside it? 3 positions, 1 fitted item kept, "
+                              "unfitted, 1 task, 1 open work order (cancelled). Its history stays in the log.")
     # A leaf with nothing on it says so plainly.
     assert m.retire_position(p["brg"], cascade=True, dry_run=True)["summary"] == (
         "Delete Bearing? Its history stays in the log.")
@@ -132,27 +132,36 @@ def test_a_location_delete_takes_the_places_inside_and_the_positions_there(m):
     assert preview["locations"] == 3 and preview["locations_inside"] == 2 and preview["positions"] == 4
     assert preview["items_placed"] == 1 and preview["stock_lines"] == 1 and preview["tasks"] == 2
     out = m.retire_location(p["site"], cascade=True)
-    assert set(out["also_retired"]) == {p["hall"], store}
+    assert set(out["also_retired"]) == {p["hall"], store} and out["items_unplaced"] == [loose]
     assert m.locations() == [] and m.position(p["prop"])["retired"] and m.position(p["brg"])["retired"]
     assert not m.position(p["top"])["retired"] and m.s.node(m.org, round_)["retired"]
+    # The spare stored there is kept, with no place now.
+    assert not m.item(loose)["retired"] and m._placement_now(loose) is None
     _same_after_rebuild(m)
     back = m.restore_location(p["site"], cascade=True)
     assert back["locations_restored"] == 3 and back["positions_restored"] == 4 and back["items_refitted"] == 1
+    assert back["items_replaced"] == 1 and m._placement_now(loose)[1]["id"] == store
     assert not m.position(p["prop"])["retired"] and not m.s.node(m.org, round_)["retired"]
     _same_after_rebuild(m)
 
 
-def test_an_item_delete_takes_it_out_with_the_positions_inside(m):
+def test_a_delete_never_retires_an_item(m):
+    """Derryn: "The 'delete' shouldn't delete items... they just become loose again." Every
+    item fitted anywhere in the branch is kept, alive and unfitted; Undo refits them."""
     p = _plant(m)
-    preview = m.retire_item(p["item"], cascade=True, dry_run=True)
-    assert preview["positions"] == 1 and preview["items_unfitted"] == 0
-    out = m.retire_item(p["item"], cascade=True)
-    assert m.item(p["item"])["retired"] and m.current_fitment(p["m1"]) is None
-    assert out["positions"] == 1
-    _same_after_rebuild(m)
-    back = m.restore_item(p["item"], cascade=True)
-    assert back["items_restored"] == 1 and back["items_refitted"] == 1 and back["positions_restored"] == 1
-    assert m.current_fitment(p["m1"]) is not None
+    m.fit(p["brg"], new_item={"name": "Bearing SN7"})
+    m.fit(p["m2"], new_item={"name": "Motor SN2"})
+    items = [i["id"] for i in m.s.nodes(m.org, "Item")]
+    assert len(items) == 3
+    m.retire_location(p["site"], cascade=True)
+    for iid in items:
+        assert not m.item(iid)["retired"] and m._current_fitment_of_item(iid) is None
+    assert {i["id"] for i in m.items()} >= set(items)  # still listed in Items
+    back = m.restore_location(p["site"], cascade=True)
+    assert back["items_refitted"] == 3
+    assert all(m._current_fitment_of_item(iid) for iid in items)
+    with pytest.raises(Invalid, match="position or a location"):
+        m.delete_tree("item", items[0])
     _same_after_rebuild(m)
 
 

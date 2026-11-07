@@ -248,7 +248,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       .catch((e) => setError({ text: e.message, notAllowed: e.status === 404 || e.status === 403 }));
   }, [root]);
   useEffect(() => load(), [load]);
-  // A delete made on a full page (position, location, item) comes here with its
+  // A delete made on a full page (a position or location) comes here with its
   // toast and Undo (the router's state), shown once.
   useEffect(() => {
     const d = location.state?.deleted;

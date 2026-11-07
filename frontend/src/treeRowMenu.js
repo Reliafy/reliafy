@@ -5,10 +5,11 @@
 // tab's rows keep their own menu (explorerRcm.js rowActions).
 //
 // A position can be renamed, moved (PATCH parent_id) and deleted; a location
-// renamed, moved and deleted; an item renamed and deleted. Delete… is never
-// greyed for what's inside (a delete takes everything below it, and Undo
-// brings it back: treeDelete.js); only a team that's view only greys the
-// changes, with the reason, so the menu never offers what can't be done.
+// renamed, moved and deleted; an item renamed (never deleted from the tree:
+// a delete keeps every item, and items are retired on the Items pages).
+// Delete… is never greyed for what's inside (a delete takes everything below
+// it, items kept, and Undo brings it back: treeDelete.js); only a team that's
+// view only greys the changes, with the reason.
 //
 // Pure functions (no React), tested in treeRowMenu.test.js.
 
@@ -49,7 +50,6 @@ export function summaryActions(r, { mode, viewOnly = null } = {}) {
     out.push(write(DELETE, viewOnly));
   } else if (r.type === "item") {
     out.push(write({ id: "tree-rename", label: "Rename…" }, viewOnly));
-    out.push(write(DELETE, viewOnly));
   }
   return out;
 }

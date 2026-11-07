@@ -5,8 +5,8 @@ import { FormModal } from "./MaintenanceParts.jsx";
 import { hasOpenLayer } from "../fullScreen.js";
 import "./DeleteTree.css";
 
-// Delete… on anything in a tree (the Explorer's row menu, the Assets and
-// Products lists, the position, location and item pages). The dialog asks the
+// Delete… on a position or location (the Explorer's row menu, the Assets and
+// Products lists, the position and location pages; never an item). The dialog asks the
 // server what would go (a dry run) and says it in plain words; one click
 // deletes it all (treeDelete.js has the words). `onDone(answer, toast)`: the
 // server's answer, and the toast to show ({text, kind, id, name}).

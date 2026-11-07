@@ -2163,12 +2163,12 @@ def restore_location(location_id: str, body: dict = Body(default={}),
 
 @router.post("/items/{item_id}/retire")
 def retire_item(item_id: str, body: dict = Body(default={}), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.retire_item, item_id, body.get("reason", ""), bool(body.get("cascade")), bool(body.get("dry_run")))
+    return _run(m.retire_item, item_id, body.get("reason", ""))
 
 
 @router.post("/items/{item_id}/restore")
-def restore_item(item_id: str, body: dict = Body(default={}), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.restore_item, item_id, bool((body or {}).get("cascade")))
+def restore_item(item_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.restore_item, item_id)
 
 
 @router.post("/tasks/{task_id}/restore")

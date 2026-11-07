@@ -14,7 +14,7 @@ test("a position's dialog counts what goes, in plain words", () => {
   assert.equal(deleteTitle(propulsion), "Delete “Propulsion” and everything inside it?");
   assert.deepEqual(deleteLines(propulsion), [
     "12 positions inside it",
-    "4 fitted items: taken out and kept in Items, not deleted",
+    "4 fitted items kept, unfitted: they stay in Items",
     "9 scheduled tasks: no longer scheduled",
     "3 open work orders: cancelled",
     "2 functions and 5 failure modes (its RCM)",
@@ -38,8 +38,8 @@ test("a location counts the places inside and the positions there", () => {
   assert.deepEqual(deleteLines(site), [
     "2 locations inside it",
     "4 positions there, with everything inside them",
-    "1 fitted item: taken out and kept in Items, not deleted (with the 2 positions on it)",
-    "1 item placed there: kept in Items",
+    "1 fitted item kept, unfitted: it stays in Items (with the 2 positions on it)",
+    "1 item stored there kept, with no place now: it stays in Items",
     "Stock recorded there: kept",
   ]);
   assert.equal(deleteButton(site), "Delete 3 locations and 4 positions");
@@ -47,12 +47,8 @@ test("a location counts the places inside and the positions there", () => {
   assert.equal(deleteButton({ kind: "location", locations: 1, positions: 0 }), "Delete the location");
 });
 
-test("an item says where it's taken out of", () => {
-  const motor = { kind: "item", name: "Motor SN1", positions: 1, items_unfitted: 0, fitted_to: "Motor 1" };
-  assert.deepEqual(deleteLines(motor), ["1 position inside it", "It's taken out of Motor 1"]);
-  assert.equal(deleteButton(motor), "Delete the item and 1 position");
-  assert.equal(deletedText(motor), "Deleted Motor SN1 and 1 position inside it.");
-  assert.equal(DELETE_KIND.item, "item");
+test("items are never deleted: there's no item kind", () => {
+  assert.deepEqual(Object.values(DELETE_KIND), ["position", "location"]);
 });
 
 test("undo says what came back and what didn't", () => {

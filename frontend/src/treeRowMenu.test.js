@@ -63,12 +63,12 @@ test("a team that's view only: every change greyed with the reason; Pin still wo
   assert.equal(withPinned.find((i) => i.id === "pin").disabled, undefined);
 });
 
-test("locations: new inside, rename, move, delete; items: rename, delete; headings: nothing", () => {
+test("locations: new inside, rename, move, delete; items: rename (never delete); headings: nothing", () => {
   const d = buildDisplay(DATA, "locations");
   assert.deepEqual(summaryActions(d.rows.get("shed"), opts("locations")).map((i) => i.label),
     ["New location inside", "Rename…", "Move to…", "Delete…"]);
   // An item row (a spare, or one with no home yet).
-  assert.deepEqual(ids(summaryActions(ITEM_ROW, opts("locations"))), ["tree-rename", "tree-delete"]);
+  assert.deepEqual(ids(summaryActions(ITEM_ROW, opts("locations"))), ["tree-rename"]);
   assert.deepEqual(summaryActions({ key: "G:nohome", type: "group", ref: { name: "No home yet" }, kids: [] }, opts("locations")), []);
   assert.deepEqual(summaryActions(null), []);
 });

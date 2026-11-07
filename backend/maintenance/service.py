@@ -7046,18 +7046,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
             self._emit("note.appended", appended)
         return self.item(item_id)
 
-    def retire_item(self, item_id: str, reason="", cascade: bool = False, dry_run: bool = False) -> dict:
+    def retire_item(self, item_id: str, reason="") -> dict:
         """Take an item out of use for good (disposed of, scrapped, sold): it stays in
         the history and in every fitment it had. It can't be fitted anywhere, have no
         open work order, and no live position inside it (an engine's turbo slots). Its
-        own tasks are retired with it (reported) and come back with it. With
-        ``cascade`` it's a delete (tree_delete.py): it's taken out if fitted, the
-        positions inside it go with everything inside those, open work orders are
-        cancelled, and nothing refuses. ``dry_run`` (with cascade) only counts."""
-        if cascade:
-            self._get(item_id, "Item")
-            return self.delete_preview("item", item_id) if dry_run else {
-                **self.delete_tree("item", item_id, reason), "retired": item_id}
+        own tasks are retired with it (reported) and come back with it."""
         item = self._get(item_id, "Item")
         if item.get("retired"):
             raise Invalid("That item was already retired.")
@@ -7077,13 +7070,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
         self._emit("item.retired", {"id": item_id, "on": self.today(), "reason": _text(reason, "reason")})
         return {"retired": item_id, "tasks_retired": tasks}
 
-    def restore_item(self, item_id: str, cascade: bool = False) -> dict:
+    def restore_item(self, item_id: str) -> dict:
         """Bring a retired item back (not fitted anywhere: fit or place it next), with
-        the tasks retired with it. ``cascade``: undo its latest delete (refitted where
-        it was, with everything that went with it)."""
-        if cascade:
-            self._get(item_id, "Item")
-            return {**self.restore_deletion(item_id), **self.item(item_id)}
+        the tasks retired with it."""
         item = self._get(item_id, "Item")
         self._not_retired(item)
         self._emit("item.restored", {"id": item_id, "on": self.today()})
@@ -8845,8 +8834,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
         """Take a position out of the plant (it stays in the history). Without
         ``cascade`` nothing may be fitted to it, and no position inside it still in
         use. With ``cascade`` it's a delete (tree_delete.py): everything inside goes
-        and nothing refuses: items fitted there are taken out (kept), open work
-        orders cancelled, tasks retired. ``dry_run`` (with cascade) only counts."""
+        and nothing refuses: items fitted there are taken out and kept (never
+        retired), open work orders cancelled, tasks retired. ``dry_run`` (with
+        cascade) only counts."""
         p = self._get(position_id, "Position")
         if cascade:
             return self.delete_preview("position", position_id) if dry_run else {
@@ -8937,7 +8927,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
         tasks (rounds) are retired with it and come back with it. With ``cascade``
         it's a delete (tree_delete.py): the locations inside and the positions
         located at any of them go too, with everything inside those, and nothing
-        refuses. ``dry_run`` (with cascade) only counts."""
+        refuses; items there are kept (fitted ones taken out, stored ones lose their
+        place). ``dry_run`` (with cascade) only counts."""
         loc = self._get(location_id, "Location")
         if cascade:
             return self.delete_preview("location", location_id) if dry_run else {

@@ -244,7 +244,7 @@ POSITIONS: Table = {
         Repeat it to build many like structures; then update the copy's location_id if it's elsewhere."""),
     "retire": ("position_id", "reason cascade dry_run", """Take it out of the plant (kept in the history). Nothing
         fitted, no work order open. cascade true deletes it with everything inside: items fitted there are taken
-        out (kept), open work orders cancelled, tasks retired; dry_run true only counts what would go."""),
+        out and kept (never retired), open work orders cancelled, tasks retired; dry_run true only counts."""),
     "restore": ("position_id", "cascade", """Bring a retired position back (its parent must be in use); cascade
         true undoes its latest delete with everything that took."""),
     "out_of_service": ("position_id reason", "until start", "Out of service (being rebuilt, drained) from start (today) until a date, or open-ended: its tasks aren't due or late meanwhile."),
@@ -287,11 +287,9 @@ ITEMS: Table = {
                "manufacture_date replacement_cost warranty location_id on", """An item that isn't fitted
         anywhere: a spare in a store (location_id places it there, on = since when), one on order. part_id (the
         make and model) fills in what isn't given. To fit one as you make it: maintenance fitments.fit."""),
-    "retire": ("item_id", "reason cascade dry_run", """Dispose of it (scrapped, sold): kept in the history and
-        every fitment it had. Not while fitted or with open work orders; its own tasks are retired with it.
-        cascade true deletes it anyway (taken out, positions inside it go); dry_run true only counts."""),
-    "restore": ("item_id", "cascade", """Bring a retired item back (with the tasks retired with it); cascade true
-        undoes its latest delete."""),
+    "retire": ("item_id", "reason", """Dispose of it (scrapped, sold): kept in the history and every fitment it
+        had. Not while fitted or with open work orders; its own tasks are retired with it."""),
+    "restore": ("item_id", "", "Bring a retired item back (with the tasks retired with it)."),
     "out_of_service": ("item_id reason", "until start", "Out of service (being rebuilt, drained) from start (today) until a date, or open-ended: its tasks aren't due or late meanwhile."),
     "back_in_service": ("item_id", "", "Back in service now."),
     "update": ("item_id", "name serial part_number manufacturer model notes append_note nameplate purchase_date "
@@ -565,7 +563,7 @@ LOCATIONS: Table = {
         description, or move it inside another (parent_id) or to the top level."""),
     "retire": ("location_id", "reason cascade dry_run", """Take a place out of use (kept in the history): nothing
         located, placed or stocked there, no open work. cascade true deletes it with the locations inside and
-        the positions located there (and all inside them); dry_run true only counts."""),
+        the positions located there (and all inside them); items there are kept; dry_run true only counts."""),
     "restore": ("location_id", "cascade", """Bring a retired location back (with the rounds retired with it);
         cascade true undoes its latest delete."""),
 }
@@ -1341,7 +1339,7 @@ def register() -> None:
                               "{attribute name: value}, e.g. {'Flow': 45, 'Head': '32 m', 'Shaft seal': "
                               "'mechanical seal'}. Numbers in the attribute's unit (convert first); '' or "
                               "null clears one."))] = None,
-                          reason: str | None = None, cascade: bool | None = None, dry_run: bool | None = None,
+                          reason: str | None = None,
                           until: Annotated[str | None, Field(description=(
                               "out_of_service: the return date (none: open-ended)."))] = None,
                           start: Annotated[str | None, Field(description=(
@@ -1364,9 +1362,9 @@ def register() -> None:
                 return m.item(made["id"])
             return run(go)
         if action == "retire":
-            return run(m.retire_item, item_id, reason or "", bool(cascade), bool(dry_run))
+            return run(m.retire_item, item_id, reason or "")
         if action == "restore":
-            return run(m.restore_item, item_id, bool(cascade))
+            return run(m.restore_item, item_id)
         if action == "out_of_service":
             return run(m.take_out_of_service, item_id, reason, until, start)
         if action == "back_in_service":

@@ -46,7 +46,7 @@ test("Delete a branch: the server's counts, one click, gone; Undo brings it all 
   const dialog = page.getByRole("dialog", { name: `Delete “Del propulsion ${tag}” and everything inside it?` });
   const counts = dialog.getByTestId("delete-counts");
   await expect(counts).toContainText("2 positions inside it");
-  await expect(counts).toContainText("1 fitted item: taken out and kept in Items, not deleted");
+  await expect(counts).toContainText("1 fitted item kept, unfitted: it stays in Items");
   await expect(counts).toContainText("1 scheduled task: no longer scheduled");
   await expect(counts).toContainText("1 open work order: cancelled");
   await expect(counts).toContainText("Its history stays in the log");
@@ -63,6 +63,7 @@ test("Delete a branch: the server's counts, one click, gone; Undo brings it all 
   await toast.getByRole("button", { name: "Undo" }).click();
   await expect(toast).toContainText(`Undone: Del propulsion ${tag} and everything inside it are back.`);
   await expect(row(page, `Del propulsion ${tag}`)).toBeVisible();
+  // The item was kept (never deleted) and is back in its position.
   const back = await (await request.get(`${M}/positions/${p.motor.id}`)).json();
   expect(back.retired).toBe(false);
   expect(back.fitted?.item?.name).toBe(`Del unit ${tag}`);
