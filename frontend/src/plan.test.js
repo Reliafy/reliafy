@@ -19,3 +19,18 @@ test("no tags until the plan is known", () => {
   assert.equal(showProTags(null), false);
   assert.equal(showProTags(undefined), false);
 });
+
+test("storage cap reached: only at or past the plan's cap", async () => {
+  const { storageCapReached } = await import("./plan.js");
+  const free = (used) => ({ billing_enabled: true, plan: "free", admin: false,
+    plan_caps: { reliability_predictions: 1 }, usage: { reliability_predictions: used } });
+  assert.equal(storageCapReached(free(0), "reliability_predictions"), null);
+  assert.deepEqual(storageCapReached(free(1), "reliability_predictions"), { used: 1, cap: 1 });
+  assert.deepEqual(storageCapReached(free(2), "reliability_predictions"), { used: 2, cap: 1 });
+  // Pro (no caps), operators, billing off and an unknown plan: never.
+  assert.equal(storageCapReached({ ...free(5), plan: "pro", plan_caps: null }, "reliability_predictions"), null);
+  assert.equal(storageCapReached({ ...free(5), admin: true }, "reliability_predictions"), null);
+  assert.equal(storageCapReached({ ...free(5), billing_enabled: false }, "reliability_predictions"), null);
+  assert.equal(storageCapReached(null, "reliability_predictions"), null);
+  assert.equal(storageCapReached(free(5), "maintainability_predictions"), null);
+});

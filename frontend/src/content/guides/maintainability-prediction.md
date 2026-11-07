@@ -155,6 +155,10 @@ kept with the result, recomputed on the server when saved, and the prediction
 appears on the [Maintainability prediction](/maintainability) page. Open one
 and press **Edit a copy** to change its lines and save a new version.
 
+The Free plan keeps **1 saved maintainability prediction** (the shared sample
+doesn't count); computing without saving has no limit. To save another, delete
+the one you have or [upgrade to Pro](/billing), which removes the limit.
+
 ## From an agent or the command line
 
 The same calculation is the `analyse` tool's `maintainability` action (and

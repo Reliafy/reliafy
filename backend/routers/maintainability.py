@@ -16,6 +16,7 @@ from backend import config
 from backend.db import get_session
 from backend.schema import MaintainabilityPrediction
 from backend.services import access as access_service
+from backend.services import billing as billing_service
 from backend.services import maintainability as service
 from backend.services import samples as samples_service
 from backend.services.access import AccessCtx, get_access
@@ -103,6 +104,10 @@ def save_prediction(name: str = Body(...), inputs: dict = Body(default={}), sess
     if denied is not None:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
+    if (ctx.is_personal and not billing_service.is_admin_user(ctx.user)
+            and billing_service.would_exceed_cap(session, ctx.uid, COLLECTION)):
+        return JSONResponse(status_code=402, content={
+            "detail": billing_service.cap_message(session, ctx.uid, COLLECTION), "code": "cap", "upgrade": True})
     try:
         doc = service.save_prediction(session, name, inputs, ctx.write_owner, _rates_for(session, ctx, inputs))
         access_service.stamp_editor(session, COLLECTION, doc.id, ctx)

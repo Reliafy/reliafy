@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { deletePrediction, listPredictions } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
+import { StorageCapNotice } from "../components/StorageCap.jsx";
 import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
@@ -47,6 +48,8 @@ export default function ReliabilityPredictions() {
       <SectionHeader section="prediction" title={PREDICTIONS_LABEL} purpose={PREDICTIONS_PURPOSE} help={HELP} primary={newPrediction} />
 
       {error && <div className="card error">{error}</div>}
+      <StorageCapNotice kind="reliability_predictions" one="saved reliability prediction"
+        many="saved reliability predictions" refreshKey={rows} />
 
       <SectionList
         rows={rows}

@@ -52,6 +52,10 @@ rate per assembly too.
    default.
 5. Press **Calculate**, read the result, then **Save prediction**.
 
+The Free plan keeps **1 saved reliability prediction** (the shared sample
+doesn't count); calculating without saving has no limit. To save another,
+delete the one you have or [upgrade to Pro](/billing), which removes the limit.
+
 A part the handbook has no type for, such as a motor, a propeller or a
 microcircuit, stays in the list with no part type: it's shown and left out of
 the total, and the result says so. Don't give it the nearest electronic part

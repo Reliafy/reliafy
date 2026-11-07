@@ -6,6 +6,7 @@ import {
 } from "../api.js";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { CapRefusal } from "../components/StorageCap.jsx";
 import Field from "../components/ui/Field.jsx";
 import { TextArea, TextInput } from "../components/ui/Controls.jsx";
 import InputGroup, { Addon } from "../components/ui/InputGroup.jsx";
@@ -57,6 +58,7 @@ export default function ReliabilityPredictionNew() {
   const [computedFor, setComputedFor] = useState(null);
   const [computing, setComputing] = useState(false);
   const [error, setError] = useState(null);
+  const [capError, setCapError] = useState(null); // a save refused at the Free storage limit
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -161,13 +163,15 @@ export default function ReliabilityPredictionNew() {
   const save = async () => {
     setSaving(true);
     setError(null);
+    setCapError(null);
     try {
       const doc = editing
         ? await updatePrediction(editing.id, { name: name.trim(), inputs })
         : await savePrediction(name.trim(), inputs);
       navigate(predictionPath(doc.id));
     } catch (e) {
-      setError(e.message);
+      if (e.code === "cap") setCapError(e);
+      else setError(e.message);
       setSaving(false);
     }
   };
@@ -305,6 +309,7 @@ export default function ReliabilityPredictionNew() {
         {!problem && results && !stale && !name.trim() && <span className="hint">Give it a name, then Save prediction.</span>}
       </div>
       {error && <div className="card error" role="alert">{error}</div>}
+      <CapRefusal error={capError} />
 
       {results && (
         <section className={"card pred-result-card" + (stale ? " is-stale" : "")} aria-live="polite">

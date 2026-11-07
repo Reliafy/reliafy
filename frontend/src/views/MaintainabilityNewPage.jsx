@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { SectionHeader } from "../components/SectionPage.jsx";
+import { CapRefusal } from "../components/StorageCap.jsx";
 import Card from "../components/ui/Card.jsx";
 import Field from "../components/ui/Field.jsx";
 import InputGroup, { Addon } from "../components/ui/InputGroup.jsx";
@@ -33,6 +34,7 @@ export default function MaintainabilityNewPage() {
   const [ranWith, setRanWith] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [capError, setCapError] = useState(null); // a save refused at the Free storage limit
   const [paste, setPaste] = useState(null); // the pasted text while the dialog is open
   const [products, setProducts] = useState(null);
   const [productNote, setProductNote] = useState(null);
@@ -109,12 +111,18 @@ export default function MaintainabilityNewPage() {
   const onSave = async () => {
     setBusy(true);
     setError(null);
+    setCapError(null);
     try {
       const doc = await saveMaintainabilityPrediction(saving.name.trim(), ranWith);
       setSavedId(doc.id);
       setSaving(null);
     } catch (e) {
-      setError(e.message);
+      if (e.code === "cap") {
+        setSaving(null);
+        setCapError(e);
+      } else {
+        setError(e.message);
+      }
     } finally {
       setBusy(false);
     }
@@ -238,6 +246,7 @@ export default function MaintainabilityNewPage() {
         </div>
 
         {error && <div className="error" role="alert">{error}</div>}
+        <CapRefusal error={capError} />
 
         {result && (
           <MaintainabilityResult

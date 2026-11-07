@@ -4,6 +4,7 @@ import { deleteMaintainabilityPrediction, listMaintainabilityPredictions } from 
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
+import { StorageCapNotice } from "../components/StorageCap.jsx";
 import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
@@ -50,6 +51,8 @@ export default function MaintainabilityHome() {
       />
 
       {error && <div className="card error">{error}</div>}
+      <StorageCapNotice kind="maintainability_predictions" one="saved maintainability prediction"
+        many="saved maintainability predictions" refreshKey={rows} />
 
       <SectionList
         rows={rows}
