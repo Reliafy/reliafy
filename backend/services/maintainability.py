@@ -30,7 +30,6 @@ time (never results from the client), owner-scoped like the other stores
 from __future__ import annotations
 
 import math
-import re
 import uuid
 from datetime import datetime, timezone
 
@@ -62,7 +61,8 @@ UNITS = {"minutes": 1.0 / 60.0, "hours": 1.0}
 RATE_UNITS = {"per_million_hours": 1e-6, "per_hour": 1.0}
 RATE_UNIT_TEXT = {"per_million_hours": "per million hours", "per_hour": "per hour"}
 
-_SEP = re.compile(r"\s*(?:›|>|/|\\|»)\s*")
+#: What may stand between the names of an assembly path; the first is the one shown.
+_SEPARATORS = "›>/\\»"
 
 
 class MaintainabilityError(ValueError):
@@ -102,7 +102,11 @@ def _text(value, what: str, limit: int = MAX_NAME) -> str:
 
 def assembly_path(text) -> list[str]:
     """"Propulsion › Motor 1" (or with / or >) as its names, top first."""
-    return [p for p in _SEP.split(" ".join(str(text or "").split())) if p]
+    # Plain string splitting, so the time taken grows only with the text's length.
+    text = " ".join(str(text or "").split())
+    for sep in _SEPARATORS[1:]:
+        text = text.replace(sep, _SEPARATORS[0])
+    return [p.strip() for p in text.split(_SEPARATORS[0]) if p.strip()]
 
 
 def _z(p: float) -> float:

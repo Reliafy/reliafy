@@ -22,6 +22,7 @@ from backend.services import reliability_prediction as prediction_service
 from backend.services import samples as samples_service
 from backend.services.access import AccessCtx, get_access
 from backend.services.reliability_prediction import PredictionError, PredictionNotFound
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/predictions")
@@ -54,7 +55,7 @@ def compute_prediction(
             lines, environment or prediction_service.DEFAULT_ENVIRONMENT,
             prediction_service.DEFAULT_MISSION_HOURS if mission_time is None else mission_time))
     except PredictionError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @router.get("/environments")
@@ -83,7 +84,7 @@ def lines_from_product(product_id: str, ctx: AccessCtx = Depends(get_access)) ->
     except NotFound:
         return JSONResponse(status_code=404, content={"detail": "Not found."})
     except Invalid as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @router.post("")
@@ -108,7 +109,7 @@ def save_prediction(
         doc = prediction_service.save_prediction(session, name, inputs, ctx.write_owner)
         access_service.stamp_editor(session, prediction_service.COLLECTION, doc.id, ctx)
     except PredictionError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=_full(doc, ctx))
 
 
@@ -151,7 +152,7 @@ def update_prediction(
     except PredictionNotFound:
         return JSONResponse(status_code=404, content=NOT_FOUND)
     except PredictionError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=_full(doc, ctx))
 
 

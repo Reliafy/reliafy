@@ -45,6 +45,7 @@ from repyability import LoadSharingModel
 from repyability.non_repairable import NonRepairable
 from repyability.rbd.standby_node import StandbyModel
 from repyability.utils.wrappers import conditional_survival
+from backend.errors import client_message
 
 # Number of points on the reliability time grid.
 _GRID_POINTS = 200
@@ -512,7 +513,7 @@ def _node_reliability(
 def _repyability_message(exc: Exception) -> str:
     """RePyability's structural errors, reworded where they'd mean nothing to
     a user."""
-    text = str(exc)
+    text = client_message(exc)
     if "no paths through" in text.lower():
         return ("there's no path from the input to the output that satisfies every k-of-n (vote) node. "
                 "Check each vote node's n against the branches wired into it.")
@@ -932,7 +933,7 @@ def validate_graph(
             # A repairable diagram's standby group is no StandbyModel: the
             # non-repairable arrangement's limits (#84) don't apply to it.
             if not pinned and not (graph.get("repairable") and getattr(exc, "nonrepairable_only", False)):
-                errors.append(str(exc))
+                errors.append(client_message(exc))
             reliabilities[nid] = PerfectReliability  # structural placeholder
 
     errors.extend(_io_errors(graph))
@@ -978,7 +979,7 @@ def validate_graph(
             # e.g. a k-out-of-n setting that leaves no path through the system.
             errors.append(f"The diagram can't be solved as drawn: {_repyability_message(exc)}")
         except Exception as exc:  # pragma: no cover - defensive
-            errors.append(f"The diagram could not be analysed: {exc}")
+            errors.append(f"The diagram could not be analysed: {client_message(exc)}")
 
     warnings.extend(design_warnings(graph, labels))
     from backend.services import rbd_standby
@@ -1103,10 +1104,12 @@ def unit_warnings(graph: dict, labels: Optional[dict] = None) -> list:
 
 
 _REDUNDANCY_WORDS = re.compile(r"\b(duty|stand-?by|spare|back-?up|redundant)\b", re.I)
-# A trailing unit identifier: "Pump A", "Pump-2", "P2", "Train ii", "Fan left".
-_UNIT_SUFFIX = re.compile(
-    r"^(?P<stem>.*?[a-z0-9])(?:[\s\-_#/.]+(?P<tok>[a-h]|\d+|i{1,3}|iv|left|right|port|starboard|north|"
-    r"south|east|west|primary|secondary|upper|lower)|(?P<num>\d+))$")
+# A trailing unit identifier: "Pump A", "Pump-2", "P2", "Train ii", "Fan left":
+# a token after separators, or a number straight after the name.
+_UNIT_TOKEN = re.compile(r"[a-h]|\d+|i{1,3}|iv|left|right|port|starboard|north|"
+                         r"south|east|west|primary|secondary|upper|lower")
+_UNIT_SEPARATORS = "-_#/."
+_STEM_END = frozenset("abcdefghijklmnopqrstuvwxyz0123456789")
 _BLOCK_TYPES = ("component", "series", "parallel", "standby", "subsystem", "loadshare")
 #: The builder's own names for a new block ("Component 3"): not a user's
 #: naming, so no sign of a redundant pair (#289).
@@ -1116,15 +1119,59 @@ _AUTO_LABEL = re.compile(r"^\s*component\s+\d+\s*$", re.I)
 _REDUNDANT_TYPES = ("parallel", "standby", "loadshare")
 
 
+def _drop_parentheticals(text: str) -> str:
+    """``text`` with each "(...)" replaced by a space; an unclosed "(" stays."""
+    out, i = [], 0
+    while True:
+        start = text.find("(", i)
+        end = text.find(")", start + 1) if start >= 0 else -1
+        if end < 0:
+            out.append(text[i:])
+            return "".join(out)
+        out.append(text[i:start] + " ")
+        i = end + 1
+
+
+def _unit_split(s: str) -> Optional[tuple[str, str]]:
+    """``(stem, unit)`` when ``s`` ends in a unit identifier (``_UNIT_TOKEN``
+    after separators, or digits straight after the name), else None. The
+    shortest stem ending in a letter or digit wins. Read by hand from the
+    end, so the time taken grows only with the label's length."""
+    def is_sep(ch: str) -> bool:
+        return ch.isspace() or ch in _UNIT_SEPARATORS
+
+    n, found, unit = len(s), None, None
+    # A token after separators: the trailing run of non-separators.
+    j = n
+    while j > 0 and not is_sep(s[j - 1]):
+        j -= 1
+    i = j
+    while i > 0 and is_sep(s[i - 1]):
+        i -= 1
+    if j < n and i < j and i > 0 and s[i - 1] in _STEM_END and _UNIT_TOKEN.fullmatch(s[j:]):
+        found, unit = i, s[j:]
+    # Digits straight after the name ("p2"): the earliest split leaving only digits.
+    d = n
+    while d > 0 and s[d - 1].isdecimal():
+        d -= 1
+    for k in range(max(d, 1), n):
+        if found is not None and k >= found:
+            break
+        if s[k - 1] in _STEM_END:
+            found, unit = k, s[k:]
+            break
+    return None if found is None else (s[:found], unit)
+
+
 def _label_stem(label: str) -> tuple[str, Optional[str]]:
     """``(stem, unit suffix)`` of a block label, ignoring parentheticals and
     redundancy words: "Pump B (standby)" -> ("pump", "b")."""
-    s = re.sub(r"\([^)]*\)", " ", str(label or "").lower())
+    s = _drop_parentheticals(str(label or "").lower())
     s = re.sub(r"\s+", " ", _REDUNDANCY_WORDS.sub(" ", s)).strip(" -_#/.")
-    m = _UNIT_SUFFIX.match(s)
-    if not m:
+    split = _unit_split(s)
+    if split is None:
         return s, None
-    return m.group("stem").strip(" -_#/."), m.group("tok") or m.group("num")
+    return split[0].strip(" -_#/."), split[1]
 
 
 def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> list:
@@ -2504,11 +2551,14 @@ _CCF_NOT_IDENTICAL = re.compile(r"^The members of a CCF group, \[(.*?)\], must b
 # Reliafy user can't make (#186) — and count a crew's jobs as "components"
 # (each unit of a standby group is one). Relayed without the call, and
 # naming what the count is.
-_PY_CALL = re.compile(r",?\s+with\s+availability\((?:demand=\.\.\.)?\)(?:\s+or\s+cost\(\))?")
+# Matched from the literal "with", then widened by hand over the whitespace
+# (and one comma) before it, so the time taken grows only with the text's length.
+_PY_CALL = re.compile(r"with\s+availability\((?:demand=\.\.\.)?\)(?:\s+or\s+cost\(\))?")
 # What followed the call, still agreeing with it ("by simulation, with
 # availability() or cost(), which take any"): one simulation takes it.
 _WHICH_TAKE = re.compile(r"\bsimulation, which take\b")
-_CREW_JOBS = re.compile(r"(\d+) repair crew\(s\) for (\d+) components\b")
+# Matched from the literal text; the crew count before it is read by hand.
+_CREW_JOBS = re.compile(r" repair crew\(s\) for (\d+) components\b")
 
 
 def plain_reason(text):
@@ -2517,9 +2567,45 @@ def plain_reason(text):
     returned as is. Idempotent, so saved results can be cleaned again."""
     if not isinstance(text, str):
         return text
-    text = hide_engine_names(_WHICH_TAKE.sub("simulation, which takes", _PY_CALL.sub("", text)))
-    return _CREW_JOBS.sub(lambda m: f"{m.group(1)} repair crew{'s' if m.group(1) != '1' else ''} for "
-                                    f"{m.group(2)} repair jobs (each unit of a standby group is one)", text)
+    text = hide_engine_names(_WHICH_TAKE.sub("simulation, which takes", _drop_py_calls(text)))
+    return _crew_jobs(text)
+
+
+def _drop_py_calls(text: str) -> str:
+    """``text`` without RePyability's ", with availability() or cost()" (the
+    whitespace before "with" is required; a comma before that goes too)."""
+    out, pos = [], 0
+    for m in _PY_CALL.finditer(text):
+        start = m.start()
+        while start > pos and text[start - 1].isspace():
+            start -= 1
+        if start == m.start():
+            continue
+        if start > pos and text[start - 1] == ",":
+            start -= 1
+        out.append(text[pos:start])
+        pos = m.end()
+    out.append(text[pos:])
+    return "".join(out)
+
+
+def _crew_jobs(text: str) -> str:
+    """"N repair crew(s) for M components" as "N repair crews for M repair jobs
+    (each unit of a standby group is one)"."""
+    out, pos = [], 0
+    for m in _CREW_JOBS.finditer(text):
+        start = m.start()
+        while start > pos and text[start - 1].isdecimal():
+            start -= 1
+        if start == m.start():
+            continue
+        crews = text[start:m.start()]
+        out.append(text[pos:start])
+        out.append(f"{crews} repair crew{'s' if crews != '1' else ''} for "
+                   f"{m.group(1)} repair jobs (each unit of a standby group is one)")
+        pos = m.end()
+    out.append(text[pos:])
+    return "".join(out)
 
 
 def plain_reasons(payload: dict) -> dict:

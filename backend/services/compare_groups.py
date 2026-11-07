@@ -28,6 +28,7 @@ from backend import fitting
 from backend.services.strategy import fmt_num
 from backend.units import unit_in_text
 from surpyval import KaplanMeier, gray_test, logrank, rmst_diff
+from backend.errors import client_message
 
 ALPHA = 0.05
 MAX_GROUPS = 12
@@ -400,7 +401,7 @@ def _gray(x, c, n, lab, cause, order) -> dict:
         try:
             r = gray_test(x, e, lab, event=mode, c=c, n=n)
         except Exception as exc:  # noqa: BLE001 - one mode failing shouldn't sink the rest
-            results.append({"mode": mode, "failures": int(modes[mode]), "error": str(exc)})
+            results.append({"mode": mode, "failures": int(modes[mode]), "error": client_message(exc)})
             continue
         p = float(r.p_value)
         results.append({"mode": mode, "failures": int(modes[mode]), "statistic": float(r.statistic),

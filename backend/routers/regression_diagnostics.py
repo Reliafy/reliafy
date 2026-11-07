@@ -16,6 +16,7 @@ from backend.services import access as access_service
 from backend.services import models as models_service
 from backend.services import regression_diagnostics as checks_service
 from backend.services.access import AccessCtx, get_access
+from backend.errors import client_message
 
 router = APIRouter(prefix="/api")
 
@@ -52,7 +53,7 @@ def model_residuals(model_id: str, session=Depends(get_session), ctx: AccessCtx 
         return JSONResponse(status_code=422, content={
             "detail": "This model's dataset is gone, so there's nothing to compute residuals from."})
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @router.get("/residuals/{cache_id}")

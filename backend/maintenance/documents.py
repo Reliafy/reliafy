@@ -132,13 +132,18 @@ class FileDocumentStore:
     """PDF bytes as files in a folder (a local install)."""
 
     def __init__(self, folder: str):
-        self._folder = folder
-        os.makedirs(folder, exist_ok=True)
+        self._folder = os.path.realpath(folder)
+        os.makedirs(self._folder, exist_ok=True)
 
     def _path(self, document_id: str) -> str:
-        if not document_id.isalnum():
+        """The file for ``document_id``: ids are plain ASCII letters and digits,
+        and the resolved path must sit directly in the folder."""
+        if not (isinstance(document_id, str) and document_id.isascii() and document_id.isalnum()):
             raise KeyError(document_id)
-        return os.path.join(self._folder, f"{document_id}.pdf")
+        path = os.path.realpath(os.path.join(self._folder, f"{document_id}.pdf"))
+        if os.path.dirname(path) != self._folder or not path.startswith(self._folder + os.sep):
+            raise KeyError(document_id)
+        return path
 
     def put(self, document_id: str, data: bytes) -> None:
         tmp = self._path(document_id) + ".tmp"

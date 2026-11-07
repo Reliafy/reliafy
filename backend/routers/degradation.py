@@ -20,6 +20,7 @@ from backend.services import access as access_service
 from backend.services import shares as shares_service
 from backend.services.access import AccessCtx, get_access
 from backend.schema import DegradationModelDoc
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -165,7 +166,7 @@ def fit_preview(
             spec["unit"], spec["measurement_unit"],
         )
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except HTTPException:
         raise
     except Exception:  # pragma: no cover - defensive
@@ -204,7 +205,7 @@ def save_model(
         doc = degradation_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "degradation_models", doc.id, ctx)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except HTTPException:
         raise
     except Exception:  # pragma: no cover - defensive
@@ -334,7 +335,7 @@ def create_item(
     except degradation_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=_item_summary(item, ctx))
 
 
@@ -389,7 +390,7 @@ def item_prediction_at_confidence(
     except degradation_service.ItemNotFound:
         return JSONResponse(status_code=404, content={"detail": "Item not found."})
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=pred)
 
 
@@ -414,7 +415,7 @@ def add_measurement(
     except degradation_service.ItemNotFound:
         return JSONResponse(status_code=404, content={"detail": "Item not found."})
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=_item_summary(item, ctx))
 
 

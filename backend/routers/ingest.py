@@ -27,6 +27,7 @@ from backend.services import ingest as ingest_service
 from backend.services import metrics as metrics_service
 from backend.services import tokens as tokens_service
 from backend.services import usage as usage_service
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -104,7 +105,7 @@ def create_token(
     try:
         return JSONResponse(content=tokens_service.create_token(session, user["uid"], name, scopes))
     except tokens_service.TokenError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
 
 
 @router.get("/tokens")
@@ -133,7 +134,7 @@ async def _handle(request: Request, user: dict, op, *args) -> JSONResponse:
         # Off the event loop: ops are sync (DB, refits, alert emails over SMTP).
         result = await run_in_threadpool(op, request.headers.get("content-type", ""), body, *args)
     except ingest_service.IngestError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     return JSONResponse(content=result)
 
 
@@ -217,9 +218,9 @@ async def ingest_maintenance_readings(
                             time_zone=time_zones.of_owner(session, user["uid"]))
             return m.ingest(rows)
         except LimitReached as err:
-            raise HTTPException(status_code=err.status, detail=str(err)) from None
+            raise HTTPException(status_code=err.status, detail=client_message(err)) from None
         except Invalid as err:
-            raise HTTPException(status_code=422, detail=str(err)) from None
+            raise HTTPException(status_code=422, detail=client_message(err)) from None
 
     return await _handle(request, user, op)
 
@@ -271,9 +272,9 @@ async def ingest_maintenance_snapshots(
                 results.append({"index": i, **m.add_signal_snapshot(
                     item.get("time"), **{k: item[k] for k in known if k in item})})
             except LimitReached as err:
-                raise HTTPException(status_code=err.status, detail=str(err)) from None
+                raise HTTPException(status_code=err.status, detail=client_message(err)) from None
             except Invalid as err:
-                results.append({"index": i, "stored": False, "error": str(err)})
+                results.append({"index": i, "stored": False, "error": client_message(err)})
         return {"stored": sum(1 for r in results if r.get("stored")),
                 "duplicates": sum(1 for r in results if r.get("duplicate")),
                 "errors": sum(1 for r in results if r.get("error")), "results": results}
@@ -328,10 +329,10 @@ async def import_model(
             extras=payload.get("extras"),
         )
     except ingest_service.IngestError as exc:  # pragma: no cover - defensive
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     except (ValueError, TypeError, KeyError, models_service.ModelNotFound) as exc:
         # fitting.FitError (a ValueError) and friends carry a user-facing message.
-        return JSONResponse(status_code=422, content={"detail": str(exc) or "Invalid model."})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid model.")})
     except Exception:
         logger.exception("Model import failed")
         return JSONResponse(status_code=500,

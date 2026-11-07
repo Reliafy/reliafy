@@ -20,6 +20,7 @@ from backend.db import get_session
 from backend.services import billing as billing_service
 from backend.services import support_replies as support_service
 from backend.services import tokens as tokens_service
+from backend.errors import client_message
 
 router = APIRouter(prefix="/api/v1/support")
 
@@ -58,7 +59,7 @@ async def send_reply(
         # Off the event loop: the send waits on the SMTP server.
         reply = await run_in_threadpool(support_service.send_reply, session, user, body)
     except support_service.SupportError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     return JSONResponse(content=reply)
 
 

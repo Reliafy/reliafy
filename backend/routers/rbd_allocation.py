@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from backend.db import get_session
 from backend.services import rbd_allocation
 from backend.services.access import AccessCtx, get_access
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -37,7 +38,7 @@ def allocate_rbd(
         result = rbd_allocation.allocate_for_owner(
             session, graph, ctx.read_owners, target, method, t=t, options=options)
     except rbd_allocation.AllocationError as exc:
-        body = {"detail": str(exc)}
+        body = {"detail": client_message(exc)}
         if exc.reachable is not None:
             body["reachable"] = exc.reachable
         return JSONResponse(status_code=422, content=body)

@@ -12,6 +12,7 @@ from backend.db import get_session
 from backend.services import rbd_fault_tree
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -39,7 +40,7 @@ def fault_tree(
             )
         )
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to build the fault tree of an RBD graph")
         return JSONResponse(

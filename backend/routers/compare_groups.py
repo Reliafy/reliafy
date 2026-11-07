@@ -19,6 +19,7 @@ from backend.services import access as access_service
 from backend.services import compare_groups as compare_service
 from backend.services import datasets as datasets_service
 from backend.services.access import AccessCtx, get_access
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -52,7 +53,7 @@ def compare_groups_endpoint(
         result = compare_service.compare_groups(
             data, groups=groups, reference=reference or None, tau=tau, unit=unit, group_column=group_column)
     except ValueError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Group comparison failed")
         return JSONResponse(status_code=500, content={"detail": "Comparison failed. The error has been logged."})

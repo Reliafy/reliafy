@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, Response
 
 from backend.auth import get_current_user
 from backend.services import excel, import_guard
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/excel")
@@ -42,9 +43,9 @@ def guarded(uid: str, fn, *args, **kwargs):
 def guard_error(exc: Exception) -> JSONResponse | None:
     """The response for the import guard's refusals (None for anything else)."""
     if isinstance(exc, import_guard.ImportBusy):
-        return JSONResponse(status_code=429, content={"detail": str(exc)}, headers={"Retry-After": "15"})
+        return JSONResponse(status_code=429, content={"detail": client_message(exc)}, headers={"Retry-After": "15"})
     if isinstance(exc, import_guard.ImportBudgetExceeded):
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return None
 
 
@@ -54,7 +55,7 @@ def excel_error(exc: Exception, what: str, data: bytes, filename: str) -> JSONRe
     if refused is not None:
         return refused
     if isinstance(exc, excel.ExcelError):
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     logger.exception("Excel %s failed: bytes=%d", what, len(data))
     return JSONResponse(
         status_code=422,

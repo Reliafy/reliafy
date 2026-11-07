@@ -24,6 +24,7 @@ from backend.services import shares as shares_service
 from backend.services import access as access_service
 from backend.services.access import AccessCtx, get_access
 from backend.schema import Dataset, Model
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -204,7 +205,7 @@ def _table_from_upload(ctx: AccessCtx, file: UploadFile, no_header: bool | None,
                 table = excel_router.guarded(ctx.uid, excel_service.read_table, contents, sheet,
                                              0 if no_header else row, file.filename or "")
             except excel_service.ExcelError as exc:
-                return JSONResponse(status_code=422, content={"detail": str(exc)})
+                return JSONResponse(status_code=422, content={"detail": client_message(exc)})
             except Exception as exc:
                 return excel_router.excel_error(exc, "dataset", contents, file.filename or "")
             contents = excel_service.to_csv(table)
@@ -217,7 +218,7 @@ def _table_from_upload(ctx: AccessCtx, file: UploadFile, no_header: bool | None,
             if apply:
                 contents = datasets_service.apply_generic_header(contents)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return contents, guess, hint
 
 
@@ -228,7 +229,7 @@ def _table_from_paste(content: str, no_header: bool | None):
         apply = guess == 0 if no_header is None else bool(no_header)
         csv_bytes = datasets_service.normalize_pasted(content, no_header=apply)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return csv_bytes, guess, (HEADER_HINT if apply and no_header is None else None)
 
 
@@ -271,7 +272,7 @@ def upload_dataset(
             ctx.write_owner,
         )
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to store dataset")
         return JSONResponse(
@@ -306,7 +307,7 @@ def paste_dataset(
             session, (name or "").strip() or "Pasted data", csv_bytes, ctx.write_owner,
         )
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to store pasted dataset")
         return JSONResponse(status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."})
@@ -432,7 +433,7 @@ def _set_part(session, ctx: AccessCtx, dataset_id: str, part: str, read) -> JSON
         else:
             dataset = datasets_service.set_life_data(session, dataset, contents, ctx.write_owner)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     access_service.stamp_editor(session, "datasets", dataset.id, ctx)
     return JSONResponse(content={**_dataset_detail(dataset, session, ctx), "header_guess": guess,
                                  **({"hint": hint} if hint else {})})
@@ -486,7 +487,7 @@ def delete_measurements(
     try:
         dataset = datasets_service.remove_measurements(session, dataset, ctx.write_owner)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     access_service.stamp_editor(session, "datasets", dataset.id, ctx)
     return JSONResponse(content=_dataset_detail(dataset, session, ctx))
 
@@ -537,7 +538,7 @@ def split_dataset(
     try:
         dataset, plan = datasets_service.split_dataset(session, dataset, ctx.write_owner, plan)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     access_service.stamp_editor(session, "datasets", dataset.id, ctx)
     return JSONResponse(content={**_dataset_detail(dataset, session, ctx), "split": plan})
 
@@ -635,7 +636,7 @@ def save_model(
         )
         access_service.stamp_editor(session, "models", model.id, ctx)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except HTTPException:
         raise
     except Exception:  # pragma: no cover - defensive
@@ -670,7 +671,7 @@ def create_from_params(
         )
         access_service.stamp_editor(session, "models", model.id, ctx)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=_model_detail(model, ctx))
 
 
@@ -716,7 +717,7 @@ def create_per_demand(
                                                  source_dataset_id=dataset_id or None)
         access_service.stamp_editor(session, "models", model.id, ctx)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=_model_detail(model, ctx))
 
 
@@ -800,7 +801,7 @@ def update_model_fit(
         )
         access_service.stamp_editor(session, "models", model.id, ctx)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except models_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     return JSONResponse(content=_model_detail(model, ctx))
@@ -872,7 +873,7 @@ def evaluate_model(
     except models_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @router.post("/models/{model_id}/confidence")
@@ -899,7 +900,7 @@ def confidence_model(
     except models_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @router.post("/models/{model_id}/life")
@@ -922,7 +923,7 @@ def life_model(
     except models_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc) or "Invalid life request."})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid life request.")})
 
 
 @router.post("/models/{model_id}/compare")
@@ -946,4 +947,4 @@ def compare_model(
         return JSONResponse(status_code=422, content={
             "detail": "This model's dataset is gone, so there's nothing to compare on."})
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
