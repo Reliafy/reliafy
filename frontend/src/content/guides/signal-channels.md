@@ -113,6 +113,9 @@ that range from every snapshot, old and new, and draws it in **Level over time**
   machine's speed, so it stays on the 1× peak when the speed drifts.
 - The band is also a **measurement point** under *Summary → Measurements*. Give it
   alarm limits there and a snapshot past the limit opens an inspection.
+  The **Measurements** tab lists it beside every other measuring point on the
+  row and everything inside it, hand-read ones too, worst first, so you can see
+  a whole system's readings and record new ones in one place.
 - **Stop watching** ends a band. What it recorded stays.
 
 ### Change a band, and set levels

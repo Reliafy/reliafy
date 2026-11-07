@@ -15,6 +15,8 @@ import { createRecent } from "../recentCache.js";
 // The Parts and stock and Classes tabs' bodies (the pages they were, with their
 // charts): loaded when one of the tabs is first opened.
 const PartsPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m) => ({ default: m.PartsPanel })));
+// The Measurements tab's body (it uses the position page's reading dialogs).
+const MeasurementsPanel = lazy(() => import("./MeasurementsPanel.jsx"));
 const ClassesPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m) => ({ default: m.ClassesPanel })));
 
 // The panel beside the asset tree: what the selected row is, in a glance. A
@@ -28,7 +30,8 @@ const ClassesPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m)
 // RCM for a position, and Failure reports (FailureReportsPanel: what has
 // failed at the row and below it, and what was done about it; `reports` is
 // the page's: the report open, how to open one, file one, and the tree read
-// again); Parts and stock and Classes (the row's branch, or everything with
+// again); Measurements (MeasurementsPanel: every measuring point at the row
+// and inside it; ?only=attention and ?point= are its own); Parts and stock and Classes (the row's branch, or everything with
 // ?scope=all; ?class= opens a class, ?show=structure the parts as structures).
 // A product's design has no maintenance: its positions' Summary leaves out
 // what's fitted, located, due and measured, and the product's own row shows
@@ -249,6 +252,8 @@ const TreeDetail = forwardRef(function TreeDetail({
            aria-labelledby={tabs.length > 1 ? `td-tab-${shown}` : undefined}>
         {shown === "reports" && reports
           ? (reports?.rollup ? reports.rollup(row) : <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} />)
+          : shown === "measurements"
+          ? <Suspense fallback={loading}><MeasurementsPanel row={row} display={display} today={today} /></Suspense>
           : shown === "signals"
           ? <SignalsPanel row={row} />
           : shown === "parts"
