@@ -396,8 +396,8 @@ const toneOf = (text) => (/to decide|not analysed|no functional failure|no failu
 //              list "std" (a function's performance standards), "inside" (what's inside it), "task" (a mode's tasks)
 //   onSaid     (text) a few words in the page's status line once something saved
 //   onMove     (r, {task}) opens Move to… for the row (or a failure mode's task); none: no Move in the ⋯
-//   fmea       {on, opts, rcm}: the FME(C)A's fields on a failure mode (FmeaPanels.jsx), `on` when
-//              that tab is open (then first, and a function lists its failure modes, added directly
+//   fmea       {on, opts, rcm}: the FME(C)A's fields on a failure mode (FmeaPanels.jsx), shown only when
+//              that tab is `on` (then first, and a function lists its failure modes, added directly
 //              under it); `opts` the action priority table (fmea.js readFmeaOptions); `rcm` the read,
 //              for the "Under" choice's functions and functional failures
 export function Details({
@@ -668,9 +668,6 @@ export function Details({
             ) : <p className="rw-dline">No decision yet.</p>}
           </Section>
         )}
-        {/* The RCM tab: the FME(C)A's groups after the decision. */}
-        {r.type === "mode" && fmea && !fmea.on && fmeaGroups}
-
         {/* 3. The quieter things, last. */}
         {r.type === "fn" && ops?.basis && !fmea?.on && (
           <RcmBasis r={r} basis={ops.basis} readOnly={readOnly} context={ops.basisView?.context(r)}
