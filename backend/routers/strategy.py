@@ -21,6 +21,7 @@ from backend.services import billing as billing_service
 from backend.services import strategy_calendar
 from backend.services import strategy_calendar_api
 from backend.services.rbd_analysis import AnalysisError
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/strategy")
@@ -45,7 +46,7 @@ def optimal_replacement_endpoint(
             )
         )
     except StrategyError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Optimal replacement failed")
         return JSONResponse(
@@ -86,7 +87,7 @@ def calendar_replacement_endpoint(
             session, user, inputs, entitled=billing_service.premium_compute_allowed(session, user))
         return JSONResponse(status_code=code, content=payload)
     except (StrategyError, AnalysisError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Calendar replacement failed")
         return JSONResponse(
@@ -120,7 +121,7 @@ def calendar_next_endpoint(
             max_age=max_age,
         ))
     except StrategyError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Calendar next replacement failed")
         return JSONResponse(
@@ -139,7 +140,7 @@ def compare_two_endpoint(
     try:
         return JSONResponse(content=strategy_service.compare_two(a, b, unit=unit))
     except StrategyError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Two-model comparison failed")
         return JSONResponse(
@@ -165,7 +166,7 @@ def failure_finding_endpoint(
             )
         )
     except StrategyError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failure-finding calculation failed")
         return JSONResponse(
@@ -210,7 +211,7 @@ def demonstration_test_endpoint(
             )
         )
     except StrategyError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Demonstration test planning failed")
         return JSONResponse(
@@ -252,7 +253,7 @@ def save_analysis(
         doc = strategy_store.save_analysis(session, name, kind, inputs, ctx.write_owner)
         access_service.stamp_editor(session, "strategy_analyses", doc.id, ctx)
     except StrategyError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content={**_analysis_summary(doc, ctx), "inputs": doc.inputs, "results": doc.results})
 
 

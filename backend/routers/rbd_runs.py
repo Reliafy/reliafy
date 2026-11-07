@@ -28,6 +28,7 @@ from backend.services import runtime_quote
 from backend.services import usage as usage_service
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -67,7 +68,7 @@ def quote_simulation(
     try:
         return JSONResponse(content=quote_for(session, graph, t_max, quick, current_state))
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @router.get("/rbd-runs")
@@ -171,7 +172,7 @@ def rerun(run_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(ge
             session, ctx, graph, options.get("t_simulation"), rbd, True, owners, simulate=True,
             current_state=options.get("state"), quick=not entitled, surface="app")
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     if status not in (200, 202):
         return JSONResponse(status_code=status, content=payload)
     if status == 202:

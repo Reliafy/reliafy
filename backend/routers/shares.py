@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from backend.auth import get_current_user
 from backend.db import get_session
 from backend.services import shares as shares_service
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/shares")
@@ -26,7 +27,7 @@ def create_share(
     try:
         share = shares_service.create_share(session, collection, artifact_id, email, user)
     except shares_service.ShareError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     return JSONResponse(content=shares_service.public(share))
 
 

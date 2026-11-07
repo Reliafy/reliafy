@@ -142,7 +142,7 @@ def test_compute_app_skips_a_job_cancelled_before_it_started(monkeypatch):
     from backend import compute_app, config
     from backend.services import compute_core
 
-    monkeypatch.setattr(config, "COMPUTE_CALLBACK_URL", None)
+    monkeypatch.setattr(config, "COMPUTE_CALLBACK_URL", CALLBACK_URL)
     sent = []
 
     def post(url, payload, timeout):

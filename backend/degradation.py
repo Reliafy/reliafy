@@ -26,6 +26,7 @@ from backend.services.method_labels import hides_solver_names, note_fit
 from backend.units import canonical_unit
 from surpyval.degradation import PATH_MODELS as _SURPYVAL_PATHS
 from surpyval.degradation import DegradationAnalysis
+from backend.errors import client_message
 
 # Path-model registry for the API/UI (display names from surpyval instances).
 PATH_MODELS = {name: {"id": name, "name": pm.name} for name, pm in _SURPYVAL_PATHS.items()}
@@ -322,7 +323,7 @@ def predict_item(model, t, y, alpha_ci: float = 0.05) -> dict:
         return _json_safe({
             **base,
             "method": "error",
-            "detail": str(exc),
+            "detail": client_message(exc),
         })
 
 

@@ -18,6 +18,7 @@ from backend.services import shares as shares_service
 from backend.services import workspace_changes
 from backend.services import access as access_service
 from backend.services.access import AccessCtx, get_access
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/fleet")
@@ -69,7 +70,7 @@ def create_fleet(
         kind = model_kind or ("alt" if model_source == "alt" else None)
         fleet = fleet_service.create_fleet(session, name, model_id, ctx.write_owner, kind)
     except fleet_service.FleetValidationError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     access_service.stamp_editor(session, "fleets", fleet.id, ctx)
     return JSONResponse(content=_summary(fleet, ctx))
 
@@ -169,7 +170,7 @@ def put_items(
     except fleet_service.FleetNotFound:
         return JSONResponse(status_code=404, content={"detail": "Fleet not found."})
     except fleet_service.FleetValidationError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except access_service.EditConflict:
         return JSONResponse(status_code=409, content={"detail": access_service.CONFLICT_MSG, "code": "conflict"})
     access_service.stamp_editor(session, "fleets", fleet_id, ctx)
@@ -248,7 +249,7 @@ def create_fleet_alert(
             enabled=enabled,
         )
     except (alerts_service.AlertValidationError, alerts_service.AlertLimitError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=alerts_service.public(doc, ctx.uid, fleet))
 
 
@@ -269,7 +270,7 @@ def update_fleet_alert(
     except alerts_service.AlertNotFound:
         return JSONResponse(status_code=404, content={"detail": "Alert not found."})
     except alerts_service.AlertValidationError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=alerts_service.public(doc, ctx.uid, fleet))
 
 
@@ -322,7 +323,7 @@ def create_tracked_fleet(
     except degradation_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Degradation model not found."})
     except ValueError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:
         logger.exception("Failed to create a tracked fleet")
         return JSONResponse(status_code=500,

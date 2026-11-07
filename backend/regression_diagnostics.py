@@ -38,6 +38,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+from backend.errors import client_reason
 
 logger = logging.getLogger(__name__)
 
@@ -560,7 +561,7 @@ def _diagnose(model, df, mapping, fit_kwargs, distribution, effect, cox_opts):
     try:
         out["ph_test"] = ph_test(cox, source)
     except Exception as exc:  # noqa: BLE001 - the other checks still stand
-        out["ph_test"] = unavailable(f"The test couldn't be run: {str(exc).strip() or type(exc).__name__}.")
+        out["ph_test"] = unavailable(f"The test couldn't be run: {client_reason(exc)}.")
     if not out["ph_test"].get("available"):
         cox_kept = None  # no test, so no residuals behind it
     else:
@@ -578,7 +579,7 @@ def _diagnose(model, df, mapping, fit_kwargs, distribution, effect, cox_opts):
             out["robust"] = robust(cox, cluster, col)
         except Exception as exc:  # noqa: BLE001
             out["robust"] = unavailable(f"Robust standard errors couldn't be computed: "
-                                        f"{str(exc).strip() or type(exc).__name__}.")
+                                        f"{client_reason(exc)}.")
     return out, cox_kept
 
 

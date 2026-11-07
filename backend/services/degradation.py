@@ -25,6 +25,7 @@ from backend.db import from_doc, to_doc
 from backend.fitting import FitError
 from backend.schema import DegradationModelDoc, TrackedItem
 from backend.services import datasets as datasets_service
+from backend.errors import client_message
 
 _LIVE: "OrderedDict[str, str]" = OrderedDict()
 _LIVE_MAX = 64
@@ -288,7 +289,7 @@ def _predict(db, model_id: str, owner_id: str, measurements: list[dict],
             "predicted_at": _now().isoformat(),
             "n_measurements": len(measurements),
             "method": "error",
-            "detail": str(exc),
+            "detail": client_message(exc),
         }
     t = [m["t"] for m in measurements]
     y = [m["y"] for m in measurements]

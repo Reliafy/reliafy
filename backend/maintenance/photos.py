@@ -219,13 +219,20 @@ class FilePhotoStore:
     """Photo bytes as files in a folder (a local install)."""
 
     def __init__(self, folder: str):
-        self._folder = folder
-        os.makedirs(folder, exist_ok=True)
+        self._folder = os.path.realpath(folder)
+        os.makedirs(self._folder, exist_ok=True)
 
     def _path(self, photo_id: str, size: str) -> str:
-        if not photo_id.isalnum():
+        """The file for one size of a photo: ids are plain ASCII letters and
+        digits, sizes are ours, and the resolved path must sit directly in the
+        folder."""
+        if not (isinstance(photo_id, str) and photo_id.isascii() and photo_id.isalnum()) \
+                or size not in ("full", "thumb"):
             raise KeyError(photo_id)
-        return os.path.join(self._folder, f"{photo_id}-{size}.jpg")
+        path = os.path.realpath(os.path.join(self._folder, f"{photo_id}-{size}.jpg"))
+        if os.path.dirname(path) != self._folder or not path.startswith(self._folder + os.sep):
+            raise KeyError(photo_id)
+        return path
 
     def put(self, photo_id: str, size: str, data: bytes) -> None:
         tmp = self._path(photo_id, size) + ".tmp"

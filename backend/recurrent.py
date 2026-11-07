@@ -31,6 +31,7 @@ from backend.fitting import FitError, _json_safe
 from backend.services.method_labels import hides_solver_names, note_fit
 from backend.units import canonical_unit
 from surpyval.recurrent import CoxLewis, CrowAMSAA, Duane, HPP, NonParametricCounting
+from backend.errors import client_message
 
 # Parametric recurrence models offered: the power-law (Crow-AMSAA, Duane) and
 # constant (HPP) intensities, and the Cox-Lewis log-linear intensity
@@ -306,7 +307,7 @@ def _add_marks(payload: dict, df: pd.DataFrame, mapping: dict, inputs: dict | No
         payload["by_cause"] = _json_safe(extra.by_cause(ins, extra.cause_labels(df, mapping, keep),
                                                         payload.get("unit", "")))
     except FitError as exc:
-        payload["by_cause"] = {"causes": [], "reason": str(exc)}
+        payload["by_cause"] = {"causes": [], "reason": client_message(exc)}
 
 
 def _power_law(model_id: str, params) -> tuple:

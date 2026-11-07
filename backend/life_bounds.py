@@ -21,6 +21,7 @@ import warnings
 from typing import Optional
 
 import numpy as np
+from backend.errors import client_reason
 
 # The B-lives the life card shows: the fraction failed, and its label.
 B_LIVES = ((0.01, "B1"), (0.05, "B5"), (0.10, "B10"), (0.50, "B50"))
@@ -148,7 +149,7 @@ def time_at_reliability(model, reliability, confidence: float = DEFAULT_CONFIDEN
         try:
             lo, hi = _quantile_bounds(model, probs, 1.0 - confidence, bound)
         except Exception as exc:  # noqa: BLE001 - the values stand without their bounds
-            note = f"No confidence bounds: {str(exc).strip() or type(exc).__name__}."
+            note = f"No confidence bounds: {client_reason(exc)}."
             lo = hi = None
     points = []
     for i, r in enumerate(rs):

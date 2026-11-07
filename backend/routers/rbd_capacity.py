@@ -14,6 +14,7 @@ from backend.db import get_session
 from backend.services import rbd_capacity
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -33,7 +34,7 @@ def rbd_production(
     try:
         result = rbd_capacity.production_for_owner(session, graph, ctx.read_owners, t=t)
     except (rbd_capacity.CapacityError, AnalysisError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Production availability failed")
         return JSONResponse(status_code=500, content={"detail": "Couldn't work out this diagram's production."})

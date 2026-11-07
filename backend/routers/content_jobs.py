@@ -13,6 +13,7 @@ from backend import config
 from backend.db import get_session
 from backend.services import content_jobs
 from backend.services import oidc
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -38,5 +39,5 @@ async def content_run(dry_run: bool = False, authorization: str | None = Header(
         result = await run_in_threadpool(content_jobs.run, session, dry_run=dry_run)
     except content_jobs.EmailNotConfigured as exc:
         logger.error("Content job refused: %s", exc)
-        return JSONResponse(status_code=503, content={"ok": False, "detail": f"{exc} Nothing sent."})
+        return JSONResponse(status_code=503, content={"ok": False, "detail": f"{client_message(exc)} Nothing sent."})
     return JSONResponse(content=result)

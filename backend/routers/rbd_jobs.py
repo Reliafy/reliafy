@@ -12,6 +12,7 @@ from backend.services import billing as billing_service
 from backend.services import compute_queue
 from backend.services import rbd_jobs as rbd_jobs_service
 from backend.services.access import AccessCtx, get_access
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -80,7 +81,7 @@ def compute_callback(
     try:
         applied = rbd_jobs_service.apply_callback(session, payload)
     except ValueError as exc:
-        return JSONResponse(status_code=400, content={"detail": str(exc)})
+        return JSONResponse(status_code=400, content={"detail": client_message(exc)})
     if payload.get("status") == "running" and rbd_jobs_service.is_cancelled(session, str(payload.get("job_id") or "")):
         # Cancelled while queued: tells the compute service to skip it.
         return JSONResponse(status_code=409, content={"ok": True, "applied": False, "cancelled": True})

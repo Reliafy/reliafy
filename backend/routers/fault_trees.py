@@ -20,6 +20,7 @@ from backend.services import rbds as rbds_service
 from backend.services import samples as samples_service
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -94,7 +95,7 @@ def save_fault_tree(
     try:
         clean = ft_service.normalize_tree(tree, resolvers(session, ctx.read_owners))
     except ft_service.FaultTreeError as exc:
-        return _err(422, f"Can't save: {exc}")
+        return _err(422, f"Can't save: {client_message(exc)}")
     existing = ft_service.get_tree(session, id, ctx.read_owners) if id else None
     creating = existing is None or existing.owner_id != ctx.write_owner
     if (creating and ctx.is_personal and not billing_service.is_admin_user(ctx.user)
@@ -104,7 +105,7 @@ def save_fault_tree(
     try:
         access_service.check_references(session, ctx, tree_refs(clean), keep=kept)
     except access_service.UnreadableReference as exc:
-        return _err(exc.status, str(exc), code="unreadable_reference")
+        return _err(exc.status, client_message(exc), code="unreadable_reference")
     try:
         doc = ft_service.save_tree(session, name, clean, ctx.write_owner,
                                    tree_id=None if creating else id, expected_updated_at=expected_updated_at)
@@ -129,7 +130,7 @@ def analyse_fault_tree(
         clean = ft_service.normalize_tree(tree, resolvers(session, ctx.read_owners))
         return JSONResponse(content=ft_service.analyse_for_owner(session, clean, ctx.read_owners, t=t, t_max=t_max))
     except (ft_service.FaultTreeError, AnalysisError) as exc:
-        return _err(422, str(exc))
+        return _err(422, client_message(exc))
     except Exception:  # pragma: no cover - defensive
         logger.exception("Fault tree analysis failed")
         return _err(500, "The fault tree couldn't be analysed. The error has been logged.")
@@ -156,7 +157,7 @@ def export_openpsa(
         xml, _ = ft_service.to_openpsa(
             name, clean, lambda mid: models_service.get_live_model(session, mid, ctx.read_owners), t=t)
     except (ft_service.FaultTreeError, AnalysisError) as exc:
-        return _err(422, str(exc))
+        return _err(422, client_message(exc))
     safe = "".join(c if c.isalnum() or c in "-_ " else "_" for c in (name or "fault-tree"))[:60].strip() or "fault-tree"
     return Response(content=xml, media_type="application/xml",
                     headers={"Content-Disposition": f'attachment; filename="{safe}.xml"', "Cache-Control": "no-store"})
@@ -193,7 +194,7 @@ def import_fault_tree_file(
         return excel_router.guard_error(exc)
     except rbd_import.RbdImportError as exc:
         logger.info("Fault tree import refused: ext=%s bytes=%d — %s", ext, len(data), exc)
-        return _err(422, str(exc))
+        return _err(422, client_message(exc))
     except Exception:  # untrusted input: never 500 on a malformed file
         logger.exception("Fault tree import failed: ext=%s bytes=%d", ext, len(data))
         return _err(422, "Couldn't read this file — it may be damaged or from an unsupported version.")
@@ -209,7 +210,7 @@ def import_fault_tree_file(
             raw, more = ft_service.from_imported(gate_tree, fixed, unit)
             tree = ft_service.normalize_tree(raw)
         except ft_service.FaultTreeError as exc:
-            out.append({**row, "error": str(exc)})
+            out.append({**row, "error": client_message(exc)})
             continue
         if not unit:
             more.insert(0, "The file doesn't state a time unit: set the tree's unit to the one its rates are per "
@@ -282,7 +283,7 @@ def open_as_rbd(tree_id: str, session=Depends(get_session), ctx: AccessCtx = Dep
     try:
         graph, notes = ft_service.to_rbd_graph(doc.tree, resolvers(session, ctx.read_owners))
     except ft_service.FaultTreeError as exc:
-        return _err(422, str(exc))
+        return _err(422, client_message(exc))
     rbd = rbds_service.save_rbd(session, f"{doc.name} (from fault tree)"[:200], graph, ctx.write_owner)
     access_service.stamp_editor(session, "rbds", rbd.id, ctx)
     if access_service.can_write(ctx, doc.owner_id):

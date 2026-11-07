@@ -23,6 +23,7 @@ from backend.schema import Model
 from backend.services import access as access_service
 from backend.services import models as models_service
 from backend.services.access import AccessCtx, get_access
+from backend.errors import client_message
 
 router = APIRouter(prefix="/api")
 
@@ -47,7 +48,7 @@ def schedule_fit(fit_id: str, body: dict = Body(default={}), user: dict = Depend
     except fitting.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found — re-fit to use the calculator."})
     except (fitting.FitError, ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc) or "Invalid schedule."})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid schedule.")})
 
 
 @router.post("/models/{model_id}/tvc")
@@ -71,4 +72,4 @@ def schedule_model(
     except models_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (fitting.FitError, ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc) or "Invalid schedule."})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid schedule.")})

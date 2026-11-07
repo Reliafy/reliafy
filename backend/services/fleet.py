@@ -43,6 +43,7 @@ from backend.services import recurrent as recurrent_service
 from backend.services import spares
 from backend.services.strategy import _model_from_params, StrategyError
 from backend.units import unit_in_text
+from backend.errors import client_message
 
 
 class FleetNotFound(KeyError):
@@ -403,7 +404,7 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
             results.get("distribution_id"), results.get("params"), results.get("extras")
         )
     except StrategyError as exc:
-        return {"status": "stale", "reason": str(exc)}
+        return {"status": "stale", "reason": client_message(exc)}
 
     settings = fleet.settings or {}
     periods = int(settings.get("periods", 12))
@@ -445,7 +446,7 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
                 dist, ages, rates, periods, items, item_periods=item_periods, unit=base["unit"],
                 limits=_period_limits(settings, items, ages, rates, periods))}
         except StrategyError as exc:
-            return {"status": "stale", "reason": str(exc)}
+            return {"status": "stale", "reason": client_message(exc)}
     else:
         out = {**base, **_forecast_renewals(dist, ages, uses, rates, periods, items)}
     for row, (rate, basis) in zip(out["per_item"], chosen):
@@ -584,7 +585,7 @@ def _compute_covariate(db, fleet: Fleet, owners, model, item_periods: bool, spar
     try:
         rows = _covariate_rows(fields, settings, items)
     except StrategyError as exc:
-        return {**base, "status": "stale", "reason": str(exc)}
+        return {**base, "status": "stale", "reason": client_message(exc)}
     if not items:
         return {**base, "expected": 0.0, "interval": [0.0, 0.0], "interval_level": INTERVAL_LEVEL,
                 "per_item": [], "per_period": [0.0] * periods,

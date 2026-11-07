@@ -20,6 +20,7 @@ from backend.services import access as access_service
 from backend.services import shares as shares_service
 from backend.services.access import AccessCtx, get_access
 from backend.schema import AltModelDoc
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -138,7 +139,7 @@ def fit_preview(
             stress_units=spec.get("stress_units"),
         )
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except HTTPException:
         raise
     except Exception:  # pragma: no cover - defensive
@@ -192,7 +193,7 @@ def save_model(
         doc = alt_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "alt_models", doc.id, ctx)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except HTTPException:
         raise
     except Exception:  # pragma: no cover - defensive
@@ -283,7 +284,7 @@ def evaluate(
     except alt_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @router.post("/alt/models/{model_id}/bounds")
@@ -315,7 +316,7 @@ def bounds(
     except alt_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @router.post("/alt/models/{model_id}/diagnostics")
@@ -339,4 +340,4 @@ def diagnostics(
     except alt_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
