@@ -1,31 +1,121 @@
-/* The Explorer's Measurements tab (MeasurementsPanel.jsx). The state is in
-   words as well as colour. */
-.ms-table td { vertical-align: top; }
-.ms-table tr.ms-picked td { background: var(--warn-bg); }
-.ms-trend { display: block; }
-.ms-state { font-weight: 600; white-space: nowrap; }
-.ms-past { color: var(--danger); }
-.ms-near { color: var(--warn); }
-.ms-ok { color: var(--ok); }
-.ms-nolimit, .ms-none { color: var(--muted); font-weight: 400; }
-.ms-due { color: var(--warn); font-size: 0.85em; }
-.ms-actions { white-space: nowrap; }
+/* The Explorer's Measurements tab (MeasurementsPanel.jsx): a scannable grid,
+   one line per point (two with the muted line under). Fixed column widths so
+   values, chips and trends line up down the list; long names and notes are
+   cut with an ellipsis, in full in their tooltips and the readings history.
+   The state is a chip in words as well as colour. */
+.ms-head, .ms-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.ms-head { margin: 0 0 10px; }
+.ms-purpose { flex: 1 1 260px; margin: 0; }
+.ms-bar { margin: 0 0 8px; }
+button.ms-filter { line-height: 26px; padding: 0 10px; font-size: var(--fs-13); }
+.ms-count { min-width: 0; }
 
-/* On a phone each point is a block: label beside each value, nothing wider
-   than the screen. */
-@media (max-width: 600px) {
-  .ms-table, .ms-table tbody, .ms-table tr, .ms-table td { display: block; width: 100%; }
-  .ms-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  .ms-table tr { border-bottom: 1px solid var(--line, #ddd); padding: 0.5rem 0; }
-  .ms-table td { border: 0; padding: 0.2rem 0; white-space: normal; }
-  .ms-table td[data-label]::before {
-    content: attr(data-label);
-    display: block;
-    font-size: 0.75em;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+/* The list is its own container: the grid turns into blocks where the panel
+   is narrow, whatever the window's width (the panel sits beside the tree). */
+.ms-list { container: mslist / inline-size; }
+
+.ms-table { table-layout: fixed; }
+.ms-table .ms-c-latest { width: 150px; }
+.ms-table .ms-c-state { width: 136px; }
+.ms-table .ms-c-trend { width: 140px; }
+.ms-table .ms-c-menu { width: 44px; }
+.ms-table thead th { padding: 0 10px 8px; white-space: nowrap; }
+.ms-table th.ms-num { text-align: right; }
+.ms-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line2);
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ms-row.ms-clickable { cursor: pointer; }
+.ms-row:hover td { background: var(--acc-hover); }
+.ms-row.ms-picked td { background: var(--acc-t); }
+
+/* Point: the name on one line, the muted line under it. */
+.ms-name, .ms-sub {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ms-name { font-weight: 600; color: var(--ink); }
+button.ms-name {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+button.ms-name:hover:not(:disabled) { background: none; color: var(--acc); text-decoration: underline; text-underline-offset: 2px; }
+.ms-sub { font-size: var(--fs-12); line-height: 1.35; }
+
+/* Latest: the value right-aligned so numbers line up; the note mark before it. */
+.ms-latest { text-align: right; font-variant-numeric: tabular-nums; }
+.ms-value-line { display: flex; justify-content: flex-end; align-items: center; gap: 5px; min-width: 0; }
+.ms-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-note { flex: none; display: inline-grid; place-items: center; color: var(--muted); cursor: help; }
+
+.ms-chip { cursor: default; }
+.ms-wo { margin-left: 6px; font-size: var(--fs-12); }
+
+.ms-trend { display: block; }
+.ms-no-trend { display: inline-block; width: 120px; }
+
+.ms-menu-cell { text-align: right; overflow: visible !important; padding-left: 0 !important; padding-right: 4px !important; }
+button.ms-more {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+}
+button.ms-more:hover:not(:disabled), button.ms-more.open { background: var(--acc-t); color: var(--acc); }
+
+/* Narrow (a phone, or a narrow panel): each point is a block, nothing wider
+   than the screen. Name and ⋯ on top; then the chip, the latest value and its
+   date; then the trend. */
+@container mslist (max-width: 620px) {
+  .ms-table, .ms-table tbody { display: block; width: 100%; }
+  .ms-table colgroup, .ms-table thead { display: none; }
+  .ms-table tr.ms-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "point menu"
+      "state state"
+      "latest latest"
+      "trend trend";
+    align-items: center;
+    row-gap: 4px;
+    padding: 10px 2px;
+    border-bottom: 1px solid var(--line2);
   }
-  .ms-state { white-space: normal; }
-  .ms-actions .maint-row { flex-wrap: wrap; }
+  .ms-table td { display: block; padding: 0; border: 0; min-width: 0; }
+  .ms-row:hover td, .ms-row.ms-picked td { background: none; }
+  .ms-row.ms-picked { background: var(--acc-t); }
+  .ms-point { grid-area: point; }
+  .ms-menu-cell { grid-area: menu; padding: 0 !important; }
+  .ms-state-cell { grid-area: state; }
+  .ms-latest { grid-area: latest; text-align: left; display: flex !important; align-items: baseline; gap: 8px; }
+  .ms-latest .ms-value-line { justify-content: flex-start; flex: none; }
+  .ms-latest .ms-sub { flex: 1 1 auto; min-width: 0; }
+  .ms-trend-cell { grid-area: trend; }
+  button.ms-more { width: 44px; height: 44px; }
 }

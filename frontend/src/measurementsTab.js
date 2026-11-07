@@ -100,12 +100,83 @@ export function needsAttention(point, today) {
   return s === STATES.past || s === STATES.near || readingDue(point, today);
 }
 
-// Who or what recorded the latest reading.
+// Who or what recorded the latest reading. The reading's note isn't part of
+// it: a note can run to a paragraph, so the row shows only a mark (latestNote)
+// and the full note is in the readings history.
 export function recordedBy(point) {
   if (point.derived) return "from a signal channel";
   if (point.source === "automated") return point.tag ? `feed: ${point.tag}` : "a feed";
-  const latest = liveReadings(point.readings)[0];
-  return latest?.note ? `by hand: ${latest.note}` : "by hand";
+  return "by hand";
+}
+
+// The latest reading's note ("" when it has none).
+export function latestNote(point) {
+  if (!point || point.source !== "manual" || point.derived) return "";
+  return (liveReadings(point.readings)[0]?.note || "").trim();
+}
+
+// The row's one state chip: the worst of past alarm, near a limit, due a
+// reading, OK, no limits, never read. `tone` is a Chip tone; `title` (its
+// tooltip) has the detail the row leaves out: which limit, the limits
+// themselves, how long since the last reading.
+export function pointChip(point, today) {
+  const s = pointState(point, today);
+  const due = readingDue(point, today);
+  const limits = point.kind === "counter" && !hasLimits(point) ? "" : limitsText(point);
+  const since = point.read_at ? Math.floor(daysBetween(point.read_at.slice(0, 10), today)) : null;
+  const sinceText = since != null && since >= 0 ? `Last read ${since === 0 ? "today" : since === 1 ? "yesterday" : `${since} days ago`}` : "";
+  const wo = point.alarm_work_order ? `Work order #${point.alarm_work_order.number} open` : "";
+  const title = (...parts) => parts.filter(Boolean).join(". ");
+  if (s === STATES.past) return { key: "past", label: "Past alarm", tone: "danger", title: title(stateText(point, today), limits, due && "A reading is due", wo) };
+  if (s === STATES.near) return { key: "near", label: "Near limit", tone: "warning", title: title(stateText(point, today), limits, due && "A reading is due", wo) };
+  if (s === STATES.none) {
+    return due
+      ? { key: "never", label: "Never read", tone: "warning", title: title("Never read: record its first reading", limits) }
+      : { key: "never", label: "Never read", tone: "neutral", title: title(point.derived ? "Nothing from its signal channel yet" : `Waiting for its feed${point.tag ? ` (${point.tag})` : ""}`, limits) };
+  }
+  if (due) return { key: "due", label: "Due", tone: "warning", title: title("A reading is due: longer than usual since the last", sinceText, limits, wo) };
+  if (s === STATES.ok) return { key: "ok", label: "OK", tone: "success", title: title("Inside its limits", limits, wo) };
+  return { key: "nolimit", label: "No limits", tone: "neutral",
+    title: point.kind === "counter" ? "Counts use: no alarm limits" : "No alarm limits set: edit its limits to be warned" };
+}
+
+// The muted line under a point's name: where it is (only when the tab shows
+// a branch, so the place varies), what it measures, its unit.
+export function pointSubline(point, { branch = false, fittedAt = new Map() } = {}) {
+  return [branch && placeOf(point, fittedAt), point.kind === "counter" ? "counter" : "condition", point.unit]
+    .filter(Boolean).join(" · ");
+}
+
+// The page a point lives on: its position's, or its item's.
+export function pointHref(point) {
+  if (point.position?.id) return `/asset-register/positions/${point.position.id}`;
+  if (point.item?.id) return `/asset-register/items/${point.item.id}`;
+  return null;
+}
+
+// What clicking a point's row does: its readings history (a hand-read point
+// with readings), its first reading (one never read), else its page (a feed's
+// readings are kept by the feed).
+export function rowAction(point) {
+  const manual = point.source === "manual" && !point.derived;
+  if (manual) return point.readings?.length ? "history" : "record";
+  return pointHref(point) ? "open" : null;
+}
+
+// The row's ⋯ menu (RowMenu items). Recording stays in the menu for a feed's
+// point, greyed with the reason, so it can be found and the reason read.
+export function pointMenu(point) {
+  const manual = point.source === "manual" && !point.derived;
+  const items = [
+    manual ? { id: "record", label: "Record a reading…" }
+      : { id: "record", label: "Record a reading…", disabled: true,
+        reason: point.derived ? "Worked out from a signal channel" : `Read by a feed${point.tag ? ` (${point.tag})` : ""}` },
+  ];
+  if (manual && point.readings?.length) items.push({ id: "history", label: "Readings…" });
+  if (point.kind !== "counter") items.push({ id: "limits", label: "Edit limits…" });
+  if (pointHref(point)) items.push({ id: "open", label: "Open the point" });
+  if (point.alarm_work_order) items.push({ id: "work-order", label: `Open work order #${point.alarm_work_order.number}` });
+  return items;
 }
 
 // Where the point is: the position it's on, or for an item's point the

@@ -2967,6 +2967,10 @@ export async function listMeasurementPoints({ positionIds = [], itemIds = [] } =
   const got = await Promise.all(asks);
   return { points: got.flatMap((g) => g.points || []), more: got.some((g) => g.more) };
 }
+// A point's name, alarm limits (null clears one) or feed tag. Returns the point.
+export function updateMeasurementPoint(pointId, body) {
+  return patchJson(`/api/maintenance/points/${pointId}`, body);
+}
 // ``at`` (optional) is when it was read, e.g. "2026-10-19T10:14" (#264).
 export function recordMeasurementReading(pointId, value, on, at) {
   return postJson(`/api/maintenance/points/${pointId}/readings`, at ? { value, at } : { value, on });
