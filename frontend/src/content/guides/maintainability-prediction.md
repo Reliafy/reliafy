@@ -43,8 +43,10 @@ row with quantity 4.
 
 ## Enter each line's repair time
 
-Repair time is entered the way handbooks split it, so the elements can be
-compared and the slow ones found:
+Each line takes one **MTTR** (its mean time to repair), in the unit chosen at
+the top (**Repair times in**: minutes or hours). If you know how a repair
+breaks down, tick **Split repair times into elements** and enter the elements
+the way handbooks split them, so they can be compared and the slow ones found:
 
 | Element | What it covers |
 |---|---|
@@ -54,10 +56,8 @@ compared and the slow ones found:
 | **Restore** | Putting everything back together. |
 | **Check out** | Proving it works: tests, alignment, calibration. |
 
-The line's **MTTR** (mean time to repair) is the sum. If you only know the
-total, leave the elements blank and type the MTTR instead. Pick **minutes** or
-**hours** at the top; every time in the table and in the results is in that
-unit.
+The line's MTTR is then the sum of its elements. Every time in the table and in
+the results is in the unit chosen at the top.
 
 **Most done by** is optional: the time 95% of that line's repairs are done by,
 say twice its MTTR when repairs vary a lot, 1.3× when they're routine. It is
@@ -69,8 +69,8 @@ Each line counts by how often it's the one being repaired: its **failure rate ×
 quantity**. A part that fails ten times as often weighs ten times as much in the
 average, however long or short its repair.
 
-- Type a failure rate per line, in the unit chosen at the top (**per million
-  hours** by default, or **per hour**).
+- Type a failure rate per line, in the unit chosen at the top (**Failure rates
+  in**: per million hours by default, or per hour).
 - With a product chosen, a saved **reliability prediction** for that product
   supplies the rates where a line's part number or name matches, and the
   result says so.
@@ -114,7 +114,7 @@ where λ is the line's failure rate, q its quantity and MTTR the sum of its
 elements. With no failure rates, λ is 1 for every line.
 
 M_max is the time by which 95% of repairs are done (change the percentage in
-**M_max covers**). Each line's repair time is taken as **lognormal**, the usual
+**Most repairs done by**). Each line's repair time is taken as **lognormal**, the usual
 shape for repair times: most are near the typical value, a few take much
 longer. Its mean is the line's MTTR and its spread comes from **Most done by**,
 the 95% point you gave. The system's repair time is the mix of the lines'

@@ -80,7 +80,7 @@ export default function FaultTreeHome() {
       <SectionHeader
         section="systems"
         title={FAULT_TREES_TITLE}
-        purpose="Work down from what must not happen to its causes: the top event's probability, cut sets and what matters most."
+        purpose="Start from what must not happen and work down to its causes: how likely it is, which failures combine to cause it, and which matter most."
         help={HELP}
         actions={
           <button className="secondary" disabled={importing} onClick={() => fileRef.current?.click()}

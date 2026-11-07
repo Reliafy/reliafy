@@ -44,7 +44,7 @@ export default function ReliabilityPredictions() {
 
   return (
     <div className="app">
-      <SectionHeader title={PREDICTIONS_LABEL} purpose={PREDICTIONS_PURPOSE} help={HELP} primary={newPrediction} />
+      <SectionHeader section="prediction" title={PREDICTIONS_LABEL} purpose={PREDICTIONS_PURPOSE} help={HELP} primary={newPrediction} />
 
       {error && <div className="card error">{error}</div>}
 
@@ -65,8 +65,8 @@ export default function ReliabilityPredictions() {
           <th key="n" style={{ width: "34%" }}>Prediction</th>,
           <th key="e" className="lib-opt">Environment</th>,
           <th key="p" className="num lib-opt">Lines</th>,
-          <th key="r" className="num">Failures / 10⁶ h</th>,
-          <th key="m" className="num">MTBF (h)</th>,
+          <th key="r" className="num">Failure rate<span className="th-unit">per million hours</span></th>,
+          <th key="m" className="num">MTBF<span className="th-unit">hours</span></th>,
           <th key="s" className="lib-opt">Saved</th>,
           <th key="a"><span className="sr-only">Actions</span></th>,
         ]}

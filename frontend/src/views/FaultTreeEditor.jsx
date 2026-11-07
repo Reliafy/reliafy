@@ -11,18 +11,19 @@ import SegmentedControl from "../components/ui/SegmentedControl.jsx";
 import ModelPicker from "../components/ModelPicker.jsx";
 import Plot from "../components/Plot.jsx";
 import LoadFailed from "../components/LoadFailed.jsx";
+import ResultSummary from "../components/ui/ResultSummary.jsx";
 import { PageTitle } from "../components/usePageTitle.js";
 import { CutSetTable, ImportanceTable, TreeCanvas } from "../components/RbdFaultTree.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import useMenuDismiss from "../components/useMenuDismiss.js";
 import { fitLine } from "../plotTheme.js";
-import { formatNumber } from "../format.js";
+import { formatNumber, formatPercent } from "../format.js";
 import { itemName } from "../components/LibRows.jsx";
 import { FAULT_TREES_PATH, FAULT_TREES_TITLE, RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
 import {
   GATE_LABELS, GATE_WORDS, addChild, emptyTree, eventSummary, gateSummary, indentRow, moveRow, nodeOf,
-  outdentRow, outlineRows, removeRow, rename, setEventData, setGate, treeIssues,
+  outdentRow, outlineRows, plainUnit, removeRow, rename, setEventData, setGate, treeIssues,
 } from "../faultTree.js";
 import "../components/RbdFaultTree.css";
 import "./FaultTree.css";
@@ -102,8 +103,9 @@ function OutlineRow({ row, selected, issue, menuOpen, onSelect, onMenu, onCloseM
   );
 }
 
-// The selected gate's or basic event's own fields.
-function NodePanel({ tree, node, unit, onChange, onAdd, readOnly }) {
+// The selected gate's or basic event's own fields (isTop: the top event, which
+// gets a hint on what to call it).
+function NodePanel({ tree, node, unit, onChange, onAdd, readOnly, isTop = false }) {
   const [source, setSource] = useState(node.type === "event" ? (node.probability != null ? "fixed" : node.model ? "model" : "none") : null);
   useEffect(() => {
     if (node.type === "event") setSource(node.probability != null ? "fixed" : node.model ? "model" : "none");
@@ -120,9 +122,10 @@ function NodePanel({ tree, node, unit, onChange, onAdd, readOnly }) {
     return (
       <div className="card ft-panel">
         <label className="ft-field">
-          <span>Name</span>
+          <span>{isTop ? "Top event" : "Name"}</span>
           <input value={node.label} disabled={readOnly} maxLength={120}
                  onChange={(e) => onChange(rename(tree, node.id, e.target.value))} />
+          {isTop && <span className="hint">What must not happen, e.g. “Loss of thrust in flight”.</span>}
         </label>
         <div className="ft-field">
           <span>Gate</span>
@@ -224,6 +227,38 @@ function TopCurve({ result }) {
   );
 }
 
+// A share as a percentage with one decimal where it matters: 0.1025 → "10.3%".
+const pct = (x) => `${formatNumber(x * 100, { sig: 3 })}%`;
+
+// The answer first (as the prediction pages give it): one sentence, then
+// three tiles — the top event's probability, the reliability and the cut sets.
+function topEventAnswer(result, unitWord) {
+  const p = result.top_event_probability;
+  const timed = result.kind === "reliability";
+  const when = timed ? `${formatNumber(result.t)}${unitWord ? ` ${unitWord}` : ""}` : "";
+  const events = Object.fromEntries((result.events || []).map((e) => [e.id, e]));
+  const cuts = result.cut_sets || {};
+  const lead = cuts.basis !== "low_order" ? cuts.listed?.[0] : null;
+  const leadLabel = lead ? lead.events.map((id) => events[id]?.label || id).join(" + ") : null;
+  const sentence = p == null ? (
+    <>The top event's probability couldn't be worked out.</>
+  ) : (
+    <>
+      {timed ? <>By {when}, the top event has a <b>{pct(p)}</b> chance of having occurred (reliability <b>{pct(1 - p)}</b>).</>
+             : <>The top event has a <b>{pct(p)}</b> chance of occurring (<b>{pct(1 - p)}</b> that it doesn't). Every basic event is a fixed probability, so time doesn't enter.</>}
+      {lead && lead.share != null && <> The most likely cause is <b>{leadLabel}</b>, {formatPercent(lead.share)} of that.</>}
+    </>
+  );
+  const tiles = [
+    { label: timed ? `Top event probability by ${when}` : "Top event probability",
+      value: formatNumber(p, { sig: 4 }), hint: timed ? "chance it has occurred by then" : "chance it occurs" },
+    { label: "Reliability", value: p == null ? "—" : formatNumber(1 - p, { sig: 4 }), hint: "1 − the top event probability" },
+    { label: "Minimal cut sets", value: formatNumber(cuts.count), hint: "smallest groups of failures that cause it" },
+  ];
+  const guessed = (result.events || []).some((e) => e.placeholder);
+  return { sentence, tiles, tone: guessed || result.notes?.length ? "caveat" : "neutral" };
+}
+
 // System models › Fault trees › one tree: the outline editor, the selected
 // node's fields, and the analysis (top event, drawn tree, cut sets, importance).
 export default function FaultTreeEditor() {
@@ -262,7 +297,7 @@ export default function FaultTreeEditor() {
         setNotes([]);
         setSelected(null);
       })
-      .catch((e) => setLoadError(e));
+      .catch((e) => setLoadError(e.message || String(e)));
   }, [routeId, isNew]);
 
   const readOnly = !!doc?.read_only; // a sample: edits are kept by "Save a copy"
@@ -392,7 +427,7 @@ export default function FaultTreeEditor() {
     return (
       <div className="app">
         <PageHeader crumbs={crumbs} title="Fault tree" />
-        <LoadFailed error={loadError} to={FAULT_TREES_PATH} label="See all fault trees" />
+        <LoadFailed error={loadError} to={FAULT_TREES_PATH} label="See all fault trees" notFound="Fault tree not found." />
       </div>
     );
   }
@@ -409,7 +444,8 @@ export default function FaultTreeEditor() {
   const nEvents = tree.nodes.length - nGates;
   const timed = result?.kind === "reliability";
   const stale = result && analysis.sig !== sig;
-  const u = result?.unit ? ` ${result.unit}` : "";
+  const unitWord = plainUnit(result?.unit);
+  const answer = result ? topEventAnswer(result, unitWord) : null;
 
   return (
     <div className="app ft-editor">
@@ -485,63 +521,45 @@ export default function FaultTreeEditor() {
         {selNode && (
           <section className="ft-side" aria-label="Selected">
             <NodePanel tree={tree} node={selNode} unit={tree.unit} onChange={edit} readOnly={false}
-                       onAdd={(gid, type) => actions.add(selRow, type)} />
+                       isTop={selRow?.depth === 0} onAdd={(gid, type) => actions.add(selRow, type)} />
           </section>
         )}
       </div>
 
-      <section className="ft-results" aria-label="Analysis">
-        <h2>Top event</h2>
+      <section className="ft-results" aria-label="Results">
+        <h2>Results</h2>
         {issues.length > 0 ? (
           <div className="card ft-todo">
-            <b>To analyse, finish the tree:</b>
+            <b>To see the results, finish the tree:</b>
             <ul>{issues.slice(0, 8).map((i) => <li key={i.id}>{i.text}</li>)}</ul>
             {issues.length > 8 && <p className="hint">…and {issues.length - 8} more.</p>}
           </div>
         ) : (
           <>
-            {analysis.error && <div className="card error">{analysis.error}</div>}
+            {analysis.error && <div className="card error" role="alert">{analysis.error}</div>}
             {analysis.phase === "loading" && !result && <p className="muted-line">Working out the top event…</p>}
             {result && (
               <div className={stale ? "ft-stale" : undefined}>
-                <div className="ft-head">
-                  {timed && (
-                    <form className="ft-controls" onSubmit={(e) => { e.preventDefault(); runAnalysis(tInput); }}>
-                      <label className="calc-t">
-                        <span>Evaluate at t{result.unit ? ` (${result.unit})` : ""}</span>
-                        <input type="number" inputMode="decimal" min="0" step="any" value={tInput}
-                               placeholder={result.t_default != null ? Number(result.t_default.toPrecision(4)).toString() : "auto"}
-                               onChange={(e) => setTInput(e.target.value)} />
-                      </label>
-                      <button type="submit" disabled={analysis.phase === "loading"}>
-                        {analysis.phase === "loading" ? "Evaluating…" : "Evaluate"}
-                      </button>
-                    </form>
-                  )}
-                  <div className="stats ft-stats">
-                    <div className="stat">
-                      <div className="k">{timed ? `Top event probability by ${formatNumber(result.t)}${u}` : "Top event probability"}</div>
-                      <div className="v">{formatNumber(result.top_event_probability)}</div>
-                    </div>
-                    <div className="stat">
-                      <div className="k">{timed ? "Reliability R(t)" : "Probability it doesn't occur"}</div>
-                      <div className="v">{formatNumber(result.top_event_probability == null ? null : 1 - result.top_event_probability, { sig: 5 })}</div>
-                    </div>
-                    <div className="stat">
-                      <div className="k">Minimal cut sets</div>
-                      <div className="v">{formatNumber(result.cut_sets.count)}</div>
-                    </div>
-                  </div>
-                </div>
-                <p className="muted-line ft-note">
-                  {timed
-                    ? result.t === result.t_default
-                      ? "At the time the top event reaches about 10% (system reliability about 90%). "
-                      : ""
-                    : "Every basic event is a fixed probability, so time doesn't enter. "}
-                  Exact, repeated events counted once.
+                {timed && (
+                  <form className="ft-controls" onSubmit={(e) => { e.preventDefault(); runAnalysis(tInput); }}>
+                    <label className="calc-t">
+                      <span>Evaluate at t{result.unit ? ` (${result.unit})` : ""}</span>
+                      <input type="number" inputMode="decimal" min="0" step="any" value={tInput}
+                             placeholder={result.t_default != null ? Number(result.t_default.toPrecision(4)).toString() : "auto"}
+                             onChange={(e) => setTInput(e.target.value)} />
+                    </label>
+                    <button type="submit" disabled={analysis.phase === "loading"}>
+                      {analysis.phase === "loading" ? "Evaluating…" : "Evaluate"}
+                    </button>
+                  </form>
+                )}
+                <ResultSummary tone={answer.tone} sentence={answer.sentence} stats={answer.tiles}>
+                  {timed && result.t === result.t_default
+                    ? "Evaluated at the time the top event reaches about 10% (reliability about 90%); type another time above to change it. "
+                    : ""}
+                  Exact; a basic event that sits under several gates is counted once.
                   {stale && " Updating…"}
-                </p>
+                </ResultSummary>
                 {result.notes?.map((n, i) => <p key={i} className="muted-line warn">{n}</p>)}
                 <TopCurve result={result} />
                 <div className="ft-section">

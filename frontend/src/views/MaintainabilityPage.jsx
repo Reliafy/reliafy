@@ -32,7 +32,7 @@ export default function MaintainabilityPage() {
   if (error) {
     return (
       <div className="app">
-        <header><h1>Maintainability prediction</h1></header>
+        <PageHeader crumbs={[{ label: "Maintainability prediction", to: MAINTAINABILITY_PATH }]} title="Prediction" />
         <LoadFailed error={error} to={MAINTAINABILITY_PATH} label="See all predictions" notFound="Prediction not found." />
       </div>
     );
@@ -65,7 +65,7 @@ export default function MaintainabilityPage() {
     r.product?.name ? `Product: ${r.product.name}` : null,
     `${r.counts?.lines ?? "?"} ${r.counts?.lines === 1 ? "line" : "lines"}`,
     `times in ${r.unit || "hours"}`,
-    "computed when saved; results are stored, not refreshed",
+    "results as computed when it was saved",
   ].filter(Boolean).join(" · ");
 
   return (

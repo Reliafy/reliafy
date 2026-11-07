@@ -20,8 +20,21 @@
 .mp-start .sel-trigger,
 .mp-start .select { min-width: 220px; }
 
+.mp-split {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+.mp-split input { margin-top: 2px; }
+
 .mp-lines { margin-top: var(--sp-2); }
-.mp-lines table { min-width: 980px; }
+/* One repair time per line fits a laptop; the five element columns need the
+   card to scroll sideways. */
+.mp-lines table { min-width: 720px; }
+.mp-lines.is-split table { min-width: 1060px; }
 .mp-lines th { white-space: nowrap; }
 .mp-lines th.mp-el { font-weight: 500; color: var(--muted); }
 .mp-lines td { padding: 4px 6px; vertical-align: middle; }

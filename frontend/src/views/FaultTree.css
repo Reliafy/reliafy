@@ -114,6 +114,9 @@
 .ft-head-note { margin: 6px 0 0; }
 .ft-results { margin-top: 20px; }
 .ft-results > h2 { margin: 0 0 8px; }
+/* The time to evaluate at sits above the answer (the shared result summary). */
+.ft-results .ft-controls { margin: 0 0 var(--sp-3); flex-wrap: wrap; }
+.ft-results .ft-controls .calc-t input { width: 8em; }
 .ft-stale { opacity: 0.6; transition: opacity 0.2s; }
 
 @media (min-width: 901px) {
