@@ -175,6 +175,19 @@ it in the function's `modes`. `products.add_sample` adds the sample
 quadcopter product, its design fully scored (on Products, not in the asset
 tree).
 
+A functional failure's causes (`failure_modes.link_cause`,
+`functional_failure_id` the effect and `cause_id` the cause) may be on any
+position of the same tree: inside the effect's position, beside it or on the
+same one. A failure causing itself, a loop and a cause on another tree are
+refused; a move that takes either end to another tree drops the link and says
+so. Things put on the wrong position move with their history intact:
+`failure_modes.move`, `move_function`, `move_functional_failure`,
+`tasks.move` (a task's open work orders go with it, listed in
+`work_orders_moved`; a task with work done stays) and
+`measurements.move_point` (`point_id`, `position_id`: a position's
+measurement point with its readings and any open alarm work order; the app's
+route is `POST /api/maintenance/points/{id}/move`).
+
 Everything in the tree can be taken out of use and brought back (`retire` /
 `restore` on positions, locations, items, parts, manufacturers, measurement
 points, tasks, failure modes, classes, conditions, groups, connections and

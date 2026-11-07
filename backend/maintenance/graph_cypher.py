@@ -528,8 +528,9 @@ CONVENTIONS = [
     "(task)-[:MITIGATES]->(FailureMode)<-[:CAN_FAIL_AS]-(position).",
     "RCM: (position)-[:PERFORMS]->(Function)-[:FAILS_AS]->(FunctionalFailure)-[:CAUSED_BY]->(FailureMode); "
     "(Function)-[:FAILS_DIRECTLY_AS]->(FailureMode) for a mode with no functional failure yet (an FMEA row); "
-    "(effect:FunctionalFailure)-[:RESULTS_FROM]->(cause:FunctionalFailure), the cause on a position inside the "
-    "effect's. Skip coalesce(x.removed, false) functions and functional failures. A mode's FME(C)A scores "
+    "(effect:FunctionalFailure)-[:RESULTS_FROM]->(cause:FunctionalFailure), the cause on the same tree as the "
+    "effect (usually inside it). Skip coalesce(x.removed, false) functions and functional failures. "
+    "A mode's FME(C)A scores "
     "(severity, occurrence, detection, cause, failure_rate, mode_ratio, loss_probability...) are on the node.",
     "Parts: (listing:PartListing)-[:LISTED_AT]->(position), (listing)-[:LISTS]->(part); (s:Stock)-[:OF]->(part), "
     "(s)-[:AT]->(location); (part)-[:SUPERSEDED_BY]->(part); (part)-[:INTERCHANGEABLE]->(part).",

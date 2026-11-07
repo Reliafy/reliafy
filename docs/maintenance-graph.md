@@ -287,7 +287,7 @@ failure is caused by some of the position's failure modes:
 (:FunctionalFailure)-[:BREACHES]->(:Standard)       # optional: none means the whole function
 (:FunctionalFailure)-[:CAUSED_BY]->(:FailureMode)
 (:Function)-[:FAILS_DIRECTLY_AS]->(:FailureMode)    # an FMEA row: no functional failure written yet
-(:FunctionalFailure)-[:RESULTS_FROM]->(:FunctionalFailure)   # effect -> cause, on a position inside
+(:FunctionalFailure)-[:RESULTS_FROM]->(:FunctionalFailure)   # effect -> cause, on the same tree
 (:Position)-[:CAN_FAIL_AS]->(:FailureMode)          # as before
 (:Task)-[:MITIGATES]->(:FailureMode)                # many-to-many: see below
 ```
@@ -510,19 +510,22 @@ causes per failure; the edge has no properties.
 position ids are for the event feed and the audit, and the projectors read only
 the failure ids. Linking twice, or unlinking what isn't linked, writes nothing.
 A link is refused, saying what to do, when either failure (or its function) was
-deleted, either position is retired, the two are the same failure or on the
-same position, the cause isn't on a position inside the effect's, the link
-would close a loop, or the effect already has 50 causes. Another workspace's
-failure is not found.
+deleted, either position is retired, the two are the same failure, the cause is
+on another tree (the tops of their positions differ), the link would close a
+loop, or the effect already has 50 causes. Another workspace's failure is not
+found. Since Nov 2026 the cause may be anywhere on the effect's tree: inside its
+position (the usual case), beside it (the pool water's chlorine from the salt
+chlorinator next to it) or on the same position; before, only positions inside
+counted. That is a read rule, not a projection, so no event changed meaning.
 
 Links are analysis, not history, so nothing is refused for having them; they
 go, with an `unlinked` event each, when:
 
 - either failure is deleted, or its function is (`links_removed` in the result);
 - the cause's position is retired (`links_removed`);
-- a function moves, or a position is moved to another parent, so that a cause
-  would no longer be on a position inside its effect's (`links_removed` and a
-  `note` in the result). Links that still run downwards stay.
+- a function or functional failure moves, or a position is moved to another
+  parent, so that its two ends would be on different trees (`links_removed`
+  and a `note` in the result). Links whose ends stay on one tree stay.
 
 Retiring or merging failure modes leaves links alone. Copying a position
 copies the links between failures inside the copied branch, and a link from a
@@ -532,9 +535,10 @@ failure above the branch when that failure is still above where the copy goes
 **Covered and analysed.** A functional failure is *covered* when it has at
 least one failure mode of its own or one counted cause, every one of its own
 failure modes has a decision, and every counted cause is covered in turn. A
-cause counts while it is live, on a live position strictly inside the effect's
-position; the walk skips failures already on it, so a loop (only possible from
-two links written at the same moment) never hangs a read. A position is
+cause counts while it is live, on a live position on the same tree as the
+effect's position; the walk skips failures already on it, so a loop (refused
+when linking; only possible from two links written at the same moment) never
+hangs a read. A position is
 *analysed* when it has a function, every function has a functional failure,
 every functional failure is covered, and every failure mode on the position has
 a decision. The cause's position need not be analysed, only the linked failure.
@@ -574,6 +578,8 @@ everything that moved with it, so a replay never works the rule out again:
 | `function.moved` | `id, position_id, from_position_id, order, failure_mode_ids, task_ids, on, task_changes?` | the function, its functional failures, the live failure modes under them and those modes' live tasks |
 | `failure_mode.moved` | `id, position_id, from_position_id, functional_failure_id, order?, task_ids, on, task_changes?` | one mode with its decision and live tasks, under one of the new position's functional failures (or none) |
 | `task.moved` | `id, position_id, from_position_id, on, task_changes?` | one position's task |
+| `work_order.moved` | `id, position_id, from_position_id, on, task_id?, point_id?` | one open work order, with its task (emitted before the task's or the RCM row's move event) or its alarm point; appends `{from_position_id, position_id, task_id, on}` to the work order's `moves` |
+| `point.moved` | `id, position_id, from_position_id, on, task_changes?` | one position's measurement point (its readings hang off it); `task_changes` pins tasks by use that counted it as their position's counter |
 | `functional_failure.moved` | `id, function_id, from_function_id, position_id, from_position_id, order, standard_id?, failure_mode_ids, task_ids, on, task_changes?` | one functional failure under another function (same position or another) with the modes named and their live tasks; the standard it breached stays with the old function, `standard_id` names one of the new function's |
 | `standard.moved` | `id, function_id, from_function_id, position_id, from_position_id, order, functional_failure_ids, unlinked_functional_failure_ids, on` | one performance standard to another function, alone: the functional failures that breached it stay with their function under no standard (`unlinked_functional_failure_ids` names them); `functional_failure_ids` are the new function's failures that breach it now (an undo puts the breaches back this way) |
 
@@ -594,9 +600,10 @@ A move is refused, with a message saying what to do instead, when:
   that history belongs to the old position, so add the mode on the new one
   instead;
 - the target already has a live mode of the same name;
-- a task has an open work order (close or cancel it first) or work done on it
-  (retire it and add a new task on the target); cancelled work orders don't
-  count;
+- a task has work done on it (retire it and add a new task on the target);
+  cancelled work orders don't count. Open work orders aren't history yet: since
+  Nov 2026 they move with their task (one `work_order.moved` each; a work
+  package's visit stays where it is, its line still naming the task);
 - a task prevents a failure mode that isn't moving with it and isn't on the
   target. It isn't unlinked silently: move the mode (its tasks go with it), or
   unlink the task first;

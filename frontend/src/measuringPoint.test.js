@@ -2,8 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   READINGS_INTRO, canEditReadings, chartData, chartTime, dayText, numberText, pageState, pointDates, pointMeta, readingChip,
-  readingDate, readingMenu, readingRows, trendText, valueHeading,
-} from "./measuringPoint.js";
+  readingDate, readingMenu, readingRows, trendText, valueHeading, pointMoveChoices } from "./measuringPoint.js";
 
 const TODAY = "2026-11-07";
 const point = (over = {}) => ({
@@ -109,4 +108,25 @@ test("what the point is, and the intro line in plain words", () => {
   assert.equal(pointMeta(point({ kind: "counter", unit: "hours", source: "automated", tag: "sensor.hours" })), "Counter · fed by sensor.hours · hours");
   assert.doesNotMatch(READINGS_INTRO, /Struck-out readings stay here/);
   assert.match(READINGS_INTRO, /voided reading stays listed/);
+});
+
+
+test("Move…: the positions in tree order, the one it's on marked, a search by name, tag or path", () => {
+  const positions = [
+    { id: "pool", name: "Pool", parent_id: null },
+    { id: "water", name: "Pool water", parent_id: "pool" },
+    { id: "chlor", name: "Salt chlorinator", parent_id: "pool", tag: "SC-1" },
+    { id: "cell", name: "Cell", parent_id: "chlor" },
+    { id: "shed", name: "Pump shed", parent_id: null },
+  ];
+  const all = pointMoveChoices(positions, "", "chlor");
+  assert.deepEqual(all.rows.map((r) => [r.name, r.depth]), [["Pool", 0], ["Pool water", 1], ["Salt chlorinator", 1], ["Cell", 2], ["Pump shed", 0]]);
+  assert.equal(all.rows.find((r) => r.id === "chlor").here, true);
+  assert.equal(all.more, false);
+  assert.deepEqual(pointMoveChoices(positions, "sc-1").rows.map((r) => r.id), ["chlor"]);
+  // A position above matches everything inside it, each shown with its path.
+  const inside = pointMoveChoices(positions, "salt");
+  assert.deepEqual(inside.rows.map((r) => r.id), ["chlor", "cell"]);
+  assert.deepEqual(inside.rows[1].path, ["Pool", "Salt chlorinator"]);
+  assert.equal(pointMoveChoices(positions, "", null, 2).more, true);
 });

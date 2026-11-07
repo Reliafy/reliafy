@@ -2,21 +2,22 @@ import { useId, useMemo, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import { PlusIcon } from "./icons.jsx";
 import { saveErrorText } from "../confirm.js";
-import { filterChoices, linkChoices } from "../explorerRcm.js";
+import { filterChoices, linkChoices, linkSectionTitle } from "../explorerRcm.js";
 import { FUNCTION_MAX } from "../rcmWorksheet.js";
 import "./FailureLinks.css";
 
-// A functional failure caused by lower ones, in the Explorer's RCM tab: the
-// two sections of its details panel (Caused by, on positions below; Causes, on
-// positions above) and the picker that links failures from either end. The
+// A functional failure caused by others on its tree, in the Explorer's RCM tab:
+// the two sections of its details panel (Caused by; Causes), each row naming the
+// position it is on, and the picker that links failures from either end. The
 // panel's two sections are self-contained blocks, so they can sit beside the
 // function panel's own without the two meeting.
 
 const plural = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
 const shorter = (t, n = 70) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
 
-// "Caused by, on positions below": the lower failures that cause this one,
-// each a link that goes to it, with its position and Unlink; the way to add one.
+// "Caused by": the failures that cause this one (usually on positions inside
+// it, but beside it or on the same position too), each a link that goes to it,
+// with its position and Unlink; the way to add one.
 // `links`: {onLink(r, "cause" | "effect"), onUnlink(effectId, causeId)}.
 export function CausedBySection({ r, where, readOnly, links, onSelect }) {
   const causes = r.ref.causes || [];
@@ -24,20 +25,20 @@ export function CausedBySection({ r, where, readOnly, links, onSelect }) {
   const own = r.sum.modes > 0;
   const summary = [
     plural(causes.length, "cause"),
-    b?.modes ? `${plural(b.modes, "failure mode")} below` : null,
+    b?.modes ? `${plural(b.modes, "failure mode")} under them` : null,
     b?.modes ? (b.undecided ? `${b.undecided.toLocaleString("en-AU")} to decide` : "all decided") : null,
   ].filter(Boolean).join(" · ");
   return (
-    <section className="fl-sec" aria-label="Caused by, on positions below">
-      <div className="psec-head"><h3 className="psec-title">Caused by, on positions below</h3><span className="psec-count">{causes.length}</span></div>
+    <section className="fl-sec" aria-label="Caused by">
+      <div className="psec-head"><h3 className="psec-title">Caused by</h3><span className="psec-count">{causes.length}</span></div>
       {causes.length > 0 && <p className="fl-sum">{summary}</p>}
       {r.ref.explained_below && !own && (
         <p className="fl-note">
-          Explained below: the failure-mode questions for this failure are answered on the positions linked.
+          Explained by its causes: the failure-mode questions for this failure are answered where they are.
           Add failure modes here only for causes that belong to {where || "this position"} itself.
         </p>
       )}
-      {causes.length === 0 && <p className="fl-sum">Nothing linked yet. A failure on a position inside {where || "this one"} can be its cause.</p>}
+      {causes.length === 0 && <p className="fl-sum">Nothing linked yet. A failure on a position inside {where || "this one"}, beside it or on it can be its cause.</p>}
       <ul className="fl-list">
         {causes.map((c) => (
           <li key={c.id}>
@@ -45,7 +46,7 @@ export function CausedBySection({ r, where, readOnly, links, onSelect }) {
               <button type="button" className="link fl-go" onClick={() => onSelect(c.id)} title={`${c.text}: go to it`}>{c.text}</button>
               <span className="fl-on">on {c.position?.name}</span>
               {c.inside === false ? (
-                <span className="fl-warn">Not inside {where || "it"} any more, so it doesn&apos;t count.</span>
+                <span className="fl-warn">On another tree now, so it doesn&apos;t count.</span>
               ) : !c.covered && <span className="rw-todo fl-chip">{c.chain?.undecided ? `${c.chain.undecided} to decide` : "not finished"}</span>}
             </span>
             {!readOnly && <button type="button" className="link fl-unlink" onClick={() => links.onUnlink(r.ref.id, c.id)}
@@ -60,15 +61,14 @@ export function CausedBySection({ r, where, readOnly, links, onSelect }) {
   );
 }
 
-// "Causes, on positions above": the failures above that this one causes.
+// "Causes": the failures this one causes (usually on positions above it).
 export function CausesSection({ r, where, readOnly, links, onSelect }) {
   const effects = r.ref.effects || [];
-  const canUp = !!r.ref.has_above;
   return (
-    <section className="fl-sec" aria-label="Causes, on positions above">
-      <div className="psec-head"><h3 className="psec-title">Causes, on positions above</h3><span className="psec-count">{effects.length}</span></div>
+    <section className="fl-sec" aria-label="Causes">
+      <div className="psec-head"><h3 className="psec-title">Causes</h3><span className="psec-count">{effects.length}</span></div>
       {effects.length === 0 && (
-        <p className="fl-sum">{canUp ? `Not linked to a failure above ${where || "it"} yet.` : "Nothing above: this failure is the top of its chain."}</p>
+        <p className="fl-sum">Not linked to an effect yet. A failure above {where || "it"}, beside it or on it can be one.</p>
       )}
       <ul className="fl-list">
         {effects.map((e) => (
@@ -76,24 +76,25 @@ export function CausesSection({ r, where, readOnly, links, onSelect }) {
             <span className="fl-main">
               <button type="button" className="link fl-go" onClick={() => onSelect(e.id)} title={`${e.text}: go to it`}>{e.text}</button>
               <span className="fl-on">on {e.position?.name}</span>
-              {e.inside === false && <span className="fl-warn">{where || "This position"} isn&apos;t inside it any more, so it doesn&apos;t count.</span>}
+              {e.inside === false && <span className="fl-warn">On another tree now, so it doesn&apos;t count.</span>}
             </span>
             {!readOnly && <button type="button" className="link fl-unlink" onClick={() => links.onUnlink(e.id, r.ref.id)}
                                   aria-label={`Unlink ${e.text}`}>Unlink</button>}
           </li>
         ))}
       </ul>
-      {!readOnly && canUp && (
+      {!readOnly && (
         <button type="button" className="add-row fl-add" onClick={(e) => { if (e.detail < 2) links.onLink(r, "effect"); }}><PlusIcon />Link to an effect…</button>
       )}
     </section>
   );
 }
 
-// The picker. `direction` "cause": tick the failures on positions inside the
-// failure's own that cause it; "effect": tick the failures on positions above
-// that it causes. Grouped by position, with a filter box. Failures not written
-// yet are added from the foot ("New functional failure on a position …") and
+// The picker. `direction` "cause": tick the failures that cause it; "effect":
+// tick the ones it causes. Anywhere on its tree: grouped by position, its own
+// position and those inside it (or above it, for effects) first, then the rest
+// of the tree, under a heading each; the filter box searches the whole tree.
+// Failures not written yet are added from the foot ("New functional failure…") and
 // written, with their function, when Link is pressed. `onLink(items, made)`
 // writes them (useTreeRcm's linkMany) and resolves once the RCM is read again;
 // until then the dialog says "Linking…" and sends nothing more, and a refusal
@@ -115,7 +116,6 @@ export default function LinkFailurePicker({ direction, row, whole, onLink, onClo
   const shown = filterChoices(groups, query);
   const word = up ? "effect" : "cause";
   const count = [...ticked].filter((k) => !made.some((m) => m.id === k)).length + made.length;
-  const place = up ? "above" : "below";
   const where = row.ref.position_name || whole.rows.get(row.ref.position_id)?.ref.name || "this position";
 
   const tick = (key, on) => setTicked((s) => {
@@ -205,14 +205,15 @@ export default function LinkFailurePicker({ direction, row, whole, onLink, onClo
       <div onKeyDown={onKeyDown}>
         <p className="lp-sub">
           {up
-            ? `Functional failures on positions above ${where}. Tick the ones it causes.`
-            : `Functional failures on positions inside ${where}. Tick the ones that cause it.`}
+            ? `Functional failures on ${where} and the positions above it first, then the rest of the tree. Tick the ones it causes.`
+            : `Functional failures on ${where} and the positions inside it first, then the rest of the tree. Tick the ones that cause it.`}
         </p>
         <input ref={filterBox} type="search" className="ctl lp-filter" value={query} onChange={(e) => setQuery(e.target.value)}
-               placeholder="Filter: position, function or failure" aria-label="Filter the list" autoFocus />
-        <div className="lp-list" ref={list} role="group" aria-label={`Functional failures ${place}`}>
-          {shown.map((g) => (
+               placeholder="Search the tree: position, function or failure" aria-label="Search the tree" autoFocus />
+        <div className="lp-list" ref={list} role="group" aria-label="Functional failures on this tree">
+          {shown.map((g, i) => (
             <div key={g.id} className="lp-group">
+              {linkSectionTitle(g, shown[i - 1], where) && <h4 className="lp-sec">{linkSectionTitle(g, shown[i - 1], where)}</h4>}
               <h4 className="lp-pos" style={{ paddingLeft: 12 + g.depth * 14 }}>{g.name}</h4>
               {g.items.map((it) => (
                 <label key={it.id} className={"lp-item" + (it.linked ? " linked" : "")} style={{ paddingLeft: 12 + g.depth * 14 }}>
@@ -224,7 +225,7 @@ export default function LinkFailurePicker({ direction, row, whole, onLink, onClo
               ))}
             </div>
           ))}
-          {!query && groups.filter((g) => g.items.length === 0).map((g) => (
+          {!query && groups.filter((g) => g.items.length === 0 && g.section !== "rest").map((g) => (
             <div key={g.id} className="lp-group">
               <h4 className="lp-pos" style={{ paddingLeft: 12 + g.depth * 14 }}>{g.name}</h4>
               <p className="lp-none" style={{ paddingLeft: 12 + g.depth * 14 }}>
@@ -246,17 +247,17 @@ export default function LinkFailurePicker({ direction, row, whole, onLink, onClo
             </div>
           )}
           {!groups.length && (
-            <p className="lp-none lp-empty">{up ? "There is no position above this one." : `There are no positions inside ${where} yet.`}</p>
+            <p className="lp-none lp-empty">There are no other functional failures on this tree yet.</p>
           )}
           {groups.length > 0 && query && !shown.length && <p className="lp-none lp-empty">Nothing matches “{query}”.</p>}
         </div>
         {groups.length > 0 && (form ? (
-          <div className="fl-new" role="group" aria-label={`New functional failure on a position ${place}`}
+          <div className="fl-new" role="group" aria-label="New functional failure"
                onKeyDown={(e) => {
                  if (e.key === "Enter" && !e.target.closest("button")) { e.preventDefault(); e.stopPropagation(); addNew(); }
                  if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setForm(null); }
                }}>
-            <h4>New functional failure on a position {place}</h4>
+            <h4>New functional failure</h4>
             <label className="fl-f"><span>Position</span>
               <select className="ctl" value={form.position_id} disabled={busy}
                       onChange={(e) => setForm({ ...form, position_id: e.target.value,
@@ -290,7 +291,7 @@ export default function LinkFailurePicker({ direction, row, whole, onLink, onClo
         ) : (
           <div className="lp-newrow">
             <button type="button" className="link lp-newbtn" onClick={() => openForm(shown[0]?.id || groups[0].id)} disabled={busy}>
-              New functional failure on a position {place}…
+              New functional failure…
             </button>
           </div>
         ))}

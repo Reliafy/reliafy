@@ -199,7 +199,16 @@ export function pointMenu(point) {
   if (point.kind !== "counter") items.push({ id: "limits", label: "Edit limits…" });
   if (pointHref(point)) items.push({ id: "open", label: point.position?.id ? "Open its position" : "Open its item" });
   if (point.alarm_work_order) items.push({ id: "work-order", label: `Open work order #${point.alarm_work_order.number}` });
+  items.push(pointMoveItem(point));
   return items;
+}
+
+// "Move…": a position's point to another position. An item's point travels
+// with the item, and a band or level stays with its signal channel.
+export function pointMoveItem(point) {
+  if (point.derived) return { id: "move", label: "Move…", disabled: true, reason: "Stays with its signal channel" };
+  if (!point.position?.id) return { id: "move", label: "Move…", disabled: true, reason: "An item's point travels with the item" };
+  return { id: "move", label: "Move…" };
 }
 
 // Where the point is: the position it's on, or for an item's point the

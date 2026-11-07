@@ -2,6 +2,26 @@
 
 ## Unreleased (0.5.1)
 
+- **Cause links anywhere on the same tree**: `maintenance
+  failure_modes.link_cause` now takes a cause on any position of the effect's
+  tree: inside it as before, beside it (the pool water's chlorine failure from
+  the salt chlorinator next to it) or on the same position. Only a failure
+  causing itself, a loop and a cause on another tree are refused. Moving a
+  position, function or functional failure drops a link only when its two
+  ends end up on different trees. The `inside` flag on causes and effects in
+  RCM reads now means "on the same tree" (the link counts).
+
+- **Move a measurement point**: the new `maintenance measurements.move_point`
+  (`point_id`, `position_id`) moves a position's point to another position
+  with its readings and any open alarm work order. Tasks by use that counted
+  it as their position's counter keep counting it. A batch undoes it.
+
+- **Move a task with open work orders**: `maintenance tasks.move` (and the
+  RCM moves that carry tasks: `failure_modes.move`, `move_function`,
+  `move_functional_failure`) no longer refuse a task with an open work order.
+  The open work orders go with it and are listed in `work_orders_moved`. A
+  task with work done is still refused.
+
 - **A combination of tasks on one RCM decision**: `maintenance
   failure_modes.decide` takes `decision.outcomes`, a list of
   `{outcome, task, interval, interval_unit, task_id}` (a regular inspection

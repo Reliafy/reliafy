@@ -297,6 +297,20 @@ def test_maintenance_names_over_the_limit_say_what_to_do(maint):
     assert r.status_code == 200 and r.json()["skipped"] == [] and r.json()["work_orders"] == []
 
 
+def test_maintenance_move_a_measurement_point_over_rest(maint):
+    a = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump A"}).json()
+    b = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump B"}).json()
+    point = maint.post("/api/v1/maintenance/measurements.add_point",
+                       {"position_id": a["id"], "name": "Run hours", "kind": "counter", "unit": "hours"}).json()
+    r = maint.post("/api/v1/maintenance/measurements.move_point", {"point_id": point["id"], "position_id": b["id"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["from_position_id"] == a["id"]
+    spec = maint.client.get("/api/v1/openapi.json", headers=_auth(maint.token[A])).json()
+    assert "/api/v1/maintenance/measurements.move_point" in spec["paths"]
+    r = maint.post("/api/v1/maintenance/measurements.move_point", {"point_id": point["id"]})
+    assert r.status_code >= 400 and "position_id" in r.text
+
+
 def _jpeg() -> bytes:
     img = Image.new("RGB", (320, 240), (200, 30, 30))
     exif = Image.Exif()

@@ -178,7 +178,8 @@ fields, then the quieter things at the foot:
 - a performance standard: its **Functional failures**, then its checkable
   limit;
 - a functional failure: its **Failure modes** (with its state in words at
-  the top), then what it is **Caused by** below and what it **Causes** above;
+  the top), then what it is **Caused by** and what it **Causes**, each with
+  the position it is on;
 - a failure mode: its **Tasks**, then its **Failure effects**,
   **Consequence** (one tap on a choice) and **Decision**, then where it sits
   (**Under**).
@@ -489,8 +490,9 @@ can drag rows in the RCM table to rearrange it:
 While you drag, a line shows where it will go (above, below), or the row is
 outlined (inside). If it can't go there, the pointer changes to a no-entry sign
 and the label says why before you let go: for example, the other position
-already has a failure mode with the same name, a task has an open work order,
-or failures are recorded against a mode. Press **Esc** to cancel a drag.
+already has a failure mode with the same name, a task has work done on it,
+or failures are recorded against a mode. A task's open work orders move with
+it, and the note says which. Press **Esc** to cancel a drag.
 
 A task by use keeps counting the same measurement when it moves, as long as
 that measurement is on the new position, a position above or below it, or the
@@ -505,9 +507,9 @@ performance standard can't move, nothing does. A note at the bottom of the page
 says what moved and has an **Undo** button (or press Ctrl+Z, Cmd+Z on a Mac,
 while it shows). Undo puts everything back where it was, in the same order,
 with each functional failure breaching the same performance standard as before. A link
-between functional failures that a move took away (a cause must sit on a
-position inside its effect's) is named in the note and isn't put back by Undo:
-link them again if you need to.
+between functional failures that a move took away (both ends must be on the
+same tree) is named in the note and isn't put back by Undo: link them again if
+you need to.
 
 **Move to…, without dragging:** every function, performance standard,
 functional failure and failure mode has **Move to…** in its row menu
@@ -553,24 +555,32 @@ as CSV and read back by **Import worksheet…**. PDFs are not part of the file.
 
 ## Working top down or bottom up
 
-Because the RCM sits on the tree, a functional failure on a higher position
-can be caused by functional failures on the positions inside it. Say a
-swimming pool's *Free chlorine below 1 ppm* is caused by *No output* on the
-salt chlorinator, a few levels down. Link them, and the failure modes and
-decisions for that cause are answered once, down on the chlorinator, not again
-on the pool.
+Because the RCM sits on the tree, a functional failure can be caused by
+functional failures elsewhere on the same tree: usually on the positions inside
+it, but also on a position beside it or on the same position. Say a swimming
+pool's *Free chlorine below 1 ppm* is caused by *No output* on the salt
+chlorinator, a few levels down (or beside the pool water, at the same level).
+Link them, and the failure modes and decisions for that cause are answered
+once, on the chlorinator, not again on the pool. A pool shell that cracks
+because the ground heaves links two functional failures on the same position.
 
-- **From the top:** right-click the higher functional failure and choose **Link
-  to a cause…**. Tick the failures on the positions inside it. If the lower one
-  isn't written yet, use **New functional failure on a position below…** at the
-  foot of the list: it is written and linked together.
-- **From the bottom:** right-click the lower functional failure and choose
-  **Link to an effect…**. Tick the failures on the positions above it.
+- **From the effect:** right-click the functional failure and choose **Link
+  to a cause…**. The list starts with its own position and the positions
+  inside it, then the rest of the tree, branch by branch; type in the filter
+  box to search the whole tree. Tick the causes. If one isn't written yet, use
+  **New functional failure…** at the foot of the list: it is written and
+  linked together.
+- **From the cause:** right-click the functional failure and choose **Link to
+  an effect…**. The list starts with its own position and the positions above
+  it, then the rest of the tree.
+- Reliafy refuses only a failure causing itself, a loop (A caused by B caused
+  by A) and a cause on another tree, and says why.
 - Under the higher failure each cause shows as a row starting **↳**, with the
   position it is on. Click it to go to the real row. The lower failure shows
-  **↑ 1** (or more) to say it causes something above; click that to go up.
-- A failure explained only below needs no failure modes of its own. Its Decision
-  cell reads **Explained below**, or says how many are still to decide below.
+  **↑ 1** (or more) to say it causes another failure; click that to go to it.
+- A failure explained by its causes needs no failure modes of its own. Its
+  Decision cell reads **Explained below**, or says how many are still to
+  decide.
   Add failure modes at the higher level only for causes that belong to that
   position itself.
 - **Unlink** (in the row's menu, or in the failure's Details) takes a link

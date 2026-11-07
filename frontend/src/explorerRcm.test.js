@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
 import {
-  NARROW_TABLE, TASK_WITH_INTERVAL, functionSummary, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, opensPanel, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardKeys, tableCols,
+  NARROW_TABLE, TASK_WITH_INTERVAL, functionSummary, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, opensPanel, filterChoices, fitWidths, graftRcm, linkChoices, linkSectionTitle, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardKeys, tableCols,
   taskWithInterval, usualCols, withTableCols,
 } from "./explorerRcm.js";
 import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, checkValue, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
@@ -328,10 +328,11 @@ test("a failure shows ↑ n for the failures above it that it causes (and only t
   assert.deepEqual(markersOf(d.rows.get(causeKey("px", "x1"))), []);
 });
 
-test("row menus: a failure offers Link to a cause and, with a position above, Link to an effect; a reference row Go to it and Unlink", () => {
+test("row menus: a failure offers Link to a cause and Link to an effect; a reference row Go to it and Unlink", () => {
   const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
   const labels = (key) => rowActions(d.rows.get(key)).map((a) => a.label);
-  assert.deepEqual(labels("px"), ["Open…", "Add failure mode", "Link to a cause…", "Edit description", "Delete functional failure…"]); // the plant is the top
+  // The top's failure too: an effect may be beside it or on the same position.
+  assert.deepEqual(labels("px"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Edit description", "Delete functional failure…"]);
   assert.deepEqual(labels("x1"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Edit description", "Delete functional failure…"]);
   assert.deepEqual(labels(causeKey("px", "x1")), ["Go to it", "Unlink"]);
   assert.deepEqual(rowActions(d.rows.get(causeKey("px", "x1")), { canRename: false }).map((a) => a.id), ["go", "unlink"]);
@@ -345,29 +346,45 @@ test("opening a position's RCM opens functions and failures, so the reference ro
   assert.ok(![...open].some((k) => k.startsWith("L:")));
 });
 
-test("the pickers: a cause is on a position inside, an effect on one above; linked ones are marked", () => {
+test("the pickers: the whole tree, the likely positions first; linked ones are marked, the failure itself left out", () => {
   const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
   const down = linkChoices(d, "px", "cause");
-  assert.deepEqual(down.map((g) => [g.name, g.depth]), [["Pump", 0], ["Motor", 1]]);
-  assert.deepEqual(down[0].items.map((i) => [i.text, i.linked]), [["No flow", true], ["Low flow", false]]);
-  assert.equal(down[0].items[0].function, "Pump water");
-  assert.equal(down[0].items[1].summary, "1 failure mode · 1 to decide");
-  assert.equal(down[1].items[0].summary, "no failure modes yet");
-  assert.deepEqual(down[0].functions, [{ id: "f1", text: "Pump water" }]);
-  // Upwards from the motor: the nearest first.
+  // Its own position (its other failure), then the positions inside it.
+  assert.deepEqual(down.map((g) => [g.name, g.depth, g.section]), [["Plant", 0, "here"], ["Pump", 1, "inside"], ["Motor", 2, "inside"]]);
+  assert.deepEqual(down[0].items.map((i) => i.text), ["Output low"]);
+  assert.deepEqual(down[1].items.map((i) => [i.text, i.linked]), [["No flow", true], ["Low flow", false]]);
+  assert.equal(down[1].items[0].function, "Pump water");
+  assert.equal(down[1].items[1].summary, "1 failure mode · 1 to decide");
+  assert.equal(down[2].items[0].summary, "no failure modes yet");
+  assert.deepEqual(down[1].functions, [{ id: "f1", text: "Pump water" }]);
+  // Effects from the motor: its own position, then those above (nearest first).
   const up = linkChoices(d, "mx", "effect");
-  assert.deepEqual(up.map((g) => g.name), ["Pump", "Plant"]);
-  assert.deepEqual(up[1].items.map((i) => [i.text, i.linked]), [["No power", false], ["Output low", true]]);
-  assert.equal(up[1].items[1].summary, "explained below");
-  // The failure's own position is left out, and a failure with nothing above has no effect choices.
-  assert.deepEqual(linkChoices(d, "px", "effect"), []);
-  assert.deepEqual(linkChoices(d, "m1", "cause"), []);
+  assert.deepEqual(up.map((g) => [g.name, g.section]), [["Motor", "here"], ["Pump", "above"], ["Plant", "above"]]);
+  assert.deepEqual(up[0].items, []); // the motor's one failure is the one linking
+  assert.deepEqual(up[2].items.map((i) => [i.text, i.linked]), [["No power", false], ["Output low", true]]);
+  assert.equal(up[2].items[1].summary, "explained below");
+  // From the pump: causes inside first, then the rest of the tree (the plant above, by branch).
+  const pump = linkChoices(d, "x1", "cause");
+  assert.deepEqual(pump.map((g) => [g.name, g.section, g.depth]), [["Pump", "here", 0], ["Motor", "inside", 1], ["Plant", "rest", 0]]);
+  assert.deepEqual(pump[0].items.map((i) => i.text), ["Low flow"]); // a failure on the same position
+  // The top's effects: its own position, then nothing else is above but the tree is listed.
+  assert.deepEqual(linkChoices(d, "px", "effect").map((g) => g.section), ["here", "rest", "rest"]);
+  assert.deepEqual(linkChoices(d, "m1", "cause"), []); // not a functional failure
+});
+
+test("the picker's section headings: one where each section starts", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
+  const groups = linkChoices(d, "x1", "cause");
+  assert.deepEqual(groups.map((g, i) => linkSectionTitle(g, groups[i - 1], "Pump")),
+    ["This position", "Inside Pump", "Elsewhere on the tree"]);
+  const up = linkChoices(d, "mx", "effect");
+  assert.deepEqual(up.map((g, i) => linkSectionTitle(g, up[i - 1], "Motor")), ["This position", "Above Motor", null]);
 });
 
 test("the picker's filter matches the position, function or failure text", () => {
   const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
   const down = linkChoices(d, "px", "cause");
-  assert.equal(filterChoices(down, "  ").length, 2);
+  assert.equal(filterChoices(down, "  ").length, 3);
   assert.deepEqual(filterChoices(down, "low flow").map((g) => g.items.map((i) => i.text)), [["Low flow"]]);
   assert.deepEqual(filterChoices(down, "motor").map((g) => g.name), ["Motor"]);
   assert.equal(filterChoices(down, "pump")[0].items.length, 2); // the position's name keeps all its failures

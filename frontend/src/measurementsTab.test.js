@@ -149,18 +149,22 @@ test("clicking a row, and its ⋯ menu", () => {
   assert.equal(rowAction(cond({ source: "automated" })), null);
   assert.equal(pointHref(read), "/asset-register/positions/a");
   assert.equal(pointHref(cond({ item: { id: "i1" } })), "/asset-register/items/i1");
-  assert.deepEqual(pointMenu(read).map((i) => i.id), ["page", "record", "history", "limits", "open"]);
+  assert.deepEqual(pointMenu(read).map((i) => i.id), ["page", "record", "history", "limits", "open", "move"]);
   assert.equal(pointMenu(read)[0].label, "Open");
   // A counter has no limits to edit; a feed's point can't be read by hand (greyed, with the reason).
-  assert.deepEqual(pointMenu(cond({ kind: "counter" })).map((i) => i.id), ["page", "record"]);
+  assert.deepEqual(pointMenu(cond({ kind: "counter" })).map((i) => i.id), ["page", "record", "move"]);
   const feed = pointMenu(cond({ source: "automated", tag: "sensor.ph", alarm_work_order: { id: "w", number: 4 } }));
-  assert.deepEqual(feed.map((i) => i.id), ["page", "record", "limits", "work-order"]);
+  assert.deepEqual(feed.map((i) => i.id), ["page", "record", "limits", "work-order", "move"]);
   assert.equal(feed[1].disabled, true);
   assert.equal(feed[1].reason, "Read by a feed (sensor.ph)");
   assert.equal(feed[3].label, "Open work order #4");
   assert.equal(pointMenu(read).find((i) => i.id === "open").label, "Open its position");
   assert.equal(pointMenu(cond({ item: { id: "i1" } })).find((i) => i.id === "open").label, "Open its item");
   assert.equal(pointPagePath("p 1"), "/asset-register/points/p%201");
+  // Move…: a position's point; an item's travels with the item, a band stays with its channel.
+  assert.deepEqual(pointMenu(read).at(-1), { id: "move", label: "Move…" });
+  assert.equal(pointMenu(cond({ item: { id: "i1" } })).at(-1).reason, "An item's point travels with the item");
+  assert.equal(pointMenu(cond({ derived: true, position: { id: "a" } })).at(-1).disabled, true);
 });
 
 test("pointsCsv: one row per point shown, where it is, its latest reading, limits and state", () => {

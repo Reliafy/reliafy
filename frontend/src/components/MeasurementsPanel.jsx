@@ -15,6 +15,7 @@ import { usePanelMenu } from "../panelMenu.js";
 import { saveText } from "../sparesPlan.js";
 import { exportFilename } from "../rcmImport.js";
 import { PointModal, PointReadingModal, ReadingsModal } from "../views/MaintenancePosition.jsx";
+import PointMoveModal from "./PointMoveModal.jsx";
 import "../views/Maintenance.css";
 import "./MeasurementsPanel.css";
 
@@ -121,6 +122,7 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
   const [state, setState] = useState({ key: null, points: null, more: false, error: null });
   const [modal, setModal] = useState(null);
   const [menu, setMenu] = useState(null); // {point, at}
+  const [moved, setMoved] = useState(null); // what the last Move… said
   const key = `${row.key}:${ask.positionIds.length}:${ask.itemIds.length}`;
   const load = useCallback(() => {
     let live = true;
@@ -159,6 +161,7 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
     else if (id === "limits") setModal({ limits: p });
     else if (id === "open") navigate(pointHref(p));
     else if (id === "work-order") navigate(`/maintenance/work-orders/${p.alarm_work_order.id}`);
+    else if (id === "move") setModal({ move: p });
   };
   const openRow = (p) => {
     const a = rowAction(p);
@@ -189,6 +192,7 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
           <PlusIcon /> Add a measuring point
         </button>
       ) : <p className="lib-date ms-add-note">Pick a position or an item to add a measuring point.</p>}
+      {moved && <p className="lib-date ms-moved" role="status">{moved}</p>}
       {state.error && <div className="card error">{state.error}</div>}
       {state.more && <p className="lib-date">Showing the first {points.length} points: pick a smaller branch to see the rest.</p>}
       {shown === null ? <div className="card empty">Loading…</div> : shown.length === 0 ? (
@@ -269,6 +273,13 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
       {modal?.add && target && <PointModal target={target} onClose={() => setModal(null)} onDone={done} />}
       {modal?.read && <PointReadingModal point={modal.read} onClose={() => setModal(null)} onDone={done} />}
       {modal?.limits && <LimitsModal point={modal.limits} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.move && (
+        <PointMoveModal point={modal.move} onClose={() => setModal(null)}
+                        onDone={(r) => {
+                          setMoved(`${r.name} moved to ${r.position?.name || "its new position"}.${r.note ? ` ${r.note}` : ""}`);
+                          done();
+                        }} />
+      )}
       {open && open.source === "manual" && (
         <ReadingsModal point={open} onClose={() => { q.setPoint(null); load(); }} />
       )}

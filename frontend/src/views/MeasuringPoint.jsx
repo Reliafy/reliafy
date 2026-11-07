@@ -10,7 +10,8 @@ import { LimitsModal } from "../components/MeasurementsPanel.jsx";
 import { today as workspaceToday } from "../components/MaintenanceParts.jsx";
 import { PageTitle } from "../components/usePageTitle.js";
 import { explorerPath } from "../assetTree.js";
-import { pointHref } from "../measurementsTab.js";
+import { pointHref, pointMoveItem } from "../measurementsTab.js";
+import PointMoveModal from "../components/PointMoveModal.jsx";
 import {
   READINGS_INTRO, canEditReadings, chartData, dayText, numberText, pageState, pointDates, pointMeta, readingDate, trendText,
 } from "../measuringPoint.js";
@@ -79,7 +80,8 @@ export default function MeasuringPoint() {
   const navigate = useNavigate();
   const [point, setPoint] = useState(null);
   const [error, setError] = useState(null);
-  const [modal, setModal] = useState(null); // "read" | "limits"
+  const [modal, setModal] = useState(null); // "read" | "limits" | "move"
+  const [moved, setMoved] = useState(null); // what the last Move… said
   const load = useCallback(() => {
     setError(null);
     return getMeasurementPoint(id).then(setPoint).catch((e) => setError(e.message));
@@ -122,12 +124,23 @@ export default function MeasuringPoint() {
         actions={point.kind !== "counter" && !point.retired
           ? <button className="secondary" onClick={() => setModal("limits")}>Edit limits…</button> : null}
         primary={<button onClick={() => setModal("read")} disabled={!readable} title={readable ? "" : notReadable}>Add reading…</button>}
-        menu={home && (
-          <button type="button" className="ovm-item" role="menuitem" onClick={() => navigate(home)}>
-            {point.position?.id ? "Open the position's page" : "Open the item's page"}
-          </button>
+        menu={(
+          <>
+            {home && (
+              <button type="button" className="ovm-item" role="menuitem" onClick={() => navigate(home)}>
+                {point.position?.id ? "Open the position's page" : "Open the item's page"}
+              </button>
+            )}
+            {!point.retired && (
+              <button type="button" className="ovm-item" role="menuitem" onClick={() => setModal("move")}
+                      disabled={!!pointMoveItem(point).disabled} title={pointMoveItem(point).reason || ""}>
+                Move…
+              </button>
+            )}
+          </>
         )}
       />
+      {moved && <p className="lib-date" role="status">{moved}</p>}
       {error && <div className="card error">{error}</div>}
 
       <section className="card mp-facts" aria-label="Latest reading and limits">
@@ -219,6 +232,13 @@ export default function MeasuringPoint() {
 
       {modal === "read" && <PointReadingModal point={point} onClose={() => setModal(null)} onDone={done} />}
       {modal === "limits" && <LimitsModal point={point} onClose={() => setModal(null)} onDone={done} />}
+      {modal === "move" && (
+        <PointMoveModal point={point} onClose={() => setModal(null)}
+                        onDone={(r) => {
+                          setMoved(`Moved to ${r.position?.name || "its new position"}.${r.note ? ` ${r.note}` : ""}`);
+                          done();
+                        }} />
+      )}
     </div>
   );
 }
