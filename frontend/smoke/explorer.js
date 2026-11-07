@@ -9,7 +9,8 @@ export const details = (page) =>
   page.getByRole("region", { name: "Details" }).or(page.locator(".tt-headslot, .tt-tabslot"));
 
 // Where the parts of the Explorer's frame are on screen, rounded to 0.1 px:
-// the pane, the tree's title row (title, +, ⋯), the search box, the counts,
+// the pane, the tree's title row (title, the Positions / Locations switch), the
+// search box and its ⋯, the counts,
 // the pinned branch's note in the column header (if any), the tree's column header, the tree's
 // scroll area (its top, its scroll and the place of each row drawn on screen,
 // by key), and the panel's heading and tabs.
@@ -36,7 +37,7 @@ export function frameOf(page) {
       boxes: {
         pane: r(q("aside.tp")),
         title: r(q(".tp-title")),
-        add: r(q(".tp-add")),
+        arrange: r(q(".tp-arrange")),
         menu: r(q(".tm-trigger")),
         search: r(q(".tp-filter")),
         counts: r(q(".tp-status")),

@@ -28,7 +28,7 @@ const DATA = {
 };
 const names = (d, list) => list.map((v) => d.rows.get(v.key).ref.name);
 
-test("what can be pinned: positions, locations, items with something inside; nothing in Flat", () => {
+test("what can be pinned: positions, locations, items with something inside", () => {
   const pos = buildDisplay(DATA, "positions");
   assert.equal(canPin(pos.rows.get("lineA"), "positions"), true);
   assert.equal(canPin(pos.rows.get("sealA"), "positions"), true); // a position with nothing inside still can
@@ -38,10 +38,6 @@ test("what can be pinned: positions, locations, items with something inside; not
   const loc = buildDisplay(DATA, "locations");
   assert.equal(canPin(loc.rows.get("site"), "locations"), true);
   assert.equal(canPin(loc.rows.get("sp"), "locations"), false); // a spare with nothing inside
-  const flat = buildDisplay(DATA, "flat");
-  assert.equal(canPin(flat.rows.get("lineA"), "flat"), false);
-  const items = buildDisplay(DATA, "items");
-  assert.equal(canPin(items.rows.get("bench"), "items"), false); // items are leaves when arranged by item
   // RCM rows can't be pinned; their position can.
   const rcm = graftRcm(pos, { positions: [{ id: "pumpA", functions: [{ id: "fn1", text: "Pump", failures: [] }] }] });
   assert.equal(canPin(rcm.rows.get("fn1"), "positions"), false);
@@ -55,7 +51,6 @@ test("an address's pin: kept when it's a row that can be pinned here, else null"
   assert.equal(pinTarget(pos, "positions", "G:loose"), null);
   assert.equal(pinTarget(pos, "positions", null), null);
   assert.equal(pinTarget(pos, "positions", "site"), null); // a location isn't a row when arranged by positions
-  assert.equal(pinTarget(buildDisplay(DATA, "flat"), "flat", "lineB"), null);
 });
 
 test("pinned: the branch is the one top row, everything above and beside it gone", () => {
