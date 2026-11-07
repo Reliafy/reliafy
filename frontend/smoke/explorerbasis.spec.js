@@ -92,11 +92,14 @@ test("the working behind a standard: write, preview, save, read, no (i) in the t
   await expect(page.getByRole("checkbox", { name: /Performance standard/ })).toHaveCount(0);
   await page.keyboard.press("Escape");
 
-  // The working is reached through the details: another row has none, the function's has it in full.
+  // The working is reached through the details: another row has none; the function's details show it
+  // collapsed (a preview line) each time they open, and Read more opens it in full.
   await trow(page, `^Failure mode: Dosing pump fails ${tag}`).locator(".tt-tree").click();
   await expect(section(page)).toHaveCount(0);
   await fnRow.locator(".tt-tree").click();
   await expect(panel(page).getByRole("heading", { name: `Keep the water safe ${tag}` })).toBeVisible();
+  await expect(section(page).locator(".rw-basis-preview")).toContainText("Chlorine demand");
+  await section(page).getByRole("button", { name: /Read more/ }).click();
   await expect(section(page).locator(".rw-md h2")).toBeVisible();
 
   // A .md file: replace the text. Then a PDF.
