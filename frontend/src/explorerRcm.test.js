@@ -223,19 +223,18 @@ test("the Task cell with the interval folded in", () => {
   assert.equal(TASK_WITH_INTERVAL.edit, "text"); // still edits the task itself
 });
 
-test("each of a function's performance standards carries its function's working data (no marker in the table)", () => {
-  const rcm = (fn) => ({ positions: [{ id: "pump", functions: [{ id: "f", text: "Keep it clean", has_basis: true, basis_preview: "Demand 4.3 ppm", failures: [], ...fn }] }] });
+test("each of a function's performance standards knows whether the function has notes (where the working is)", () => {
+  const rcm = (fn) => ({ positions: [{ id: "pump", functions: [{ id: "f", text: "Keep it clean", notes: "Demand 4.3 ppm", failures: [], ...fn }] }] });
   const listed = graftRcm(buildDisplay(DATA, "positions"), rcm({ standards: [st("a", "FC 1-3 ppm"), st("b", "pH 7.2-7.8")] }));
-  assert.deepEqual(["a", "b"].map((k) => listed.rows.get(k).ref.function_has_basis), [true, true]);
-  assert.equal(listed.rows.get("a").ref.function_basis_preview, "Demand 4.3 ppm");
-  const noWorking = graftRcm(buildDisplay(DATA, "positions"), rcm({ has_basis: false, standards: [st("a", "FC 1-3 ppm")] }));
-  assert.equal(noWorking.rows.get("a").ref.function_has_basis, false);
+  assert.deepEqual(["a", "b"].map((k) => listed.rows.get(k).ref.function_has_notes), [true, true]);
+  const none = graftRcm(buildDisplay(DATA, "positions"), rcm({ notes: "  ", standards: [st("a", "FC 1-3 ppm")] }));
+  assert.equal(none.rows.get("a").ref.function_has_notes, false);
 });
 
-test("the one search box also reaches the first words of a working, never the whole text", () => {
+test("the one search box reaches a function's notes, the working in them too", () => {
   const display = graftRcm(buildDisplay(DATA, "positions"), {
-    positions: [{ id: "pump", functions: [{ id: "f", text: "Keep it clean", standard: "", has_basis: true,
-      basis_preview: "Chlorine demand 4.3 ppm per day", failures: [] }] }],
+    positions: [{ id: "pump", functions: [{ id: "f", text: "Keep it clean", standard: "",
+      notes: "Why\n\nWorking\n\nChlorine demand 4.3 ppm per day", failures: [] }] }],
   });
   const f = computeFilter(display, { query: "chlorine demand" });
   assert.ok(f.keep.has("f"));
@@ -661,7 +660,7 @@ test("functionSummary: a position's functions with standards, failures and decid
   const display = graftRcm(buildDisplay(DATA, "positions"), rcm);
   const s = functionSummary(display, display.rows.get("pump"));
   assert.equal(s.length, 2);
-  assert.deepEqual([s[0].standards, s[0].standardTexts, s[0].failures, s[0].modes, s[0].decided, s[0].hasBasis], [2, ["50 L/s"], 1, 2, 1, true]);
-  assert.deepEqual([s[1].text, s[1].standards, s[1].modes, s[1].hasBasis], ["(no text yet)", 1, 0, false]);
+  assert.deepEqual([s[0].standards, s[0].standardTexts, s[0].failures, s[0].modes, s[0].decided], [2, ["50 L/s"], 1, 2, 1]);
+  assert.deepEqual([s[1].text, s[1].standards, s[1].modes], ["(no text yet)", 1, 0]);
   assert.deepEqual(functionSummary(display, null), []);
 });

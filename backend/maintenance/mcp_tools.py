@@ -164,7 +164,7 @@ GET_KINDS: Table = {
     "photo_link": ("id", "", """id = a link_id from maintenance attachments.photo_link. The photos added
         through it so far, and any location a photo carried with the user's answer (saved / declined / null =
         not answered). Unanswered: ask the user before set_coordinates; never save it unasked."""),
-    "function": ("id", "", "A function in full: standard_basis (Markdown) and its documents."),
+    "function": ("id", "", "A function in full: its notes (with the working behind its standard) and documents."),
     "document": ("id", "", """A document on an item, position, function or class. A stored PDF has open_url and
         download_url: no sign-in, for 15 minutes; read it again for new ones."""),
     "manufacturer_match": ("text", "", """Which register entry a maker as written ('K.S.B.', 'KSB AG') is:
@@ -331,7 +331,7 @@ FAILURE_MODES: Table = {
         I-IV: cm = βαλt). clear: fields to unset. Guide topic plan."""),
     "decide": ("failure_mode_id", "consequence decision task_id", """consequence and the whole decision
         {outcome, rtf_basis, task, interval, interval_unit, notes, evidence: {type, id}: a model or analysis,
-        checked; or report / working (a function's id): linked, not checked} ({} clears it; values:
+        checked; or report / working (a function's id: its notes and rationale): linked, not checked} ({} clears it; values:
         guide topic plan); adds, changes or retires its task (task_id: an existing one is the decision's).
         A combination of tasks (an inspection plus a fixed-time replacement): decision.outcomes [{outcome, task,
         interval, interval_unit, task_id?}, ...], each scheduled one with a task of its own. Returns it with the
@@ -344,9 +344,9 @@ FAILURE_MODES: Table = {
                "recorded failures keep it). cascade: undo_delete can bring it all back; dry_run: only count."),
     "restore": ("failure_mode_id", "", "Put a deleted mode back, with its decision and the task retired with it."),
     "add_function": ("position_id text", "standard standard_basis notes", "A function the position performs (its "
-                     "performance standards: add_standard), with the working behind them (standard_basis)."),
+                     "performance standards: add_standard); notes: its rationale and the working behind them."),
     "update_function": ("function_id", "text standard standard_basis notes", "Change its text, single standard text "
-                        "(before add_standard), standard_basis or notes ('' clears it)."),
+                        "(before add_standard) or notes ('' clears it)."),
     "add_standard": ("function_id text", "parameter comparator value unit when source notes", """One of the function's
         performance standards, one parameter and one limit ('pH 7.2-7.8'); the structured limit, when it
         applies and its source are optional. A function may hold several."""),
@@ -557,7 +557,7 @@ SIGNALS: Table = {
     "update_band": ("point_id", "name low high axis unit alarm_above alarm_below warn_above warn_below clear_limits",
                     """Change a band: name and limits in place; a new range starts a new version from now (the old
         values stay as measured, the trend shows the change). clear_limits: list of limit names to remove."""),
-    "set_storage_cap": ("", "cap_mb", "Warn on the Signals tab above cap_mb of snapshots (none clears; deletes nothing)."),
+    "set_storage_cap": ("", "cap_mb", "Warn on channel pages above cap_mb of snapshots (none clears; deletes nothing)."),
     "add_level": ("channel_id name stat", "axis alarm_above alarm_below warn_above warn_below", """An overall level of each snapshot as a
         measurement point: stat rms, peak, crest, kurtosis, mean or value (a scalar channel, e.g. pressure)."""),
     "remove_band": ("point_id", "reason", """Stop a band or level adding values (its recorded values stay)."""),
@@ -1411,7 +1411,8 @@ def register() -> None:
                                   consequence: str | None = None, effects: str | None = None,
                                   notes: str | None = None, function_id: str | None = None,
                                   functional_failure_id: str | None = None, standard: str | None = None,
-                                  standard_basis: str | None = None,
+                                  standard_basis: Annotated[str | None, Field(description=(
+                                      "Deprecated: write the working in notes; this is added to them."))] = None,
                                   decision: Annotated[dict[str, Any] | None, Field(description=(
                                       "decide: {outcome, rtf_basis, task, interval, interval_unit, notes, "
                                       "evidence}; a combination of tasks: outcomes [{outcome, task, interval, "

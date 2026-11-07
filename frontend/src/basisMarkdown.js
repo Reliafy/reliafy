@@ -1,8 +1,9 @@
 import { Marked } from "marked";
 import DOMPurify from "dompurify";
 
-// The working behind a performance standard, written in Markdown and shown to
-// everyone who can open the function. It is typed or uploaded by a person, so
+// A function's notes and rationale (which hold the working behind its
+// performance standards), written in Markdown and shown to everyone who can
+// open the function. It is typed or uploaded by a person, so
 // it is treated as untrusted: raw HTML in it is dropped before it is turned
 // into markup, then the markup is cleaned against a short list of tags (no
 // images, styles, forms or scripts) and a link may only be http, https or

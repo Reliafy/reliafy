@@ -467,6 +467,19 @@ The server stores it as text and never renders it.
   read (`GET /functions/{id}`, `maintenance get.function`). The bulk
   `rcm_all` (the asset tree's RCM tab) gives each function `has_basis` and
   `basis_preview` (its first 240 characters as one plain line) instead.
+- **Merged into the notes (Nov 2026).** The working is now written in the
+  function's notes and rationale; nothing new writes `standard_basis`. Reads
+  merge a working still on the node into the notes (`merged_notes`: the notes,
+  a "Working" line, then the working; the working alone when there are no
+  notes), and `standard_basis` / `has_basis` / `basis_preview` describe those
+  notes for older readers. The first save of such a function's notes emits
+  `function.working_merged` (`id, notes`): the projector replaces `notes` and
+  clears `standard_basis` on the node (`working_merged: true`); the old events
+  stay as written. `merge_workings(dry_run=True)` and
+  `python -m backend.scripts.merge_function_workings [--org ORG] [--apply]`
+  emit it once for every live function that still has a separate working.
+  `standard_basis` on add/update is a deprecated alias that writes the notes.
+  A function's notes may run to 25,000 characters (`FUNCTION_NOTES`).
 - A PDF of the working is a Document with its `OF` edge to the Function (no
   new event, edge or kind; at most 5 on one function). It moves with the
   function (the edge is on the node), isn't copied with a position (no
@@ -479,8 +492,8 @@ Every function, performance standard, functional failure and failure mode has
 its title (`text`) and its notes: a long description where the rationale for
 it is written (why the standard is set where it is, what a mode rests on).
 Plain text, line breaks kept as LF, trimmed, at most 4,000 characters
-(`LONG_TEXT`). A function's working (`standard_basis`) stays the numeric basis
-of its standards; notes are the general rationale.
+(`LONG_TEXT`); a function's, which hold the working behind its standards, at
+most 25,000 (`FUNCTION_NOTES`).
 
 - `function.notes_set`, `standard.notes_set` and `functional_failure.notes_set`
   (`id, notes`) replace the row's `notes` whole (`""` clears them). The add and

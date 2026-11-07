@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listSignalChannels } from "../api.js";
-import { channelExplorerPath } from "../signals.js";
+import { channelPath } from "../signals.js";
 import { useRoles } from "../RolesProvider.jsx";
 
 // Risk › Condition monitoring: a line for the people who use Maintenance, pointing at the signal channels
-// whose watched bands can be fitted for their time to the limit (Assets › Explorer › Signals).
+// whose watched bands can be fitted for their time to the limit (each channel's own page).
 export default function WatchedBandsNote() {
   const { has } = useRoles();
   const [channels, setChannels] = useState(null);
@@ -14,8 +14,8 @@ export default function WatchedBandsNote() {
     listSignalChannels().then((d) => setChannels(d.channels || [])).catch(() => setChannels([]));
   }, [has.maintenance]);
   if (!has.maintenance || !channels || channels.length === 0) return null;
-  // A channel opens its position's Summary (its Signals tab when that is shown, EXPLORER_SIGNALS_TAB); a loose item's, its row in Locations.
-  const link = channelExplorerPath;
+  // A channel opens its own page (spectrum, watch bands, time to the limit).
+  const link = channelPath;
   return (
     <section className="card" aria-label="Signal channels">
       <p className="sg-meta">

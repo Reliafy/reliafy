@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import {
-  addSignalBand, createSignalChannel, getSignalChannel, getSignalSpectra, listSignalChannels, previewSignalBand,
+  addSignalBand, getSignalChannel, getSignalSpectra, listSignalChannels, previewSignalBand,
   removeSignalBand, updateSignalChannel,
 } from "../api.js";
 import { ACCENT, COLORWAY, DANGER, REFERENCE, WARNING } from "../plotTheme.js";
@@ -15,6 +15,7 @@ import TimeToLimit from "./TimeToLimit.jsx";
 import SignalSnapshotForm from "./SignalSnapshotForm.jsx";
 import SignalBandEditor from "./SignalBandEditor.jsx";
 import SignalStorage from "./SignalStorage.jsx";
+import NewChannel from "./SignalChannelForm.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import "./SignalsPanel.css";
 
@@ -30,7 +31,9 @@ const saveFlag = (key, on) => {
   try { window.localStorage.setItem(key, on ? "1" : "0"); } catch { /* private window: it just won't be remembered */ }
 };
 
-// The Signals tab of the Explorer's panel (Assets › Explorer): the
+// Signal channels: SignalsPanel is the Explorer's Signals tab (hidden for now,
+// EXPLORER_SIGNALS_TAB); ChannelView is a channel's own page
+// (/asset-register/channels/:id, views/SignalChannel.jsx). The
 // sensors on a position or an item that send snapshots (vibration bursts,
 // spectra, pressures). One spectrum chart (overlay chosen snapshots and a
 // baseline; hover a legend entry to find a snapshot; drag a frequency range to
@@ -153,49 +156,7 @@ function ChannelList({ target, what, onStored, quiet = false, addAsk = 0 }) {
   );
 }
 
-function NewChannel({ target, onDone, onCancel }) {
-  const [f, setF] = useState({ name: "", unit: "g", axes: "", sample_rate: "", rpm: "", tag: "" });
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
-  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
-  const submit = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    setErr(null);
-    try {
-      const axes = f.axes.split(",").map((a) => a.trim()).filter(Boolean);
-      const made = await createSignalChannel({
-        position_id: target.positionId, item_id: target.itemId, name: f.name, unit: f.unit,
-        ...(axes.length ? { axes } : {}), ...(f.sample_rate ? { sample_rate: Number(f.sample_rate) } : {}),
-        ...(f.rpm ? { rpm: Number(f.rpm) } : {}), tag: f.tag,
-      });
-      onDone(made);
-    } catch (x) {
-      setErr(x.message);
-      setBusy(false);
-    }
-  };
-  return (
-    <form className="card sg-new" onSubmit={submit}>
-      <h3>Add a signal channel</h3>
-      <div className="sg-grid">
-        <label className="sg-field">Name<input value={f.name} onChange={set("name")} required maxLength={200} placeholder="DE bearing" /></label>
-        <label className="sg-field">Unit<input value={f.unit} onChange={set("unit")} required maxLength={20} placeholder="g, mm/s, kPa" /></label>
-        <label className="sg-field">Axes (optional)<input value={f.axes} onChange={set("axes")} placeholder="X, Y, Z" /></label>
-        <label className="sg-field">Sample rate, Hz (optional)<input type="number" inputMode="decimal" min="0" step="any" value={f.sample_rate} onChange={set("sample_rate")} /></label>
-        <label className="sg-field">Running speed, rpm (optional)<input type="number" inputMode="decimal" min="0" step="any" value={f.rpm} onChange={set("rpm")} /></label>
-        <label className="sg-field">Tag the device sends<input value={f.tag} onChange={set("tag")} maxLength={200} placeholder="pump.vib" /></label>
-      </div>
-      {err && <p className="sg-note sg-bad" role="alert">{err}</p>}
-      <div className="sg-actions">
-        <button type="submit" disabled={busy || !f.name.trim() || !f.unit.trim()}>{busy ? "Adding…" : "Add the channel"}</button>
-        <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
-      </div>
-    </form>
-  );
-}
-
-function ChannelView({ summary, all, onChanged }) {
+export function ChannelView({ summary, all, onChanged, focusBands = false }) {
   const confirm = useConfirm();
   const [ch, setCh] = useState(null);
   const [error, setError] = useState(null);
@@ -218,6 +179,14 @@ function ChannelView({ summary, all, onChanged }) {
   const [detail, setDetail] = useState(null); // { key, data: Map id -> { freqs, amps }, full }
   const [addingSnap, setAddingSnap] = useState(false);
   const [editing, setEditing] = useState(null); // point id of the band being edited
+  // The channel's page opened at its bands (#bands, a row's "Edit bands…"): scroll there once they're drawn.
+  const bandsRef = useRef(null);
+  const scrolled = useRef(false);
+  useEffect(() => {
+    if (!focusBands || scrolled.current || !ch || !bandsRef.current) return;
+    scrolled.current = true;
+    bandsRef.current.scrollIntoView({ block: "start" });
+  });
 
   const reload = useCallback(() => getSignalChannel(summary.id).then((d) => {
     setCh(d);
@@ -666,7 +635,7 @@ function ChannelView({ summary, all, onChanged }) {
       )}
 
       {bands.length > 0 && (
-        <section className="card sg-card" aria-label="Watch bands">
+        <section className="card sg-card" aria-label="Watch bands" id="bands" ref={bandsRef}>
           <h3 className="sg-h">Watch bands and levels</h3>
           <div className="maint-scroll">
             <table className="sg-table">
@@ -700,7 +669,7 @@ function ChannelView({ summary, all, onChanged }) {
                                 onChanged?.();
                               }} />
           )}
-          <p className="sg-hint">Each band is also a measurement point (see Summary › Measurements), so its alarm limits, trend and projected alarm date work as for any other.</p>
+          <p className="sg-hint">Each band is also a measurement point (a row of the Explorer's Measurements tab), so its alarm limits, trend and projected alarm date work as for any other.</p>
         </section>
       )}
       {bands.length > 0 && <TimeToLimit bands={bands} channelName={ch.name} selectedId={bandSel === "preview" ? null : bandSel} />}

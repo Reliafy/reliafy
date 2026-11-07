@@ -12,7 +12,7 @@ from backend.config import SAMPLE_OWNER
 
 from backend.maintenance import fmea_sheet, rcm_decisions, rcm_graph
 from backend.maintenance.service import PROJECTORS, Invalid, Maintenance
-from backend.maintenance.store import GraphStore
+from backend.maintenance.store import GraphStore, new_id
 from backend.services import access
 from backend.tests.test_maintenance_mcp import UID, _do, _get, _list, _ok, _session, env  # noqa: F401
 from backend.tests.test_maintenance_rcm_api import api  # noqa: F401 - fixture
@@ -91,7 +91,7 @@ def test_linked_evidence_goes_stale_when_it_goes(m, db):
     m.decide_failure_mode(seal, decision={"outcome": "redesign", "evidence": {"type": "report", "id": "r1"}})
     m.decide_failure_mode(bearing, decision={"outcome": "redesign", "evidence": {"type": "working", "id": fn["id"]}})
     db.reports.delete_one({"_id": "r1"})
-    m.update_function(fn["id"], standard_basis="")
+    m.update_function(fn["id"], notes="")  # the working is the function's notes and rationale now
     _, got = _read(db, m, pid)
     assert got["Seal"]["status"] == "stale" and got["Seal"]["reason"] == "The linked report no longer exists."
     assert got["Bearing"]["status"] == "stale" and "working" in got["Bearing"]["reason"]
@@ -107,7 +107,7 @@ def test_linked_evidence_goes_stale_when_it_goes(m, db):
 def test_a_working_must_be_there_to_link(m):
     pid, fn, (seal, *_) = _pump(m)
     plain = m.add_function(pid, "Contain water")
-    with pytest.raises(Invalid, match="no working behind its performance standard yet"):
+    with pytest.raises(Invalid, match="no notes and rationale yet"):
         m.decide_failure_mode(seal, decision={"outcome": "accept", "evidence": {"type": "working", "id": plain["id"]}})
     with pytest.raises(Invalid, match="no such function here"):
         m.decide_failure_mode(seal, decision={"outcome": "accept", "evidence": {"type": "working", "id": "nope"}})
@@ -132,7 +132,7 @@ def test_the_fmea_workbook_names_the_kind(m, db):
     m.decide_failure_mode(bearing, decision={"outcome": "redesign", "evidence": {"type": "working", "id": fn["id"]}})
     sheet, _ = _read(db, m, pid)
     cells = {c for row in fmea_sheet.rows(sheet) for c in row if isinstance(c, str)}
-    assert {"Report linked", "Working linked"} <= cells
+    assert {"Report linked", "Notes linked"} <= cells
 
 
 def test_over_the_routes_a_report_links_and_someone_elses_is_refused(api):  # noqa: F811
@@ -185,3 +185,26 @@ def test_over_mcp_decide_takes_a_working_and_the_read_shows_it(env):  # noqa: F8
     assert by_report["decision"]["artifact_name"] == "Bearing case"
     assert {md["decision"]["evidence_kind"] for md in sheet["positions"][0]["unassigned"]} == {"working", "report"}
     assert sheet["rollup"]["decided"] == 2 and gaps["evidence_to_check"] == []
+
+
+def test_an_old_working_link_still_resolves_and_notes_alone_can_be_linked(m, db):
+    """A decision linking a function whose working was written before Nov 2026
+    (standard_basis on function.added) resolves through the merged read, before
+    and after the migration; a function with notes alone can be linked too."""
+    pid = m.create_position("Pump")["id"]
+    fid = new_id()
+    m._emit("function.added", {"id": fid, "position_id": pid, "text": "Pump water", "standard": "50 L/s", "order": 0,
+                               "standard_basis": WORKING, "on": "2026-10-01"})
+    ff = m.add_functional_failure(fid, "No flow")
+    seal = m.add_failure_mode(pid, "Seal", functional_failure_id=ff["id"])["id"]
+    bearing = m.add_failure_mode(pid, "Bearing", functional_failure_id=ff["id"])["id"]
+    m.decide_failure_mode(seal, decision={"outcome": "accept", "evidence": {"type": "working", "id": fid}})
+    assert _read(db, m, pid)[1]["Seal"]["status"] == "linked"
+    m.merge_workings(dry_run=False)
+    assert _read(db, m, pid)[1]["Seal"]["status"] == "linked"
+    noted = m.add_function(pid, "Contain water", notes="Rated 10 bar: the vendor's sheet")
+    m.decide_failure_mode(bearing, decision={"outcome": "accept", "evidence": {"type": "working", "id": noted["id"]}})
+    assert m.rcm_mode(bearing)["decision"]["working"]["id"] == noted["id"]
+    before = m.s.snapshot()
+    m.s.rebuild()
+    assert m.s.snapshot() == before

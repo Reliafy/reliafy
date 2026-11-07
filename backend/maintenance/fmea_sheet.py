@@ -8,9 +8,11 @@ directly under a function (no functional failure yet) has a blank Functional
 failure cell; a mode under none has blank function cells too.
 
 Notes and rationale: a function's (Function notes) and a functional
-failure's (Functional failure notes) on its first row, as the working is; a
-performance standard's (Standard notes) on its own row; a failure mode's
-(Failure mode notes) on its row. The import reads each back.
+failure's (Functional failure notes) on its first row; a performance
+standard's (Standard notes) on its own row; a failure mode's (Failure mode
+notes) on its row. The import reads each back. A function's notes hold the
+working behind its standard, so the Standard working column stays blank (it
+is kept so older files and this one line up).
 """
 
 from __future__ import annotations
@@ -37,8 +39,8 @@ _CONSEQUENCE = {c["id"]: c["label"] for c in rcm_decisions.CONSEQUENCE_OPTIONS}
 _OUTCOME = {o["id"]: o["label"] for o in rcm_decisions.OUTCOME_OPTIONS}
 _STATUS = {"supported": "Supported", "contradicted": "Contradicted", "inconclusive": "Inconclusive",
            "stale": "Stale link"}
-# Linked, not checked: what's linked says which ("Report linked", "Working linked").
-_LINKED = {"report": "Report linked", "working": "Working linked"}
+# Linked, not checked: what's linked says which ("Report linked", "Notes linked": a function's notes and rationale).
+_LINKED = {"report": "Report linked", "working": "Notes linked"}
 _AP = fmea.AP_LABELS
 _FILENAME_BAD = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
 
@@ -100,7 +102,7 @@ def rows(worksheet: dict) -> list[list]:
             return [
                 where, (fn or {}).get("text") or "", (first and (fn or {}).get("notes")) or "",
                 _standard_cell(fn or {}, fail), "",
-                (first and (fn or {}).get("standard_basis")) or "", (fail or {}).get("text") or "",
+                "", (fail or {}).get("text") or "",
                 (first_fail and (fail or {}).get("notes")) or "",
                 _caused_by(fail or {}), (m or {}).get("text") or "", (m or {}).get("effects") or "",
                 _CONSEQUENCE.get((m or {}).get("consequence") or "", ""),
@@ -133,7 +135,7 @@ def rows(worksheet: dict) -> list[list]:
                 for i, st in enumerate(fn["standards"]):
                     out.append([where, fn.get("text") or "", (first and i == 0 and fn.get("notes")) or "",
                                 st.get("text") or "", st.get("notes") or "",
-                                (first and i == 0 and fn.get("standard_basis")) or "", "", "", "", "", "", "",
+                                "", "", "", "", "", "", "",
                                 *blank_scores, "", "", "", "", "", "", ""])
             for m in fn.get("modes") or []:  # directly under the function: no functional failure yet
                 mode_rows(fn, None, m)

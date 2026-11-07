@@ -175,6 +175,15 @@ it in the function's `modes`. `products.add_sample` adds the sample
 quadcopter product, its design fully scored (on Products, not in the asset
 tree).
 
+A function's notes and rationale (`notes` on `failure_modes.add_function` /
+`update_function`, up to 25,000 characters on a function) hold the working
+behind its performance standards. `standard_basis`, the separate working
+before Nov 2026, is still accepted but deprecated: it is added to the notes
+under a "Working" line. Reads keep `standard_basis`, `has_basis` and
+`basis_preview` describing the notes, and a working written before reads as
+part of the notes. Evidence `{type: "working", id}` on a decision links that
+function's notes and rationale.
+
 Everything in the tree can be taken out of use and brought back (`retire` /
 `restore` on positions, locations, items, parts, manufacturers, measurement
 points, tasks, failure modes, classes, conditions, groups, connections and

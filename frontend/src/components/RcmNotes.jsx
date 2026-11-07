@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Section, { AddRow } from "./ui/Section.jsx";
 import Field from "./ui/Field.jsx";
 import { TextArea } from "./ui/Controls.jsx";
 import ClampLines from "./ui/ClampLines.jsx";
-import { NOTES_LIMIT, checkNotes, notesChanged, notesCount, notesOf, notesPrompt } from "../rcmNotes.js";
+import { renderBasisMarkdown } from "../basisMarkdown.js";
+import { FUNCTION_NOTES_HINT, checkNotes, notesChanged, notesCount, notesLimit, notesOf, notesPrompt } from "../rcmNotes.js";
 import "./OperatingContextCard.css";
 
 // "Notes and rationale" in an RCM row's details, the first section under its title and status chips
@@ -16,8 +17,49 @@ import "./OperatingContextCard.css";
 // "Add notes" row, like the "Add a failure mode" row of the other sections. `onSave(value)` is the details' commit: true, or a
 // promise of true, once saved; a string is the refusal, shown on the box with
 // the text kept.
-export default function RcmNotes({ r, readOnly = false, onSave }) {
+//
+// A function's notes also hold the working behind its performance standards
+// (they were two sections until Nov 2026; a working written before reads
+// below the notes under a "Working" line, and the first save keeps both as
+// one text). So on a function: the hint says the working goes here, the text
+// is shown as Markdown (tables, lists; the same cleaned renderer the working
+// had), it may run to 25,000 characters, and `children` (its PDFs) close the
+// section. `openToken` changes when the notes are asked for in full (a
+// decision's linked notes clicked): they unfold.
+
+// A function's notes as Markdown, folded to about six lines with Show all.
+function MarkdownClamp({ text, openToken }) {
+  const html = useMemo(() => renderBasisMarkdown(text), [text]);
+  const box = useRef(null);
+  const [long, setLong] = useState(false);
+  const [open, setOpen] = useState(false);
+  useLayoutEffect(() => { setOpen(false); }, [text]);
+  useEffect(() => { if (openToken != null) setOpen(true); }, [openToken]);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el || open) return undefined;
+    const check = () => setLong(el.scrollHeight > el.clientHeight + 1);
+    check();
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(check);
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [html, open]);
+  return (
+    <div className="clampl">
+      <div ref={box} className={"rw-md rw-notes-md" + (open ? " open" : "")} dangerouslySetInnerHTML={{ __html: html }} />
+      {(long || open) && (
+        <button type="button" className="link clampl-more" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          {open ? "Show less" : "Show all"}<span className="sr-only"> of the notes</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
+export default function RcmNotes({ r, readOnly = false, onSave, openToken = null, children = null }) {
   const text = notesOf(r);
+  const fn = r.type === "fn";
+  const limit = notesLimit(r);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -50,7 +92,7 @@ export default function RcmNotes({ r, readOnly = false, onSave }) {
     setTimeout(() => startBtn.current?.focus(), 0);
   };
   const save = async () => {
-    const res = checkNotes(draft);
+    const res = checkNotes(draft, limit);
     if (res.error) return setError(res.error);
     if (!notesChanged(text, draft)) return stop();
     setBusy(true);
@@ -72,15 +114,17 @@ export default function RcmNotes({ r, readOnly = false, onSave }) {
     }
   };
 
-  const count = notesCount(draft);
+  const count = notesCount(draft, limit);
   let body;
   if (editing) {
     body = (
       <div className="td-ctx-edit">
+        {fn && <p className="rw-fhelp rw-notes-hint">{FUNCTION_NOTES_HINT}</p>}
         <Field label="Notes and rationale" labelHidden error={error || (count.over ? count.message : null)}
-               help={error || count.over ? null : "Ctrl+Enter saves, Esc cancels."}
+               help={error || count.over ? null : fn ? "Markdown is fine: headings, lists, tables, links. Ctrl+Enter saves, Esc cancels."
+                 : "Ctrl+Enter saves, Esc cancels."}
                count={<span className={"char-count" + (count.tone ? ` ${count.tone}` : "")}>{count.text}</span>}>
-          <TextArea ref={area} rows={5} value={draft} maxLength={NOTES_LIMIT} placeholder={notesPrompt(r)}
+          <TextArea ref={area} rows={fn ? 8 : 5} value={draft} maxLength={limit} placeholder={notesPrompt(r)}
                     readOnly={busy} aria-busy={busy || undefined}
                     aria-description={`${count.n} of ${count.max} characters.`}
                     onChange={(e) => setDraft(e.target.value)} onKeyDown={keys} />
@@ -95,12 +139,13 @@ export default function RcmNotes({ r, readOnly = false, onSave }) {
     // Empty: the prompt, and the dashed add row the other sections end with.
     body = (
       <>
-        <p className="td-quiet rw-notes-prompt">{notesPrompt(r)}</p>
+        <p className="td-quiet rw-notes-prompt">{notesPrompt(r)}{fn && <> {FUNCTION_NOTES_HINT}</>}</p>
         {!readOnly && <AddRow ref={startBtn} onClick={start}>Add notes</AddRow>}
       </>
     );
   } else {
-    body = <ClampLines text={text} lines={6} what="the notes" textClassName="td-ctx-text" />;
+    body = fn ? <MarkdownClamp text={text} openToken={openToken} />
+      : <ClampLines text={text} lines={6} what="the notes" textClassName="td-ctx-text" />;
   }
 
   return (
@@ -108,6 +153,7 @@ export default function RcmNotes({ r, readOnly = false, onSave }) {
              aside={note && <span className="field-saved td-ctx-note" role="status">{note}</span>}
              action={text && !editing && !readOnly ? { label: "Edit", ariaLabel: "Edit the notes and rationale", onClick: start, ref: startBtn } : null}>
       {body}
+      {children}
     </Section>
   );
 }

@@ -586,23 +586,23 @@ def position_fmea_xlsx(position_id: str, scope: str = "below", session=Depends(g
 
 @router.post("/positions/{position_id}/functions")
 def add_function(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """A function with its performance standard and, optionally, the working behind it
-    (standard_basis: Markdown text) and its notes (the rationale, plain text)."""
+    """A function with its performance standard and its notes and rationale (which hold
+    the working behind the standard; standard_basis, deprecated, is added to them)."""
     return _run(m.add_function, position_id, body.get("text"), body.get("standard", ""),
                 standard_basis=body.get("standard_basis", ""), notes=body.get("notes"))
 
 
 @router.get("/functions/{function_id}")
 def get_function(function_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    """One function in full: the working behind its performance standard and the documents on it."""
+    """One function in full: its notes and rationale (with the working behind its standard) and documents."""
     return _run(m.function, function_id)
 
 
 @router.patch("/functions/{function_id}")
 def update_function(function_id: str, body: dict = Body(...),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """text, standard, standard_basis (the working behind the standard) or notes (its
-    rationale); "" clears one."""
+    """text, standard or notes (its rationale and the working behind the standard; standard_basis,
+    deprecated, is added to them); "" clears one."""
     return _run(m.update_function, function_id, body.get("text"), body.get("standard"),
                 body.get("standard_basis"), notes=body.get("notes"))
 
@@ -1169,7 +1169,7 @@ def add_item_point(item_id: str, body: dict = Body(...), m: Maintenance = Depend
                 item_id=item_id)
 
 
-# ---- signal channels (the Explorer's Signals tab) --------------------------------------
+# ---- signal channels (rows of the Explorer's Measurements tab; their own pages) --------------------------------------
 # The same operations as the maintenance tool's signals.* / signal_data.* actions.
 
 @router.get("/signals/channels")

@@ -279,7 +279,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // A position an FMEA / RCM worksheet is being imported onto ({id, name}).
   const [sheetFor, setSheetFor] = useState(null);
   const [rcmFocus, setRcmFocus] = useState(null); // a function, failure or mode picked (its position is selected)
-  const [basisAt, setBasisAt] = useState(null); // the (i) in the table clicked: {key, at}, the working opens in the panel
+  const [notesAt, setNotesAt] = useState(null); // a function's notes asked for in full: {key, at}
   const [panel, setPanel] = useState(false); // its details beside the table
   const [editing, setEditing] = useState(null); // {key, col}: a cell being edited
   const [deciding, setDeciding] = useState(null); // a failure mode in the decision dialog
@@ -1368,10 +1368,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     onCommit: commit, onCancel: () => setEditing(null), onDecision: (r) => setDeciding(r),
     // A double-click on a function, standard, failure or mode (on its name, not on a cell edited in place): its details, expanded.
     onOpen: openItem,
-    // The (i) at the end of a performance standard's name (or a function's
-    // with none) that has a working: the function is picked and its details
-    // open with the working in full.
-    onBasis: (r) => openBasis(r.type === "std" ? r.ref.function_id : r.key),
+    // A decision's linked notes (evidence "working") in the table: the function is picked and its
+    // details open with its notes and rationale in full.
+    onNotes: (r) => openNotes(r.type === "std" ? r.ref.function_id : r.key),
     onGoto: (key) => reveal(key),
     // The position picked, when it has no functions yet: its row says how to start.
     hint: !wideDetails && rcm?.positions && posRow?.type === "pos" && !posRow.rcmKids ? posRow.key : null,
@@ -1440,45 +1439,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const fmeaPos = useMemo(() => (fmeaPosRow ? positionSummary(whole, fmeaPosRow.key, fopts) : null), [fmeaPosRow, whole, fopts]);
   // A failure mode moved under another functional failure from the panel: a
   // refusal is said in the heading, in plain words.
-  // The function panel's working: where the operating context is (the
-  // function's position, else the nearest one above that has it), and the (i)
-  // click that asks for the working open.
-  const positionsById = new Map((data?.positions || []).map((p) => [p.id, p]));
-  const contextOf = (r) => {
-    const own = positionsById.get(r.ref.position_id);
-    if (!own) return null;
-    let p = own;
-    for (let guard = 0; p && !p.context && p.parent_id && guard < 64; guard += 1) p = positionsById.get(p.parent_id);
-    const at = p?.context ? p : own;
-    return {
-      name: at.name, has: !!p?.context, to: explorerPath("positions", { sel: at.id }),
-      // The Summary tab on that position, its operating context card brought into view once it is drawn.
-      go: () => {
-        setEditing(null);
-        setRcmFocus(null);
-        setPanel(false);
-        setSelected((sel) => ({ ...sel, positions: at.id }));
-        pending.current = at.id;
-        navigate(explorerPath("positions"), { state: { treeReveal: at.id } });
-        let tries = 0;
-        const bring = () => {
-          const card = document.getElementById("operating-context");
-          if (card) card.scrollIntoView({ block: "nearest" });
-          else if ((tries += 1) < 20) setTimeout(bring, 100);
-        };
-        setTimeout(bring, 100);
-      },
-    };
-  };
-  // A function's working opened: the function picked, its details shown with the working in full.
-  const openBasis = (fnKey) => {
+  // A function's notes and rationale opened (a decision's linked notes): the function picked, its
+  // details shown with the notes in full.
+  const openNotes = (fnKey) => {
     pick(fnKey, { go: true });
-    setBasisAt({ key: fnKey, at: Date.now() });
+    setNotesAt({ key: fnKey, at: Date.now() });
   };
   const panelOps = {
     ...ops,
     create: (kind, where, text) => ops.create(kind, where, text).then((id) => { openNew.current = id; setNewTick((t) => t + 1); return id; }),
-    basisView: { context: contextOf, token: (r) => (basisAt?.key === r.key ? basisAt.at : null) },
+    notesView: { token: (r) => (notesAt?.key === r.key ? notesAt.at : null) },
     assign: (r, ffId, fnId = null) => ops.assign(r, ffId, fnId).catch((e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error")),
   };
   // The FME(C)A's groups in a failure mode's details (both tabs; first on
@@ -1499,7 +1469,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                addStart={addStart} onSaid={say}
                onMove={fmeaOn ? null : (r, { task = false } = {}) => (task ? setMoving({ taskFrom: r.key }) : setMoving({ src: dragSource(whole, r.key) }))}
                onClose={closeDetails} fmea={fmeaPanel}
-               onSelect={(k, o) => (o?.basis ? openBasis(k) : reveal(k))} />
+               onSelect={(k, o) => (o?.notes ? openNotes(k) : reveal(k))} />
     </div>
   ) : fmeaPosRow && fmeaPos ? (
     // The FME(C)A tab with a position picked: its criticality matrix, Cr and

@@ -1,5 +1,5 @@
 // A decision's evidence can be a model or saved analysis (checked: supported,
-// contradicted...), a report or a standard's working (linked, not checked).
+// contradicted...), a report or a function's notes and rationale (linked, not checked).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RCM_CHIPS, hasLinkedEvidence, workingsFor } from "./explorerRcm.js";
@@ -15,7 +15,7 @@ const model = { outcome: "rtf", rtf_basis: "random", evidence: { type: "model", 
 
 test("the Evidence check names what's linked and never calls a report or working supported", () => {
   assert.equal(checkLabel(report), "Report linked");
-  assert.equal(checkLabel(working), "Working linked");
+  assert.equal(checkLabel(working), "Notes linked");
   assert.equal(checkLabel({ status: "linked" }), "Linked");
   assert.equal(checkLabel(model), "Contradicted");
   assert.equal(checkLabel({ status: "stale", evidence_kind: "report" }), "Stale link");
@@ -51,13 +51,13 @@ test("the dialog offers models only when the decision expects one, and opens on 
   assert.equal(startKind({ type: "model", id: "m" }, "model"), "model");
 });
 
-test("the workings on offer are the mode's position's, its own function first", () => {
+test("the function notes on offer are the mode's position's functions with notes, its own function first", () => {
   const rcm = { positions: [
-    { id: "other", functions: [{ id: "f9", text: "Elsewhere", has_basis: true, failures: [] }], unassigned: [] },
+    { id: "other", functions: [{ id: "f9", text: "Elsewhere", notes: "x", failures: [] }], unassigned: [] },
     { id: "pump", functions: [
-      { id: "f1", text: "Contain water", has_basis: true, basis_preview: "Rated 10 bar", failures: [] },
-      { id: "f2", text: "No working", has_basis: false, failures: [] },
-      { id: "f3", text: "Pump water", has_basis: true, basis_preview: "50 L/s", failures: [{ id: "x", modes: [mode("seal")] }] },
+      { id: "f1", text: "Contain water", notes: "Rated 10 bar", basis_preview: "Rated 10 bar", failures: [] },
+      { id: "f2", text: "No notes", notes: "  ", failures: [] },
+      { id: "f3", text: "Pump water", notes: "50 L/s", basis_preview: "50 L/s", failures: [{ id: "x", modes: [mode("seal")] }] },
     ], unassigned: [mode("loose")] },
   ] };
   assert.deepEqual(workingsFor(rcm, "seal").map((w) => w.id), ["f3", "f1"]);

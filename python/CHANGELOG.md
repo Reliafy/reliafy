@@ -12,6 +12,17 @@
   maintenance positions.log_event --position-id <id> --event-type "Lightning
   strike"`.
 
+- **A function's working is in its notes and rationale**: the working behind a
+  performance standard now goes in the function's `notes` (`maintenance
+  failure_modes.add_function` / `update_function`; up to 25,000 characters on
+  a function, Markdown is fine; `--notes @working.md` reads a file).
+  `standard_basis` is still accepted but deprecated: it is added to the notes
+  under a "Working" line. Reads keep `standard_basis`, `has_basis` and
+  `basis_preview`, now describing the notes, and a function's notes read with
+  any working written before as one text. Evidence `{type: "working", id}` on
+  a decision now means that function's notes and rationale; links made before
+  still resolve. No client code changed.
+
 - **A combination of tasks on one RCM decision**: `maintenance
   failure_modes.decide` takes `decision.outcomes`, a list of
   `{outcome, task, interval, interval_unit, task_id}` (a regular inspection
