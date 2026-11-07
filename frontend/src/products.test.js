@@ -52,6 +52,20 @@ test("on a design no failure report is filed", () => {
   assert.equal(designActions(actions, false), actions);
 });
 
+test("the product's own row offers Build an item…, first; the rows inside don't", () => {
+  const actions = [{ id: "tree-new" }, { id: "report-new" }, { id: "tree-rename" }];
+  const product = { type: "pos", key: "d", ref: { design: true } };
+  const inside = { type: "pos", key: "d1", ref: { in_design: true } };
+  assert.deepEqual(designActions(actions, true, { row: product }).map((a) => a.id), ["build-item", "tree-new", "tree-rename"]);
+  assert.equal(designActions(actions, true, { row: product })[0].label, "Build an item…");
+  assert.deepEqual(designActions(actions, true, { row: inside }).map((a) => a.id), ["tree-new", "tree-rename"]);
+  // View only: there, greyed with the reason.
+  const greyed = designActions(actions, true, { row: product, viewOnly: "View only." })[0];
+  assert.deepEqual([greyed.id, greyed.disabled, greyed.reason], ["build-item", true, "View only."]);
+  // Not a design (an item's tree): never.
+  assert.equal(designActions(actions, false, { row: product }), actions);
+});
+
 test("an item's tree is the Explorer scoped to it", () => {
   assert.equal(itemTreePath("t1"), "/asset-register/explorer?arrange=positions&root=t1");
   assert.equal(itemTreePath("t1", "b5"), "/asset-register/explorer?arrange=positions&root=t1&sel=b5");

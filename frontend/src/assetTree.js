@@ -377,6 +377,12 @@ export function insideWords(r) {
 // and whether it's folded to a rail. Storage can throw (private mode, blocked site data), so
 // every read and write is guarded and the page works without it.
 const KEY = (ws) => `reliafy.assetTree.${ws || "personal"}`;
+// The counts under the tree's title in their parts ("4 positions", "3 not
+// analysed"): the pane wraps between them, never inside one (TreePane).
+export function statusParts(text) {
+  return text ? String(text).split(" · ") : [];
+}
+
 export const PANE = { min: 220, initial: 320, rail: 44 };
 
 export function loadTreeState(ws, storage = globalThis.localStorage) {

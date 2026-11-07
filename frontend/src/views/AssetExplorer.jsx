@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  addSampleProduct, getFmeaExcelBlob, getMaintenanceTree, getPositionRcm, getRcmOptions,
+  addSampleProduct, getFmeaExcelBlob, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
   hasFmeaExcel, restoreTree,
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
@@ -69,7 +69,7 @@ import NewFailureReportModal from "../components/NewFailureReportModal.jsx";
 import usePhone from "../usePhone.js";
 import { OPEN_SAMPLE_PRODUCT_LABEL, sampleProductId, sampleProductView } from "../sampleProduct.js";
 import { PRODUCTS_PATH, designActions, isDesignScope, productViewPath, scopeTree } from "../products.js";
-import { DesignReports } from "../components/ProductPanels.jsx";
+import { BuildItemModal, DesignReports } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
 
@@ -229,6 +229,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // A failure report being filed ({id, name}: the position; select: the row
   // to show it under on the Failure reports tab once filed).
   const [reportFor, setReportFor] = useState(null);
+  const [buildFor, setBuildFor] = useState(null); // the product the row menu's Build an item… is for
   const headingRef = useRef(null);
   const detailsHeading = useRef(null);
   const frame = useRef(null);
@@ -877,7 +878,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const rowMenu = {
     // The moves a drag does: on a phone, or from the keyboard (no dragging there).
     actions: (r, { keyboard = false } = {}) => {
-      if (!rcmOn) return withPin(designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope), [...isolateItem(r), ...pinItem(r)]);
+      if (!rcmOn) return withPin(designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), [...isolateItem(r), ...pinItem(r)]);
       if (!rcm) return [...isolateItem(r), ...pinItem(r)];
       // The FME(C)A tab: its own rows' actions (no moving: that's the RCM tab's).
       if (fmeaOn) return [...withPin(fmeaRowActions(r, { canRename: !phone }), isolateItem(r)), ...pinItem(r)];
@@ -892,6 +893,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         setModal(r.type === "loc" ? "location" : "position");
       } else if (id === "tree-rename" || id === "tree-move" || id === "tree-delete") setRowModal({ kind: id.slice(5), row: r });
       else if (id === "report-new") setReportFor({ id: r.key, name: r.ref.name, select: r.key });
+      else if (id === "build-item") buildFrom(r.key);
       else if (id === "pin") pinTo(r.key, { select: true });
       else if (id.startsWith("isolate:")) isolateAt(r, id === "isolate:all" ? "all" : Number(id.slice(8)));
       else if (id === "isolate-incomplete") isolateIncomplete(r);
@@ -1172,6 +1174,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // report open in the Failure reports tab under the row it was filed from
   // (?tab=reports&sel=&report=), and a few words to say so. On a phone the
   // panel is its own screen, opened on that row.
+  // The product row's menu's Build an item…: the product read, then the same
+  // dialog as its Summary's; once built, the tree read again and a few words.
+  const buildFrom = (id) => {
+    getProduct(id).then(setBuildFor, (e) => say(`The product didn't load: ${e.message}`, "error"));
+  };
+  const built = (out) => {
+    setBuildFor(null);
+    load();
+    say(`Built ${out.name}: ${out.counts.positions} positions, with the item (serial ${out.serial}) fitted at the top.`, "ok");
+  };
   const reportFiled = (view) => {
     const select = reportFor?.select || view.position?.id;
     setReportFor(null);
@@ -1496,7 +1508,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // screen on a phone.
   // The row's own changes (the tree's row menu, less Pin and Isolate), for
   // the Summary's add row and footer.
-  const summaryActionsOf = (r) => (r ? designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope)
+  const summaryActionsOf = (r) => (r ? designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly })
     .map((a) => ({ ...a, onSelect: () => rowMenu.onAction(r, a.id) })) : []);
   const summary = !rcmOn && (
     <section className="tx-detail" aria-label="Details"
@@ -1689,6 +1701,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <NewFailureReportModal positionId={reportFor.id} positionName={reportFor.name} today={data?.today || ""}
                                onClose={() => setReportFor(null)} onDone={reportFiled} />
       )}
+      {buildFor && <BuildItemModal product={buildFor} onClose={() => setBuildFor(null)} onDone={built} />}
       {sheetFor && <RcmImportModal position={sheetFor} onClose={() => setSheetFor(null)} onImported={sheetImported} />}
       {assigning && (
         // A "No functional failure yet" row's modes, under one of the function's functional failures.

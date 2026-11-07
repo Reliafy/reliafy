@@ -363,3 +363,20 @@ export function defaultPicks(index) {
 export function snapshotColor(colors, n) {
   return colors[n % colors.length];
 }
+
+// ---- where a channel lives in the Explorer ----------------------------------------
+//
+// A channel is on a position or on an item. A fitted item has no row of its own
+// in the Explorer: its channels show on its position's Signals tab, so a link to
+// one opens that position. A loose item (a spare, or one with no home yet) has
+// its row in Locations.
+export function channelExplorerPath(c) {
+  const on = c?.item?.fitted_to
+    ? { mode: "positions", sel: c.item.fitted_to.id }
+    : c?.item ? { mode: "locations", sel: c.item.id }
+    : { mode: "positions", sel: c?.position?.id };
+  const q = new URLSearchParams({ arrange: on.mode });
+  if (on.sel) q.set("sel", on.sel);
+  q.set("tab", "signals");
+  return `/asset-register/explorer?${q}`;
+}
