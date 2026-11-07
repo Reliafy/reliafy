@@ -2321,12 +2321,6 @@ export function removeMaintenanceItem(positionId, body) {
 export function addSampleTruck(again = false) {
   return postJson("/api/maintenance/sample-truck", { again: !!again });
 }
-// The sample quadcopter UAV, with its FME(C)A (scored failure modes, some
-// directly under a function), copied into the tree the same way.
-export function addSampleUav(again = false) {
-  return postJson("/api/maintenance/sample-uav", { again: !!again });
-}
-
 // The sample product: a quadcopter's design with its FME(C)A, its part and bill
 // of materials, three items built from it with two failure reports, and a
 // flight-critical RBD (placeholder failure rates). Once, unless again.

@@ -169,8 +169,8 @@ severity_class I-IV give cm = β × α × λ × t. A position's fmea in maintena
 cm, and by class), the H / M / L counts and max_rpn.
 - An FMEA row before its RCM: add (or assign, move) with function_id and no functional_failure_id puts a mode \
 directly under the function; the position isn't analysed until the functional failure is written and the mode \
-assigned to it (same id, scores kept). maintenance positions.add_sample_uav copies a fully scored sample tree \
-(three such modes on purpose).
+assigned to it (same id, scores kept). maintenance products.add_sample adds the sample quadcopter product, its design \
+fully scored (three such modes on purpose).
 - A worksheet the user has (an FMEA or RCM sheet, one row per failure mode): see below.
 - Directly (a maker's manual, a regulation, own practice): maintenance tasks.create, on exactly one subject:
   - position_id, the usual one: the job, whatever does it. 'Lubricate the pump', 'test the protection relay'. \

@@ -249,8 +249,6 @@ POSITIONS: Table = {
     "back_in_service": ("position_id", "", "Back in service now."),
     "add_sample_truck": ("", "again", """Copy the sample delivery truck, with its RCM, into the tree; once
         only unless again is true."""),
-    "add_sample_uav": ("", "again", """Copy the sample quadcopter UAV, a tree with every failure mode scored
-        as an FME(C)A, into the tree; once only unless again is true."""),
     "adopt_placements": ("", "dry_run", """One-off tidy-up for a workspace that placed fitted items at
         locations: each such placement becomes its position's location where it has none. dry_run (default
         true) lists the changes: show them, then run with dry_run false."""),
@@ -1271,10 +1269,6 @@ def register() -> None:
             from backend.maintenance import templates
 
             return run(templates.add_sample_truck, m, bool(again))
-        if action == "add_sample_uav":
-            from backend.maintenance import templates
-
-            return run(templates.add_sample_uav, m, bool(again))
         return run(m.adopt_placements, _d(dry_run, True))
 
     @tool("maintenance_fitments", _WRITE, "Fit, remove and correct items in positions", FITMENTS)

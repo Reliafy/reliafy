@@ -906,16 +906,6 @@ def add_sample_truck(body: dict | None = Body(None), m: Maintenance = Depends(ma
     return _run(templates.add_sample_truck, m, bool((body or {}).get("again")))
 
 
-@router.post("/sample-uav")
-def add_sample_uav(body: dict | None = Body(None), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Copy the sample quadcopter UAV (a tree with every failure mode scored as an FME(C)A) into
-    this workspace's tree. When a copy is there already nothing is added (added false) unless
-    again is true."""
-    from backend.maintenance import templates
-
-    return _run(templates.add_sample_uav, m, bool((body or {}).get("again")))
-
-
 @router.post("/sample-product")
 def add_sample_product(body: dict | None = Body(None), session=Depends(get_session),
                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
