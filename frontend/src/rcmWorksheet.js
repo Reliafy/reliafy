@@ -298,7 +298,7 @@ export function decisionRows(d, tasks) {
   }));
 }
 
-// The decision card's lines (a failure mode's details, "What we do"): the
+// The decision card's lines (a failure mode's details, "Proactive task or default action"): the
 // decision in words with its task, one line per task: [{key, kind, name,
 // every, task, member}]. "On condition", "Weekly level check", "every 1 week".
 // A combination: one line per member (its task, or "no task now"; a redesign

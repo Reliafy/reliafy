@@ -179,9 +179,10 @@ fields, then the quieter things at the foot:
 - a functional failure: its **Failure modes** (with its state in words at
   the top), then what it is **Caused by** and what it **Causes**, each with
   the position it is on;
-- a failure mode: three numbered steps. **1. What happens** is its failure
-  effects. **2. How bad** is whether it's evident or hidden and its
-  consequence (one tap on a choice each). **3. What we do** is one card with
+- a failure mode: three numbered steps. **1. Failure effects** is what
+  happens when it occurs. **2. Failure consequences** is whether it's hidden
+  and its consequence category (one tap on a choice each). **3. Proactive task
+  or default action** is one card with
   the decision and its tasks, such as *On condition · Weekly water level check
   · every 1 week*. Its **⋯** holds **Change…**, **Link evidence…**, **Add
   another task…** and each task's **Edit…** and **Remove…**. **Why**, folded
@@ -337,7 +338,7 @@ Sometimes one task isn't enough: an inspection catches the slow failures, and
 a replacement at a hard life catches the ones it can't see. And sometimes one
 act of work answers several failure modes: one monthly water sample covers
 five chemistry failure modes. Both are in the failure mode's Details, in its
-decision card (**3. What we do**): one line per task, each with its kind,
+decision card (**3. Proactive task or default action**): one line per task, each with its kind,
 name and how often, and how many other failure modes share it.
 
 - **Add another task…**, in the card's **⋯**, adds a task to the

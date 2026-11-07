@@ -788,8 +788,8 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-notes-md:not(.open) { max-height: 9em; overflow: hidden; }
 .rw-notes-hint { margin: 0 0 6px; }
 
-/* A failure mode's three steps (Derryn, 9 Nov 2026): "1. What happens", "2. How bad",
-   "3. What we do", each compact, each opening on a hairline. The decision is one card:
+/* A failure mode's three steps (Derryn, 9 Nov 2026): "1. Failure effects", "2. Failure consequences",
+   "3. Proactive task or default action", each compact, each opening on a hairline. The decision is one card:
    its lines, one ⋯, and the evidence and notes folded behind "Why". */
 .rw-step { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); min-width: 0; }
 .rw-stepn { color: var(--acc); font-variant-numeric: tabular-nums; }

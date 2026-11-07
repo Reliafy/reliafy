@@ -17,7 +17,7 @@ import Modal from "./Modal.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 
-// A failure mode's decision as one card, step 3 "What we do" of its details
+// A failure mode's decision as one card, step 3 "Proactive task or default action" of its details
 // (the Explorer's RCM tab; Derryn, 8-9 Nov 2026: in RCM the decision is the
 // choice of task, said once). Its lines are the decision in words with its
 // task: "On condition · Weekly level check · every 1 week", one per member
@@ -182,7 +182,7 @@ export default function RcmModeTasks({
       {d && why && (
         <>
           <button type="button" className="link rim-whybtn" aria-expanded={whyOpen} onClick={() => setWhyOpen((o) => !o)}>
-            <ChevronIcon open={whyOpen} /> Why<span className="sr-only">: the evidence and the decision notes</span>
+            <ChevronIcon open={whyOpen} /> Evidence and rationale
           </button>
           {whyOpen && <div className="rim-whybody">{why}</div>}
         </>

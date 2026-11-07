@@ -138,11 +138,11 @@ test("a click shows the details beside the table; a double-click on the name spr
   await panel(page).getByRole("textbox", { name: /^Failure effects/ }).fill("Pump stops; no flow to the tank");
   await panel(page).getByRole("textbox", { name: /^Failure effects/ }).blur();
   // The two RCM questions: one tap on a chip each, the chosen one ticked; "✓ Saved" by its label.
-  const evident = panel(page).getByRole("radiogroup", { name: "Evident or hidden" });
+  const evident = panel(page).getByRole("radiogroup", { name: "Hidden failure?" });
   await evident.getByRole("radio", { name: "Hidden" }).click();
   await expect(evident.getByRole("radio", { name: "Hidden" })).toHaveAttribute("aria-checked", "true");
   await expect(panel(page).getByRole("status").filter({ hasText: "✓ Saved" }).first()).toBeVisible();
-  const consequence = panel(page).getByRole("radiogroup", { name: "Consequence" });
+  const consequence = panel(page).getByRole("radiogroup", { name: "Consequence category" });
   await consequence.getByRole("radio", { name: "Operational", exact: true }).click();
   await expect(consequence.getByRole("radio", { name: "Operational", exact: true })).toHaveAttribute("aria-checked", "true");
   await expect.poll(async () => {
@@ -150,7 +150,7 @@ test("a click shows the details beside the table; a double-click on the name spr
     return [m.text, m.effects, m.hidden, m.consequence];
   }).toEqual([`Bearing seizes early ${tag}`, "Pump stops; no flow to the tank", true, "operational"]);
   // Step 3, no decision: the card says so, with one Decide…; no task lines, no add row, no ⋯ (Decide… first).
-  const todo = panel(page).getByRole("region", { name: "What we do" });
+  const todo = panel(page).getByRole("region", { name: "Proactive task or default action" });
   await expect(todo).toContainText("No decision yet");
   await expect(todo.getByRole("button", { name: "Decide…" })).toBeVisible();
   await expect(todo.getByRole("listitem")).toHaveCount(0);
@@ -225,7 +225,7 @@ test("Open… and Add a task… in the row menu expand the details; Enter shows 
   // Add a task…: across the table, the Add another task dialog open on its kind; the two tasks listed.
   await sealRow.locator(".tp-nm").click({ button: "right" });
   await page.getByRole("menuitem", { name: "Add a task…" }).click();
-  const tasks = panel(page).getByRole("region", { name: "What we do" });
+  const tasks = panel(page).getByRole("region", { name: "Proactive task or default action" });
   const add = page.getByRole("dialog", { name: "Add another task" });
   await expect(add).toBeVisible();
   await expect(add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio").first()).toBeFocused();
@@ -372,19 +372,19 @@ test("one order at every level: its notes under the title and chips, what's insi
     // The FME(C)A's groups (scores, criticality) are on its own tab, not this one; the mode's
     // notes and rationale (the same section at every level) are above all of it, below the chips.
     // Then its three numbered steps: what happens, how bad, what we do (its tasks are lines of its decision card).
-    expect(await blocks(page)).toEqual(["What happens", "How bad", "What we do"]);
+    expect(await blocks(page)).toEqual(["Failure effects", "Failure consequences", "Proactive task or default action"]);
     expect(await notesFirst(page)).toBe(true);
     await notesQuiet(page);
-    await expect(panel(page).locator(".rw-step > .psec-head .psec-title")).toHaveText(["1. What happens", "2. How bad", "3. What we do"]);
+    await expect(panel(page).locator(".rw-step > .psec-head .psec-title")).toHaveText(["1. Failure effects", "2. Failure consequences", "3. Proactive task or default action"]);
     // Step 1 is the effects box alone: the step's title is its label (the box's name, not shown again).
-    await expect(panel(page).getByRole("region", { name: "What happens" }).getByRole("textbox", { name: /^Failure effects/ })).toBeVisible();
-    await expect(panel(page).getByRole("region", { name: "What happens" }).locator(".field-head")).toHaveClass(/sr-only/);
+    await expect(panel(page).getByRole("region", { name: "Failure effects" }).getByRole("textbox", { name: /^Failure effects/ })).toBeVisible();
+    await expect(panel(page).getByRole("region", { name: "Failure effects" }).locator(".field-head")).toHaveClass(/sr-only/);
     // Step 2: the two chip rows, no help sentences (those are in the Decide dialog).
-    const howBad = panel(page).getByRole("region", { name: "How bad" });
+    const howBad = panel(page).getByRole("region", { name: "Failure consequences" });
     await expect(howBad.getByRole("radiogroup")).toHaveCount(2);
     await expect(howBad.locator(".field-help")).toHaveCount(0);
     // Step 3: one card; the decision said in it once (no heading line, Change… button, Evidence line or notes field outside it).
-    const todo = panel(page).getByRole("region", { name: "What we do" });
+    const todo = panel(page).getByRole("region", { name: "Proactive task or default action" });
     await expect(todo.locator(".rim-dcard")).toHaveCount(1);
     await expect(todo.getByRole("listitem").first()).toContainText(`On condition · Check the seal ${tag} · every 1 month`);
     await expect(todo.getByRole("button", { name: /^Change/ })).toHaveCount(0);
@@ -417,7 +417,7 @@ test("fields, chips, ⋯ and refusals: kept where you typed, the reason beside i
   await effects.fill("Water on the floor");
   await effects.blur();
   // "✓ Saved" by the step's title (the field's own label is the step's).
-  await expect(panel(page).getByRole("region", { name: "What happens" }).getByRole("status")).toHaveText("✓ Saved");
+  await expect(panel(page).getByRole("region", { name: "Failure effects" }).getByRole("status")).toHaveText("✓ Saved");
 
   // Refused by the server: the text stays, the reason under it, the box marked and described by it.
   await page.route(/\/api\/maintenance\/failure-modes\/[^/]+$/, (route) => (route.request().method() === "PATCH"
@@ -445,7 +445,7 @@ test("fields, chips, ⋯ and refusals: kept where you typed, the reason beside i
   await page.unroute(/\/api\/maintenance\/failure-modes\/[^/]+$/);
 
   // Consequence chips by keyboard: Tab lands on the chosen one, → chooses the next.
-  const chips = panel(page).getByRole("radiogroup", { name: "Consequence" });
+  const chips = panel(page).getByRole("radiogroup", { name: "Consequence category" });
   await chips.getByRole("radio", { name: "Operational", exact: true }).focus();
   await page.keyboard.press("ArrowRight");
   await expect(chips.getByRole("radio", { name: "Non-operational" })).toHaveAttribute("aria-checked", "true");
@@ -455,7 +455,7 @@ test("fields, chips, ⋯ and refusals: kept where you typed, the reason beside i
 
   // The decision card's one ⋯ by keyboard: Enter opens it on its first item (Change…), with each
   // task's Edit… and Remove… after the decision's own; Escape closes it back to the button.
-  const more = panel(page).getByRole("region", { name: "What we do" }).getByRole("button", { name: "Actions for the decision" });
+  const more = panel(page).getByRole("region", { name: "Proactive task or default action" }).getByRole("button", { name: "Actions for the decision" });
   await more.focus();
   await page.keyboard.press("Enter");
   const menu = page.getByRole("menu", { name: "Actions for the decision" });

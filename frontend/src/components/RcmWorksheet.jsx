@@ -383,7 +383,7 @@ export function PhoneStatus({ r, fmea = false }) {
 // A standard's description is its text.
 export const EDITABLE = new Set(["fn", "std", "fail", "mode"]);
 
-// A failure mode's step heading: "1. What happens".
+// A failure mode's step heading: "1. Failure effects" (the standard RCM terms, Derryn, 9 Nov 2026).
 const Step = ({ n, children }) => <><span className="rw-stepn">{n}.</span> {children}</>;
 
 // A status chip's tone from its words (the words always say it too).
@@ -507,18 +507,18 @@ export function Details({
   const hiddenValue = answers?.hidden === true ? "hidden" : answers?.hidden === false ? "evident" : "";
   const consequenceField = r.type === "mode" && (
     <>
-      <Field label="Evident or hidden" saved={saved.hidden} className="rw-eyebrow"
+      <Field label="Hidden failure?" saved={saved.hidden} className="rw-eyebrow"
              help={fmea?.on ? "Hidden: the crew wouldn't notice the loss of function in normal operation, until something else fails too." : null}>
         {readOnly ? <span className="rw-fval">{EVIDENT_LABEL[hiddenValue] || "Not set"}</span> : (
-          <ChoiceChips label="Evident or hidden" clearable value={hiddenValue}
+          <ChoiceChips label="Hidden failure?" clearable value={hiddenValue}
                        options={Object.entries(EVIDENT_LABEL).map(([value, label]) => ({ value, label }))}
                        onChange={(v) => keep("hidden", onCommit(r, "hidden", v))} />
         )}
       </Field>
-      <Field label="Consequence" saved={saved.consequence} className="rw-eyebrow"
+      <Field label="Consequence category" saved={saved.consequence} className="rw-eyebrow"
              help={!fmea?.on ? null : answers?.hidden ? "The consequence of the multiple failure: the hidden failure plus the one it protects against." : "The first that applies: safety, environmental, operational, non-operational."}>
         {readOnly ? <span className="rw-fval">{CATEGORY_LABEL[answers.consequence] || "Not set"}</span> : (
-          <ChoiceChips label="Consequence" clearable value={answers.consequence || ""}
+          <ChoiceChips label="Consequence category" clearable value={answers.consequence || ""}
                        options={Object.entries(CATEGORY_LABEL).map(([value, label]) => ({ value, label }))}
                        onChange={(v) => keep("consequence", onCommit(r, "consequence", v))} />
         )}
@@ -671,18 +671,18 @@ export function Details({
             9 Nov 2026): what happens, how bad it is, what we do. The help sentences stay in the
             Decide dialog, where the choice is made; the decision is one card. */}
         {r.type === "mode" && !fmea?.on && (
-          <Section title={<Step n={1}>What happens</Step>} label="What happens" className="rw-step"
+          <Section title={<Step n={1}>Failure effects</Step>} label="Failure effects" className="rw-step"
                    aside={<SavedMark saved={saved.effects} />}>
             {field("Failure effects", "effects", { area: true, labelHidden: true, placeholder: "What's seen, what stops, what it costs" })}
           </Section>
         )}
         {r.type === "mode" && !fmea?.on && (
-          <Section title={<Step n={2}>How bad</Step>} label="How bad" className="rw-step rw-howbad">
+          <Section title={<Step n={2}>Failure consequences</Step>} label="Failure consequences" className="rw-step rw-howbad">
             {consequenceField}
           </Section>
         )}
         {r.type === "mode" && (
-          <Section title={fmea?.on ? "What we do" : <Step n={3}>What we do</Step>} label="What we do" className="rw-step rw-decision">
+          <Section title={fmea?.on ? "Proactive task or default action" : <Step n={3}>Proactive task or default action</Step>} label="Proactive task or default action" className="rw-step rw-decision">
             <RcmModeTasks key={`${r.key}:tasks`} r={r} ops={ops} readOnly={readOnly} addStart={startOf("task")} onSaid={said}
                           onDecision={onDecision} why={decisionWhy} own={ownBlock} ownNeeded={ownNeeded} />
           </Section>

@@ -118,10 +118,10 @@ test("no evidence linked: no warnings, no Evidence check column; the column come
   const panel = page.locator("aside.rw-panel");
   await expect(panel).toBeVisible();
   // Said once, in the decision card's folded Why ("None linked"), not again as a chip by the title.
-  const decision = panel.getByRole("region", { name: "What we do" });
+  const decision = panel.getByRole("region", { name: "Proactive task or default action" });
   await expect(decision).not.toContainText("None linked");
-  await decision.getByRole("button", { name: /^Why/ }).click();
-  await expect(decision.getByRole("button", { name: /^Why/ })).toHaveAttribute("aria-expanded", "true");
+  await decision.getByRole("button", { name: /^Evidence and rationale/ }).click();
+  await expect(decision.getByRole("button", { name: /^Evidence and rationale/ })).toHaveAttribute("aria-expanded", "true");
   await expect(decision).toContainText("None linked");
   await expect(panel.locator(".rw-chips-row")).not.toContainText("No evidence linked");
   // Quiet: never a warning.
