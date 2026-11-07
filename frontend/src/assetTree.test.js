@@ -164,6 +164,7 @@ test("switching arrangements keeps the same thing picked where it can", () => {
     { id: "house", name: "House", parent_id: null, location_id: "site" },
     { id: "shed", name: "Shed", parent_id: "yard", location_id: "site" }, // its parent is elsewhere: a top here too
     { id: "yard", name: "Yard", parent_id: null, location_id: "other" },
+    { id: "annex", name: "Annex (sample)", parent_id: null, location_id: "site" }, // first A–Z, but nothing beneath it
   ];
   assert.equal(carryOver(loc.rows.get("site"), "positions", placed), "house");
   assert.equal(carryOver(loc.rows.get("site"), "positions", placed.filter((p) => p.id !== "house")), "pool");
