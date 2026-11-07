@@ -305,13 +305,13 @@ def test_cli_adds_the_sample_product_and_the_truck_action_is_gone(server, capsys
     truck's action is gone (no alias)."""
     code, out, _ = run(capsys, "maintenance", "products.add_sample", "--json")
     made = json.loads(out)
-    assert code == 0 and made["added"] and made["failure_modes"] == 41 and made["decisions"] == 39
+    assert code == 0 and made["added"] and made["failure_modes"] == 83 and made["decisions"] == 81
     code, out, _ = run(capsys, "maintenance", "products.add_sample", "--json")
     assert code == 0 and json.loads(out)["added"] is False
     code, out, _ = run(capsys, "maintenance", "products.add_sample", "--again", "--json")
     assert code == 0 and json.loads(out)["product"]["name"] == "Survey quadcopter (sample 2)"
     sheet = Client().call("maintenance", "get.rcm", id=made["product"]["id"], scope="below")
-    assert sheet["rollup"]["modes"] == 41
+    assert sheet["rollup"]["modes"] == 83
     code, _, err = run(capsys, "maintenance", "positions.add_sample_truck", "--json")
     assert code != 0
 

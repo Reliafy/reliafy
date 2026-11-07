@@ -65,6 +65,37 @@ _BRAKE_WEAR_CSV = (
     "pad-06,2700,2.97\npad-06,3250,3.53\npad-06,3800,4.13\npad-06,4350,4.85\n"
 ).encode()
 
+# The sample quadcopter's speed controllers (backend/maintenance/templates.py):
+# each controller's temperature rise above ambient in the hover, read from the
+# flight log every 25 flight hours. The thermal pad to the arm dries out, so the
+# rise climbs about 0.1 °C an hour toward the 45 °C limit the controller derates
+# at. Six controllers, invented.
+_QUAD_ESC_TEMP_CSV = (
+    "esc,hours,temp_rise_c\n"
+    "esc-01,25,17.8\nesc-01,50,20.1\nesc-01,75,23.0\nesc-01,100,24.8\n"
+    "esc-01,125,27.8\nesc-01,150,29.9\nesc-01,175,32.4\nesc-01,200,34.8\n"
+    "esc-02,25,18.4\nesc-02,50,20.2\nesc-02,75,22.6\nesc-02,100,24.8\n"
+    "esc-02,125,28.0\nesc-02,150,29.5\nesc-02,175,31.8\nesc-02,200,34.1\n"
+    "esc-03,25,17.1\nesc-03,50,20.3\nesc-03,75,22.6\nesc-03,100,25.5\n"
+    "esc-03,125,28.5\nesc-03,150,31.1\nesc-03,175,33.8\nesc-03,200,35.8\n"
+    "esc-04,25,18.8\nesc-04,50,21.7\nesc-04,75,24.2\nesc-04,100,27.6\n"
+    "esc-04,125,29.7\nesc-04,150,33.0\nesc-04,175,35.9\nesc-04,200,38.7\n"
+    "esc-05,25,18.2\nesc-05,50,21.2\nesc-05,75,22.5\nesc-05,100,25.0\n"
+    "esc-05,125,27.6\nesc-05,150,29.5\nesc-05,175,31.7\nesc-05,200,34.1\n"
+    "esc-06,25,17.5\nesc-06,50,20.3\nesc-06,75,22.6\nesc-06,100,24.8\n"
+    "esc-06,125,26.8\nesc-06,150,29.1\nesc-06,175,32.0\nesc-06,200,34.0\n"
+).encode()
+
+# The sample quadcopter's avionics boards (radios and flight controllers) in the
+# field: flight hours to an electronic failure, the boards still working at the
+# review on a 1. Random failures (no wear-out), so an exponential fits: the
+# evidence behind the radio's run-to-failure decision. Invented.
+_QUAD_AVIONICS_CSV = (
+    "hours,censored\n"
+    "140,0\n310,0\n480,0\n620,0\n790,0\n950,0\n1180,0\n1420,0\n1690,0\n2050,0\n"
+    "350,1\n400,1\n450,1\n520,1\n580,1\n640,1\n700,1\n760,1\n820,1\n900,1\n960,1\n1050,1\n1150,1\n1250,1\n"
+).encode()
+
 # Accelerated life test with covariates: valve seals run at combinations of
 # temperature and mechanical load. Life falls as either stress rises — the
 # textbook proportional-hazards regression case. A crossed 3×2 stress design
@@ -328,6 +359,16 @@ SAMPLE_DATASETS = [
         "name": "Pump failures by mode (sample)",
         "csv": _PUMP_MODES_CSV,
     },
+    {
+        "id": "sample-ds-quad-esc-temperature",
+        "name": "Quadcopter speed controller temperature rise (sample)",
+        "csv": _QUAD_ESC_TEMP_CSV,
+    },
+    {
+        "id": "sample-ds-quad-avionics",
+        "name": "Quadcopter avionics boards — field failures (sample)",
+        "csv": _QUAD_AVIONICS_CSV,
+    },
 ]
 
 # A condition and life (joint) model on the feed pumps: each running pump's
@@ -367,6 +408,22 @@ SAMPLE_DEGRADATION_MODELS = [
             "population_method": "moments",
             "unit": "hours",
             "measurement_unit": "mm",
+        },
+    },
+    {
+        # The sample quadcopter's speed controllers: the evidence behind the
+        # on-condition check of their temperature rise (templates.py).
+        "id": "sample-deg-quad-esc-temperature",
+        "name": "Quadcopter speed controller — temperature rise (sample)",
+        "dataset_id": "sample-ds-quad-esc-temperature",
+        "spec": {
+            "mapping": {"i": "esc", "x": "hours", "y": "temp_rise_c"},
+            "threshold": 45.0,
+            "path": "linear",
+            "distribution_id": "weibull",
+            "population_method": "moments",
+            "unit": "hours",
+            "measurement_unit": "°C",
         },
     },
 ]
@@ -520,6 +577,17 @@ SAMPLE_MODELS = [
         "dataset_id": "sample-ds-pump-modes",
         "distribution": "competing_risks",
         "mapping": {"x": "hours", "e": "failure_mode", "g": "site"},
+        "unit": "hours",
+    },
+    {
+        # The sample quadcopter's avionics: an exponential fit (memoryless, so
+        # random failures), the evidence behind the radio's run-to-failure
+        # decision (backend/maintenance/templates.py).
+        "id": "sample-model-quad-avionics-exponential",
+        "name": "Quadcopter avionics — Exponential (sample)",
+        "dataset_id": "sample-ds-quad-avionics",
+        "distribution": "exponential",
+        "mapping": {"x": "hours", "c": "censored"},
         "unit": "hours",
     },
 ]
@@ -1394,9 +1462,23 @@ def _seed_strategy_analyses(db) -> None:
     })
 
     # The sample quadcopter's (all invented, in flight hours): propeller fatigue
-    # and pack retirement as age-based replacements, and the BMS cut-off's
-    # failure-finding test interval.
+    # and pack retirement as age-based replacements, the BMS cut-off's
+    # failure-finding test interval, and the gimbal motor's replacement analysis,
+    # which finds no worthwhile interval (its failures are random), so the
+    # run-to-failure decision it supports reads as supported.
     specs += [
+        {
+            "id": "sample-strategy-quad-gimbal-replacement",
+            "name": "Quadcopter gimbal motor — preventive replacement (sample)",
+            "kind": "optimal_replacement",
+            "inputs": {
+                "distribution_id": "exponential",
+                "params": [{"name": "failure_rate", "value": 1e-4}],
+                "planned_cost": 80.0,
+                "unplanned_cost": 300.0,
+                "unit": "hours",
+            },
+        },
         {
             "id": "sample-strategy-quad-propeller-replacement",
             "name": "Quadcopter propeller — preventive replacement (sample)",

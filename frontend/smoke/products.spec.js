@@ -100,7 +100,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     const dialog = page.getByRole("dialog", { name: /Build an item/ });
     await dialog.getByLabel("Serial number").fill(serial);
     await dialog.getByRole("button", { name: "Check" }).click();
-    await expect(dialog).toContainText("25 positions");
+    await expect(dialog).toContainText("33 positions");
     await expect(dialog.locator(".pp-paths")).toContainText(`· ${serial} › Propulsion › Motor 1`);
     await shot(page, `${w}-build-dry-run`);
     await dialog.getByRole("button", { name: "Build item" }).click();
