@@ -21,6 +21,7 @@ import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { BuildItemModal, DesignReports, NewProductModal } from "../components/ProductPanels.jsx";
 import AssetExplorer from "./AssetExplorer.jsx";
 import { SAMPLES, addSample } from "../sampleTruck.js";
+import { newPredictionPath } from "../predictions.js";
 import {
   PRODUCTS_GUIDE, PRODUCTS_PATH, PRODUCT_TABS, hoursText, itemPagePath, itemTreePath, itemsText, productPath,
   productRbds, productTab, revText,
@@ -319,6 +320,14 @@ function AnalysisTab({ product }) {
         </ul>
       )}
       <p className="lib-date">Models fitted to a design position's pooled life data, and requirements on the design, aren't here yet.</p>
+      <div className="maint-head" style={{ marginTop: "var(--sp-4)" }}>
+        <h2>Reliability prediction</h2>
+        <button type="button" className="secondary sm" onClick={() => navigate(newPredictionPath({ product: product.id }))}>
+          New prediction from its parts list
+        </button>
+      </div>
+      <p className="lib-date">A parts count: the parts list's lowest-level parts, each given a handbook part type, added up from
+        handbook base rates for the environment the product works in. For a design with no failure data yet.</p>
     </section>
   );
 }

@@ -58,7 +58,7 @@ test("no roles: every entry in one flat list, nothing under More", async ({ page
   await mainMenu(page).getByRole("link", { name: "Modelling", exact: true }).click();
   await expect(page).toHaveURL(/\/data$/);
   await expect(mainMenu(page).locator(":scope > .side-group > div > .side-children > div > .side-subitem"))
-    .toHaveText(["Data", "Models", "System models"]);
+    .toHaveText(["Data", "Models", "Reliability prediction", "Maintainability prediction", "System models"]);
   await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Data");
   // An entry with a landing page opens on it; its children show beneath it.
   await mainMenu(page).getByRole("link", { name: "Models", exact: true }).click();
@@ -81,7 +81,7 @@ test("no roles: every entry in one flat list, nothing under More", async ({ page
   // same in the menu and on the page; a diagram lights RBDs too.
   await mainMenu(page).getByRole("link", { name: "System models", exact: true }).click();
   await expect(page).toHaveURL(/\/systems\/rbds$/);
-  await expect(mainMenu(page).locator(".side-grandchildren .side-subitem")).toHaveText(["RBDs", "Simulation runs"]);
+  await expect(mainMenu(page).locator(".side-grandchildren .side-subitem")).toHaveText(["RBDs", "Fault trees", "Simulation runs"]);
   await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("RBDs");
   await expect(page.getByRole("heading", { name: "Reliability block diagrams (RBDs)", level: 1 })).toBeVisible();
   await mainMenu(page).getByRole("link", { name: "Simulation runs", exact: true }).click();
@@ -92,11 +92,11 @@ test("no roles: every entry in one flat list, nothing under More", async ({ page
   await open(page, "/systems/b/sample-rbd-pump-station");
   await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("RBDs");
   await expect(page.locator(".crumb")).toHaveText("RBDs");
-  // The old addresses land on the list, and on the working fault tree and FME(C)A.
+  // The old addresses land on the list and on the working FME(C)A; fault trees are a page of their own now.
   await open(page, "/systems");
   await expect(page).toHaveURL(/\/systems\/rbds$/);
   await open(page, "/systems/fault-trees");
-  await expect(page).toHaveURL(/\/systems\/rbds$/);
+  await expect(page).toHaveURL(/\/systems\/fault-trees$/);
   await open(page, "/systems/fmeca");
   await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=fmea(&|$)/);
   await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");

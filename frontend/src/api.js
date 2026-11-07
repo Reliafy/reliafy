@@ -1641,6 +1641,63 @@ export function deleteStrategyAnalysis(id) {
   return request(`/api/strategy/analyses/${id}`, { method: "DELETE" });
 }
 
+// ---- Reliability prediction (a parts count from handbook base rates) ------------
+
+// The handbook's use environments and the page's defaults.
+export function getPredictionEnvironments() {
+  return request("/api/predictions/environments");
+}
+// The parts count for lines in an environment, saving nothing.
+export function computePrediction(lines, environment, missionTime) {
+  return request("/api/predictions/compute", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lines, environment, mission_time: missionTime }),
+  });
+}
+// A product's parts list as prediction lines (Reliafy Maintenance).
+export function getPredictionLinesFromProduct(productId) {
+  return request(`/api/predictions/from-product/${encodeURIComponent(productId)}`);
+}
+// Save a prediction: {name, inputs: {lines, environment, mission_time, product?, notes?}}.
+// The results are computed on the server.
+export function savePrediction(name, inputs) {
+  return request("/api/predictions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, inputs }),
+  });
+}
+export function listPredictions() {
+  return request("/api/predictions");
+}
+export function getPrediction(id) {
+  return request(`/api/predictions/${encodeURIComponent(id)}`);
+}
+// {name?, inputs?}: rename, or replace the parts list (results computed again).
+export function updatePrediction(id, body) {
+  return request(`/api/predictions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+export function deletePrediction(id) {
+  return request(`/api/predictions/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+// The reliability data library's search (public): the part-type picker.
+export function searchLibrary({ q, source, equipmentType, kind, page, pageSize } = {}) {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (source) params.set("source", source);
+  if (equipmentType) params.set("equipment_type", equipmentType);
+  if (kind) params.set("kind", kind);
+  if (page) params.set("page", String(page));
+  if (pageSize) params.set("page_size", String(pageSize));
+  const s = params.toString();
+  return request(`/api/library/search${s ? `?${s}` : ""}`);
+}
+
 // ---- RCM ---------------------------------------------------------------------
 
 // The RCM decision vocabulary (consequences, outcomes, run-to-failure bases)

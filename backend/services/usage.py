@@ -328,6 +328,9 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/test-planning/comparison", "test_planning_comparison"),
     ("POST", "/api/test-planning/simulate", "test_planning_simulate"),
     ("POST", "/api/strategy/analyses", "strategy_save"),
+    # Reliability prediction (a parts count)
+    ("POST", "/api/predictions/compute", "prediction_compute"),
+    ("POST", "/api/predictions", "prediction_save"),
     ("POST", "/api/recurrent/models/{id}/overhaul", "strategy_overhaul"),
     # Recurrent, degradation, ALT
     ("POST", "/api/recurrent/fit", "recurrent_fit"),

@@ -94,6 +94,7 @@ from backend.routers import feeds as feeds_router
 from backend.routers import library as library_router
 from backend.routers import oauth as oauth_router
 from backend.routers import outage_logs as outage_logs_router
+from backend.routers import predictions as predictions_router
 from backend.routers import uploads as uploads_router
 from backend.routers import compare_groups as compare_groups_router
 from backend.routers import regression_diagnostics as regression_diagnostics_router
@@ -284,6 +285,8 @@ app.include_router(uploads_router.router)
 # RSS: served (date-filtered) before the SPA catch-all below.
 app.include_router(feeds_router.router)
 app.include_router(library_router.router)
+# Reliability prediction: a parts count from the library's handbook rates.
+app.include_router(predictions_router.router)
 
 # MCP (Model Context Protocol) server for AI assistants — token-authed, and
 # registered before the SPA catch-all so GET/POST/DELETE /mcp reach it.
@@ -655,7 +658,7 @@ SPA_ROOTS = frozenset({
     "reliability-analysis-software",
     # The signed-in app.
     "home", "products", "items", "systems", "asset-register", "maintenance", "data", "models", "strategy",
-    "forecasts", "reports",
+    "forecasts", "predictions", "reports",
     "maintainability",
     "agent", "team", "settings", "tokens", "admin", "billing", "changes", "data-model",
     # Placeholder pages (frontend/src/plannedPages.js).

@@ -46,6 +46,10 @@ const FleetForecasts = lazy(() => import("./views/FleetForecasts.jsx"));
 const FleetTrackingHome = lazy(() => import("./views/FleetTrackingHome.jsx"));
 const FleetForecastPage = lazy(() => import("./views/FleetForecastPage.jsx"));
 const StrategyAnalysisPage = lazy(() => import("./views/StrategyAnalysisPage.jsx"));
+// Reliability prediction: a parts count from handbook base rates.
+const ReliabilityPredictions = lazy(() => import("./views/ReliabilityPredictions.jsx"));
+const ReliabilityPredictionNew = lazy(() => import("./views/ReliabilityPredictionNew.jsx"));
+const ReliabilityPredictionPage = lazy(() => import("./views/ReliabilityPredictionPage.jsx"));
 // Maintainability prediction: the list, the calculator and a saved prediction.
 const MaintainabilityHome = lazy(() => import("./views/MaintainabilityHome.jsx"));
 const MaintainabilityNewPage = lazy(() => import("./views/MaintainabilityNewPage.jsx"));
@@ -266,6 +270,10 @@ export default function AppShell() {
             <Route path="/strategy/test-planning/accelerated" element={<StrategyTestPlanning />} />
             <Route path="/strategy/test-planning/comparison" element={<StrategyTestPlanning />} />
             <Route path="/strategy/analyses/:id" element={<StrategyAnalysisPage />} />
+            {/* Reliability prediction: the saved parts counts, the builder and each one's page. */}
+            <Route path="/predictions" element={<ReliabilityPredictions />} />
+            <Route path="/predictions/new" element={<ReliabilityPredictionNew />} />
+            <Route path="/predictions/:id" element={<ReliabilityPredictionPage />} />
             {/* The fleets' forecasts and (Reliafy Maintenance) the position classes'. */}
             <Route path="/forecasts" element={<FleetForecasts />} />
             <Route path="/forecasts/:id" element={<FleetForecastPage />} />

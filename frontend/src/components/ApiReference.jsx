@@ -1054,7 +1054,7 @@ reliafy photo add IMG_*.jpg --to POSITION_ID   # Reliafy Maintenance users`}</Co
 // few tools, each doing one area's work by action (or, for get and list, kind).
 // Reads and calculations are separate from the tools that change your workspace.
 const MCP_TOOLS = [
-  { name: "guide", desc: "Short how-tos by topic — life data and censoring, units, accelerated tests, repairable systems, building RBDs, analysing them, strategy, fleets, uploads, sharing, published failure data, the workspace, plans — so the agent reads the one it needs before a task. Never counted against the allowance. guide(action=\"analyse.fit\") gives any action’s full argument schema." },
+  { name: "guide", desc: "Short how-tos by topic — life data and censoring, units, accelerated tests, repairable systems, building RBDs, analysing them, strategy, fleets, uploads, sharing, published failure data, reliability prediction, the workspace, plans — so the agent reads the one it needs before a task. Never counted against the allowance. guide(action=\"analyse.fit\") gives any action’s full argument schema." },
   { name: "get", desc: "One saved item in full, by kind and id; your account and the upgrade link.", actions: [
     ["model", "A saved life or recurrent model — distribution, parameters with confidence intervals, goodness of fit, MTTF and B-lives with lower bounds. Regression models add how good the model is (Harrell’s C, the integrated Brier score, the time-dependent AUC) and whether it holds (the proportional-hazards test with a plain verdict; for Cox PH robust standard errors, the tie method and strata). A model fitted by failure mode reports each mode’s share with 95% intervals and Gray’s test. Recurrent models give the growth verdict, ROCOF and MTBF with bounds and the trend tests."],
     ["dataset", "A dataset’s columns and rows, a page at a time."],
@@ -1065,6 +1065,7 @@ const MCP_TOOLS = [
     ["upload", "An uploaded file before importing it: a workbook’s sheets with their header rows, columns, row counts and a guessed mapping; a diagram file’s diagrams and block counts."],
     ["account", "Your plan; on Free, the tool calls used and left this month and the date they reset (Pro is unlimited); storage used against your plan’s limits, and whether simulation is included. Never counted against the allowance."],
     ["library_record", "One published failure-data record in full: the mean with its 5th to 95th percentile spread, the evidence behind it (failures, demands or hours), conditions, citation and licence, and the model an RBD block would use. For a handbook rate, give the environment the part works in (e.g. GF, ground, fixed). Never counted against the allowance."],
+    ["prediction", "A saved reliability prediction (a parts count) in full: its parts list and conditions, and the results computed when it was saved — every line, the rate per assembly, the Pareto, and which handbook factors were applied and which weren’t."],
     ["upgrade_link", "A Stripe checkout link for Reliafy Pro, for you to open and pay yourself — nothing is charged until you complete it. Works before you have Pro."],
   ] },
   { name: "list", desc: "Your saved items of one kind, with the shared samples; what changed; the published failure-data library.", actions: [
@@ -1075,6 +1076,7 @@ const MCP_TOOLS = [
     ["workspace_changes", "What changed in your workspace over a period — the last 30 days by default, a number of days, a date, or since your last visit — worked out from what Reliafy stores, never estimated: new and changed items; refits whose B10 or MTTF moved by more than 10%; fleet forecasts that moved and alerts that fired (Pro); RCM decisions whose linked model was refitted; simulations that moved. It says what it can’t compare."],
     ["library", "Published generic failure data, each record cited with its source and licence (free to read without an account at /api/library too): failure rates and probabilities of failure on demand by component and failure mode (“motor-driven pump fails to start”), filtered by source, equipment type and record_kind, 25 a page with counts. Never counted against the allowance."],
     ["library_sources", "The sources, their licences and what each holds. Today: the NRC / INL industry averages for U.S. nuclear power plant components (2020 update), and base failure rates for electronic parts from MIL-HDBK-217F, Notice 2."],
+    ["predictions", "Your saved reliability predictions (parts counts), with the shared sample: name, environment, lines, failure rate and MTBF."],
   ] },
   { name: "analyse", desc: "Every calculation; nothing is saved: life data, test plans, repairable systems, maintenance strategy, fleet forecasts and RBD analyses.", actions: [
     ["fit", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset — every model id, from Beta and Royston-Parmar to Buckley-James; shared frailty with group_column (frailty_family: gamma or lognormal); Cox PH with cox_options; covariates that change over time with id_column; by failure mode with causes and “competing_risks”. A fit whose data don’t pin the model down says so (fit_ok: false) so its numbers aren’t quoted. With “best”, criterion ranks by aic, aic_c, bic or neg_ll (the ranking gives each candidate’s parameters, score and delta) and include_mixtures lets two-mode mixtures compete. Regression fits report diagnostics.model_checks. Fitting is Pro."],
@@ -1100,6 +1102,7 @@ const MCP_TOOLS = [
     ["rbd_allocate_targets", "What reliability, availability or MTTF / MTTR each block needs for the system to meet a target. Exact and free."],
     ["rbd_system_history", "The observed availability from an outage log, each outage with the block that caused it, and the blocks ranked by downtime share."],
     ["rbd_export_python / rbd_export_json", "A standalone SurPyval + RePyability script, or RePyability’s JSON (rbd_from_json loads it; change import_rbd brings it back)."],
+    ["prediction", "A reliability prediction by parts count, for a design with no failure data yet: each line’s handbook base rate (a library record from MIL-HDBK-217F) × the environment factor × a quality factor per line × its quantity, added up — the failure rate per million hours and per hour, MTBF, reliability at a mission time, the rate per assembly, a Pareto by line and by part category, and which handbook factors aren’t applied. Reliafy Maintenance users can start from a product’s parts list. Exact and free."],
   ] },
   { name: "change", desc: "Every write to your workspace (Claude asks before running it): models, datasets, diagrams, files in, share links, fleet alerts.", actions: [
     ["model_fit", "The same fit as analyse fit, saved as a model; with demand_batches, a per-demand model. Pro."],
@@ -1122,6 +1125,7 @@ const MCP_TOOLS = [
     ["share_report", "Several of your items on one print-ready page, with a title, an author line, an introduction and a note per item."],
     ["share_revoke", "End a link at once."],
     ["fleet_create_alert", "Email alerts on a fleet’s expected failures — checked each time usage arrives through the ingest API."],
+    ["prediction_save / prediction_update / prediction_delete", "Save a reliability prediction (the parts count of analyse prediction) with its parts list, environment and mission time — the results are computed on save and kept as they were; change one of yours (computed again), or delete it."],
   ] },
   { name: "report_problem", desc: "Tell Reliafy’s developers when a tool got in the agent’s way, and check later whether it’s fixed. Never counted against the allowance." },
 ];

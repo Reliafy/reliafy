@@ -14,6 +14,13 @@
   "failure_rate": 180, "elements": {"isolation": 10, "replace": 15}}]'
   --unit minutes`.
 
+- **Reliability prediction**: a parts count from the library's handbook base
+  rates (MIL-HDBK-217F) for a design with no failure data yet. `analyse
+  prediction` (`lines`, `environment`, `mission_time`; Reliafy Maintenance
+  users may start from a `product_id`), `change prediction_save`,
+  `prediction_update` and `prediction_delete`, `get kind prediction` and `list
+  kind predictions`; the guide topic `prediction`. On the command line:
+  `reliafy analyse prediction --environment GF --lines @parts.json`.
 - **Fault trees built by hand**: `get fault_tree`, `list fault_trees`, `analyse fault_tree` (top event,
   cut sets, importance; `export_openpsa` for Open-PSA XML), `change fault_tree_save` (with `make_rbd`) and
   `change fault_tree_delete`; `change import_rbd` takes `as_fault_tree` for Open-PSA and Galileo files.

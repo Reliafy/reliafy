@@ -114,6 +114,9 @@ export const ENTRIES = [
           { to: "/models/joint", label: "Condition and life" },
         ],
       },
+      // Reliability prediction: a parts count from handbook base rates, for a
+      // design with no failure data yet. One entry, no children.
+      { id: "prediction", label: "Reliability prediction", to: "/predictions" },
       // Maintainability prediction: Mct, M_max and availability from a parts list's repair times.
       { id: "maintainability", label: "Maintainability prediction", to: "/maintainability" },
       {
@@ -322,6 +325,7 @@ export const COLLECTION_PATHS = {
   maintainability_predictions: "/maintainability/",
   fleets: "/forecasts/",
   tracked_fleets: "/risk/",
+  reliability_predictions: "/predictions/",
 };
 
 export function itemPath(collection, id) {
