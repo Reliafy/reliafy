@@ -183,10 +183,11 @@ fields, then the quieter things at the foot:
   **Consequence** (one tap on a choice) and **Decision**, then where it sits
   (**Under**).
 
-Every row, whatever its level, ends with **Notes and rationale**: the long
-description beside its title, where you write why it's there and what it
-rests on (why a performance standard is set where it is, the history behind
-a failure mode). Press **Edit** (or **Add notes** when there are none yet) to
+Every row, whatever its level, opens its details with **Notes and rationale**,
+straight under its title and above everything else: the long description beside
+its title, where you write why it's there and what it rests on (why a
+performance standard is set where it is, the history behind a failure mode).
+Press **Edit** (or **Add notes** when there are none yet) to
 write in a box in place, with a count up to 4,000 characters, then **Save**
 or **Cancel**. Line breaks are kept. A row with notes shows a small note mark
 after its name in the table; hover over it to read the first line. On a

@@ -583,6 +583,11 @@ export function Details({
                       : r.type === "fail" ? "How it fails to do it" : "What causes the failure"}
                     limit={r.type === "fn" ? { max: FUNCTION_MAX, nudge: FUNCTION_NUDGE } : null}
                     onCommit={(raw) => keep("name", onCommit(r, "name", raw))} />
+        {/* Notes and rationale come first, straight under the title (before the chips and
+            everything else), the same section at every level: a failure mode's are its notes. */}
+        {hasNotesField(r) && (
+          <RcmNotes key={`${r.key}:notes`} r={r} readOnly={readOnly} onSave={(value) => keep("notes", onCommit(r, "notes", value))} />
+        )}
         {(chips.length > 0 || saved.name) && (
           <div className="rw-chips-row">
             {chips.map((c) => <Chip key={c.text} tone={c.tone}>{c.text}</Chip>)}
@@ -592,9 +597,9 @@ export function Details({
         )}
       </div>
 
-      {/* One order at every level: what's inside it first (the next level down, as in the
-          tree), then what belongs to this level, then the quieter things (the working, the
-          checkable limit, where it sits, notes) last. */}
+      {/* One order at every level: the notes and rationale straight under the title (above), then
+          what's inside it (the next level down, as in the tree), then what belongs to this level,
+          then the quieter things (the working, the checkable limit, where it sits) last. */}
       <div className="rw-pbody">
         {/* The FME(C)A tab: a failure mode's two groups first (the end effect and the
             consequence are in the first), its tasks and decision after. */}
@@ -722,11 +727,6 @@ export function Details({
               </Field>
             )}
           </div>
-        )}
-        {/* Every row's notes and rationale, the same section at every level (a failure mode's
-            are its notes). */}
-        {hasNotesField(r) && (
-          <RcmNotes key={`${r.key}:notes`} r={r} readOnly={readOnly} onSave={(value) => keep("notes", onCommit(r, "notes", value))} />
         )}
         {/* Which standard a failure breaches is where it sits in the tree (moved by drag or Move
             to…); said here only when the way up doesn't show it (a pinned branch, say). */}

@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import Section, { AddRow } from "./ui/Section.jsx";
+import Section from "./ui/Section.jsx";
 import Field from "./ui/Field.jsx";
 import { TextArea } from "./ui/Controls.jsx";
 import ClampLines from "./ui/ClampLines.jsx";
 import { NOTES_LIMIT, checkNotes, notesChanged, notesCount, notesOf, notesPrompt } from "../rcmNotes.js";
 import "./OperatingContextCard.css";
 
-// "Notes and rationale" in an RCM row's details (a function, a performance
+// "Notes and rationale" in an RCM row's details (the first thing under its title) (a function, a performance
 // standard, a functional failure, a failure mode; the same on the RCM and
 // FME(C)A tabs, and in the phone's sheet): the row's long description, where
 // the reason for it is written. The text keeps its line breaks and is clamped
@@ -91,11 +91,14 @@ export default function RcmNotes({ r, readOnly = false, onSave }) {
       </div>
     );
   } else if (!text) {
-    body = (
-      <>
-        <p className="td-quiet">{notesPrompt(r)}</p>
-        {!readOnly && <AddRow ref={startBtn} onClick={start}>Add notes</AddRow>}
-      </>
+    // Empty: one quiet line (the prompt and the link), so it doesn't push the details down.
+    return (
+      <section className="rw-notes rw-notes-empty" aria-label="Notes and rationale">
+        <p className="td-quiet">
+          {notesPrompt(r)}
+          {!readOnly && <> <button ref={startBtn} type="button" className="link" onClick={(e) => { if (e.detail < 2) start(); }}>Add notes</button></>}
+        </p>
+      </section>
     );
   } else {
     body = <ClampLines text={text} lines={6} what="the notes" textClassName="td-ctx-text" />;
