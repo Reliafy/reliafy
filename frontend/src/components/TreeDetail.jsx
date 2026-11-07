@@ -4,13 +4,14 @@ import { getMaintenancePosition } from "../api.js";
 import Tabs from "./ui/Tabs.jsx";
 import FailureReportsPanel from "./FailureReportsPanel.jsx";
 import SignalsPanel from "./SignalsPanel.jsx";
-import { PinIcon } from "./OutlineBits.jsx";
+import OverflowMenu from "./OverflowMenu.jsx";
 import { ancestorsOf } from "../assetTree.js";
 import { branchOf, classesInBranch, isDesignRow, isProductRow, rowKind, shownTab, tabsFor } from "../explorerTabs.js";
 import TreeSummary from "./TreeSummary.jsx";
 import ProductSummary, { ProductPartsList } from "./ProductSummary.jsx";
 import "./TreeSummary.css";
 import { createRecent } from "../recentCache.js";
+import { withFullPage } from "../panelMenu.js";
 
 // The Parts and stock and Classes tabs' bodies (the pages they were, with their
 // charts): loaded when one of the tabs is first opened.
@@ -23,8 +24,9 @@ const ClassesPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m)
 // position: where it sits, what's fitted, its status in words, its work
 // (overdue first), its class and location, and what's directly inside it. An
 // item: its serial, class, make and model, and where it is (the position it's
-// fitted to, or the place it's kept). "Open the full page" goes to the row's
-// own page, where it's edited (an item's history and fitments are there).
+// fitted to, or the place it's kept). "Open the full page" (in the heading's
+// "…" menu) goes to the row's own page, where it's edited (an item's history
+// and fitments are there).
 //
 // The panel has tabs (explorerTabs.js): Summary (the above) for every row,
 // RCM for a position, and Failure reports (FailureReportsPanel: what has
@@ -160,25 +162,28 @@ function ClassesTab({ row, display }) {
   );
 }
 
-// The panel's heading, the same on both tabs: two slim rows. The first: the
+// The panel's heading, the same on every tab: two slim rows. The first: the
 // way up (and the last thing done) as small text over the row's name, its
-// kind, tag and checks, with the actions on the right; the second, under the
-// way up and the name: the tabs. On a wide screen the two rows sit beside the
-// tree's own two over the tree, on both tabs (TreePane's head and headTabs);
-// on a phone they head the panel.
+// kind, tag and checks, with two controls on the right, the same on every tab:
+// the "…" menu (HeaderMenu: the tab's own items, then Open the full page) and
+// Full screen. Adding, pinning and the rest of a row's changes are in the
+// tree's row menu (right-click, its ⋯, Shift+F10), not here. The second row,
+// under the way up and the name: the tabs. On a wide screen the two rows sit
+// beside the tree's own two over the tree, on every tab (TreePane's head and
+// headTabs); on a phone they head the panel.
 //
 // With a branch of the tree pinned, the way up still shows the whole path:
 // `above(key)` says which crumbs are above the pinned row (a click there moves
-// the pin up, `onCrumb` decides). `pin` ({on, onClick}): the pin button for
-// the row (pinned now when `on`), or null where it can't be pinned.
+// the pin up, `onCrumb` decides). `menu`: the tab's items (panelMenu.js).
+// `popover`: something the menu opened that hangs under the controls (the
+// RCM's column chooser).
 // `heading`: the name's heading level, 1 on the Explorer's own page; 2 where
 // the tree sits inside a page with its own h1 (a product's).
 export function SlimHeader({
-  display, row, onSelect, onCrumb = onSelect, above = null, pin = null, fullScreenButton, headingRef, meta, actions, message,
-  primaryOpen = false, heading = 1,
+  display, row, onSelect, onCrumb = onSelect, above = null, fullScreenButton, headingRef, meta, menu = [], popover = null, message,
+  heading = 1,
 }) {
   const crumbs = ancestorsOf(display, row.key).map((k) => ({ key: k, label: display.rows.get(k).ref.name, above: !!above?.(k) }));
-  const full = fullPagePath(row);
   const p = row.ref;
   const H = heading === 2 ? "h2" : "h1";
   return (
@@ -207,19 +212,26 @@ export function SlimHeader({
         </div>
       </div>
       <div className="tt-actions">
-        {actions}
-        {pin && (
-          <button type="button" className={"secondary sm tt-pin" + (pin.on ? " on" : "")} aria-pressed={pin.on}
-                  aria-label="Pin this branch"
-                  title={pin.on ? "Pinned: show the whole tree again" : "Pin this branch: show only it and what's inside it"}
-                  onClick={pin.onClick}>
-            <PinIcon size={16} />
-          </button>
-        )}
+        <HeaderMenu items={withFullPage(menu, fullPagePath(row))} />
         {fullScreenButton}
-        {full && <Link className={"td-open" + (primaryOpen ? " primary" : "")} to={full}>Open the full page</Link>}
+        {popover}
       </div>
     </div>
+  );
+}
+
+// The heading's "…": the tab's items (a link for Open the full page), greyed
+// where a row has none (a group), so the heading looks the same on every row.
+export function HeaderMenu({ items }) {
+  return (
+    <OverflowMenu triggerClass="tp-icon-btn" disabled={!items.length} title={items.length ? "More actions" : "Nothing more for this row"}>
+      {items.map((it) => (it.to ? (
+        <Link key={it.id} className="ovm-item" to={it.to}>{it.label}</Link>
+      ) : (
+        <button key={it.id} type="button" className="ovm-item" disabled={!!it.disabled} title={it.title || undefined}
+                onClick={it.onSelect}>{it.label}</button>
+      )))}
+    </OverflowMenu>
   );
 }
 
@@ -230,9 +242,11 @@ export function HeaderTabs({ row, tab, onTab }) {
   return <Tabs tabs={tabs} value={shownTab(tab, row)} onChange={onTab} label="What to show for this row" idPrefix="td" className="tt-tabs" wholeTabs />;
 }
 
+// `menu`: the "…" items the tab's body gave (through `onMenu`, panelMenu.js),
+// for the heading here on a phone; on a wide screen the page draws the heading.
 const TreeDetail = forwardRef(function TreeDetail({
-  display, row, today, onSelect, onCrumb, above, pin, back, version, empty, tab, onTab, fullScreenButton, headless = false, actions = [],
-  reports = null, heading = 1,
+  display, row, today, onSelect, onCrumb, above, back, version, empty, tab, onTab, fullScreenButton, headless = false, actions = [],
+  reports = null, heading = 1, menu = [], onMenu = null,
 }, headingRef) {
   if (!row) return <div className="td">{back}{empty}</div>;
   const tabs = tabsFor(row);
@@ -242,20 +256,20 @@ const TreeDetail = forwardRef(function TreeDetail({
       {back}
       {!headless && (
         <div className="td-head">
-          <SlimHeader display={display} row={row} onSelect={onSelect} onCrumb={onCrumb || onSelect} above={above} pin={pin}
-                      fullScreenButton={fullScreenButton} headingRef={headingRef} heading={heading}
-                      meta={rowKind(row) ? <span className="tt-kind">{rowKind(row)}</span> : null} primaryOpen />
+          <SlimHeader display={display} row={row} onSelect={onSelect} onCrumb={onCrumb || onSelect} above={above}
+                      fullScreenButton={fullScreenButton} headingRef={headingRef} heading={heading} menu={menu}
+                      meta={rowKind(row) ? <span className="tt-kind">{rowKind(row)}</span> : null} />
           <HeaderTabs row={row} tab={tab} onTab={onTab} />
         </div>
       )}
       <div className="td-body" role={tabs.length > 1 ? "tabpanel" : undefined} id={tabs.length > 1 ? "td-panel" : undefined}
            aria-labelledby={tabs.length > 1 ? `td-tab-${shown}` : undefined}>
         {shown === "reports" && reports
-          ? (reports?.rollup ? reports.rollup(row) : <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} />)
+          ? (reports?.rollup ? reports.rollup(row) : <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} onMenu={onMenu} />)
           : shown === "measurements"
-          ? <Suspense fallback={loading}><MeasurementsPanel row={row} display={display} today={today} /></Suspense>
+          ? <Suspense fallback={loading}><MeasurementsPanel row={row} display={display} today={today} onMenu={onMenu} /></Suspense>
           : shown === "signals"
-          ? <SignalsPanel row={row} />
+          ? <SignalsPanel row={row} onMenu={onMenu} />
           : shown === "parts"
           ? <PartsTab row={row} display={display} />
           : shown === "classes"

@@ -1,5 +1,5 @@
 // "Pin this branch" in the Explorer (Operate › Assets › Explorer): a row's
-// menu or the pin in the panel's heading shows only that row and what's
+// menu (right-click, its ⋯) shows only that row and what's
 // inside it; the pin's note in the tree's column header (no row of its own),
 // its ✕ (Show everything), "Show whole tree" in the ⋯ menu, Reset; the levels, search and counts on the branch; a crumb
 // above it moves the pin up; Back un-pins; the RCM tab with a pin; a row
@@ -84,8 +84,8 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   await expect(row(page, `Works pump A ${tag}`)).toBeVisible();
   for (const gone of [`Works plant ${tag}`, `Works line B ${tag}`, `Works other ${tag}`]) await expect(row(page, gone)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Tree options: 1 changed" })).toBeVisible();
-  // The panel's heading: the pin is on; the way up still shows the plant.
-  await expect(panel(page).getByRole("button", { name: "Pin this branch" })).toHaveAttribute("aria-pressed", "true");
+  // The panel's heading has no pin of its own (pinning is the row menu's); the way up still shows the plant.
+  await expect(panel(page).getByRole("button", { name: "Pin this branch" })).toHaveCount(0);
   await expect(panel(page).getByRole("button", { name: `Works plant ${tag}` })).toBeVisible();
   await shot(page, "2-pinned-positions-tree");
 
@@ -130,13 +130,11 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   await expect(bar(page)).toHaveCount(0);
   await expect(row(page, `Works line A ${tag}`)).toHaveAttribute("aria-level", "2");
 
-  // The pin in the panel's heading: on, then off.
+  // Pinned from the row menu: on, then off (Show whole tree in the same menu).
   await row(page, `Works pump A ${tag}`).click();
-  const pin = panel(page).getByRole("button", { name: "Pin this branch" });
-  await expect(pin).toHaveAttribute("aria-pressed", "false");
-  await pin.click();
+  await row(page, `Works pump A ${tag}`).locator(".tp-nm").click({ button: "right" });
+  await rowMenu(page, `Works pump A ${tag}`).getByRole("menuitem", { name: "Pin this branch" }).click();
   await expect(bar(page)).toContainText(`Works pump A ${tag}`);
-  await expect(pin).toHaveAttribute("aria-pressed", "true");
   // Full screen keeps the pin, and its note.
   await page.locator(".td-title").click();
   await page.keyboard.press("f");
@@ -144,7 +142,8 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   await expect(bar(page)).toBeVisible();
   await page.getByRole("button", { name: "Exit full screen" }).click();
   await expect(page.locator(".tx.is-full")).toHaveCount(0);
-  await pin.click();
+  await row(page, `Works pump A ${tag}`).locator(".tp-nm").click({ button: "right" });
+  await rowMenu(page, `Works pump A ${tag}`).getByRole("menuitem", { name: "Show whole tree" }).click();
   await expect(bar(page)).toHaveCount(0);
 
   // Reset to the usual view un-pins too; and the ✕ (Show everything) in the column header.
@@ -194,8 +193,8 @@ test("the RCM tab with a pin: the one table shows only the branch, its rows' men
   await page.keyboard.press("Escape");
   await trow(`^Works pump A ${tag}`).locator(".tt-tree").click();
   await shot(page, "3-pinned-rcm-tab");
-  // The heading's pin, and its way up (the plant, above the pinned row).
-  await expect(page.locator(".tt-headslot").getByRole("button", { name: "Pin this branch" })).toHaveAttribute("aria-pressed", "false");
+  // The heading: no pin (the row menu's), and its way up (the plant, above the pinned row).
+  await expect(page.locator(".tt-headslot").getByRole("button", { name: "Pin this branch" })).toHaveCount(0);
   await expect(page.locator(".tt-headslot").getByRole("button", { name: `Works plant ${tag}` })).toBeVisible();
   // Summary keeps the pin.
   await page.getByRole("tab", { name: "Summary" }).click();

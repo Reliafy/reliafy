@@ -60,7 +60,11 @@
   text-overflow: ellipsis;
 }
 
-.tp button.tp-icon-btn {
+/* The tree pane's small icon buttons (« fold, » unfold), and the panel
+   heading's two controls (the "…" menu and Full screen) on every tab: one
+   look, 30 × 30 (36 on a phone). */
+.tp button.tp-icon-btn,
+.tt-actions button.tp-icon-btn {
   min-width: 30px;
   height: 30px;
   padding: 0 7px;
@@ -73,7 +77,8 @@
   font-weight: 600;
 }
 
-.tp button.tp-icon-btn:hover:not(:disabled) {
+.tp button.tp-icon-btn:hover:not(:disabled),
+.tt-actions button.tp-icon-btn:hover:not(:disabled) {
   background: var(--surf-2);
   color: var(--ink);
 }
@@ -381,22 +386,6 @@
   text-decoration: underline;
 }
 
-a.td-open {
-  display: inline-flex;
-  align-items: center;
-  padding: 9px 15px;
-  border-radius: var(--r-sm);
-  background: var(--acc);
-  color: var(--on-fill);
-  font-weight: 600;
-  font-size: var(--fs-14);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-a.td-open:hover {
-  background: var(--acc-d);
-}
 
 .td-error p {
   margin: 0 0 10px;
@@ -444,7 +433,8 @@ a.td-open:hover {
     height: 20px;
     font-size: 12px;
   }
-  .tx.phone .tp button.tp-icon-btn {
+  .tx.phone .tp button.tp-icon-btn,
+  .tx.phone .tt-actions button.tp-icon-btn {
     min-width: 36px;
     height: 36px;
   }
@@ -607,18 +597,11 @@ button.rw-cklink {
   min-width: 0;
   container: tthead / inline-size;
 }
-/* Over the tree, the heading is one line on both tabs (the name shrinks
-   first); where the slot is too narrow for the RCM tab's actions beside the
-   name, the actions go under it on both tabs alike. Whether it wraps depends
-   only on the slot's width, never on which tab is open, so the rows under it
-   don't move when the tab changes. */
+/* Over the tree, the heading is one line on every tab: the name shrinks
+   (cut with an ellipsis) beside the two controls, so the rows under it don't
+   move when the tab changes. */
 .tt-headslot .tt-bar-head { flex-wrap: nowrap; }
 .tt-headslot .tt-name { flex: 1 1 0; min-width: 4em; }
-@container tthead (max-width: 490px) {
-  .tt-headslot .tt-bar-head { flex-wrap: wrap; }
-  .tt-headslot .tt-name { flex-basis: 100%; }
-  .tt-headslot .tt-actions { padding-top: 0; }
-}
 .tt-bar-head {
   flex: 1 1 auto;
   display: flex;
@@ -706,35 +689,23 @@ button.rw-cklink {
   color: var(--muted);
 }
 .tt-rollup { flex: none; display: inline-flex; }
+/* The heading's two controls, the same on every tab: the "…" menu and Full
+   screen (tp-icon-btn, above), 8 px apart. The column chooser the menu opens
+   hangs from their right edge. */
 .tt-actions {
+  position: relative;
   flex: none;
   margin-left: auto;
   display: flex;
-  flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 6px 0;
 }
-.tt-actions button,
-.tt-actions .rw-cols > button,
-.tt-actions a.td-open {
-  min-height: 32px;
-  padding: 0 11px;
-  font-size: var(--fs-13);
-  box-shadow: none;
-}
-/* One primary action here (Add function): the way to the full page is
-   secondary. */
-.tt-actions a.td-open {
-  background: var(--surf);
-  color: var(--ink);
-  border: 1px solid var(--line);
-}
-.tt-actions a.td-open:hover { background: var(--surf-2); }
-/* On the Summary tab it's the one action, so the primary. */
-.tt-actions a.td-open.primary { background: var(--acc); border-color: var(--acc); color: var(--on-fill); }
-.tt-actions a.td-open.primary:hover { background: var(--acc-d); }
+.tt-actions > .rw-cols { position: absolute; right: 0; top: 100%; }
+/* Square: the icon centred in 30 × 30, border included (36 on a phone). */
+.tt-actions button.tp-icon-btn { width: 30px; min-height: 30px; padding: 0; gap: 0; }
+.tt-actions button.tp-icon-btn svg { width: 16px; height: 16px; }
 .tt-kind { flex: none; font-size: var(--fs-12); color: var(--muted); }
 
 /* The Summary tab's heading: the same two slim rows as the RCM tab's (the way
@@ -755,15 +726,14 @@ button.rw-cklink {
 @media (max-width: 720px) {
   .tx.phone .td-head { margin: 0 -16px 14px; padding: 0 16px; }
   .tx.phone .td > .td-head:first-child { margin-top: -16px; }
-  /* The whole name on a phone: the actions go under it. */
-  .tx.phone .td-head .tt-name { flex-basis: 100%; }
+  /* The whole name on a phone (it wraps), the two controls beside it. */
+  .tx.phone .td-head .tt-name { flex: 1 1 0; min-width: 0; }
   .tx.phone .td-head .tt-name-row { flex-wrap: wrap; white-space: normal; }
-  .tx.phone .td-head .tt-actions { padding-top: 0; }
+  .tx.phone .td-head .tt-actions { align-self: flex-start; }
 }
-/* Full screen is the icon here (its name and the F key in the tooltip);
-   "Exit full screen" stays spelt out. */
-.tt-actions .full-screen-btn:not(.is-full) { min-width: 32px; padding: 0 8px; justify-content: center; }
-.tt-actions .full-screen-btn:not(.is-full) .full-screen-word {
+/* Full screen is the icon here, both ways (its name, and the F key, in the
+   tooltip and for screen readers). */
+.tt-actions .full-screen-word {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
 }
 .tt-row2 {
@@ -1257,9 +1227,6 @@ button.rw-cklink {
 }
 .tp-row button.tp-unpin:hover { background: var(--acc-t); }
 .tp-mk + .tp-unpin, .tt-st + .tp-unpin, .tp-unpin + .tt-more { margin-left: 2px; }
-/* The pin in the panel's heading: an icon, as tall as Full screen beside it. */
-.tt-actions button.tt-pin { min-width: 32px; padding: 0 8px; justify-content: center; }
-.tt-actions button.tt-pin.on { background: var(--acc-t); border-color: var(--acc); color: var(--acc); }
 
 /* The empty tree's "New here? Open the sample UAV product" card. */
 .ae-sample {

@@ -6,8 +6,8 @@ import {
 } from "../failureReports.js";
 import FailureReportDetail from "./FailureReportDetail.jsx";
 import { Field, FormModal, PositionPicker, fmtDate } from "./MaintenanceParts.jsx";
-import { PlusIcon } from "./LibRows.jsx";
 import { ShowMe } from "./SectionPage.jsx";
+import { usePanelMenu } from "../panelMenu.js";
 import "./FailureReports.css";
 
 // The Explorer's Failure reports tab: every report at the row picked and
@@ -16,8 +16,9 @@ import "./FailureReports.css";
 // otherwise. The counts in a line, chips for the stage, a search box, the
 // consequence, failure mode, dates and order to narrow it, and "Show more"
 // for a long list. A row opens the report in place of the list (?report= in
-// the address, so a link opens on it). "Add failure report" files one at the
-// position picked (a location or an item: which position, first).
+// the address, so a link opens on it). "Add failure report…" (a position's row
+// menu, and the panel heading's "…" menu, given through `onMenu`) files one at
+// the position picked (a location or an item: which position, first).
 //
 // `reports` is the page's: {id (the report open), open(id | null), onNew
 // (positionId, name), onChanged (the tree read again), viewOnly}.
@@ -61,7 +62,7 @@ function Row({ r, scopeKind, onOpen }) {
   );
 }
 
-export default function FailureReportsPanel({ row, display, today, version, reports }) {
+export default function FailureReportsPanel({ row, display, today, version, reports, onMenu = null }) {
   const scope = scopeOf(row);
   const scopeKey = scope ? `${row.type}:${row.key}` : "";
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
@@ -124,6 +125,7 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   const canAdd = !reports.viewOnly && (row.type === "pos" || positions.length > 0);
   const addTitle = reports.viewOnly || (row.type !== "pos" && !positions.length
     ? (row.type === "item" ? "This item isn't fitted to a position; a report sits at a position." : "No positions here to report a failure at.") : undefined);
+  usePanelMenu(onMenu, [{ id: "report-new", label: "Add failure report…", onSelect: addHere, disabled: !canAdd, title: addTitle }]);
 
   if (reports.id) {
     return (
@@ -149,7 +151,7 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   } else if (!list.length && !narrowed) {
     body = (
       <div className="fr-empty">
-        <p>No failure reports here yet. Press Add failure report, or {touch() ? "tap ⋯ on a position in the tree" : "right-click a position in the tree"}, to add one.</p>
+        <p>No failure reports here yet. To add one, {touch() ? "tap ⋯ on a position in the tree" : "right-click a position in the tree"} and choose Add failure report…, or use More actions (…) above.</p>
         <p className="section-empty-more"><ShowMe help={HELP}>How failure reports work</ShowMe></p>
       </div>
     );
@@ -180,9 +182,6 @@ export default function FailureReportsPanel({ row, display, today, version, repo
     <div className="fr-panel">
       <div className="fr-head">
         <p className="fr-counts">{data ? countsSentence(counts, data.scope, { kind: row.type }) : " "}</p>
-        <button type="button" className="sm fr-add" onClick={addHere} disabled={!canAdd} title={addTitle}>
-          <PlusIcon /> Add failure report
-        </button>
       </div>
       {!none && (
       <div className="fr-filters">

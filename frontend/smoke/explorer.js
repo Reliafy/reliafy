@@ -201,3 +201,33 @@ export async function reveal(page, row, { timeout = 10_000 } = {}) {
   await row.first().scrollIntoViewIfNeeded();
   return row;
 }
+
+// The panel heading's "…" (More actions) on a wide screen: the heading has
+// that and Full screen on every tab, nothing else. Opens it and returns the
+// heading, so an item is pressed with
+// `(await headMenu(page)).getByRole("button", { name: "Export CSV" })`, or a
+// link with getByRole("link") (Open the full page).
+export async function headMenu(page, { root = ".tt-headslot" } = {}) {
+  const head = page.locator(root).first();
+  await head.getByRole("button", { name: "More actions" }).click();
+  return head;
+}
+
+// The RCM or FME(C)A table's column chooser, opened from the heading's "…" ›
+// Columns…; returns its list of boxes.
+export async function openColumns(page) {
+  const head = await headMenu(page);
+  await head.getByRole("button", { name: "Columns…" }).click();
+  const pop = page.getByRole("group", { name: "Columns to show" });
+  await expect(pop).toBeVisible();
+  return pop;
+}
+
+// A row's menu item on the RCM or FME(C)A tab: right-click the row (its
+// accessible name starts with `rowName`) and choose `item` (a position's Add
+// function, say: the heading has no Add button).
+export async function rcmRowMenu(page, rowName, item) {
+  const grid = page.getByRole("treegrid", { name: /and their (RCM|FME\(C\)A)/ });
+  await grid.getByRole("row", { name: new RegExp(`^${rowName}`) }).locator(".tt-tree, .tt-l1").first().click({ button: "right" });
+  await page.getByRole("menu", { name: new RegExp(`^Actions for ${rowName}`) }).getByRole("menuitem", { name: item, exact: true }).click();
+}

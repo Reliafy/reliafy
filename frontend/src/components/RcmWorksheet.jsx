@@ -1004,23 +1004,38 @@ function Crumbs({ up, onSelect }) {
 
 // The column chooser: tick the columns to show; the description is always
 // shown. `columns`: the table's columns (the RCM's, or the FME(C)A tab's).
-export function ColumnChooser({ cols, onCols, usual = DEFAULT_COLUMNS, columns = COLUMNS }) {
-  const [open, setOpen] = useState(false);
+// With `open` given it has no button of its own: something else opens it (the
+// Explorer heading's "…" › Columns…) and `onClose` closes it (a click away,
+// Escape), focus going back to `returnFocus()`.
+export function ColumnChooser({ cols, onCols, usual = DEFAULT_COLUMNS, columns = COLUMNS, open: openProp, onClose, returnFocus }) {
+  const controlled = openProp !== undefined;
+  const [openOwn, setOpenOwn] = useState(false);
+  const open = controlled ? openProp : openOwn;
   const box = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
-    const away = (e) => { if (!box.current?.contains(e.target)) setOpen(false); };
-    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
+    const close = (refocus) => {
+      if (controlled) onClose?.();
+      else setOpenOwn(false);
+      if (refocus) returnFocus?.()?.focus?.();
+    };
+    const away = (e) => { if (!box.current?.contains(e.target)) close(false); };
+    const esc = (e) => { if (e.key === "Escape") { e.preventDefault(); close(true); } };
     document.addEventListener("pointerdown", away);
     document.addEventListener("keydown", esc);
+    // Opened from a menu: the first box takes the focus, so the keyboard can tick.
+    if (controlled) box.current?.querySelector("input")?.focus({ preventScroll: true });
     return () => { document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", esc); };
-  }, [open]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (controlled && !open) return null;
   return (
     <div className="rw-cols" ref={box}>
-      <button type="button" className="secondary rw-btn" aria-expanded={open} aria-haspopup="true" onClick={() => setOpen((o) => !o)}
-              aria-label="Columns" title="Choose which columns to show">
-        Columns
-      </button>
+      {!controlled && (
+        <button type="button" className="secondary rw-btn" aria-expanded={open} aria-haspopup="true" onClick={() => setOpenOwn((o) => !o)}
+                aria-label="Columns" title="Choose which columns to show">
+          Columns
+        </button>
+      )}
       {open && (
         <div className="rw-pop" role="group" aria-label="Columns to show">
           {columns.map((c) => (

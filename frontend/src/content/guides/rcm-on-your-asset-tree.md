@@ -120,7 +120,7 @@ To find your way around a big tree:
   in Items. The dialog counts what will go before you confirm. Its history
   stays, and **Undo** in the message that follows (or Ctrl+Z, Cmd+Z on a Mac)
   brings it all back.
-- **Columns** shows or hides columns, such as **Evidence**, **What the evidence shows** and **Decision notes**. Drag a
+- **Columns…**, in the **⋯** menu at the top right of the panel, shows or hides columns, such as **Evidence**, **What the evidence shows** and **Decision notes**. Drag a
   column's edge to resize it. The Explorer remembers these choices on this
   device.
 
@@ -151,8 +151,8 @@ goes the same way: on any position.
 
 Pick a position in the tree on the RCM tab. Build from the top down:
 
-1. **Add function** (at the top of the position's panel, or in the position's
-   row menu: right-click the row, press its **⋯** button, or Shift+F10). Type
+1. **Add function** in the position's row menu (right-click the row, press
+   its **⋯** button, or Shift+F10). Type
    what the position must do and press **Add function**.
 2. In the function's row menu, **Add a performance standard…** adds a performance
    standard (one parameter and one limit), and **Add functional failure**
@@ -350,8 +350,8 @@ The **What changed** panel on Home lists the decisions whose evidence changed.
 ## Import an existing worksheet
 
 If your FMEA or RCM worksheet already lives in a spreadsheet, choose **Import
-worksheet…** in the position's row menu (or in the **⋯** beside **Add
-function** at the top of its panel). Drop in the workbook or CSV, pick the
+worksheet…** in the position's row menu (or in the **⋯** menu at the top
+right of its panel). Drop in the workbook or CSV, pick the
 sheet and header row for a workbook, and map its columns: **Function**,
 **Functional failure**, **Failure mode**, **Effects**, **Consequence**,
 **Decision / task type**, **Task**, **Interval** and **Interval unit**. Each

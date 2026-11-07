@@ -65,7 +65,8 @@ export default function RcmPositionPanel({
           ) : (
             <p className="rw-inside">{NO_FUNCTIONS}</p>
           )}
-          {canAdd && <button type="button" className="sm" onClick={onAdd}>Add function</button>}
+          {/* A double-click asks once (its second click is the dialog's, which ignores it). */}
+          {canAdd && <button type="button" className="sm" onClick={(e) => { if (e.detail < 2) onAdd(); }}>Add function</button>}
         </Section>
       </div>
     </aside>

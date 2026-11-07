@@ -19,8 +19,11 @@ const ExitIcon = () => (
 // ``shortcutNote`` after it (where the key works, say).
 // ``compact`` keeps only the icon on the way in on a phone (the shared page's
 // corner button), never on the way out: "Exit full screen" is always spelt out.
+// ``base`` is its look ("secondary sm"); the Explorer's panel heading passes
+// its own (the tree pane's icon buttons), where the words are its name and
+// tooltip only.
 const FullScreenButton = forwardRef(function FullScreenButton(
-  { full, onClick, shortcut = "F", shortcutNote = "", className = "", compact = false },
+  { full, onClick, shortcut = "F", shortcutNote = "", className = "", compact = false, base = "secondary sm" },
   ref
 ) {
   const label = full ? "Exit full screen" : "Full screen";
@@ -28,7 +31,7 @@ const FullScreenButton = forwardRef(function FullScreenButton(
     <button
       ref={ref}
       type="button"
-      className={"secondary sm full-screen-btn" + (full ? " is-full" : "") + (className ? " " + className : "")}
+      className={(base ? base + " " : "") + "full-screen-btn" + (full ? " is-full" : "") + (className ? " " + className : "")}
       onClick={onClick}
       title={shortcut ? `${label} (${shortcut}${shortcutNote ? `, ${shortcutNote}` : ""})` : label}
       aria-label={label}

@@ -11,6 +11,7 @@
 // share the server and expect their rows near the top.
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
+import { openColumns, rcmRowMenu } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -115,8 +116,7 @@ test("at 1280x720 the RCM table fits: no column cut off, the interval in the Tas
   await page.getByRole("button", { name: "Close the details" }).click();
 
   // More columns than fit: the table scrolls sideways, and a shadow shows on the side with more.
-  await page.getByRole("button", { name: "Columns", exact: true }).click();
-  const pop = page.getByRole("group", { name: "Columns to show" });
+  const pop = await openColumns(page);
   for (const n of ["Interval", "Mode notes", "Decision notes", "What the evidence shows"]) {
     await pop.getByRole("checkbox", { name: n }).check();
   }
@@ -139,8 +139,7 @@ test("at 1280x720 the RCM table fits: no column cut off, the interval in the Tas
   await page.waitForTimeout(400);
   await page.reload();
   await expect(table(page).getByRole("columnheader", { name: "Interval" })).toBeVisible();
-  await page.getByRole("button", { name: "Columns", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Columns", exact: true })).toHaveAttribute("title", "Choose which columns to show");
+  await openColumns(page);
   await page.getByRole("button", { name: "Show the usual columns" }).click();
   await page.keyboard.press("Escape");
   await expect(table(page).getByRole("columnheader", { name: "Interval" })).toHaveCount(0);
@@ -163,8 +162,8 @@ test("a function's text is kept to 200 characters where it's typed; one saved lo
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
   await expect(table(page)).toBeVisible();
 
-  // Add function: a live counter, the nudge, amber near the limit, and the box stops at 200.
-  await page.locator(".tt-headslot").getByRole("button", { name: "Add function" }).click();
+  // Add function (the position's row menu): a live counter, the nudge, amber near the limit, and the box stops at 200.
+  await rcmRowMenu(page, `Yard pump ${tag}`, "Add function");
   const dialog = page.getByRole("dialog", { name: "Add a function" });
   const box = dialog.getByRole("textbox", { name: "What must this position do?" });
   await expect(dialog).toContainText("Keep it short. Put the performance standard in its own field.");
@@ -224,8 +223,8 @@ test("offline, a save says so in plain words and keeps what was typed: the dialo
   await expect(basket).toBeVisible();
 
   await context.setOffline(true);
-  // Add function: the dialog stays open with the text, and says what to do.
-  await page.locator(".tt-headslot").getByRole("button", { name: "Add function" }).click();
+  // Add function (the position's row menu): the dialog stays open with the text, and says what to do.
+  await rcmRowMenu(page, `Yard pump ${tag}`, "Add function");
   const dialog = page.getByRole("dialog", { name: "Add a function" });
   await dialog.getByRole("textbox").fill(`Hold the water ${tag}`);
   await dialog.getByRole("button", { name: "Add function" }).click();

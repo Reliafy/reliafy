@@ -17,7 +17,6 @@ import useRcmDrag from "../components/useRcmDrag.js";
 import {
   answerNotes, dragBlock, dragSource, moveItems, planDrop, refusalText, shownAfter, stepTarget, undoBatch,
 } from "../rcmDrag.js";
-import OverflowMenu from "../components/OverflowMenu.jsx";
 import { exportFilename, importSummary, positionRcmCsv } from "../rcmImport.js";
 import { saveText } from "../sparesPlan.js";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
@@ -83,8 +82,8 @@ const TOP = "\u0000top";
 // register, arranged by positions or by locations (the switch in the pane's
 // heading, and the address follows: ?arrange=). The
 // tree is a second-level menu beside the site menu; the panel beside it shows
-// the row picked, with "Open the full page" for the position's (or
-// location's, or item's) own page. On a phone the tree is the whole screen
+// the row picked; its heading's "…" menu has "Open the full page" for the
+// position's (or location's, or item's) own page. On a phone the tree is the whole screen
 // and picking a row slides to the panel; Back (or the phone's back gesture)
 // slides back.
 //
@@ -105,12 +104,16 @@ const TOP = "\u0000top";
 // it. Picking a function, failure or mode opens its details beside the table.
 // Each row's menu (right-click, its ⋯ button, or Shift+F10) adds inside it (a
 // function on a position, a functional failure on a function, a failure mode
-// on a functional failure) and has the row's other actions; the heading's Add
-// function adds to the position picked; the tree grows. On the Summary tab the tree is the positions alone
+// on a functional failure) and has the row's other actions; the tree grows. On the Summary tab the tree is the positions alone
 // and the page about the row picked is beside it. Full screen (F, Esc to leave)
 // gives the tree and the panel the whole screen, as the RBD editor's.
 //
-// "Pin this branch" (a row's menu, or the pin in the panel's heading) shows
+// The panel's heading has the same two controls on every tab: the "…" menu
+// (the tab's own items that aren't a row's: the RCM's Import worksheet…,
+// Export CSV and Columns…; Open the full page last) and Full screen. Adding,
+// pinning and the row's other changes are in the tree's row menu.
+//
+// "Pin this branch" (a row's menu, or its right-click) shows
 // only that row and what's inside it (treePin.js): ?pin=<id>, so Back un-pins
 // and a link opens pinned; not remembered on this device. The tree's column
 // header says so ("Pinned: <name>", its path in the tooltip, and a ✕ to show
@@ -238,6 +241,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const detailsHeading = useRef(null);
   const frame = useRef(null);
   const fullBtn = useRef(null);
+  // The "…" items the tab's body gives (the failure reports', measurements',
+  // signals': panelMenu.js), and the RCM's column chooser opened from it.
+  const [tabMenu, setTabMenu] = useState(null);
+  const [colsOpen, setColsOpen] = useState(false);
   const { full, toggle: toggleFull } = useFullScreen(frame, { returnFocus: fullBtn });
   const pending = useRef(params.get("sel") || location.state?.treeReveal || null);
 
@@ -684,10 +691,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     return unpin({ select: key });
   };
   const above = pinKey ? (key) => !display.rows.has(key) : null;
-  const pinFor = (r) => (r && canPin(whole.rows.get(r.key), mode) ? {
-    on: r.key === pinKey,
-    onClick: () => (r.key === pinKey ? unpin() : pinTo(r.key, { select: true })),
-  } : null);
   const pinItem = (r) => (canPin(r, mode)
     ? [r.key === pinKey ? { id: "unpin", label: "Show whole tree" } : { id: "pin", label: "Pin this branch" }] : []);
   const isolateItem = (r) => isolateItems(display.rows.get(r.key) || r, { can: canIsolate(display.rows.get(r.key) || r, mode, canPin) });
@@ -1313,7 +1316,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The panel shows the row from the whole tree, so its way up is the whole path.
   const row = (phone ? detailKey : focus) != null ? whole.rows.get(phone ? detailKey : focus) ?? null : null;
   const posRow = selPos != null ? display.rows.get(selPos) : null;
-  const fullButton = !phone && <FullScreenButton ref={fullBtn} full={full} onClick={toggleFull} shortcutNote="also in the tree" />;
+  // The heading's Full screen: the tree pane's 30 × 30 icon button (its name
+  // and the F key in the tooltip), on a phone too (no key there).
+  const fullButton = (
+    <FullScreenButton ref={fullBtn} full={full} onClick={toggleFull} base="tp-icon-btn"
+                      shortcut={phone ? "" : "F"} shortcutNote={phone ? "" : "also in the tree"} />
+  );
 
   // The RCM tab: the table's columns beside the tree, the heading over them,
   // and the details of the function, failure or mode picked.
@@ -1373,37 +1381,39 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // tabs (a wide screen): the same elements on each, so nothing in them is
   // drawn afresh and the focus stays on the tab picked.
   const summaryRow = !rcmOn && data && !nothing ? row : null;
+  // The RCM and FME(C)A tabs' "…": the worksheet in and out, the column
+  // chooser (it hangs under the heading's controls), and the FME(C)A's print
+  // view and guide. Adding a function is the position's row menu (and the RCM
+  // position panel's button).
+  const rcmMenu = rcmOn && posRow?.type === "pos" ? [
+    { id: "import-sheet", label: "Import worksheet…", onSelect: () => setSheetFor({ id: posRow.key, name: posRow.ref.name }) },
+    { id: "export-csv", label: "Export CSV", onSelect: () => exportRcm(posRow) },
+    fmeaOn && excel && { id: "export-excel", label: "Export Excel", onSelect: () => exportExcel(posRow) },
+    !phone && { id: "columns", label: "Columns…", onSelect: () => setColsOpen(true) },
+    fmeaOn && { id: "print", label: "Print view", onSelect: () => openPrint(posRow.key) },
+    fmeaOn && { id: "guide", label: "Show me how", onSelect: () => openGuide(HELP_FMEA.guide) },
+  ].filter(Boolean) : [];
+  const moreButton = () => frame.current?.querySelector(".tt-headslot .ovm-trigger");
+  const columns = colsOpen && !phone && (fmeaOn ? (
+    <ColumnChooser open cols={shownCols} usual={fmeaUsualCols({ narrow, wide })} columns={FMEA_COLUMNS}
+                   onCols={(next, o) => setFprefs((p) => withFmeaCols(p, next, o))}
+                   onClose={() => setColsOpen(false)} returnFocus={moreButton} />
+  ) : (
+    <ColumnChooser open cols={shownCols} usual={usualCols({ narrow })}
+                   onCols={(next, o) => setRprefs((p) => withTableCols(p, next, shownCols, o))}
+                   onClose={() => setColsOpen(false)} returnFocus={moreButton} />
+  ));
+  // Another tab or position: the chooser closes (it was for that table).
+  useEffect(() => setColsOpen(false), [tab, selPos, phone]);
   const head = phone ? null : rcmOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
-                pin={pinFor(posRow)} headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
+                headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
                 meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key)} /></span> : null}
-                actions={(
-                  <>
-                    <button type="button" className="sm"
-                            // A double-click asks once (its second click is the dialog's, which ignores it).
-                            onClick={(e) => { if (e.detail < 2) runAdd({ ref: { add: "fn", position_id: posRow.key } }); }}>Add function</button>
-                    {fmeaOn ? (
-                      <ColumnChooser cols={shownCols} usual={fmeaUsualCols({ narrow, wide })} columns={FMEA_COLUMNS}
-                                     onCols={(next, o) => setFprefs((p) => withFmeaCols(p, next, o))} />
-                    ) : (
-                      <ColumnChooser cols={shownCols} usual={usualCols({ narrow })}
-                                     onCols={(next, o) => setRprefs((p) => withTableCols(p, next, shownCols, o))} />
-                    )}
-                    <OverflowMenu>
-                      <button type="button" className="ovm-item" onClick={() => setSheetFor({ id: posRow.key, name: posRow.ref.name })}>
-                        Import worksheet…
-                      </button>
-                      <button type="button" className="ovm-item" onClick={() => exportRcm(posRow)}>Export CSV</button>
-                      {fmeaOn && excel && <button type="button" className="ovm-item" onClick={() => exportExcel(posRow)}>Export Excel</button>}
-                      {fmeaOn && <button type="button" className="ovm-item" onClick={() => openPrint(posRow.key)}>Print view</button>}
-                      {fmeaOn && <button type="button" className="ovm-item" onClick={() => openGuide(HELP_FMEA.guide)}>Show me how</button>}
-                    </OverflowMenu>
-                  </>
-                )} />
+                menu={rcmMenu} popover={columns} />
   ) : summaryRow && (
     <SlimHeader display={whole} row={summaryRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
-                pin={pinFor(summaryRow)} headingRef={headingRef} fullScreenButton={fullButton} heading={heading}
-                meta={rowKind(summaryRow) ? <span className="tt-kind">{rowKind(summaryRow)}</span> : null} primaryOpen
+                headingRef={headingRef} fullScreenButton={fullButton} heading={heading} menu={tabMenu || []}
+                meta={rowKind(summaryRow) ? <span className="tt-kind">{rowKind(summaryRow)}</span> : null}
                 message={message?.fade ? msg : null} />
   );
   const tabsRow = rcmOn ? (posRow?.type === "pos" ? posRow : null) : summaryRow;
@@ -1557,9 +1567,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       {(!phone || detailKey) && (
         <TreeDetail ref={headingRef} display={whole} row={data && !nothing ? row : null} today={data?.today || ""}
                     onSelect={selectFromPanel} onCrumb={(k) => crumbGo(k, selectFromPanel)} above={above}
-                    pin={data && !nothing ? pinFor(row) : null}
                     back={back} version={version} empty={emptyDetail} headless={!phone} heading={heading}
                     tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi}
+                    menu={tabMenu || []} onMenu={setTabMenu}
                     actions={summaryActionsOf(data && !nothing ? row : null)} />
       )}
     </section>

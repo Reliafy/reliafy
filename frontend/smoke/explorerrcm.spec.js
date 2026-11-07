@@ -8,7 +8,7 @@
 // by, the levels, Show only, Reset); full screen.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { details, reveal } from "./explorer.js";
+import { details, openColumns, reveal } from "./explorer.js";
 
 const M = "/api/maintenance";
 // With SMOKE_SHOTS_DIR set, the decision dialog's states are saved there too (for the pull request).
@@ -155,14 +155,15 @@ test("adding from each row's menu grows the tree: a function, its failures and m
   const tag = `g${Date.now()}`;
   const p = await plant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.motor.id}&tab=rcm`);
-  // No "Add …" rows in the table: the motor's own row says how to start (Add function, or a row's menu).
+  // No "Add …" rows in the table: the motor's own row says how to start (its row menu's Add function).
   await expect(table(page)).toBeVisible();
   await expect(table(page).getByText(/^Add a (function|functional failure|failure mode)$/)).toHaveCount(0);
   await expect(trow(page, `^Rcm motor ${tag}`).locator(".tt-empty-hint"))
-    .toHaveText("No functions yet. Press Add function, or right-click a row to add inside it.");
+    .toHaveText("No functions yet. Right-click the position (or press its ⋯) and choose Add function.");
   await expect(page.locator(".tt-top")).not.toContainText("No functions yet");
-  // The heading's Add function adds to the position picked.
-  await page.locator(".tt-headslot").getByRole("button", { name: "Add function", exact: true }).click();
+  // The heading has no Add button: adding is the row menu's.
+  await expect(page.locator(".tt-headslot").getByRole("button", { name: "Add function", exact: true })).toHaveCount(0);
+  await fromMenu(page, `^Rcm motor ${tag}`, `Rcm motor ${tag}`, "Add function");
   await ask(page, "Add a function", `Turn the shaft ${tag}`);
   const fn = trow(page, `^Function: Turn the shaft ${tag}`);
   await expect(fn).toHaveAttribute("aria-selected", "true");
@@ -380,21 +381,33 @@ for (const [w, h] of [[1440, 900], [1366, 768]]) {
   });
 }
 
-test("the RCM tab's heading is two slim rows: the way up and the name, then the tabs; Columns opens over it", async ({ page, request, problems }) => {
+test("the RCM tab's heading is two slim rows: the way up and the name with the … and Full screen, then the tabs; Columns… opens over it", async ({ page, request, problems }) => {
   const tag = `h${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 720 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.motor.id}&tab=rcm`);
   await expect(table(page)).toBeVisible();
   const bar = page.locator(".tt-headslot");
-  // The bar: the position (its way up over its name) and the actions, Add function first and the one primary.
+  // The bar: the position (its way up over its name) and two controls, the "…" and Full screen,
+  // both 30 × 30 like the tree pane's « and 8 px apart; nothing else.
   await expect(bar.getByRole("heading", { name: `Rcm motor ${tag}` })).toBeVisible();
   await expect(bar.getByRole("navigation", { name: "Breadcrumb" })).toContainText(`Rcm pump ${tag}`);
-  for (const name of ["Columns", "Add function", "Full screen"]) {
-    await expect(bar.getByRole("button", { name, exact: true })).toBeVisible();
-  }
-  await expect(bar.getByRole("link", { name: "Open the full page" })).toBeVisible();
-  await expect(bar.locator(".tt-actions > button").first()).toHaveText("Add function");
+  await expect(bar.locator(".tt-actions > *")).toHaveCount(2);
+  await expect(bar.getByRole("button", { name: "More actions" })).toBeVisible();
+  await expect(bar.getByRole("button", { name: "Full screen", exact: true })).toBeVisible();
+  for (const name of ["Columns", "Add function", "Pin this branch"]) await expect(bar.getByRole("button", { name, exact: true })).toHaveCount(0);
+  await expect(bar.getByRole("link", { name: "Open the full page" })).toHaveCount(0);
+  const boxes = await bar.locator(".tt-actions button.tp-icon-btn").evaluateAll((bs) => bs.map((b) => {
+    const r = b.getBoundingClientRect();
+    return { w: Math.round(r.width), h: Math.round(r.height), left: Math.round(r.left), right: Math.round(r.right) };
+  }));
+  expect(boxes.map((b) => [b.w, b.h])).toEqual([[30, 30], [30, 30]]);
+  expect(boxes[1].left - boxes[0].right).toBe(8);
+  // The "…": what isn't a row's action (adding is the row menu's), Open the full page last.
+  await bar.getByRole("button", { name: "More actions" }).click();
+  await expect(bar.locator(".ovm-menu .ovm-item")).toHaveText(["Import worksheet…", "Export CSV", "Columns…", "Open the full page"]);
+  await page.keyboard.press("Escape");
+  await expect(bar.locator(".ovm-menu")).toBeHidden();
   await expect(bar.getByRole("tab")).toHaveCount(0);
   // Under it, the tabs: below the way up and the name.
   const tabs = page.locator(".tt-tabslot");
@@ -423,10 +436,8 @@ test("the RCM tab's heading is two slim rows: the way up and the name, then the 
   // The way up goes up.
   await bar.getByRole("navigation", { name: "Breadcrumb" }).getByRole("button", { name: `Rcm pump ${tag}` }).click();
   await expect(trow(page, `^Rcm pump ${tag}`)).toHaveAttribute("aria-selected", "true");
-  // Columns opens over the table, its last choice not cut off.
-  await bar.getByRole("button", { name: "Columns" }).click();
-  const list = page.getByRole("group", { name: "Columns to show" });
-  await expect(list).toBeVisible();
+  // Columns… (in the "…") opens over the table, its last choice not cut off.
+  const list = await openColumns(page);
   const reset = list.getByRole("button", { name: "Show the usual columns" });
   const box = await reset.boundingBox();
   expect(await page.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest(".rw-pop"),
@@ -709,10 +720,11 @@ test("adding, deleting and deciding go once: a double-click, three clicks at onc
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.motor.id}&tab=rcm`);
   await slow(page, `**${M}/positions/${p.motor.id}/functions`, "POST");
   const posts = sent(page, "POST", `/positions/${p.motor.id}/functions`);
-  const add = page.locator(".tt-headslot").getByRole("button", { name: "Add function", exact: true });
+  // Add function is the position's row menu's (the heading has no Add button).
+  const add = { click: () => fromMenu(page, `^Rcm motor ${tag}`, `Rcm motor ${tag}`, "Add function") };
   const dialog = page.getByRole("dialog", { name: "Add a function" });
-  // A double-click on Add function asks once; one on the dialog's button adds once, saying so meanwhile.
-  await add.dblclick();
+  // Add function asks once; a double-click on the dialog's button adds once, saying so meanwhile.
+  await add.click();
   await expect(dialog).toBeVisible();
   await dialog.getByRole("textbox").fill(`Double ${tag}`);
   await dialog.getByRole("button", { name: "Add function" }).dblclick();

@@ -844,7 +844,9 @@ async function main() {
         await page.getByRole("treegrid", { name: /and their RCM/ }).waitFor({ timeout: 20000 });
         await page.getByText("Aircraft lost or crashes").first().waitFor({ timeout: 20000 });
         // At this width the Evidence check column may be off by default: show it.
-        await page.getByRole("button", { name: "Columns" }).click(); await wait(300);
+        // Columns… is in the panel heading's "…" menu.
+        await page.locator(".tt-headslot").getByRole("button", { name: "More actions" }).click();
+        await page.locator(".tt-headslot").getByRole("button", { name: "Columns…" }).click(); await wait(300);
         const check = page.getByRole("group", { name: "Columns to show" }).getByRole("checkbox", { name: "Evidence check" });
         if (!(await check.isChecked())) await check.check();
         await page.keyboard.press("Escape"); await wait(300);

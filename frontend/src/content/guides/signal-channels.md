@@ -28,7 +28,8 @@ Open **Assets → Explorer**, pick the position or item the sensor is
 on, and open the **Signals** tab. A fitted item has no row of its own: pick
 the position it's fitted to, and its channels are under **On the fitted
 item** on that tab (they go with the item when it moves). Press **Add a
-channel** and give it:
+channel** (or choose **Add a channel…** from the **⋯** menu at the top right of
+the panel) and give it:
 
 - a **name** (for example *DE bearing*) and the **unit** the sensor reports (g,
   mm/s, kPa);

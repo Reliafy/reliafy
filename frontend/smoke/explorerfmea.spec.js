@@ -8,6 +8,7 @@
 // until it's assigned; nothing scrolls sideways at 400 px; the print view.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy } from "./health.js";
+import { openColumns } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -80,7 +81,7 @@ test("FME(C)A: the worksheet on the tree; a score edited in place changes the RP
   const heads = (await table(page).getByRole("columnheader").allInnerTexts()).map((t) => t.trim());
   expect(heads.slice(0, 13)).toEqual(["Function or failure mode", "Functional failure", "Cause", "End effect", "Detection method", "S", "O", "D", "RPN", "AP",
     "Recommended action", "Due", "Status"]);
-  await page.getByRole("button", { name: "Columns" }).click();
+  await openColumns(page);
   await expect(page.getByRole("group", { name: "Columns to show" }).getByRole("checkbox", { name: "Local effect" })).not.toBeChecked();
   await expect(page.getByRole("group", { name: "Columns to show" }).getByRole("checkbox", { name: "Mode criticality (Cm)" })).not.toBeChecked();
   await page.keyboard.press("Escape");

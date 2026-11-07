@@ -212,8 +212,8 @@ function ArrangeIcon({ value }) {
 }
 
 // What the RCM tab says on the row of the position picked when it has no
-// functions yet: how to start (the heading's Add function, or a row's menu).
-export const NO_FUNCTIONS = "No functions yet. Press Add function, or right-click a row to add inside it.";
+// functions yet: how to start (the position's row menu: Add function).
+export const NO_FUNCTIONS = "No functions yet. Right-click the position (or press its ⋯) and choose Add function.";
 const NO_FUNCTIONS_PHONE = "No functions yet. Tap ⋯ to add one.";
 
 // A position's second line on a phone, on the RCM tab: its own failure modes.

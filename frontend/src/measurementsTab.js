@@ -12,6 +12,7 @@
 // automatically are never "due": the feed sends them.
 
 import { liveReadings } from "./maintenanceReadings.js";
+import { toCsv } from "./csv.js";
 
 export const STATES = {
   past: { key: "past", label: "Past alarm", rank: 0 },
@@ -226,4 +227,19 @@ export function branchQuery(display, branch) {
 // whose history is open).
 export function readMeasurementsQuery(params) {
   return { attention: params.get("only") === "attention", point: params.get("point") || null };
+}
+
+// The points shown, as a CSV file (the panel heading's "…" › Export CSV): one
+// row each, in the order shown, with where it is, its latest reading and
+// when, its limits and its state in words.
+export function pointsCsv(points, today, fittedAt = new Map()) {
+  const head = ["Point", "Where", "Kind", "Unit", "Latest reading", "Read on", "Source", "Alarm below", "Alarm above", "State"];
+  const num = (v) => (v == null ? "" : v);
+  const rows = (points || []).map((p) => [
+    p.name || "", placeOf(p, fittedAt), p.kind === "counter" ? "counter" : "condition", p.unit || "",
+    num(p.reading), p.read_at ? String(p.read_at).slice(0, 10) : "",
+    p.read_at ? (p.derived ? "signal" : p.source === "manual" ? "by hand" : "feed") : "",
+    num(p.alarm_below), num(p.alarm_above), pointChip(p, today).label,
+  ]);
+  return toCsv([head, ...rows]);
 }

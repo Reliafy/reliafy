@@ -15,6 +15,7 @@ import TimeToLimit from "./TimeToLimit.jsx";
 import SignalSnapshotForm from "./SignalSnapshotForm.jsx";
 import SignalBandEditor from "./SignalBandEditor.jsx";
 import SignalStorage from "./SignalStorage.jsx";
+import { usePanelMenu } from "../panelMenu.js";
 import "./SignalsPanel.css";
 
 const flag = (key, fallback = false) => {
@@ -42,16 +43,20 @@ const SPECTRA_PER_REQUEST = 40;
 
 // A position's tab also shows the channels on the item fitted there (a fitted
 // item has no row of its own in the Explorer); a loose item's row shows its own.
-export default function SignalsPanel({ row }) {
+// "Add a channel…" is in the list's own bar and in the panel heading's "…"
+// (given through `onMenu`): a channel on the row picked.
+export default function SignalsPanel({ row, onMenu = null }) {
   const [storageTick, setStorageTick] = useState(0);
+  const [addAsk, setAddAsk] = useState(0);
   const changed = () => setStorageTick((t) => t + 1);
+  usePanelMenu(onMenu, [{ id: "channel-new", label: "Add a channel…", onSelect: () => setAddAsk((n) => n + 1) }]);
   const fitted = row.type === "pos" && row.ref?.item?.id ? row.ref.item : null;
   const own = row.type === "item" ? { itemId: row.key } : { positionId: row.key };
   return (
     <div className="sg">
       <SignalStorage refresh={storageTick} />
       <ChannelList key={`${row.type}:${row.key}`} target={own} what={row.type === "item" ? "item" : "position"}
-                   onStored={changed} quiet={!!fitted} />
+                   onStored={changed} quiet={!!fitted} addAsk={addAsk} />
       {fitted && (
         <section className="sg-fitted" aria-labelledby={`sg-fitted-${fitted.id}`}>
           <h3 id={`sg-fitted-${fitted.id}`} className="sg-fitted-head">On the fitted item {fitted.name || "(no name)"}</h3>
@@ -66,7 +71,9 @@ export default function SignalsPanel({ row }) {
 // The channels on one position or item: a picker, Add a channel, and the one
 // picked. `quiet`: with none, a line and the Add button instead of the
 // introduction card (a position with an item fitted shows two lists).
-function ChannelList({ target, what, onStored, quiet = false }) {
+// `addAsk`: a count that goes up each time the heading's "…" asks for a new
+// channel (the form opens).
+function ChannelList({ target, what, onStored, quiet = false, addAsk = 0 }) {
   const [list, setList] = useState(null);
   const [error, setError] = useState(null);
   const [picked, setPicked] = useState(null); // channel id
@@ -78,6 +85,13 @@ function ChannelList({ target, what, onStored, quiet = false }) {
     live.current = true;
     return () => { live.current = false; };
   }, []);
+
+  const asked = useRef(addAsk);
+  useEffect(() => {
+    if (addAsk === asked.current) return;
+    asked.current = addAsk;
+    setAdding(true);
+  }, [addAsk]);
 
   const load = useCallback(() => {
     setError(null);

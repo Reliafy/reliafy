@@ -27,7 +27,7 @@ const noStatus = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null, n
 // (each with its performance standards, each with the functional failures
 // that breach it, each with its failure modes), then its failure modes under
 // no functional failure (an "unassigned" row), then the positions inside it.
-// Adding is from each row's menu (rowActions) and the heading's Add function,
+// Adding is from each row's menu (rowActions: a position's Add function),
 // not from rows in the tree. The display given is left as it is; position
 // rows gain `rsum` (their own failure modes' counts) and `rcmKids` (how many
 // of their kids are RCM rows).

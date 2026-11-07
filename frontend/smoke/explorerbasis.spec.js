@@ -4,6 +4,7 @@
 // PDF added, and nothing scrolling sideways on a phone. Makes its own plant
 // through the API. With SMOKE_SHOTS_DIR set, screenshots are saved there.
 import { test, expect, open, postOk } from "./health.js";
+import { openColumns } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -88,7 +89,7 @@ test("the working behind a standard: write, preview, save, read, no (i) in the t
   await expect(section(page).getByRole("link", { name: /operating context of Basis pool/ })).toBeVisible();
 
   // No Performance standard column to move it into: the Columns menu doesn't offer one.
-  await page.getByRole("button", { name: "Columns" }).click();
+  await openColumns(page);
   await expect(page.getByRole("checkbox", { name: /Performance standard/ })).toHaveCount(0);
   await page.keyboard.press("Escape");
 

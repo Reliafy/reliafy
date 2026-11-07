@@ -10,6 +10,7 @@
 // evidence), so the workspace's RCM is read here as if nothing were linked.
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
+import { openColumns } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -94,7 +95,7 @@ test("no evidence linked: no warnings, no Evidence check column; the column come
   await shot(page, "quiet-1-rcm-no-evidence-1280");
 
   // The Columns menu still has it: ticked on, it shows (each mode: a quiet dash), and stays on after a reload.
-  await page.getByRole("button", { name: "Columns" }).click();
+  await openColumns(page);
   const pop = page.getByRole("group", { name: "Columns to show" });
   await expect(pop.getByRole("checkbox", { name: "Evidence check" })).not.toBeChecked();
   await pop.getByRole("checkbox", { name: "Evidence check" }).check();
@@ -106,7 +107,7 @@ test("no evidence linked: no warnings, no Evidence check column; the column come
   await page.reload();
   await expect(table(page).getByRole("columnheader", { name: "Evidence check" })).toBeVisible();
   // Show the usual columns: back to following the evidence (none here: hidden).
-  await page.getByRole("button", { name: "Columns" }).click();
+  await openColumns(page);
   await page.getByRole("button", { name: "Show the usual columns" }).click();
   await page.keyboard.press("Escape");
   await expect(table(page).getByRole("columnheader", { name: "Evidence check" })).toHaveCount(0);
