@@ -45,11 +45,15 @@ export function combinationOk(outcomes) {
 
 // The outcomes the dialog offers to join `primary` ([{id, allowed}]), given
 // the ones `chosen` already: none for an outcome that stands alone.
-export function combineChoices(primary, chosen = []) {
+// `answers` ({hidden, consequence}): the mode's, so the diagram's refusals
+// grey a choice out too (`why` says why).
+export function combineChoices(primary, chosen = [], answers = null) {
   if (!COMBINES.includes(primary)) return [];
-  return COMBINES.filter((o) => o !== primary).map((o) => ({
-    id: o, allowed: chosen.includes(o) || combinationOk([primary, ...chosen, o]),
-  }));
+  return COMBINES.filter((o) => o !== primary).map((o) => {
+    const why = answers && !chosen.includes(o) ? doctrineRefusal(answers.hidden, answers.consequence, [primary, ...chosen, o]) : null;
+    const allowed = chosen.includes(o) || (combinationOk([primary, ...chosen, o]) && !why);
+    return answers ? { id: o, allowed, why } : { id: o, allowed };
+  });
 }
 
 // The extra members still allowed once the primary outcome changes (in order,
@@ -81,6 +85,83 @@ export function extraBody(x, expected) {
   return out;
 }
 
+// ---- the RCM decision diagram (SAE JA1011, RCM II) ------------------------------
+// Two questions, in order: is the failure evident or hidden (`hidden`: true,
+// false, or null not answered), then the consequence category (for a hidden
+// failure, what the multiple failure would do). The tasks are weighed in
+// order (on condition, fixed interval, then for a hidden failure failure
+// finding); when none is worth doing the default action follows from the two
+// answers. The same rules and words as the server's
+// (backend/maintenance/rcm_decisions.py refusal and default_action).
+
+export const SERIOUS = ["safety", "environmental"];
+export const CATEGORIES = ["safety", "environmental", "operational", "non_operational"];
+export const TASK_ORDER = ["on_condition", "fixed_interval", "failure_finding"];
+// What's done when no task is worth doing, in the dialog's order.
+export const DEFAULT_OUTCOMES = ["rtf", "accept", "redesign"];
+
+// A mode's two answers however it was saved: the old fifth consequence
+// "hidden" reads as hidden with its category not yet set, and a category with
+// no answer as evident (the old five values were one or the other).
+export function modeAnswers(mode) {
+  const raw = mode?.consequence || null;
+  if (raw === "hidden") return { hidden: true, consequence: null };
+  if (typeof mode?.hidden === "boolean") return { hidden: mode.hidden, consequence: raw };
+  return { hidden: raw ? false : null, consequence: raw };
+}
+
+const CATEGORY_WORD = { safety: "A safety", environmental: "An environmental", operational: "An operational", non_operational: "A non-operational" };
+
+// Why the diagram doesn't allow these outcomes for these answers, or null.
+export function doctrineRefusal(hidden, consequence, outcomes) {
+  const members = (outcomes || []).filter(Boolean);
+  if (SERIOUS.includes(consequence) && members.some((o) => o === "rtf" || o === "accept")) {
+    return `${CATEGORY_WORD[consequence]} consequence can't be run to failure or accepted: find a task that makes the risk of ${hidden ? "the multiple failure" : "the failure"} tolerable, or redesign.`;
+  }
+  if (members.includes("failure_finding") && hidden === false) {
+    return "Failure finding is for hidden failures only, and this one is evident (the crew would notice it). Mark it hidden if the loss of function can't be seen in normal operation.";
+  }
+  if (members.filter((o) => SCHEDULED.includes(o)).length > 1 && (consequence === "operational" || consequence === "non_operational")) {
+    return `A combination of tasks is only for safety or environmental consequences, where no single task makes the risk tolerable. ${CATEGORY_WORD[consequence]} consequence takes the one task that costs least over time.`;
+  }
+  return null;
+}
+
+// The test a task must pass for these answers, in a few words.
+export function worthTest(hidden, consequence) {
+  if (SERIOUS.includes(consequence)) return `it makes the risk${hidden ? " of the multiple failure" : ""} tolerable (cost isn't the test)`;
+  if (consequence === "operational") return `it costs less over time than the ${hidden ? "multiple failures" : "lost output and repairs"} it prevents`;
+  if (consequence === "non_operational") return `it costs less over time than the ${hidden ? "multiple failures" : "repairs"} it prevents`;
+  return null;
+}
+
+const TASK_WORTH = {
+  on_condition: "First choice: worth doing if a sign of the failure shows in time to act",
+  fixed_interval: "Next: worth doing if the failures come at an age most of them reach",
+  failure_finding: "For a hidden failure, after those: worth doing if a check finds the failure",
+};
+
+// One line for each task kind on what makes it worth doing here.
+export function worthLine(outcome, hidden, consequence) {
+  const start = TASK_WORTH[outcome];
+  if (!start) return null;
+  const test = worthTest(hidden, consequence);
+  return test ? `${start}, and ${test}.` : `${start}.`;
+}
+
+// What the diagram prescribes when no task is worth doing ({outcome, then,
+// redesign, text}), or null until the category is known.
+export function defaultAction(hidden, consequence) {
+  if (!CATEGORIES.includes(consequence)) {
+    return hidden ? { outcome: null, then: null, redesign: null, text: "Say what the multiple failure would do (the hidden failure plus the one it protects against): the default action follows from it." } : null;
+  }
+  const serious = SERIOUS.includes(consequence);
+  if (!hidden && serious) return { outcome: "redesign", then: null, redesign: "compulsory", text: "If no task makes the risk tolerable, redesign is compulsory. It can't be run to failure." };
+  if (!hidden) return { outcome: "rtf", then: null, redesign: "desirable", text: "If no task pays for itself, no scheduled maintenance (run to failure). A redesign may be worth it." };
+  if (serious) return { outcome: "failure_finding", then: "redesign", redesign: "compulsory", text: "If no on condition or fixed interval task makes the risk tolerable, a failure finding task that makes the multiple-failure risk tolerable; if none does, redesign is compulsory." };
+  return { outcome: "failure_finding", then: "rtf", redesign: "desirable", text: "If no on condition or fixed interval task pays, a failure finding task if it costs less than the multiple failures it prevents; otherwise no scheduled maintenance. A redesign may be worth it." };
+}
+
 // What's wrong with an interval as typed (null when nothing is).
 function intervalProblem(raw, unit, limits) {
   const n = Number(raw);
@@ -98,13 +179,17 @@ function intervalProblem(raw, unit, limits) {
 // interval of a combination's i-th further task (`extras`: [{outcome,
 // interval, intervalUnit}]). In a combination every scheduled task needs its
 // interval, the first one too.
-export function checkDecision({ outcome, rtfBasis, task = "", interval = "", intervalUnit = "hours", notes = "", fields = [], extras = [] }, { limits = false } = {}) {
+// `hidden` and `consequence`: the mode's answers; a decision the RCM decision
+// diagram forbids for them is a blocker, in its words.
+export function checkDecision({ outcome, rtfBasis, task = "", interval = "", intervalUnit = "hours", notes = "", fields = [], extras = [], hidden = null, consequence = null }, { limits = false } = {}) {
   const blockers = [];
   let intervalError = null;
   let notice = null;
   if (!outcome) {
     return { blockers: ["Choose a maintenance decision."], intervalError, notice };
   }
+  const refused = doctrineRefusal(hidden, consequence, [outcome, ...extras.map((x) => x.outcome)]);
+  if (refused) blockers.push(refused);
   if (outcome === "rtf" && !rtfBasis) blockers.push("Choose why it can run to failure.");
   const asksInterval = fields.includes("interval");
   const raw = String(interval ?? "").trim();

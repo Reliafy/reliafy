@@ -97,7 +97,7 @@ OPEN_REPORT_STATUSES = REPORT_STATUSES[:4]
 REPORT_STATUS_WORDS = {"reported": "Reported", "investigating": "Investigating",
                        "corrective_action": "Corrective action", "verifying": "Verifying", "closed": "Closed",
                        "rejected": "Rejected"}
-REPORT_CONSEQUENCES = rcm_decisions.CONSEQUENCES
+REPORT_CONSEQUENCES = rcm_decisions.CONSEQUENCES + (rcm_decisions.HIDDEN_ALIAS,)
 ROOT_CAUSE_CATEGORIES = ("design", "material", "installation", "operation", "maintenance", "wear", "environment",
                          "unknown", "other")
 VERIFICATION_RESULTS = ("worked", "not_worked", "unclear")
@@ -1143,8 +1143,8 @@ def _rcm_rollup(index: dict, mode_ids: set) -> dict:
         # A combination counts when any of its scheduled tasks has gone.
         "scheduled_without_task": sum(1 for m in modes if Maintenance._members_without_task(
             m, {t["id"] for t in index["tasks_of"].get(m["id"], [])})),
-        "hidden": sum(1 for m in modes if m.get("consequence") == "hidden"),
-        "safety": sum(1 for m in modes if m.get("consequence") in ("safety", "environmental")),
+        "hidden": sum(1 for m in modes if rcm_decisions.mode_consequence(m)[0]),
+        "safety": sum(1 for m in modes if rcm_decisions.mode_consequence(m)[1] in rcm_decisions.SERIOUS),
         "mode_ids": sorted(m["id"] for m in modes),
     }
 
@@ -1332,7 +1332,7 @@ def _functional_failure_moved(s: GraphStore, org: str, p: dict) -> None:
 
 
 # A failure mode's RCM analysis, beyond what failure_mode.added carries.
-_ANALYSIS = ("effects", "notes", "rtf_basis", "evidence", "decision_notes", "task_note")
+_ANALYSIS = ("effects", "notes", "rtf_basis", "evidence", "decision_notes", "task_note", "hidden")
 
 
 # Task fields that only tasks added by hand (or edited since) carry: projected
@@ -2959,7 +2959,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     **{k: fm.get(k) for k in ("text", "function", "failure", "consequence", "outcome")},
                     **({"ad_hoc": True} if fm.get("ad_hoc") else {}),
                 })
-                analysis = {k: fm[k] for k in _ANALYSIS if fm.get(k)}
+                analysis = {k: fm[k] for k in _ANALYSIS if fm.get(k) or (k == "hidden" and fm.get(k) is False)}
                 if analysis:
                     self._emit("failure_mode.analysed", {"id": mode_ids[fm["id"]], "changes": analysis})
                 scores = {k: fm[k] for k in fmea.FIELDS if fm.get(k) is not None}
@@ -3573,6 +3573,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             changes["failure"] = _text(failure, "functional failure")
         if consequence is not None:
             changes["consequence"] = _text(consequence, "consequence") or None
+            if fm.get("consequence") == rcm_decisions.HIDDEN_ALIAS and changes["consequence"] != fm["consequence"] \
+                    and "hidden" not in fm:
+                # The old value "hidden" was the first answer too: keep it when the category is set.
+                self._emit("failure_mode.analysed", {"id": mode_id, "changes": {"hidden": True}})
         if fm.get("ad_hoc"):
             changes["ad_hoc"] = False
         if changes:
@@ -4413,8 +4417,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 "name": position["name"]}, "tasks": [brief(t) for t in self._mode_tasks(mode_id, fm)],
                 "available": available}
 
-    def decide_failure_mode(self, mode_id: str, consequence=..., decision=..., task_id=None) -> dict:
-        """A failure mode's RCM decision: its consequence and the decision (outcome,
+    def decide_failure_mode(self, mode_id: str, consequence=..., decision=..., task_id=None, hidden=...,
+                            strict=True) -> dict:
+        """A failure mode's RCM decision: its two answers (hidden: is the failure
+        hidden from the crew in normal operation; consequence: safety,
+        environmental, operational or non_operational, for a hidden one what the
+        multiple failure would do; the old value "hidden" is an alias that sets
+        hidden) and the decision (outcome,
         rtf_basis, task, interval and interval_unit, notes, evidence: the saved model
         or analysis behind it, or a report or a function's notes and rationale (type working), {type, id}),
         checked by the RCM decision rules (rcm_decisions).
@@ -4426,15 +4435,33 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         other modes keeps its own interval and name: change those on the task.
         decision.outcomes [{outcome, task, interval, interval_unit, task_id}, ...]:
         a combination of tasks (a regular inspection plus a fixed-time replacement),
-        each scheduled member with a task of its own (_decide_combination)."""
+        each scheduled member with a task of its own (_decide_combination).
+        The decision must follow the RCM decision diagram for the mode's answers
+        (rcm_decisions.refusal: no run to failure on a safety or environmental
+        consequence, failure finding only on a hidden failure, a combination
+        only on safety or environmental); strict=False (an import, a sample)
+        keeps one that doesn't, and its read carries advice saying so.
+        hidden is stored through failure_mode.analysed's open changes dict."""
         fm, position = self._live_mode(mode_id)
         changes: dict = {}
-        if consequence is not ...:
-            consequence = consequence or None
-            if consequence is not None and consequence not in rcm_decisions.CONSEQUENCES:
-                raise Invalid(f"Unknown consequence '{consequence}': it's one of "
-                              f"{', '.join(rcm_decisions.CONSEQUENCES)}.")
-            changes["consequence"] = consequence
+        now_hidden, now_category = rcm_decisions.mode_consequence(fm)
+        if consequence is not ... or hidden is not ...:
+            try:
+                given_hidden, given_category = rcm_decisions.clean_consequence(
+                    consequence if consequence is not ... else None, hidden if hidden not in (..., None) else None)
+            except rcm_decisions.RcmValidationError as err:
+                raise Invalid(str(err)) from None
+            if consequence is not ... and consequence != rcm_decisions.HIDDEN_ALIAS:
+                now_category = given_category
+            if hidden is not ...:
+                now_hidden = hidden
+            elif given_hidden:  # the alias
+                now_hidden = True
+            changes["consequence"] = now_category
+            read_hidden, _ = rcm_decisions.mode_consequence(fm)
+            if now_hidden != read_hidden or (now_hidden is not None and now_category != fm.get("consequence")):
+                # Stored only when it says something the mode doesn't already read as.
+                changes["hidden"] = now_hidden
         tasks = self._mode_tasks(mode_id, fm)
         task = tasks[0] if tasks else None
         adopt = None
@@ -4446,6 +4473,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             cleaned = cleaned or {}
             task_id = task_id or cleaned.pop("task_id", None)
             members = cleaned.pop("outcomes", None)
+            if strict and cleaned:
+                why = rcm_decisions.refusal(now_hidden, now_category,
+                                            [mm["outcome"] for mm in members or []] or [cleaned.get("outcome")])
+                if why:
+                    raise Invalid(why)
             # The decision's evidence and each member's own (a combination's).
             had = [fm.get("evidence")] + [o.get("evidence") for o in fm.get("outcomes") or []]
             for linked in [cleaned.get("evidence")] + [mm.get("evidence") for mm in members or []]:
@@ -5486,9 +5518,14 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 row["trigger"] = triggers.get(row.get("id") or row.get("task_id"))
             if decision:
                 decision["trigger"] = triggers.get(decision.get("task_id"))
+        hidden, consequence = rcm_decisions.mode_consequence(fm)
+        # A decision the diagram wouldn't make now is kept, with a word saying so.
+        said = rcm_decisions.advice(consequence, (decision or {}).get("outcome"),
+                                    [o["outcome"] for o in (decision or {}).get("outcomes") or []], hidden=hidden)
         return {
             "id": fm["id"], "text": fm["text"], "effects": fm.get("effects") or "", "notes": fm.get("notes") or "",
-            "consequence": fm.get("consequence"), "decision": decision,
+            "hidden": hidden, "consequence": consequence, "decision": decision,
+            **({"advice": said} if said else {}),
             # Its tasks whether or not it's decided yet (a task linked before the decision).
             "tasks": brief,
             "ad_hoc": bool(fm.get("ad_hoc")),

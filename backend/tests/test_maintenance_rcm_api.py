@@ -316,13 +316,17 @@ def test_a_combination_of_tasks_over_mcp(env):  # noqa: F811
     async def flow(client):
         pid = _ok(await _do(client, "maintenance", "positions.create", name="Pump"))["id"]
         mode = _ok(await _do(client, "maintenance", "failure_modes.add", position_id=pid, text="Bearing worn"))
+        # The RCM decision diagram: a combination only where a failure could hurt someone or the environment.
+        refused = await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=mode["id"],
+                            consequence="operational", decision=COMBINATION)
+        assert refused.is_error and "only for safety or environmental" in refused.content[0].text
         out = _ok(await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=mode["id"],
-                            consequence="operational", decision=COMBINATION))
+                            hidden=False, consequence="safety", decision=COMBINATION))
         return out, _ok(await _get(client, "position", pid))
 
     out, position = _session(env["token"], flow)
     assert [o["outcome"] for o in out["decision"]["outcomes"]] == ["on_condition", "fixed_interval"]
-    assert "combination" in out["advice"]  # operational: say what the second task earns
+    assert out["hidden"] is False and out["consequence"] == "safety" and "advice" not in out
     assert sorted((t["name"], t["outcome"]) for t in position["tasks"]) == [
         ("Replace the bearing", "fixed_interval"), ("Vibration check", "on_condition")]
 
@@ -341,3 +345,17 @@ def test_move_a_point_over_the_app_route(api):
     assert r.json()["from_position_id"] == a["id"] and len(r.json()["readings"]) == 1
     r = api.post(f"{M}/points/{pid}/move", json={"position_id": b["id"]})
     assert r.status_code == 422 and "already on Pump B" in r.json()["detail"]
+
+
+def test_the_app_route_takes_hidden_and_refuses_what_the_diagram_does(api):
+    M = "/api/maintenance"
+    pump = api.post(f"{M}/positions", json={"name": "Pump"}).json()
+    mode = api.post(f"{M}/positions/{pump['id']}/failure-modes", json={"text": "Relief valve stuck"}).json()
+    r = api.put(f"{M}/failure-modes/{mode['id']}/decision", json={"hidden": True, "consequence": "operational"})
+    assert r.status_code == 200, r.text
+    assert (r.json()["hidden"], r.json()["consequence"]) == (True, "operational")
+    r = api.put(f"{M}/failure-modes/{mode['id']}/decision", json={"hidden": False, "consequence": "safety",
+                                                                 "decision": {"outcome": "accept"}})
+    assert r.status_code == 422 and "can't be run to failure" in r.json()["detail"]
+    options = api.get(f"{M}/rcm/options").json()
+    assert [o["id"] for o in options["evident_hidden"]] == ["evident", "hidden"]

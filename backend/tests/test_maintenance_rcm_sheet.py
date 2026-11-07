@@ -124,7 +124,7 @@ def test_rows_group_into_functions_failures_and_modes_with_decisions_and_tasks(m
     assert slip["decision"]["outcome"] == "rtf" and slip["decision"]["rtf_basis"] == "uneconomic"
     assert slip["decision"].get("task_id") is None
     switch = stop["failures"][0]["modes"][0]
-    assert switch["consequence"] == "hidden" and switch["decision"]["outcome"] == "failure_finding"
+    assert switch["hidden"] is True and switch["decision"]["outcome"] == "failure_finding"
     tasks = m._tasks_on(pid)
     assert sorted(t["name"] for t in tasks) == ["Replace head pulley bearings", "Test the pull-wire switch",
                                                "Walk the belt and look for damage"]

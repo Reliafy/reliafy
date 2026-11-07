@@ -41,11 +41,23 @@ class RcmValidationError(ValueError):
     """Raised when a decision or a worksheet tree fails validation (HTTP 422)."""
 
 
-CONSEQUENCES = ("safety", "environmental", "operational", "non_operational", "hidden")
+# The consequence of a failure mode, as SAE JA1011 and RCM II (Moubray) ask it:
+# two questions, in order. First, is the failure evident or hidden (would the
+# loss of function on its own become evident to the operating crew under
+# normal circumstances)? A mode's ``hidden`` holds the answer. Then the
+# category, one of four, walked in order (safety, environmental, operational,
+# non-operational; the first that applies). For a hidden failure the category
+# is what the multiple failure would do: the hidden failure plus the second
+# failure it fails to protect against.
+CONSEQUENCES = ("safety", "environmental", "operational", "non_operational")
+# The old fifth value. A mode saved with it reads as hidden with its category
+# not yet set; a call that sends it sets hidden (a deprecated alias).
+HIDDEN_ALIAS = "hidden"
+SERIOUS = ("safety", "environmental")
 OUTCOMES = ("on_condition", "fixed_interval", "rtf", "failure_finding", "redesign", "accept")
 RTF_BASES = ("random", "uneconomic")
 # A combination of tasks (RCM II's words): where no one task is good enough on
-# its own (classically for safety or environmental consequences), a decision
+# its own, and only for a safety or environmental consequence, a decision
 # holds two or more outcomes, a regular inspection plus a fixed-time
 # replacement. Each member that schedules work gets a task of its own. A
 # redesign may sit beside one scheduled task, the interim measure until the
@@ -55,6 +67,34 @@ COMBINES = (
     "A combination is two or more of on_condition, fixed_interval and failure_finding (no outcome twice), or "
     "redesign beside one of them as the interim measure; rtf and accept stand alone."
 )
+
+
+def mode_consequence(mode) -> tuple[bool | None, str | None]:
+    """A mode's two answers as (hidden, category), however it was saved.
+
+    ``hidden`` when the mode says so; True for the old value consequence
+    "hidden" (its category not yet set); False for a mode saved with a category
+    and no answer, since under the old five values a category meant the
+    failure was evident; None when neither question is answered. A category
+    outside the four comes back as saved (free text from an old import)."""
+    mode = mode or {}
+    raw = mode.get("consequence") or None
+    hidden = mode.get("hidden")
+    if raw == HIDDEN_ALIAS:
+        return True, None
+    if isinstance(hidden, bool):
+        return hidden, raw
+    return (False if raw else None), raw
+
+
+def consequence_label(hidden, consequence) -> str:
+    """"Hidden · Safety", "Operational" (evident: most failures are, so only
+    the category), "Hidden" or "Evident" (category not set yet), "" (nothing
+    answered): the worksheet's and the exports' words."""
+    category = next((c["label"] for c in CONSEQUENCE_OPTIONS if c["id"] == consequence), consequence or "")
+    if hidden:
+        return " · ".join(x for x in ("Hidden", category) if x)
+    return category or ("Evident" if hidden is False else "")
 
 
 def combination_ok(outcomes) -> bool:
@@ -84,52 +124,60 @@ def evidence_kind(etype) -> str | None:
         return etype
     return "model" if etype in CHECKED_TYPES else None
 
-# The vocabulary as the app shows it (GET /api/maintenance/rcm/options): each
-# consequence and outcome with its hint. Suggestions follow the classic RCM
-# logic: hidden failures need failure-finding; safety and environmental
-# consequences demand a proactive task or redesign; economic consequences
-# allow run-to-failure when the numbers support it.
+# The vocabulary as the app shows it (GET /api/maintenance/rcm/options): the
+# first question (evident or hidden), each consequence category with what
+# makes a task worth doing for it, and each outcome with its hint.
+EVIDENT_HIDDEN_OPTIONS = [
+    {"id": "evident", "label": "Evident",
+     "hint": "The crew would notice the loss of function on its own, in normal operation."},
+    {"id": "hidden", "label": "Hidden",
+     "hint": "Nobody would notice in normal operation until something else fails too (a standby pump, a trip, "
+             "an alarm). The category is then what that multiple failure would do."},
+]
+
 CONSEQUENCE_OPTIONS = [
     {"id": "safety", "label": "Safety",
-     "hint": "Could hurt someone. A proactive task must reduce the risk to a tolerable level — otherwise redesign is compulsory.",
-     "suggested_outcomes": ["on_condition", "fixed_interval", "redesign"]},
+     "hint": "Could hurt or kill someone.",
+     "worth_doing": "A task is worth doing only if it makes the risk tolerable; cost isn't the test."},
     {"id": "environmental", "label": "Environmental",
-     "hint": "Could breach an environmental standard. Treat like safety: proactive task or redesign.",
-     "suggested_outcomes": ["on_condition", "fixed_interval", "redesign"]},
+     "hint": "Could breach an environmental standard or regulation.",
+     "worth_doing": "A task is worth doing only if it makes the risk tolerable; cost isn't the test."},
     {"id": "operational", "label": "Operational",
-     "hint": "Affects output or quality. A proactive task must cost less than the consequences it prevents — otherwise run-to-failure.",
-     "suggested_outcomes": ["on_condition", "fixed_interval", "rtf"]},
+     "hint": "Affects output, quality or customer service, plus the repair.",
+     "worth_doing": "A task is worth doing only if it costs less over time than the failures it prevents "
+                    "(lost output and repairs)."},
     {"id": "non_operational", "label": "Non-operational",
-     "hint": "Only the repair cost matters. Proactive maintenance rarely pays — run-to-failure unless the numbers say otherwise.",
-     "suggested_outcomes": ["rtf", "fixed_interval", "accept"]},
-    {"id": "hidden", "label": "Hidden",
-     "hint": "The failure is invisible in normal operation (protective devices). Schedule failure-finding checks, or redesign to make it evident.",
-     "suggested_outcomes": ["failure_finding", "on_condition", "redesign"]},
+     "hint": "Only the repair costs.",
+     "worth_doing": "A task is worth doing only if it costs less over time than the repairs it prevents."},
 ]
 
 OUTCOME_OPTIONS = [
-    {"id": "on_condition", "label": "On-condition (monitor)",
+    {"id": "on_condition", "label": "On condition",
      "expected_evidence": "degradation_model",
      "fields": ["task", "interval"],
-     "hint": "Monitor a degradation signal and act before the threshold. Link the degradation model that shows the failure develops measurably."},
-    {"id": "fixed_interval", "label": "Fixed-interval replacement",
+     "hint": "Check for a sign the failure is on its way and act before it happens. Link the degradation model "
+             "that shows the failure develops measurably."},
+    {"id": "fixed_interval", "label": "Fixed interval",
      "expected_evidence": "strategy_analysis",
      "fields": ["task", "interval"],
-     "hint": "Replace or restore on a schedule. Link the optimal-replacement analysis showing the interval is cost-optimal."},
-    {"id": "rtf", "label": "Run-to-failure",
+     "hint": "Scheduled restoration or discard: restore or replace at a fixed age, whatever its condition. Link "
+             "the optimal-replacement analysis showing the interval pays."},
+    {"id": "rtf", "label": "Run to failure",
      "expected_evidence": None,  # depends on rtf_basis
      "fields": ["rtf_basis", "task"],
-     "hint": "Let it fail, then fix it. Justify with either a non-repairable model showing random failures, or a replacement analysis showing prevention isn't economic."},
-    {"id": "failure_finding", "label": "Failure-finding task",
+     "hint": "No scheduled maintenance: let it fail, then fix it. Justify with either a non-repairable model "
+             "showing random failures, or a replacement analysis showing prevention doesn't pay."},
+    {"id": "failure_finding", "label": "Failure finding",
      "expected_evidence": "strategy_analysis",
      "fields": ["task", "interval"],
-     "hint": "Periodically check a hidden function. Link the failure-finding-interval analysis that sets the check frequency."},
+     "hint": "For a hidden failure: check now and then that the protective function still works. Link the "
+             "failure-finding interval analysis that sets how often."},
     {"id": "redesign", "label": "Redesign",
      "expected_evidence": None, "fields": ["notes"],
-     "hint": "No suitable task exists — change the design (or the operating context) instead."},
-    {"id": "accept", "label": "Accept risk / no scheduled maintenance",
+     "hint": "No task is worth doing: change the design, or the way it's operated, instead."},
+    {"id": "accept", "label": "Accept",
      "expected_evidence": None, "fields": ["notes"],
-     "hint": "The consequences are tolerable and no task is worthwhile. Document why."},
+     "hint": "No scheduled maintenance, as run to failure, where the consequences allow it. Say why in the notes."},
 ]
 
 RTF_BASIS_OPTIONS = [
@@ -142,31 +190,103 @@ RTF_BASIS_OPTIONS = [
 ]
 
 
-def advice(consequence, outcome, outcomes=None) -> str | None:
-    """A word when a decision's outcome isn't one the classic RCM logic
-    suggests for its consequence (a hidden failure run to failure, a safety
-    one accepted): never a refusal, the analyst may have reasons.
-    ``outcomes``: every outcome of a combination of tasks (its members'), each
-    checked; a combination on an operational or non-operational consequence
-    gets a word too, since there the second task has to pay for itself."""
-    option = next((c for c in CONSEQUENCE_OPTIONS if c["id"] == consequence), None)
-    members = [o for o in (outcomes or [outcome]) if o]
-    if option is None or not members:
+# ---- The decision diagram (SAE JA1011, RCM II) ----------------------------------
+# Tasks are considered in order: on condition, then scheduled restoration or
+# discard (fixed interval), then, for a hidden failure, failure finding. A
+# combination of tasks only where no single task is good enough and the
+# consequence is safety or environmental. When no task is worth doing, the
+# default action follows from the two answers (default_action).
+
+TASK_ORDER = ("on_condition", "fixed_interval", "failure_finding")
+
+
+def _category_word(consequence) -> str:
+    return {"safety": "A safety", "environmental": "An environmental", "operational": "An operational",
+            "non_operational": "A non-operational"}.get(consequence, "This")
+
+
+def refusal(hidden, consequence, outcomes) -> str | None:
+    """Why the decision diagram doesn't allow these outcomes for a mode with
+    these answers, or None when it does. A question not answered yet (None)
+    allows everything that hangs on it."""
+    members = [o for o in outcomes or [] if o]
+    if consequence in SERIOUS and any(o in ("rtf", "accept") for o in members):
+        what = "the multiple failure" if hidden else "the failure"
+        return (f"{_category_word(consequence)} consequence can't be run to failure or accepted: find a task that "
+                f"makes the risk of {what} tolerable, or redesign.")
+    if "failure_finding" in members and hidden is False:
+        return ("Failure finding is for hidden failures only, and this one is evident (the crew would notice it). "
+                "Mark it hidden if the loss of function can't be seen in normal operation.")
+    if sum(1 for o in members if o in SCHEDULED) > 1 and consequence in ("operational", "non_operational"):
+        return (f"A combination of tasks is only for safety or environmental consequences, where no single task "
+                f"makes the risk tolerable. {_category_word(consequence)} consequence takes the one task that "
+                "costs least over time.")
+    return None
+
+
+def allowed_outcomes(hidden, consequence) -> dict:
+    """Each outcome with None (allowed) or why the diagram doesn't allow it on
+    its own, for a mode with these answers."""
+    return {o: refusal(hidden, consequence, [o]) for o in OUTCOMES}
+
+
+def default_action(hidden, consequence) -> dict | None:
+    """What the diagram prescribes when no task is worth doing: {outcome,
+    then (the next default when that one isn't worth doing either),
+    redesign: "compulsory" or "desirable", text}. None until the category is
+    known (a hidden mode without one gets a word asking for it)."""
+    if consequence not in CONSEQUENCES:
+        if hidden:
+            return {"outcome": None, "then": None, "redesign": None,
+                    "text": "Say what the multiple failure would do (the hidden failure plus the one it protects "
+                            "against): the default action follows from it."}
         return None
-    if any(o not in option["suggested_outcomes"] for o in members):
-        usual = ", ".join(option["suggested_outcomes"])
-        return (f"{option['label']} consequences usually take {usual}. {option['hint']} If this decision stands, "
-                "say why in its notes.")
-    if len(members) > 1 and consequence in ("operational", "non_operational"):
-        return (f"A combination of tasks is what RCM expects where a failure could hurt someone or harm the "
-                f"environment. On {option['label'].lower()} consequences each task has to cost less than the losses "
-                "it prevents: say in the notes what the second task earns.")
+    serious = consequence in SERIOUS
+    if not hidden and serious:
+        return {"outcome": "redesign", "then": None, "redesign": "compulsory",
+                "text": "If no task makes the risk tolerable, redesign is compulsory. It can't be run to failure."}
+    if not hidden:
+        return {"outcome": "rtf", "then": None, "redesign": "desirable",
+                "text": "If no task pays for itself, no scheduled maintenance (run to failure). A redesign may be "
+                        "worth it."}
+    if serious:
+        return {"outcome": "failure_finding", "then": "redesign", "redesign": "compulsory",
+                "text": "If no on condition or fixed interval task makes the risk tolerable, a failure finding task "
+                        "that makes the multiple-failure risk tolerable; if none does, redesign is compulsory."}
+    return {"outcome": "failure_finding", "then": "rtf", "redesign": "desirable",
+            "text": "If no on condition or fixed interval task pays, a failure finding task if it costs less than "
+                    "the multiple failures it prevents; otherwise no scheduled maintenance. A redesign may be "
+                    "worth it."}
+
+
+def advice(consequence, outcome, outcomes=None, hidden=...) -> str | None:
+    """A word on a decision the diagram wouldn't make now (a saved one from
+    before, or an import's): never a refusal on read, the analyst changes it
+    when they next review the mode. Also asks for a hidden mode's category.
+    ``outcomes``: every outcome of a combination of tasks (its members').
+    ``hidden``: the mode's first answer; left out, it's read from the
+    consequence as mode_consequence reads a saved mode."""
+    if hidden is ...:
+        hidden, consequence = mode_consequence({"consequence": consequence})
+    members = [o for o in (outcomes or [outcome]) if o]
+    if hidden and consequence not in CONSEQUENCES:
+        return ("This failure is hidden: say what the multiple failure would do (the hidden failure plus the one "
+                "it protects against): safety, environmental, operational or non-operational.")
+    if not members:
+        return None
+    why = refusal(hidden, consequence, members)
+    if why:
+        return f"{why} This decision is kept as it was saved; change it when you next review this failure mode."
+    if hidden and consequence in CONSEQUENCES and not any(o in SCHEDULED for o in members) and "redesign" not in members:
+        return ("A hidden failure gets a failure-finding task before no scheduled maintenance, if one is worth "
+                "doing: say in the notes why none is.")
     return None
 
 
 def options() -> dict:
     """The decision vocabulary with its hints, for the decision dialog."""
-    return {"consequences": CONSEQUENCE_OPTIONS, "outcomes": OUTCOME_OPTIONS, "rtf_bases": RTF_BASIS_OPTIONS}
+    return {"evident_hidden": EVIDENT_HIDDEN_OPTIONS, "consequences": CONSEQUENCE_OPTIONS,
+            "outcomes": OUTCOME_OPTIONS, "rtf_bases": RTF_BASIS_OPTIONS, "task_order": list(TASK_ORDER)}
 
 # Common aliases so "hr", "hrs" and "hours" agree. Unmapped units compare
 # case-insensitively as-is.
@@ -368,17 +488,34 @@ def _node_id(node: dict) -> str:
     return nid if isinstance(nid, str) and nid.strip() else uuid.uuid4().hex
 
 
-def _clean_mode(mode: dict) -> dict:
-    consequence = mode.get("consequence") or None
+def clean_consequence(consequence, hidden=None) -> tuple[bool | None, str | None]:
+    """A consequence and the evident-or-hidden answer as given, checked:
+    (hidden, category). The old value "hidden" is a deprecated alias that sets
+    hidden (its category then stays as given elsewhere, so None here)."""
+    consequence = consequence or None
+    if hidden is not None and not isinstance(hidden, bool):
+        raise RcmValidationError("hidden is true (the failure can't be seen in normal operation) or false (evident).")
+    if consequence == HIDDEN_ALIAS:
+        if hidden is False:
+            raise RcmValidationError("consequence 'hidden' says the failure is hidden, but hidden is false: give one.")
+        return True, None
     if consequence is not None and consequence not in CONSEQUENCES:
         raise RcmValidationError(
-            f"Unknown consequence '{consequence}': it's one of {', '.join(CONSEQUENCES)}.")
+            f"Unknown consequence '{consequence}': it's one of {', '.join(CONSEQUENCES)} (and hidden is a "
+            "separate yes or no).")
+    return hidden, consequence
+
+
+def _clean_mode(mode: dict) -> dict:
+    hidden, consequence = clean_consequence(mode.get("consequence"), mode.get("hidden"))
     cleaned_mode = {
         "id": _node_id(mode),
         "text": _require_text(mode, "failure mode"),
         "consequence": consequence,
         "decision": _clean_decision(mode.get("decision")),
     }
+    if hidden is not None:
+        cleaned_mode["hidden"] = hidden
     effects = str(mode.get("effects") or "").strip()
     if effects:
         cleaned_mode["effects"] = effects
@@ -486,8 +623,8 @@ def resolve_decision(decision: dict, fetch) -> dict:
 
 
 # A combination's members in words ("the fixed-interval task").
-_MEMBER_WORD = {"on_condition": "on-condition", "fixed_interval": "fixed-interval",
-                "failure_finding": "failure-finding", "redesign": "redesign"}
+_MEMBER_WORD = {"on_condition": "on condition", "fixed_interval": "fixed interval",
+                "failure_finding": "failure finding", "redesign": "redesign"}
 # The strategy analysis each scheduled outcome expects (its kind).
 _ANALYSIS_KIND = {"fixed_interval": "optimal_replacement", "failure_finding": "failure_finding"}
 

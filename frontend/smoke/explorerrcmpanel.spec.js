@@ -135,15 +135,18 @@ test("a click shows the details beside the table; a double-click on the name spr
   await desc.blur();
   await panel(page).getByRole("textbox", { name: /^Failure effects/ }).fill("Pump stops; no flow to the tank");
   await panel(page).getByRole("textbox", { name: /^Failure effects/ }).blur();
-  // Consequence: one tap on a chip, the chosen one ticked; "✓ Saved" by its label.
-  const consequence = panel(page).getByRole("radiogroup", { name: "Consequence" });
-  await consequence.getByRole("radio", { name: "Hidden" }).click();
-  await expect(consequence.getByRole("radio", { name: "Hidden" })).toHaveAttribute("aria-checked", "true");
+  // The two RCM questions: one tap on a chip each, the chosen one ticked; "✓ Saved" by its label.
+  const evident = panel(page).getByRole("radiogroup", { name: "Evident or hidden" });
+  await evident.getByRole("radio", { name: "Hidden" }).click();
+  await expect(evident.getByRole("radio", { name: "Hidden" })).toHaveAttribute("aria-checked", "true");
   await expect(panel(page).getByRole("status").filter({ hasText: "✓ Saved" }).first()).toBeVisible();
+  const consequence = panel(page).getByRole("radiogroup", { name: "Consequence" });
+  await consequence.getByRole("radio", { name: "Operational" }).click();
+  await expect(consequence.getByRole("radio", { name: "Operational" })).toHaveAttribute("aria-checked", "true");
   await expect.poll(async () => {
     const m = (await rcmOf(request, p)).functions[0].failures[0].modes.find((x) => x.id === p.mode.id);
-    return [m.text, m.effects, m.consequence];
-  }).toEqual([`Bearing seizes early ${tag}`, "Pump stops; no flow to the tank", "hidden"]);
+    return [m.text, m.effects, m.hidden, m.consequence];
+  }).toEqual([`Bearing seizes early ${tag}`, "Pump stops; no flow to the tank", true, "operational"]);
   await expect(panel(page).getByRole("region", { name: "Decision" })).toContainText("No decision yet.");
   // No decision: no task rows and no add row (Decide… first).
   await expect(panel(page).getByRole("button", { name: /^Add (another|a) task$/ })).toHaveCount(0);

@@ -188,7 +188,7 @@ def test_the_design_carries_a_whole_rcm(store, db):
         == {"random", "uneconomic"}
     # Eight hidden failures (the four failsafes, each IMU failing silently, the BMS cut-off
     # and its state of charge), each with its failure-finding task.
-    hidden = [mo for mo in modes if mo["consequence"] == "hidden"]
+    hidden = [mo for mo in modes if mo["hidden"]]
     assert len(hidden) == 8 and gaps["counts"]["hidden_without_failure_finding"] == 0
     gps = next(p for p in sheet["positions"] if p["name"] == "GPS")
     [fn] = gps["functions"]

@@ -2,7 +2,6 @@ import { useId, useMemo, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
 import Select from "./Select.jsx";
-import Chip from "./ui/Chip.jsx";
 import Field from "./ui/Field.jsx";
 import { TextArea } from "./ui/Controls.jsx";
 
@@ -13,18 +12,29 @@ const LINKED_ONLY = new Set(["report", "working"]);
 const Tick = () => <span className="choice-tick" aria-hidden="true">✓ </span>;
 import { saveErrorText } from "../confirm.js";
 import {
-  INTERVAL_UNITS, NEEDS_INTERVAL, SCHEDULED, analysisKindOf, checkDecision, combineChoices, extraBody, pruneExtras,
-  rememberUnit, startUnit,
+  DEFAULT_OUTCOMES, INTERVAL_UNITS, NEEDS_INTERVAL, SCHEDULED, TASK_ORDER, analysisKindOf, checkDecision, combineChoices,
+  defaultAction, doctrineRefusal, extraBody, modeAnswers, pruneExtras, rememberUnit, startUnit, worthLine,
 } from "../decisionCheck.js";
 
-// Guided RCM decision flow for one failure mode: consequence → outcome
-// (suggested first, per the classic decision diagram) → task details →
-// linked evidence. A scheduled outcome (or a redesign) may take further tasks,
+// The first question's choices when the server's options don't carry them (an older server).
+const EVIDENT_HIDDEN = [
+  { id: "evident", label: "Evident", hint: "The crew would notice the loss of function on its own, in normal operation." },
+  { id: "hidden", label: "Hidden", hint: "Nobody would notice in normal operation until something else fails too (a standby pump, a trip, an alarm). The category is then what that multiple failure would do." },
+];
+
+// Guided RCM decision flow for one failure mode, walking the RCM decision
+// diagram (SAE JA1011, RCM II; decisionCheck.js): evident or hidden →
+// consequence category (for a hidden failure, what the multiple failure would
+// do) → the tasks in the diagram's order (on condition, fixed interval, then
+// failure finding for a hidden failure), each with what makes it worth doing
+// here, and what's done if none is (greyed out where the diagram forbids it,
+// with why; the default action named at the end) → task details → linked
+// evidence. A scheduled outcome (or a redesign) may take further tasks,
 // a combination of tasks (RCM II: a regular inspection plus a fixed-time
 // replacement), each with its own name and interval; the notes are once per
 // decision, and the decision's evidence counts for every task it fits, while a
 // further task may link its own (one piece can't cover a degradation model's
-// task and a replacement analysis's). Saves back {consequence, decision} straight to the
+// task and a replacement analysis's). Saves back {hidden, consequence, decision} straight to the
 // server (the Explorer): onSave returns a promise, and the dialog stays
 // open, Apply showing "Saving…", until it's done, and a refusal shows here
 // with everything as typed. Apply says what's missing whenever it can't be
@@ -44,7 +54,9 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
   const sharedNote = sharedWith
     ? `“${own.name}” also serves ${sharedWith} other failure mode${sharedWith === 1 ? "" : "s"}, so its name and interval are changed on the task (under Tasks in the failure mode's dialog), for all of them.`
     : null;
-  const [consequence, setConsequence] = useState(mode.consequence || null);
+  const answers0 = modeAnswers(mode);
+  const [hidden, setHidden] = useState(answers0.hidden);
+  const [consequence, setConsequence] = useState(answers0.consequence);
   const [outcome, setOutcome] = useState(existing.outcome || null);
   const [rtfBasis, setRtfBasis] = useState(existing.rtf_basis || null);
   const [task, setTask] = useState(existing.task || own?.text || own?.name || "");
@@ -64,7 +76,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
   const firstOwn = Array.isArray(existing.outcomes) && existing.outcomes.length > 1 ? existing.outcomes[0].evidence : null;
   const expectedOf = (o) => options.outcomes.find((x) => x.id === o)?.expected_evidence || null;
   const chosen = extras.map((x) => x.outcome);
-  const choices = combineChoices(outcome, chosen);
+  const choices = combineChoices(outcome, chosen, { hidden, consequence });
   const labelOf = (o) => options.outcomes.find((x) => x.id === o)?.label || o;
   const toggleExtra = (o) => setExtras((xs) => (xs.some((x) => x.outcome === o)
     ? xs.filter((x) => x.outcome !== o)
@@ -75,7 +87,11 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
 
   const outcomeOpt = options.outcomes.find((o) => o.id === outcome);
   const consequenceOpt = options.consequences.find((c) => c.id === consequence);
-  const suggested = consequenceOpt?.suggested_outcomes || [];
+  const evidentHidden = options.evident_hidden || EVIDENT_HIDDEN;
+  const hiddenKey = hidden === true ? "hidden" : hidden === false ? "evident" : null;
+  const hiddenOpt = evidentHidden.find((o) => o.id === hiddenKey);
+  const fallback = defaultAction(hidden, consequence);
+  const outcomeById = (o) => options.outcomes.find((x) => x.id === o);
 
   // RTF's expected evidence depends on the claimed basis.
   const rtfBasisOpt = options.rtf_bases.find((b) => b.id === rtfBasis);
@@ -86,16 +102,12 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
     ? (outcome === "failure_finding" ? "failure_finding" : "optimal_replacement")
     : null;
 
-  const orderedOutcomes = useMemo(() => {
-    const rank = (o) => {
-      const i = suggested.indexOf(o.id);
-      return i === -1 ? suggested.length + 1 : i;
-    };
-    return [...options.outcomes].sort((a, b) => rank(a) - rank(b));
-  }, [options.outcomes, suggested]);
+  // The tasks in the diagram's order, then what's done if none is worth doing.
+  const taskTiles = useMemo(() => TASK_ORDER.map(outcomeById).filter(Boolean), [options.outcomes]); // eslint-disable-line react-hooks/exhaustive-deps
+  const otherTiles = useMemo(() => DEFAULT_OUTCOMES.map(outcomeById).filter(Boolean), [options.outcomes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fields = outcomeOpt?.fields || [];
-  const check = checkDecision({ outcome, rtfBasis, task, interval, intervalUnit, notes, fields, extras }, { limits });
+  const check = checkDecision({ outcome, rtfBasis, task, interval, intervalUnit, notes, fields, extras, hidden, consequence }, { limits });
   const canSave = check.blockers.length === 0;
   const needsInterval = NEEDS_INTERVAL.has(outcome) && fields.includes("interval");
   // One save at a time: a second click (or Enter) while one is on its way does nothing.
@@ -131,7 +143,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
       || evidence === existing.evidence) ? { type: evidence.type, id: evidence.id } : null;
     busy.current = true;
     setFailed(null);
-    const done = onSave({ consequence, decision });
+    const done = onSave({ hidden, consequence, decision });
     if (!done || typeof done.then !== "function") return;
     setSaving(true);
     try {
@@ -167,9 +179,24 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
       }
     >
       <div className="decision-step">
-        <label className="field-label">1. Consequence of failure</label>
-        <div className="option-grid">
-          {options.consequences.map((c) => (
+        <label className="field-label" id={`${id}-q1`}>1. Would the crew notice the failure on its own?</label>
+        <div className="option-grid" role="group" aria-labelledby={`${id}-q1`}>
+          {evidentHidden.map((c) => (
+            <button key={c.id} type="button" className={"option-tile" + (hiddenKey === c.id ? " selected" : "")}
+                    aria-pressed={hiddenKey === c.id} onClick={() => setHidden(c.id === "hidden")}>
+              <span className="option-title">{hiddenKey === c.id && <Tick />}{c.label}</span>
+            </button>
+          ))}
+        </div>
+        {hiddenOpt && <p className="option-hint">{hiddenOpt.hint}</p>}
+      </div>
+
+      <div className="decision-step">
+        <label className="field-label" id={`${id}-q2`}>
+          {hidden ? "2. What would the multiple failure do?" : "2. Consequence of failure"}
+        </label>
+        <div className="option-grid" role="group" aria-labelledby={`${id}-q2`}>
+          {options.consequences.filter((c) => c.id !== "hidden").map((c) => (
             <button
               key={c.id}
               type="button"
@@ -181,43 +208,55 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
             </button>
           ))}
         </div>
-        {consequenceOpt && <p className="option-hint">{consequenceOpt.hint}</p>}
+        <p className="option-hint">
+          {consequenceOpt
+            ? [consequenceOpt.hint, consequenceOpt.worth_doing].filter(Boolean).join(" ")
+            : hidden
+              ? "The hidden failure plus the second failure it fails to protect against. The first that applies: safety, environmental, operational, non-operational."
+              : "The first that applies, in this order: safety, environmental, operational, non-operational."}
+        </p>
       </div>
 
       <div className="decision-step">
-        <label className="field-label">2. Maintenance decision</label>
-        <div className="option-grid">
-          {orderedOutcomes.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              className={
-                "option-tile" +
-                (outcome === o.id ? " selected" : "") +
-                (suggested.includes(o.id) ? " suggested" : "")
-              }
-              aria-pressed={outcome === o.id}
-              onClick={() => {
-                setOutcome(o.id);
-                if (o.id !== "rtf") setRtfBasis(null);
-                setExtras((xs) => pruneExtras(o.id, xs));
-                dropModel();
-              }}
-            >
-              <span className="option-title">
-                {outcome === o.id && <Tick />}
-                {o.label}
-                {suggested.includes(o.id) && <Chip tone="accent" style={{ marginLeft: 6 }}>Suggested</Chip>}
-              </span>
-            </button>
-          ))}
+        <label className="field-label" id={`${id}-q3`}>3. Which task is worth doing?</label>
+        <div className="decision-list" role="group" aria-labelledby={`${id}-q3`}>
+          {[...taskTiles, ...otherTiles].map((o, i) => {
+            const why = doctrineRefusal(hidden, consequence, [o.id]);
+            const line = why || worthLine(o.id, hidden, consequence) || o.hint;
+            return (
+              <div key={o.id} className={"decision-row" + (i === taskTiles.length ? " decision-row-gap" : "")}>
+                {i === taskTiles.length && <p className="decision-sub">If no task is worth doing</p>}
+                <button
+                  type="button"
+                  className={"option-tile" + (outcome === o.id ? " selected" : "")}
+                  aria-pressed={outcome === o.id}
+                  aria-describedby={`${id}-o-${o.id}`}
+                  disabled={!!why && outcome !== o.id}
+                  onClick={() => {
+                    setOutcome(o.id);
+                    if (o.id !== "rtf") setRtfBasis(null);
+                    setExtras((xs) => pruneExtras(o.id, xs));
+                    dropModel();
+                  }}
+                >
+                  <span className="option-title">{outcome === o.id && <Tick />}{o.label}</span>
+                </button>
+                <p className={"decision-line" + (why ? " refused" : "")} id={`${id}-o-${o.id}`}>{why ? `Not here: ${why}` : line}</p>
+              </div>
+            );
+          })}
         </div>
         {outcomeOpt && <p className="option-hint">{outcomeOpt.hint}</p>}
+        {fallback && (
+          <p className="decision-default" role="note">
+            <strong>{fallback.outcome ? "The default action: " : "Next: "}</strong>{fallback.text}
+          </p>
+        )}
       </div>
 
       {outcome === "rtf" && (
         <div className="decision-step">
-          <label className="field-label">Why run-to-failure?</label>
+          <label className="field-label">Why run to failure?</label>
           <div className="option-grid">
             {options.rtf_bases.map((b) => (
               <button
@@ -297,7 +336,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
               return (
                 <button key={c.id} type="button" className={"option-tile" + (on ? " selected" : "")} aria-pressed={on}
                         disabled={!c.allowed}
-                        title={c.allowed ? undefined : "Can't be combined with the tasks chosen: a redesign goes beside one scheduled task only."}
+                        title={c.allowed ? undefined : c.why || "Can't be combined with the tasks chosen: a redesign goes beside one scheduled task only."}
                         onClick={() => toggleExtra(c.id)}>
                   <span className="option-title">{on && <Tick />}+ {labelOf(c.id)}</span>
                 </button>
@@ -305,8 +344,8 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
             })}
           </div>
           <p className="option-hint">
-            A combination of tasks: a regular inspection plus a fixed-time replacement, say. RCM II uses one where no
-            single task is good enough on its own, usually when a failure could hurt someone or harm the environment.
+            A combination of tasks: a regular inspection plus a fixed-time replacement, say. Only where no single task
+            makes the risk tolerable and the failure could hurt someone or harm the environment.
             Each task is scheduled on its own. A redesign can sit beside one task, which is done until the change is made.
           </p>
           {extras.map((x, i) => SCHEDULED.includes(x.outcome) && (
@@ -331,7 +370,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
               <details className="decision-extra-evidence" open={!!x.evidence}>
                 <summary>Evidence for this task (optional){x.evidence ? ": linked" : ""}</summary>
                 <p className="option-hint">
-                  Only when the decision's evidence (step 3) doesn't cover this task: a replacement analysis for a
+                  Only when the decision's evidence (step 4) doesn't cover this task: a replacement analysis for a
                   fixed-interval task, say, beside a degradation model for the inspection.
                 </p>
                 <EvidencePicker
@@ -349,7 +388,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
 
       {outcome && (outcome !== "rtf" || rtfBasis) && (
         <div className="decision-step">
-          <label className="field-label">3. Link the evidence (optional)</label>
+          <label className="field-label">4. Link the evidence (optional)</label>
           {extras.some((x) => SCHEDULED.includes(x.outcome)) && (
             <p className="option-hint">
               In a combination this evidence counts for every task it fits (a report or function notes fit any). A task

@@ -329,13 +329,15 @@ FAILURE_MODES: Table = {
         action (owner, due, status open/in_progress/done), and criticality (failure_rate λ per time_unit,
         rate_source entered/model/data, mode_ratio α, loss_probability β, operating_time t, severity_class
         I-IV: cm = βαλt). clear: fields to unset. Guide topic plan."""),
-    "decide": ("failure_mode_id", "consequence decision task_id", """consequence and the whole decision
+    "decide": ("failure_mode_id", "hidden consequence decision task_id", """hidden (evident or not), consequence
+        and the whole decision
         {outcome, rtf_basis, task, interval, interval_unit, notes, evidence: {type, id}: a model or analysis,
         checked; or report / working (a function's id: its notes and rationale): linked, not checked} ({} clears it; values:
         guide topic plan); adds, changes or retires its task (task_id: an existing one is the decision's).
         A combination of tasks (an inspection plus a fixed-time replacement): decision.outcomes [{outcome, task,
         interval, interval_unit, task_id?, evidence?}, ...], each scheduled one with a task of its own and checked
-        against its own evidence, else the decision's. Returns it with the evidence check and any advice to relay."""),
+        against its own evidence, else the decision's. A decision the RCM decision diagram forbids for the mode is
+        refused (guide topic plan). Returns it with the evidence check and any advice to relay."""),
     "add_task": ("failure_mode_id name interval", "unit outcome instructions", """Another task for the mode
         (an inspection plus a hard-time replacement); its decision's stays first."""),
     "assign": ("failure_mode_id", "functional_failure_id function_id", "Put it under one of its position's "
@@ -1409,7 +1411,14 @@ def register() -> None:
     def maintenance_failure_modes(action: _choice(FAILURE_MODES), ctx: Context, position_id: str | None = None,
                                   failure_mode_id: str | None = None, into_failure_mode_id: str | None = None,
                                   text: str | None = None, function: str | None = None, failure: str | None = None,
-                                  consequence: str | None = None, effects: str | None = None,
+                                  consequence: Annotated[str | None, Field(description=(
+                                      "decide: safety, environmental, operational or non_operational (for a "
+                                      "hidden failure, what the multiple failure would do). 'hidden' is a "
+                                      "deprecated alias for hidden: true."))] = None,
+                                  hidden: Annotated[bool | None, Field(description=(
+                                      "decide: true when the loss of function wouldn't be evident to the crew "
+                                      "in normal operation, false when it would."))] = None,
+                                  effects: str | None = None,
                                   notes: str | None = None, function_id: str | None = None,
                                   functional_failure_id: str | None = None, standard: str | None = None,
                                   standard_basis: Annotated[str | None, Field(description=(
@@ -1501,18 +1510,16 @@ def register() -> None:
                     access_service.check_references(_db(), reader, rcm_graph.evidence_refs(decision),
                                                     keep=rcm_graph.evidence_refs(old))
                 return m.decide_failure_mode(failure_mode_id, consequence if consequence is not None else ...,
-                                             decision if decision is not None else ..., task_id=task_id)
+                                             decision if decision is not None else ..., task_id=task_id,
+                                             hidden=hidden if hidden is not None else ...)
             try:
                 mode = run(go)
             except access_service.UnreadableReference as err:
                 raise ToolError(str(err)) from None
-            from backend.maintenance import rcm_decisions, rcm_graph
+            from backend.maintenance import rcm_graph
 
-            out = rcm_graph.mode_status(_db(), mode, reader.read_owners)
-            decided = out.get("decision") or {}
-            advice = rcm_decisions.advice(out.get("consequence"), decided.get("outcome"),
-                                          [o["outcome"] for o in decided.get("outcomes") or []])
-            return out | ({"advice": advice} if advice else {})
+            # The mode's read carries any advice to relay (rcm_decisions.advice).
+            return rcm_graph.mode_status(_db(), mode, reader.read_owners)
         if action == "add_task":
             return run(m.add_mode_task, failure_mode_id, name, interval, _d(unit, "months"), outcome,
                        instructions or "")

@@ -272,7 +272,7 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
         scores = {k: mode[k] for k in fmea.FIELDS if mode.get(k) is not None}
         planned = {
             "row": row, "text": text, "effects": mode.get("effects") or "", "notes": notes,
-            "consequence": mode.get("consequence"), "decision": decision, "task": task,
+            "consequence": mode.get("consequence"), "hidden": mode.get("hidden"), "decision": decision, "task": task,
             "shared": shared, "extra_tasks": [], "scores": scores,
             "members": [],  # further outcomes of its decision, from repeated rows (a combination)
         }
@@ -502,7 +502,7 @@ def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
             m.update_failure_mode(mode_id, effects=mode["effects"] or None, notes=mode["notes"] or None)
         if mode.get("scores"):
             m.score_failure_mode(mode_id, mode["scores"])
-        if mode["consequence"] or mode["decision"]:
+        if mode["consequence"] or mode["decision"] or mode.get("hidden") is not None:
             decision = mode["decision"]
             # A task the position has (or an earlier row made) is the decision's, linked.
             shared = task_named(decision.get("task")) if mode.get("shared") and decision else None
@@ -520,8 +520,10 @@ def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
                     | ({"task_id": task_named(x["task"])} if x["shared"] and task_named(x["task"]) else {})
                     for x in mode["members"]]
                 shared = None
+            # strict=False: a sheet's decision is kept as written, and its read flags any the RCM
+            # decision diagram wouldn't make (rcm_decisions.advice).
             m.decide_failure_mode(mode_id, mode["consequence"] or None, decision if decision else ...,
-                                  task_id=shared)
+                                  task_id=shared, hidden=True if mode.get("hidden") else ..., strict=False)
         for extra in mode.get("extra_tasks") or []:
             have = task_named(extra["name"])
             if have:

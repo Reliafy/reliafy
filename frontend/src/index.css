@@ -7711,6 +7711,16 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .decision-interval-error { font-size: var(--fs-12); color: var(--danger); line-height: 1.5; margin: 6px 0 0; }
 /* A combination of tasks: each further task's name and interval under the choice. */
 .option-tile:disabled { cursor: not-allowed; opacity: 0.5; }
+/* The decision diagram's tasks, in order, each with what makes it worth doing here. */
+.decision-list { display: flex; flex-direction: column; gap: 6px; }
+.decision-row { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; }
+.decision-row .option-tile { min-width: 8.5rem; }
+.decision-row-gap { margin-top: 6px; }
+.decision-sub { flex-basis: 100%; margin: 0; font-size: var(--fs-12); font-weight: 600; color: var(--muted); }
+.decision-line { flex: 1 1 14rem; margin: 0; font-size: var(--fs-12); color: var(--muted); line-height: 1.5; }
+.decision-line.refused { font-style: italic; }
+.decision-default { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--acc); background: var(--surf);
+  font-size: var(--fs-13); line-height: 1.5; }
 .decision-extra { margin-top: 12px; }
 .decision-extra .field-row { flex-wrap: wrap; }
 .decision-extra .field-row input[type="text"] { min-width: 12rem; }

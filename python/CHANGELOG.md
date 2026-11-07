@@ -2,6 +2,16 @@
 
 ## Unreleased (0.5.1)
 
+- **The RCM decision follows SAE JA1011 and RCM II**: `maintenance
+  failure_modes.decide` takes `hidden` (`--hidden true`), and `consequence` is
+  one of safety, environmental, operational, non_operational; `"hidden"` is a
+  deprecated alias for `hidden: true`. Run to failure or accept on a safety or
+  environmental consequence, failure finding on an evident failure and a
+  combination of tasks on an operational one are refused. Reads add `hidden`,
+  and `advice` on a decision saved before that the rules would refuse. Outcome
+  labels lose the hyphen ("On condition", "Run to failure"). No client code
+  changed.
+
 - **Tasks raised by an event**: `maintenance tasks.create` and `tasks.update`
   take `trigger` (`{kind: "reading", point_id, above | below}` or `{kind:
   "event", event_type, note}`, with `with_interval` to keep the interval too;

@@ -36,7 +36,6 @@ HEADER = [
 SHEET = "FMECA"
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-_CONSEQUENCE = {c["id"]: c["label"] for c in rcm_decisions.CONSEQUENCE_OPTIONS}
 _OUTCOME = {o["id"]: o["label"] for o in rcm_decisions.OUTCOME_OPTIONS}
 _STATUS = {"supported": "Supported", "contradicted": "Contradicted", "inconclusive": "Inconclusive",
            "stale": "Stale link", "partly": "Partly evidenced"}
@@ -106,7 +105,7 @@ def rows(worksheet: dict) -> list[list]:
                 "", (fail or {}).get("text") or "",
                 (first_fail and (fail or {}).get("notes")) or "",
                 _caused_by(fail or {}), (m or {}).get("text") or "", (m or {}).get("effects") or "",
-                _CONSEQUENCE.get((m or {}).get("consequence") or "", ""),
+                rcm_decisions.consequence_label(*rcm_decisions.mode_consequence(m)) if m else "",
                 *(_scores(m) if m else blank_scores),
                 _OUTCOME.get(d.get("outcome") or "", ""), d.get("rtf_basis") or "", d.get("task") or "",
                 *_interval_cells(d, d.get("interval_unit")),

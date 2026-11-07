@@ -14,6 +14,7 @@
 import { filterRows } from "./outlineTree.js";
 import { charCount } from "./maintenanceText.js";
 import { limitWords } from "./rcmStandards.js";
+import { doctrineRefusal, modeAnswers } from "./decisionCheck.js";
 
 // A function's text is a short statement (what it must do); the standard of
 // performance has its own field. Kept to 200 characters where it's typed (the
@@ -57,15 +58,30 @@ export const OUTCOME_LABEL = {
   rtf: "Run to failure",
   failure_finding: "Failure finding",
   redesign: "Redesign",
-  accept: "Accept risk",
+  accept: "Accept",
 };
-export const CONSEQUENCE_LABEL = {
+// The four consequence categories ("hidden", the old fifth value, still read:
+// it's the evident-or-hidden answer now, modeAnswers in decisionCheck.js).
+export const CATEGORY_LABEL = {
   safety: "Safety",
   environmental: "Environmental",
   operational: "Operational",
   non_operational: "Non-operational",
-  hidden: "Hidden",
 };
+export const CONSEQUENCE_LABEL = { ...CATEGORY_LABEL, hidden: "Hidden" };
+export const EVIDENT_LABEL = { evident: "Evident", hidden: "Hidden" };
+
+// A mode's two answers in words, as the server's exports write them: "Hidden ·
+// Safety", "Operational" (evident: most failures are, so only the category),
+// "Hidden" or "Evident" (the category to say), "" (neither answered).
+export function consequenceText(m) {
+  const { hidden, consequence } = modeAnswers(m);
+  const category = CATEGORY_LABEL[consequence] || consequence || "";
+  if (hidden) return ["Hidden", category].filter(Boolean).join(" · ");
+  return category || (hidden === false ? "Evident" : "");
+}
+export const isHidden = (m) => modeAnswers(m).hidden === true;
+export const categoryOf = (m) => modeAnswers(m).consequence;
 export const STATUS_LABEL = {
   supported: "Supported",
   contradicted: "Contradicted",
@@ -124,8 +140,8 @@ export function modeCounts(m) {
     modes: 1,
     undecided: d ? 0 : 1,
     tasks: hasTask(m) ? 1 : 0,
-    hidden: m.consequence === "hidden" ? 1 : 0,
-    safety: m.consequence === "safety" || m.consequence === "environmental" ? 1 : 0,
+    hidden: isHidden(m) ? 1 : 0,
+    safety: categoryOf(m) === "safety" || categoryOf(m) === "environmental" ? 1 : 0,
     supported: s === "supported" ? 1 : 0,
     contradicted: s === "contradicted" ? 1 : 0,
     // Linked evidence that doesn't settle it (the wrong kind, a unit mismatch...).
@@ -293,12 +309,17 @@ function combines(list) {
   const scheduled = list.filter((o) => SCHEDULED_OUTCOMES.has(o)).length;
   return list.includes("redesign") ? scheduled === 1 : scheduled >= 2;
 }
-export function addableOutcomes(d) {
+// `mode`: the failure mode, so the RCM decision diagram's refusals apply too
+// (a second scheduled task only on a safety or environmental consequence;
+// failure finding only on a hidden failure).
+export function addableOutcomes(d, mode = null) {
   if (!d) return [];
   const members = isCombination(d) ? d.outcomes : [{ outcome: d.outcome, task_id: d.task_id }];
   if (members.some((o) => SCHEDULED_OUTCOMES.has(o.outcome) && !o.task_id)) return [];
   const have = members.map((o) => o.outcome);
-  return COMBINES.filter((o) => !have.includes(o) && combines([...have, o]));
+  const answers = mode ? modeAnswers(mode) : null;
+  return COMBINES.filter((o) => !have.includes(o) && combines([...have, o])
+    && !(answers && doctrineRefusal(answers.hidden, answers.consequence, [...have, o])));
 }
 
 // The decision as the server takes it back with one more member: each member
@@ -474,7 +495,7 @@ export function phoneLine(r) {
   }
   if (r.type !== "mode") return insideWords(r);
   const d = r.ref.decision;
-  return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", isCombination(d) ? "" : whenText(d), d?.task || tasksOf(r.ref)[0]?.text, moreTasks(r.ref)]
+  return [consequenceText(r.ref), d ? decisionText(d) : "To decide", isCombination(d) ? "" : whenText(d), d?.task || tasksOf(r.ref)[0]?.text, moreTasks(r.ref)]
     .filter(Boolean).join(" · ");
 }
 
@@ -500,7 +521,9 @@ export function checkCounts(r) {
 // the value it sorts by, null for blank (blanks go last); a row with things
 // inside it sorts by what's inside. `edit`: the field edited in the cell
 // ("text", "choice" or "number"), and `can(r)` the rows that allow it.
-const CONS_RANK = { safety: 0, environmental: 1, hidden: 2, operational: 3, non_operational: 4 };
+const CONS_RANK = { safety: 0, environmental: 1, operational: 3, non_operational: 4 };
+// Safety first; a hidden mode just before the evident ones of its category (one with none yet after the serious ones).
+const consRank = (m) => (categoryOf(m) ? CONS_RANK[categoryOf(m)] ?? null : isHidden(m) ? 2 : null) - (isHidden(m) && categoryOf(m) ? 0.5 : 0);
 const OUT_RANK = { on_condition: 0, fixed_interval: 1, failure_finding: 2, rtf: 3, redesign: 4, accept: 5 };
 const STATUS_RANK = { contradicted: 0, stale: 1, inconclusive: 3, supported: 4, linked: 5 };
 const isMode = (r) => r.type === "mode";
@@ -519,16 +542,17 @@ export const COLUMNS = [
   },
   {
     id: "consequence", label: "Consequence", width: 114, min: 98, on: true,
-    title: "Safety, environmental, operational, non-operational or hidden",
-    text: (r) => (isMode(r) ? CONSEQUENCE_LABEL[r.ref.consequence] || "" : consequenceSum(r)),
-    sort: (r) => (isMode(r) ? CONS_RANK[r.ref.consequence] ?? null : r.sum.safety ? 0 : r.sum.hidden ? 2 : null),
-    edit: "choice", can: isMode, field: "consequence",
+    title: "Safety, environmental, operational or non-operational; for a hidden failure, what the multiple failure would do",
+    text: (r) => (isMode(r) ? consequenceText(r.ref) : consequenceSum(r)),
+    sort: (r) => (isMode(r) ? (categoryOf(r.ref) || isHidden(r.ref) ? consRank(r.ref) : null) : r.sum.safety ? 0 : r.sum.hidden ? 2 : null),
+    edit: "choice", can: isMode, field: "consequence", labels: CATEGORY_LABEL,
+    options: Object.entries(CATEGORY_LABEL).map(([value, label]) => ({ value, label })),
   },
   {
     id: "evident", label: "Evident or hidden", width: 120, min: 120, on: false,
     title: "Hidden: the failure can't be seen in normal operation",
-    text: (r) => (isMode(r) ? (r.ref.consequence === "hidden" ? "Hidden" : r.ref.consequence ? "Evident" : "") : r.sum.hidden ? `${r.sum.hidden} hidden` : ""),
-    sort: (r) => (isMode(r) ? (r.ref.consequence === "hidden" ? 0 : r.ref.consequence ? 1 : null) : r.sum.hidden ? 0 : null),
+    text: (r) => (isMode(r) ? (isHidden(r.ref) ? "Hidden" : modeAnswers(r.ref).hidden === false ? "Evident" : "") : r.sum.hidden ? `${r.sum.hidden} hidden` : ""),
+    sort: (r) => (isMode(r) ? (isHidden(r.ref) ? 0 : modeAnswers(r.ref).hidden === false ? 1 : null) : r.sum.hidden ? 0 : null),
   },
   {
     id: "decision", label: "Decision", width: 150, min: 84, on: true,
@@ -636,8 +660,8 @@ export function siblingOrder(display, sort) {
 // The chips, each about the failure modes (and showing how many there are).
 export const CHIPS = [
   { id: "undecided", label: "Needs a decision", test: (r) => isMode(r) && !d(r) },
-  { id: "hidden", label: "Hidden failures", test: (r) => isMode(r) && r.ref.consequence === "hidden" },
-  { id: "safety", label: "Safety or environment", test: (r) => isMode(r) && (r.ref.consequence === "safety" || r.ref.consequence === "environmental") },
+  { id: "hidden", label: "Hidden failures", test: (r) => isMode(r) && isHidden(r.ref) },
+  { id: "safety", label: "Safety or environment", test: (r) => isMode(r) && (categoryOf(r.ref) === "safety" || categoryOf(r.ref) === "environmental") },
   { id: "task", label: "Has a task", test: (r) => isMode(r) && hasTask(r.ref) },
   { id: "notask", label: "No task yet", test: (r) => isMode(r) && !hasTask(r.ref) },
   { id: "check", label: "Evidence to look at", title: "Linked evidence that contradicts the decision, doesn't settle it, or has gone (a stale link)",
@@ -700,7 +724,9 @@ export function checkValue(col, row, raw) {
     if (n <= 0) return { error: "The task interval must be positive." };
     return { value: n };
   }
-  if (c?.edit === "choice") return { value: CONSEQUENCE_LABEL[raw] ? raw : null };
+  // The first RCM question: "evident" or "hidden" (blank: not answered).
+  if (col === "hidden") return { value: raw === "hidden" ? true : raw === "evident" ? false : null };
+  if (c?.edit === "choice") return { value: (c.labels || CONSEQUENCE_LABEL)[raw] ? raw : null };
   return { value: String(raw ?? "").trim() };
 }
 

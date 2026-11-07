@@ -71,7 +71,8 @@ def test_an_unknown_consequence_is_refused_with_the_same_words_everywhere(m):
     with pytest.raises(Invalid) as tree_err:
         m.decide_failure_mode(mode["id"], consequence="cosmic")
     assert str(tree_err.value) == str(sheet_err.value) == (
-        "Unknown consequence 'cosmic': it's one of safety, environmental, operational, non_operational, hidden.")
+        "Unknown consequence 'cosmic': it's one of safety, environmental, operational, non_operational (and hidden "
+        "is a separate yes or no).")
 
 
 def test_a_worksheet_tree_is_normalised():
