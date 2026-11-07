@@ -9,6 +9,7 @@
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
+import { EXPLORER_PARTS_CLASSES_TABS } from "../src/explorerTabs.js";
 
 // One after another: building an item writes its tree in steps, and the Assets list is checked meanwhile.
 test.describe.configure({ mode: "serial" });
@@ -72,10 +73,11 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
     // The product's own row is headed "Product" (its design's positions stay "Position").
     await expect(page.locator(".tt-kind").first()).toHaveText("Product");
-    // A design has no maintenance: no Failure reports or Signals tab; Parts (the parts list), not Parts and stock.
+    // A design has no maintenance: no Failure reports or Signals tab. Parts and Classes are hidden tabs for
+    // now (the parts list is the Summary's Bill of materials).
     await expect(page.getByRole("tab", { name: "RCM" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Parts", exact: true })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Classes" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Parts", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Classes" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Failure reports" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Signals" })).toHaveCount(0);
     // The product's facts, in place of an asset's (nothing fitted, no location, no work).
@@ -136,20 +138,20 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expect(page.locator(".fr-detail")).toBeVisible();
     await shot(page, `${w}-report-on-item`);
 
-    // The parts list: the tree's Parts tab (an earlier ?tab=parts lands there), with no stock.
+    // The parts list: the product's Summary holds it as its Bill of materials (the tree's Parts tab is
+    // hidden for now, so an earlier ?tab=parts lands on the Summary), with no stock.
     await open(page, `/products/${product.id}?tab=parts`);
-    await expect(page).toHaveURL(/view=parts/);
+    await expect(page).not.toHaveURL(/view=parts/);
     if (phone) await page.getByRole("treeitem", { name: /^Survey quadcopter \(sample/ }).first().click();
-    await expect(page.getByRole("tab", { name: "Parts", exact: true })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByText("SQ-M2210").first()).toBeVisible();
-    // The parts lists in the design: no stock columns, no Stock button.
-    await expect(page.locator(".td-tab-page .count")).toContainText(/parts? at Survey quadcopter/);
-    await expect(page.locator(".td-tab-page table").first().getByRole("columnheader", { name: "On hand" })).toHaveCount(0);
-    await expect(page.locator(".td-tab-page").getByRole("button", { name: "Stock" })).toHaveCount(0);
-    // The bill of materials rolled up stays, with no stock and nothing installed on it.
-    await expect(page.getByRole("heading", { name: "Quantities rolled up" })).toBeVisible();
-    await expect(page.getByRole("columnheader", { name: "On hand" })).toHaveCount(0);
-    await expect(page.getByRole("columnheader", { name: /^Installed/ })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Parts", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Summary", exact: true })).toHaveAttribute("aria-selected", "true");
+    const bom = page.getByRole("region", { name: "Bill of materials", exact: true });
+    await bom.scrollIntoViewIfNeeded();
+    await expect(bom.getByRole("link", { name: "SQ-M2210" }).first()).toBeVisible();
+    // No stock columns and nothing installed: the bill of materials as designed.
+    await expect(bom.getByRole("heading", { name: "Quantities rolled up" })).toBeVisible();
+    await expect(bom.getByRole("columnheader", { name: "On hand" })).toHaveCount(0);
+    await expect(bom.getByRole("columnheader", { name: /^Installed/ })).toHaveCount(0);
     await shot(page, `${w}-product-parts`);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
 
@@ -316,7 +318,7 @@ test("Products and Items empty states offer the sample and the guide", async ({ 
 
 // Assets and Products: two landing pages of one shape (RegisterList), and the
 // asset tree's Parts and stock and Classes tabs (they were pages of their
-// own), each scoped to the row picked, with "Show all" for everything.
+// own; hidden for now, EXPLORER_PARTS_CLASSES_TABS), each scoped to the row picked, with "Show all" for everything.
 // smoke/seed.js puts a plain position in the smoke-test depot.
 for (const [width, height] of [[1440, 900], [400, 860]]) {
   test(`Assets and Products landing pages share one shape at ${width} px`, async ({ page, problems }) => {
@@ -335,7 +337,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
       await expect(page.locator("table.reg-table")).toHaveCount(1);
       await expect(page.locator("table.reg-table thead th").first()).toHaveText(first);
       await expect(page.locator("table.reg-table tbody tr.lib-row").first()).toBeVisible();
-      // No links line under the header (Parts and stock and Classes are tabs of the tree).
+      // No links line under the header (Parts and stock and Classes are tabs of the tree, hidden for now).
       await expect(page.getByRole("navigation", { name: "The asset register" })).toHaveCount(0);
       shape[path] = await page.evaluate(() => {
         const t = document.querySelector("table.reg-table");
@@ -354,7 +356,33 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expectHealthy(page, problems, { label: `landing pages ${width}` });
   });
 
+  test(`Parts and stock and Classes are hidden tabs of the asset tree at ${width} px`, async ({ page, problems }) => {
+    test.skip(EXPLORER_PARTS_CLASSES_TABS, "the tabs are shown: the test below covers them");
+    await page.setViewportSize({ width, height });
+    await open(page, "/asset-register");
+    await page.getByRole("link", { name: "Smoke test depot", exact: true }).click();
+    await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=locations&sel=/);
+    // On a phone the panel is its own screen: the tabs head it.
+    if (width < 600) {
+      await page.getByRole("treeitem", { name: /^Smoke test depot\b/ }).click();
+    }
+    // A location has Summary, RCM, FME(C)A, Failure reports and Measurements; not Parts and stock or Classes.
+    await expect(page.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "Failure reports" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Parts and stock" })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Classes" })).toHaveCount(0);
+    await shot(page, `${width}-tabs-without-parts-classes`);
+    expect(await sideways(page)).toBeLessThanOrEqual(0);
+    // An address that names a hidden tab shows Summary.
+    const sel = new URL(page.url()).searchParams.get("sel");
+    await open(page, `/asset-register/explorer?arrange=locations&sel=${sel}&tab=parts&scope=all`);
+    if (width < 600) await page.getByRole("treeitem", { name: /^Smoke test depot\b/ }).click();
+    await expect(page.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
+    await expectHealthy(page, problems, { label: `tabs without parts and classes ${width}`, root: width < 600 ? ".td" : "main" });
+  });
+
   test(`Parts and stock and Classes are tabs of the asset tree at ${width} px`, async ({ page, problems }) => {
+    test.skip(!EXPLORER_PARTS_CLASSES_TABS, "the tabs are hidden for now");
     await page.setViewportSize({ width, height });
     await open(page, "/asset-register");
     await page.getByRole("link", { name: "Smoke test depot", exact: true }).click();

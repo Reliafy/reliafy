@@ -6,6 +6,7 @@ import {
   datasetPath, entryActive, flatEntries, homeCards, itemPath, liveEntries,
 } from "./navigation.js";
 import { MOVED, movedHref, movedTo } from "./redirects.js";
+import { EXPLORER_PARTS_CLASSES_TABS } from "./explorerTabs.js";
 import { PLANNED } from "./plannedPages.js";
 import { appRoutes, hasParam } from "../smoke/routes.js";
 
@@ -339,6 +340,10 @@ test("saved items open at their new addresses", () => {
 
 // Every address the app had before this menu, and where it must land (with
 // "x" for an id). The whole table: a row missing here or in redirects.js fails.
+// Parts and stock and Classes are hidden Explorer tabs for now: their old
+// addresses land on the Explorer with no tab; switched on, they open the tabs.
+const tabbed = (query, search = "") => (EXPLORER_PARTS_CLASSES_TABS ? `/asset-register/explorer?${query}` : `/asset-register/explorer${search}`);
+
 const OLD_TO_NEW = [
   ["/modelling", "/models"],
   ["/modelling/models", "/models"],
@@ -390,9 +395,9 @@ const OLD_TO_NEW = [
   ["/maintenance/items/x", "/asset-register/items/x"],
   ["/maintenance/locations", "/asset-register/explorer?arrange=locations"],
   ["/maintenance/locations/x", "/asset-register/locations/x"],
-  ["/maintenance/classes", "/asset-register/explorer?tab=classes&scope=all"],
-  ["/maintenance/classes/x", "/asset-register/explorer?tab=classes&scope=all&class=x"],
-  ["/maintenance/parts", "/asset-register/explorer?tab=parts&scope=all"],
+  ["/maintenance/classes", tabbed("tab=classes&scope=all")],
+  ["/maintenance/classes/x", tabbed("tab=classes&scope=all&class=x")],
+  ["/maintenance/parts", tabbed("tab=parts&scope=all")],
   ["/maintenance/parts/x", "/asset-register/parts/x"],
   ["/systems", "/systems/rbds"],
   ["/asset-register/positions", "/asset-register/explorer?arrange=positions"],
@@ -400,20 +405,28 @@ const OLD_TO_NEW = [
   ["/asset-register/locations", "/asset-register/explorer?arrange=locations"],
   ["/systems/fmeca", "/asset-register/explorer?tab=fmea"],
   // Parts and stock and Classes are tabs of the asset tree, on everything.
-  ["/asset-register/parts", "/asset-register/explorer?tab=parts&scope=all"],
-  ["/asset-register/classes", "/asset-register/explorer?tab=classes&scope=all"],
-  ["/asset-register/classes/x", "/asset-register/explorer?tab=classes&scope=all&class=x"],
-  ["/systems/structure", "/asset-register/explorer?tab=parts&scope=all&show=structure"],
+  ["/asset-register/parts", tabbed("tab=parts&scope=all")],
+  ["/asset-register/classes", tabbed("tab=classes&scope=all")],
+  ["/asset-register/classes/x", tabbed("tab=classes&scope=all&class=x")],
+  ["/systems/structure", tabbed("tab=parts&scope=all&show=structure")],
 ];
+
+test("while Parts and stock and Classes are hidden, their old addresses land on the Explorer's Summary, no dead tab", () => {
+  assert.equal(EXPLORER_PARTS_CLASSES_TABS, false);
+  for (const from of ["/maintenance/parts", "/maintenance/classes", "/maintenance/classes/x", "/asset-register/parts",
+    "/asset-register/classes", "/asset-register/classes/x", "/systems/structure"]) {
+    assert.equal(movedTo(from), "/asset-register/explorer", from);
+  }
+});
 
 test("every earlier address redirects to its page's new place, with its id", () => {
   for (const [from, to] of OLD_TO_NEW) assert.equal(movedTo(from), to, from);
   assert.equal(MOVED.length, OLD_TO_NEW.length, "redirects.js and this table differ");
   // Ids are carried as they come (already encoded in the address).
-  assert.equal(movedTo("/maintenance/classes/Pool%20pump"), "/asset-register/explorer?tab=classes&scope=all&class=Pool%20pump");
-  assert.equal(movedTo("/asset-register/classes/Pool%20pump"), "/asset-register/explorer?tab=classes&scope=all&class=Pool%20pump");
+  assert.equal(movedTo("/maintenance/classes/Pool%20pump"), tabbed("tab=classes&scope=all&class=Pool%20pump"));
+  assert.equal(movedTo("/asset-register/classes/Pool%20pump"), tabbed("tab=classes&scope=all&class=Pool%20pump"));
   // A class's address with a query of its own keeps it after the tab's.
-  assert.equal(movedHref(movedTo("/asset-register/classes/Pump"), "?sel=p1"), "/asset-register/explorer?tab=classes&scope=all&class=Pump&sel=p1");
+  assert.equal(movedHref(movedTo("/asset-register/classes/Pump"), "?sel=p1"), tabbed("tab=classes&scope=all&class=Pump&sel=p1", "?sel=p1"));
   // Each part's own page stays.
   assert.equal(movedTo("/asset-register/parts/pt1"), null);
   assert.equal(movedTo("/modelling/m/"), null);

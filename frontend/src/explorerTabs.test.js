@@ -1,22 +1,46 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEFAULT_TAB, TABS, branchOf, classesInBranch, isDesignRow, isProductRow, partsInBranch, rowKind, shownTab, tabParam, tabsFor,
+  DEFAULT_TAB, EXPLORER_PARTS_CLASSES_TABS, TABS, branchOf, classesInBranch, isDesignRow, isProductRow, partsInBranch, rowKind, shownTab, tabParam, tabsFor,
 } from "./explorerTabs.js";
 
 const pos = { type: "pos" };
 const item = { type: "item" };
 const loc = { type: "loc" };
 
+// Parts and stock and Classes are switched off for now (EXPLORER_PARTS_CLASSES_TABS):
+// `shown(ids)` is the tab list a row has with the switch as it is.
+const shown = (ids) => (EXPLORER_PARTS_CLASSES_TABS ? ids : ids.filter((id) => id !== "parts" && id !== "classes"));
+
+test("Parts and stock and Classes are hidden for now, on assets and designs alike, behind one switch", () => {
+  assert.equal(EXPLORER_PARTS_CLASSES_TABS, false);
+  const asset = { type: "pos", ref: { name: "Pump" } };
+  const product = { type: "pos", ref: { design: { rev: "A" } } };
+  const designLoc = { type: "loc", ref: { design_of: "d", in_design: true } };
+  for (const r of [pos, loc, asset, product, designLoc, { type: "pos", ref: { in_design: true } }]) {
+    assert.ok(!tabsFor(r).some((t) => t.id === "parts" || t.id === "classes"));
+    assert.equal(shownTab("parts", r), "summary");
+    assert.equal(shownTab("classes", r), "summary");
+  }
+  // An address that names one shows Summary.
+  assert.equal(tabParam("parts"), "summary");
+  assert.equal(tabParam("classes"), "summary");
+  // Their entries stay, for when they come back.
+  assert.equal(TABS.find((t) => t.id === "parts").label, "Parts and stock");
+  assert.equal(TABS.find((t) => t.id === "classes").label, "Classes");
+  assert.deepEqual(tabsFor(pos).map((t) => t.id), ["summary", "rcm", "fmea", "reports", "measurements", "signals"]);
+  assert.deepEqual(tabsFor(product).map((t) => t.id), ["summary", "rcm", "fmea"]);
+});
+
 test("a position has Summary, RCM, FME(C)A, Failure reports, Parts and stock, Classes and Signals; an item Summary, Failure reports and Signals; a location all but Signals; headings only Summary", () => {
-  assert.deepEqual(tabsFor(pos).map((t) => t.id), ["summary", "rcm", "fmea", "reports", "parts", "classes", "measurements", "signals"]);
+  assert.deepEqual(tabsFor(pos).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "parts", "classes", "measurements", "signals"]));
   assert.equal(TABS.find((t) => t.id === "fmea").label, "FME(C)A");
   assert.equal(shownTab("fmea", pos), "fmea");
   assert.equal(shownTab("fmea", item), "summary");
   assert.equal(tabParam("fmea"), "fmea");
   assert.deepEqual(tabsFor(item).map((t) => t.id), ["summary", "reports", "measurements", "signals"]);
   // A place opens its positions' RCM (the Assets page opens the Explorer on the place).
-  assert.deepEqual(tabsFor(loc).map((t) => t.id), ["summary", "rcm", "fmea", "reports", "parts", "classes", "measurements"]);
+  assert.deepEqual(tabsFor(loc).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "parts", "classes", "measurements"]));
   assert.equal(TABS.find((t) => t.id === "parts").label, "Parts and stock");
   assert.equal(TABS.find((t) => t.id === "classes").label, "Classes");
   assert.deepEqual(tabsFor({ type: "group" }).map((t) => t.id), ["summary"]);
@@ -69,11 +93,11 @@ test("a product's design has no maintenance: no Failure reports, Signals or stoc
   const asset = { type: "pos", ref: { name: "Pump" } };
   for (const r of [top, inside]) {
     assert.ok(isDesignRow(r));
-    assert.deepEqual(tabsFor(r).map((t) => t.id), ["summary", "rcm", "fmea", "parts", "classes"]);
-    assert.equal(tabsFor(r).find((t) => t.id === "parts").label, "Parts");
+    assert.deepEqual(tabsFor(r).map((t) => t.id), shown(["summary", "rcm", "fmea", "parts", "classes"]));
+    if (EXPLORER_PARTS_CLASSES_TABS) assert.equal(tabsFor(r).find((t) => t.id === "parts").label, "Parts");
     assert.equal(shownTab("reports", r), "summary");
     assert.equal(shownTab("signals", r), "summary");
-    assert.equal(shownTab("parts", r), "parts");
+    assert.equal(shownTab("parts", r), EXPLORER_PARTS_CLASSES_TABS ? "parts" : "summary");
   }
   assert.ok(isProductRow(top));
   assert.ok(!isProductRow(inside));
@@ -86,8 +110,8 @@ test("a product's design has no maintenance: no Failure reports, Signals or stoc
   // An asset (an item's tree built from a design is an asset too) keeps everything.
   assert.ok(!isDesignRow(asset));
   assert.ok(!isDesignRow({ type: "pos", ref: { design_position_id: "d1" } }));
-  assert.deepEqual(tabsFor(asset).map((t) => t.id), ["summary", "rcm", "fmea", "reports", "parts", "classes", "measurements", "signals"]);
-  assert.equal(tabsFor(asset).find((t) => t.id === "parts").label, "Parts and stock");
+  assert.deepEqual(tabsFor(asset).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "parts", "classes", "measurements", "signals"]));
+  if (EXPLORER_PARTS_CLASSES_TABS) assert.equal(tabsFor(asset).find((t) => t.id === "parts").label, "Parts and stock");
   // The tab list itself is unchanged by a design row.
   assert.equal(TABS.find((t) => t.id === "parts").label, "Parts and stock");
 });
@@ -120,16 +144,16 @@ test("a branch's parts and classes: what's kept or used there and inside it", ()
 test("a product's design locations have the design's tabs: no Failure reports, Signals, or Parts and stock", () => {
   const designLoc = { type: "loc", ref: { name: "Forward left arm", design_of: "d", in_design: true } };
   assert.ok(isDesignRow(designLoc));
-  assert.deepEqual(tabsFor(designLoc).map((t) => t.id), ["summary", "rcm", "fmea", "classes"]);
+  assert.deepEqual(tabsFor(designLoc).map((t) => t.id), shown(["summary", "rcm", "fmea", "classes"]));
   assert.equal(rowKind(designLoc), "Design location");
   assert.equal(shownTab("reports", designLoc), "summary");
   assert.equal(shownTab("parts", designLoc), "summary");
   // A location a built item carries is a real place on a real thing: the usual location tabs.
   const carried = { type: "loc", ref: { name: "Forward left arm", carried_by: "b" } };
   assert.ok(!isDesignRow(carried));
-  assert.deepEqual(tabsFor(carried).map((t) => t.id), ["summary", "rcm", "fmea", "reports", "parts", "classes", "measurements"]);
+  assert.deepEqual(tabsFor(carried).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "parts", "classes", "measurements"]));
   assert.equal(rowKind(carried), "Location");
   // A design's positions keep their Parts (the parts list).
   const designPos = { type: "pos", ref: { name: "Motor 1", in_design: true } };
-  assert.deepEqual(tabsFor(designPos).map((t) => t.id), ["summary", "rcm", "fmea", "parts", "classes"]);
+  assert.deepEqual(tabsFor(designPos).map((t) => t.id), shown(["summary", "rcm", "fmea", "parts", "classes"]));
 });

@@ -35,9 +35,9 @@ and its criticality figures filled in over a year's 150 flight hours. Its
 same Explorer, scoped to the design: pick its **FME(C)A** tab. Everything below
 works the same on a product's design and on your asset tree. Its **RCM** tab
 holds the same failure modes as an RCM, each with its decision (see
-[RCM on your asset tree](/guides/rcm-on-your-asset-tree)). The product's other
-tabs hold the rest of the sample: its parts list, the items built from it and
-their failure reports.
+[RCM on your asset tree](/guides/rcm-on-your-asset-tree)). The product's own
+row holds the rest of the sample on its Summary: its bill of materials, the
+items built from it and their failure reports.
 
 ![The FME(C)A tab on the sample UAV product: each failure mode with its cause, effects, scores, RPN and action priority](/guides/img/fmea-01-worksheet.png)
 

@@ -1,6 +1,7 @@
 // The main path through the app: fit a model to a sample dataset and save it.
 // (Calculating an RBD is in rbd.spec.js.)
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { EXPLORER_PARTS_CLASSES_TABS } from "../src/explorerTabs.js";
 
 test("fit and save a Weibull model from a sample dataset", async ({ page, problems }) => {
   await open(page, "/data/sample-ds-bearings");
@@ -19,7 +20,19 @@ test("fit and save a Weibull model from a sample dataset", async ({ page, proble
 
 // #31: a class with a fitted model and a spare with a lead time shows how many to
 // hold, and the chance a typed stock runs out (smoke/seed.js makes the class).
+// The Classes tab is hidden for now (explorerTabs.js): a class's old address lands on the Explorer, and the
+// stock levels have no screen to test until the tab comes back.
+test("a class's old address lands on the Explorer, with no Classes tab", async ({ page, problems }) => {
+  test.skip(EXPLORER_PARTS_CLASSES_TABS, "the Classes tab is shown: the stock levels test below covers it");
+  await open(page, `/asset-register/classes/${encodeURIComponent("Smoke test pump")}`);
+  await expect(page).toHaveURL(/\/asset-register\/explorer(\?|$)/);
+  await expect(page).not.toHaveURL(/tab=classes/);
+  await expect(page.getByRole("tab", { name: "Classes" })).toHaveCount(0);
+  await expectHealthy(page, problems, { label: "class address, Classes tab hidden" });
+});
+
 test("a class's spares stock levels and the what-if", async ({ page, problems }) => {
+  test.skip(!EXPLORER_PARTS_CLASSES_TABS, "the Classes tab is hidden for now");
   // A class's old address opens the Explorer's Classes tab on that class.
   await open(page, `/asset-register/classes/${encodeURIComponent("Smoke test pump")}`);
   await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=classes&scope=all&class=Smoke(%20|\+)test(%20|\+)pump/);

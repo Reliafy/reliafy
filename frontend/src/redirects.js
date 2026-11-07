@@ -15,7 +15,18 @@
 // (smoke/routes.js) and the server's list of app roots
 // (backend/tests/test_spa_routes.py) all read it.
 //
+import { EXPLORER_PARTS_CLASSES_TABS } from "./explorerTabs.js";
+
 // A `:name` in `to` takes the value of the same `:name` in `path`.
+//
+// Parts and stock and Classes are hidden tabs of the Explorer for now
+// (explorerTabs.js, EXPLORER_PARTS_CLASSES_TABS): while they are, their old
+// pages' addresses land on the Explorer with no tab (its Summary, still under
+// Assets) and carry no ?scope, ?show or ?class, which only those tabs read.
+// Switched on again, they open the tabs as they were.
+const EXPLORER = "/asset-register/explorer";
+const tabAt = (query) => (EXPLORER_PARTS_CLASSES_TABS ? `${EXPLORER}?${query}` : EXPLORER);
+
 export const MOVED = [
   // Modelling → Analyse › Models and Analyse › Data.
   { path: "/modelling", to: "/models" },
@@ -83,9 +94,9 @@ export const MOVED = [
   { path: "/maintenance/items/:id", to: "/asset-register/items/:id" },
   { path: "/maintenance/locations", to: "/asset-register/explorer?arrange=locations" },
   { path: "/maintenance/locations/:id", to: "/asset-register/locations/:id" },
-  { path: "/maintenance/classes", to: "/asset-register/explorer?tab=classes&scope=all" },
-  { path: "/maintenance/classes/:name", to: "/asset-register/explorer?tab=classes&scope=all&class=:name" },
-  { path: "/maintenance/parts", to: "/asset-register/explorer?tab=parts&scope=all" },
+  { path: "/maintenance/classes", to: tabAt("tab=classes&scope=all") },
+  { path: "/maintenance/classes/:name", to: tabAt("tab=classes&scope=all&class=:name") },
+  { path: "/maintenance/parts", to: tabAt("tab=parts&scope=all") },
   { path: "/maintenance/parts/:id", to: "/asset-register/parts/:id" },
   // Design › Systems opens on its RBDs, the list of diagrams, at their own address.
   { path: "/systems", to: "/systems/rbds" },
@@ -99,15 +110,15 @@ export const MOVED = [
   // Explorer's FME(C)A tab. (Fault trees have their own page now.)
   { path: "/systems/fmeca", to: "/asset-register/explorer?tab=fmea" },
   // Assets › Parts and stock and Classes → tabs of the asset tree (the
-  // Explorer's Parts and stock and Classes tabs), on everything (?scope=all:
+  // Explorer's Parts and stock and Classes tabs, while shown), on everything (?scope=all:
   // "Show all parts" / "Show all classes" ticked) as the pages were. A class's
   // own address opens its panel (?class=); the parts catalogue as structures
   // (Product structure) is the Parts and stock tab's Structure view. Each
   // part's own page (/asset-register/parts/:id) stays.
-  { path: "/asset-register/parts", to: "/asset-register/explorer?tab=parts&scope=all" },
-  { path: "/asset-register/classes", to: "/asset-register/explorer?tab=classes&scope=all" },
-  { path: "/asset-register/classes/:name", to: "/asset-register/explorer?tab=classes&scope=all&class=:name" },
-  { path: "/systems/structure", to: "/asset-register/explorer?tab=parts&scope=all&show=structure" },
+  { path: "/asset-register/parts", to: tabAt("tab=parts&scope=all") },
+  { path: "/asset-register/classes", to: tabAt("tab=classes&scope=all") },
+  { path: "/asset-register/classes/:name", to: tabAt("tab=classes&scope=all&class=:name") },
+  { path: "/systems/structure", to: tabAt("tab=parts&scope=all&show=structure") },
 ];
 
 // Where an old address goes: `pathname` (no query or hash) matched against

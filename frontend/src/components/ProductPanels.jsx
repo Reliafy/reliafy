@@ -84,7 +84,7 @@ export function NewProductModal({ onClose, onDone }) {
     <FormModal title="New product" submitLabel="Create" canSubmit={!!name.trim()} onClose={onClose}
                onSubmit={async () => onDone(await createProduct({ name: name.trim(), part_number: number.trim(), rev: rev.trim() }))}>
       <Field label="Name" text={name}><input value={name} onChange={(e) => setName(e.target.value)} autoFocus /></Field>
-      <Field label="Part number (optional)" hint="A new part in Parts and stock: its bill of materials is the product's parts list.">
+      <Field label="Part number (optional)" hint="A new part in the catalogue: its bill of materials is the product's parts list.">
         <input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="e.g. SQ-4" />
       </Field>
       <Field label="Revision"><input value={rev} onChange={(e) => setRev(e.target.value)} placeholder="e.g. A" /></Field>

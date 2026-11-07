@@ -2,18 +2,21 @@
 // the addresses, the product page's tabs, the Explorer scoped to one tree, and
 // the words the lists use. A product's id is its design's top position id.
 
+import { EXPLORER_PARTS_CLASSES_TABS } from "./explorerTabs.js";
+
 export const PRODUCTS_PATH = "/products";
 export const ITEMS_PATH = "/items";
 export const PRODUCTS_GUIDE = "products-and-items";
 
 // A product's page is the Explorer on its design (?view= names the tree's tab,
 // as ?tab= does on the Explorer's own page). Its earlier page tabs (?tab=) are
-// in that page now: the parts list is the tree's Parts tab; the items built,
+// in that page now: the parts list is the tree's Parts tab (hidden for now:
+// the product's Summary holds it as its Bill of materials); the items built,
 // their failure reports and the analyses are on the product's Summary.
 // Where an earlier product tab (?tab=) lands on the page now: the tree tab to
 // open (null: Summary).
 export function productTab(param) {
-  return param === "parts" ? "parts" : null;
+  return param === "parts" && EXPLORER_PARTS_CLASSES_TABS ? "parts" : null;
 }
 
 export function productPath(id, tab = null) {

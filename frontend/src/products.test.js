@@ -15,13 +15,14 @@ const positions = [
 ];
 const data = { positions, locations: [] };
 
-test("the product page is the Explorer on its design: the earlier page tabs land on the tree's Parts tab or the Summary", () => {
+test("the product page is the Explorer on its design: the earlier page tabs land on the Summary", () => {
   assert.equal(productTab(null), null);
-  assert.equal(productTab("parts"), "parts");
+  // The tree's Parts tab is hidden for now: the parts list is on the product's Summary.
+  assert.equal(productTab("parts"), null);
   assert.equal(productTab("items"), null);
   assert.equal(productTab("rcm"), null);
   assert.equal(productPath("p 1"), "/products/p%201");
-  assert.equal(productPath("p1", "parts"), "/products/p1?view=parts");
+  assert.equal(productPath("p1", "parts"), "/products/p1");
   assert.equal(productPath("p1", "reports"), "/products/p1");
   assert.equal(productPath("p1", "structure"), "/products/p1");
   assert.equal(productViewPath("p 1"), "/products/p%201?view=fmea&sel=p%201");

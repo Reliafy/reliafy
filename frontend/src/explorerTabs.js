@@ -20,11 +20,23 @@
 // Failure reports, Signals, or Parts and stock; the Summary gives the design
 // facts (what's placed there).
 //
+// Parts and stock and Classes are hidden for now (EXPLORER_PARTS_CLASSES_TABS
+// below): their entries, bodies (TreeDetail) and old addresses (redirects.js)
+// stay, so one switch brings them back.
+//
 // Adding a tab is one entry here (id, label, the kinds of row that have it,
 // `asset: true` when a design's rows don't) and its body in TreeDetail. The
 // address names the tab (?tab=rcm, left out for Summary); the tab picked stays
 // as you walk the tree, shown on every row of a kind that has it, Summary on
 // the others.
+
+// Derryn, 8 Nov 2026: hidden for now, may come back. Off, `tabsFor` leaves out
+// Parts and stock and Classes on every row (an asset's, a product's design),
+// so a `?tab=parts` or `?tab=classes` address shows Summary, and the old pages'
+// redirects (redirects.js) land on the Explorer with no tab.
+export const EXPLORER_PARTS_CLASSES_TABS = false;
+const SWITCHED = new Set(["parts", "classes"]);
+const offered = (t) => EXPLORER_PARTS_CLASSES_TABS || !SWITCHED.has(t.id);
 
 export const TABS = [
   { id: "summary", label: "Summary", title: "What it is, where it is, its work and what's inside it", kinds: ["pos", "loc", "item", "group"] },
@@ -42,7 +54,7 @@ export const TABS = [
   { id: "measurements", label: "Measurements", title: "Every measuring point here and inside it: the latest reading, its limits and whether it's past them", kinds: ["pos", "loc", "item"], asset: true },
   { id: "signals", label: "Signals", title: "Vibration and other sensors that send snapshots: spectra, watch bands and how they change", kinds: ["pos", "item"], asset: true },
 ];
-const BY_ID = new Map(TABS.map((t) => [t.id, t]));
+const BY_ID = new Map(TABS.filter(offered).map((t) => [t.id, t]));
 export const DEFAULT_TAB = "summary";
 
 // The tab the address asks for, if it's one (else Summary).
@@ -75,7 +87,7 @@ export function rowKind(row) {
 export function tabsFor(row) {
   if (!row) return [];
   const design = isDesignRow(row);
-  return TABS.filter((t) => t.kinds.includes(row.type) && !(design && t.asset) && !(design && row.type === "loc" && t.notDesignLoc))
+  return TABS.filter((t) => offered(t) && t.kinds.includes(row.type) && !(design && t.asset) && !(design && row.type === "loc" && t.notDesignLoc))
     .map((t) => (design && t.designLabel ? { ...t, label: t.designLabel, title: t.designTitle || t.title } : t));
 }
 

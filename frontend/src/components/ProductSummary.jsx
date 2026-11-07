@@ -4,8 +4,9 @@
 // reports) in place of an asset's (nothing is fitted to a design or kept
 // anywhere); Build an item; the items built from it; their failure reports
 // rolled up; and the analyses of the design (its RBDs, a reliability
-// prediction). The parts list is the tree's Parts tab (ProductPartsList at the
-// top of it).
+// prediction), and its Bill of materials (the structure of its part: what it's
+// made of). The tree's Parts tab (ProductPartsList at the top of it) is hidden
+// for now (explorerTabs.js), so the Summary is where the parts list is.
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { generatePositionRbd, getPartStructure, getProduct, listProductItems, listRbds } from "../api.js";
@@ -93,6 +94,41 @@ function BuiltItems({ product, version, onBuild }) {
   );
 }
 
+// The product's bill of materials, on its Summary: its part and what that's
+// made of, as designed (no stock), with the quantities rolled up. Where the
+// parts list is while the tree's Parts tab is hidden.
+function BillOfMaterials({ product }) {
+  const navigate = useNavigate();
+  const [structure, setStructure] = useState(null);
+  const [error, setError] = useState(null);
+  const part = product.part;
+  useEffect(() => {
+    if (!part?.id) return undefined;
+    let live = true;
+    getPartStructure(part.id).then((d) => live && setStructure(d)).catch((e) => live && setError(e.message));
+    return () => { live = false; };
+  }, [part?.id]);
+  const empty = !(structure?.tree?.children || []).length;
+  return (
+    <Section title="Bill of materials" id="bill-of-materials"
+             action={part ? { label: "Change it…", onClick: () => navigate(`/asset-register/parts/${part.id}`), ariaLabel: `Change it on ${part.part_number}'s page` } : null}
+             tip="The parts list: the structure of the product's part, as designed. Add or change what goes in it on the part's page.">
+      {!part ? (
+        <p className="td-quiet">This product has no part yet, so it has no bill of materials.</p>
+      ) : error ? <p className="field-error" role="alert">The bill of materials didn't load: {error}</p>
+        : !structure ? <p className="td-quiet">Loading…</p>
+        : empty ? <p className="td-quiet">Nothing inside {part.part_number} yet: add what goes in it on the part's page.</p>
+        : (
+          <>
+            <p className="td-quiet">As designed: what {part.part_number} ({part.name}) is made of.</p>
+            <div className="maint-scroll"><StructureTree tree={structure.tree} /></div>
+            <RollupCard structure={structure} design />
+          </>
+        )}
+    </Section>
+  );
+}
+
 // The analyses of the design: its RBDs (made from its structure, or named
 // after it), Make an RBD from this structure, and a reliability prediction.
 function Analyses({ product }) {
@@ -161,6 +197,7 @@ export default function ProductSummary({ row, version: treeVersion = 0, actions 
                      tip="A report is about an item, filed on its tree; here they roll up to the design.">
               <DesignReports positionId={product.id} />
             </Section>
+            <BillOfMaterials product={product} />
             <Analyses product={product} />
           </>
         )}
