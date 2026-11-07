@@ -85,6 +85,7 @@ from backend.routers import reports as reports_router
 from backend.routers import ingest as ingest_router
 from backend.routers import public_api as public_api_router
 from backend.routers import api_tools as api_tools_router
+from backend.routers import support as support_router
 from backend.routers import email_prefs as email_prefs_router
 from backend.routers import walkthroughs as walkthroughs_router
 from backend.routers import lifecycle as lifecycle_router
@@ -266,6 +267,8 @@ app.include_router(public_router.router)
 app.include_router(reports_router.router)
 app.include_router(ingest_router.router)
 app.include_router(public_api_router.router)
+# Operator support replies (fixed /api/v1/support routes, before the generic ones).
+app.include_router(support_router.router)
 # Every MCP tool action over REST (POST /api/v1/{tool}/{action}), its OpenAPI
 # spec and the REST-only photo upload. After public_api: its fixed /api/v1
 # routes win over the generic {tool}/{action} ones.

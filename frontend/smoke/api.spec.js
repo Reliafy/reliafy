@@ -33,6 +33,7 @@ const SIGNED_IN = [
   ["PUT", "/api/datasets/smoke/life"],
   ["POST", "/api/alt/models/smoke/diagnostics"], // the accelerated life page's Diagnostics checks
   ["GET", "/api/me/roles"], // what the user does: the menu's order and Home's cards
+  ["GET", "/api/v1/support/replies"], // operator support replies (mounted before the generic /api/v1 routes)
   ["GET", "/api/public-links"], // Reports: every shared link
   ["POST", "/api/maintenance/documents/upload"], // PDFs kept in maintenance
   ["GET", "/api/maintenance/documents/smoke/file"],

@@ -142,6 +142,15 @@ ADMIN_EMAILS = {
     if e.strip()
 }
 
+# Operator support replies (POST /api/v1/support/replies): replies to mail sent
+# to the support inbox, sent over the SMTP settings above. Inert without SMTP.
+SUPPORT_FROM = os.environ.get("SUPPORT_FROM", "hello@reliafy.com").strip()
+SUPPORT_FROM_NAME = os.environ.get("SUPPORT_FROM_NAME", "Reliafy support").strip()
+# A blind copy of every reply, so the sent reply shows in the support inbox.
+# Set it empty to send no copy.
+SUPPORT_COPY_TO = os.environ.get("SUPPORT_COPY_TO", "hello@reliafy.com").strip()
+SUPPORT_REPLIES_PER_HOUR = _int("SUPPORT_REPLIES_PER_HOUR", 20)
+
 # Salt for the daily visitor hash in first-party analytics. Any stable value
 # works; setting a private one in prod stops anyone recomputing hashes from
 # guessed (day, ip, ua) tuples.
