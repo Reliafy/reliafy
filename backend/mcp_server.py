@@ -2652,6 +2652,7 @@ def fit_alt_model(
             spec["stress_units"] = alt_fit.clean_stress_units(stress_units, entry["n_stress"])
         except FitError as exc:
             raise ToolError(str(exc)) from None
+    _cap(db, user, "models", "models")
     try:
         # Checked before anything is stored, with the same message the save gives.
         alt_fit.build_inputs(df, mapping, stress_cols)
@@ -6782,6 +6783,7 @@ def fit_recurrent_model(
                "n_events": payload.get("n_events"), "params": payload.get("params"),
                "growth": payload.get("growth"), **_recurrent_evidence(payload)}
         return out
+    _cap(db, user, "models", "models")
     created = None
     try:
         recurrent_fit.fit_spec(df, spec, gof_test=False)  # checked before anything is stored

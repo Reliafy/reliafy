@@ -22,6 +22,7 @@ import {
   SPREADSHEET_ACCEPT,
 } from "../api.js";
 import { useSpreadsheet } from "../components/ExcelSheetPicker.jsx";
+import { ErrorNotice } from "../components/StorageCap.jsx";
 
 // The model families (#65): minimal repair (Poisson processes), covariates on
 // the repair rate, and imperfect repair.
@@ -137,7 +138,7 @@ export default function RecurrentNewPage() {
       setWindows("");
       setStep(2);
     } catch (err) {
-      setError(err.message);
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -160,7 +161,7 @@ export default function RecurrentNewPage() {
       setWindows("");
       setStep(2);
     } catch (err) {
-      setError(err.message);
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -199,7 +200,7 @@ export default function RecurrentNewPage() {
       setName(`${res.results?.model?.name || modelName} — ${src}`);
       setStep(4);
     } catch (err) {
-      setError(err.message);
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -216,7 +217,7 @@ export default function RecurrentNewPage() {
       });
       navigate(`/models/recurrent/${saved.id}`);
     } catch (err) {
-      setError(err.message);
+      setError(err);
       setSaving(false);
     }
   };
@@ -460,7 +461,7 @@ export default function RecurrentNewPage() {
           </div>
         )}
 
-        {error && <div className="error">{error}</div>}
+        <ErrorNotice error={error} />
 
         <div className="fit-flow-foot">
           {stepper}

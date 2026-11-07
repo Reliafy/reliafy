@@ -6,6 +6,7 @@ import { PlusIcon, itemName } from "../components/LibRows.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
+import { StorageCapNotice } from "../components/StorageCap.jsx";
 
 const HELP = { guide: "recurrent-events" };
 
@@ -42,6 +43,7 @@ export default function RecurrentHome() {
       />
 
       {error && <div className="card error">{error}</div>}
+      <StorageCapNotice kind="models" one="saved model" many="saved models" refreshKey={models} />
 
       <RecurrentLibrary
         models={models}

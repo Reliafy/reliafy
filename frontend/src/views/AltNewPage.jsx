@@ -12,6 +12,7 @@ import {
   getAltOptions, getColumns, listDatasets, getDataset, fitAlt, saveAltModel, SPREADSHEET_ACCEPT,
 } from "../api.js";
 import { useSpreadsheet } from "../components/ExcelSheetPicker.jsx";
+import { ErrorNotice } from "../components/StorageCap.jsx";
 
 const STEPS = ["Source", "Model", "Data", "Result"];
 
@@ -92,7 +93,7 @@ export default function AltNewPage() {
       const cols = await getColumns(f);
       loadColumns(cols.columns, cols.preview, cols.n_rows);
       setStep(2);
-    } catch (err) { setError(err.message); } finally { setLoading(false); }
+    } catch (err) { setError(err); } finally { setLoading(false); }
   };
 
   const pickDataset = async (d) => {
@@ -101,7 +102,7 @@ export default function AltNewPage() {
       const full = await getDataset(d.id);
       loadColumns(full.preview_columns || [], full.preview || [], full.n_rows);
       setStep(2);
-    } catch (err) { setError(err.message); } finally { setLoading(false); }
+    } catch (err) { setError(err); } finally { setLoading(false); }
   };
 
   const onDrop = (e) => { e.preventDefault(); setDragging(false); pickFile(e.dataTransfer.files?.[0]); };
@@ -132,7 +133,7 @@ export default function AltNewPage() {
       const src = (file?.name || sourceName || "dataset").replace(/\.csv$/i, "");
       setName(`${dists.find((d) => d.id === distribution)?.name || "ALT"} — ${src}`);
       setStep(4);
-    } catch (err) { setError(err.message); } finally { setLoading(false); }
+    } catch (err) { setError(err); } finally { setLoading(false); }
   };
 
   const onSave = async () => {
@@ -145,7 +146,7 @@ export default function AltNewPage() {
         distribution, lifeModel, unit,
       });
       navigate(`/models/alt/${saved.id}`);
-    } catch (err) { setError(err.message); setSaving(false); }
+    } catch (err) { setError(err); setSaving(false); }
   };
 
   const goBack = () => { setError(null); if (step === 1) return navigate("/models/alt"); setStep((s) => s - 1); };
@@ -349,7 +350,7 @@ export default function AltNewPage() {
           </div>
         )}
 
-        {error && <div className="error">{error}</div>}
+        <ErrorNotice error={error} />
 
         <div className="fit-flow-foot">
           {stepper}

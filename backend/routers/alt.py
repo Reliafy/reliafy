@@ -175,6 +175,10 @@ def save_model(
     if denied is not None:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
+    if (ctx.is_personal and not billing_service.is_admin_user(ctx.user)
+            and billing_service.would_exceed_cap(session, ctx.uid, "models")):
+        return JSONResponse(status_code=402, content={
+            "detail": billing_service.cap_message(session, ctx.uid, "models"), "code": "cap", "upgrade": True})
     denied = datasets_service.upload_denial(session, ctx, dataset_id, file)
     if denied is not None:
         status, payload = denied
