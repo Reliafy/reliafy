@@ -64,7 +64,7 @@ function fetchPosition(id, version) {
 }
 // A change saved from the panel, kept in its copy too (so switching tabs and
 // back shows it, not the text from before).
-function rememberChange(id, version, change) {
+export function rememberChange(id, version, change) {
   const key = seenKey(id, version);
   const seen = SEEN.get(key);
   if (seen?.data) SEEN.set(key, { ...seen, data: { ...seen.data, ...change } });
@@ -75,7 +75,7 @@ export function prefetchPosition(id, version) {
   if (!id || SEEN.has(seenKey(id, version))) return;
   fetchPosition(id, version).catch(() => {});
 }
-function usePosition(id, version) {
+export function usePosition(id, version) {
   const [state, setState] = useState(() => SEEN.get(seenKey(id, version)) || { id: null, data: null, error: null });
   useEffect(() => {
     if (!id) return undefined;

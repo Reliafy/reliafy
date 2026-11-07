@@ -6,7 +6,7 @@ import {
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
-import TreeDetail, { HeaderTabs, SlimHeader, forgetPositions, prefetchPosition } from "../components/TreeDetail.jsx";
+import TreeDetail, { HeaderTabs, SlimHeader, forgetPositions, prefetchPosition, rememberChange, usePosition } from "../components/TreeDetail.jsx";
 import DecisionModal from "../components/DecisionModal.jsx";
 import LinkFailurePicker from "../components/FailureLinks.jsx";
 import RcmImportModal from "../components/RcmImportModal.jsx";
@@ -27,7 +27,7 @@ import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
 import {
-  NARROW_TABLE, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, newStandardRows, openFor, opensItem, positionOf, rowActions,
+  NARROW_TABLE, cellRow, functionSummary, graftRcm, hasLinkedEvidence, isRcmRow, newStandardRows, openFor, opensItem, positionOf, rowActions,
   standardKeys, tableCols, unlinkEmptiesFailure, usualCols,
   withTableCols,
 } from "../explorerRcm.js";
@@ -41,6 +41,7 @@ import {
   tableCols as fmeaTableCols, usualCols as fmeaUsualCols, withTableCols as withFmeaCols,
 } from "../fmeaWorksheet.js";
 import { readFmeaOptions } from "../fmea.js";
+import RcmPositionPanel from "../components/RcmPositionPanel.jsx";
 import { AssignFailureModal, FmeaPositionPanel } from "../components/FmeaPanels.jsx";
 import { saveBlob } from "../sparesPlan.js";
 import { saveErrorText } from "../confirm.js";
@@ -580,7 +581,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setRcmFocus(null);
     setSelected((s) => ({ ...s, [mode]: key }));
     // On the FME(C)A tab a position's own details (its criticality matrix) are beside the table.
-    if (fmeaOn && r?.type === "pos" && opts.go) setPanel(true);
+    if ((fmeaOn || rcmOn) && r?.type === "pos" && opts.go) setPanel(true);
     if (phone && opts.go && !rcmOn) navigate(location.pathname + location.search, { state: { treeDetail: key } });
   };
 
@@ -1408,6 +1409,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const detailsRow = rcmOn && panel && isRcmRow(focusRow) && focusRow.type !== "cause" && focusRow.type !== "nofail" ? cellRow(focusRow) : null;
   // The FME(C)A tab with a position picked: its criticality matrix beside the table.
   const fmeaPosRow = fmeaOn && panel && !detailsRow && focusRow?.type === "pos" ? focusRow : null;
+  // The RCM tab with a position picked: its operating context and functions beside the table.
+  const rcmPosRow = rcmOn && !fmeaOn && panel && !detailsRow && focusRow?.type === "pos" ? focusRow : null;
+  const rcmPosition = usePosition(rcmPosRow ? rcmPosRow.key : null, version);
+  const rcmPosFns = useMemo(() => (rcmPosRow ? functionSummary(whole, rcmPosRow) : []), [rcmPosRow, whole]);
   const fmeaPos = useMemo(() => (fmeaPosRow ? positionSummary(whole, fmeaPosRow.key, fopts) : null), [fmeaPosRow, whole, fopts]);
   // A failure mode moved under another functional failure from the panel: a
   // refusal is said in the heading, in plain words.
@@ -1479,6 +1484,15 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
       <FmeaPositionPanel row={fmeaPosRow} summary={fmeaPos} phone={phone} headingRef={detailsHeading} onClose={closeDetails}
                          onSelect={(k) => { reveal(k); setPanel(true); }} />
+    </div>
+  ) : rcmPosRow ? (
+    <div className="rw tt-side">
+      {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
+      <RcmPositionPanel row={rcmPosRow} kind={rowKind(rcmPosRow) || "Position"} functions={rcmPosFns} position={rcmPosition}
+                        phone={phone} headingRef={detailsHeading} onClose={closeDetails}
+                        onSelect={(k) => { reveal(k); setPanel(true); }}
+                        onAdd={() => runAdd({ ref: { add: "fn", position_id: rcmPosRow.key } })}
+                        onContextSaved={(text) => rememberChange(rcmPosRow.key, version, { operating_context: text })} />
     </div>
   ) : wideDetails && (
     // Expanded with a position picked: the room says what to pick (the tree beside it).

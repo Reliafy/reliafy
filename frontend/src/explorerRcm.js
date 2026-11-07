@@ -633,3 +633,28 @@ export function failureStatusWords(r) {
   }
   return "Not analysed yet: it has no failure modes and nothing linked below.";
 }
+
+// A position's functions for its panel on the RCM tab: one entry per function
+// row below it, in table order, with what the table's row would say (its
+// performance standards, functional failures and failure modes, how many of
+// those are decided, and whether it has a working).
+export function functionSummary(display, posRow) {
+  const out = [];
+  for (const k of posRow?.kids || []) {
+    const r = display?.rows?.get(k);
+    if (r?.type !== "fn") continue;
+    const stds = standardsShown(r.ref);
+    const s = r.rsum || rcmBlank();
+    out.push({
+      key: r.key,
+      text: String(r.ref.text || "").trim() || "(no text yet)",
+      standards: stds.length,
+      standardTexts: stds.map((st) => String(st.text || "").trim()).filter(Boolean),
+      failures: (r.ref.failures || []).length,
+      modes: s.modes,
+      decided: Math.max(0, s.modes - s.undecided),
+      hasBasis: !!r.ref.has_basis,
+    });
+  }
+  return out;
+}
