@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import RowMenu from "./RowMenu.jsx";
 import TreeControlsMenu from "./TreeControlsMenu.jsx";
 import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
-import { BasisInfo, NotesMark, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
+import { NotesMark, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
 import { ARRANGEMENTS, CHIPS, CHIP_MARK, PANE, TREE_ROW_MARKERS, clampWidth, markersOf, nextGutter } from "../assetTree.js";
 import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensPanel } from "../explorerRcm.js";
@@ -297,7 +297,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
     tabIndex: pinned ? undefined : focused ? 0 : -1,
     style: { top: pinned ? undefined : top, height, width: table && !phone ? table.total : rowW },
     onClick: (e) => {
-      if (e.target.closest("input, select, a, button.rw-todo-btn, .tt-more, .tp-unpin, .rw-info")) return;
+      if (e.target.closest("input, select, a, button.rw-todo-btn, .tt-more, .tp-unpin")) return;
       // Failure modes picked with Shift / Ctrl / Cmd-click, to drag (or move) together.
       if (drag && r.type === "mode" && (e.shiftKey || e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -376,7 +376,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
         {editCol === "name"
           ? <CellEditor col={NAME_COLUMN} r={cr} onCommit={(raw) => table.onCommit(r, "name", raw)} onCancel={table.onCancel} />
           : <><TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table onGoto={table.onGoto}
-                       info={<><BasisInfo r={r} onBasis={table.onBasis} /><NotesMark r={r} /></>} />{more}</>}
+                       info={<NotesMark r={r} />} />{more}</>}
       </div>
       {table.hint === r.key && editCol == null ? (
         <div role="gridcell" aria-colspan={table.cols.length} className="rw-c tt-empty-hint"

@@ -23,14 +23,13 @@ import {
 import { charCount } from "../maintenanceText.js";
 import RcmBasis from "./RcmBasis.jsx";
 import RcmFunctionStandards from "./RcmFunctionStandards.jsx";
-import { plainFirstLine } from "../basisMarkdown.js";
 import { COMPARATORS, COMPARATOR_LABEL, limitReads, limitWords } from "../rcmStandards.js";
 import RcmModeTasks from "./RcmModeTasks.jsx";
 import RcmNotes from "./RcmNotes.jsx";
 import { hasNotes, hasNotesField, notesTip } from "../rcmNotes.js";
 import { saveErrorText } from "../confirm.js";
 import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
-import { basisMarked, failureRows, failureStatusWords, failureSummary } from "../explorerRcm.js";
+import { failureRows, failureStatusWords, failureSummary } from "../explorerRcm.js";
 import { AP_LABEL, AP_TONE } from "../fmea.js";
 import { apWords } from "../fmeaWorksheet.js";
 import { failuresOn as failuresFromRcm, functionsOn } from "../explorerFmea.js";
@@ -83,25 +82,6 @@ export function cellTip(col, r, can) {
   return can ? "Double-click to edit" : undefined;
 }
 export const cellHint = (can) => (can ? "Double-click to edit" : undefined);
-
-// The (i) at the end of a performance standard's name (or a function's, when
-// it has no performance standard) when its function has a working behind it
-// (basisMarked). It opens the function's details with the working in full. A
-// letter, a label and a tooltip: never colour alone. Fixed size, so a row
-// never changes height or width with it.
-export function BasisInfo({ r, onBasis }) {
-  if (!onBasis || !basisMarked(r)) return null;
-  const first = plainFirstLine(r.type === "std" ? r.ref.function_basis_preview : r.ref.basis_preview, 80);
-  const what = r.type === "std" ? "this performance standard" : "this function's performance standard";
-  return (
-    <button type="button" className="rw-info" aria-label={`How ${what} was worked out: open the working`}
-            title={`How ${what} was worked out${first ? `: ${first}` : ""}. Open the working.`}
-            onDoubleClick={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); if (e.detail < 2) onBasis(r); }}>
-      <span aria-hidden="true">i</span>
-    </button>
-  );
-}
 
 // The small note mark after a row's name when it has notes and rationale:
 // the notes' first line is its tooltip (and its accessible name). Not a
