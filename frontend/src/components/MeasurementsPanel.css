@@ -3,15 +3,17 @@
    values, chips and trends line up down the list; long names and notes are
    cut with an ellipsis, in full in their tooltips and the readings history.
    The state is a chip in words as well as colour. */
-.ms-head, .ms-bar {
+.ms-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
 }
-.ms-head { margin: 0 0 10px; }
-.ms-purpose { flex: 1 1 260px; margin: 0; }
+.ms-purpose { margin: 0 0 10px; }
 .ms-bar { margin: 0 0 8px; }
+/* The list's dashed add row, over it (a new point goes on the picked row). */
+.ms-panel button.ms-add { width: 100%; margin: 0 0 8px; }
+.ms-add-note { margin: 0 0 8px; }
 button.ms-filter { line-height: 26px; padding: 0 10px; font-size: var(--fs-13); }
 .ms-count { min-width: 0; }
 

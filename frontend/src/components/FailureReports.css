@@ -14,7 +14,6 @@
 .fr-panel { display: flex; flex-direction: column; gap: 10px; }
 .fr-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .fr-counts { margin: 0; font-size: var(--fs-13); color: var(--muted); }
-.fr-add { flex: none; }
 .fr-filters { display: flex; flex-direction: column; gap: 8px; }
 .fr-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .fr-chips .chip { cursor: pointer; }

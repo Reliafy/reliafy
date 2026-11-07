@@ -8,9 +8,12 @@ import Chip from "./ui/Chip.jsx";
 import RowMenu from "./RowMenu.jsx";
 import { readingWhen } from "../maintenanceReadings.js";
 import {
-  branchQuery, latestNote, needsAttention, pointChip, pointHref, pointMenu, pointSubline, readMeasurementsQuery,
+  branchQuery, latestNote, needsAttention, pointChip, pointHref, pointMenu, pointSubline, pointsCsv, readMeasurementsQuery,
   recentValues, recordedBy, rowAction, sortPoints,
 } from "../measurementsTab.js";
+import { usePanelMenu } from "../panelMenu.js";
+import { saveText } from "../sparesPlan.js";
+import { exportFilename } from "../rcmImport.js";
 import { PointModal, PointReadingModal, ReadingsModal } from "../views/MaintenancePosition.jsx";
 import "../views/Maintenance.css";
 import "./MeasurementsPanel.css";
@@ -24,7 +27,9 @@ import "./MeasurementsPanel.css";
 // readings history, so the list stays scannable. Clicking a row opens its
 // readings. The filter (?only=attention) and the point whose readings are open
 // (?point=) are in the address, so a link opens the tab as it was. Where the
-// panel is narrow (a phone) each point becomes a block.
+// panel is narrow (a phone) each point becomes a block. A new point: the
+// dashed "+ Add a measuring point" row over the list, or the panel heading's
+// "…" (given through `onMenu`), which also exports the points shown as CSV.
 
 function useMeasurementsQuery() {
   const [params] = useSearchParams();
@@ -108,7 +113,7 @@ function LimitsModal({ point, onClose, onDone }) {
   );
 }
 
-export default function MeasurementsPanel({ row, display, today }) {
+export default function MeasurementsPanel({ row, display, today, onMenu = null }) {
   const q = useMeasurementsQuery();
   const navigate = useNavigate();
   const branch = useMemo(() => branchOf(display, row.key), [display, row.key]);
@@ -140,6 +145,13 @@ export default function MeasurementsPanel({ row, display, today }) {
     ? `${shown.length} of ${sorted.length} measuring point${sorted.length === 1 ? "" : "s"} ${where}`
     : `${sorted.length} measuring point${sorted.length === 1 ? "" : "s"} ${where}`);
 
+  const noTarget = "Pick a position or an item to add a measuring point: a place has none of its own.";
+  const exportCsv = () => saveText(pointsCsv(shown || [], today, ask.fittedAt), exportFilename(row.ref.name, { what: "measuring points" }));
+  usePanelMenu(onMenu, [
+    { id: "point-new", label: "Add a measuring point…", onSelect: () => setModal({ add: true }), disabled: !target, title: target ? "" : noTarget },
+    { id: "points-csv", label: "Export CSV", onSelect: exportCsv, disabled: !shown?.length, title: shown?.length ? "" : "No measuring points to export" },
+  ]);
+
   const act = (id, p) => {
     if (id === "record") setModal({ read: p });
     else if (id === "history") q.setPoint(p.id);
@@ -159,12 +171,7 @@ export default function MeasurementsPanel({ row, display, today }) {
 
   return (
     <div className="td-tab-page ms-panel">
-      <div className="ms-head">
-        <p className="lib-date ms-purpose">Read by hand or fed automatically, worst first: past alarm, near a limit, due a reading.</p>
-        {target
-          ? <button className="sm" onClick={() => setModal({ add: true })}><PlusIcon /> Add a measuring point</button>
-          : <span className="lib-date">Pick a position to add a measuring point.</span>}
-      </div>
+      <p className="lib-date ms-purpose">Read by hand or fed automatically, worst first: past alarm, near a limit, due a reading.</p>
       {sorted && sorted.length > 0 && (
         <div className="ms-bar">
           <button type="button" aria-pressed={q.attention} onClick={() => q.setAttention(!q.attention)}
@@ -175,6 +182,12 @@ export default function MeasurementsPanel({ row, display, today }) {
           <span className="lib-date ms-count">{count}</span>
         </div>
       )}
+      {/* The list's add row, first: a point goes on the picked position or item. */}
+      {target ? (
+        <button type="button" className="add-row ms-add" onClick={(e) => { if (e.detail < 2) setModal({ add: true }); }}>
+          <PlusIcon /> Add a measuring point
+        </button>
+      ) : <p className="lib-date ms-add-note">Pick a position or an item to add a measuring point.</p>}
       {state.error && <div className="card error">{state.error}</div>}
       {state.more && <p className="lib-date">Showing the first {points.length} points: pick a smaller branch to see the rest.</p>}
       {shown === null ? <div className="card empty">Loading…</div> : shown.length === 0 ? (

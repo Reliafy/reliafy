@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   STATES, branchQuery, latestNote, limitsText, needsAttention, placeOf, pointChip, pointHref, pointMenu, pointState,
-  pointSubline, readMeasurementsQuery, readingDue, recentValues, recordedBy, rowAction, sortPoints, stateText,
+  pointSubline, pointsCsv, readMeasurementsQuery, readingDue, recentValues, recordedBy, rowAction, sortPoints, stateText,
 } from "./measurementsTab.js";
 
 const TODAY = "2026-11-07";
@@ -153,4 +153,18 @@ test("clicking a row, and its ⋯ menu", () => {
   assert.equal(feed[0].disabled, true);
   assert.equal(feed[0].reason, "Read by a feed (sensor.ph)");
   assert.equal(feed[2].label, "Open work order #4");
+});
+
+test("pointsCsv: one row per point shown, where it is, its latest reading, limits and state", () => {
+  const points = [
+    cond({ name: "pH", unit: "", position: { id: "a", name: "Pool" }, reading: 8.1, status: "high" }),
+    cond({ id: "c", name: "=Run hours", kind: "counter", unit: "h", alarm_above: null, alarm_below: null, reading: null, read_at: null,
+      item: { id: "i1", name: "Pump 7" }, source: "feed" }),
+  ];
+  const lines = pointsCsv(points, TODAY, new Map([["i1", "Bay 2"]])).split("\n");
+  assert.equal(lines[0], "Point,Where,Kind,Unit,Latest reading,Read on,Source,Alarm below,Alarm above,State");
+  assert.equal(lines[1], "pH,Pool,condition,,8.1,2026-11-06,by hand,7,7.8,Past alarm");
+  // A name a spreadsheet would read as a formula is kept as text; no reading leaves the cells blank.
+  assert.equal(lines[2], "'=Run hours,Bay 2 (on Pump 7),counter,h,,,,,,Never read");
+  assert.equal(pointsCsv([], TODAY).split("\n").length, 1);
 });

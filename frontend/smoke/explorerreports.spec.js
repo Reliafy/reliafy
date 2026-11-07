@@ -11,6 +11,7 @@
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { headMenu } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -53,6 +54,10 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   // Nothing to narrow yet: no stage chips or filters, just the way to add one.
   await expect(panel(page).getByRole("group", { name: "Stage" })).toHaveCount(0);
   await expect(panel(page).getByRole("searchbox", { name: "Search failure reports" })).toHaveCount(0);
+  // No Add button in the tab or its heading: the heading's "…" has Add failure report… (and Open the full page).
+  await expect(panel(page).getByRole("button", { name: /^Add failure report/ })).toHaveCount(0);
+  await expect((await headMenu(page)).locator(".ovm-menu .ovm-item")).toHaveText(["Add failure report…", "Open the full page"]);
+  await page.keyboard.press("Escape");
 
   // Right-click the pump: Add failure report… is after New position inside.
   await row(page, `Report pump ${tag}`).locator(".tp-nm").click({ button: "right" });

@@ -10,6 +10,7 @@
 // share the server and expect their rows near the top.
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
+import { openColumns } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -121,7 +122,7 @@ test("the RCM table scrolled sideways: the tree column stays on top and opaque, 
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
   await expect(table(page)).toBeVisible();
   // More columns than fit, so the table scrolls sideways.
-  await page.getByRole("button", { name: "Columns", exact: true }).click();
+  await openColumns(page);
   const pop = page.getByRole("group", { name: "Columns to show" });
   for (const n of ["Interval", "Evidence", "Mode notes", "Decision notes", "What the evidence shows"]) await pop.getByRole("checkbox", { name: n, exact: true }).check();
   await page.keyboard.press("Escape");

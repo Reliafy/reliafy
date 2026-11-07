@@ -63,7 +63,8 @@ switch the tree from **Positions** to **Locations** to see it.
 - **New location inside** the product (the tree's last row) adds a place at the
   top of its layout; a location's row menu adds one inside it, renames, moves or
   deletes it.
-- To place a position, open its full page and set its **Location** to one of
+- To place a position, open its full page (**Open the full page** in the
+  **⋯** menu at the top right of its panel) and set its **Location** to one of
   the product's locations. The positions inside it are there too, unless they
   say otherwise. The ones not placed yet are listed last.
 - Deleting a location keeps the positions placed there: they just have no

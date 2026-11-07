@@ -46,8 +46,9 @@ open reports at it and inside it, so a branch with trouble stands out.
 ## Report a failure
 
 Right-click a position in the tree (on a phone, press its **⋯** button) and
-choose **Add failure report…**, or press **Add failure report** at the top of
-the tab. Say what happened in a line, and add the detail if there is any. The
+choose **Add failure report…**, or choose it from the **⋯** menu at the top
+right of the panel (on a location or an item it asks which position first).
+Say what happened in a line, and add the detail if there is any. The
 date is today unless you change it, and the person signed in is who found it.
 The item fitted at the position is recorded with the report, so the report
 still says what was there even if the item is replaced later.

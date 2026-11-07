@@ -11,7 +11,7 @@
 // With SMOKE_SHOTS_DIR set, it also saves screenshots of the function's
 // details with its standards list at 1280 and 400 px (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { pickPlace } from "./explorer.js";
+import { openColumns, pickPlace } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -137,7 +137,7 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   await expect(standardsOf(page).getByText("No functional failure yet")).toHaveCount(1);
   await page.keyboard.press("Escape");
   // The standards are rows of the tree, not a column: the Columns menu doesn't offer one.
-  await page.getByRole("button", { name: "Columns" }).click();
+  await openColumns(page);
   await expect(page.getByRole("group", { name: "Columns to show" })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: /Performance standard/ })).toHaveCount(0);
   await page.keyboard.press("Escape");

@@ -61,7 +61,7 @@ worksheet:
 - **Recommended action**, with its **Owner**, **Due** date and **Status**
   (Open, In progress, Done).
 
-**Columns** adds the criticality columns (failure rate, mode ratio, loss
+**Columns…**, in the **⋯** menu at the top right of the panel, adds the criticality columns (failure rate, mode ratio, loss
 probability, operating time, mode criticality, severity class) and the RCM's
 own (Consequence, Decision, Task). Double-click a cell to edit it in place;
 click a row to open its **Details** beside the table, where the same fields
@@ -178,7 +178,8 @@ on a Mac) brings it all back as it was, scores and all.
 
 ## Bring in a worksheet, take one out
 
-**Import worksheet…** in a position's row menu reads an FMEA worksheet the
+**Import worksheet…** in a position's row menu (or the panel's **⋯** menu)
+reads an FMEA worksheet the
 same way it reads an RCM one, one row per failure mode, and now maps
 **Severity**, **Occurrence**, **Detection**, **Cause**, **Local effect**,
 **Next higher effect**, **Detection method**, **Recommended action**,
@@ -190,7 +191,7 @@ function, as on this tab. A worksheet imported before this scoring existed
 kept its scores in each mode's notes; they are still there, and the fields
 are blank until you fill them.
 
-**Export CSV** and **Export Excel** write the position's worksheet (it and
+**Export CSV** and **Export Excel**, in the panel's **⋯** menu, write the position's worksheet (it and
 everything inside it) one row per failure mode, with every column above, in
 the layout the import reads back. **Print view** opens the same worksheet as
 one plain page for printing or a PDF.
