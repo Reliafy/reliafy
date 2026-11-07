@@ -2,7 +2,7 @@
 // Explorer's RCM tab (Assets › Explorer › RCM): a failure mode's decision card
 // (step 3, "Proactive task or default action", edited in place) lists its tasks as cards, one per member
 // task, each with plain Edit and Remove links; a dashed "+ Add another task" row asks its kind, then a
-// new task or Use an existing task…, in place; the row menu's Add a task… opens that row (the decision
+// new task or an existing one ("New task · Existing task"), in place, in the same card shape; the row menu's Add a task… opens that row (the decision
 // dialog when there's no decision yet); a tap on "Which task is worth doing?" adopts a task linked before
 // the decision; the Task cell says "+1 task" without the row changing height; the decision dialog
 // (the row menu's Change the decision…) shows a shared task's interval read-only; at 400 px it all fits. Each test makes its own small plant through the API.
@@ -73,6 +73,9 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await expect(cards(tasks)).toHaveCount(1);
   // Each card leads with what it's for (Derryn, 9 Nov 2026): a check, then what's done when it finds it.
   await expect(names(tasks)).toHaveText([`Check: Weekly pH check ${tag} · every 1 week`]);
+  // The chosen chip's line names what the card holds; the worth-doing test is the chip's tooltip.
+  await expect(tasks.locator(".task-choice")).toContainText("On condition: a check at an interval, then what's done when the check finds it.");
+  await expect(tasks.getByRole("radio", { name: /On condition/ })).toHaveAttribute("title", /^First choice: /);
   const found = tasks.getByRole("textbox", { name: "Then, if found:" });
   await expect(found).toHaveAttribute("placeholder", "Say what's done when the check finds it");
   await found.fill(`Dose acid by hand ${tag}`);
@@ -114,8 +117,12 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   // The check keeps what's done when it finds it.
   await expect(tasks.getByRole("textbox", { name: "Then, if found:" })).toHaveValue(`Dose acid by hand ${tag}`);
   await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 24 months");
-  // Its instructions: its card's Edit, as for any other task.
+  // Its instructions: its card's Edit, as for any other task. Edit puts inputs where the words
+  // were (row 1), the other fields in row 3; no "Change the task" heading.
   await taskLink(tasks, `Replace the acid pump ${tag}`, "Edit").click();
+  await expect(tasks.locator(".rim-card.editing .rim-r1 .rim-trole")).toHaveText("Do:");
+  await expect(tasks.locator(".rim-card.editing .rim-r1").getByRole("textbox", { name: "Task" })).toBeVisible();
+  await expect(tasks.getByRole("heading", { name: "Change the task" })).toHaveCount(0);
   await tasks.getByRole("textbox", { name: "Instructions" }).fill("Swap the pump head.");
   await tasks.getByRole("button", { name: "Save task" }).click();
   await expect(item(`Replace the acid pump ${tag}`)).toContainText("Swap the pump head.");
@@ -124,7 +131,7 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await addRow(tasks).click();
   add = addForm(tasks);
   await expect(add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio")).toHaveText([/Failure finding/]);
-  await add.getByRole("button", { name: "Use an existing task…" }).click();
+  await add.getByRole("radiogroup", { name: "New or existing task" }).getByRole("radio", { name: "Existing task" }).click();
   const pick = add.getByRole("combobox", { name: "Existing task" });
   await expect(pick).toBeVisible();
   await expect(pick.locator("option")).toContainText([/Choose a task/, new RegExp(`Backwash the filter ${tag} · every 1 month`)]);
@@ -224,11 +231,19 @@ test("one task for several modes: adopted by a tap, read-only in the decision di
   const ask = page.getByRole("alertdialog", { name: "Remove this task?" });
   await expect(ask).toContainText("also serves 1 other failure mode, so it stays with them");
   await ask.getByRole("button", { name: "Remove from this failure mode" }).click();
-  // The decision alone now: the task form in its place, its name and interval asked for.
+  // The decision alone now: the same card, with inputs where its name and interval go (row 1)
+  // and what's done when it's found (row 2); New task or Existing task at its top; no grey sentence.
   await expect(cards(tasks)).toHaveCount(0);
-  await expect(tasks).toContainText("The decision schedules work, but no task does it yet");
-  await expect(tasks.getByRole("textbox", { name: "Task" })).toBeVisible();
-  await expect(tasks.getByRole("spinbutton", { name: "Interval" })).toBeVisible();
+  const empty = tasks.getByRole("group", { name: "The decision's task" });
+  await expect(empty).not.toContainText("no task does it yet");
+  await expect(empty.locator(".rim-r1 .rim-trole")).toHaveText("Check it still works:");
+  await expect(empty.locator(".rim-r1").getByRole("textbox", { name: "Task" })).toBeVisible();
+  await expect(empty.locator(".rim-r1").getByRole("spinbutton", { name: "Interval" })).toBeVisible();
+  await expect(empty.locator(".rim-r2").getByRole("textbox", { name: "Then, if failed:" })).toBeVisible();
+  await expect(empty.getByRole("radiogroup", { name: "New or existing task" }).getByRole("radio", { name: "New task" }))
+    .toHaveAttribute("aria-checked", "true");
+  await empty.getByRole("radio", { name: "Existing task" }).click();
+  await expect(empty.locator(".rim-r1").getByRole("combobox", { name: "Existing task" })).toBeVisible();
   const rcm = await (await request.get(`${M}/rcm`)).json();
   const acid = rcm.positions.find((x) => x.id === p.pool.id).functions[0].failures[0].modes.find((x) => x.id === p.acid.id);
   expect(acid.decision.tasks.map((t) => t.id)).toEqual([p.own]);

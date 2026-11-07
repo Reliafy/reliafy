@@ -398,6 +398,9 @@ test("one order at every level: its notes under the title and chips, what's insi
       .toHaveAttribute("aria-checked", "true");
     await expect(todo.locator(".rim-cards .rim-tname").first()).toHaveText(`Check: Check the seal ${tag} · every 1 month`);
     await expect(todo.getByRole("textbox", { name: "Then, if found:" })).toBeVisible();
+    // One card shape: row 1 the role and task, row 2 the check's response, under the bridge line.
+    await expect(todo.locator(".rim-cards > li.rim-one").first().locator(".rim-r1, .rim-r2")).toHaveCount(2);
+    await expect(todo.locator(".task-choice")).toContainText("On condition: a check at an interval");
     await expect(todo.getByRole("button", { name: `Edit “Check the seal ${tag}”` })).toBeVisible();
     await expect(todo.getByRole("button", { name: `Remove “Check the seal ${tag}”` })).toBeVisible();
     await expect(todo.getByRole("button", { name: /^Change…$|^Actions for/ })).toHaveCount(0);

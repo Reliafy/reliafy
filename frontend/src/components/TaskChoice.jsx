@@ -22,6 +22,8 @@ import { DEFAULT_OUTCOMES, TASK_ORDER, allowedChoices, defaultAction, worthLine 
 //   moveOnly  arrows move only (Enter, Space or a click chooses): where each choice is saved
 //   n         a number before row 1's label (the dialog's "3.")
 //   saved     a count that goes up on each save ("✓ Saved" by row 1's label)
+//   bridge    under the chosen chip, what comes next (BRIDGE) instead of the worth-doing
+//             line, which becomes each chip's tooltip (the details' step 3)
 
 const LABELS = {
   on_condition: "On condition", fixed_interval: "Fixed interval", failure_finding: "Failure finding",
@@ -31,11 +33,20 @@ const BASES = [
   { id: "random", label: "Failures are random", hint: "Evidence: a Weibull fit whose β confidence interval contains 1, or an Exponential fit." },
   { id: "uneconomic", label: "Prevention isn't economic", hint: "Evidence: an optimal-replacement analysis showing no beneficial interval." },
 ];
+// Under the chosen chip in a failure mode's details (`bridge`): what comes next, in the
+// card below (Derryn, 10 Nov 2026: the chip row didn't lead into the card). The "worth
+// doing" test moves to each chip's tooltip there.
+export const BRIDGE = {
+  on_condition: "On condition: a check at an interval, then what's done when the check finds it.",
+  fixed_interval: "Fixed interval: a task done at a set age or interval.",
+  failure_finding: "Failure finding: a check that the hidden function still works, then what's done if it has failed.",
+  none: "No task is worth doing: pick what's done instead.",
+};
 export const NO_TASK_LINE = "None of the tasks reduces the risk enough, or costs less than the failures it prevents. Pick what's done instead.";
 
 export default function TaskChoice({
   options = null, hidden, consequence, value, onChange, disabled = false, locked = null, moveOnly = false, saved = 0,
-  className = "", n = null,
+  className = "", n = null, bridge = false,
 }) {
   const { outcome = null, noTask = false, rtfBasis = null } = value || {};
   const opt = (id) => options?.outcomes?.find((o) => o.id === id);
@@ -44,14 +55,17 @@ export default function TaskChoice({
   const tasks = allowedChoices(TASK_ORDER, hidden, consequence, TASK_ORDER.includes(outcome) ? outcome : null);
   const defaults = allowedChoices(DEFAULT_OUTCOMES, hidden, consequence, DEFAULT_OUTCOMES.includes(outcome) ? outcome : null);
   const first = noTask ? "none" : TASK_ORDER.includes(outcome) ? outcome : "";
-  const firstLine = locked || (first === "none" ? NO_TASK_LINE : first ? worthLine(first, hidden, consequence) || opt(first)?.hint : null);
+  const worth = (o) => worthLine(o, hidden, consequence) || opt(o)?.hint || null;
+  const firstLine = locked || (bridge ? BRIDGE[first] || null
+    : first === "none" ? NO_TASK_LINE : first ? worth(first) : null);
   const fallback = noTask && !outcome ? defaultAction(hidden, consequence) : null;
   const basis = bases.find((b) => b.id === rtfBasis);
   return (
     <div className={"task-choice" + (className ? ` ${className}` : "")}>
       <Field label={n ? `${n}. Which task is worth doing?` : "Which task is worth doing?"} saved={saved} className="rw-eyebrow" help={firstLine}>
         <ChoiceChips label="Which task is worth doing?" clearable value={first} disabled={disabled} moveOnly={moveOnly}
-                     options={[...tasks.map((o) => ({ value: o, label: label(o) })), { value: "none", label: "No task is worth doing" }]}
+                     options={[...tasks.map((o) => ({ value: o, label: label(o), ...(bridge ? { title: worth(o) || undefined } : {}) })),
+                       { value: "none", label: "No task is worth doing", ...(bridge ? { title: NO_TASK_LINE } : {}) }]}
                      onChange={(v) => onChange(v === "none" ? { outcome: null, noTask: true, rtfBasis: null }
                        : v ? { outcome: v, noTask: false, rtfBasis: null } : { outcome: null, noTask: false, rtfBasis: null })} />
       </Field>

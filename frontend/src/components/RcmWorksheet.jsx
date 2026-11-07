@@ -564,7 +564,7 @@ export function Details({
   // Run to failure's action on failure, kept as you go in step 3 (a scheduled decision's task
   // is a task card, or the task form while it has none: RcmModeTasks).
   const ownBlock = r.type === "mode" && !readOnly && d?.outcome === "rtf" && COLUMN.task.can(r)
-    ? field("What's done on failure", "task", { area: true, optional: true, placeholder: "Corrective action on failure" }) : null;
+    ? field("What's done on failure", "task", { area: true, optional: true, labelHidden: true, placeholder: "Corrective action on failure" }) : null;
   // The FME(C)A's two groups on a failure mode (FmeaPanels.jsx): each field
   // kept as you go, as the others are; the RPN and action priority previewed
   // from the scores as they're typed.
