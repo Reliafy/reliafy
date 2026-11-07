@@ -9,3 +9,15 @@ export function showProTags(billing) {
   if (billing.admin) return false;
   return billing.plan !== "pro";
 }
+
+// Whether a Free (or Agent) user has used up a storage limit (GET /api/billing:
+// ``usage`` against ``plan_caps``; the server counts only the user's own items,
+// never shared samples). Returns { used, cap } at or past the cap, else null:
+// Pro, operators, self-hosted installs and a plan not yet loaded have none.
+export function storageCapReached(billing, kind) {
+  if (!billing || !billing.billing_enabled || billing.admin) return null;
+  const cap = billing.plan_caps?.[kind];
+  const used = billing.usage?.[kind];
+  if (cap == null || used == null) return null;
+  return used >= cap ? { used, cap } : null;
+}

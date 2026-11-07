@@ -8668,6 +8668,7 @@ def save_reliability_prediction(
     environment and mission time; the results are computed on save and kept as they were."""
     user, db = _caller(ctx), _db()
     inputs, _ = _prediction_inputs(db, user, lines, product_id, environment, mission_time, notes)
+    _cap(db, user, prediction_service.COLLECTION, "reliability predictions")
     doc = prediction_service.save_prediction(db, name, inputs, user["uid"])
     access_service.stamp_editor(db, prediction_service.COLLECTION, doc.id, _reader(user))
     return {"saved": True, **_prediction_result(doc)}
@@ -8840,6 +8841,7 @@ def save_maintainability_prediction(
     are computed here from the lines and kept with them. Returns its id, url and the results."""
     user, db = _caller(ctx), _db()
     inputs = _maintainability_inputs(lines, unit, failure_rate_unit, percentile, mtbf, product_id, product_name)
+    _cap(db, user, maintainability_service.COLLECTION, "maintainability predictions")
     doc = _maintainability_call(maintainability_service.save_prediction, db, name, inputs, user["uid"],
                                 _maintainability_rates(db, user["uid"], inputs))
     return {"saved": True, "prediction_id": doc.id, **_maintainability_brief(doc), "results": doc.results}

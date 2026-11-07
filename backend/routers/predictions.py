@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from backend.db import get_session
 from backend.schema import ReliabilityPrediction
 from backend.services import access as access_service
+from backend.services import billing as billing_service
 from backend.services import reliability_prediction as prediction_service
 from backend.services import samples as samples_service
 from backend.services.access import AccessCtx, get_access
@@ -98,6 +99,11 @@ def save_prediction(
     if denied is not None:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
+    if (ctx.is_personal and not billing_service.is_admin_user(ctx.user)
+            and billing_service.would_exceed_cap(session, ctx.uid, prediction_service.COLLECTION)):
+        return JSONResponse(status_code=402, content={
+            "detail": billing_service.cap_message(session, ctx.uid, prediction_service.COLLECTION),
+            "code": "cap", "upgrade": True})
     try:
         doc = prediction_service.save_prediction(session, name, inputs, ctx.write_owner)
         access_service.stamp_editor(session, prediction_service.COLLECTION, doc.id, ctx)

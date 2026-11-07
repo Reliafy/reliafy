@@ -24,6 +24,8 @@ const ARTIFACTS = [
   ["Fleet forecasts", "fleets"],
   ["Outage logs", "outage_logs"],
   ["Fault trees", "fault_trees"],
+  ["Reliability predictions", "reliability_predictions"],
+  ["Maintainability predictions", "maintainability_predictions"],
 ];
 
 export default function BillingPage() {
