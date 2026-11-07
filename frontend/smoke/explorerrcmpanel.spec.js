@@ -298,19 +298,19 @@ test("screenshots of the panel side by side and expanded (SMOKE_SHOTS_DIR)", asy
 const blocks = (page) => panel(page).locator(".rw-pbody > *").evaluateAll((els) => els.map((el) => (
   el.getAttribute("aria-label") || (el.classList.contains("rw-own") ? "own" : el.classList.contains("rw-foot") ? "foot" : el.className))));
 
-// The notes and rationale come first at every level: straight under the title, before the
-// status chips and every block of the body (so none of the body's blocks is the notes).
+// The notes and rationale come first at every level: after the title and the status chips,
+// before every block of the body (so none of the body's blocks is the notes).
 const notesFirst = (page) => panel(page).evaluate((el) => {
   const after = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
   const h = el.querySelector("h2");
   const n = el.querySelector('section[aria-label="Notes and rationale"]');
   const chips = el.querySelector(".rw-chips-row");
   const body = el.querySelector(".rw-pbody");
-  return !!(h && n && body && after(h, n) && after(n, body) && (!chips || after(n, chips))
+  return !!(h && n && body && after(h, n) && after(n, body) && (!chips || after(chips, n))
     && !body.querySelector('section[aria-label="Notes and rationale"]'));
 });
 
-test("one order at every level: its notes straight under the title, what's inside it, then its own, the quieter things last", async ({ page, request, problems }) => {
+test("one order at every level: its notes under the title and chips, what's inside it, then its own, the quieter things last", async ({ page, request, problems }) => {
   const tag = `b${Date.now()}`;
   const p = await plant(request, tag);
   for (const w of [1280, 400]) {
@@ -342,7 +342,7 @@ test("one order at every level: its notes straight under the title, what's insid
     await show(`^Failure mode: Seal leaks ${tag}`);
     await expect(panel(page).getByRole("heading", { level: 2, name: `Seal leaks ${tag}` })).toBeVisible();
     // The FME(C)A's two groups (scores, criticality) come after the decision on this tab; its
-    // notes and rationale (the same section at every level) are above all of it, under the title.
+    // notes and rationale (the same section at every level) are above all of it, below the chips.
     expect(await blocks(page)).toEqual(["Tasks", "own", "Decision", "FME(C)A", "Criticality", "foot"]);
     expect(await notesFirst(page)).toBe(true);
     // The worksheet's order inside: effects, consequence, then the decision; where it sits last.

@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import Section from "./ui/Section.jsx";
+import Section, { AddRow } from "./ui/Section.jsx";
 import Field from "./ui/Field.jsx";
 import { TextArea } from "./ui/Controls.jsx";
 import ClampLines from "./ui/ClampLines.jsx";
 import { NOTES_LIMIT, checkNotes, notesChanged, notesCount, notesOf, notesPrompt } from "../rcmNotes.js";
 import "./OperatingContextCard.css";
 
-// "Notes and rationale" in an RCM row's details (the first thing under its title) (a function, a performance
-// standard, a functional failure, a failure mode; the same on the RCM and
+// "Notes and rationale" in an RCM row's details, the first section under its title and status chips
+// (a function, a performance standard, a functional failure, a failure mode; the same on the RCM and
 // FME(C)A tabs, and in the phone's sheet): the row's long description, where
 // the reason for it is written. The text keeps its line breaks and is clamped
 // to about six lines ("Show all"); Edit (or the add row when there are none)
 // opens a box in place with a character count and Save / Cancel, as the
-// operating context does. `onSave(value)` is the details' commit: true, or a
+// operating context does. Empty, it is the same titled section with its prompt and a dashed
+// "Add notes" row, like the "Add a failure mode" row of the other sections. `onSave(value)` is the details' commit: true, or a
 // promise of true, once saved; a string is the refusal, shown on the box with
 // the text kept.
 export default function RcmNotes({ r, readOnly = false, onSave }) {
@@ -91,14 +92,12 @@ export default function RcmNotes({ r, readOnly = false, onSave }) {
       </div>
     );
   } else if (!text) {
-    // Empty: one quiet line (the prompt and the link), so it doesn't push the details down.
-    return (
-      <section className="rw-notes rw-notes-empty" aria-label="Notes and rationale">
-        <p className="td-quiet">
-          {notesPrompt(r)}
-          {!readOnly && <> <button ref={startBtn} type="button" className="link" onClick={(e) => { if (e.detail < 2) start(); }}>Add notes</button></>}
-        </p>
-      </section>
+    // Empty: the prompt, and the dashed add row the other sections end with.
+    body = (
+      <>
+        <p className="td-quiet rw-notes-prompt">{notesPrompt(r)}</p>
+        {!readOnly && <AddRow ref={startBtn} onClick={start}>Add notes</AddRow>}
+      </>
     );
   } else {
     body = <ClampLines text={text} lines={6} what="the notes" textClassName="td-ctx-text" />;
