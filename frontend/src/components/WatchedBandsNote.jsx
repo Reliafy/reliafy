@@ -15,7 +15,8 @@ export default function WatchedBandsNote() {
   if (!has.maintenance || !channels || channels.length === 0) return null;
   const link = (c) => {
     const on = c.item || c.position;
-    return `/asset-register/explorer?arrange=${c.item ? "items" : "positions"}&sel=${on?.id}&tab=signals`;
+    // An item's row is in Locations (a spare, or one with no home yet).
+    return `/asset-register/explorer?arrange=${c.item ? "locations" : "positions"}&sel=${on?.id}&tab=signals`;
   };
   return (
     <section className="card" aria-label="Signal channels">

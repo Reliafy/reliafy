@@ -112,11 +112,7 @@ test("no roles: every entry in one flat list, nothing under More", async ({ page
   await register.getByRole("link", { name: "Parts and stock" }).click();
   await expect(page).toHaveURL(/\/asset-register\/parts$/);
   await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
-  // The Explorer's ⋯ menu opens Classes (and Parts and stock).
-  await open(page, "/asset-register/explorer?arrange=positions");
-  await page.getByRole("button", { name: /^Tree options/ }).click();
-  await page.getByRole("menu", { name: "Tree options" }).getByRole("menuitem", { name: "Classes" }).click();
-  await expect(page).toHaveURL(/\/asset-register\/classes$/);
+  await open(page, "/asset-register/classes");
   await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
   await open(page, "/systems/structure");
   await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
@@ -272,7 +268,7 @@ test("the collapsed menu and the keyboard", async ({ page, request, problems }) 
 
 const PHONE_PAGES = [
   "/home", "/systems/rbds", "/asset-register", "/asset-register/explorer?arrange=positions", "/asset-register/explorer?arrange=locations",
-  "/asset-register/explorer?arrange=items", "/asset-register/explorer?tab=rcm", "/asset-register/parts", "/maintenance", "/data",
+  "/items", "/asset-register/explorer?tab=rcm", "/asset-register/parts", "/maintenance", "/data",
   "/models", "/models/recurrent", "/strategy", "/risk", "/forecasts", "/reports", "/settings",
 ];
 

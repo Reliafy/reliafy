@@ -1,9 +1,9 @@
-// The Explorer tree's options menu (the ⋯ in the tree pane's heading): Arrange
-// by, the levels, Close everything and the Show only filters, behind one
-// button. These helpers say what's changed from the usual view (so the button
+// The Explorer tree's options menu (the ⋯ beside the filter box): the levels,
+// Close everything and the Show only filters, behind one button. (Positions or
+// Locations is the switch in the pane's heading, on show, so it isn't counted
+// here.) These helpers say what's changed from the usual view (so the button
 // can show it and Reset can undo it), and how the arrow keys move in the menu.
 
-export const DEFAULT_ARRANGEMENT = "positions";
 export const DEFAULT_LEVEL = 2;
 
 // The level a tree is shown at: the one chosen last, the usual one before
@@ -13,14 +13,12 @@ export function levelShown(levelBy, mode) {
 }
 
 // What's not as usual, each with a short name: a branch pinned (only part of
-// the tree shown), an arrangement other than Positions (offered only when
-// `arrange` is), a level other than the usual one (when the levels are
+// the tree shown), a level other than the usual one (when the levels are
 // offered), and each Show only filter that's on. `chips`: the filters on that
 // this tree offers.
-export function changedFromUsual({ mode, arrange = true, level, levels = true, chips = [], pinned = false }) {
+export function changedFromUsual({ level, levels = true, chips = [], pinned = false }) {
   const out = [];
   if (pinned) out.push({ id: "pin", label: "Pinned branch" });
-  if (arrange && mode !== DEFAULT_ARRANGEMENT) out.push({ id: "arrange", label: "Arrangement" });
   if (levels && typeof level === "number" && level !== DEFAULT_LEVEL) out.push({ id: "level", label: "Level" });
   for (const c of chips) out.push({ id: `chip:${c.id}`, label: c.label });
   return out;

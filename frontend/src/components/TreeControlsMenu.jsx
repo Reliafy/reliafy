@@ -4,9 +4,10 @@ import { portalHost } from "../fullScreen.js";
 import { EDGE } from "../menuPlace.js";
 import { menuMove } from "../treeControls.js";
 
-// The tree pane's ⋯ menu: how the tree is shown (Arrange by, the levels,
-// Close everything), what it shows (the Show only filters, ticked when on),
-// and the pane's other actions (Import, Open the sample UAV product). It stays open
+// The tree pane's ⋯ menu, beside the filter box: how far the tree is open
+// (the levels, Close everything), what it shows (the Show only filters, ticked
+// when on), and the pane's other actions (Import, the sample UAV product), if any.
+// Positions or Locations is the switch in the pane's heading. It stays open
 // while several things are changed, and closes on Esc, Tab, a click outside or
 // Done; Esc and Done put the focus back on the ⋯ button. The menu pattern:
 // the first item takes the focus; ↑ ↓ go from row to row, ← → along a row of
@@ -19,8 +20,6 @@ import { menuMove } from "../treeControls.js";
 //
 //   pinned   {name, onUnpin} while a branch is pinned: "Show whole tree" heads
 //            the menu; or null
-//   arrange  {value, options: [{value, label, title}], onChange} or null
-//   note     a line in place of Arrange by (why it isn't offered here), or null
 //   levels   {value (1..4, Infinity, 0, or null), onLevel(n), onCloseAll} or null
 //   chips    [{id, label, title, on, mark}]; onChip(id) turns one on or off;
 //            mark {kind, text}: the tree's marker the filter matches, drawn
@@ -44,7 +43,7 @@ const Tick = ({ on }) => (
 );
 
 export default function TreeControlsMenu({
-  pinned = null, arrange = null, note = null, levels = null, chips = [], onChip, changed = [], onReset, actions = [], markNote = null,
+  pinned = null, levels = null, chips = [], onChip, changed = [], onReset, actions = [], markNote = null,
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
@@ -109,7 +108,7 @@ export default function TreeControlsMenu({
     return !!el;
   };
   // Opened: the first item takes the focus. After a change that removes the
-  // item with the focus (Reset, or an arrangement with no levels), the focus
+  // item with the focus (Reset), the focus
   // goes back into the menu rather than being lost.
   useEffect(() => {
     if (!open || !pos) return;
@@ -161,20 +160,6 @@ export default function TreeControlsMenu({
           <div className="tm-sep" role="separator" />
         </>
       )}
-      {arrange && (
-        <div className="tm-sec" role="group" aria-labelledby={`${id}-arr`}>
-          <div className="tm-label" id={`${id}-arr`}>Arrange by</div>
-          <div className="tm-seg">
-            {arrange.options.map((a) => (
-              <button key={a.value} type="button" role="menuitemradio" aria-checked={a.value === arrange.value} tabIndex={-1}
-                      data-id={`arr:${a.value}`} data-row="arr" title={a.title}
-                      className={"tm-seg-btn" + (a.value === arrange.value ? " on" : "")}
-                      onClick={() => arrange.onChange(a.value)}>{a.label}</button>
-            ))}
-          </div>
-        </div>
-      )}
-      {note && <p className="tm-note">{note}</p>}
       {levels && (
         <div className="tm-sec" role="group" aria-labelledby={`${id}-lvl`}>
           <div className="tm-label" id={`${id}-lvl`}>Open to level</div>
@@ -220,7 +205,7 @@ export default function TreeControlsMenu({
       <div className="tm-foot">
         {changed.length > 0 && (
           <button type="button" role="menuitem" tabIndex={-1} data-id="reset" data-row="foot" className="ovm-item tm-item tm-reset"
-                  title={`Back to the whole tree, Positions, level 2 and no filters (now: ${changed.map((c) => c.label).join(", ")})`} onClick={onReset}>
+                  title={`Back to the whole tree, level 2 and no filters (now: ${changed.map((c) => c.label).join(", ")})`} onClick={onReset}>
             Reset to the usual view
           </button>
         )}
@@ -236,7 +221,7 @@ export default function TreeControlsMenu({
       <button ref={btn} type="button" className={"secondary ovm-trigger tm-trigger" + (changed.length ? " changed" : "")}
               aria-haspopup="menu" aria-expanded={open} aria-controls={open ? `${id}-menu` : undefined}
               aria-label={changed.length ? `Tree options: ${changed.length} changed` : "Tree options"}
-              title={changed.length ? `Arrange, levels and filters (${changed.map((c) => c.label).join(", ")})` : "Arrange, levels and filters"}
+              title={changed.length ? `Levels and filters (${changed.map((c) => c.label).join(", ")})` : "Levels and filters"}
               onClick={() => (open ? close(false) : setOpen(true))}
               onKeyDown={(e) => {
                 if (e.key === "ArrowDown" && !open) {

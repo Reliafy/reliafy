@@ -25,7 +25,7 @@ score or an effect edited on one shows on the other at once. Nothing is copied.
 
 A quadcopter is something you design, so the sample one is a product. On
 **Products**, press **Add the sample UAV product** (in **Assets → Explorer**,
-**Open the sample UAV product** in the tree's **⋯** menu, or on the empty
+**Open the sample UAV product** in the **⋯** beside the tree's search box, or on the empty
 tree's card, does the same and opens it). *Survey quadcopter (sample)* is a
 small fictional quadcopter: airframe, propulsion with four motors, power,
 flight control, comms and a payload gimbal, with every failure mode scored and
@@ -93,8 +93,8 @@ Two rankings come from the three scores:
 
 A failure mode with all three scores shows its RPN and AP; one with fewer
 shows neither. Function and position rows add up what is inside them: *2 high ·
-1 medium*, the highest RPN, and *3 of 5 scored*. The tree's **⋯** menu filters
-with **Show only**: **High priority**, **Medium priority**, **Not scored** and
+1 medium*, the highest RPN, and *3 of 5 scored*. The **⋯** beside the tree's
+search box filters with **Show only**: **High priority**, **Medium priority**, **Not scored** and
 **Has an action open**. Click a column header to sort the rows under each
 function by that column (RPN, AP, severity, criticality or the due date),
 highest first; the tree stays as it is.

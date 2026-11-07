@@ -41,6 +41,9 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expect(page.getByRole("tab", { name: "Functional structure" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("treeitem", { name: /^Propulsion/ }).first()).toBeVisible();
     await expect(page.getByRole("treeitem", { name: /^Pump station|^Depot conveyor/ })).toHaveCount(0);
+    // One tree: no Positions / Locations switch, and the tree's last row adds inside the product.
+    await expect(page.getByRole("radiogroup", { name: "Arrange by" })).toHaveCount(0);
+    await expect(page.locator(".tp-addrow")).toHaveText(/^\+New position inside Survey quadcopter \(sample/);
     // One h1 (the product's): the tree's picked row is an h2 here, not a second h1.
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
     await shot(page, `${w}-product-structure`);

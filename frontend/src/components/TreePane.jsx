@@ -10,10 +10,12 @@ import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 
 // The asset tree as a second-level menu beside the site menu: the outline
-// (indent, arrow, name, at most three markers), with the search box and the
-// counts at the top, and everything else about how the tree is shown (Arrange
-// by, the levels 1·2·3·4·All, Close everything, the Show only filters) in the
-// ⋯ menu beside its title (TreeControlsMenu), the same on both tabs. Only the rows on
+// (indent, arrow, name, at most three markers). Over it, two lines: the title
+// and counts with the Positions / Locations switch (ArrangeSwitch) and « on
+// the right; then the search box with the ⋯ menu beside it (TreeControlsMenu:
+// the levels 1·2·3·4·All, Close everything, the Show only filters), the same
+// on every tab. Adding is in the tree itself: a row's menu has New … inside,
+// and a quiet last row (`addRow`) adds at the top level. Only the rows on
 // screen are in the page, so a plant of thousands of positions scrolls and
 // opens smoothly; the rows the first one sits inside stay pinned at the top.
 // The keyboard follows the tree view pattern: ↑ ↓ Home End Page Up/Down, → ←
@@ -29,8 +31,8 @@ import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 //
 // On a wide screen the frame is the same on both tabs, so switching tabs moves
 // nothing but what's meant to change: the pane takes the page's width, with
-// two slim rows over it (the tree's title, counts and ⋯ beside the panel's
-// heading; then the search box beside the panel's tabs), and under them the
+// two slim rows over it (the tree's title, counts, switch and « beside the
+// panel's heading; then the search box and ⋯ beside the panel's tabs), and under them the
 // tree, as wide as the tree column, with the table's columns (the RCM tab) or
 // the panel's page (`side`, the Summary tab) beside it. The same elements stay
 // in the page across the tabs (the search box, the tree's scroll area, the
@@ -147,6 +149,42 @@ function MoreButton({ r, open, onMenu }) {
         <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
       </svg>
     </button>
+  );
+}
+
+// Positions or Locations: a two-way switch in the pane's heading (a radio
+// group: Tab reaches the one on, ← → move and choose, the way radios do). With
+// `locked` (the RCM and FME(C)A tabs are by position) it stays on show, greyed,
+// and says why, so the heading looks the same on every tab.
+export function ArrangeSwitch({ value, options, onChange, locked = null }) {
+  const group = useRef(null);
+  const choose = (v) => {
+    if (locked || v === value) return;
+    onChange(v);
+  };
+  const onKeyDown = (e) => {
+    const i = options.findIndex((o) => o.value === value);
+    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (!step || locked) return;
+    e.preventDefault();
+    const next = options[(i + step + options.length) % options.length];
+    choose(next.value);
+    // The switch stays in the page as the address changes: the focus follows the choice.
+    setTimeout(() => group.current?.querySelector(`[data-value="${next.value}"]`)?.focus(), 0);
+  };
+  return (
+    <div ref={group} className={"tp-arrange" + (locked ? " is-off" : "")} role="radiogroup" aria-label="Arrange by"
+         aria-disabled={locked ? "true" : undefined} title={locked || undefined} onKeyDown={onKeyDown}>
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <button key={o.value} type="button" role="radio" aria-checked={on} data-value={o.value}
+                  tabIndex={on ? 0 : -1} className={"tp-arrange-btn" + (on ? " on" : "")}
+                  aria-disabled={locked && !on ? "true" : undefined}
+                  title={locked || o.title} onClick={() => choose(o.value)}>{o.label}</button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -370,7 +408,7 @@ function cornerOf(row) {
 export default function TreePane({
   title, treeLabel, display, list, index, open, filter, query, onQuery, chips, onChips, mode, onMode, focus, onPick,
   onToggle, onLevel, onCloseAll, level = null, changed = [], onReset, phone, width, onWidth, collapsed, onCollapse,
-  onNew, newLabel, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table: tableIn = null,
+  addRow = null, canArrange = true, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table: tableIn = null,
   head = null, headTabs = null, phoneTabs = null, layoutKey = "", anchorKey = null, side = null, arrangeLocked = null,
   rowMenu = null, branch = null, branchNote = null, fullScreenKey = false, statusTitle,
 }) {
@@ -413,7 +451,7 @@ export default function TreePane({
     if (key != null) document.getElementById(`tp-${key}`)?.focus({ preventScroll: true });
   };
   const keys = (e) => {
-    if (e.target.closest(".tt-head button")) return;
+    if (e.target.closest(".tt-head button, .tp-addrow")) return;
     // F is the page's full screen (its own key handler), not a jump to a row.
     if (fullScreenKey && isFullScreenKey(e)) return;
     if (rowMenu && focus != null && itemsFor(focus).length && (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey))
@@ -558,29 +596,13 @@ export default function TreePane({
             aria-label="Show the tree" aria-expanded="false" title="Show the tree (Ctrl+\)">»</button>
   );
   const dim = (key) => filter && !filter.match.has(key);
-  const levelsOn = mode !== "flat" && mode !== "items";
   // A tab's own chips (the RCM's, the FME(C)A's) show on that tab only.
-  const chipList = CHIPS.filter((c) => (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || (table && (!c.tab || c.tab === (table.tab || "rcm")))));
+  const chipList = CHIPS.filter((c) => !c.rcmOnly || (table && (!c.tab || c.tab === (table.tab || "rcm"))));
   const status = <p className="tp-status" role="status" title={statusTitle || statusText || undefined}>{statusText}</p>;
   const titleRow = (
     <div className="tp-title-row">
       {wide ? <div className="tt-title"><h2 className="tp-title">{title}</h2>{status}</div> : <h2 className="tp-title">{title}</h2>}
-      {onNew && (
-        <button type="button" className="tp-icon-btn tp-add" onClick={onNew} aria-label={newLabel} title={newLabel}>
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-        </button>
-      )}
-      <TreeControlsMenu
-        pinned={branch ? { name: branch.name, onUnpin: branch.onUnpin } : null}
-        arrange={arrangeLocked ? null : { value: mode, options: ARRANGEMENTS, onChange: onMode }}
-        note={arrangeLocked}
-        levels={levelsOn ? { value: level, onLevel, onCloseAll } : null}
-        // Each Show only filter with the marker it matches in the tree: the
-        // markers' key (the "not analysed" one only where it shows).
-        chips={chipList.map((c) => ({ ...c, on: chips.includes(c.id), mark: c.id !== "unanalysed" || rcmMarks ? CHIP_MARK[c.id] : null }))}
-        markNote="A row's markers count what's on it; dashed ones count everything inside it too."
-        onChip={(id) => onChips(chips.includes(id) ? chips.filter((x) => x !== id) : [...chips, id])}
-        changed={changed} onReset={onReset} actions={menuActions} />
+      {canArrange && <ArrangeSwitch value={mode} options={ARRANGEMENTS} onChange={onMode} locked={arrangeLocked} />}
       {/* Folding is for the Summary tab; on the RCM and FME(C)A tabs the tree
           is the table's first column, so the button stays, greyed, and says
           why: the pane's header looks the same on every tab. */}
@@ -591,13 +613,26 @@ export default function TreePane({
       )}
     </div>
   );
+  // The search line: the filter box, then the ⋯ menu (the levels and the
+  // Show only filters; its badge counts what isn't as usual).
   const search = (
-    <label className="tp-filter">
-      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-      <input type="search" value={query} onChange={(e) => onQuery(e.target.value)}
-             placeholder={table ? "Filter: name, tag, failures, tasks" : mode === "items" ? "Filter: name, serial, make, model" : "Filter: name, tag, item, serial"}
-             aria-label={table ? "Filter the tree and its RCM" : "Filter the tree"} />
-    </label>
+    <div className="tp-search-row">
+      <label className="tp-filter">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+        <input type="search" value={query} onChange={(e) => onQuery(e.target.value)}
+               placeholder={table ? "Filter: name, tag, failures, tasks" : "Filter: name, tag, item, serial"}
+               aria-label={table ? "Filter the tree and its RCM" : "Filter the tree"} />
+      </label>
+      <TreeControlsMenu
+        pinned={branch ? { name: branch.name, onUnpin: branch.onUnpin } : null}
+        levels={{ value: level, onLevel, onCloseAll }}
+        // Each Show only filter with the marker it matches in the tree: the
+        // markers' key (the "not analysed" one only where it shows).
+        chips={chipList.map((c) => ({ ...c, on: chips.includes(c.id), mark: c.id !== "unanalysed" || rcmMarks ? CHIP_MARK[c.id] : null }))}
+        markNote="A row's markers count what's on it; dashed ones count everything inside it too."
+        onChip={(id) => onChips(chips.includes(id) ? chips.filter((x) => x !== id) : [...chips, id])}
+        changed={changed} onReset={onReset} actions={menuActions} />
+    </div>
   );
   // While a branch is pinned, the tree's column header says so (a wide screen,
   // both tabs): the pin, "Pinned: <name>" (cut short, the whole path in its
@@ -707,6 +742,18 @@ export default function TreePane({
               );
             })}
           </div>
+          {/* Adding at the top level: a quiet last row of the tree (a row's
+              own menu adds inside it). Not while filtering: what's added
+              might not match. */}
+          {addRow && !filter && list.length > 0 && (
+            <div className="tp-addrow-line" style={{ height: H, width: wideTable ? table.treeW : wide ? width : undefined }}>
+              <button type="button" className="tp-addrow" onClick={addRow.onAdd} disabled={!!addRow.disabled}
+                      title={addRow.disabled ? addRow.reason : undefined}>
+                <span className="tp-addrow-plus" aria-hidden="true">+</span>
+                <span className="tp-addrow-nm">{addRow.label}</span>
+              </button>
+            </div>
+          )}
           {!list.length && <div className="tp-empty" style={wide && !table ? { width } : undefined}>{empty}</div>}
         </div>
         )}
