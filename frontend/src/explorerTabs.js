@@ -5,13 +5,15 @@
 // the asset tree itself); Failure reports for a position, a location or an
 // item (what has failed there and below, and what was done about it); Parts
 // and stock (the parts used and kept there and inside it); Classes (the
-// classes used there and inside it, and the whole taxonomy); Signals for a
+// classes used there and inside it, and the whole taxonomy); Measurements for
+// a position, a location or an item (every measuring point there and inside
+// it: the latest reading, its limits and state, read by hand or fed); Signals for a
 // position or an item (sensor snapshots and their spectra). A tab a kind
 // doesn't have isn't shown (never greyed out).
 //
 // A product is a design, not an operated thing: its rows (a design's
-// positions) have no maintenance done to them, so no Failure reports, Signals
-// or stock. They keep RCM and FME(C)A (the design's maintenance programme is a
+// positions) have no maintenance done to them, so no Failure reports,
+// Measurements, Signals or stock. They keep RCM and FME(C)A (the design's maintenance programme is a
 // design output; the assets built from it carry it out), Classes, and "Parts"
 // (the parts list, with no stock). Its layout's rows (the product's design
 // locations, on its page's Locations) are no place you look after either: no
@@ -37,6 +39,7 @@ export const TABS = [
     notDesignLoc: true,
   },
   { id: "classes", label: "Classes", title: "The classes used here and inside it, and every class in the register", kinds: ["pos", "loc"] },
+  { id: "measurements", label: "Measurements", title: "Every measuring point here and inside it: the latest reading, its limits and whether it's past them", kinds: ["pos", "loc", "item"], asset: true },
   { id: "signals", label: "Signals", title: "Vibration and other sensors that send snapshots: spectra, watch bands and how they change", kinds: ["pos", "item"], asset: true },
 ];
 const BY_ID = new Map(TABS.map((t) => [t.id, t]));

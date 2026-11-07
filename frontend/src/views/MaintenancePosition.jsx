@@ -861,7 +861,7 @@ export function MeasurementsCard({ measurements, target, onChanged }) {
   );
 }
 
-function PointModal({ target, onClose, onDone }) {
+export function PointModal({ target, onClose, onDone }) {
   const [f, setF] = useState({ name: "", kind: "condition", unit: "", source: "manual", tag: "", alarm_above: "", alarm_below: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const counter = f.kind === "counter";
@@ -905,7 +905,7 @@ function PointModal({ target, onClose, onDone }) {
   );
 }
 
-function PointReadingModal({ point, onClose, onDone }) {
+export function PointReadingModal({ point, onClose, onDone }) {
   const [value, setValue] = useState("");
   const [on, setOn] = useState(today());
   // The time of day it was read, now by default: clear it when it isn't known.
@@ -924,7 +924,7 @@ function PointReadingModal({ point, onClose, onDone }) {
 // A manual point's readings, newest first, with the ones struck out or corrected
 // marked. A reading entered by mistake is voided; a wrong value or date is
 // corrected (the original is kept, struck out). Both need a reason.
-function ReadingsModal({ point: initial, onClose }) {
+export function ReadingsModal({ point: initial, onClose }) {
   const [point, setPoint] = useState(initial);
   const [edit, setEdit] = useState(null); // { id, mode: "void" | "correct", value, on, reason }
   const [busy, setBusy] = useState(false);
