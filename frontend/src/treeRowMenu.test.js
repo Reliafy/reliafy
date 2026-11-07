@@ -21,6 +21,7 @@ const DATA = {
 };
 
 const ids = (items) => items.map((i) => i.id);
+const ITEM_ROW = { key: "u1", type: "item", ref: { id: "u1", name: "Pump unit" }, kids: [] };
 const opts = (mode, extra = {}) => ({ mode, kidsOf: (k) => liveKids(DATA.positions).get(k) || 0, ...extra });
 
 test("a position's menu: new inside, add failure report, rename, move, delete; Pin goes before Delete", () => {
@@ -33,9 +34,7 @@ test("a position's menu: new inside, add failure report, rename, move, delete; P
   assert.deepEqual(ids(withPin(skim, [{ id: "pin", label: "Pin this branch" }])),
     ["tree-new", "report-new", "tree-rename", "tree-move", "pin", "tree-delete"]);
   assert.deepEqual(ids(withPin([{ id: "tree-rename" }], [{ id: "pin" }])), ["tree-rename", "pin"]);
-  // Flat: the same. Locations: a position's place there is where it is, so no Move.
-  assert.deepEqual(ids(summaryActions(buildDisplay(DATA, "flat").rows.get("skim"), opts("flat"))),
-    ["tree-new", "report-new", "tree-rename", "tree-move", "tree-delete"]);
+  // Locations: a position's place there is where it is, so no Move.
   assert.deepEqual(ids(summaryActions({ key: "skim", type: "pos", ref: DATA.positions[4], kids: [] }, opts("locations"))),
     ["tree-new", "report-new", "tree-rename", "tree-delete"]);
 });
@@ -68,9 +67,9 @@ test("locations: new inside, rename, move, delete; items: rename, delete; headin
   const d = buildDisplay(DATA, "locations");
   assert.deepEqual(summaryActions(d.rows.get("shed"), opts("locations")).map((i) => i.label),
     ["New location inside", "Rename…", "Move to…", "Delete…"]);
-  const items = buildDisplay(DATA, "items");
-  assert.deepEqual(ids(summaryActions(items.rows.get("u1"), opts("items"))), ["tree-rename", "tree-delete"]);
-  assert.deepEqual(summaryActions(items.rows.get("G:fitted"), opts("items")), []);
+  // An item row (a spare, or one with no home yet).
+  assert.deepEqual(ids(summaryActions(ITEM_ROW, opts("locations"))), ["tree-rename", "tree-delete"]);
+  assert.deepEqual(summaryActions({ key: "G:nohome", type: "group", ref: { name: "No home yet" }, kids: [] }, opts("locations")), []);
   assert.deepEqual(summaryActions(null), []);
 });
 
@@ -105,7 +104,7 @@ test("Add failure report…: positions only (a report sits at a position), greye
   assert.equal(add.label, "Add failure report…");
   assert.equal(add.disabled, undefined);
   assert.ok(!summaryActions(buildDisplay(DATA, "locations").rows.get("shed"), opts("locations")).some((i) => i.id === "report-new"));
-  assert.ok(!summaryActions(buildDisplay(DATA, "items").rows.get("u1"), opts("items")).some((i) => i.id === "report-new"));
+  assert.ok(!summaryActions(ITEM_ROW, opts("locations")).some((i) => i.id === "report-new"));
   const viewOnly = summaryActions(d.rows.get("pump"), opts("positions", { viewOnly: "View only: the team's Pro plan has lapsed." }))
     .find((i) => i.id === "report-new");
   assert.equal(viewOnly.disabled, true);

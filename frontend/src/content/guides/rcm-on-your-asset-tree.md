@@ -67,10 +67,17 @@ Double-clicking a cell in the columns still edits that cell in place.
 
 To find your way around a big tree:
 
-- The tree's **⋯** menu opens the tree to a level (**Open to level 1**, **2**,
-  **3**, **Open everything**) and filters it with **Show only**: **Needs a
-  decision**, **Hidden failures**, **Evidence to look at** and **Not analysed**
-  (positions with no RCM yet). **Reset to the usual view** puts it all back.
+- The **⋯** beside the tree's search box opens the tree to a level (**Open to
+  level 1**, **2**, **3**, **Open everything**) and filters it with **Show
+  only**: **Needs a decision**, **Hidden failures**, **Evidence to look at**
+  and **Not analysed** (positions with no RCM yet). **Reset to the usual view**
+  puts it all back.
+- **Positions** / **Locations**, above the tree, switches how it's arranged:
+  by what each position is inside, or by where things are. The RCM tab is
+  always by position.
+- To add a position at the top of the tree, press **+ New position**, the last
+  row of the tree. To add one inside another, choose **New position inside**
+  in that row's menu.
 - The search box filters the tree and its RCM: descriptions, effects, tasks
   and notes, keeping the rows each match sits inside.
 - **Isolate** in any row's menu (a position, function, performance standard, functional

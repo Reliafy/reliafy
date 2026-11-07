@@ -222,14 +222,12 @@ test("a row outside the branch shows the whole tree again; a pin that's gone qui
   await expect.poll(() => query(page).get("pin")).toBe(null);
   await expect(page.getByRole("tree", { name: "Positions" })).toBeVisible();
   await expect(page.getByText("Showing the whole tree again")).toHaveCount(0);
-  // Flat can't pin: the pin goes, and its rows' menus have no Pin this branch.
+  // An old Flat address (Flat is gone) opens by positions, the pin kept.
   await open(page, `/asset-register/explorer?arrange=flat&pin=${p.lineA.id}&sel=${p.lineA.id}`);
-  await expect.poll(() => query(page).get("pin")).toBe(null);
+  await expect.poll(() => query(page).get("arrange")).toBe("positions");
+  expect(query(page).get("pin")).toBe(p.lineA.id);
+  await expect(bar(page)).toContainText(`Works line A ${tag}`);
   await expect(row(page, `Works line A ${tag}`)).toHaveAttribute("aria-selected", "true");
-  await row(page, `Works line A ${tag}`).locator(".tp-nm").click({ button: "right" });
-  await expect(rowMenu(page, `Works line A ${tag}`).getByRole("menuitem", { name: "Rename…" })).toBeVisible();
-  await expect(rowMenu(page, `Works line A ${tag}`).getByRole("menuitem", { name: "Pin this branch" })).toHaveCount(0);
-  await page.keyboard.press("Escape");
   // Locations: pin the site; its positions show inside it.
   await open(page, `/asset-register/explorer?arrange=locations&sel=${p.site.id}`);
   await row(page, `Works site ${tag}`).locator(".tp-nm").click({ button: "right" });

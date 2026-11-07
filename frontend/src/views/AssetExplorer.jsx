@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   addSampleProduct, addSampleTruck as postSampleTruck, getFmeaExcelBlob, getMaintenanceTree, getPositionRcm, getRcmOptions,
-  hasFmeaExcel, listMaintenanceItems, restoreTree,
+  hasFmeaExcel, restoreTree,
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
@@ -51,9 +51,9 @@ import { shownTab, tabParam, tabsFor } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { openGuide } from "../components/HelpButton.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
-import { NewItemModal, NewLocationModal } from "./MaintenanceLists.jsx";
+import { NewLocationModal } from "./MaintenanceLists.jsx";
 import { ImportModal, NewPositionModal } from "./MaintenanceHome.jsx";
-import { DEFAULT_ARRANGEMENT, DEFAULT_LEVEL, changedFromUsual, levelShown, showingOnly } from "../treeControls.js";
+import { DEFAULT_LEVEL, changedFromUsual, levelShown, showingOnly } from "../treeControls.js";
 import {
   ARRANGEMENTS, CHIPS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
@@ -75,16 +75,13 @@ import { DesignReports } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
 
-// The register's other pages, from the tree's ⋯ menu (Assets has no
-// children in the menu).
-const REGISTER_LINKS = (navigate) => [
-  { id: "parts", label: "Parts and stock", onSelect: () => navigate("/asset-register/parts") },
-  { id: "classes", label: "Classes", onSelect: () => navigate("/asset-register/classes") },
-];
+// The new-position (or new-location) dialog opened from the tree's last row:
+// at the top level, whatever row is picked.
+const TOP = "\u0000top";
 
 // Assets › Explorer: one page, one tree pane over the whole
-// register, arranged by positions, locations or items, or as a flat list of
-// positions (Arrange by switches, and the address follows: ?arrange=). The
+// register, arranged by positions or by locations (the switch in the pane's
+// heading, and the address follows: ?arrange=). The
 // tree is a second-level menu beside the site menu; the panel beside it shows
 // the row picked, with "Open the full page" for the position's (or
 // location's, or item's) own page. On a phone the tree is the whole screen
@@ -183,7 +180,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const rcmOn = tab === "rcm" || fmeaOn;
   // RCM (and the FME(C)A) is by position: on its tab the tree is arranged by positions.
   const mode = rcmOn || root ? "positions" : arrangementOf(params.get("arrange"), saved.mode);
-  const notPlaced = (mode === "positions" || mode === "flat") && params.get("place") === "none";
+  const notPlaced = mode === "positions" && params.get("place") === "none";
   const title = titleProp || EXPLORER_LABEL;
   // Inside a product's page (its own h1), the picked row's name is an h2.
   const heading = rootProp ? 2 : 1;
@@ -212,9 +209,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   }, [params, navigate, location]);
 
   const [data, setData] = useState(null);
-  // The items list (class, make and model for each item), for the Items
-  // arrangement: fetched when it's first shown, and again after a change.
-  const [itemList, setItemList] = useState(null);
   const [error, setError] = useState(null);
   const [version, setVersion] = useState(0);
   const [openBy, setOpenBy] = useState(saved.open);
@@ -329,18 +323,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const t = setTimeout(() => setToast((x) => (x === toast ? null : x)), toast.undo || toast.restore ? 12000 : 5000);
     return () => clearTimeout(t);
   }, [toast]);
-  const wantItems = mode === "items";
-  useEffect(() => {
-    if (!wantItems || !version) return undefined;
-    let live = true;
-    // Without it the items still show, from the tree: only class, make and model are missing.
-    listMaintenanceItems().then((d) => live && setItemList(d.items || [])).catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [wantItems, version]);
-
-  const base = useMemo(() => buildDisplay(data, mode, mode === "items" ? itemList : null), [data, mode, itemList]);
+  const base = useMemo(() => buildDisplay(data, mode), [data, mode]);
   const whole = useMemo(() => (rcmOn && rcm ? (fmeaOn ? graftFmea(base, rcm) : graftRcm(base, rcm)) : base), [base, rcmOn, fmeaOn, rcm]);
   const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
   // The modes picked that are still in the tree after a read.
@@ -368,8 +351,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     return () => clearTimeout(t);
   }, [pinNote]);
   const filter = useMemo(() => (data ? computeFilter(display, {
-    query, chips: mode === "items" ? chips.filter((c) => c !== "empty") : chips, extra: notPlaced ? (r) => r.type === "pos" && !r.ref.location : null,
-  }) : null), [data, display, query, chips, notPlaced, mode]);
+    query, chips, extra: notPlaced ? (r) => r.type === "pos" && !r.ref.location : null,
+  }) : null), [data, display, query, chips, notPlaced]);
   useEffect(() => setFopen(filter ? filterOpen(filter) : null), [filter]);
   const defaultOpen = useMemo(() => levelSet(whole, 2), [whole]);
   const baseOpen = openBy[mode] || defaultOpen;
@@ -1087,24 +1070,18 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
              { state: keep ? { treeReveal: keep } : undefined });
   };
 
-  // What isn't as usual in the tree's ⋯ menu, and putting it back: Positions,
-  // the usual level, no Show only filters (the search box is on show, so it
-  // stays as typed).
+  // What isn't as usual in the tree's ⋯ menu, and putting it back: the usual
+  // level, no Show only filters, no pinned branch (the search box and the
+  // Positions / Locations switch are on show, so they stay as they are).
   const level = levelShown(levelBy, mode);
-  const levelsOn = mode !== "flat" && mode !== "items";
-  const chipsOn = CHIPS.filter((c) => chips.includes(c.id) && (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || rcmOn));
+  const chipsOn = CHIPS.filter((c) => chips.includes(c.id) && (!c.rcmOnly || rcmOn));
   // A pin on the whole tree's one top row shows everything: not a change.
   const changed = changedFromUsual({
-    mode, arrange: !rcmOn, level, levels: levelsOn, chips: chipsOn, pinned: !!pinKey && !pinCoversAll(whole, pinKey),
+    level, chips: chipsOn, pinned: !!pinKey && !pinCoversAll(whole, pinKey),
   });
   const resetView = () => {
     setChips([]);
-    if (!rcmOn && mode !== DEFAULT_ARRANGEMENT) {
-      setLevelBy((l) => ({ ...l, [DEFAULT_ARRANGEMENT]: DEFAULT_LEVEL }));
-      onMode(DEFAULT_ARRANGEMENT); // its address has no pin
-      return;
-    }
-    if (pinKey || (levelsOn && level !== DEFAULT_LEVEL && typeof level === "number")) {
+    if (pinKey || (level !== DEFAULT_LEVEL && typeof level === "number")) {
       setLevelBy((l) => ({ ...l, [mode]: DEFAULT_LEVEL }));
       setOpenBy((o) => ({ ...o, [mode]: levelSet(whole, DEFAULT_LEVEL) }));
     }
@@ -1137,7 +1114,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     else {
       const next = new Set([...(openBy[mode] || defaultOpen), ...keys]);
       setOpenBy((o) => ({ ...o, [mode]: next }));
-      if (levelsOn && typeof level === "number" && !levelMatches(display, next, level)) setLevelBy((l) => ({ ...l, [mode]: null }));
+      if (typeof level === "number" && !levelMatches(display, next, level)) setLevelBy((l) => ({ ...l, [mode]: null }));
     }
     if (focus != null) setScrollTo({ key: focus, at: Date.now() });
   }); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1227,11 +1204,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // Where a row can move to: its kind's tree, without it and what's inside it.
   const targetsFor = (row) => moveTargets(row.type === "loc" ? data?.locations : data?.positions, row.key);
 
-  const nothing = data && (mode === "locations" ? !data.locations.length && !data.positions.length
-    : mode === "items" ? !display.items : !data.positions.length);
+  const nothing = data && (mode === "locations" ? !data.locations.length && !data.positions.length : !data.positions.length);
   const EMPTY = {
     locations: ["No locations yet", "Add the places you look after (a site, a house), the areas and rooms inside them, and the stores."],
-    items: ["No items yet", "Items are the physical things, each with its own history. Fit one from a position's page, or add a spare that isn't fitted yet."],
   };
   const emptyDetail = error?.notAllowed ? (
     <div className="card empty">
@@ -1253,11 +1228,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       <div className="section-empty-action">
         {mode === "locations" ? (
           <button type="button" onClick={() => setModal("location")}><PlusIcon /> New location</button>
-        ) : mode === "items" ? (
-          <>
-            <button type="button" onClick={() => setModal("item")}><PlusIcon /> New item</button>
-            <button type="button" className="secondary" onClick={() => onMode("positions")}>Fit one to a position</button>
-          </>
         ) : (
           <>
             <button type="button" onClick={() => setModal("position")}><PlusIcon /> New position</button>
@@ -1265,7 +1235,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           </>
         )}
       </div>
-      {mode !== "locations" && mode !== "items" && (
+      {mode !== "locations" && (
         <div className="ae-sample">
           <p><strong>New here?</strong> Add the sample truck to see an RCM built on the tree, or open the sample UAV product for an FME(C)A on a design.</p>
           <div className="ae-sample-btns">
@@ -1310,7 +1280,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     ? [`${n(filter.match.size, "match", "matches")}, shown with what they're inside`, showingOnly(chipsOn.map((c) => c.label))].filter(Boolean).join(" · ")
     : mode === "locations"
       ? `${n(locationCount, "location")} · ${n(placedCount, "position")}`
-      : mode === "items" ? n(display.items, "item") : n(placedCount, "position");
+      : n(placedCount, "position");
 
   const notice = root && !rootProp ? (
     <p className="tp-notice">
@@ -1565,6 +1535,27 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   );
   const side = rcmOn ? rcmSide : phone ? null : summary;
 
+  // The tree's quiet last row: a new position (or location) at the top level.
+  // Inside a pinned branch, or one tree on show (a product's structure, an
+  // item's tree), it goes inside that branch's top instead.
+  const addRow = (() => {
+    if (!data || nothing) return null;
+    const kind = mode === "locations" ? "location" : "position";
+    const top = pinKey || root;
+    let parent = TOP;
+    let label = `New ${kind}`;
+    if (top) {
+      const r = whole.rows.get(top);
+      if (!r || r.type !== (kind === "location" ? "loc" : "pos")) return null;
+      parent = top;
+      label = `New ${kind} inside ${r.ref.name || "(no name)"}`;
+    }
+    return {
+      label, disabled: !!viewOnly, reason: viewOnly,
+      onAdd: () => { setNewParent(parent); setModal(kind); },
+    };
+  })();
+
   return (
     <div ref={frame} className={"tx" + (phone ? " phone" : "") + (phone && detailKey && !rcmOn ? " show-detail" : "")
       + (full ? " is-full" : "") + (rcmOn ? " tx-table" : "")}>
@@ -1595,16 +1586,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         onWidth={setWidth}
         collapsed={collapsed}
         onCollapse={setCollapsed}
-        onNew={data ? () => setModal(mode === "locations" ? "location" : mode === "items" ? "item" : "position") : null}
-        newLabel={mode === "locations" ? "New location" : mode === "items" ? "New item" : "New position"}
+        addRow={addRow}
+        canArrange={!root}
         level={level}
         changed={changed}
         onReset={resetView}
-        menuActions={[...(data && !root && mode !== "locations" && mode !== "items" ? [
+        menuActions={[...(data && !root && mode !== "locations" ? [
           { id: "import", label: "Import from a spreadsheet", onSelect: () => setModal("import") },
           { id: "sample", label: SAMPLE_TRUCK_LABEL, onSelect: () => addSample("truck") },
           { id: "sample-product", label: OPEN_SAMPLE_PRODUCT_LABEL, onSelect: () => addSample("product") },
-        ] : []), ...REGISTER_LINKS(navigate)]}
+        ] : [])]}
         notice={notice}
         statusText={statusText}
         statusTitle={rcmOn && !filter && rcm && !rcmError ? `${statusText} · ${what} is by position` : undefined}
@@ -1636,8 +1627,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           key: pinKey, name: whole.rows.get(pinKey).ref.name || "(no name)", path: pinPath(whole, pinKey), onUnpin: () => unpin(),
         } : null}
         branchNote={pinNote}
-        arrangeLocked={rcmOn ? `${what} is by position, so the ${what} tab shows the positions tree`
-          : root ? "One tree on show, by position" : null}
+        arrangeLocked={rcmOn ? `${what} is by position, so the ${what} tab shows the positions tree` : null}
       />
       {phone && summary}
       <div className="sr-only" role="status" aria-live="polite">{spoken}</div>
@@ -1676,19 +1666,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
 
       {modal === "position" && (
         <NewPositionModal positions={pickerList(data)}
-                          parentId={newParent ?? (selPos && display.rows.get(selPos)?.type === "pos" ? selPos : null)}
+                          parentId={newParent === TOP ? null : newParent ?? (selPos && display.rows.get(selPos)?.type === "pos" ? selPos : null)}
                           onClose={closeModal} onCreated={(p) => created(p.id)} />
       )}
       {modal === "location" && (
         <NewLocationModal
           locations={(data?.locations || []).map((l) => ({ ...l, parent: l.parent_id ? { name: data.locations.find((x) => x.id === l.parent_id)?.name } : null }))}
-          parentId={newParent ?? (focus && display.rows.get(focus)?.type === "loc" ? focus : null)}
+          parentId={newParent === TOP ? null : newParent ?? (focus && display.rows.get(focus)?.type === "loc" ? focus : null)}
           onClose={closeModal} onDone={(l) => created(l.id)} />
-      )}
-      {modal === "item" && (
-        <NewItemModal
-          locations={(data?.locations || []).map((l) => ({ ...l, parent: l.parent_id ? { name: data.locations.find((x) => x.id === l.parent_id)?.name } : null }))}
-          onClose={() => setModal(null)} onDone={(it) => created(it.id)} />
       )}
       {modal === "import" && <ImportModal onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
       {rowModal?.kind === "rename" && (

@@ -105,11 +105,16 @@ test("RCM: the tree and the RCM are one table; Summary: the tree and the page; t
   await trow(page, `^Function: Contain the water ${tag}`).locator(".tp-chev").click();
   await expect(trow(page, "Not under a functional failure").first()).toBeVisible();
   await expect(trow(page, `Coupling fails ${tag}`).getByText("Contradicted")).toBeVisible();
-  // RCM is by position: the other arrangements wait for Summary (the counts' tooltip and the menu say so).
+  // RCM is by position: Locations waits for Summary (the counts' tooltip and the greyed switch say so).
   await expect(page.locator(".tt-top .tp-status")).toHaveAttribute("title", /RCM is by position$/);
+  const sw = page.getByRole("radiogroup", { name: "Arrange by" });
+  await expect(sw).toHaveAttribute("aria-disabled", "true");
+  await expect(sw).toHaveAttribute("title", /RCM is by position/);
+  await expect(sw.getByRole("radio", { name: "Positions" })).toHaveAttribute("aria-checked", "true");
+  await sw.getByRole("radio", { name: "Locations" }).click({ force: true }); // greyed: nothing happens
+  await expect(page).toHaveURL(/arrange=positions/);
   const menu = await openTreeMenu(page);
   await expect(menu.getByRole("menuitemradio", { name: "Locations" })).toHaveCount(0);
-  await expect(menu).toContainText("RCM is by position");
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
 
@@ -574,10 +579,12 @@ test("the tree's ⋯ menu: the levels, a filter with its count on the button, Re
   for (const t of ["summary", "rcm"]) {
     await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}${t === "rcm" ? "&tab=rcm" : ""}`);
     await expect(t === "rcm" ? table(page) : tree(page)).toBeVisible();
-    // The same pane on both tabs: the title, +, ⋯, the search box and the counts; the rest is in the menu.
-    await expect(menuButton(page)).toHaveAccessibleName("Tree options");
-    await expect(page.locator(".tp").getByRole("searchbox")).toBeVisible();
-    await expect(page.getByRole("radio", { name: "Locations" })).toHaveCount(0);
+    // The same pane on both tabs: the title, the Positions / Locations switch and «; then the
+    // search box with ⋯ beside it, and the counts; the rest is in the menu. No + button.
+    await expect(page.locator(".tp-search-row").getByRole("button", { name: "Tree options", exact: true })).toBeVisible();
+    await expect(page.locator(".tp-search-row").getByRole("searchbox")).toBeVisible();
+    await expect(page.locator(".tp-title-row").getByRole("radiogroup", { name: "Arrange by" })).toBeVisible();
+    await expect(page.locator(".tp-title-row").getByRole("button", { name: /^New / })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Open to level 1" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Overdue", exact: true })).toHaveCount(0);
   }
@@ -589,12 +596,12 @@ test("the tree's ⋯ menu: the levels, a filter with its count on the button, Re
   await page.keyboard.press("Enter");
   const menu = treeMenu(page);
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitemradio", { name: "Positions" })).toBeFocused(); // the first item
-  await expect(menu.getByRole("menuitemradio", { name: "Positions" })).toHaveAttribute("aria-checked", "true");
+  await expect(menu.getByRole("menuitemradio", { name: "Open to level 1" })).toBeFocused(); // the first item
   await expect(menu.getByRole("menuitemradio", { name: "Open to level 2" })).toHaveAttribute("aria-checked", "true"); // the usual
-  await page.keyboard.press("ArrowRight");
-  await expect(menu.getByRole("menuitemradio", { name: "Locations" })).toBeFocused();
-  await page.keyboard.press("ArrowDown"); // the next row: the levels, on the checked one
+  await expect(menu.getByRole("menuitemradio", { name: "Positions" })).toHaveCount(0); // the switch is in the heading
+  await page.keyboard.press("ArrowDown"); // the next row: Close everything
+  await expect(menu.getByRole("menuitemradio", { name: "Close everything" })).toBeFocused();
+  await page.keyboard.press("ArrowUp"); // back to the levels, on the checked one
   await expect(menu.getByRole("menuitemradio", { name: "Open to level 2" })).toBeFocused();
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Enter"); // level 3
@@ -615,7 +622,7 @@ test("the tree's ⋯ menu: the levels, a filter with its count on the button, Re
   await expect(treeitem(page, `Rcm pump ${tag}`)).toBeVisible();
   await expect(menuButton(page)).toHaveAccessibleName("Tree options");
   await openTreeMenu(page);
-  await expect(menu.locator("[role=menuitemradio][aria-checked=true]")).toHaveText(["Positions"]);
+  await expect(menu.locator("[role=menuitemradio][aria-checked=true]")).toHaveCount(0);
   await expect(menu.getByRole("menuitem", { name: "Reset to the usual view" })).toHaveCount(0);
 
   // A filter: ticked, its count on the button and the words by the counts; a click outside closes the menu.
@@ -643,16 +650,15 @@ test("the tree's ⋯ menu: the levels, a filter with its count on the button, Re
   await expect(menuButton(page)).toBeFocused();
   await expect(treeitem(page, `Rcm pump ${tag}`)).toBeVisible();
 
-  // An arrangement other than Positions counts too, and Reset brings Positions back.
+  // Locations is on show in the heading's switch: not counted on ⋯, and the menu keeps its levels.
+  await page.getByRole("radiogroup", { name: "Arrange by" }).getByRole("radio", { name: "Locations" }).click();
+  await expect(page).toHaveURL(/arrange=locations/);
+  await expect(menuButton(page)).toHaveAccessibleName("Tree options");
   await openTreeMenu(page);
-  await menu.getByRole("menuitemradio", { name: "Flat" }).click();
-  await expect(page).toHaveURL(/arrange=flat/);
-  await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitemradio", { name: "Open to level 1" })).toHaveCount(0); // no levels when flat
-  await expect(menuButton(page)).toHaveAccessibleName("Tree options: 1 changed");
-  await menu.getByRole("menuitem", { name: "Reset to the usual view" }).click();
-  await expect(page).toHaveURL(/arrange=positions/);
+  await expect(menu.getByRole("menuitemradio", { name: "Open to level 1" })).toBeVisible();
   await page.keyboard.press("Escape");
+  await page.getByRole("radiogroup", { name: "Arrange by" }).getByRole("radio", { name: "Positions" }).click();
+  await expect(page).toHaveURL(/arrange=positions/);
 
   // In full screen it opens inside it, and F doesn't leave while it's open.
   await page.locator("body").click({ position: { x: 5, y: 300 } });

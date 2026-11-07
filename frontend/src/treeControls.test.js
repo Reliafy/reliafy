@@ -18,12 +18,14 @@ test("what's changed from the usual view", () => {
   assert.deepEqual(changedFromUsual({ mode: "positions", level: 0 }).map((c) => c.id), ["level"]);
   assert.deepEqual(changedFromUsual({
     mode: "locations", level: 1, chips: [{ id: "overdue", label: "Overdue" }, { id: "alarm", label: "Alarm" }],
-  }).map((c) => c.id), ["arrange", "level", "chip:overdue", "chip:alarm"]);
+  }).map((c) => c.id), ["level", "chip:overdue", "chip:alarm"]);
   // A pinned branch isn't the usual view: it counts, first.
   assert.deepEqual(changedFromUsual({ mode: "positions", level: 2, pinned: true }).map((c) => c.id), ["pin"]);
-  assert.deepEqual(changedFromUsual({ mode: "locations", level: 3, pinned: true }).map((c) => c.id), ["pin", "arrange", "level"]);
-  // Not offered, not counted: the RCM tab has no Arrange by; Flat has no levels.
-  assert.deepEqual(changedFromUsual({ mode: "locations", arrange: false, level: 3, levels: false }), []);
+  assert.deepEqual(changedFromUsual({ mode: "locations", level: 3, pinned: true }).map((c) => c.id), ["pin", "level"]);
+  // Positions or Locations is the switch on show in the heading: never counted here.
+  assert.deepEqual(changedFromUsual({ mode: "locations", level: 2 }), []);
+  // Not offered, not counted.
+  assert.deepEqual(changedFromUsual({ mode: "positions", level: 3, levels: false }), []);
 });
 
 test("the words beside the count line", () => {
@@ -34,18 +36,18 @@ test("the words beside the count line", () => {
 });
 
 test("the arrow keys in the menu: rows of radios, and items alone", () => {
-  const rows = [["pos", "loc", "items", "flat"], ["l1", "l2", "l3", "l4", "all"], ["close"], ["overdue"], ["alarm"], ["done"]];
+  const rows = [["a", "pos", "loc", "z"], ["l1", "l2", "l3", "l4", "all"], ["close"], ["overdue"], ["alarm"], ["done"]];
   const checked = (id) => id === "loc" || id === "l2";
   assert.equal(menuMove(rows, "pos", "ArrowRight", checked), "loc");
-  assert.equal(menuMove(rows, "flat", "ArrowRight", checked), "pos"); // round the row
-  assert.equal(menuMove(rows, "pos", "ArrowLeft", checked), "flat");
+  assert.equal(menuMove(rows, "z", "ArrowRight", checked), "a"); // round the row
+  assert.equal(menuMove(rows, "a", "ArrowLeft", checked), "z");
   assert.equal(menuMove(rows, "pos", "ArrowDown", checked), "l2"); // the row's checked one
   assert.equal(menuMove(rows, "l4", "ArrowUp", checked), "loc");
   assert.equal(menuMove(rows, "close", "ArrowDown", checked), "overdue");
   assert.equal(menuMove(rows, "done", "ArrowDown", checked), "loc"); // round the menu
   assert.equal(menuMove(rows, "pos", "ArrowUp", checked), "done");
   assert.equal(menuMove(rows, "close", "ArrowRight", checked), "close"); // alone in its row
-  assert.equal(menuMove(rows, "l3", "Home", checked), "pos");
+  assert.equal(menuMove(rows, "l3", "Home", checked), "a");
   assert.equal(menuMove(rows, "l3", "End", checked), "done");
   assert.equal(menuMove(rows, null, "ArrowDown", checked), "loc");
   assert.equal(menuMove(rows, "l3", "Enter", checked), null);
