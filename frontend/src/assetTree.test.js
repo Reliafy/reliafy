@@ -277,13 +277,6 @@ test("the scrollbar's gutter only grows, so a measure that flips can't loop", ()
   assert.deepEqual(renders, [true, false, false, false, true, false, false]);
 });
 
-test("the counts come apart at their dots, so they wrap between the parts", async () => {
-  const { statusParts } = await import("./assetTree.js");
-  assert.deepEqual(statusParts("4 positions · 3 not analysed"), ["4 positions", "3 not analysed"]);
-  assert.deepEqual(statusParts("12 positions"), ["12 positions"]);
-  assert.deepEqual(statusParts(""), []);
-});
-
 test("a product's page by Locations: its layout's rows, positions placed there, the rest not placed yet", () => {
   const data = {
     positions: [

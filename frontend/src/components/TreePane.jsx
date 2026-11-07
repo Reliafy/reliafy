@@ -1,10 +1,10 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import RowMenu from "./RowMenu.jsx";
 import TreeControlsMenu from "./TreeControlsMenu.jsx";
 import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
 import { BasisInfo, NotesMark, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
-import { ARRANGEMENTS, CHIPS, CHIP_MARK, PANE, TREE_ROW_MARKERS, clampWidth, markersOf, nextGutter, statusParts } from "../assetTree.js";
+import { ARRANGEMENTS, CHIPS, CHIP_MARK, PANE, TREE_ROW_MARKERS, clampWidth, markersOf, nextGutter } from "../assetTree.js";
 import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensItem } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
@@ -435,7 +435,7 @@ export default function TreePane({
   onToggle, onLevel, onCloseAll, level = null, changed = [], onReset, phone, width, onWidth, collapsed, onCollapse,
   addRow = null, canArrange = true, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table: tableIn = null,
   head = null, headTabs = null, phoneTabs = null, layoutKey = "", anchorKey = null, side = null, arrangeLocked = null,
-  rowMenu = null, branch = null, branchNote = null, fullScreenKey = false, statusTitle,
+  rowMenu = null, branch = null, branchNote = null, fullScreenKey = false,
 }) {
   const H = phone ? (tableIn ? 54 : 44) : 30;
   const wide = !phone;
@@ -632,16 +632,7 @@ export default function TreePane({
   const dim = (key) => filter && !filter.match.has(key);
   // A tab's own chips (the RCM's, the FME(C)A's) show on that tab only.
   const chipList = CHIPS.filter((c) => !c.rcmOnly || (table && (!c.tab || c.tab === (table.tab || "rcm"))));
-  const status = (
-    <p className="tp-status" role="status" title={statusTitle || statusText || undefined}>
-      {/* The counts' parts ("4 positions", "3 not analysed") each kept whole: where
-          the pane is too narrow for one line they wrap between the parts, never cut
-          short. Each part keeps its dot; the line can break only at the space after it. */}
-      {statusParts(statusText).map((part, i, all) => (
-        <Fragment key={i}><span className="tp-status-part">{part}{i < all.length - 1 ? " ·" : ""}</span>{i < all.length - 1 ? " " : ""}</Fragment>
-      ))}
-    </p>
-  );
+  const status = statusText ? <p className="tp-status" role="status" title={statusText}>{statusText}</p> : null;
   const titleRow = (
     <div className="tp-title-row">
       {wide ? <div className="tt-title"><h2 className="tp-title">{title}</h2>{status}</div> : <h2 className="tp-title">{title}</h2>}
