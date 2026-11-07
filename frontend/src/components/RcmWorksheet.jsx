@@ -26,6 +26,8 @@ import RcmFunctionStandards from "./RcmFunctionStandards.jsx";
 import { plainFirstLine } from "../basisMarkdown.js";
 import { COMPARATORS, COMPARATOR_LABEL, limitReads, limitWords } from "../rcmStandards.js";
 import RcmModeTasks from "./RcmModeTasks.jsx";
+import RcmNotes from "./RcmNotes.jsx";
+import { hasNotes, hasNotesField, notesTip } from "../rcmNotes.js";
 import { saveErrorText } from "../confirm.js";
 import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
 import { basisMarked, failureRows, failureStatusWords, failureSummary } from "../explorerRcm.js";
@@ -98,6 +100,22 @@ export function BasisInfo({ r, onBasis }) {
             onClick={(e) => { e.stopPropagation(); if (e.detail < 2) onBasis(r); }}>
       <span aria-hidden="true">i</span>
     </button>
+  );
+}
+
+// The small note mark after a row's name when it has notes and rationale:
+// the notes' first line is its tooltip (and its accessible name). Not a
+// button: the notes are read and edited in the row's details. Fixed size, so a
+// row never changes height or width with it.
+export function NotesMark({ r }) {
+  if (!hasNotes(r)) return null;
+  const tip = notesTip(r);
+  return (
+    <span className="rw-note-mark" role="img" aria-label={`Has notes: ${tip}`} title={tip}>
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" aria-hidden="true">
+        <path d="M3 2.5h7l3 3v8H3z M10 2.5v3h3 M5.5 8h5 M5.5 10.5h5" strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+    </span>
   );
 }
 
@@ -703,8 +721,12 @@ export function Details({
                 )}
               </Field>
             )}
-            {field("Notes", "notes", { area: true, optional: true })}
           </div>
+        )}
+        {/* Every row's notes and rationale, the same section at every level (a failure mode's
+            are its notes). */}
+        {hasNotesField(r) && (
+          <RcmNotes key={`${r.key}:notes`} r={r} readOnly={readOnly} onSave={(value) => keep("notes", onCommit(r, "notes", value))} />
         )}
         {/* Which standard a failure breaches is where it sits in the tree (moved by drag or Move
             to…); said here only when the way up doesn't show it (a pinned branch, say). */}

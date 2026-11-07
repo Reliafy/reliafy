@@ -47,10 +47,14 @@ export const FMEA_HEADER = [
   "Recommended action", "Owner", "Due date", "Action status", "Failure rate", "Time unit", "Rate source", "Mode ratio", "Loss probability",
   "Operating time", "Mode criticality", "Severity class",
 ];
+// Every row kind's notes and rationale has its own column: Function notes and
+// Functional failure notes on the first row of each (as the working is),
+// Standard notes on each standard's own row, Failure mode notes on the mode's.
 export const EXPORT_HEADER = [
-  "Position", "Function", "Performance standard", "Standard working", "Functional failure", "Caused by (below)", "Failure mode", "Effects", "Consequence",
+  "Position", "Function", "Function notes", "Performance standard", "Standard notes", "Standard working",
+  "Functional failure", "Functional failure notes", "Caused by (below)", "Failure mode", "Effects", "Consequence",
   ...FMEA_HEADER,
-  "Decision", "Run-to-failure basis", "Task", "Interval", "Interval unit", "Evidence check", "Notes",
+  "Decision", "Run-to-failure basis", "Task", "Interval", "Interval unit", "Evidence check", "Failure mode notes",
 ];
 const BLANK_FMEA = FMEA_HEADER.map(() => "");
 
@@ -110,9 +114,11 @@ export function positionRcmRows(worksheet) {
     const standardCell = (fn, fail) => (listed(fn) ? fail?.standard?.text || "" : fn?.standard || "");
     const modeRow = (fn, fail, m) => {
       const first = firstRow(fn);
+      const firstFail = firstRow(fail);
       const d = m?.decision || {};
       return [
-        where, fn?.text || "", standardCell(fn, fail), (first && fn.standard_basis) || "", fail?.text || "", causedBy(fail), m?.text || "", m?.effects || "",
+        where, fn?.text || "", (first && fn.notes) || "", standardCell(fn, fail), "", (first && fn.standard_basis) || "",
+        fail?.text || "", (firstFail && fail.notes) || "", causedBy(fail), m?.text || "", m?.effects || "",
         CONSEQUENCE_LABEL[m?.consequence] || "", ...fmeaCells(m), OUTCOME_LABEL[d.outcome] || "", d.rtf_basis || "", d.task || "",
         d.interval ?? "", d.interval ? d.interval_unit || "" : "",
         checkLabel(d), m?.notes || "",
@@ -122,11 +128,12 @@ export function positionRcmRows(worksheet) {
       if (!listed(fn)) return;
       const first = firstRow(fn);
       for (const [i, st] of fn.standards.entries()) {
-        rows.push([where, fn.text || "", st.text || "", (first && i === 0 && fn.standard_basis) || "", "", "", "", "", "", ...BLANK_FMEA, "", "", "", "", "", "", ""]);
+        rows.push([where, fn.text || "", (first && i === 0 && fn.notes) || "", st.text || "", st.notes || "",
+          (first && i === 0 && fn.standard_basis) || "", "", "", "", "", "", "", ...BLANK_FMEA, "", "", "", "", "", "", ""]);
       }
     };
     const taskRow = (fn, fail, m, t) => [
-      where, fn?.text || "", standardCell(fn, fail), "", fail?.text || "", causedBy(fail), m.text || "", "",
+      where, fn?.text || "", "", standardCell(fn, fail), "", "", fail?.text || "", "", causedBy(fail), m.text || "", "",
       "", ...BLANK_FMEA, OUTCOME_LABEL[t.outcome] || OUTCOME_LABEL[m.decision?.outcome] || "", "", t.text || t.name || "",
       t.interval ?? "", t.interval ? t.unit || "" : "", "", "",
     ];

@@ -241,6 +241,12 @@ def _text(value, what: str, required: bool = False, max_len: int | None = None) 
     return text
 
 
+def _notes_text(value) -> str:
+    """An RCM row's notes and rationale: plain text, line breaks kept (as
+    \n), trimmed, at most LONG_TEXT characters."""
+    return _text(str(value or "").replace("\r\n", "\n").replace("\r", "\n"), "notes", max_len=LONG_TEXT)
+
+
 def _joined(ch: str) -> bool:
     """A character that belongs with the one before it (an accent, a variation
     selector, a skin tone, an emoji tag or joiner): never cut just before it."""
@@ -939,6 +945,12 @@ def _functional_failure_updated(s: GraphStore, org: str, p: dict) -> None:
             s.put_edge(org, "BREACHES", p["id"], standard)
     if changes:
         s.patch_node(org, p["id"], changes)
+
+
+def _notes_set(s: GraphStore, org: str, p: dict) -> None:
+    """function.notes_set, standard.notes_set, functional_failure.notes_set: the
+    row's notes and rationale (its long description), replaced whole ("" clears it)."""
+    s.patch_node(org, p["id"], {"notes": p["notes"]})
 
 
 # A function's performance standards as a list: each one parameter and one
@@ -2496,6 +2508,9 @@ PROJECTORS = {
     "function.added": _function_added,
     "function.updated": _function_updated,
     "function.removed": _flag("removed"),
+    "function.notes_set": _notes_set,
+    "standard.notes_set": _notes_set,
+    "functional_failure.notes_set": _notes_set,
     "functional_failure.added": _functional_failure_added,
     "functional_failure.updated": _functional_failure_updated,
     "functional_failure.removed": _flag("removed"),
@@ -2849,6 +2864,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     "order": fn.get("order") or 0,
                 } | ({"standard_basis": fn["standard_basis"], "on": fn.get("basis_on") or self.today()}
                      if fn.get("standard_basis") else {}))
+                if fn.get("notes"):
+                    self._emit("function.notes_set", {"id": fn_id, "notes": fn["notes"]})
                 standard_ids: dict[str, str] = {}
                 for st in self._standards_of(fn["id"]):
                     standard_ids[st["id"]] = new_id()
@@ -2856,12 +2873,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                         "id": standard_ids[st["id"]], "function_id": fn_id, "text": st.get("text") or "",
                         "order": st.get("order") or 0, "on": today,
                     } | {k: st[k] for k in _STANDARD_FIELDS if st.get(k) not in (None, "")})
+                    if st.get("notes"):
+                        self._emit("standard.notes_set", {"id": standard_ids[st["id"]], "notes": st["notes"]})
                 for ff in self._failures_of(fn["id"]):
                     ff_id = ff_ids[ff["id"]] = new_id()
                     breach = [x["id"] for x in self.s.out(self.org, ff["id"], "BREACHES") if x["id"] in standard_ids]
                     self._emit("functional_failure.added", {
                         "id": ff_id, "function_id": fn_id, "text": ff["text"], "order": ff.get("order") or 0,
                     } | ({"standard_id": standard_ids[breach[0]]} if breach else {}))
+                    if ff.get("notes"):
+                        self._emit("functional_failure.notes_set", {"id": ff_id, "notes": ff["notes"]})
                     for fm in self._ff_modes(ff["id"]):
                         if fm["id"] in mode_ids:
                             self._emit("failure_mode.assigned", {"id": mode_ids[fm["id"]], "functional_failure_id": ff_id,
@@ -3417,7 +3438,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if effects is not None:
             analysed["effects"] = _text(effects, "effects", max_len=LONG_TEXT)
         if notes is not None:
-            analysed["notes"] = _text(notes, "notes")
+            analysed["notes"] = _notes_text(notes)
         analysed = {k: v for k, v in analysed.items() if (fm.get(k) or "") != v}
         if analysed:
             self._emit("failure_mode.analysed", {"id": mode_id, "changes": analysed})
@@ -3524,26 +3545,56 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         fns = [fn for fn in self.s.inn(self.org, mode_id, "FAILS_DIRECTLY_AS") if not fn.get("removed")]
         return fns[0]["id"] if fns else None
 
-    def add_function(self, position_id: str, text, standard="", standard_basis="") -> dict:
+    # ---- notes and rationale on a function, performance standard or functional failure ----
+    # Each RCM row has its title (text) and its notes: the long description,
+    # where the rationale for it is written (plain text, line breaks kept, at
+    # most LONG_TEXT). A failure mode's are its `notes` (failure_mode.analysed);
+    # the others' are set whole by their own event, `<kind>.notes_set`.
+
+    def _set_notes(self, kind: str, node: dict, value: str | None) -> None:
+        """Write a row's notes (checked already by _notes_text; None: leave them)."""
+        if value is not None and value != (node.get("notes") or ""):
+            self._emit(f"{kind}.notes_set", {"id": node["id"], "notes": value})
+
+    def set_rcm_notes(self, kind: str, row_id: str, notes) -> dict:
+        """Set (replace) the notes on one RCM row: kind function, standard,
+        functional_failure or failure_mode ("" clears them). Returns the row."""
+        if kind == "function":
+            return self.update_function(row_id, notes=notes)
+        if kind == "standard":
+            return self.update_standard(row_id, notes=notes)
+        if kind == "functional_failure":
+            return self.update_functional_failure(row_id, notes=notes)
+        if kind == "failure_mode":
+            self.update_failure_mode(row_id, notes=notes)
+            return self.rcm_mode(row_id)
+        raise Invalid("kind is function, standard, functional_failure or failure_mode.")
+
+    def add_function(self, position_id: str, text, standard="", standard_basis="", notes=None) -> dict:
         """A function the position performs ('Pump 50 L/s of water at 4 bar'), with
-        its performance standard if any, and the working behind that standard
-        (standard_basis: how it was worked out, Markdown text)."""
+        its performance standard if any, the working behind that standard
+        (standard_basis: how it was worked out, Markdown text) and its notes
+        (the rationale, plain text)."""
         position = self._get(position_id, "Position")
         if position.get("retired"):
             raise Invalid("That position has been retired.")
         basis = _basis_text(standard_basis)
+        noted = _notes_text(notes) if notes is not None else ""
         fid = new_id()
         self._emit("function.added", {
             "id": fid, "position_id": position_id, "text": _text(text, "function", required=True, max_len=LONG_TEXT),
             "standard": _text(standard, "performance standard", max_len=LONG_TEXT),
             "order": self._next_order(self.s.out(self.org, position_id, "PERFORMS")),
         } | ({"standard_basis": basis, "on": self.today()} if basis else {}))
+        if noted:
+            self._emit("function.notes_set", {"id": fid, "notes": noted})
         return self._function_view(self._get(fid, "Function"))
 
-    def update_function(self, function_id: str, text=None, standard=None, standard_basis=None) -> dict:
-        """Change a function's text, performance standard or the working behind
-        the standard ("" clears the standard or the working)."""
+    def update_function(self, function_id: str, text=None, standard=None, standard_basis=None, notes=None) -> dict:
+        """Change a function's text, performance standard, the working behind
+        the standard or its notes ("" clears the standard, the working or the notes)."""
         fn, _ = self._live_function(function_id)
+        noted = _notes_text(notes) if notes is not None else None
         changes = {}
         if text is not None:
             changes["text"] = _text(text, "function", required=True, max_len=LONG_TEXT)
@@ -3557,6 +3608,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         changes = {k: v for k, v in changes.items() if (fn.get(k) or "") != v}
         if changes:
             self._emit("function.updated", {"id": function_id, "changes": changes, "on": self.today()})
+        self._set_notes("function", fn, noted)
         return self._function_view(self._get(function_id, "Function"))
 
     def remove_function(self, function_id: str, cascade: bool = False, dry_run: bool = False) -> dict:
@@ -3595,24 +3647,29 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 "failures": [self._ff_view(ff) for ff in self._failures_of(function_id)],
                 "documents": self.documents_of(function_id)}
 
-    def add_functional_failure(self, function_id: str, text, standard_id=None) -> dict:
+    def add_functional_failure(self, function_id: str, text, standard_id=None, notes=None) -> dict:
         """A way the function fails ('No flow', 'Flow below 40 L/s'). standard_id:
         one of the function's performance standards it breaches (left out: the
-        whole function, as a total loss does)."""
+        whole function, as a total loss does); notes: its rationale."""
         self._live_function(function_id)
         standard = self._standard_on(function_id, standard_id) if standard_id else None
+        noted = _notes_text(notes) if notes is not None else ""
         fid = new_id()
         self._emit("functional_failure.added", {
             "id": fid, "function_id": function_id,
             "text": _text(text, "functional failure", required=True, max_len=LONG_TEXT),
             "order": self._next_order(self.s.out(self.org, function_id, "FAILS_AS")),
         } | ({"standard_id": standard["id"]} if standard else {}))
+        if noted:
+            self._emit("functional_failure.notes_set", {"id": fid, "notes": noted})
         return self._ff_view(self._get(fid, "FunctionalFailure"))
 
-    def update_functional_failure(self, ff_id: str, text=None, standard_id=...) -> dict:
-        """Change a functional failure's text, or the standard it breaches
-        (standard_id: one of its function's; None: the whole function)."""
+    def update_functional_failure(self, ff_id: str, text=None, standard_id=..., notes=None) -> dict:
+        """Change a functional failure's text, the standard it breaches
+        (standard_id: one of its function's; None: the whole function) or its
+        notes ("" clears them)."""
         ff, fn, _ = self._live_ff(ff_id)
+        noted = _notes_text(notes) if notes is not None else None
         changes: dict = {}
         if text is not None:
             value = _text(text, "functional failure", required=True, max_len=LONG_TEXT)
@@ -3625,6 +3682,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 changes["standard_id"] = wanted
         if changes:
             self._emit("functional_failure.updated", {"id": ff_id, "changes": changes})
+        self._set_notes("functional_failure", ff, noted)
         # The standard it breached before (None: the whole function), so a batch can undo the change.
         return {**self._ff_view(self._get(ff_id, "FunctionalFailure")), "from_standard_id": now[0] if now else None}
 
@@ -3680,7 +3738,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return out
 
     def _standard_view(self, st: dict, breached_by: int | None = None) -> dict:
-        out = {"id": st["id"], "text": st.get("text") or "", "order": st.get("order") or 0}
+        out = {"id": st["id"], "text": st.get("text") or "", "order": st.get("order") or 0,
+               "notes": st.get("notes") or ""}
         for key in _STANDARD_FIELDS:
             out[key] = st.get(key) if st.get(key) not in (None, "") else None
         if breached_by is not None:
@@ -3695,38 +3754,47 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                           "order": 1, "on": self.today()})
 
     def add_standard(self, function_id: str, text, parameter=None, comparator=None, value=None, unit=None,
-                     when=None, source=None) -> dict:
+                     when=None, source=None, notes=None) -> dict:
         """A performance standard on a function: one parameter and one limit
         ('pH 7.2-7.8'), with the limit structured if wanted (parameter,
         comparator, value, unit), when it applies ('while the filter pump
-        runs') and where it comes from ('AS 1926.3'). The function's old single
-        standard text, if any, becomes the first item."""
+        runs') and where it comes from ('AS 1926.3'), with its notes (the
+        rationale). The function's old single standard text, if any, becomes
+        the first item. One with the same text already: that one (given notes
+        replace its own)."""
         fn, _ = self._live_function(function_id)
         wanted = _text(text, "performance standard", required=True, max_len=LONG_TEXT)
         fields = self._standard_fields(parameter, comparator, value, unit, when, source)
+        noted = _notes_text(notes) if notes is not None else None
         if len(self._standards_of(function_id)) >= MAX_STANDARDS:
             raise Invalid(f"A function has at most {MAX_STANDARDS} performance standards.")
         self._adopt_legacy_standard(fn)
         have = self._standards_of(function_id)
         same = next((st for st in have if _same_text(st.get("text"), wanted)), None)
         if same is not None:
-            return self._standard_view(same)
+            if noted:
+                self._set_notes("standard", same, noted)
+            return self._standard_view(self._get(same["id"], "Standard"))
         sid = new_id()
         self._emit("standard.added", {"id": sid, "function_id": function_id, "text": wanted,
                                       "order": self._next_order(have), "on": self.today()}
                    | {k: v for k, v in fields.items() if v not in (None, "")})
+        if noted:
+            self._emit("standard.notes_set", {"id": sid, "notes": noted})
         return self._standard_view(self._get(sid, "Standard"))
 
     def update_standard(self, standard_id: str, text=None, parameter=None, comparator=None, value=None, unit=None,
-                        when=None, source=None) -> dict:
-        """Change a standard's text or its structured limit ('' clears a field)."""
+                        when=None, source=None, notes=None) -> dict:
+        """Change a standard's text, its structured limit or its notes ('' clears a field)."""
         st, _ = self._live_standard(standard_id)
+        noted = _notes_text(notes) if notes is not None else None
         changes = self._standard_fields(parameter, comparator, value, unit, when, source)
         if text is not None:
             changes["text"] = _text(text, "performance standard", required=True, max_len=LONG_TEXT)
         changes = {k: v for k, v in changes.items() if (st.get(k) if st.get(k) not in (None, "") else "") != v}
         if changes:
             self._emit("standard.updated", {"id": standard_id, "changes": changes})
+        self._set_notes("standard", st, noted)
         return self._standard_view(self._get(standard_id, "Standard"))
 
     def remove_standard(self, standard_id: str, cascade: bool = False, dry_run: bool = False) -> dict:
@@ -4960,7 +5028,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                # The old single text, as typed, while the list stands in for it (empty otherwise).
                "legacy_standard": (fn.get("standard") or "") if listed else "",
                "standards_without_failure": sum(1 for st in listed if not st["failures"]),
-               "has_basis": bool(basis), "basis_on": fn.get("basis_on") if basis else None}
+               "has_basis": bool(basis), "basis_on": fn.get("basis_on") if basis else None,
+               "notes": fn.get("notes") or ""}
         return out | ({"standard_basis": basis} if full else {"basis_preview": basis_preview(basis)})
 
     def _ff_view(self, ff: dict, standard=...) -> dict:
@@ -4969,7 +5038,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if standard is ...:
             found = [st for st in self.s.out(self.org, ff["id"], "BREACHES") if not st.get("removed")]
             standard = {"id": found[0]["id"], "text": found[0].get("text") or ""} if found else None
-        return {"id": ff["id"], "text": ff["text"], "standard": standard}
+        return {"id": ff["id"], "text": ff["text"], "standard": standard, "notes": ff.get("notes") or ""}
 
     @staticmethod
     def _task_text(task: dict) -> str:

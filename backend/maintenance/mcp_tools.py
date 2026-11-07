@@ -331,14 +331,14 @@ FAILURE_MODES: Table = {
     "retire": ("failure_mode_id", "cascade dry_run", "Delete it, with its tasks (a shared one is unlinked; "
                "recorded failures keep it). cascade: undo_delete can bring it all back; dry_run: only count."),
     "restore": ("failure_mode_id", "", "Put a deleted mode back, with its decision and the task retired with it."),
-    "add_function": ("position_id text", "standard standard_basis", "A function the position performs (its "
+    "add_function": ("position_id text", "standard standard_basis notes", "A function the position performs (its "
                      "performance standards: add_standard), with the working behind them (standard_basis)."),
-    "update_function": ("function_id", "text standard standard_basis", "Change its text, single standard text "
-                        "(before add_standard) or standard_basis ('' clears it)."),
-    "add_standard": ("function_id text", "parameter comparator value unit when source", """One of the function's
+    "update_function": ("function_id", "text standard standard_basis notes", "Change its text, single standard text "
+                        "(before add_standard), standard_basis or notes ('' clears it)."),
+    "add_standard": ("function_id text", "parameter comparator value unit when source notes", """One of the function's
         performance standards, one parameter and one limit ('pH 7.2-7.8'); the structured limit, when it
         applies and its source are optional. A function may hold several."""),
-    "update_standard": ("standard_id", "text parameter comparator value unit when source", "Change one ('' clears "
+    "update_standard": ("standard_id", "text parameter comparator value unit when source notes", "Change one ('' clears "
                         "a field)."),
     "remove_standard": ("standard_id", "cascade dry_run", "Take one off its function (functional failures "
                         "breaching it then breach none; cascade: they go too, with their modes and tasks)."),
@@ -350,9 +350,9 @@ FAILURE_MODES: Table = {
         standards [{text, parameter?, comparator?, value?, unit?, when?, source?}] with dry_run false."""),
     "remove_function": ("function_id", "cascade dry_run", "Delete a function, its functional failures and "
                         "documents; their modes stay, unassigned (cascade: everything under it goes)."),
-    "add_functional_failure": ("function_id text", "standard_id", "A way the function fails ('No flow'); "
+    "add_functional_failure": ("function_id text", "standard_id notes", "A way the function fails ('No flow'); "
                                "standard_id: the performance standard it breaches (none: the whole function)."),
-    "update_functional_failure": ("functional_failure_id", "text standard_id", "Change its text, or the performance "
+    "update_functional_failure": ("functional_failure_id", "text standard_id notes", "Change its text, or the performance "
                                   "standard it breaches (standard_id 'none': the whole function)."),
     "remove_functional_failure": ("functional_failure_id", "cascade dry_run", "Delete a functional failure; its "
                                   "modes stay, unassigned (cascade: they and their tasks go too)."),
@@ -1498,22 +1498,25 @@ def register() -> None:
         if action == "undo_delete":
             return run(m.restore_rcm, deleted_id)
         if action == "add_function":
-            return run(m.add_function, position_id, text, standard or "", standard_basis=standard_basis or "")
+            return run(m.add_function, position_id, text, standard or "", standard_basis=standard_basis or "",
+                       notes=notes)
         if action == "update_function":
-            return run(m.update_function, function_id, text, standard, standard_basis)
+            return run(m.update_function, function_id, text, standard, standard_basis, notes=notes)
         if action == "remove_function":
             if cascade or dry_run:
                 return run(m.remove_function, function_id, bool(cascade), bool(dry_run))
             return run(remove_function_bytes, m, function_id)
         if action == "add_functional_failure":
-            return run(m.add_functional_failure, function_id, text, standard_id)
+            return run(m.add_functional_failure, function_id, text, standard_id, notes=notes)
         if action == "update_functional_failure":
             return run(m.update_functional_failure, functional_failure_id, text,
-                       none_is_null(standard_id) if standard_id is not None else ...)
+                       none_is_null(standard_id) if standard_id is not None else ..., notes=notes)
         if action == "add_standard":
-            return run(m.add_standard, function_id, text, parameter, comparator, value, unit, when, source)
+            return run(m.add_standard, function_id, text, parameter, comparator, value, unit, when, source,
+                       notes=notes)
         if action == "update_standard":
-            return run(m.update_standard, standard_id, text, parameter, comparator, value, unit, when, source)
+            return run(m.update_standard, standard_id, text, parameter, comparator, value, unit, when, source,
+                       notes=notes)
         if action == "remove_standard":
             return run(m.remove_standard, standard_id, bool(cascade), bool(dry_run))
         if action == "reorder_standards":

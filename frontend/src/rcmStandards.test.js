@@ -45,16 +45,16 @@ test("the CSV writes a function's standards as rows, and each failure's breach",
     ] },
     { id: "g", text: "Contain the water", standard: "No leak", standards: [], failures: [{ id: "x3", text: "Leaks", standard: null, modes: [] }] },
   ] }] });
-  const col = EXPORT_HEADER.indexOf("Performance standard");
-  assert.deepEqual(rows.slice(1).map((r) => [r[1], r[col], r[4], r[6]]), [
+  const at = (r, h) => r[EXPORT_HEADER.indexOf(h)];
+  assert.deepEqual(rows.slice(1).map((r) => [at(r, "Function"), at(r, "Performance standard"), at(r, "Functional failure"), at(r, "Failure mode")]), [
     ["Keep the water balanced", "pH 7.2-7.8", "", ""],
     ["Keep the water balanced", "TA 80-120", "", ""],
     ["Keep the water balanced", "pH 7.2-7.8", "pH above 7.8", "Acid under-dosed"],
     ["Keep the water balanced", "", "Water unusable", ""],
     ["Contain the water", "No leak", "Leaks", ""],
   ]);
-  assert.equal(rows[1][3], "## Sums"); // the working on the function's first row only
-  assert.equal(rows[3][3], "");
+  assert.equal(at(rows[1], "Standard working"), "## Sums"); // the working on the function's first row only
+  assert.equal(at(rows[3], "Standard working"), "");
 });
 
 test("limitReads says a limit in words: a range, a single limit, a condition", () => {

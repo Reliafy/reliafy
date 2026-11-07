@@ -96,6 +96,10 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
         return after(updateFailureMode(id, { text: value }));
       }
       if (col === "standard") return after(updatePositionFunction(id, { standard: value }));
+      // Notes and rationale on a function, a standard of the list or a functional failure.
+      if (col === "notes" && r.type === "fn") return after(updatePositionFunction(id, { notes: value }));
+      if (col === "notes" && r.type === "std") return after(updateFunctionStandard(r.ref.standard_id, { notes: value }));
+      if (col === "notes" && r.type === "fail") return after(updateFunctionalFailure(id, { notes: value }));
       // The FME(C)A's fields (scores, effects, action, criticality) and the
       // mode's notes: one PATCH each, null clearing the field.
       if (col === "notes" || FMEA_FIELDS.has(col)) return after(updateFailureMode(id, { [col]: value }));

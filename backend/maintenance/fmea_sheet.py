@@ -6,6 +6,11 @@ the RCM export's with the FME(C)A fields after Consequence, named as the
 worksheet import's synonyms, so the file imports again adding nothing. A mode
 directly under a function (no functional failure yet) has a blank Functional
 failure cell; a mode under none has blank function cells too.
+
+Notes and rationale: a function's (Function notes) and a functional
+failure's (Functional failure notes) on its first row, as the working is; a
+performance standard's (Standard notes) on its own row; a failure mode's
+(Failure mode notes) on its row. The import reads each back.
 """
 
 from __future__ import annotations
@@ -16,13 +21,14 @@ import re
 from backend.maintenance import fmea, rcm_decisions
 
 HEADER = [
-    "Position", "Function", "Performance standard", "Standard working", "Functional failure", "Caused by (below)",
+    "Position", "Function", "Function notes", "Performance standard", "Standard notes", "Standard working",
+    "Functional failure", "Functional failure notes", "Caused by (below)",
     "Failure mode", "Effects", "Consequence",
     "Cause", "Local effect", "Next higher effect", "Detection method", "Severity", "Occurrence", "Detection", "RPN",
     "Action priority", "Recommended action", "Action owner", "Action due", "Action status", "Failure rate",
     "Time unit", "Rate source", "Mode ratio", "Loss probability", "Operating time", "Mode criticality",
     "Severity class",
-    "Decision", "Run-to-failure basis", "Task", "Interval", "Interval unit", "Evidence check", "Notes",
+    "Decision", "Run-to-failure basis", "Task", "Interval", "Interval unit", "Evidence check", "Failure mode notes",
 ]
 SHEET = "FMECA"
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -79,11 +85,14 @@ def rows(worksheet: dict) -> list[list]:
 
         def mode_row(fn, fail, m) -> list:
             first = first_row(fn)
+            first_fail = first_row(fail)
             d = (m or {}).get("decision") or {}
             status = d.get("status")
             return [
-                where, (fn or {}).get("text") or "", _standard_cell(fn or {}, fail),
+                where, (fn or {}).get("text") or "", (first and (fn or {}).get("notes")) or "",
+                _standard_cell(fn or {}, fail), "",
                 (first and (fn or {}).get("standard_basis")) or "", (fail or {}).get("text") or "",
+                (first_fail and (fail or {}).get("notes")) or "",
                 _caused_by(fail or {}), (m or {}).get("text") or "", (m or {}).get("effects") or "",
                 _CONSEQUENCE.get((m or {}).get("consequence") or "", ""),
                 *(_scores(m) if m else blank_scores),
@@ -97,8 +106,8 @@ def rows(worksheet: dict) -> list[list]:
 
         def task_row(fn, fail, m, t) -> list:
             return [
-                where, (fn or {}).get("text") or "", _standard_cell(fn or {}, fail), "", (fail or {}).get("text") or "",
-                _caused_by(fail or {}), m.get("text") or "", "", "", *blank_scores,
+                where, (fn or {}).get("text") or "", "", _standard_cell(fn or {}, fail), "", "",
+                (fail or {}).get("text") or "", "", _caused_by(fail or {}), m.get("text") or "", "", "", *blank_scores,
                 _OUTCOME.get(t.get("outcome") or (m.get("decision") or {}).get("outcome") or "", ""), "",
                 t.get("text") or t.get("name") or "", t.get("interval") if t.get("interval") is not None else "",
                 (t.get("unit") or "") if t.get("interval") else "", "", "",
@@ -115,8 +124,9 @@ def rows(worksheet: dict) -> list[list]:
             if fn.get("standards"):
                 first = first_row(fn)
                 for i, st in enumerate(fn["standards"]):
-                    out.append([where, fn.get("text") or "", st.get("text") or "",
-                                (first and i == 0 and fn.get("standard_basis")) or "", "", "", "", "", "",
+                    out.append([where, fn.get("text") or "", (first and i == 0 and fn.get("notes")) or "",
+                                st.get("text") or "", st.get("notes") or "",
+                                (first and i == 0 and fn.get("standard_basis")) or "", "", "", "", "", "", "",
                                 *blank_scores, "", "", "", "", "", "", ""])
             for m in fn.get("modes") or []:  # directly under the function: no functional failure yet
                 mode_rows(fn, None, m)

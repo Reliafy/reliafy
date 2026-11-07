@@ -181,7 +181,18 @@ fields, then the quieter things at the foot:
   the top), then what it is **Caused by** below and what it **Causes** above;
 - a failure mode: its **Tasks**, then its **Failure effects**,
   **Consequence** (one tap on a choice) and **Decision**, then where it sits
-  (**Under**) and its **Notes**.
+  (**Under**).
+
+Every row, whatever its level, ends with **Notes and rationale**: the long
+description beside its title, where you write why it's there and what it
+rests on (why a performance standard is set where it is, the history behind
+a failure mode). Press **Edit** (or **Add notes** when there are none yet) to
+write in a box in place, with a count up to 4,000 characters, then **Save**
+or **Cancel**. Line breaks are kept. A row with notes shows a small note mark
+after its name in the table; hover over it to read the first line. On a
+phone the same section is in the Details sheet, and the FME(C)A tab's Details
+show a failure mode's notes the same way. A function's working (below) stays
+the sums behind its performance standards; notes are for the reasons.
 
 **Edit description**
 (on a performance standard, **Edit text**) in a row's menu changes the text in the table
@@ -341,7 +352,11 @@ worksheet…** in the position's row menu (or in the **⋯** beside **Add
 function** at the top of its panel). Drop in the workbook or CSV, pick the
 sheet and header row for a workbook, and map its columns: **Function**,
 **Functional failure**, **Failure mode**, **Effects**, **Consequence**,
-**Decision / task type**, **Task**, **Interval** and **Interval unit**. Only
+**Decision / task type**, **Task**, **Interval** and **Interval unit**. Each
+level's notes and rationale has its own column: **Function notes**,
+**Standard notes** (for the performance standard on the same row),
+**Functional failure notes** and **Notes** (or **Failure mode notes**) for
+the failure mode. Only
 **Failure mode** is required; without a Function or Functional failure column
 everything goes under *Imported*. Blank function and failure cells carry down
 from the row above, as most worksheets expect.
@@ -354,10 +369,12 @@ and any rows it will skip, before you press **Add to “…”**.
 
 The import only adds. A function or functional failure with the same text is
 used as it is, and a failure mode already on the position is left alone, so
-importing the same file again adds nothing. **Export CSV**, beside **Import
+importing the same file again adds nothing. The one exception is notes: a
+function, performance standard or functional failure already there with no
+notes takes the file's; one with notes of its own keeps them. **Export CSV**, beside **Import
 worksheet…**, downloads a position's RCM (and everything inside it) one row per
-failure mode, with each decision's evidence and status, in the same layout the
-import reads.
+failure mode, with each decision's evidence and status and every row's notes,
+in the same layout the import reads.
 
 ## Several performance standards on one function
 
