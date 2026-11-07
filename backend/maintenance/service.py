@@ -64,6 +64,8 @@ from backend.maintenance.progression import ProgressionOps
 from backend.maintenance.signals import SignalOps
 from backend.maintenance.tree_delete import PROJECTORS as _TREE_DELETE_PROJECTORS
 from backend.maintenance.tree_delete import TreeDeleteOps
+from backend.maintenance.rcm_delete import PROJECTORS as _RCM_DELETE_PROJECTORS
+from backend.maintenance.rcm_delete import RcmDeleteOps
 
 logger = logging.getLogger(__name__)
 
@@ -2565,7 +2567,7 @@ PROJECTORS = {
 
 # ---- the domain ------------------------------------------------------------------
 
-class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
+class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -3509,11 +3511,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
             self._emit("function.updated", {"id": function_id, "changes": changes, "on": self.today()})
         return self._function_view(self._get(function_id, "Function"))
 
-    def remove_function(self, function_id: str) -> dict:
+    def remove_function(self, function_id: str, cascade: bool = False, dry_run: bool = False) -> dict:
         """Delete a function and its functional failures. Their failure modes stay
         on the position (unassigned), with their decisions, tasks and history.
         Documents on the function are removed with it (documents_removed: the
-        caller deletes a kept PDF's bytes)."""
+        caller deletes a kept PDF's bytes). ``cascade``: everything under it goes
+        too, and restore_rcm undoes it (rcm_delete.py); ``dry_run`` only counts
+        what that would take."""
+        if dry_run or cascade:
+            return self.rcm_delete_preview("function", function_id) if dry_run else self.rcm_delete("function",
+                                                                                                    function_id)
         fn, position = self._live_function(function_id)
         moved = links = 0
         for ff in self._failures_of(function_id):
@@ -3674,9 +3681,14 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
             self._emit("standard.updated", {"id": standard_id, "changes": changes})
         return self._standard_view(self._get(standard_id, "Standard"))
 
-    def remove_standard(self, standard_id: str) -> dict:
+    def remove_standard(self, standard_id: str, cascade: bool = False, dry_run: bool = False) -> dict:
         """Take a standard off its function. A functional failure that breached it
-        goes back to breaching the whole function."""
+        goes back to breaching the whole function. ``cascade``: those functional
+        failures go with it, with their modes and tasks (rcm_delete.py);
+        ``dry_run`` only counts."""
+        if dry_run or cascade:
+            return self.rcm_delete_preview("standard", standard_id) if dry_run else self.rcm_delete("standard",
+                                                                                                    standard_id)
         st, fn = self._live_standard(standard_id)
         breached = [ff for ff in self.s.inn(self.org, standard_id, "BREACHES") if not ff.get("removed")]
         self._emit("standard.removed", {"id": standard_id, "on": self.today()})
@@ -3807,9 +3819,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
         self._emit("functional_failure.removed", {"id": ff["id"], "on": self.today()})
         return len(modes), links
 
-    def remove_functional_failure(self, ff_id: str) -> dict:
+    def remove_functional_failure(self, ff_id: str, cascade: bool = False, dry_run: bool = False) -> dict:
         """Delete a functional failure. Its failure modes stay on the position
-        (unassigned), with their decisions, tasks and history."""
+        (unassigned), with their decisions, tasks and history. ``cascade``: its
+        modes and their tasks go too (rcm_delete.py); ``dry_run`` only counts."""
+        if dry_run or cascade:
+            return self.rcm_delete_preview("functional_failure", ff_id) if dry_run else self.rcm_delete(
+                "functional_failure", ff_id)
         ff, _, position = self._live_ff(ff_id)
         moved, links = self._drop_ff(ff)
         return {"removed": ff_id, "position_id": position["id"], "failure_modes_unassigned": moved,
@@ -4192,10 +4208,15 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
                 retired.append(t["id"])
         return retired, unlinked
 
-    def retire_failure_mode(self, mode_id: str) -> dict:
+    def retire_failure_mode(self, mode_id: str, cascade: bool = False, dry_run: bool = False) -> dict:
         """Delete a failure mode from the position's RCM, with the tasks that serve
         it alone (a task serving other modes too stays, unlinked from this one).
-        Failures already recorded against it keep it in their history."""
+        Failures already recorded against it keep it in their history.
+        ``cascade``: the same, recorded so restore_rcm brings it back with its
+        tasks and their links (rcm_delete.py); ``dry_run`` only counts."""
+        if dry_run or cascade:
+            return self.rcm_delete_preview("failure_mode", mode_id) if dry_run else self.rcm_delete(
+                "failure_mode", mode_id)
         fm, position = self._live_mode(mode_id)
         retired, unlinked = self._drop_mode_tasks(mode_id, self._mode_tasks(mode_id, fm), "Its failure mode was deleted.")
         self._emit("failure_mode.retired", {"id": mode_id, "on": self.today()})
@@ -12069,5 +12090,7 @@ PROJECTORS.update(_SIGNAL_PROJECTORS)
 PROJECTORS.update(_PRODUCT_PROJECTORS)
 # Deleting a branch of the tree and undoing it (Nov 2026, tree_delete.py).
 PROJECTORS.update(_TREE_DELETE_PROJECTORS)
+# Deleting an RCM row with everything under it and undoing it (Nov 2026, rcm_delete.py).
+PROJECTORS.update(_RCM_DELETE_PROJECTORS)
 
 PROJECTION_VERSION = 5

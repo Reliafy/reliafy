@@ -13,6 +13,7 @@
 
 import { modeSums, blankSums, addSums } from "./fmeaWorksheet.js";
 import { byCriticality, crOf, matrixOf } from "./fmea.js";
+import { withPositionDelete } from "./rcmDelete.js";
 
 const noStatus = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null, not_analysed: 0, positions: 0, empty: 0 });
 
@@ -71,24 +72,25 @@ export function graftFmea(display, rcm) {
 // a failure mode directly under itself (no functional failure yet: the RCM
 // tab shows it as such). `canRename`: the description is edited in the table
 // (not on a phone, where the details panel edits it).
-export function rowActions(r, { canRename = true } = {}) {
+export function rowActions(r, { canRename = true, viewOnly = null } = {}) {
   if (!r) return [];
   const open = r.type === "fn" || r.type === "mode" ? [{ id: "open", label: "Open…" }] : [];
   const rename = canRename ? [{ id: "rename", label: "Edit description" }] : [];
+  // Delete… on any row takes everything under it (a dialog counts it first; Undo brings it back).
   if (r.type === "pos") {
-    return [
+    return withPositionDelete([
       { id: "add-fn", label: "Add function" },
       { id: "import-sheet", label: "Import worksheet…" },
       { id: "export-csv", label: "Export CSV" },
       { id: "print", label: "Print view" },
-    ];
+    ], { viewOnly });
   }
   if (r.type === "fn") {
     return [
       ...open,
       { id: "add-mode", label: "Add failure mode" },
       ...rename,
-      { id: "delete", label: "Delete function", danger: true },
+      { id: "delete", label: "Delete function…", danger: true },
     ];
   }
   if (r.type === "unassigned") return [{ id: "add-mode", label: "Add a failure mode…" }];
@@ -97,7 +99,7 @@ export function rowActions(r, { canRename = true } = {}) {
       ...open,
       { id: "score", label: "Score…" },
       ...rename,
-      { id: "delete", label: "Delete failure mode", danger: true },
+      { id: "delete", label: "Delete failure mode…", danger: true },
     ];
   }
   return [];

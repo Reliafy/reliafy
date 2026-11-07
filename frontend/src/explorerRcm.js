@@ -14,6 +14,7 @@ import {
   rowText as rcmText, tasksOf,
 } from "./rcmWorksheet.js";
 import { standardsShown } from "./rcmStandards.js";
+import { withPositionDelete } from "./rcmDelete.js";
 import { FIELDS as FMEA_FIELDS } from "./fmeaWorksheet.js";
 
 export const RCM_TYPES = new Set(["fn", "std", "nostd", "fail", "mode", "unassigned", "cause", "nofail"]);
@@ -229,7 +230,7 @@ export const rcmRowText = (r) => rcmText(r);
 // the description is edited in the table (not on a phone, where the details panel edits it). `moves`: a
 // standard's Move up / Move down (a wide screen drags them instead, so the page
 // passes false there unless the menu was opened from the keyboard).
-export function rowActions(r, { canRename = true, moves = true } = {}) {
+export function rowActions(r, { canRename = true, moves = true, viewOnly = null } = {}) {
   if (!r) return [];
   // A function, standard, functional failure or failure mode opens its
   // details across the table (a double-click on its name does the same):
@@ -237,12 +238,13 @@ export function rowActions(r, { canRename = true, moves = true } = {}) {
   // there's none (there the details are a sheet).
   const open = opensItem(r) ? [{ id: "open", label: "Open…" }] : [];
   const rename = canRename ? [{ id: "rename", label: "Edit description" }] : [];
+  // Delete… on any row takes everything under it (a dialog counts it first; Undo brings it back).
   if (r.type === "pos") {
-    return [
+    return withPositionDelete([
       { id: "add-fn", label: "Add function" },
       { id: "import-sheet", label: "Import worksheet…" },
       { id: "export-csv", label: "Export CSV" },
-    ];
+    ], { viewOnly });
   }
   if (r.type === "fn") {
     return [
@@ -250,7 +252,7 @@ export function rowActions(r, { canRename = true, moves = true } = {}) {
       { id: "add-std", label: "Add a performance standard…" },
       { id: "add-fail", label: "Add functional failure" },
       ...rename,
-      { id: "delete", label: "Delete function", danger: true },
+      { id: "delete", label: "Delete function…", danger: true },
     ];
   }
   if (r.type === "std") {
@@ -266,7 +268,8 @@ export function rowActions(r, { canRename = true, moves = true } = {}) {
       ...(canRename ? [{ id: "rename", label: "Edit text" }] : []),
       { id: "add-fail", label: "Add a functional failure…" },
       ...move,
-      { id: "delete", label: "Remove performance standard", danger: true },
+      // The old single text (legacy) is cleared; a standard of the list goes with the failures breaching it.
+      { id: "delete", label: r.ref.legacy ? "Remove performance standard" : "Delete performance standard…", danger: true },
     ];
   }
   if (r.type === "fail") {
@@ -276,7 +279,7 @@ export function rowActions(r, { canRename = true, moves = true } = {}) {
       { id: "link-cause", label: "Link to a cause…" },
       ...(r.ref.has_above ? [{ id: "link-effect", label: "Link to an effect…" }] : []),
       ...rename,
-      { id: "delete", label: "Delete functional failure", danger: true },
+      { id: "delete", label: "Delete functional failure…", danger: true },
     ];
   }
   if (r.type === "cause") return [{ id: "go", label: "Go to it" }, { id: "unlink", label: "Unlink", danger: true }];
@@ -298,7 +301,7 @@ export function rowActions(r, { canRename = true, moves = true } = {}) {
       // Another task for the mode (or an existing one linked): the details' Tasks, on their add row.
       { id: "add-task", label: "Add a task…" },
       ...rename,
-      { id: "delete", label: "Delete failure mode", danger: true },
+      { id: "delete", label: "Delete failure mode…", danger: true },
     ];
   }
   return [];

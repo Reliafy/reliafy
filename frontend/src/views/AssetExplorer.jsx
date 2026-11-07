@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   addSampleProduct, getFmeaExcelBlob, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
-  hasFmeaExcel, restoreTree,
+  hasFmeaExcel, restoreRcm, restoreTree,
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
@@ -63,8 +63,9 @@ import { EXPLORER_LABEL, EXPLORER_PATH } from "../navigation.js";
 import { isolateItems, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
 import { canIsolate, depthWords, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen } from "../treeIsolate.js";
 import { MoveModal, RenameModal } from "../components/TreeRowModals.jsx";
-import { DeleteTreeModal } from "../components/DeleteTree.jsx";
+import { DeleteRcmModal, DeleteTreeModal } from "../components/DeleteTree.jsx";
 import { DELETE_KIND, undoneText } from "../treeDelete.js";
+import { RCM_DELETE_KIND, deletesWithCascade, rcmDeleteId, rcmUndoneText } from "../rcmDelete.js";
 import NewFailureReportModal from "../components/NewFailureReportModal.jsx";
 import usePhone from "../usePhone.js";
 import { OPEN_SAMPLE_PRODUCT_LABEL, sampleProductId, sampleProductView } from "../sampleProduct.js";
@@ -621,6 +622,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setRcmFocus(isRcmRow(display.rows.get(r.parent)) ? r.parent : null);
     say(`${verb === "Remove" ? "Removed" : "Deleted"} the ${level}.`);
   };
+  // Delete on an RCM row (its menu, or the foot of its details): a function,
+  // standard, failure or mode goes with everything under it, in a dialog that
+  // counts it first, then a toast with Undo; the old single standard text is
+  // cleared as before.
+  const removeRow = (r) => (deletesWithCascade(r) ? setRowModal({ kind: "rcm-delete", row: r }) : remove(r));
   // Linking functional failures (from a row's menu or the panel): the picker,
   // and taking a link off, with one confirm when it would leave the higher
   // failure with nothing explaining it.
@@ -790,10 +796,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const undoDelete = async (t) => {
     setToast({ ...t, busy: true });
     try {
-      const answer = await restoreTree(t.restore.kind, t.restore.id);
-      pending.current = t.restore.id;
+      // An RCM row's delete (restoreRcm), or a position's or location's.
+      const rcmRow = !!t.restore.rcm;
+      const answer = rcmRow ? await restoreRcm(t.restore.id) : await restoreTree(t.restore.kind, t.restore.id);
+      if (rcmRow) setRcmFocus(t.restore.focus ?? null);
+      else pending.current = t.restore.id;
+      if (rcmOn) await loadRcm();
       load();
-      const text = undoneText({ ...answer, name: t.restore.name });
+      const text = rcmRow ? rcmUndoneText({ ...answer, name: t.restore.name }) : undoneText({ ...answer, name: t.restore.name });
       setToast({ text, undo: null, at: Date.now() });
       announce(text);
     } catch (e) {
@@ -881,11 +891,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (!rcmOn) return withPin(designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), [...isolateItem(r), ...pinItem(r)]);
       if (!rcm) return [...isolateItem(r), ...pinItem(r)];
       // The FME(C)A tab: its own rows' actions (no moving: that's the RCM tab's).
-      if (fmeaOn) return [...withPin(fmeaRowActions(r, { canRename: !phone }), isolateItem(r)), ...pinItem(r)];
+      // Delete… stays last (pin and isolate go before it).
+      if (fmeaOn) return withPin(fmeaRowActions(r, { canRename: !phone, viewOnly }), [...isolateItem(r), ...pinItem(r)]);
       const moves = phone || keyboard;
       // Move to… always (the picker: no dragging needed, and a long way); Move up / down only where there's no dragging.
-      const own = withPin(rowActions(r, { canRename: !phone, moves }), moveItems(whole, whole.rows.get(r.key) || r, { picked, steps: moves }));
-      return [...withPin(own, [...isolateItem(r), ...isolateIncompleteItem(display.rows.get(r.key) || r, { can: canIsolate(display.rows.get(r.key) || r, mode, canPin) })]), ...pinItem(r)];
+      const own = withPin(rowActions(r, { canRename: !phone, moves, viewOnly }), moveItems(whole, whole.rows.get(r.key) || r, { picked, steps: moves }));
+      return withPin(own, [...isolateItem(r), ...isolateIncompleteItem(display.rows.get(r.key) || r, { can: canIsolate(display.rows.get(r.key) || r, mode, canPin) }), ...pinItem(r)]);
     },
     onAction: (r, id) => {
       if (id === "tree-new") {
@@ -926,7 +937,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       else if (id === "link-effect") openLink(r, "effect");
       else if (id === "go") reveal(r.ref.cause_id);
       else if (id === "unlink") unlinkPair(r.ref.effect_id, r.ref.cause_id);
-      else if (id === "delete") remove(r);
+      // A function, standard, failure or mode goes with everything under it (a counted dialog, then Undo).
+      else if (id === "delete") removeRow(r);
       else if (id === "import-sheet") setSheetFor({ id: r.key, name: r.ref.name });
       else if (id === "export-csv") exportRcm(r);
     },
@@ -1444,7 +1456,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
       <Details r={detailsRow} display={display} whole={whole} readOnly={false} phone={phone} headingRef={detailsHeading} ops={panelOps}
                links={{ onLink: openLink, onUnlink: unlinkPair }}
-               onCommit={commit} onAdd={addInside} onDelete={remove} onDecision={(r) => setDeciding(r)}
+               onCommit={commit} onAdd={addInside} onDelete={removeRow} onDecision={(r) => setDeciding(r)}
                expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
                addStart={addStart} onSaid={say}
                onMove={fmeaOn ? null : (r, { task = false } = {}) => (task ? setMoving({ taskFrom: r.key }) : setMoving({ src: dragSource(whole, r.key) }))}
@@ -1691,11 +1703,25 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                            }
                            const up = row.ref.parent_id && display.rows.has(row.ref.parent_id) ? row.ref.parent_id : null;
                            if (up != null) pending.current = up;
+                           if (rcmOn) loadRcm();
                            load();
                            setToast({ text: done.text, restore: { kind: done.kind, id: done.id, name: done.name }, at: Date.now() });
                            announce(`${done.text} Press Control Z to undo.`);
                            if (up != null) setTimeout(() => document.getElementById(`tp-${up}`)?.focus({ preventScroll: true }), 300);
                          }} />
+      )}
+      {rowModal?.kind === "rcm-delete" && (
+        <DeleteRcmModal kind={RCM_DELETE_KIND[rowModal.row.type]} id={rcmDeleteId(rowModal.row)}
+                        name={rowModal.row.ref.text} onClose={() => setRowModal(null)}
+                        onDone={(answer, done) => {
+                          // The RCM and the tree read again, the row it was under picked, and the toast with Undo.
+                          const row = rowModal.row;
+                          setRowModal(null);
+                          setRcmFocus(isRcmRow(display.rows.get(row.parent)) ? row.parent : null);
+                          Promise.resolve(loadRcm()).then(() => load());
+                          setToast({ text: done.text, restore: { rcm: true, id: done.id, name: done.name, focus: row.key }, at: Date.now() });
+                          announce(`${done.text} Press Control Z to undo.`);
+                        }} />
       )}
       {reportFor && (
         <NewFailureReportModal positionId={reportFor.id} positionName={reportFor.name} today={data?.today || ""}

@@ -192,10 +192,14 @@ test("adding from each row's menu grows the tree: a function, its failures and m
   const sheet = await (await request.get(`${M}/positions/${p.motor.id}/rcm?scope=this`)).json();
   expect(sheet.positions[0].functions.map((f) => f.text)).toEqual([`Turn the shaft ${tag}`, `Stay cool ${tag}`]);
   expect(sheet.positions[0].functions[0].failures[0].modes.map((m) => m.text)).toEqual([`Winding burnt ${tag}`, `Bearing worn ${tag}`]);
-  // A failure mode's menu: decide, edit, delete; Delete asks first.
-  await fromMenu(page, `^Failure mode: Bearing worn ${tag}`, `Failure mode: Bearing worn ${tag}`, "Delete failure mode");
-  await page.getByRole("alertdialog", { name: "Delete this failure mode?" }).getByRole("button", { name: "Delete failure mode" }).click();
+  // A failure mode's menu: decide, edit, delete; Delete asks first (the counted dialog), then offers Undo.
+  await fromMenu(page, `^Failure mode: Bearing worn ${tag}`, `Failure mode: Bearing worn ${tag}`, "Delete failure mode…");
+  const delMode = page.getByRole("dialog", { name: `Delete “Bearing worn ${tag}”?` });
+  await expect(delMode.getByTestId("delete-counts")).toContainText("Nothing else is under it.");
+  await delMode.getByRole("button", { name: "Delete the failure mode" }).click();
   await expect(trow(page, `^Failure mode: Bearing worn ${tag}`)).toHaveCount(0);
+  await page.locator(".rcm-toast").getByRole("button", { name: "Undo" }).click();
+  await expect(trow(page, `^Failure mode: Bearing worn ${tag}`)).toHaveCount(1);
   await expectHealthy(page, problems, { label: "tree grows" });
 });
 
@@ -213,13 +217,13 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   await page.keyboard.press("Shift+F10");
   const menu = rowMenu(page, fnName);
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Move up", "Move down", "Isolate", "Isolate incomplete rows", "Delete function"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Move up", "Move down", "Isolate", "Isolate incomplete rows", "Delete function…"]);
   await expect(menu.getByRole("menuitem", { name: "Open…" })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Add a performance standard…" })).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp"); // round to the last
-  await expect(menu.getByRole("menuitem", { name: "Delete function" })).toBeFocused();
+  await expect(menu.getByRole("menuitem", { name: "Delete function…" })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
   await expect(fn).toBeFocused();
@@ -327,7 +331,7 @@ test("at 400 px each row shows its ⋯: a tap opens the menu, and adding works",
   await more.click();
   const menu = rowMenu(page, fnName);
   // On a phone the details panel edits the description: no Edit description here.
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Move to…", "Move up", "Move down", "Isolate", "Isolate incomplete rows", "Delete function"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Move to…", "Move up", "Move down", "Isolate", "Isolate incomplete rows", "Delete function…"]);
   const mbox = await menu.boundingBox();
   expect(mbox.x).toBeGreaterThanOrEqual(0);
   expect(mbox.x + mbox.width).toBeLessThanOrEqual(400);
@@ -778,14 +782,14 @@ test("adding, deleting and deciding go once: a double-click, three clicks at onc
   await expect(trow(page, `^Failure mode: Burns out fast ${tag}`)).toHaveCount(1);
   expect(patches).toHaveLength(1);
 
-  // Deleting: a double-click on the confirm's button deletes once.
+  // Deleting: a double-click on the dialog's button deletes once (the count before it is a dry run).
   const deletes = sent(page, "DELETE", "");
-  await fromMenu(page, `^Function: Triple ${tag}`, `Function: Triple ${tag}`, "Delete function");
-  const confirm = page.getByRole("alertdialog", { name: "Delete this function?" });
-  await confirm.getByRole("button", { name: "Delete function" }).dblclick();
+  await fromMenu(page, `^Function: Triple ${tag}`, `Function: Triple ${tag}`, "Delete function…");
+  const confirm = page.getByRole("dialog", { name: new RegExp(`^Delete “Triple ${tag}”`) });
+  await confirm.getByRole("button", { name: "Delete the function" }).dblclick();
   await expect(confirm).toHaveCount(0);
   await expect(trow(page, `^Function: Triple ${tag}`)).toHaveCount(0);
-  expect(deletes).toHaveLength(1);
+  expect(deletes.filter((u) => !u.includes("dry_run"))).toHaveLength(1);
   await expectHealthy(page, problems, { label: "once only", root: ".tx" });
 });
 

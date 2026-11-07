@@ -2,6 +2,14 @@
 
 ## Unreleased (0.5.1)
 
+- **Delete an RCM row with everything under it**: `maintenance
+  failure_modes.remove_function`, `remove_standard`,
+  `remove_functional_failure` and `retire` take `cascade` (everything under it
+  goes: standards, functional failures, failure modes, their tasks and links)
+  and `dry_run` (only count it). The new `failure_modes.undo_delete`
+  (`deleted_id`) brings the lot back as a unit. Without `cascade` they behave
+  as before.
+
 - **One sample quadcopter**: `maintenance positions.add_sample_uav` is gone.
   The sample quadcopter is now the sample product only (`maintenance
   products.add_sample`): its design carries the same scored FME(C)A. Copies
