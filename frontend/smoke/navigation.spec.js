@@ -58,7 +58,7 @@ test("no roles: every entry in one flat list, nothing under More", async ({ page
   await mainMenu(page).getByRole("link", { name: "Modelling", exact: true }).click();
   await expect(page).toHaveURL(/\/data$/);
   await expect(mainMenu(page).locator(":scope > .side-group > div > .side-children > div > .side-subitem"))
-    .toHaveText(["Data", "Models", "System models"]);
+    .toHaveText(["Data", "Models", "Maintainability prediction", "System models"]);
   await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Data");
   // An entry with a landing page opens on it; its children show beneath it.
   await mainMenu(page).getByRole("link", { name: "Models", exact: true }).click();
