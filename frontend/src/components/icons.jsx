@@ -26,8 +26,8 @@ export const UploadIcon = () => svg(<><path d="M12 16V4m0 0 4 4m-4-4-4 4" /><pat
 export const RepairIcon = () => svg(<path d="M14.7 6.3a4 4 0 0 0-5.4 5.1L4 16.7V20h3.3l5.3-5.3a4 4 0 0 0 5.1-5.4l-2.6 2.6-2.4-.6-.6-2.4z" />);
 
 // "Toggle sidebar" (the macOS / VS Code glyph): a rounded rectangle with its left
-// pane filled. The Explorer pane's fold button draws the same shape in CSS
-// (views/AssetExplorer.css, --sidebar-glyph), so the two controls match.
+// pane filled. The menu rail's toggle only: the Explorer pane's fold button
+// keeps its « so the two are told apart.
 export const SidebarIcon = () => (
   <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true">
     <rect x="1.7" y="2.7" width="12.6" height="10.6" rx="2.3" />
