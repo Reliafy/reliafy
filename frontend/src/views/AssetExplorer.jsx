@@ -181,6 +181,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const mode = rcmOn || root ? "positions" : arrangementOf(params.get("arrange"), saved.mode);
   const notPlaced = (mode === "positions" || mode === "flat") && params.get("place") === "none";
   const title = titleProp || EXPLORER_LABEL;
+  // Inside a product's page (its own h1), the picked row's name is an h2.
+  const heading = rootProp ? 2 : 1;
   const treeLabel = ARRANGEMENTS.find((a) => a.value === mode).tree;
 
   // The address always says the arrangement, so it can be shared as it is.
@@ -1320,7 +1322,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const summaryRow = !rcmOn && data && !nothing ? row : null;
   const head = phone ? null : rcmOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
-                pin={pinFor(posRow)} headingRef={headingRef} fullScreenButton={fullButton} message={msg}
+                pin={pinFor(posRow)} headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
                 meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key)} /></span> : null}
                 actions={(
                   <>
@@ -1347,7 +1349,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                 )} />
   ) : summaryRow && (
     <SlimHeader display={whole} row={summaryRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
-                pin={pinFor(summaryRow)} headingRef={headingRef} fullScreenButton={fullButton}
+                pin={pinFor(summaryRow)} headingRef={headingRef} fullScreenButton={fullButton} heading={heading}
                 meta={KIND[summaryRow.type] ? <span className="tt-kind">{KIND[summaryRow.type]}</span> : null} primaryOpen
                 message={message?.fade ? msg : null} />
   );
@@ -1488,7 +1490,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <TreeDetail ref={headingRef} display={whole} row={data && !nothing ? row : null} today={data?.today || ""}
                     onSelect={selectFromPanel} onCrumb={(k) => crumbGo(k, selectFromPanel)} above={above}
                     pin={data && !nothing ? pinFor(row) : null}
-                    back={back} version={version} empty={emptyDetail} headless={!phone}
+                    back={back} version={version} empty={emptyDetail} headless={!phone} heading={heading}
                     tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi}
                     actions={summaryActionsOf(data && !nothing ? row : null)} />
       )}

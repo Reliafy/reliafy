@@ -306,7 +306,8 @@ test("a model's failure pattern, Use this model and B-lives", async ({ page, pro
   await expect(answer).toContainText(/we're 90% sure it's at least [\d,]+ hours/);
   await page.getByRole("group", { name: "B-lives" }).getByRole("button", { name: "B50" }).click();
   await expect(answer).toContainText("(the B50 life)");
-  await expect(page.getByLabel("Reliability %")).toHaveValue("50");
+  // The field is labelled "Reliability"; the % is a visible suffix beside the box.
+  await expect(page.getByLabel("Reliability", { exact: true })).toHaveValue("50");
   await expect(page.getByRole("region", { name: "B-lives and mean life" })).toHaveCount(0);
   await expectHealthy(page, problems, { label: "model calculator", chart: true });
 });
@@ -335,7 +336,7 @@ test("Model characteristics: the mean life and its bound", async ({ page, proble
   await expect(page.getByRole("region", { name: "B-lives" })).toContainText(/B10\s*582 hours\s*≥ \d+/);
   await page.getByRole("button", { name: /Another reliability: use Time at reliability/ }).click();
   await expect(page.locator(".calc-answer")).toContainText("(the B10 life)");
-  await expect(page.getByLabel("Confidence level %")).toHaveValue("95");
+  await expect(page.getByLabel("Confidence level", { exact: true })).toHaveValue("95");
 
   // An exponential's mean, and Kaplan-Meier's counted to a time.
   const pumps = { dataset_id: "sample-ds-pumps", x: "months", c: "censored", c_invert: "0", unit: "months" };
@@ -454,10 +455,33 @@ test("the empty tree offers the sample truck", async ({ page, problems }) => {
   });
   await open(page, "/asset-register/explorer?arrange=positions");
   const card = page.locator(".ae-sample").first();
-  await expect(card).toContainText("New here? Add the sample truck to see an RCM built on the tree.");
+  await expect(card).toContainText("New here? Add the sample truck to see an RCM built on the tree, or the sample UAV for an FME(C)A.");
+  await expect(card.getByRole("button", { name: "Add the sample UAV" })).toBeVisible();
   await card.getByRole("button", { name: "Add the sample truck" }).click();
   const ask = page.getByRole("alertdialog", { name: "The sample truck is already in your tree" });
   await ask.getByRole("button", { name: "Keep the one I have" }).click();
   expect(asked).toEqual([{ again: false }]);
   await expectHealthy(page, problems, { label: "the empty tree" });
+  // The page reads the tree again after the answer; a read still in flight when the test ends must not fail the worker.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+// Maintenance on a phone: a task named with one unbreakable code (as imported
+// ones often are) widens the "Due in the next 30 days" table, which then
+// scrolls inside its card; the page itself never scrolls sideways.
+test("Maintenance at 400 px: a wide due table scrolls in its card, not the page", async ({ page, request, problems }) => {
+  const tag = `${Date.now() % 1000000}`;
+  const p = await postOk(request, "/api/maintenance/positions", { name: `GBX_${tag}` });
+  await postOk(request, `/api/maintenance/positions/${p.id}/tasks`,
+               { name: `PM_WEEKLY_LUBRICATION_CHECK_GEARBOX_BEARINGS_${tag}`, interval: 1, unit: "days", outcome: "on_condition" });
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, "/maintenance");
+  const row = page.getByRole("row", { name: new RegExp(`PM_WEEKLY_LUBRICATION_CHECK_GEARBOX_BEARINGS_${tag}`) });
+  await expect(row).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  // The table is wider than the card, and it is the card's scroller that holds it.
+  const box = await row.locator("xpath=ancestor::div[contains(@class, 'maint-scroll')]").evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(box).toBeGreaterThan(0);
+  await expectHealthy(page, problems, { label: "maintenance on a phone" });
+  await postOk(request, `/api/maintenance/positions/${p.id}/retire`, { reason: "smoke test" });
 });

@@ -143,7 +143,7 @@ export default function MaintenanceHome() {
             {data.due.length === 0 ? (
               <p className="lib-date">Nothing due.</p>
             ) : (
-              <table className="lib-table">
+              <div className="maint-scroll"><table className="lib-table">
                 <thead><tr><th>Task</th><th>On</th><th>Due</th><th>Work order</th></tr></thead>
                 <tbody>
                   {data.due.map((t) => (
@@ -157,7 +157,7 @@ export default function MaintenanceHome() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </section>
 

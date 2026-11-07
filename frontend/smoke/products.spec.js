@@ -41,6 +41,8 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expect(page.getByRole("tab", { name: "Functional structure" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("treeitem", { name: /^Propulsion/ }).first()).toBeVisible();
     await expect(page.getByRole("treeitem", { name: /^Pump station|^Delivery truck/ })).toHaveCount(0);
+    // One h1 (the product's): the tree's picked row is an h2 here, not a second h1.
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
     await shot(page, `${w}-product-structure`);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
 
