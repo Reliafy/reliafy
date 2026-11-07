@@ -2,6 +2,7 @@
 // most-likely date and a range; a level with too few readings gets a plain message and no dates.
 // At 400 px nothing scrolls the page sideways. Names start "Ttl" so they sort after the other specs' plants.
 import { test, expect, open, expectHealthy } from "./health.js";
+import { EXPLORER_SIGNALS_TAB } from "../src/explorerTabs.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -31,6 +32,7 @@ async function plant(request, tag, readings) {
 }
 
 test("Time to the limit: a date and a range, and the two ways on", async ({ page, request, problems }) => {
+  test.skip(!EXPLORER_SIGNALS_TAB, "the Signals tab is hidden for now: the hidden-tab test covers it");
   const p = await plant(request, "A", 16);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=signals`);
   const panel = page.getByRole("region", { name: "Time to the limit" });
@@ -55,6 +57,7 @@ test("Time to the limit: a date and a range, and the two ways on", async ({ page
 });
 
 test("Time to the limit: too few readings gives a message and fits a phone", async ({ page, request, problems }) => {
+  test.skip(!EXPLORER_SIGNALS_TAB, "the Signals tab is hidden for now: the hidden-tab test covers it");
   const p = await plant(request, "B", 3);
   await page.setViewportSize({ width: 400, height: 800 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=signals`);

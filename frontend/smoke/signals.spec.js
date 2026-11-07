@@ -5,6 +5,7 @@
 // scrolls the page sideways. The names start "Sig" so they sort after the other specs' plants.
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
+import { EXPLORER_SIGNALS_TAB } from "../src/explorerTabs.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -39,6 +40,7 @@ async function plant(request, tag) {
 }
 
 test("the Signals tab: spectrum, a watch band, and play", async ({ page, request, problems }) => {
+  test.skip(!EXPLORER_SIGNALS_TAB, "the Signals tab is hidden for now: the hidden-tab test covers it");
   const p = await plant(request, "A");
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=signals`);
   await expect(page.getByRole("tab", { name: "Signals" })).toHaveAttribute("aria-selected", "true");
@@ -65,6 +67,7 @@ test("the Signals tab: spectrum, a watch band, and play", async ({ page, request
 });
 
 test("the Signals tab fits a phone and an item with no channel offers the guide", async ({ page, request, problems }) => {
+  test.skip(!EXPLORER_SIGNALS_TAB, "the Signals tab is hidden for now: the hidden-tab test covers it");
   const p = await plant(request, "B");
   await page.setViewportSize({ width: 400, height: 800 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=signals`);
@@ -84,6 +87,7 @@ test("the Signals tab fits a phone and an item with no channel offers the guide"
 });
 
 test("view controls: orders, log scale, editable bands with levels, the storage line, adding a file", async ({ page, request, problems }) => {
+  test.skip(!EXPLORER_SIGNALS_TAB, "the Signals tab is hidden for now: the hidden-tab test covers it");
   const p = await plant(request, "C");
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=signals`);
   const spectrum = page.getByRole("region", { name: "Spectrum" });
@@ -132,6 +136,7 @@ test("view controls: orders, log scale, editable bands with levels, the storage 
 });
 
 test("a file with too many numbers is refused in plain words, and the controls fit a phone", async ({ page, request, problems }) => {
+  test.skip(!EXPLORER_SIGNALS_TAB, "the Signals tab is hidden for now: the hidden-tab test covers it");
   const p = await plant(request, "D");
   await page.setViewportSize({ width: 400, height: 800 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=signals`);
@@ -150,4 +155,21 @@ test("a file with too many numbers is refused in plain words, and the controls f
   expect(sideways, "the page scrolls sideways at 400 px").toBe(false);
   await shot(page, "signals-view-phone");
   expect(problems, "errors on the page").toEqual([]);
+});
+
+test("the Signals tab is hidden for now: no tab, an old address shows Summary, a channel's link opens the position", async ({ page, request, problems }) => {
+  test.skip(EXPLORER_SIGNALS_TAB, "the Signals tab is shown: the tests above cover it");
+  const p = await plant(request, "H");
+  for (const width of [1280, 400]) {
+    await page.setViewportSize({ width, height: 800 });
+    await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=signals`);
+    if (width < 800) await page.getByLabel("Positions").getByText("Sig pump H", { exact: true }).click();
+    await expect(page.getByRole("tab", { name: "Signals" })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("region", { name: "Spectrum" })).toHaveCount(0);
+  }
+  // The data and API stay: the channel is still there.
+  const channels = await request.get(`${M}/signals/channels`).then((r) => r.json());
+  expect(channels.channels.some((c) => c.name === "Sig bearing H")).toBe(true);
+  await expectHealthy(page, problems, { label: "signals tab hidden" });
 });

@@ -14,7 +14,7 @@ export default function WatchedBandsNote() {
     listSignalChannels().then((d) => setChannels(d.channels || [])).catch(() => setChannels([]));
   }, [has.maintenance]);
   if (!has.maintenance || !channels || channels.length === 0) return null;
-  // A fitted item's channel opens its position's Signals tab; a loose item's, its row in Locations.
+  // A channel opens its position's Summary (its Signals tab when that is shown, EXPLORER_SIGNALS_TAB); a loose item's, its row in Locations.
   const link = channelExplorerPath;
   return (
     <section className="card" aria-label="Signal channels">

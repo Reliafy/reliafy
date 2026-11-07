@@ -22,7 +22,8 @@
 //
 // Parts and stock and Classes are hidden for now (EXPLORER_PARTS_CLASSES_TABS
 // below): their entries, bodies (TreeDetail) and old addresses (redirects.js)
-// stay, so one switch brings them back.
+// stay, so one switch brings them back. Signals is the same
+// (EXPLORER_SIGNALS_TAB).
 //
 // Adding a tab is one entry here (id, label, the kinds of row that have it,
 // `asset: true` when a design's rows don't) and its body in TreeDetail. The
@@ -35,8 +36,16 @@
 // so a `?tab=parts` or `?tab=classes` address shows Summary, and the old pages'
 // redirects (redirects.js) land on the Explorer with no tab.
 export const EXPLORER_PARTS_CLASSES_TABS = false;
-const SWITCHED = new Set(["parts", "classes"]);
-const offered = (t) => EXPLORER_PARTS_CLASSES_TABS || !SWITCHED.has(t.id);
+
+// Derryn, 8 Nov 2026: hidden for now. Off, `tabsFor` leaves out Signals on
+// every row (positions, items, a product's design), so `?tab=signals` shows
+// Summary. The body (SignalsPanel) and the Signals data and API stay; the
+// links that opened the tab (signals.js channelExplorerPath) open the
+// position's Summary meanwhile.
+export const EXPLORER_SIGNALS_TAB = false;
+
+const HIDDEN_WHEN_OFF = { parts: EXPLORER_PARTS_CLASSES_TABS, classes: EXPLORER_PARTS_CLASSES_TABS, signals: EXPLORER_SIGNALS_TAB };
+const offered = (t) => HIDDEN_WHEN_OFF[t.id] !== false;
 
 export const TABS = [
   { id: "summary", label: "Summary", title: "What it is, where it is, its work and what's inside it", kinds: ["pos", "loc", "item", "group"] },
