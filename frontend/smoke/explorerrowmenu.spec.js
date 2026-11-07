@@ -123,11 +123,12 @@ test("Summary row menu: new inside, rename, move to…, delete, pin; the server'
   await shot(page, "rowmenu-2-move-to-picker-1280");
   await dialog.getByRole("button", { name: "Move" }).click();
   await expect(dialog).toHaveCount(0);
+  // The words fade after 6 s, so read them first: on a slow runner the tree reload below can outlast them.
+  await expect(page.locator(".tt-headslot")).toContainText(`Moved it inside “Menu heating ${tag}”.`, { timeout: 30_000 });
   const moved = row(page, `Menu circulation ${tag}`);
   await expect(moved).toHaveAttribute("aria-selected", "true");
   await expect(moved).toHaveAttribute("aria-level", "3");
   await expect(row(page, `Menu pump ${tag}`)).toHaveAttribute("aria-level", "4"); // what's inside came with it
-  await expect(page.locator(".tt-headslot")).toContainText(`Moved it inside “Menu heating ${tag}”.`);
   await expect(page.locator(".tt-headslot").getByRole("button", { name: `Menu heating ${tag}` })).toBeVisible();
 
   // The server refuses a move: its reason, in the dialog, which stays open.

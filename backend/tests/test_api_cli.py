@@ -57,11 +57,23 @@ def server(monkeypatch, tmp_path):
     mcp_tools.register()
 
     srv = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning", lifespan="on"))
-    thread = threading.Thread(target=srv.run, daemon=True)
+    crash: list[BaseException] = []
+
+    def _serve():
+        try:
+            srv.run()
+        except BaseException as e:  # noqa: BLE001 - reported by the wait below
+            crash.append(e)
+
+    thread = threading.Thread(target=_serve, daemon=True)
     thread.start()
-    deadline = time.monotonic() + 30
+    # A loaded runner (the full suite in parallel) can take a while: wait up to 90 s, stop early if it died.
+    deadline = time.monotonic() + 90
     while not srv.started:
-        assert time.monotonic() < deadline, "the server didn't start"
+        if not thread.is_alive() or time.monotonic() >= deadline:
+            raise AssertionError(
+                f"the server didn't start within 90 s (thread alive: {thread.is_alive()}, error: {crash[-1]!r})"
+                if crash else f"the server didn't start within 90 s (thread alive: {thread.is_alive()})")
         time.sleep(0.05)
     port = srv.servers[0].sockets[0].getsockname()[1]
     base = f"http://127.0.0.1:{port}"
