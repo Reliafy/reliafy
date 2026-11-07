@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listSignalChannels } from "../api.js";
+import { channelExplorerPath } from "../signals.js";
 import { useRoles } from "../RolesProvider.jsx";
 
 // Risk › Condition monitoring: a line for the people who use Maintenance, pointing at the signal channels
@@ -13,11 +14,8 @@ export default function WatchedBandsNote() {
     listSignalChannels().then((d) => setChannels(d.channels || [])).catch(() => setChannels([]));
   }, [has.maintenance]);
   if (!has.maintenance || !channels || channels.length === 0) return null;
-  const link = (c) => {
-    const on = c.item || c.position;
-    // An item's row is in Locations (a spare, or one with no home yet).
-    return `/asset-register/explorer?arrange=${c.item ? "locations" : "positions"}&sel=${on?.id}&tab=signals`;
-  };
+  // A fitted item's channel opens its position's Signals tab; a loose item's, its row in Locations.
+  const link = channelExplorerPath;
   return (
     <section className="card" aria-label="Signal channels">
       <p className="sg-meta">

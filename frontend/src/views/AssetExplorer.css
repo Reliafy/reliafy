@@ -107,6 +107,8 @@
 .tp .tp-arrange button.tp-arrange-btn.on { background: var(--acc-t); color: var(--acc-d); font-weight: 600; }
 .tp .tp-arrange button.tp-arrange-btn:focus-visible { outline: 2px solid var(--acc); outline-offset: -3px; }
 .tp-arrange.is-off { opacity: 0.55; }
+/* The icons stand in for the labels where the tree pane is narrow (below). */
+.tp-arrange-ico { display: none; flex: none; }
 .tp .tp-arrange.is-off button.tp-arrange-btn { cursor: default; }
 
 /* The search line: the filter box, then the ⋯ menu beside it. */
@@ -583,6 +585,15 @@ a.rw-cklink:focus-visible {
   min-width: 0;
 }
 .tt-cell > * { flex: 1 1 auto; min-width: 0; }
+/* A tree pane under 420 px (its default is 320): the Positions / Locations
+   switch shows icons, the labels in their names and tooltips, so the counts
+   beside it have room. */
+.tt-cell { container: ttcell / inline-size; }
+@container ttcell (max-width: 420px) {
+  .tp .tp-arrange button.tp-arrange-btn { padding: 0 8px; }
+  .tp-arrange-lbl { display: none; }
+  .tp-arrange-ico { display: block; }
+}
 .tt-headslot {
   flex: 1 1 auto;
   align-self: stretch;
@@ -777,9 +788,19 @@ a.rw-cklink:focus-visible {
 .tt-title .tp-status {
   padding: 0;
   line-height: 1.3;
+}
+/* Each part of the counts stays whole; the line wraps between them (only where
+   the pane is very narrow or the counts very long). A part wider than the
+   pane on its own is cut short, its whole text in the tooltip. */
+.tp-status-part {
   white-space: nowrap;
+}
+.tt-title .tp-status-part {
+  display: inline-block;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+  vertical-align: top;
 }
 .tp-table .tp-body { min-width: 100%; }
 .tt-msg {

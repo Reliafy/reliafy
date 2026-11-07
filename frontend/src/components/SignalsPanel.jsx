@@ -40,45 +40,71 @@ const saveFlag = (key, on) => {
 const GUIDE = "/guides/signal-channels";
 const SPECTRA_PER_REQUEST = 40;
 
+// A position's tab also shows the channels on the item fitted there (a fitted
+// item has no row of its own in the Explorer); a loose item's row shows its own.
 export default function SignalsPanel({ row }) {
-  const target = row.type === "item" ? { itemId: row.key } : { positionId: row.key };
+  const [storageTick, setStorageTick] = useState(0);
+  const changed = () => setStorageTick((t) => t + 1);
+  const fitted = row.type === "pos" && row.ref?.item?.id ? row.ref.item : null;
+  const own = row.type === "item" ? { itemId: row.key } : { positionId: row.key };
+  return (
+    <div className="sg">
+      <SignalStorage refresh={storageTick} />
+      <ChannelList key={`${row.type}:${row.key}`} target={own} what={row.type === "item" ? "item" : "position"}
+                   onStored={changed} quiet={!!fitted} />
+      {fitted && (
+        <section className="sg-fitted" aria-labelledby={`sg-fitted-${fitted.id}`}>
+          <h3 id={`sg-fitted-${fitted.id}`} className="sg-fitted-head">On the fitted item {fitted.name || "(no name)"}</h3>
+          <p className="sg-meta">Its channels go with it when it's taken off and fitted elsewhere.</p>
+          <ChannelList key={`item:${fitted.id}`} target={{ itemId: fitted.id }} what="item" onStored={changed} quiet />
+        </section>
+      )}
+    </div>
+  );
+}
+
+// The channels on one position or item: a picker, Add a channel, and the one
+// picked. `quiet`: with none, a line and the Add button instead of the
+// introduction card (a position with an item fitted shows two lists).
+function ChannelList({ target, what, onStored, quiet = false }) {
   const [list, setList] = useState(null);
   const [error, setError] = useState(null);
   const [picked, setPicked] = useState(null); // channel id
   const [adding, setAdding] = useState(false);
-  const [storageTick, setStorageTick] = useState(0);
-  // The row shown now. A reply for a row that is no longer shown (the Explorer
-  // can switch rows while a request is in flight) must not overwrite the list.
-  const shownKey = `${row.type}:${row.key}`;
-  const shown = useRef(shownKey);
-  shown.current = shownKey;
+  // The list is keyed by its target (a new row mounts a new list), so a reply
+  // that comes back after the list is gone is dropped.
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => { live.current = false; };
+  }, []);
 
   const load = useCallback(() => {
     setError(null);
-    const asked = shownKey;
     return listSignalChannels(target)
-      .then((d) => { if (shown.current === asked) setList(d.channels); })
-      .catch((e) => { if (shown.current === asked) setError(e.message); });
+      .then((d) => { if (live.current) setList(d.channels); })
+      .catch((e) => { if (live.current) setError(e.message); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [row.key, row.type]);
-  useEffect(() => {
-    setList(null);
-    setPicked(null);
-    setAdding(false);
-    load();
-  }, [load]);
+  }, [target.positionId, target.itemId]);
+  useEffect(() => { load(); }, [load]);
 
   if (error) return <p className="sg-note sg-bad" role="alert">Couldn't load the signals: {error}</p>;
   if (!list) return <p className="sg-note">Loading…</p>;
   const channel = list.find((c) => c.id === picked) || list[0];
 
   return (
-    <div className="sg">
-      {list.length === 0 && !adding && (
+    <>
+      {list.length === 0 && !adding && (quiet ? (
+        <div className="sg-bar">
+          <span className="sg-meta">No sensor channels on this {what} yet.</span>
+          <button type="button" className="secondary sm" onClick={() => setAdding(true)}>Add a channel</button>
+          <Link className="sg-help" to={GUIDE}>Guide</Link>
+        </div>
+      ) : (
         <div className="card sg-empty">
           <h3>No sensor channels here yet</h3>
           <p>
-            A signal channel takes snapshots from a sensor on this {row.type === "item" ? "item" : "position"}: a
+            A signal channel takes snapshots from a sensor on this {what}: a
             vibration burst, a spectrum the device already made, or a pressure. Reliafy works out the spectrum,
             lets you watch a frequency band over time, and raises an inspection when a band passes its limit.
           </p>
@@ -87,7 +113,7 @@ export default function SignalsPanel({ row }) {
             <Link to={GUIDE}>How signal channels work</Link>
           </div>
         </div>
-      )}
+      ))}
       {adding && (
         <NewChannel target={target} onCancel={() => setAdding(false)}
                     onDone={(c) => { setAdding(false); setPicked(c.id); load(); }} />
@@ -105,12 +131,11 @@ export default function SignalsPanel({ row }) {
           <Link className="sg-help" to={GUIDE}>Guide</Link>
         </div>
       )}
-      <SignalStorage refresh={storageTick} />
       {channel && !adding && (
         <ChannelView key={channel.id} summary={channel} all={list}
-                     onChanged={() => { setStorageTick((t) => t + 1); return load(); }} />
+                     onChanged={() => { onStored(); return load(); }} />
       )}
-    </div>
+    </>
   );
 }
 

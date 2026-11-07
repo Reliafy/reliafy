@@ -97,8 +97,15 @@ export function isDesignScope(data, root) {
 }
 
 // A design's rows: no failure report is filed there (a report is about an item).
-export function designActions(actions, design) {
-  return design ? actions.filter((a) => a.id !== "report-new") : actions;
+// The product's own row (the design's top position, `r`) adds Build an item…
+// first, as its Summary does (greyed with the reason when the workspace is
+// view only).
+export const BUILD_ITEM = { id: "build-item", label: "Build an item…" };
+export function designActions(actions, design, { row = null, viewOnly = null } = {}) {
+  if (!design) return actions;
+  const out = actions.filter((a) => a.id !== "report-new");
+  if (row?.type !== "pos" || !row.ref?.design) return out;
+  return [viewOnly ? { ...BUILD_ITEM, disabled: true, reason: viewOnly } : BUILD_ITEM, ...out];
 }
 
 // Words.

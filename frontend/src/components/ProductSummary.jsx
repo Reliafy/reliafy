@@ -137,7 +137,7 @@ function Analyses({ product }) {
 }
 
 // The product's own row: its Summary.
-export default function ProductSummary({ row, version: treeVersion = 0, ...props }) {
+export default function ProductSummary({ row, version: treeVersion = 0, actions = [], ...props }) {
   const [version, setVersion] = useState(0);
   const [building, setBuilding] = useState(false);
   const [said, setSaid] = useState(null);
@@ -151,7 +151,8 @@ export default function ProductSummary({ row, version: treeVersion = 0, ...props
     : product ? <ProductFacts product={product} /> : <p className="td-quiet">Loading…</p>;
   return (
     <>
-      <TreeSummary row={row} {...props} design facts={facts}>
+      {/* Build an item… is the Built items section's button here, not a footer one. */}
+      <TreeSummary row={row} {...props} actions={actions.filter((a) => a.id !== "build-item")} design facts={facts}>
         {said && <p className="pp-said" role="status">{said}</p>}
         {product && (
           <>

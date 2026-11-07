@@ -349,3 +349,16 @@ def test_speed_comes_from_a_tagged_speed_channel(m):
     before = m.s.snapshot(ORG)
     m.s.rebuild()
     assert m.s.snapshot(ORG) == before
+
+
+def test_an_items_channel_says_where_the_item_is_fitted(m):
+    pos = m.create_position("Feed pump")
+    item_id = m.create_item("Pump P-7", serial="7")["id"]
+    m.fit(pos["id"], item_id=item_id)
+    ch = m.add_signal_channel(None, item_id, "Pump DE", "g", sample_rate=FS)
+    head = m.signal_channels(item_id=item_id)["channels"][0]
+    assert head["id"] == ch["id"] and head["position"] is None
+    assert head["item"] == {"id": item_id, "name": "Pump P-7", "fitted_to": {"id": pos["id"], "name": "Feed pump"}}
+    loose = m.create_item("Spare pump")
+    m.add_signal_channel(None, loose["id"], "Spare DE", "g", sample_rate=FS)
+    assert m.signal_channels(item_id=loose["id"])["channels"][0]["item"]["fitted_to"] is None

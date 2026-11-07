@@ -574,12 +574,20 @@ class SignalOps:
 
     def _channel_head(self, ch: dict, on: list) -> dict:
         target = on[0] if on else None
+        item = None
+        if target and target["label"] == "Item":
+            # Where the item is fitted now (None: loose): the Explorer shows a fitted
+            # item's channels on that position's Signals tab.
+            fitment = self._current_fitment_of_item(target["id"])
+            at = fitment and self.s.out(self.org, fitment["id"], "AT")
+            item = {"id": target["id"], "name": target["name"],
+                    "fitted_to": at and {"id": at[0]["id"], "name": at[0]["name"]} or None}
         return {"id": ch["id"], "name": ch["name"], "quantity": ch.get("quantity", ""), "unit": ch.get("unit", ""),
                 "sample_rate": ch.get("sample_rate"), "axes": ch.get("axes") or [], "rpm": ch.get("rpm"),
                 "tag": ch.get("tag", ""), "mount": ch.get("mount", ""), "retired": bool(ch.get("retired")),
                 "speed_channel_id": ch.get("speed_channel_id") or None,
                 "position": target and target["label"] == "Position" and {"id": target["id"], "name": target["name"]} or None,
-                "item": target and target["label"] == "Item" and {"id": target["id"], "name": target["name"]} or None}
+                "item": item}
 
     def signal_channel(self, channel_id, snapshots=300, series=1000) -> dict:
         """One channel: its settings, watch bands (with their series), a size count and its

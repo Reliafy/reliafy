@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import RowMenu from "./RowMenu.jsx";
 import TreeControlsMenu from "./TreeControlsMenu.jsx";
 import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
 import { BasisInfo, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
-import { ARRANGEMENTS, CHIPS, CHIP_MARK, PANE, clampWidth, markersOf, nextGutter } from "../assetTree.js";
+import { ARRANGEMENTS, CHIPS, CHIP_MARK, PANE, clampWidth, markersOf, nextGutter, statusParts } from "../assetTree.js";
 import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensItem } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
@@ -178,14 +178,35 @@ export function ArrangeSwitch({ value, options, onChange, locked = null }) {
          aria-disabled={locked ? "true" : undefined} title={locked || undefined} onKeyDown={onKeyDown}>
       {options.map((o) => {
         const on = o.value === value;
+        // Its label, or (a narrow tree pane: AssetExplorer.css) its icon, with the label in its name and tooltip.
         return (
           <button key={o.value} type="button" role="radio" aria-checked={on} data-value={o.value}
                   tabIndex={on ? 0 : -1} className={"tp-arrange-btn" + (on ? " on" : "")}
-                  aria-disabled={locked && !on ? "true" : undefined}
-                  title={locked || o.title} onClick={() => choose(o.value)}>{o.label}</button>
+                  aria-disabled={locked && !on ? "true" : undefined} aria-label={o.label}
+                  title={locked ? `${o.label}. ${locked}` : `${o.label}: ${o.title}`} onClick={() => choose(o.value)}>
+            <ArrangeIcon value={o.value} />
+            <span className="tp-arrange-lbl">{o.label}</span>
+          </button>
         );
       })}
     </div>
+  );
+}
+
+// The switch's icons, shown in place of the labels where the tree pane is
+// narrow: a tree of boxes (what each position does, inside what) and a map pin
+// (where things are).
+function ArrangeIcon({ value }) {
+  return (
+    <svg className="tp-arrange-ico" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none"
+         stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      {value === "locations" ? (
+        <><path d="M8 14.5s4.5-4.2 4.5-7.8a4.5 4.5 0 0 0-9 0c0 3.6 4.5 7.8 4.5 7.8Z" /><circle cx="8" cy="6.6" r="1.6" /></>
+      ) : (
+        <><rect x="5.5" y="1.5" width="5" height="3.5" rx="0.8" /><rect x="1.5" y="11" width="5" height="3.5" rx="0.8" />
+          <rect x="9.5" y="11" width="5" height="3.5" rx="0.8" /><path d="M8 5v3M4 11V8h8v3" /></>
+      )}
+    </svg>
   );
 }
 
@@ -608,7 +629,16 @@ export default function TreePane({
   const dim = (key) => filter && !filter.match.has(key);
   // A tab's own chips (the RCM's, the FME(C)A's) show on that tab only.
   const chipList = CHIPS.filter((c) => !c.rcmOnly || (table && (!c.tab || c.tab === (table.tab || "rcm"))));
-  const status = <p className="tp-status" role="status" title={statusTitle || statusText || undefined}>{statusText}</p>;
+  const status = (
+    <p className="tp-status" role="status" title={statusTitle || statusText || undefined}>
+      {/* The counts' parts ("4 positions", "3 not analysed") each kept whole: where
+          the pane is too narrow for one line they wrap between the parts, never cut
+          short. Each part keeps its dot; the line can break only at the space after it. */}
+      {statusParts(statusText).map((part, i, all) => (
+        <Fragment key={i}><span className="tp-status-part">{part}{i < all.length - 1 ? " ·" : ""}</span>{i < all.length - 1 ? " " : ""}</Fragment>
+      ))}
+    </p>
+  );
   const titleRow = (
     <div className="tp-title-row">
       {wide ? <div className="tt-title"><h2 className="tp-title">{title}</h2>{status}</div> : <h2 className="tp-title">{title}</h2>}

@@ -182,3 +182,12 @@ test("limit lines name their kind in words as well as colour", () => {
   assert.match(lines[1].label, /^Alarm above 0.5/);
   assert.deepEqual(limitLines(null), []);
 });
+
+test("a channel's link opens where it shows: a fitted item's on its position", async () => {
+  const { channelExplorerPath } = await import("./signals.js");
+  const base = "/asset-register/explorer?arrange=";
+  assert.equal(channelExplorerPath({ position: { id: "p1" }, item: null }), `${base}positions&sel=p1&tab=signals`);
+  assert.equal(channelExplorerPath({ position: null, item: { id: "i1", fitted_to: { id: "p2", name: "Feed" } } }),
+    `${base}positions&sel=p2&tab=signals`);
+  assert.equal(channelExplorerPath({ position: null, item: { id: "i3", fitted_to: null } }), `${base}locations&sel=i3&tab=signals`);
+});

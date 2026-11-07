@@ -16,6 +16,20 @@
   min-width: 0;
 }
 
+/* The channels on the item fitted to the position, under the position's own. */
+.sg-fitted {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.sg-fitted-head + .sg-meta {
+  margin-top: -10px;
+}
+
 .sg-empty p {
   margin: 8px 0 12px;
   max-width: 60ch;
