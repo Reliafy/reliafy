@@ -184,10 +184,11 @@ fields, then the quieter things at the foot:
   (**Under**).
 
 Every row, whatever its level, opens its details with **Notes and rationale**,
-straight under its title and above everything else: the long description beside
+a section of its own directly below its title and status line and above
+everything else: the long description beside
 its title, where you write why it's there and what it rests on (why a
 performance standard is set where it is, the history behind a failure mode).
-Press **Edit** (or **Add notes** when there are none yet) to
+Press **Edit** (or the dashed **Add notes** row when there are none yet) to
 write in a box in place, with a count up to 4,000 characters, then **Save**
 or **Cancel**. Line breaks are kept. A row with notes shows a small note mark
 after its name in the table; hover over it to read the first line. On a
