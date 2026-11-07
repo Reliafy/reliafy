@@ -51,7 +51,7 @@ export default function AllModelsPage() {
       <UnsavedFitReminder />
 
       {error && <div className="card error">{error}</div>}
-      {/* The Free limit counts non-repairable models (the server's "models"). */}
+      {/* The Free limit counts every saved model kind (the server's "models"). */}
       <StorageCapNotice kind="models" one="saved model" many="saved models" refreshKey={rows} />
 
       <SectionList

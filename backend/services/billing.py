@@ -441,9 +441,16 @@ def ai_cost_cents(model: str, input_tokens: int, output_tokens: int) -> int:
 
 # ---- Plan caps -----------------------------------------------------------
 
+# Every saved model kind counts toward the one "models" limit: non-repairable
+# (and joint) models, repairable (recurrent) models and accelerated-life models.
+MODEL_COLLECTIONS = ("models", "recurrent_models", "alt_models")
+
+
 def owned_count(db, uid: str, collection: str) -> int:
-    """Count items the user actually owns (shared samples don't count)."""
-    return db[collection].count_documents({"owner_id": uid})
+    """Count items the user actually owns (shared samples don't count). The
+    "models" kind is all three saved model kinds together."""
+    names = MODEL_COLLECTIONS if collection == "models" else (collection,)
+    return sum(db[name].count_documents({"owner_id": uid}) for name in names)
 
 
 CAPPED_KINDS = ("datasets", "models", "rbds", "degradation_models", "tracked_items", "fleets",

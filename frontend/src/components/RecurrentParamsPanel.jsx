@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Select from "./Select.jsx";
 import { createRecurrentFromParams } from "../api.js";
+import { ErrorNotice } from "./StorageCap.jsx";
 
 // Build a simple recurrent (repairable-system) model from known parameters —
 // no data. For reliability-growth planning and repair-vs-replace decisions
@@ -39,7 +40,7 @@ export default function RecurrentParamsPanel({ onCreated, onBack }) {
     try {
       onCreated(await createRecurrentFromParams(name.trim(), model, { alpha: na, beta: nb, horizon: nh, unit }));
     } catch (err) {
-      setError(err.message);
+      setError(err);
       setBusy(false);
     }
   };
@@ -83,7 +84,7 @@ export default function RecurrentParamsPanel({ onCreated, onBack }) {
 
       {MODEL_DESC[model] && <p className="muted-line" style={{ margin: "0.6rem 0 0" }}>{MODEL_DESC[model]}</p>}
       {growth && <p className="muted-line" style={{ margin: "0.3rem 0 0" }}>β = {nb} → <b>{growth}</b>.</p>}
-      {error && <div className="error">{error}</div>}
+      <ErrorNotice error={error} />
 
       <div className="fit-flow-foot">
         <span />

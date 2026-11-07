@@ -15,6 +15,7 @@ from backend.http_limits import read_upload
 from backend.fitting import FitError
 from backend.units import canonical_unit
 from backend.services import datasets as datasets_service
+from backend.services import billing as billing_service
 from backend.services import recurrent as recurrent_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
@@ -165,6 +166,10 @@ def save_model(
     if denied is not None:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
+    if (ctx.is_personal and not billing_service.is_admin_user(ctx.user)
+            and billing_service.would_exceed_cap(session, ctx.uid, "models")):
+        return JSONResponse(status_code=402, content={
+            "detail": billing_service.cap_message(session, ctx.uid, "models"), "code": "cap", "upgrade": True})
     denied = datasets_service.upload_denial(session, ctx, dataset_id, file)
     if denied is not None:
         status, payload = denied
@@ -201,6 +206,10 @@ def save_from_params(
     if denied is not None:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
+    if (ctx.is_personal and not billing_service.is_admin_user(ctx.user)
+            and billing_service.would_exceed_cap(session, ctx.uid, "models")):
+        return JSONResponse(status_code=402, content={
+            "detail": billing_service.cap_message(session, ctx.uid, "models"), "code": "cap", "upgrade": True})
     try:
         params = [{"name": "alpha", "value": alpha}, {"name": "beta", "value": beta}]
         doc = recurrent_service.save_from_params(session, name, model, params, horizon, unit or "", ctx.write_owner)
