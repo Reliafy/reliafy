@@ -17,6 +17,11 @@ trends and projected alarm dates work on it as they do on any other.
 This is in beta. A slow sensor, like a pressure transducer, works the same way
 without the spectrum.
 
+**The Signals tab in the Explorer is hidden for now.** Your channels and snapshots are
+kept and the API and commands below keep working, but the screens described here
+(the tab, its spectrum and its bands) aren't in the app at the moment. Links to a
+channel open its position's Summary.
+
 ## 1. Add a channel
 
 Open **Assets → Explorer**, pick the position or item the sensor is

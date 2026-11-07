@@ -1,16 +1,33 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEFAULT_TAB, EXPLORER_PARTS_CLASSES_TABS, TABS, branchOf, classesInBranch, isDesignRow, isProductRow, partsInBranch, rowKind, shownTab, tabParam, tabsFor,
+  DEFAULT_TAB, EXPLORER_PARTS_CLASSES_TABS, EXPLORER_SIGNALS_TAB, TABS, branchOf, classesInBranch, isDesignRow, isProductRow, partsInBranch, rowKind, shownTab, tabParam, tabsFor,
 } from "./explorerTabs.js";
 
 const pos = { type: "pos" };
 const item = { type: "item" };
 const loc = { type: "loc" };
 
-// Parts and stock and Classes are switched off for now (EXPLORER_PARTS_CLASSES_TABS):
-// `shown(ids)` is the tab list a row has with the switch as it is.
-const shown = (ids) => (EXPLORER_PARTS_CLASSES_TABS ? ids : ids.filter((id) => id !== "parts" && id !== "classes"));
+// Parts and stock, Classes and Signals are switched off for now (EXPLORER_PARTS_CLASSES_TABS,
+// EXPLORER_SIGNALS_TAB): `shown(ids)` is the tab list a row has with the switches as they are.
+const shown = (ids) => ids.filter((id) => (EXPLORER_PARTS_CLASSES_TABS || (id !== "parts" && id !== "classes"))
+  && (EXPLORER_SIGNALS_TAB || id !== "signals"));
+
+test("Signals is hidden for now, on every kind of row, behind one switch", () => {
+  assert.equal(EXPLORER_SIGNALS_TAB, false);
+  const asset = { type: "pos", ref: { name: "Pump" } };
+  const product = { type: "pos", ref: { design: { rev: "A" } } };
+  const fitted = { type: "item", ref: { fitted_to: { id: "p" } } };
+  for (const r of [pos, item, loc, asset, product, fitted, { type: "pos", ref: { in_design: true } }, { type: "group" }]) {
+    assert.ok(!tabsFor(r).some((t) => t.id === "signals"));
+    assert.equal(shownTab("signals", r), "summary");
+  }
+  // An address that names it shows Summary.
+  assert.equal(tabParam("signals"), "summary");
+  // Its entry stays, for when it comes back.
+  assert.equal(TABS.find((t) => t.id === "signals").label, "Signals");
+  assert.deepEqual(tabsFor(item).map((t) => t.id), ["summary", "reports", "measurements"]);
+});
 
 test("Parts and stock and Classes are hidden for now, on assets and designs alike, behind one switch", () => {
   assert.equal(EXPLORER_PARTS_CLASSES_TABS, false);
@@ -28,7 +45,7 @@ test("Parts and stock and Classes are hidden for now, on assets and designs alik
   // Their entries stay, for when they come back.
   assert.equal(TABS.find((t) => t.id === "parts").label, "Parts and stock");
   assert.equal(TABS.find((t) => t.id === "classes").label, "Classes");
-  assert.deepEqual(tabsFor(pos).map((t) => t.id), ["summary", "rcm", "fmea", "reports", "measurements", "signals"]);
+  assert.deepEqual(tabsFor(pos).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "measurements", "signals"]));
   assert.deepEqual(tabsFor(product).map((t) => t.id), ["summary", "rcm", "fmea"]);
 });
 
@@ -38,7 +55,7 @@ test("a position has Summary, RCM, FME(C)A, Failure reports, Parts and stock, Cl
   assert.equal(shownTab("fmea", pos), "fmea");
   assert.equal(shownTab("fmea", item), "summary");
   assert.equal(tabParam("fmea"), "fmea");
-  assert.deepEqual(tabsFor(item).map((t) => t.id), ["summary", "reports", "measurements", "signals"]);
+  assert.deepEqual(tabsFor(item).map((t) => t.id), shown(["summary", "reports", "measurements", "signals"]));
   // A place opens its positions' RCM (the Assets page opens the Explorer on the place).
   assert.deepEqual(tabsFor(loc).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "parts", "classes", "measurements"]));
   assert.equal(TABS.find((t) => t.id === "parts").label, "Parts and stock");
@@ -71,7 +88,7 @@ test("Measurements: positions, locations and items (before Signals), never a des
 test("the tab picked stays while walking the tree, Summary where a row hasn't it", () => {
   assert.equal(shownTab("rcm", pos), "rcm");
   assert.equal(shownTab("rcm", item), "summary");
-  assert.equal(shownTab("signals", item), "signals");
+  assert.equal(shownTab("signals", item), EXPLORER_SIGNALS_TAB ? "signals" : "summary");
   assert.equal(shownTab("signals", loc), "summary");
   assert.equal(shownTab("rcm", loc), "rcm");
   assert.equal(shownTab("reports", loc), "reports");
@@ -82,7 +99,7 @@ test("the tab picked stays while walking the tree, Summary where a row hasn't it
 test("the address names the tab", () => {
   assert.equal(tabParam("rcm"), "rcm");
   assert.equal(tabParam("reports"), "reports");
-  assert.equal(tabParam("signals"), "signals");
+  assert.equal(tabParam("signals"), EXPLORER_SIGNALS_TAB ? "signals" : "summary");
   assert.equal(tabParam("work"), "summary");
   assert.equal(tabParam(null), "summary");
 });

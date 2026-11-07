@@ -2,6 +2,8 @@
 // logic behind the spectrum chart and its player, kept apart from the screen so
 // they can be tested.
 
+import { EXPLORER_SIGNALS_TAB } from "./explorerTabs.js";
+
 // ---- the player ---------------------------------------------------------------------
 //
 // The player steps through snapshots and holds each for its share of the real
@@ -369,7 +371,9 @@ export function snapshotColor(colors, n) {
 // A channel is on a position or on an item. A fitted item has no row of its own
 // in the Explorer: its channels show on its position's Signals tab, so a link to
 // one opens that position. A loose item (a spare, or one with no home yet) has
-// its row in Locations.
+// its row in Locations. While the Signals tab is hidden (EXPLORER_SIGNALS_TAB),
+// the link opens that row's Summary (no `tab`), so it never lands on a tab that
+// isn't there.
 export function channelExplorerPath(c) {
   const on = c?.item?.fitted_to
     ? { mode: "positions", sel: c.item.fitted_to.id }
@@ -377,6 +381,6 @@ export function channelExplorerPath(c) {
     : { mode: "positions", sel: c?.position?.id };
   const q = new URLSearchParams({ arrange: on.mode });
   if (on.sel) q.set("sel", on.sel);
-  q.set("tab", "signals");
+  if (EXPLORER_SIGNALS_TAB) q.set("tab", "signals");
   return `/asset-register/explorer?${q}`;
 }
