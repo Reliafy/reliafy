@@ -36,11 +36,17 @@ const WORDS_UNDER_STANDARD = { ...WORDS.fail, label: "How does it fail to meet t
 export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askText }) {
   const [rcm, setRcm] = useState(null);
   const [error, setError] = useState(null);
+  // Each read is numbered and only the latest read's answer is shown, except
+  // before any answer is in: then an earlier read's answer shows too. So the
+  // read a moment early (prefetch) still shows when the tab opens and reads
+  // again while it's on its way, instead of the tab waiting for the second
+  // read with no RCM rows. (After a change, an older read never shows.)
   const latest = useRef(0);
+  const landed = useRef(0);
   const load = useCallback(() => {
     const n = ++latest.current;
     return getWorkspaceRcm()
-      .then((d) => { if (n === latest.current) { setRcm(d); setError(null); } return d; })
+      .then((d) => { if (n === latest.current || landed.current === 0) { landed.current = n; setRcm(d); setError(null); } return d; })
       .catch((e) => { if (n === latest.current) setError(e.message); });
   }, []);
   useEffect(() => {
