@@ -14,6 +14,11 @@
   "failure_rate": 180, "elements": {"isolation": 10, "replace": 15}}]'
   --unit minutes`.
 
+- **Fault trees built by hand**: `get fault_tree`, `list fault_trees`, `analyse fault_tree` (top event,
+  cut sets, importance; `export_openpsa` for Open-PSA XML), `change fault_tree_save` (with `make_rbd`) and
+  `change fault_tree_delete`; `change import_rbd` takes `as_fault_tree` for Open-PSA and Galileo files.
+  Listed by `reliafy tools`, e.g. `reliafy analyse fault_tree --fault-tree-id …`.
+
 - **Products** (Reliafy Maintenance): a product is a design tree with its part;
   items are built from it by serial. `maintenance products.create`,
   `products.declare`, `products.clear` and `products.build` (a dry run by

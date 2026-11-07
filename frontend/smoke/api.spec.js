@@ -37,6 +37,8 @@ const SIGNED_IN = [
   ["POST", "/api/strategy/calendar-replacement"], // replacement over a shutdown calendar
   ["POST", "/api/strategy/calendar-next"],
   ["POST", "/api/rbd-jobs/smoke/cancel"], // cancel a long calculation
+  ["GET", "/api/fault-trees"], // System models › Fault trees
+  ["POST", "/api/fault-trees/analyse"],
   ["POST", "/api/maintenance/photos/smoke/move"], // a photo on several places
   ["GET", "/api/maintenance/parts/levels"], // #435
   ["POST", "/api/maintenance/parts/import-bom"], // #435

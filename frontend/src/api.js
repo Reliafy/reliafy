@@ -1140,6 +1140,65 @@ export function rbdFaultTree(graph, t = null, tMax = null) {
   });
 }
 
+// ---- Fault trees built by hand (System models › Fault trees) ---------------
+
+export function listFaultTrees() {
+  return request("/api/fault-trees");
+}
+
+export function getFaultTree(id) {
+  return request(`/api/fault-trees/${id}`);
+}
+
+export function saveFaultTree(name, tree, id, expectedUpdatedAt) {
+  return request("/api/fault-trees", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, tree, id: id || null, expected_updated_at: expectedUpdatedAt || null }),
+  });
+}
+
+export function renameFaultTree(id, name) {
+  return request(`/api/fault-trees/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteFaultTree(id) {
+  return request(`/api/fault-trees/${id}`, { method: "DELETE" });
+}
+
+// The (unsaved) tree's top event, cut sets and importance, at time t (null: the default).
+export function analyseFaultTree(tree, t = null) {
+  return request("/api/fault-trees/analyse", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tree, t: t ?? null }),
+  });
+}
+
+// Save the tree's RBD as a new diagram, linked to the tree: {rbd_id, name, notes}.
+export function faultTreeToRbd(id) {
+  return request(`/api/fault-trees/${id}/rbd`, { method: "POST" });
+}
+
+export function downloadFaultTreeOpenPsa(name, tree, t = null) {
+  return downloadFile("/api/fault-trees/export/openpsa", "fault-tree.xml", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, tree, t: t ?? null }),
+  });
+}
+
+// Parse an Open-PSA or Galileo file into fault trees (nothing saved): {trees: [{name, tree?, notes, error?}]}.
+export function importFaultTreeFile(file) {
+  const form = new FormData();
+  form.append("file", file);
+  return request("/api/fault-trees/import", { method: "POST", body: form });
+}
+
 // A phased mission (#160): the (unsaved) graph's phases worked out — mission
 // reliability, each phase's failure probability, the riskiest phase.
 export function rbdPhases(graph) {

@@ -46,6 +46,7 @@ const REACHED_FROM = {
   "/admin": "operators only, by address",
   "/data-model": "graph-access users: the menu's Account group where the preview is on, or by address",
   "/changes": "Home's What changed panel",
+  "/systems/fault-trees/new": "Fault trees' New fault tree",
   "/oauth/consent": "an MCP client's sign-in",
 };
 
@@ -81,7 +82,7 @@ test("Modelling and Decisions are groups: their entries, each with its children"
   assert.deepEqual(kids(live, "models"), ["Non-repairable", "Repairable", "Accelerated life", "Degradation",
     "Condition and life"]);
   assert.deepEqual(kids(live, "maintainability"), []);
-  assert.deepEqual(kids(live, "systems"), ["RBDs", "Simulation runs"]);
+  assert.deepEqual(kids(live, "systems"), ["RBDs", "Fault trees", "Simulation runs"]);
   assert.deepEqual(kids(live, "strategy"), ["Optimal replacement", "Compare two models", "Failure finding",
     "Test planning"]);
   assert.deepEqual(kids(live, "forecasts"), []);
@@ -164,13 +165,23 @@ test("Risk shows where the workspace uses it", () => {
   assert.equal(itemPath("tracked_fleets", "f1"), "/risk/f1");
 });
 
-test("no placeholder entries: Requirements, Failures, Fleets, Fault trees and FMECA aren't in the menu", () => {
+test("no placeholder entries: Requirements, Failures, Fleets and FMECA aren't in the menu", () => {
   for (const has of [{}, ALL, PREVIEW]) {
     const links = everyLink(liveEntries(has));
-    for (const to of ["/requirements", "/failures", "/asset-register/fleets", "/systems/fault-trees", "/systems/fmeca"]) {
+    for (const to of ["/requirements", "/failures", "/asset-register/fleets", "/systems/fmeca"]) {
       assert.ok(!links.includes(to), to);
     }
   }
+});
+
+test("Fault trees sits under System models, between RBDs and Simulation runs, for everyone", () => {
+  for (const has of [{}, ALL]) {
+    const systems = liveEntries(has).find((e) => e.id === "modelling").entries.find((e) => e.id === "systems");
+    assert.deepEqual(systems.children.map((c) => c.to), ["/systems/rbds", "/systems/fault-trees", "/systems/runs"]);
+  }
+  const live = liveEntries(ALL);
+  assert.equal(activeEntry(live, "/systems/fault-trees/abc").id, "modelling");
+  assert.equal(movedTo("/systems/fault-trees"), null);
 });
 
 test("no roles shows everything the workspace has, nothing under More", () => {
@@ -388,7 +399,6 @@ const OLD_TO_NEW = [
   ["/asset-register/positions", "/asset-register/explorer?arrange=positions"],
   ["/asset-register/items", "/asset-register/explorer?arrange=items"],
   ["/asset-register/locations", "/asset-register/explorer?arrange=locations"],
-  ["/systems/fault-trees", "/systems/rbds"],
   ["/systems/fmeca", "/asset-register/explorer?tab=fmea"],
 ];
 
@@ -453,7 +463,7 @@ test("not-yet-built entries show only where the menu preview is on", () => {
   assert.deepEqual(kids(preview, "data"), ["Library"]);
   assert.deepEqual(kids(plain, "maintenance"), []);
   assert.deepEqual(kids(preview, "maintenance"), ["Field inbox"]);
-  assert.deepEqual(kids(preview, "systems"), ["RBDs", "Simulation runs"]);
+  assert.deepEqual(kids(preview, "systems"), ["RBDs", "Fault trees", "Simulation runs"]);
   assert.deepEqual(kids(preview, "assets"), []);
 });
 

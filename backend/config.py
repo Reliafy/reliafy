@@ -164,6 +164,8 @@ FREE_MAX_TRACKED_ITEMS = _int("FREE_MAX_TRACKED_ITEMS", 3)
 FREE_MAX_FLEETS = _int("FREE_MAX_FLEETS", 1)
 # Outage logs (an RBD's observed up/down history, issue #159).
 FREE_MAX_OUTAGE_LOGS = _int("FREE_MAX_OUTAGE_LOGS", 1)
+# Fault trees built by hand (backend/services/fault_trees.py), as many as RBDs.
+FREE_MAX_FAULT_TREES = _int("FREE_MAX_FAULT_TREES", 1)
 
 # Retired Agent plan (US$2/month, MCP only; sold briefly in October 2026, no
 # longer offered — MCP is part of Pro). Existing subscribers keep these caps,
@@ -175,6 +177,7 @@ AGENT_MAX_DEGRADATION_MODELS = _int("AGENT_MAX_DEGRADATION_MODELS", 10)
 AGENT_MAX_TRACKED_ITEMS = _int("AGENT_MAX_TRACKED_ITEMS", 50)
 AGENT_MAX_FLEETS = _int("AGENT_MAX_FLEETS", 5)
 AGENT_MAX_OUTAGE_LOGS = _int("AGENT_MAX_OUTAGE_LOGS", 10)
+AGENT_MAX_FAULT_TREES = _int("AGENT_MAX_FAULT_TREES", 25)
 # Availability (Monte-Carlo) simulation is not part of the Agent plan: it stays
 # Pro (billing.premium_compute_allowed) on every surface.
 

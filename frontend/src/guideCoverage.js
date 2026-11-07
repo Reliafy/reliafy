@@ -27,6 +27,7 @@ export const GUIDE_COVERAGE = [
   { feature: "Reliability block diagrams", href: "/systems/rbds" },
   { feature: "RBD builder (targets, design, phases, production, outages)", href: "/systems/b" },
   { feature: "Simulation run history", href: "/systems/runs" },
+  { feature: "Fault trees built by hand", href: "/systems/fault-trees" },
   // Strategy.
   { feature: "Saved strategy analyses", href: "/strategy" },
   { feature: "Optimal replacement by age", href: "/strategy/replacement" },

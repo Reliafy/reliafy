@@ -10,6 +10,7 @@ token's scope follows the tool's read / write annotation. The earlier names
 are gone; ``LEGACY`` below maps every one of their actions to its new home."""
 
 import json
+import re
 
 import anyio
 import pytest
@@ -59,13 +60,19 @@ LEGACY: dict = {
 }
 
 # Actions added since the six tools (no earlier tool had them), and those among
-# them whose results carry people's text (the data notice).
+# them that are heavy (a compute slot) or whose results carry people's text (the
+# data notice). A PR that adds core actions adds them here, under its own comment.
 NEW_ACTIONS = {
     # Maintainability prediction (Nov 2026).
     ("get", "maintainability_prediction"), ("list", "maintainability_predictions"), ("analyse", "maintainability"),
     ("change", "maintainability_save"), ("change", "maintainability_update"), ("change", "maintainability_delete"),
+    # Fault trees built by hand (Nov 2026).
+    ("get", "fault_tree"), ("list", "fault_trees"), ("analyse", "fault_tree"), ("change", "fault_tree_save"),
+    ("change", "fault_tree_delete"),
 }
-NEW_TEXT = {"get.maintainability_prediction", "list.maintainability_predictions"}
+NEW_HEAVY = {"analyse.fault_tree"}
+NEW_TEXT = {"get.maintainability_prediction", "list.maintainability_predictions",
+            "list.fault_trees", "get.fault_tree", "analyse.fault_tree"}
 
 # The earlier tools' sets (to 1 Nov 2026), by their old keys: the new sets must be these, renamed.
 OLD_PRO_ONLY = {"life_data_analysis.fit", "models.fit", "models.fit_alt", "models.fit_recurrent", "list.fleets",
@@ -142,7 +149,7 @@ def test_gating_and_slots_are_the_earlier_ones_renamed():
     from backend import mcp_server
 
     assert {_new_key(k) for k in OLD_PRO_ONLY} == mcp_server.PRO_ONLY_TOOLS
-    assert {_new_key(k) for k in OLD_HEAVY} == mcp_server.HEAVY_TOOLS
+    assert {_new_key(k) for k in OLD_HEAVY} | NEW_HEAVY == mcp_server.HEAVY_TOOLS
     assert {_new_key(k) for k in OLD_UNGATED} == mcp_server.UNGATED_TOOLS
     assert {_new_key(k) for k in OLD_UNCOUNTED} == mcp_server.UNCOUNTED_TOOLS
     assert {_new_key(k) for k in OLD_TEXT} | NEW_TEXT == mcp_server.TEXT_RESULT_TOOLS
@@ -182,13 +189,17 @@ def test_every_action_is_in_its_tool_description_and_schema(env):
     tools = _tools(env.oauth[PRO])
     for name, (selector, table) in mcp_server.TABLES.items():
         tool = tools[name]
+        # "Required: a/b(x, y); c(z)." — actions needing the same arguments share an entry.
+        listed = {}
+        for values, need in re.findall(r"([\w/]+)\(([^)]*)\)", tool.description.partition(" Required: ")[2]):
+            listed.update(dict.fromkeys(values.split("/"), need))
         props = tool.input_schema["properties"]
         assert set(props) == {selector, "args"} and tool.input_schema["required"] == [selector], name
         assert props[selector]["enum"] == list(table) and props["args"]["type"] == "object", name
         for value, (required, optional, text) in table.items():
             assert text.strip(), (name, value)
             if required.strip() and (name, value) not in mcp_server.ONE_OF:
-                assert f"{value}({', '.join(required.split())})" in tool.description, (name, value)
+                assert listed.get(value) == ", ".join(required.split()), (name, value)
             own = mcp_server.ACTION_SCHEMAS[(name, value)]
             assert set(required.split()) == set(own["required"]), (name, value)
             assert set((required + " " + optional).split()) == set(own["properties"]), (name, value)

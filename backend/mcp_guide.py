@@ -207,6 +207,29 @@ with change rbd_edit.
 (SurPyval + RePyability) with the run command; rbd_export_json: RePyability's JSON (change import_rbd takes it \
 back)."""),
 
+    "fault_trees": ("Fault trees built by hand: gates, basic events, analysis, RBD and Open-PSA.", """\
+Fault trees: a top event, gates and basic events, saved as their own items (list kind fault_trees).
+- Gates: or (occurs when any input occurs), and (when all do), vote with k (when at least k of its inputs do). \
+NOT, XOR, INHIBIT and dynamic gates (priority-AND, spare, functional dependency, sequence) are refused: say \
+so, and suggest an RBD (standby there) for spares.
+- change fault_tree_save: name, top (the top event's gate id) and nodes. A gate: {id, type: gate, label, gate, \
+k (vote), inputs: [ids]}. A basic event: {id, type: event, label} plus model (as an RBD block's: \
+saved_model_id, or distribution_id + params, or mean) OR probability (a fixed unavailability q, 0 to 1). A \
+basic event may sit under several gates (a repeated event, counted once); a gate under one. unit: the models' \
+time unit. Up to 500 gates and events.
+- Never invent failure data: ask, or mark a guess placeholder=true and say so. A tree may be saved unfinished \
+(no_data lists the events still without data); analyse fault_tree says what it needs.
+- fault_tree_save with fault_tree_id replaces the tree's nodes (get kind fault_tree first, change, send back); \
+samples can't be changed: save a copy without fault_tree_id.
+- analyse fault_tree: the top event probability at t (default where it's about 10%; no t when every event is \
+a fixed probability), minimal cut sets (share_alone overlaps: shares don't add to 1) and each event's \
+importance (criticality = its share of the top event; Birnbaum; Fussell-Vesely; RAW; RRW). Exact and free. \
+export_openpsa=true adds the tree as Open-PSA XML.
+- make_rbd=true on fault_tree_save also saves the equivalent RBD (OR = series, AND = parallel, k of n failed \
+= n-k+1 of n working); a fixed-probability event becomes a block with no model, to be set before analysing it.
+- change import_rbd with as_fault_tree=true saves an Open-PSA or Galileo file's top events as fault trees.
+- change fault_tree_delete: own trees only, on the user's explicit request, confirmed by name."""),
+
     "strategy": ("Replacement (also over a shut calendar), proof-test and overhaul intervals; shape uncertainty.", """\
 Maintenance strategy (analyse actions).
 - analyse optimal_replacement: the cost-optimal age-replacement interval from a non-repairable model (model_id, or \
