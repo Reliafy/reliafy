@@ -312,6 +312,10 @@ export function FormModal({ title, submitLabel, pendingLabel = "Saving…", onCl
 }
 
 export function DueChip({ task }) {
+  // Raised by an event, not a date: it waits for it (never overdue).
+  if (!task.next_due && task.on_event) {
+    return <span className="lib-date" title={task.trigger?.text ? `On event: ${task.trigger.text}` : undefined}>{task.status || "On event"}</span>;
+  }
   if (!task.next_due) {
     const note = (task.limits || []).map((l) => l.note).find(Boolean);
     return <span className="lib-date">{note || "—"}</span>;
@@ -363,8 +367,12 @@ export function LifeTable({ rows, showPosition = false, onFix }) {
 }
 
 export function everyText(t) {
+  // A task raised by an event says what it waits for, or both when its interval runs too.
+  const event = t.trigger?.text ? `on event: ${t.trigger.text}` : "";
+  if (event && !t.trigger.with_interval) return event;
   const first = `${t.interval} ${t.unit}`;
-  return t.also_interval ? `${first} or ${t.also_interval} ${t.also_unit}` : first;
+  const timed = t.also_interval ? `${first} or ${t.also_interval} ${t.also_unit}` : first;
+  return event ? `${timed} or ${event}` : timed;
 }
 
 // Proposed changes to the plan, each with its reason, to accept or reject.

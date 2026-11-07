@@ -290,6 +290,8 @@ failure is caused by some of the position's failure modes:
 (:FunctionalFailure)-[:RESULTS_FROM]->(:FunctionalFailure)   # effect -> cause, on a position inside
 (:Position)-[:CAN_FAIL_AS]->(:FailureMode)          # as before
 (:Task)-[:MITIGATES]->(:FailureMode)                # many-to-many: see below
+(:Task)-[:WATCHES]->(:MeasurementPoint)            # a reading trigger (task.trigger_set)
+(:LoggedEvent {event_type, note, when})-[:LOGGED_ON]->(:Position)   # position.event_logged
 ```
 
 A failure mode's analysis and decision are properties on the mode

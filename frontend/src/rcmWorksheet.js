@@ -154,8 +154,8 @@ export function moreTasks(d) {
 }
 
 // "Weekly pH check · every 1 week": one task's line, and the tooltip listing them all.
-export const taskLine = (t) => [t.text || t.name, t.interval != null && t.unit ? `every ${intervalText({ interval: t.interval, interval_unit: t.unit })}` : null]
-  .filter(Boolean).join(" · ");
+// A task raised by an event says so: "Re-dose · on event: 120 mm on POOL-RAIN".
+export const taskLine = (t) => [t.text || t.name, everyText(t) || null].filter(Boolean).join(" · ");
 export const tasksTip = (d) => tasksOf(d).map((t) => taskLine(t) + (t.shared_with ? ` (shared with ${t.shared_with} other failure mode${t.shared_with === 1 ? "" : "s"})` : "")).join("\n");
 
 // The display: rows {key, type, ref, at, parent, kids, depth, sum} keyed by
@@ -286,6 +286,32 @@ export function intervalText(d) {
   return `${Number(d.interval).toLocaleString("en-AU", { maximumSignificantDigits: 6 })} ${unit}`.trim();
 }
 
+// A task's trigger (the server's `trigger`, with its words in `text`): what
+// raises its work order besides, or instead of, its interval.
+// "on event: 120 mm on POOL-RAIN", "on event: Lightning strike".
+export function triggerText(trigger) {
+  return trigger?.text ? `on event: ${trigger.text}` : "";
+}
+// Raised only by its trigger: the interval is kept but doesn't run.
+export const onEventOnly = (x) => !!(x?.trigger && !x.trigger.with_interval);
+// When a task (or a decision: interval_unit for unit) is done, as the
+// worksheet's Interval column says it: "6 months", "on event: 120 mm on
+// POOL-RAIN", or both ("6 months or on event: …").
+export function whenText(x) {
+  if (!x) return "";
+  if (onEventOnly(x)) return triggerText(x.trigger);
+  const every = intervalText({ interval: x.interval, interval_unit: x.interval_unit ?? x.unit });
+  return [every, triggerText(x.trigger)].filter(Boolean).join(" or ");
+}
+// The same with "every" before an interval: a task card's chip.
+export function everyText(x) {
+  if (!x) return "";
+  if (onEventOnly(x)) return triggerText(x.trigger);
+  const every = x.interval != null && (x.interval_unit ?? x.unit)
+    ? `every ${intervalText({ interval: x.interval, interval_unit: x.interval_unit ?? x.unit })}` : "";
+  return [every, triggerText(x.trigger)].filter(Boolean).join(" or ");
+}
+
 export function decisionText(d) {
   if (!d) return "";
   if (isCombination(d)) return d.outcomes.map((o) => OUTCOME_LABEL[o.outcome] || o.outcome).join(" + ");
@@ -360,7 +386,7 @@ export function phoneLine(r) {
   if (r.type === "fn" && r.ref.has_basis) return [insideWords(r), "has a working"].filter(Boolean).join(" · ");
   if (r.type !== "mode") return insideWords(r);
   const d = r.ref.decision;
-  return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", isCombination(d) ? "" : intervalText(d), d?.task || tasksOf(r.ref)[0]?.text, moreTasks(r.ref)]
+  return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", isCombination(d) ? "" : whenText(d), d?.task || tasksOf(r.ref)[0]?.text, moreTasks(r.ref)]
     .filter(Boolean).join(" · ");
 }
 
@@ -434,9 +460,10 @@ export const COLUMNS = [
   {
     id: "interval", label: "Interval", width: 92, min: 72, on: true, align: "num",
     title: "How often the task is done, in its unit",
-    text: (r) => (isMode(r) ? intervalText(d(r)) : ""),
-    sort: (r) => (isMode(r) && d(r)?.interval ? Number(d(r).interval) : null),
-    edit: "number", can: (r) => isMode(r) && INTERVAL_OUTCOMES.has(d(r)?.outcome), field: "interval", onDecision: true,
+    text: (r) => (isMode(r) ? whenText(d(r)) : ""),
+    sort: (r) => (isMode(r) && d(r)?.interval && !onEventOnly(d(r)) ? Number(d(r).interval) : null),
+    // A task raised by an event: its trigger is changed in the task's Edit… (Trigger).
+    edit: "number", can: (r) => isMode(r) && INTERVAL_OUTCOMES.has(d(r)?.outcome) && !onEventOnly(d(r)), field: "interval", onDecision: true,
   },
   {
     id: "check", label: "Evidence check", width: 126, min: 112, on: true,

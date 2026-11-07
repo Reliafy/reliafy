@@ -5,7 +5,7 @@
 // imported again; importing it onto the same position adds nothing.
 
 import { toCsv } from "./csv.js";
-import { CONSEQUENCE_LABEL, OUTCOME_LABEL, checkLabel } from "./rcmWorksheet.js";
+import { CONSEQUENCE_LABEL, OUTCOME_LABEL, checkLabel, onEventOnly, triggerText } from "./rcmWorksheet.js";
 import { AP_LABEL, CLASS_LABEL, SOURCE_LABEL, STATUS_LABEL as ACTION_STATUS_LABEL, cmOf, rpnOf } from "./fmea.js";
 
 // The files the import takes: an Excel workbook or a CSV file.
@@ -120,7 +120,8 @@ export function positionRcmRows(worksheet) {
         where, fn?.text || "", (first && fn.notes) || "", standardCell(fn, fail), "", (first && fn.standard_basis) || "",
         fail?.text || "", (firstFail && fail.notes) || "", causedBy(fail), m?.text || "", m?.effects || "",
         CONSEQUENCE_LABEL[m?.consequence] || "", ...fmeaCells(m), OUTCOME_LABEL[d.outcome] || "", d.rtf_basis || "", d.task || "",
-        d.interval ?? "", d.interval ? d.interval_unit || "" : "",
+        // A task raised only by an event: the interval cell says so, in words.
+        onEventOnly(d) ? triggerText(d.trigger) : d.interval ?? "", d.interval && !onEventOnly(d) ? d.interval_unit || "" : "",
         checkLabel(d), m?.notes || "",
       ];
     };
@@ -135,7 +136,7 @@ export function positionRcmRows(worksheet) {
     const taskRow = (fn, fail, m, t) => [
       where, fn?.text || "", "", standardCell(fn, fail), "", "", fail?.text || "", "", causedBy(fail), m.text || "", "",
       "", ...BLANK_FMEA, OUTCOME_LABEL[t.outcome] || OUTCOME_LABEL[m.decision?.outcome] || "", "", t.text || t.name || "",
-      t.interval ?? "", t.interval ? t.unit || "" : "", "", "",
+      onEventOnly(t) ? triggerText(t.trigger) : t.interval ?? "", t.interval && !onEventOnly(t) ? t.unit || "" : "", "", "",
     ];
     const modeRows = (fn, fail, m) => {
       rows.push(modeRow(fn, fail, m));

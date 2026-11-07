@@ -65,6 +65,15 @@ def _scores(m: dict) -> list:
     ]
 
 
+def _interval_cells(x: dict, unit) -> list:
+    """The Interval and Interval unit cells: a task raised only by an event says
+    so in words ("on event: 120 mm on POOL-RAIN"), its unit blank."""
+    trigger = x.get("trigger") or {}
+    if trigger and not trigger.get("with_interval"):
+        return [f"on event: {trigger.get('text', '')}", ""]
+    return [x.get("interval") if x.get("interval") is not None else "", (unit or "") if x.get("interval") else ""]
+
+
 def rows(worksheet: dict) -> list[list]:
     """The header and one row per failure mode of a resolved RCM read
     (rcm_graph.resolve over Maintenance.rcm_worksheet)."""
@@ -97,8 +106,7 @@ def rows(worksheet: dict) -> list[list]:
                 _CONSEQUENCE.get((m or {}).get("consequence") or "", ""),
                 *(_scores(m) if m else blank_scores),
                 _OUTCOME.get(d.get("outcome") or "", ""), d.get("rtf_basis") or "", d.get("task") or "",
-                d.get("interval") if d.get("interval") is not None else "",
-                (d.get("interval_unit") or "") if d.get("interval") else "",
+                *_interval_cells(d, d.get("interval_unit")),
                 (_LINKED.get(d.get("evidence_kind"), "Linked") if status == "linked" else _STATUS.get(status, status))
                 if status and status != "unevidenced" else "",
                 (m or {}).get("notes") or "",
@@ -109,8 +117,7 @@ def rows(worksheet: dict) -> list[list]:
                 where, (fn or {}).get("text") or "", "", _standard_cell(fn or {}, fail), "", "",
                 (fail or {}).get("text") or "", "", _caused_by(fail or {}), m.get("text") or "", "", "", *blank_scores,
                 _OUTCOME.get(t.get("outcome") or (m.get("decision") or {}).get("outcome") or "", ""), "",
-                t.get("text") or t.get("name") or "", t.get("interval") if t.get("interval") is not None else "",
-                (t.get("unit") or "") if t.get("interval") else "", "", "",
+                t.get("text") or t.get("name") or "", *_interval_cells(t, t.get("unit")), "", "",
             ]
 
         def mode_rows(fn, fail, m) -> None:

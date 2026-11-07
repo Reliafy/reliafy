@@ -189,6 +189,7 @@ later takes last_done_reading on the new one, or works it out from the date); al
 whichever comes first. outcome: fixed_interval, \
 failure_finding (a hidden function), on_condition, or none for routine work. source (oem, statutory, manual, \
 other) with reference; trade (who may do it); last_done.
+- Raised by an event instead of (or as well as) the interval: trigger on tasks.create / tasks.update. A reading past a limit: {kind: 'reading', point_id: a condition point, above: 120} (after 120 mm of rain in 24 h, test and re-dose the pool: the rain gauge POOL-RAIN's reading of 128 raises the work order, dated the reading's day). A named event: {kind: 'event', event_type: 'Lightning strike'}, raised when someone logs it with maintenance positions.log_event (position_id, event_type, note, on) on the task's position or one above it. with_interval true keeps the interval running too; otherwise the task waits for the event (status 'Waiting for the event', never overdue). One work order per event: another reading or event while it's open raises nothing. clear_trigger true: the interval alone again.
 - Several performance standards on one function: a function is one job (one verb, one object); how well it must \
 do it can be several numbers (pH, alkalinity and hardness; flow and pressure). Each is one performance standard, as a list: \
 maintenance failure_modes.add_standard (text: one parameter and one limit, 'pH 7.2-7.8'; parameter, comparator, \

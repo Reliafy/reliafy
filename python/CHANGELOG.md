@@ -2,6 +2,16 @@
 
 ## Unreleased (0.5.1)
 
+- **Tasks raised by an event**: `maintenance tasks.create` and `tasks.update`
+  take `trigger` (`{kind: "reading", point_id, above | below}` or `{kind:
+  "event", event_type, note}`, with `with_interval` to keep the interval too;
+  `tasks.update clear_trigger` removes it), and `tasks.create` needs no
+  `interval` when a trigger raises it. The new `maintenance
+  positions.log_event` (`position_id`, `event_type`, `note`, `on`) logs an
+  event and returns `work_orders_raised`. On the command line: `reliafy
+  maintenance positions.log_event --position-id <id> --event-type "Lightning
+  strike"`.
+
 - **A combination of tasks on one RCM decision**: `maintenance
   failure_modes.decide` takes `decision.outcomes`, a list of
   `{outcome, task, interval, interval_unit, task_id}` (a regular inspection

@@ -35,6 +35,8 @@ export function summaryActions(r, { mode, viewOnly = null } = {}) {
   if (r.type === "pos") {
     out.push(write({ id: "tree-new", label: "New position inside" }, viewOnly));
     out.push(write({ id: "report-new", label: "Add failure report…" }, viewOnly));
+    // Something that happened there (a storm, a lightning strike): tasks triggered by it raise their work.
+    out.push(write({ id: "event-log", label: "Log an event…" }, viewOnly));
     out.push(write({ id: "tree-rename", label: "Rename…" }, viewOnly));
     // Its place in the positions tree (in Locations, a position's place is
     // where it is, set on its own page).

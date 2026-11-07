@@ -1336,6 +1336,30 @@ def _task_unlinked(s: GraphStore, org: str, p: dict) -> None:
     s.delete_edge(org, "MITIGATES", p["id"], p["failure_mode_id"])
 
 
+def _task_trigger_set(s: GraphStore, org: str, p: dict) -> None:
+    """task.trigger_set (Nov 2026): what raises the task's work order besides (or
+    instead of) its interval. trigger is {kind: reading, point_id, above | below}
+    (a reading on a condition point past a limit), {kind: event, event_type, note}
+    (a named event logged on its position or one above it), each with
+    with_interval true when the interval still runs too; None clears it. A
+    reading trigger also links the task to the point it watches (WATCHES)."""
+    for point in s.out(org, p["id"], "WATCHES"):
+        s.delete_edge(org, "WATCHES", p["id"], point["id"])
+    trigger = p.get("trigger")
+    s.patch_node(org, p["id"], {"trigger": dict(trigger) if trigger else None})
+    if trigger and trigger.get("kind") == "reading":
+        s.put_edge(org, "WATCHES", p["id"], trigger["point_id"])
+
+
+def _position_event_logged(s: GraphStore, org: str, p: dict) -> None:
+    """position.event_logged (Nov 2026): something happened at a position (a storm,
+    a lightning strike, an overflow), kept as its history. The work orders it
+    raised are their own work_order.opened events."""
+    s.put_node(org, p["id"], "LoggedEvent", {"event_type": p["event_type"], "note": p.get("note", ""),
+                                            "when": p["when"]})
+    s.put_edge(org, "LOGGED_ON", p["id"], p["position_id"])
+
+
 def _work_order_opened(s: GraphStore, org: str, p: dict) -> None:
     task = s.node(org, p["task_id"]) if p.get("task_id") else None
     s.put_node(org, p["id"], "WorkOrder", {
@@ -1655,6 +1679,19 @@ def _reread_tasks(s: GraphStore, org: str, point_id: str, day: str) -> None:
             value = _reading_at(readings, task["last_done"])
         if value != task.get("last_done_reading"):
             s.patch_node(org, task["id"], {"last_done_reading": value})
+
+
+def _on_event_only(task: dict) -> bool:
+    """A task raised only by its trigger (an event or a reading past a limit): its
+    interval is kept but doesn't run, so it's never due on a date."""
+    trigger = task.get("trigger")
+    return bool(trigger) and not trigger.get("with_interval")
+
+
+def _short_day(day: str) -> str:
+    """A day as a work order's note says it: 7 Nov 2026."""
+    d = date.fromisoformat(day)
+    return f"{d.day} {d.strftime('%b')} {d.year}"
 
 
 def _subject(s: GraphStore, org: str, task: dict) -> dict | None:
@@ -2430,6 +2467,9 @@ PROJECTORS = {
     # One task may prevent several failure modes, and a mode may have several tasks.
     "task.linked": _task_linked,
     "task.unlinked": _task_unlinked,
+    # Raised by an event as well as (or instead of) its interval, and the events logged.
+    "task.trigger_set": _task_trigger_set,
+    "position.event_logged": _position_event_logged,
     "work_order.opened": _work_order_opened,
     "action.recorded": _action_recorded,
     "work_order.closed": _work_order_closed,
@@ -5266,11 +5306,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if decision and (decision.get("evidence") or {}).get("type") == "working":
             # A working is on the graph: the read hands it to the evidence check (rcm_decisions).
             decision["working"] = self._working_ref(decision["evidence"].get("id"))
+        brief = self._tasks_brief(tasks, shares)
+        # A task raised by an event: the worksheet shows "on event: …" in place of its interval.
+        triggers = {t["id"]: self._trigger_view(t.get("trigger")) for t in tasks if t.get("trigger")}
+        if triggers:
+            for row in [*brief, *((decision or {}).get("tasks") or []), *((decision or {}).get("outcomes") or [])]:
+                row["trigger"] = triggers.get(row.get("id") or row.get("task_id"))
+            if decision:
+                decision["trigger"] = triggers.get(decision.get("task_id"))
         return {
             "id": fm["id"], "text": fm["text"], "effects": fm.get("effects") or "", "notes": fm.get("notes") or "",
             "consequence": fm.get("consequence"), "decision": decision,
             # Its tasks whether or not it's decided yet (a task linked before the decision).
-            "tasks": self._tasks_brief(tasks, shares),
+            "tasks": brief,
             "ad_hoc": bool(fm.get("ad_hoc")),
             # Words an earlier failure mode kept for its function and failure (before
             # functions were on the positions): a hint for where it belongs.
@@ -5631,8 +5679,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return {"kind": node["label"].lower(), "id": node["id"], "name": node.get("name", "")}
 
     def _task_view(self, task: dict) -> dict:
-        limits = [self._due_by(task, task["interval"], task["unit"])]
-        if task.get("also_interval") and task.get("also_unit"):
+        on_event = _on_event_only(task)
+        # A task raised only by its trigger is never due on a date (nor late): it waits for the event.
+        limits = [] if on_event else [self._due_by(task, task["interval"], task["unit"])]
+        if not on_event and task.get("also_interval") and task.get("also_unit"):
             limits.append(self._due_by(task, task["also_interval"], task["also_unit"]))
         dues = [lim["next_due"] for lim in limits if lim["next_due"]]
         nxt = min(dues) if dues else None
@@ -5662,14 +5712,18 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             "proposal": next(({"id": p["id"], "proposed": p.get("proposed"), "kind": p.get("kind")}
                               for p in self.s.inn(self.org, task["id"], "ABOUT")
                               if p["label"] == "Proposal" and p.get("status") == "pending"), None),
+            # What raises it besides (or instead of) the interval: null when only the interval does.
+            "trigger": self._trigger_view(task.get("trigger")), "on_event": on_event,
         }
+        if on_event and not open_wo:
+            out["status"] = "Waiting for the event"
         if subject and subject["label"] == "Item":
             out["while_stored"] = task.get("while_stored") or "run"
         if subject and subject["label"] == "Location":
             out["include_positions"] = bool(task.get("include_positions"))
         # In a work package: due on the package's visits (its own interval aside) while
         # the package is active; a paused one's are raised on their own as before.
-        entry = self._package_index().get(task["id"]) if not task.get("retired") else None
+        entry = self._package_index().get(task["id"]) if not task.get("retired") and not on_event else None
         if entry:
             out |= self._package_due(task, entry)
         # On something out of service: not due (nor late) until it's back.
@@ -6691,7 +6745,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return {"stored": stored, "points": len(grouped), "unknown_tags": unknown, "work_orders_raised": alarms}
 
     def _check_alarm(self, point_id: str, value: float, day: str) -> dict | None:
-        """Past a limit with no alarm work order open: open one. Returns it, if opened."""
+        """Past a limit with no alarm work order open: open one. Returns it, if opened.
+        First, tasks whose trigger watches the point raise their work orders when the
+        reading sets them off (_raise_by_reading)."""
+        self._raise_by_reading(point_id, value, day)
         point = self._get(point_id, "MeasurementPoint")
         above, below = point.get("alarm_above"), point.get("alarm_below")
         status = "high" if above is not None and value >= above else "low" if below is not None and value <= below \
@@ -6967,7 +7024,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return sorted(rows, key=lambda r: r["text"].lower())[:MAX_LOCATION_POSITIONS]
 
     def open_work_order(self, position_id: str | None, title, type="corrective", task_id=None, due=None,
-                        notes="", trade=None, item_id=None, location_id=None, include_positions=None) -> dict:
+                        notes="", trade=None, item_id=None, location_id=None, include_positions=None,
+                        opened=None) -> dict:
         """Open a work order on a position, an item (it follows the item: a calibration, a
         certificate, an overhaul) or a location (a round, an area inspection): exactly one.
         From a task with no subject given, the task's. trade: who may do the work ("licensed
@@ -6976,7 +7034,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         (by default, as the task says).
 
         From a task with no title given (or the task's own name), the title is the task's
-        name, shortened to fit when it's long, with the full name at the top of the notes."""
+        name, shortened to fit when it's long, with the full name at the top of the notes.
+        ``opened`` (not a tool argument): the day it opened, when not today (a task raised by a
+        reading opens on the reading's day)."""
         task = self._get(task_id, "Task") if task_id else None
         if task and str(title or "").strip() in ("", str(task.get("name") or "").strip()):
             title, full = derived_title(task.get("name") or "Task")
@@ -6999,7 +7059,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             "id": wid, "number": self._next_number(), "title": _text(title, "title", required=True),
             "type": type, **ref, "task_id": task_id or None,
             "due": _day(due, "due date") if due else None, "notes": _text(notes, "notes"),
-            "on": self.today(),
+            "on": opened or self.today(),
         } | ({"trade": trade} if trade else {})
           | ({"round": self._round(node["id"])} if include_positions else {}))
         return self.work_order(wid)
@@ -8984,7 +9044,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def create_task(self, position_id: str | None, name, interval, unit="months", outcome=None, also_interval=None,
                     also_unit=None, point_id=None, instructions="", checklist=None, source="manual", reference="",
                     failure_mode_id=None, last_done=None, trade="", item_id=None, location_id=None,
-                    while_stored=None, include_positions=None, failure_mode_ids=None) -> dict:
+                    while_stored=None, include_positions=None, failure_mode_ids=None, trigger=None) -> dict:
         """A scheduled task added directly (not an RCM decision's): from the maker's manual (source 'oem'),
         a law or standard ('statutory'), your own practice ('manual') or elsewhere
         ('other'). It's scheduled and raises work orders like a task from RCM. outcome
@@ -9002,9 +9062,15 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
           (default: calendar time keeps counting in a store) or pause.
         * location_id: a place (an inspection round, Ex inspections, a building check). By
           the calendar only; include_positions puts a line for each position there on the
-          checklist of the work orders it raises."""
+          checklist of the work orders it raises.
+
+        trigger: raised by an event as well as, or instead of, the interval (set_task_trigger).
+        A task raised only by its trigger needs no interval (it keeps 12 months, unused)."""
         node, ref = self._subject_ref("task", position_id, item_id, location_id)
         name = _text(name, "task's name", required=True)
+        checked_trigger = self._checked_trigger(trigger)
+        if interval in (None, "") and checked_trigger and not checked_trigger.get("with_interval"):
+            interval, unit = 12, "months"
         unit = _unit(unit, "months")
         interval = _interval(interval, unit)
         if outcome in ("", None):
@@ -9043,6 +9109,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 raise Invalid("Last done can't be in the future.")
         self._quota("Task", MAX_TASKS)
         self._emit("task.added", payload)
+        if checked_trigger:
+            self._emit("task.trigger_set", {"id": payload["id"], "trigger": checked_trigger})
         if done:
             self.set_last_done(payload["id"], done)
         return self._task_view(self._get(payload["id"], "Task"))
@@ -9050,8 +9118,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def update_task(self, task_id: str, name=None, interval=None, unit=None, also_interval=None,
                     also_unit=None, point_id=None, instructions=None, checklist=None, failure_mode_id=None,
                     source=None, reference=None, outcome=..., trade=None, while_stored=None,
-                    include_positions=None, last_done_reading=None) -> dict:
-        """Change a task. also_interval / also_unit add a second limit, whichever comes
+                    include_positions=None, last_done_reading=None, trigger=...) -> dict:
+        """Change a task. trigger: what raises it besides its interval (set_task_trigger); None
+        clears it. also_interval / also_unit add a second limit, whichever comes
         first (500 hours or 6 months); also_interval 0 removes it. point_id picks the
         measurement a task by use counts ('' : its position's, or item's, counter in its
         unit): for a position's task, one in its unit on the position, above or below
@@ -9120,9 +9189,199 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 changes |= self._task_link(subject["id"], failure_mode_id, task)
         changes = {k: v for k, v in changes.items() if k not in ("while_stored", "include_positions")
                    or v != task.get(k)}
+        checked_trigger = self._checked_trigger(trigger) if trigger is not ... else ...
         if changes:
             self._emit("task.updated", {"id": task_id, "changes": changes})
+        if checked_trigger is not ... and checked_trigger != (task.get("trigger") or None):
+            self._emit("task.trigger_set", {"id": task_id, "trigger": checked_trigger})
         return self._task_view(self._get(task_id, "Task"))
+
+    # ---- tasks raised by an event (Nov 2026) ----------------------------------------
+    #
+    # A task may be raised by an event as well as (or instead of) its interval: a
+    # reading on a condition point past a limit (120 mm of rain in 24 h), or a
+    # named event someone logs on a position (a lightning strike, an overflow).
+    # Either opens the task's work order once; another while it's open doesn't.
+
+    TRIGGER_KINDS = ("reading", "event")
+
+    def _trigger_view(self, trigger: dict | None) -> dict | None:
+        """A task's trigger as reads show it, with text: "120 mm on POOL-RAIN" or
+        "Lightning strike" (the worksheet's interval column says "on event: …")."""
+        if not trigger:
+            return None
+        out = dict(trigger)
+        out["with_interval"] = bool(trigger.get("with_interval"))
+        if trigger.get("kind") == "reading":
+            point = self.s.node(self.org, trigger["point_id"]) or {}
+            unit = f" {point['unit']}" if point.get("unit") else ""
+            limit = trigger.get("above") if trigger.get("above") is not None else trigger.get("below")
+            word = "" if trigger.get("above") is not None else "below "
+            out["point"] = {"id": trigger["point_id"], "name": point.get("name", ""), "unit": point.get("unit", "")}
+            out["text"] = f"{word}{limit:g}{unit} on {point.get('name') or 'its point'}"
+        else:
+            out["text"] = trigger.get("event_type", "")
+        return out
+
+    def _checked_trigger(self, trigger) -> dict | None:
+        """A trigger from a request, checked; None (or {}) clears it."""
+        if trigger in (None, "", {}):
+            return None
+        if not isinstance(trigger, dict):
+            raise Invalid("trigger is {kind: 'reading', point_id, above or below} or {kind: 'event', event_type, "
+                          "note?}, with with_interval true to keep the interval running too; null clears it.")
+        kind = trigger.get("kind")
+        takes = {"reading": {"kind", "point_id", "above", "below", "with_interval"},
+                 "event": {"kind", "event_type", "note", "with_interval"}}.get(kind)
+        if takes is None:
+            raise Invalid("A trigger's kind is reading (a reading on a condition point past a limit) or event (a "
+                          "named event logged on the position, or one above it).")
+        extra = sorted(set(trigger) - takes)
+        if extra:
+            raise Invalid(f"A {kind} trigger doesn't take {', '.join(extra)} (it takes {', '.join(sorted(takes))}).")
+        if kind == "reading":
+            point = self._live_point(trigger.get("point_id"))
+            if point.get("kind") != "condition":
+                raise Invalid(f"{point['name']} is a counter: a task by use goes by it with an interval in its unit. "
+                              "A trigger watches a condition point (rainfall, level, temperature).")
+            given = [(k, trigger[k]) for k in ("above", "below") if trigger.get(k) not in (None, "")]
+            if len(given) != 1:
+                raise Invalid("A reading trigger needs one limit: above (a reading at or over it) or below (at or "
+                              "under it).")
+            limit, value = given[0]
+            out = {"kind": "reading", "point_id": point["id"], limit: _number(value, "trigger limit", -MAX_AMOUNT,
+                                                                             MAX_AMOUNT)}
+        else:
+            out = {"kind": "event", "event_type": " ".join(_text(trigger.get("event_type"), "event_type",
+                                                                required=True).split()),
+                   "note": _text(trigger.get("note"), "note")}
+        if _flag_value(trigger.get("with_interval"), "with_interval"):
+            out["with_interval"] = True
+        return out
+
+    def set_task_trigger(self, task_id: str, trigger) -> dict:
+        """Raise the task's work order when an event happens: a reading past a limit
+        ({kind: reading, point_id, above | below}) or a named event logged on its
+        position or one above it ({kind: event, event_type, note}). On its own it
+        replaces the interval (the task waits for the event, never overdue);
+        with_interval true keeps the interval running too. None clears it: the
+        interval runs again as before."""
+        task = self._get(task_id, "Task")
+        if task.get("retired"):
+            raise Invalid("That task has been retired.")
+        checked = self._checked_trigger(trigger)
+        if checked != (task.get("trigger") or None):
+            self._emit("task.trigger_set", {"id": task_id, "trigger": checked})
+        return self._task_view(self._get(task_id, "Task"))
+
+    def _raise_for_trigger(self, task: dict, day: str, why: str) -> dict | None:
+        """The task's work order, opened on ``day`` with what raised it in its notes;
+        None when one is open already (one event, one work order) or the task or
+        what it's on is retired. A work order that can't be opened is logged and
+        skipped: it never stops the reading or event being recorded."""
+        if task.get("retired"):
+            return None
+        subject = _subject(self.s, self.org, task)
+        if not subject or subject.get("retired"):
+            return None
+        if any(w.get("status") in OPEN_STATUSES for w in self.s.inn(self.org, task["id"], "FOR")):
+            return None
+        try:
+            wo = self.open_work_order(None, None, type="preventive", task_id=task["id"], due=day,
+                                      notes=f"Raised by: {why}", opened=day)
+        except Invalid as err:
+            logger.warning("maintenance: no work order for triggered task %s in %s: %s", task["id"], self.org, err)
+            return None
+        return {"id": wo["id"], "number": wo["number"], "title": wo["title"],
+                "task": {"id": task["id"], "name": task["name"]}}
+
+    def _raise_by_reading(self, point_id: str, value: float, day: str) -> list[dict]:
+        """The work orders of tasks watching a point that a reading of ``value`` on
+        ``day`` sets off (at or over an above limit, at or under a below one)."""
+        point = self.s.node(self.org, point_id) or {}
+        unit = f" {point['unit']}" if point.get("unit") else ""
+        raised = []
+        for task in sorted(self.s.inn(self.org, point_id, "WATCHES"), key=lambda t: t["id"]):
+            trigger = task.get("trigger") or {}
+            if task["label"] != "Task" or trigger.get("kind") != "reading" or trigger.get("point_id") != point_id:
+                continue
+            above, below = trigger.get("above"), trigger.get("below")
+            if above is not None and value >= above:
+                past = f"at or over {above:g}{unit}"
+            elif below is not None and value <= below:
+                past = f"at or under {below:g}{unit}"
+            else:
+                continue
+            wo = self._raise_for_trigger(task, day, f"{value:g}{unit} on {point.get('name', '')}, "
+                                                    f"{_short_day(day)} ({past})")
+            if wo:
+                raised.append(wo)
+        return raised
+
+    def log_position_event(self, position_id: str, event_type, note="", when=None) -> dict:
+        """Something happened at a position: a storm, a lightning strike, an overflow
+        (event_type, in your words), on a day (when: today by default). Every task
+        on the position, or on a position inside it, whose trigger names that event
+        (case aside) raises its work order, unless one is open already. Returns the
+        event and work_orders_raised."""
+        position = self._get(position_id, "Position")
+        if position.get("retired"):
+            raise Invalid("That position has been retired.")
+        name = " ".join(_text(event_type, "event_type", required=True).split())
+        day = _day(when, "date", today=self.today())
+        if day > self.today():
+            raise Invalid("An event can't be logged in the future.")
+        eid = new_id()
+        note = _text(note, "note")
+        self._emit("position.event_logged", {"id": eid, "position_id": position["id"], "event_type": name,
+                                             "note": note, "when": day})
+        inside = {position["id"], *self._below_ids(position["id"])}
+        why = f"{name} logged on {position['name']}, {_short_day(day)}" + (f": {note}" if note else "")
+        raised = []
+        for task in sorted(self.s.nodes(self.org, "Task"), key=lambda t: t["id"]):
+            trigger = task.get("trigger") or {}
+            if trigger.get("kind") != "event" or trigger.get("event_type", "").casefold() != name.casefold():
+                continue
+            subject = _subject(self.s, self.org, task)
+            if not subject or subject["id"] not in inside:
+                continue
+            wo = self._raise_for_trigger(task, day, why)
+            if wo:
+                raised.append(wo)
+        return {"event": {"id": eid, "position_id": position["id"], "event_type": name, "note": note, "when": day},
+                "work_orders_raised": raised}
+
+    def task_trigger_points(self, task_id: str) -> list[dict]:
+        """The condition points a task's trigger can watch, nearest first: on what
+        it's on, then the positions above it and inside its top position (a site's
+        rain gauge), at most 200."""
+        task = self._get(task_id, "Task")
+        subject = _subject(self.s, self.org, task)
+        if subject is None:
+            return []
+        start = subject["id"]
+        if subject["label"] == "Item":
+            fitment = self._current_fitment_of_item(subject["id"])
+            start = fitment and self.s.out(self.org, fitment["id"], "AT")[0]["id"]
+        order = [subject["id"]]
+        if start and subject["label"] != "Location":
+            above = self._ancestor_ids(start)
+            top = above[-1] if above else start
+            order += [start, *above, top, *self._below_ids(top)]
+        out, seen = [], set()
+        for nid in order:
+            if nid in seen:
+                continue
+            seen.add(nid)
+            node = self.s.node(self.org, nid) or {}
+            for mp in sorted(self.s.inn(self.org, nid, "ON"), key=lambda m: (m.get("name") or "").lower()):
+                if mp["label"] == "MeasurementPoint" and mp.get("kind") == "condition" and not mp.get("retired"):
+                    out.append({"id": mp["id"], "name": mp["name"], "unit": mp.get("unit", ""),
+                                "alarm_above": mp.get("alarm_above"), "alarm_below": mp.get("alarm_below"),
+                                "on": {"id": nid, "name": node.get("name", "")}})
+                    if len(out) >= 200:
+                        return out
+        return out
 
     def retire_task(self, task_id: str, reason="") -> None:
         task = self._get(task_id, "Task")
@@ -11437,6 +11696,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def _tree_task_due(self, task: dict, subject_label: str) -> str | None:
         """A task's next due date, as _task_view gives it, without its store reads
         for a plain calendar limit."""
+        if _on_event_only(task):
+            return None
         limits = [(task["interval"], task["unit"])]
         if task.get("also_interval") and task.get("also_unit"):
             limits.append((task["also_interval"], task["also_unit"]))

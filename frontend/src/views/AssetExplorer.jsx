@@ -67,6 +67,7 @@ import { DeleteRcmModal, DeleteTreeModal } from "../components/DeleteTree.jsx";
 import { DELETE_KIND, undoneText } from "../treeDelete.js";
 import { RCM_DELETE_KIND, deletesWithCascade, rcmDeleteId, rcmUndoneText } from "../rcmDelete.js";
 import NewFailureReportModal from "../components/NewFailureReportModal.jsx";
+import LogEventModal from "../components/LogEventModal.jsx";
 import usePhone from "../usePhone.js";
 import { OPEN_SAMPLE_PRODUCT_LABEL, sampleProductId, sampleProductView } from "../sampleProduct.js";
 import { PRODUCTS_PATH, designActions, isDesignScope, productViewPath, scopeTree } from "../products.js";
@@ -236,6 +237,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // A failure report being filed ({id, name}: the position; select: the row
   // to show it under on the Failure reports tab once filed).
   const [reportFor, setReportFor] = useState(null);
+  const [eventFor, setEventFor] = useState(null); // Log an event…: {id, name} of the position
   const [buildFor, setBuildFor] = useState(null); // the product the row menu's Build an item… is for
   const headingRef = useRef(null);
   const detailsHeading = useRef(null);
@@ -910,6 +912,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         setModal(r.type === "loc" ? "location" : "position");
       } else if (id === "tree-rename" || id === "tree-move" || id === "tree-delete") setRowModal({ kind: id.slice(5), row: r });
       else if (id === "report-new") setReportFor({ id: r.key, name: r.ref.name, select: r.key });
+      else if (id === "event-log") setEventFor({ id: r.key, name: r.ref.name });
       else if (id === "build-item") buildFrom(r.key);
       else if (id === "pin") pinTo(r.key, { select: true });
       else if (id.startsWith("isolate:")) isolateAt(r, id === "isolate:all" ? "all" : Number(id.slice(8)));
@@ -1218,6 +1221,15 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setBuildFor(null);
     load();
     say(`Built ${out.name}: ${out.counts.positions} positions, with the item (serial ${out.serial}) fitted at the top.`, "ok");
+  };
+  // An event logged: the tree read again (its work), and what it raised said.
+  const eventLogged = (out) => {
+    setEventFor(null);
+    load();
+    const raised = out.work_orders_raised || [];
+    say(raised.length
+      ? `Logged ${out.event.event_type}: raised ${raised.map((w) => `#${w.number}`).join(", ")}.`
+      : `Logged ${out.event.event_type}. No task here is waiting for it, or its work order is open already.`, "ok", { fade: !raised.length });
   };
   const reportFiled = (view) => {
     const select = reportFor?.select || view.position?.id;
@@ -1769,6 +1781,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       {reportFor && (
         <NewFailureReportModal positionId={reportFor.id} positionName={reportFor.name} today={data?.today || ""}
                                onClose={() => setReportFor(null)} onDone={reportFiled} />
+      )}
+      {eventFor && (
+        <LogEventModal positionId={eventFor.id} positionName={eventFor.name} today={data?.today || ""}
+                       onClose={() => setEventFor(null)} onDone={eventLogged} />
       )}
       {buildFor && <BuildItemModal product={buildFor} onClose={() => setBuildFor(null)} onDone={built} />}
       {sheetFor && <RcmImportModal position={sheetFor} onClose={() => setSheetFor(null)} onImported={sheetImported} />}
