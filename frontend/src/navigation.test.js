@@ -386,7 +386,7 @@ const OLD_TO_NEW = [
   ["/maintenance/rcm", "/asset-register/explorer?tab=rcm"],
   ["/maintenance/rcm/x", "/asset-register/explorer?tab=rcm"],
   ["/maintenance/positions/x", "/asset-register/positions/x"],
-  ["/maintenance/items", "/asset-register/explorer?arrange=items"],
+  ["/maintenance/items", "/items"],
   ["/maintenance/items/x", "/asset-register/items/x"],
   ["/maintenance/locations", "/asset-register/explorer?arrange=locations"],
   ["/maintenance/locations/x", "/asset-register/locations/x"],
@@ -396,7 +396,7 @@ const OLD_TO_NEW = [
   ["/maintenance/parts/x", "/asset-register/parts/x"],
   ["/systems", "/systems/rbds"],
   ["/asset-register/positions", "/asset-register/explorer?arrange=positions"],
-  ["/asset-register/items", "/asset-register/explorer?arrange=items"],
+  ["/asset-register/items", "/items"],
   ["/asset-register/locations", "/asset-register/explorer?arrange=locations"],
   ["/systems/fmeca", "/asset-register/explorer?tab=fmea"],
   // Parts and stock and Classes are tabs of the asset tree, on everything.
@@ -432,11 +432,12 @@ test("an earlier address keeps its query: the target's first, then the rest", ()
     "/asset-register/explorer?arrange=positions&place=none");
   // An RCM study's address from an email: the tab first, then the rest.
   assert.equal(movedHref("/asset-register/explorer?tab=rcm", "?from=email"), "/asset-register/explorer?tab=rcm&from=email");
+  // The old Positions page's Flat arrangement is gone: by positions, p1 picked.
   assert.equal(movedHref("/asset-register/explorer?arrange=positions", "?arrange=flat&sel=p1"),
-    "/asset-register/explorer?arrange=flat&sel=p1");
+    "/asset-register/explorer?arrange=positions&sel=p1");
   assert.equal(movedHref("/asset-register/explorer?arrange=locations", "?sel=l1", "#top"),
     "/asset-register/explorer?arrange=locations&sel=l1#top");
-  assert.equal(movedHref("/asset-register/explorer?arrange=items", ""), "/asset-register/explorer?arrange=items");
+  assert.equal(movedHref("/items", "?sel=i1"), "/items?sel=i1");
 });
 
 test("every redirect lands on a page of the app, and no page is also a redirect", () => {

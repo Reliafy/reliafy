@@ -120,8 +120,8 @@ test("the positions a report can be filed at from a row", () => {
   const l = buildDisplay(DATA, "locations");
   const atSite = positionsInScope(l, l.rows.get("site")).map((p) => p.id);
   assert.ok(atSite.includes("pool") && atSite.includes("shedpos"));
-  const items = buildDisplay(DATA, "items");
-  const u1 = items.rows.get("u1");
-  assert.deepEqual(positionsInScope(items, { ...u1, ref: { ...u1.ref, fitted_to: { id: "pump", name: "Filter pump" } } }).map((p) => p.id), ["pump"]);
+  // An item fitted to a position: that position.
+  const u1 = { key: "u1", type: "item", ref: { id: "u1", name: "Pump unit", fitted_to: { id: "pump", name: "Filter pump" } }, kids: [], parent: null };
+  assert.deepEqual(positionsInScope(d, u1).map((p) => p.id), ["pump"]);
   assert.deepEqual(positionsInScope(null, null), []);
 });

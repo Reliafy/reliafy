@@ -62,13 +62,12 @@ test("isolate on the RCM tab: a function and the rows inside it", () => {
   assert.ok(one.has("fnA") && one.has("pumpA") && one.has("lineA") && one.has("plant"));
   assert.ok(!one.has("ffA") && !one.has("pumpB") && !one.has("lineB"));
   assert.ok(isolateOpen(d, all, "fnA", 2).has("ffA"));
-  // What can be isolated: the tree's rows and the RCM's, not a heading, not in Flat.
+  // What can be isolated: the tree's rows and the RCM's, not a heading.
   assert.equal(canIsolate(d.rows.get("fnA"), "positions", canPin), true);
   assert.equal(canIsolate(d.rows.get("mA"), "positions", canPin), true);
   assert.equal(canIsolate(d.rows.get("lineA"), "positions", canPin), true);
   assert.equal(canIsolate({ type: "cause", kids: [] }, "positions", canPin), false);
   assert.equal(canIsolate({ type: "unassigned", kids: ["x"] }, "positions", canPin), false); // a heading: no menu
-  assert.equal(canIsolate(buildDisplay(DATA, "flat").rows.get("lineA"), "flat", canPin), false);
   assert.equal(canIsolate(null, "positions", canPin), false);
 });
 

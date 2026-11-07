@@ -277,7 +277,7 @@ test("the collapsed menu and the keyboard", async ({ page, request, problems }) 
 
 const PHONE_PAGES = [
   "/home", "/systems/rbds", "/asset-register", "/asset-register/explorer?arrange=positions", "/asset-register/explorer?arrange=locations",
-  "/asset-register/explorer?arrange=items", "/asset-register/explorer?tab=rcm", "/asset-register/explorer?tab=parts&scope=all",
+  "/items", "/asset-register/explorer?tab=rcm", "/asset-register/explorer?tab=parts&scope=all",
   "/asset-register/explorer?tab=classes&scope=all", "/products", "/maintenance", "/data",
   "/models", "/models/recurrent", "/strategy", "/risk", "/forecasts", "/reports", "/settings",
 ];

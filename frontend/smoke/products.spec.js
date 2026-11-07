@@ -55,6 +55,9 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expect(page.locator(".pp-head")).toHaveCount(0);
     await expect(page.getByRole("treeitem", { name: /^Propulsion/ }).first()).toBeVisible();
     await expect(page.getByRole("treeitem", { name: /^Pump station|^Delivery truck/ })).toHaveCount(0);
+    // One tree: no Positions / Locations switch, and the tree's last row adds inside the product.
+    await expect(page.getByRole("radiogroup", { name: "Arrange by" })).toHaveCount(0);
+    await expect(page.locator(".tp-addrow")).toHaveText(/^\+New position inside Survey quadcopter \(sample/);
     // At most one h1: the product's row's name.
     expect(await page.getByRole("heading", { level: 1 }).count()).toBeLessThanOrEqual(1);
     if (phone) await page.getByRole("treeitem", { name: /^Survey quadcopter \(sample/ }).first().click();

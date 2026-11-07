@@ -13,9 +13,10 @@ import { levelSet } from "./outlineTree.js";
 
 // Can this row be pinned in this arrangement? Any position, any location, and
 // an item with something inside it (positions it carries). Not the pane's own
-// headings ("No home yet" and so on), not an RCM row, and nothing in Flat.
-export function canPin(row, mode) {
-  if (!row || mode === "flat") return false;
+// headings ("No home yet" and so on), and not an RCM row. Every arrangement
+// pins the same way (callers still pass the arrangement as a second argument).
+export function canPin(row) {
+  if (!row) return false;
   if (row.type === "pos" || row.type === "loc") return true;
   if (row.type === "item") return row.kids.length > 0;
   return false;

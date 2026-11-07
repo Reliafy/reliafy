@@ -92,8 +92,8 @@ Two rankings come from the three scores:
 
 A failure mode with all three scores shows its RPN and AP; one with fewer
 shows neither. Function and position rows add up what is inside them: *2 high ·
-1 medium*, the highest RPN, and *3 of 5 scored*. The tree's **⋯** menu filters
-with **Show only**: **High priority**, **Medium priority**, **Not scored** and
+1 medium*, the highest RPN, and *3 of 5 scored*. The **⋯** beside the tree's
+search box filters with **Show only**: **High priority**, **Medium priority**, **Not scored** and
 **Has an action open**. Click a column header to sort the rows under each
 function by that column (RPN, AP, severity, criticality or the due date),
 highest first; the tree stays as it is.

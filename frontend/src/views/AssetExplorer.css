@@ -78,15 +78,78 @@
   color: var(--ink);
 }
 
-.tp button.tp-icon-btn.tp-add {
-  background: var(--acc);
-  border-color: var(--acc);
-  color: var(--on-fill);
+/* Positions or Locations (ArrangeSwitch): a two-way switch in the heading,
+   the one on filled. Greyed where the tab is by position (it says why). */
+.tp-arrange {
+  display: inline-flex;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--surf);
 }
+.tp .tp-arrange button.tp-arrange-btn {
+  min-height: 0;
+  height: 100%;
+  padding: 0 9px;
+  border: none;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--surf);
+  color: var(--muted);
+  box-shadow: none;
+  font-size: var(--fs-13);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.tp .tp-arrange button.tp-arrange-btn:first-child { border-left: none; }
+.tp .tp-arrange button.tp-arrange-btn:hover:not(.on):not([aria-disabled="true"]) { background: var(--acc-hover); color: var(--ink); }
+.tp .tp-arrange button.tp-arrange-btn.on { background: var(--acc-t); color: var(--acc-d); font-weight: 600; }
+.tp .tp-arrange button.tp-arrange-btn:focus-visible { outline: 2px solid var(--acc); outline-offset: -3px; }
+.tp-arrange.is-off { opacity: 0.55; }
+.tp .tp-arrange.is-off button.tp-arrange-btn { cursor: default; }
 
-.tp button.tp-icon-btn.tp-add:hover:not(:disabled) {
-  background: var(--acc-d);
+/* The search line: the filter box, then the ⋯ menu beside it. */
+.tp-search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
+.tp-search-row .tp-filter { flex: 1 1 auto; min-width: 0; }
+
+/* Adding at the top level: the tree's quiet last row. */
+.tp-addrow-line {
+  display: flex;
+  align-items: stretch;
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--line2);
+}
+.tp button.tp-addrow {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 26px; /* under the top-level names */
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.tp button.tp-addrow:hover:not(:disabled) { background: var(--acc-hover); color: var(--acc-d); }
+.tp button.tp-addrow:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+.tp button.tp-addrow:disabled { opacity: 0.55; cursor: default; }
+.tp-addrow-plus { flex: none; width: 14px; text-align: center; font-size: 15px; line-height: 1; }
+.tp-addrow-nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 .tp .ovm-trigger {
   min-height: 30px;
@@ -1000,8 +1063,8 @@ a.rw-cklink:focus-visible {
 .row-menu-tick { display: inline-block; width: 1em; color: var(--acc); }
 .row-menu-why { display: block; max-width: 260px; margin-top: 2px; font-size: var(--fs-12); color: var(--muted); white-space: normal; line-height: 1.35; }
 
-/* The tree's ⋯ menu (TreeControlsMenu): Arrange by, the levels, Close
-   everything, Show only, the pane's other actions; it stays open while you
+/* The tree's ⋯ menu (TreeControlsMenu), beside the filter box: the levels,
+   Close everything, Show only, the pane's other actions; it stays open while you
    change several. The button shows how many things aren't as usual. */
 .tp button.tm-trigger { position: relative; }
 .tm-trigger.changed { border-color: var(--acc-line); color: var(--acc-d); }
@@ -1094,7 +1157,15 @@ a.rw-cklink:focus-visible {
 .tm-menu button.tm-seg-btn:focus-visible { outline-offset: -3px; }
 @media (max-width: 720px), (hover: none) {
   .tm-menu button.tm-seg-btn, .tm-menu .tm-item { min-height: 40px; }
-  .tx.phone .tp button.tm-trigger { min-width: 40px; height: 36px; }
+  .tx.phone .tp button.tm-trigger { min-width: 44px; height: 44px; }
+}
+/* A phone: the heading's switch and the search line's ⋯ are 44 px targets;
+   the add row is as tall as the rows (44 px). */
+@media (max-width: 720px) {
+  .tx.phone .tp-arrange { height: auto; }
+  .tx.phone .tp .tp-arrange button.tp-arrange-btn { height: 44px; min-width: 44px; padding: 0 12px; font-size: 14px; }
+  .tx.phone .tp-filter input { padding: 11px 0; }
+  .tx.phone .tp button.tp-addrow { font-size: 15px; padding-left: 40px; }
 }
 
 /* ---- a pinned branch ------------------------------------------------------- */
