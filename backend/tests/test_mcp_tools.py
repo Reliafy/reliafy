@@ -10,6 +10,7 @@ token's scope follows the tool's read / write annotation. The earlier names
 are gone; ``LEGACY`` below maps every one of their actions to its new home."""
 
 import json
+import re
 
 import anyio
 import pytest
@@ -58,6 +59,26 @@ LEGACY: dict = {
     "upgrade_link": ("", {"": ("get", "upgrade_link")}),
 }
 
+# Actions added since the six tools (no earlier tool had them), and those among
+# them that are heavy (a compute slot) or whose results carry people's text (the
+# data notice). A PR that adds core actions adds them here, under its own comment.
+NEW_ACTIONS = {
+    # Maintainability prediction (Nov 2026).
+    ("get", "maintainability_prediction"), ("list", "maintainability_predictions"), ("analyse", "maintainability"),
+    ("change", "maintainability_save"), ("change", "maintainability_update"), ("change", "maintainability_delete"),
+    # Reliability prediction: a parts count from handbook base rates (Nov 2026).
+    ("analyse", "prediction"), ("get", "prediction"), ("list", "predictions"),
+    ("change", "prediction_save"), ("change", "prediction_update"), ("change", "prediction_delete"),
+    # Fault trees built by hand (Nov 2026).
+    ("get", "fault_tree"), ("list", "fault_trees"), ("analyse", "fault_tree"), ("change", "fault_tree_save"),
+    ("change", "fault_tree_delete"),
+}
+NEW_HEAVY = {"analyse.fault_tree"}
+NEW_TEXT = {"get.maintainability_prediction", "list.maintainability_predictions",
+            "list.fault_trees", "get.fault_tree", "analyse.fault_tree",
+            # A reliability prediction's lines and assemblies are named by people (or a product's parts list).
+            "list.predictions", "get.prediction", "analyse.prediction"}
+
 # The earlier tools' sets (to 1 Nov 2026), by their old keys: the new sets must be these, renamed.
 OLD_PRO_ONLY = {"life_data_analysis.fit", "models.fit", "models.fit_alt", "models.fit_recurrent", "list.fleets",
                 "strategy.fleet_forecast", "list.fleet_alerts", "fleet.create_alert",
@@ -97,7 +118,6 @@ OLD_TOOLS = {
     "upgrade_link": {""},
 }
 
-
 def _tools(token):
     return {t.name: t for t in _run(token, lambda c: c.list_tools()).tools}
 
@@ -122,8 +142,9 @@ def test_every_earlier_tool_and_action_has_its_new_home():
             assert new_action in mcp_server.TABLES[tool][1], (old, action)
             targets.add((tool, new_action))
     every_new = {(t, a) for t, (_, table) in mcp_server.TABLES.items() for a in table}
-    assert targets == every_new
-    assert sum(len(t) for t in OLD_TOOLS.values()) == len(every_new) == 81  # 80 actions + upgrade_link
+    assert targets | NEW_ACTIONS == every_new and not targets & NEW_ACTIONS
+    assert sum(len(t) for t in OLD_TOOLS.values()) == 81  # 80 actions + upgrade_link
+    assert len(every_new) == 81 + len(NEW_ACTIONS)
 
 
 def test_gating_and_slots_are_the_earlier_ones_renamed():
@@ -132,10 +153,10 @@ def test_gating_and_slots_are_the_earlier_ones_renamed():
     from backend import mcp_server
 
     assert {_new_key(k) for k in OLD_PRO_ONLY} == mcp_server.PRO_ONLY_TOOLS
-    assert {_new_key(k) for k in OLD_HEAVY} == mcp_server.HEAVY_TOOLS
+    assert {_new_key(k) for k in OLD_HEAVY} | NEW_HEAVY == mcp_server.HEAVY_TOOLS
     assert {_new_key(k) for k in OLD_UNGATED} == mcp_server.UNGATED_TOOLS
     assert {_new_key(k) for k in OLD_UNCOUNTED} == mcp_server.UNCOUNTED_TOOLS
-    assert {_new_key(k) for k in OLD_TEXT} == mcp_server.TEXT_RESULT_TOOLS
+    assert {_new_key(k) for k in OLD_TEXT} | NEW_TEXT == mcp_server.TEXT_RESULT_TOOLS
     assert mcp_server._FIT_TOOLS == {_new_key(k) for k in OLD_PRO_ONLY if "fleet" not in k}
 
 
@@ -161,7 +182,7 @@ def test_six_tools_reads_apart_from_writes(env):
     assert set(mcp_server.TABLES) == set(tools) - {"guide"}
     assert {mcp_server.TABLES[n][0] for n in ("get", "list")} == {"kind"}
     assert {mcp_server.TABLES[n][0] for n in set(mcp_server.TABLES) - {"get", "list"}} == {"action"}
-    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 81
+    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 81 + len(NEW_ACTIONS)
 
 
 def test_every_action_is_in_its_tool_description_and_schema(env):
@@ -172,13 +193,17 @@ def test_every_action_is_in_its_tool_description_and_schema(env):
     tools = _tools(env.oauth[PRO])
     for name, (selector, table) in mcp_server.TABLES.items():
         tool = tools[name]
+        # "Required: a/b(x, y); c(z)." — actions needing the same arguments share an entry.
+        listed = {}
+        for values, need in re.findall(r"([\w/]+)\(([^)]*)\)", tool.description.partition(" Required: ")[2]):
+            listed.update(dict.fromkeys(values.split("/"), need))
         props = tool.input_schema["properties"]
         assert set(props) == {selector, "args"} and tool.input_schema["required"] == [selector], name
         assert props[selector]["enum"] == list(table) and props["args"]["type"] == "object", name
         for value, (required, optional, text) in table.items():
             assert text.strip(), (name, value)
             if required.strip() and (name, value) not in mcp_server.ONE_OF:
-                assert f"{value}({', '.join(required.split())})" in tool.description, (name, value)
+                assert listed.get(value) == ", ".join(required.split()), (name, value)
             own = mcp_server.ACTION_SCHEMAS[(name, value)]
             assert set(required.split()) == set(own["required"]), (name, value)
             assert set((required + " " + optional).split()) == set(own["properties"]), (name, value)
@@ -187,7 +212,10 @@ def test_every_action_is_in_its_tool_description_and_schema(env):
 def test_the_listed_tools_are_small(env):
     """Every connection loads tools/list and the instructions into the agent's
     context: under 8,000 characters for the six tools (192,060 as 16 tools with
-    full schemas) and about 1,000 for the instructions (3,663 before)."""
+    full schemas; 7,914 with the maintainability prediction, fault tree and
+    reliability prediction actions, Nov 2026, after shortening the shared
+    args and guide text) and
+    about 1,000 for the instructions (3,663 before)."""
     from backend import mcp_server
 
     tools = _tools(env.oauth[PRO])
@@ -420,7 +448,7 @@ def test_maintenance_adds_its_calls_to_the_same_sets():
         _, table = mcp_tools.TOOL_TABLES["maintenance"]
         expected = {f"{area[len('maintenance_'):]}.{verb}" for area, (_, t) in mcp_tools.TABLES.items() for verb in t}
         expected |= {"overview", "guide", "view_photo", "graph_schema", "graph_query", "apply"}
-        assert set(table) == expected and len(table) == 241  # 189 + work packages (Nov 2026): 9 actions, 2 reads, work_orders.mark, out of service ×4; + signals ×9, signal_data ×3; progression ×2; + failure reports (Nov 2026): 7 actions, 2 reads; + FME(C)A: failure_modes.score, positions.add_sample_uav; + products (Nov 2026): 4 actions, 2 gets, 3 lists; products.add_sample
+        assert set(table) == expected and len(table) == 240  # 189 + work packages (Nov 2026): 9 actions, 2 reads, work_orders.mark, out of service ×4; + signals ×9, signal_data ×3; progression ×2; + failure reports (Nov 2026): 7 actions, 2 reads; + FME(C)A: failure_modes.score (positions.add_sample_uav since removed: the sample quadcopter is products.add_sample); + products (Nov 2026): 4 actions, 2 gets, 3 lists; products.add_sample
         # The whole list an operator loads on every connection, guarded (301,819 characters as 40 tools).
         listed = json.dumps([t.model_dump(mode="json", by_alias=True, exclude_none=True) for t in every])
         assert len(listed) < 22_000  # was 20,000 before the signal channel actions, 21,000 before failure reports

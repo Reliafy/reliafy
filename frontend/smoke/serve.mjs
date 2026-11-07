@@ -27,6 +27,9 @@ Object.assign(env, {
   // The app as published: optional extensions installed in this Python aren't
   // loaded, unless SMOKE_EXTENSIONS=true (an extension's own smoke tests).
   EXTENSIONS_DISABLED: process.env.SMOKE_EXTENSIONS === "true" ? "false" : "true",
+  // Several workers edit the one workspace at once: past the usual 600 changes
+  // a minute the server would refuse them ("Too many changes in the last minute").
+  MAINTENANCE_WRITES_PER_MINUTE: "100000",
   MPLBACKEND: "Agg",
   PYTHONUNBUFFERED: "1",
 });

@@ -441,13 +441,15 @@ async function seedSampleTruck(config) {
   const made = await api("/maintenance/sample-truck", {});
   return made.position.id;
 }
-// FME(C)A guide: the sample quadcopter, a tree of positions with every failure
-// mode scored and its criticality filled in. Retired (with everything inside
-// it) in the cleanup. null without Maintenance, like the truck.
-async function seedSampleUav(config) {
+// FME(C)A guide: the sample UAV product (the one quadcopter example), its
+// design with every failure mode scored and its criticality filled in. When
+// this run added it, the cleanup retires its design and items and deletes its
+// RBD; one already there is left alone. null without Maintenance, like the truck.
+async function seedSampleProduct(config) {
   if (!config.maintenance) return null;
-  const made = await api("/maintenance/sample-uav", {});
-  return made.position.id;
+  const made = await api("/maintenance/sample-product", {});
+  const id = made.product?.id || made.position.id;
+  return { id, added: !!made.added, tops: (made.items || []).map((it) => it.top_position_id), rbdId: made.rbd?.id };
 }
 // Failure reports guide: a report filed on the sample truck's top position and
 // taken part way round the loop (investigated, one corrective action), so the
@@ -731,6 +733,8 @@ async function main() {
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); } },
     { file: "sif-02-results.png", url: "/systems/rbds", settle: 1500,
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); await calculate(page); } },
+    // --- Maintainability prediction: the sample quadcopter's saved prediction ---
+    { file: "mp-01-result.png", url: "/maintainability/sample-maintainability-quadcopter", settle: 1500 },
     // --- Failure-finding interval: a trip failing once a year (λ = 1/8,760 h), 99% ---
     { file: "ff-01-result.png", url: "/strategy/failure-finding", settle: 1200,
       async act(page) {
@@ -855,20 +859,20 @@ async function main() {
         await page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: "Change the decision…" }).click();
         await page.getByRole("dialog", { name: /^Decision/ }).waitFor({ timeout: 20000 }); await wait(800);
       } },
-    // --- FME(C)A on the asset tree: the Explorer's FME(C)A tab on the sample
-    // quadcopter (its motor picked, so the worksheet columns show scored rows),
+    // --- FME(C)A: the FME(C)A tab of the sample UAV product's functional
+    // structure (the same Explorer, on the design; its motor picked, so the worksheet columns show scored rows),
     // then the root picked for the criticality matrix in its Details. Skipped,
     // like the RCM shots, without Maintenance.
-    { file: "fmea-01-worksheet.png", url: `/asset-register/explorer?arrange=positions&tab=fmea&sel=${fx.uavId}`, settle: 2500,
-      skip: () => (fx.uavId ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=fmea on a server that has it."),
+    { file: "fmea-01-worksheet.png", url: `/products/${fx.uav?.id}?view=fmea&sel=${fx.uav?.id}`, settle: 2500,
+      skip: () => (fx.uav ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=fmea on a server that has it."),
       async act(page) {
         const table = page.getByRole("treegrid");
         await table.waitFor({ timeout: 20000 });
         await table.getByRole("row", { name: /^Motor/ }).first().locator(".tt-tree").click(); await wait(600);
         await page.getByText("Bearing seizure").first().waitFor({ timeout: 20000 }); await wait(600);
       } },
-    { file: "fmea-02-matrix.png", url: `/asset-register/explorer?arrange=positions&tab=fmea&sel=${fx.uavId}`, settle: 2500,
-      skip: () => (fx.uavId ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=fmea on a server that has it."),
+    { file: "fmea-02-matrix.png", url: `/products/${fx.uav?.id}?view=fmea&sel=${fx.uav?.id}`, settle: 2500,
+      skip: () => (fx.uav ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=fmea on a server that has it."),
       async act(page) {
         await page.getByRole("treegrid").waitFor({ timeout: 20000 });
         await page.getByRole("complementary", { name: "Details" }).getByText(/matrix/i).first().waitFor({ timeout: 20000 }); await wait(600);
@@ -1166,7 +1170,7 @@ async function main() {
       networkId: await seedNetworkRbd(),
       design: await seedDesignRbds(),
       truckId: await seedSampleTruck(config),
-      uavId: await seedSampleUav(config),
+      uav: await seedSampleProduct(config),
       signals: await seedSignals(config),
       teamId: await seedTeam(),
     };
@@ -1189,11 +1193,14 @@ async function main() {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "guide capture" }),
         }).catch(() => {});
       }
-      if (fx.uavId) {
-        await fetch(`${BASE}/api/maintenance/positions/${fx.uavId}/retire`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reason: "guide capture", cascade: true }),
-        }).catch(() => {});
+      if (fx.uav?.added) {
+        for (const id of [...fx.uav.tops, fx.uav.id]) {
+          await fetch(`${BASE}/api/maintenance/positions/${id}/retire`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: "guide capture", cascade: true }),
+          }).catch(() => {});
+        }
+        if (fx.uav.rbdId) await fetch(`${BASE}/api/rbds/${fx.uav.rbdId}`, { method: "DELETE" }).catch(() => {});
       }
       if (fx.signals) {
         await fetch(`${BASE}/api/maintenance/signals/channels/${fx.signals.channelId}`, {

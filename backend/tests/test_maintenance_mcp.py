@@ -9,6 +9,7 @@ tool.action."""
 from datetime import datetime, timezone
 
 import json
+import re
 
 import anyio
 import httpx2
@@ -109,7 +110,9 @@ def test_one_tool_with_every_areas_actions(env):
     _, table = mcp_tools.TOOL_TABLES["maintenance"]
     assert t.input_schema["properties"]["action"]["enum"] == [a for a in table if not a.startswith("graph_")]
     assert set(t.input_schema["properties"]) == {"action", "args"}
-    assert "work_orders.close(work_order_id)" in t.description
+    # Actions needing the same arguments share one entry, "a/b(need)": close is listed with its id.
+    close = re.search(r"(?:^|[ /])work_orders\.close(?:/[\w.]+)*\(([^)]*)\)", t.description)
+    assert close and close.group(1) == "work_order_id"
     # What every agent loads on connecting: the one-line intro plus each action's required
     # arguments, and the action enum. Each action adds about 40 characters to both; the
     # failure_reports area (Nov 2026) took them to about 7,000 and 5,200; with signals too, 7,400 and 5,500.

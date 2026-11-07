@@ -468,3 +468,17 @@ def test_an_older_server_is_said_plainly(capsys, monkeypatch, tmp_path):
         assert code == 1 and "tools API" in out
     finally:
         httpd.shutdown()
+
+
+def test_fault_trees_over_rest_and_the_cli(server, capsys):
+    """Fault trees built by hand have their REST twins and CLI commands, like every action."""
+    rf = Client()
+    nodes = [{"id": "top", "type": "gate", "gate": "or", "label": "No flow", "inputs": ["a", "b"]},
+             {"id": "a", "type": "event", "label": "Pump A", "probability": 0.1},
+             {"id": "b", "type": "event", "label": "Pump B", "probability": 0.2}]
+    saved = rf.call("change", "fault_tree_save", name="Flow", nodes=nodes)
+    assert "/api/v1/analyse/fault_tree" in rf.spec()["paths"]
+    code, out, _ = run(capsys, "analyse", "fault_tree", "--fault-tree-id", saved["id"], "--json")
+    assert code == 0 and abs(json.loads(out)["top_event_probability"] - 0.28) < 1e-12
+    code, out, _ = run(capsys, "list", "fault_trees", "--json")
+    assert code == 0 and saved["id"] in out

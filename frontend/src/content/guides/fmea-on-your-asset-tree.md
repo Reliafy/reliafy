@@ -2,7 +2,7 @@
 title: "Score failure modes as an FMEA or FMECA on your asset tree"
 task: "How do I score severity, occurrence and detection for each failure mode, get an action priority and RPN, and work out criticality, on the same tree as my RCM?"
 category: "Maintenance strategy"
-prerequisites: "A position in your asset tree with failure modes, or the sample UAV or sample truck."
+prerequisites: "A position in your asset tree with failure modes, or the sample UAV product or sample truck."
 order: 26
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
 # FME(C)A tab itself and stays out of the index until Maintenance opens.
@@ -21,16 +21,22 @@ In Reliafy, the FMEA sits on the same failure modes as your RCM. The
 records: a failure mode written on either tab is there on the other, and a
 score or an effect edited on one shows on the other at once. Nothing is copied.
 
-## Start from the sample UAV
+## Start from the sample UAV product
 
-Open **Assets → Explorer** and pick the **FME(C)A** tab. If your tree
-is empty, press **Add the sample UAV** (or **Add the sample truck**; with
-positions already there, both are in the tree's **⋯** menu). *Quadcopter UAV
-(sample)* is a small fictional quadcopter: airframe, propulsion, power, flight
-control, comms and a payload gimbal, with sixteen failure modes scored and
-their criticality figures filled in.
+A quadcopter is something you design, so the sample one is a product. On
+**Products**, press **Add the sample UAV product** (in **Assets → Explorer**,
+**Open the sample UAV product** in the tree's **⋯** menu, or on the empty
+tree's card, does the same and opens it). *Survey quadcopter (sample)* is a
+small fictional quadcopter: airframe, propulsion with four motors, power,
+flight control, comms and a payload gimbal, with every failure mode scored and
+its criticality figures filled in. Its **Functional structure** tab is the
+same Explorer, scoped to the design: pick its **FME(C)A** tab. Everything below
+works the same on a product's design and on your asset tree. For an FME(C)A on
+an operated asset, the sample truck (**Add the sample truck**) is scored too.
+The product's other tabs hold the rest of the sample: its parts list, the
+items built from it and their failure reports.
 
-![The FME(C)A tab on the sample UAV: each failure mode with its cause, effects, scores, RPN and action priority](/guides/img/fmea-01-worksheet.png)
+![The FME(C)A tab on the sample UAV product: each failure mode with its cause, effects, scores, RPN and action priority](/guides/img/fmea-01-worksheet.png)
 
 The tree of positions is the first column, as on the RCM tab. Under each
 position sit its functions, and under each function its failure modes, one
@@ -114,8 +120,8 @@ The fields, in the **Criticality** group of a failure mode's Details:
   mission, a year or the design life.
 - **Severity class**: I Catastrophic, II Critical, III Marginal, IV Minor.
 
-The formula is C<sub>m</sub> = β × α × λ × t. For the sample UAV's motor
-bearing seizure that is 1.0 × 0.5 × 0.00008 per hour × 100 hours = 0.004: four
+The formula is C<sub>m</sub> = β × α × λ × t. For the sample UAV product's
+motor bearing seizure that is 1.0 × 0.5 × 0.00008 per hour × 100 hours = 0.004: four
 expected losses per thousand flight hours from that one mode. The **item
 criticality** C<sub>r</sub> of a position is the sum of its modes'
 C<sub>m</sub>, shown on the position's row and in its Details, with the sum

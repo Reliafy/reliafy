@@ -164,6 +164,8 @@ FREE_MAX_TRACKED_ITEMS = _int("FREE_MAX_TRACKED_ITEMS", 3)
 FREE_MAX_FLEETS = _int("FREE_MAX_FLEETS", 1)
 # Outage logs (an RBD's observed up/down history, issue #159).
 FREE_MAX_OUTAGE_LOGS = _int("FREE_MAX_OUTAGE_LOGS", 1)
+# Fault trees built by hand (backend/services/fault_trees.py), as many as RBDs.
+FREE_MAX_FAULT_TREES = _int("FREE_MAX_FAULT_TREES", 1)
 
 # Retired Agent plan (US$2/month, MCP only; sold briefly in October 2026, no
 # longer offered — MCP is part of Pro). Existing subscribers keep these caps,
@@ -175,6 +177,7 @@ AGENT_MAX_DEGRADATION_MODELS = _int("AGENT_MAX_DEGRADATION_MODELS", 10)
 AGENT_MAX_TRACKED_ITEMS = _int("AGENT_MAX_TRACKED_ITEMS", 50)
 AGENT_MAX_FLEETS = _int("AGENT_MAX_FLEETS", 5)
 AGENT_MAX_OUTAGE_LOGS = _int("AGENT_MAX_OUTAGE_LOGS", 10)
+AGENT_MAX_FAULT_TREES = _int("AGENT_MAX_FAULT_TREES", 25)
 # Availability (Monte-Carlo) simulation is not part of the Agent plan: it stays
 # Pro (billing.premium_compute_allowed) on every surface.
 
@@ -323,6 +326,10 @@ MAINTENANCE_DB_PATH = os.environ.get("MAINTENANCE_DB_PATH") or os.path.expanduse
 # the app rather than linked; each is at most 20 MB). The bytes live beside the
 # event log: in MongoDB for a deployment, so keep this well within its storage.
 MAINTENANCE_DOCUMENT_BYTES = int(float(os.environ.get("MAINTENANCE_DOCUMENT_MB") or 100) * 1024 * 1024)
+# Changes one maintenance workspace may start per minute (anything more is
+# refused with "Too many changes in the last minute"). The smoke suite raises
+# it: several browsers editing one workspace at once go past the usual 600.
+MAINTENANCE_WRITES_PER_MINUTE = int(os.environ.get("MAINTENANCE_WRITES_PER_MINUTE") or 600)
 # Where the graph projected from the log lives (docs/maintenance-graph.md):
 # "sqlite" (the default: in this process, in memory for a mongo log) or
 # "neo4j" (one shared graph in Neo4j: every read is a round trip to it, so only

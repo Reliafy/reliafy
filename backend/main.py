@@ -46,6 +46,7 @@ from backend.fitting import (
 from backend.auth import get_current_user
 from backend.routers import auth as auth_router
 from backend.routers import maintenance as maintenance_router
+from backend.routers import maintainability as maintainability_router
 from backend.routers import models as models_router
 from backend.routers import rbds as rbds_router
 from backend.routers import rbd_jobs as rbd_jobs_router
@@ -53,6 +54,7 @@ from backend.routers import rbd_block_check as rbd_block_check_router
 from backend.routers import rbd_compare as rbd_compare_router
 from backend.routers import rbd_runs as rbd_runs_router
 from backend.routers import rbd_fault_tree as rbd_fault_tree_router
+from backend.routers import fault_trees as fault_trees_router
 from backend.routers import rbd_design as rbd_design_router
 from backend.routers import rbd_allocation as rbd_allocation_router
 from backend.routers import rbd_capacity as rbd_capacity_router
@@ -92,6 +94,7 @@ from backend.routers import feeds as feeds_router
 from backend.routers import library as library_router
 from backend.routers import oauth as oauth_router
 from backend.routers import outage_logs as outage_logs_router
+from backend.routers import predictions as predictions_router
 from backend.routers import uploads as uploads_router
 from backend.routers import compare_groups as compare_groups_router
 from backend.routers import regression_diagnostics as regression_diagnostics_router
@@ -223,6 +226,7 @@ app.include_router(rbd_compare_router.router)
 app.include_router(rbd_block_check_router.router)
 app.include_router(rbd_runs_router.router)
 app.include_router(rbd_fault_tree_router.router)
+app.include_router(fault_trees_router.router)
 app.include_router(rbd_design_router.router)
 app.include_router(rbd_allocation_router.router)
 app.include_router(rbd_capacity_router.router)
@@ -235,6 +239,8 @@ app.include_router(rbd_measures_router.router)
 app.include_router(rbd_missions_router.router)
 app.include_router(rbd_tvc_router.router)
 app.include_router(strategy_router.router)
+# Maintainability prediction: the calculator, saved predictions, a product's lines.
+app.include_router(maintainability_router.router)
 app.include_router(test_planning_router.router)
 app.include_router(compare_groups_router.router)
 app.include_router(regression_diagnostics_router.router)
@@ -278,6 +284,8 @@ app.include_router(uploads_router.router)
 # RSS: served (date-filtered) before the SPA catch-all below.
 app.include_router(feeds_router.router)
 app.include_router(library_router.router)
+# Reliability prediction: a parts count from the library's handbook rates.
+app.include_router(predictions_router.router)
 # Optional extensions (backend/extensions.py): the pages they add, and their
 # own routes. Nothing installed: an empty list, and no other routes.
 app.include_router(extensions_router.router)
@@ -656,7 +664,8 @@ SPA_ROOTS = frozenset({
     "reliability-analysis-software",
     # The signed-in app.
     "home", "products", "items", "systems", "asset-register", "maintenance", "data", "models", "strategy",
-    "forecasts", "reports",
+    "forecasts", "predictions", "reports",
+    "maintainability",
     "agent", "team", "settings", "tokens", "billing", "changes", "data-model",
     # Placeholder pages (frontend/src/plannedPages.js).
     "requirements", "failures", "risk",

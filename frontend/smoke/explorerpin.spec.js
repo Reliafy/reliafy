@@ -11,7 +11,7 @@
 // "Tree"), which share the server and expect their rows near the top.
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
-import { details } from "./explorer.js";
+import { details, reveal } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -155,7 +155,7 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   await expect(bar(page)).toBeVisible();
   await fromTreeMenu(page, "menuitem", "Reset to the usual view");
   await expect(bar(page)).toHaveCount(0);
-  await row(page, `Works plant ${tag}`).locator(".tp-nm").click({ button: "right" });
+  await (await reveal(page, row(page, `Works plant ${tag}`))).locator(".tp-nm").click({ button: "right" });
   await rowMenu(page, `Works plant ${tag}`).getByRole("menuitem", { name: "Pin this branch" }).click();
   await expect(row(page, `Works other ${tag}`)).toHaveCount(0);
   await bar(page).getByRole("button", { name: "Show everything" }).click();
@@ -184,15 +184,15 @@ test("the RCM tab with a pin: the one table shows only the branch, its rows' men
   await expect(page.locator(".tt-top .tp-status")).toHaveText(/^3 positions · \d+ not analysed$/);
   // A position's menu: Add function, the worksheet in and out, then Pin this branch (the pinned row: Show whole tree).
   await trow(`^Works pump A ${tag}`).locator(".tt-tree").click({ button: "right" });
-  await expect(rowMenu(page, `Works pump A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Pin this branch"]);
+  await expect(rowMenu(page, `Works pump A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Isolate incomplete rows", "Pin this branch"]);
   await page.keyboard.press("Escape");
   await trow(`^Works line A ${tag}`).locator(".tt-tree").click({ button: "right" });
-  await expect(rowMenu(page, `Works line A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Show whole tree"]);
+  await expect(rowMenu(page, `Works line A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Isolate incomplete rows", "Show whole tree"]);
   await page.keyboard.press("Escape");
   // A function's menu (with the mouse: Move to…, no Move up / down, a drag does them; Isolate before Delete).
   await trow(`^Function: Pump water ${tag}`).locator(".tt-tree").click({ button: "right" });
   await expect(rowMenu(page, `Function: Pump water ${tag}`).getByRole("menuitem"))
-    .toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Isolate", "Delete function"]);
+    .toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Isolate", "Isolate incomplete rows", "Delete function"]);
   await page.keyboard.press("Escape");
   await trow(`^Works pump A ${tag}`).locator(".tt-tree").click();
   await shot(page, "3-pinned-rcm-tab");

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildDisplay } from "./assetTree.js";
 import { graftRcm } from "./explorerRcm.js";
 import {
-  answerNotes, dragBlock, dragSource, dropZones, moveItems, moveOpenAtStart, moveTree, place, planDrop, planMoveTo, positionWithin,
+  answerNotes, dragBlock, dragSource, dropZones, keptMoveTarget, moveItems, moveSourceKey, moveOpenAtStart, moveTree, place, planDrop, planMoveTo, positionWithin,
   refusalText, sourceWords, stepTarget, undoBatch, visibleNodes, withMoveGroups, zoneAt,
 } from "./rcmDrag.js";
 
@@ -332,6 +332,23 @@ test("the picker's list: open rows, and search shows the matches and the way to 
   // A disabled match keeps its reason.
   assert.equal(found.find((n) => n.key === "x1").reason, "It's here now.");
   assert.deepEqual(visibleNodes(t, { query: "zzz" }), []);
+});
+
+test("Move to…: the place picked survives the tree being read again while it's still there", () => {
+  const before = moveTree(whole(), src(whole(), "m1"));
+  // The Explorer reads the tree again: new objects, the same rows.
+  const d = whole();
+  const after = moveTree(d, src(d, "m1"));
+  assert.notEqual(before, after);
+  assert.equal(keptMoveTarget(after, "x2"), "x2");
+  // Gone from the tree, or no longer a place it can go: nothing picked.
+  assert.equal(keptMoveTarget(after, "gone"), "");
+  assert.equal(keptMoveTarget(after, "m1"), "");
+  assert.equal(keptMoveTarget(after, ""), "");
+  // The same thing moving gives the same key; another thing, another key.
+  assert.equal(moveSourceKey(src(whole(), "m1")), moveSourceKey(src(d, "m1")));
+  assert.notEqual(moveSourceKey(src(d, "m1")), moveSourceKey(src(d, "m3")));
+  assert.equal(moveSourceKey(null), "");
 });
 
 test("the row menus' moves: Move to…, and Move up / down among siblings", () => {

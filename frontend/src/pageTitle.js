@@ -31,7 +31,9 @@ const PAGES = [
   ["/models/recurrent/new", "New model"],
   ["/models/alt/new", "New model"],
   ["/models/joint/new", "New model"],
+  ["/maintainability/new", "New prediction"],
   ["/systems/b", "New diagram"],
+  ["/predictions/new", "New prediction"],
   // Assets' pages (one menu entry, no children): the Explorer, and each
   // position's, location's and item's page under it; Parts and stock, Classes.
   [EXPLORER_PATH, EXPLORER_LABEL],

@@ -47,12 +47,18 @@ export default function SignalsPanel({ row }) {
   const [picked, setPicked] = useState(null); // channel id
   const [adding, setAdding] = useState(false);
   const [storageTick, setStorageTick] = useState(0);
+  // The row shown now. A reply for a row that is no longer shown (the Explorer
+  // can switch rows while a request is in flight) must not overwrite the list.
+  const shownKey = `${row.type}:${row.key}`;
+  const shown = useRef(shownKey);
+  shown.current = shownKey;
 
   const load = useCallback(() => {
     setError(null);
+    const asked = shownKey;
     return listSignalChannels(target)
-      .then((d) => setList(d.channels))
-      .catch((e) => setError(e.message));
+      .then((d) => { if (shown.current === asked) setList(d.channels); })
+      .catch((e) => { if (shown.current === asked) setError(e.message); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row.key, row.type]);
   useEffect(() => {

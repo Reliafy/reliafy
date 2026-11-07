@@ -1,6 +1,35 @@
 # Changelog
 
-## Unreleased (0.5.0)
+## Unreleased (0.5.1)
+
+- **One sample quadcopter**: `maintenance positions.add_sample_uav` is gone.
+  The sample quadcopter is now the sample product only (`maintenance
+  products.add_sample`): its design carries the same scored FME(C)A. Copies
+  the old action made stay in a workspace as they are.
+
+- **Maintainability prediction**: `analyse maintainability` gives the mean
+  corrective maintenance time (Mct), M_max at a percentile, inherent
+  availability, where the repair time goes by element, the Pareto of the lines
+  and the roll-up by assembly, from a parts list with each line's repair
+  elements and failure rate; `change maintainability_save`,
+  `maintainability_update` and `maintainability_delete` keep them, and
+  `get maintainability_prediction` / `list maintainability_predictions` read
+  them (a sample included). On the command line:
+  `reliafy analyse maintainability --lines '[{"name": "Motor", "quantity": 4,
+  "failure_rate": 180, "elements": {"isolation": 10, "replace": 15}}]'
+  --unit minutes`.
+
+- **Reliability prediction**: a parts count from the library's handbook base
+  rates (MIL-HDBK-217F) for a design with no failure data yet. `analyse
+  prediction` (`lines`, `environment`, `mission_time`; Reliafy Maintenance
+  users may start from a `product_id`), `change prediction_save`,
+  `prediction_update` and `prediction_delete`, `get kind prediction` and `list
+  kind predictions`; the guide topic `prediction`. On the command line:
+  `reliafy analyse prediction --environment GF --lines @parts.json`.
+- **Fault trees built by hand**: `get fault_tree`, `list fault_trees`, `analyse fault_tree` (top event,
+  cut sets, importance; `export_openpsa` for Open-PSA XML), `change fault_tree_save` (with `make_rbd`) and
+  `change fault_tree_delete`; `change import_rbd` takes `as_fault_tree` for Open-PSA and Galileo files.
+  Listed by `reliafy tools`, e.g. `reliafy analyse fault_tree --fault-tree-id …`.
 
 - **Products** (Reliafy Maintenance): a product is a design tree with its part;
   items are built from it by serial. `maintenance products.create`,

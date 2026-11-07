@@ -447,7 +447,7 @@ def owned_count(db, uid: str, collection: str) -> int:
 
 
 CAPPED_KINDS = ("datasets", "models", "rbds", "degradation_models", "tracked_items", "fleets",
-                "outage_logs")
+                "outage_logs", "fault_trees")
 
 
 def plan_caps(plan: str) -> dict | None:
@@ -473,6 +473,7 @@ _CAP_NOUNS = {
     "tracked_items": ("tracked item", "tracked items"),
     "fleets": ("failure forecast", "failure forecasts"),
     "outage_logs": ("outage log", "outage logs"),
+    "fault_trees": ("saved fault tree", "saved fault trees"),
 }
 
 

@@ -257,6 +257,25 @@ def test_a_decision_with_a_bad_interval_is_refused(store):
     assert m.position(pos["id"])["tasks"] == []
 
 
+def test_changes_per_minute_come_from_the_environment():
+    """MAINTENANCE_WRITES_PER_MINUTE sets the limit (the smoke server raises it); unset, 600."""
+    import os
+    import subprocess
+    import sys
+
+    code = "from backend.maintenance import service; print(service.WRITES_PER_MINUTE)"
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    env = {k: v for k, v in os.environ.items() if k != "MAINTENANCE_WRITES_PER_MINUTE"}
+
+    def limit(**extra):
+        out = subprocess.run([sys.executable, "-c", code], cwd=root, env={**env, **extra},
+                             capture_output=True, text=True, check=True)
+        return int(out.stdout.strip().splitlines()[-1])
+
+    assert limit() == 600
+    assert limit(MAINTENANCE_WRITES_PER_MINUTE="100000") == 100000
+
+
 def test_api_limits_answer_with_their_status(api, monkeypatch):
     client = api["client"]
     pid = client.post("/api/maintenance/positions", json={"name": "P"}).json()["id"]

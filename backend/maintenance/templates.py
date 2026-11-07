@@ -9,11 +9,16 @@ bearing Weibull shows wear-out), so the evidence check shows red on purpose.
 Each mode is scored as an FME(C)A too (severity, occurrence, detection, the
 cause and effects, the recommended action and the criticality figures).
 
-The sample quadcopter UAV: a small tree (airframe, propulsion, power, flight
-control, comms, payload) whose sixteen failure modes are all scored, as a
-design FME(C)A reads. Three positions carry their modes directly under a
-function with no functional failure yet, on purpose, to show how an FMEA row
-reads back on the RCM tab. Entirely invented: no real product.
+The sample product, "Survey quadcopter (sample)": the one quadcopter example,
+on Products (a design, not an operated asset in the tree). Its design tree
+(airframe, propulsion, power, flight control, comms, payload) carries the
+sample failure modes, all scored as a design FME(C)A reads; three positions
+carry their modes directly under a function with no functional failure yet,
+on purpose, to show how an FMEA row reads back on the RCM tab. It comes with
+a part and bill of materials, three items built from it, failure reports and
+a flight-critical RBD. Entirely invented: no real product. (An earlier
+asset-tree copy, "Quadcopter UAV (sample)", is no longer offered; copies
+already in a workspace stay as they are.)
 
 A copy is made through the ordinary service methods, so it is events like
 any change a person makes, in the caller's own workspace only. Nothing is
@@ -243,23 +248,12 @@ def add_sample_truck(m, again: bool = False) -> dict:
     }
 
 
-# ---- the sample quadcopter UAV ----------------------------------------------------
-# Entirely invented: no real product, company or partner. Modes with "ff": None
+# ---- the sample quadcopter's failure modes -------------------------------------
+# Entirely invented: no real product, company or partner. The sample product
+# ("Survey quadcopter (sample)", below) puts these on its design: the one
+# quadcopter example, on Products, not in the asset tree. Modes with "ff": None
 # sit directly under their function, with no functional failure yet.
 
-SAMPLE_UAV_NAME = "Quadcopter UAV (sample)"
-SAMPLE_UAV_DESCRIPTION = (
-    "A sample: a small quadcopter's design FME(C)A on its functional tree, every failure mode scored (severity, "
-    "occurrence, detection, action priority) with MIL-STD-1629A-style criticality figures. Three positions carry "
-    "failure modes directly under a function with no functional failure yet, to show how an FMEA row reads back "
-    "on the RCM tab."
-)
-SAMPLE_UAV_TREE = [
-    ("Airframe", []), ("Propulsion", ["Motor", "Speed controller (ESC)", "Propeller"]),
-    ("Power", ["Battery pack", "Battery management (BMS)"]),
-    ("Flight control", ["Flight controller", "IMU", "GPS receiver"]),
-    ("Comms link", []), ("Payload gimbal", []),
-]
 # The criticality figures are all over the same 100 flight hours.
 SAMPLE_UAV_BASIS = {"operating_time": 100.0, "time_unit": "hours", "rate_source": "entered"}
 
@@ -466,23 +460,15 @@ SAMPLE_UAV_MODES = [
      ]},
 ]
 
-_UAV_COPY_NAME = re.compile(r"^Quadcopter UAV \(sample(?: (\d+))?\)$")
-
-
 def sample_uav_modes() -> list[dict]:
-    """The sample UAV's modes, a fresh copy each time (callers may change it)."""
+    """The sample quadcopter's modes, a fresh copy each time (callers may change it)."""
     return copy.deepcopy(SAMPLE_UAV_MODES)
 
 
-def sample_uavs(m) -> list[dict]:
-    """Copies of the sample UAV in this workspace (live positions with its name)."""
-    return _copies(m, _UAV_COPY_NAME)
-
-
 def _add_uav_modes(m, at_of: dict[str, list[str]], counts: dict) -> None:
-    """The sample UAV's failure modes, each scored, with its RCM consequence and
+    """The sample quadcopter's failure modes, each scored, with its RCM consequence and
     decision, on every position the template's position name maps to (at_of: name ->
-    position ids; the sample product has four motors where the FME(C)A sample has one)."""
+    position ids; the sample product has four motors where the template names one)."""
     for entry in sample_uav_modes():
         for at in at_of[entry["position"]]:
             function = m.add_function(at, entry["function"])
@@ -507,47 +493,9 @@ def _add_uav_modes(m, at_of: dict[str, list[str]], counts: dict) -> None:
                 counts["decisions"] += bool(mode.get("decision"))
 
 
-def add_sample_uav(m, again: bool = False) -> dict:
-    """Copy the sample quadcopter UAV into ``m``'s workspace: its tree, every
-    failure mode scored as an FME(C)A, with its RCM consequence and (where
-    there is one) decision. Three functions carry their modes directly, with
-    no functional failure yet. Once only, unless ``again``."""
-    existing = sample_uavs(m)
-    if existing and not again:
-        have = existing[0]
-        return {
-            "added": False,
-            "position": {"id": have["id"], "name": have["name"]},
-            "message": f"The sample UAV is already in your tree as “{have['name']}”. "
-                       "Ask again to add another copy.",
-        }
-    root = m.create_position(_copy_name(existing, _UAV_COPY_NAME, SAMPLE_UAV_NAME), description=SAMPLE_UAV_DESCRIPTION)
-    pid = root["id"]
-    by_name: dict[str, str] = {}
-    counts = {"positions": 1, "functions": 0, "functional_failures": 0, "failure_modes": 0, "scored": 0,
-              "direct": 0, "decisions": 0}
-    for name, children in SAMPLE_UAV_TREE:
-        parent = m.create_position(name, parent_id=pid)
-        by_name[name] = parent["id"]
-        counts["positions"] += 1
-        for child in children:
-            by_name[child] = m.create_position(child, parent_id=parent["id"])["id"]
-            counts["positions"] += 1
-    _add_uav_modes(m, {name: [at] for name, at in by_name.items()}, counts)
-    return {
-        "added": True,
-        "position": {"id": pid, "name": root["name"]},
-        **counts,
-        "message": (f"Added “{root['name']}” to your tree: {_n(counts['positions'], 'position')}, "
-                    f"{_n(counts['functions'], 'function')} and {_n(counts['failure_modes'], 'failure mode')}, every "
-                    f"one scored as an FME(C)A; {counts['direct']} of them sit directly under a function with no "
-                    "functional failure yet, so the RCM tab shows what's left to finish."),
-    }
-
-
 # ---- the sample product: a quadcopter design and three items built from it ---------
-# Entirely invented: no real product, company or partner. The design reuses the
-# FME(C)A sample's failure modes on every position they belong to (four motors,
+# Entirely invented: no real product, company or partner. The design carries the
+# sample failure modes (SAMPLE_UAV_MODES) on every position they belong to (four motors,
 # four speed controllers, four propellers, two IMUs), so its FME(C)A tab is full.
 
 SAMPLE_PRODUCT_NAME = "Survey quadcopter (sample)"
@@ -573,7 +521,7 @@ SAMPLE_PRODUCT_TREE: list[tuple[str, str, list[tuple[str, str]]]] = [
     ("Comms", "", []),
     ("Payload gimbal", "", []),
 ]
-# Where each of the FME(C)A sample's positions sits in the product's design.
+# Where each of SAMPLE_UAV_MODES's positions sits in the product's design.
 SAMPLE_PRODUCT_MODES_AT = {
     "Airframe": ["Airframe"], "Motor": [f"Motor {i}" for i in range(1, ARMS + 1)],
     "Speed controller (ESC)": [f"ESC {i}" for i in range(1, ARMS + 1)],
@@ -665,7 +613,7 @@ def _save_sample_rbd(m, db, name: str) -> dict:
 
 def add_sample_product(m, db, again: bool = False) -> dict:
     """Add the sample product to ``m``'s workspace: a quadcopter's design tree with the
-    FME(C)A sample's failure modes scored on it, its part with a small bill of materials,
+    sample failure modes scored on it, its part with a small bill of materials,
     three items built from it (each with a flight-hours counter), a replaced motor on one,
     two failure reports, and a flight-critical RBD in the RBDs (placeholder failure rates,
     said so in its name). Once only, unless ``again``."""

@@ -122,7 +122,10 @@ test("isolate at 1, 2, 3 levels and everything: the rest closed but on show, the
   await row(page, `Works line B ${tag}`).click();
   await row(page, `Works line B ${tag}`).press("Shift+F10");
   const kmenu = rowMenu(page, `Works line B ${tag}`);
+  // The menu puts the focus on its first item as it opens: wait for that, so it doesn't take it back from Isolate.
+  await expect(kmenu.getByRole("menuitem").first()).toBeFocused();
   await kmenu.getByRole("menuitem", { name: "Isolate" }).focus();
+  await expect(kmenu.getByRole("menuitem", { name: "Isolate" })).toBeFocused();
   await page.keyboard.press("ArrowRight");
   await expect(sub.getByRole("menuitem", { name: "With 1 level open" })).toBeFocused();
   await page.keyboard.press("ArrowLeft"); // back to Isolate
@@ -151,7 +154,7 @@ test("the RCM tab: isolate a function; inside a pinned branch; the mouse menus h
   // The function's menu with the mouse: Move to… (the picker), but no Move up / Move down (drag for those).
   await fnRow.locator(".tt-tree").click({ button: "right" });
   const fmenu = rowMenu(page, `Function: Pump water ${tag}`);
-  await expect(fmenu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Isolate", "Delete function"]);
+  await expect(fmenu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Isolate", "Isolate incomplete rows", "Delete function"]);
   await shot(page, "v2-3-rcm-function-menu-no-moves-1280");
   await page.keyboard.press("Escape");
   // Its ⋯: the same.
@@ -168,7 +171,7 @@ test("the RCM tab: isolate a function; inside a pinned branch; the mouse menus h
   // From the keyboard: the moves are there.
   await fnRow.locator(".tt-tree").click();
   await fnRow.press("Shift+F10");
-  await expect(fmenu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Move up", "Move down", "Isolate", "Delete function"]);
+  await expect(fmenu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Move up", "Move down", "Isolate", "Isolate incomplete rows", "Delete function"]);
   await page.keyboard.press("Escape");
 
   // Isolate the function, 1 level: its failure shows, closed; line B closed, still on show; the pin stays.
@@ -227,7 +230,7 @@ test("at 400 px: Isolate opens in place in the ⋯ menu; the rest closes; the RC
   await fnRow.getByRole("button", { name: "Actions", exact: true }).click();
   await expect(page.getByRole("menu").getByRole("menuitem", { name: "Move to…" })).toBeVisible();
   await expect(page.getByRole("menu").getByRole("menuitem", { name: "Move up" })).toBeVisible();
-  await expect(page.getByRole("menu").getByRole("menuitem", { name: "Isolate" })).toBeVisible();
+  await expect(page.getByRole("menu").getByRole("menuitem", { name: "Isolate", exact: true })).toBeVisible();
   await shot(page, "v2-7-phone-400px-rcm-menu-moves");
   await page.keyboard.press("Escape");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);

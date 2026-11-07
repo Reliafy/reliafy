@@ -68,8 +68,8 @@ test("the Signals tab fits a phone and an item with no channel offers the guide"
   const p = await plant(request, "B");
   await page.setViewportSize({ width: 400, height: 800 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=signals`);
-  // On a phone the panel is its own screen: pick the row.
-  await page.getByText("Sig pump B", { exact: true }).click();
+  // On a phone the panel is its own screen: pick the row (the tabs' "For …" line names it too).
+  await page.getByLabel("Positions").getByText("Sig pump B", { exact: true }).click();
   await expect(page.getByRole("region", { name: "Spectrum" })).toBeVisible();
   const sideways = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   expect(sideways, "the page scrolls sideways at 400 px").toBe(false);
@@ -77,7 +77,7 @@ test("the Signals tab fits a phone and an item with no channel offers the guide"
 
   const bare = await request.post(`${M}/positions`, { data: { name: "Sig bare pump" } }).then((r) => r.json());
   await open(page, `/asset-register/explorer?arrange=positions&sel=${bare.id}&tab=signals`);
-  await page.getByText("Sig bare pump", { exact: true }).click();
+  await page.getByLabel("Positions").getByText("Sig bare pump", { exact: true }).click();
   await expect(page.getByText("No sensor channels here yet")).toBeVisible();
   await expect(page.getByRole("link", { name: "How signal channels work" })).toBeVisible();
   expect(problems, "errors on the page").toEqual([]);
@@ -135,7 +135,7 @@ test("a file with too many numbers is refused in plain words, and the controls f
   const p = await plant(request, "D");
   await page.setViewportSize({ width: 400, height: 800 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=signals`);
-  await page.getByText("Sig pump D", { exact: true }).click();
+  await page.getByLabel("Positions").getByText("Sig pump D", { exact: true }).click();
   const spectrum = page.getByRole("region", { name: "Spectrum" });
   await expect(spectrum).toBeVisible();
   await expect(spectrum.getByRole("button", { name: "Orders" })).toBeVisible();

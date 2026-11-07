@@ -31,6 +31,8 @@ const RbdBuilder = lazy(() => import("./views/RbdBuilder.jsx"));
 // Simulation run history (#112).
 const RbdRuns = lazy(() => import("./views/RbdRuns.jsx"));
 const RbdRunsDetail = lazy(() => import("./views/RbdRunsDetail.jsx"));
+const FaultTreeHome = lazy(() => import("./views/FaultTreeHome.jsx"));
+const FaultTreeEditor = lazy(() => import("./views/FaultTreeEditor.jsx"));
 const RbdRunsCompare = lazy(() => import("./views/RbdRunsCompare.jsx"));
 const DatasetsHome = lazy(() => import("./views/DatasetsHome.jsx"));
 const DatasetPage = lazy(() => import("./views/DatasetPage.jsx"));
@@ -44,6 +46,14 @@ const FleetForecasts = lazy(() => import("./views/FleetForecasts.jsx"));
 const FleetTrackingHome = lazy(() => import("./views/FleetTrackingHome.jsx"));
 const FleetForecastPage = lazy(() => import("./views/FleetForecastPage.jsx"));
 const StrategyAnalysisPage = lazy(() => import("./views/StrategyAnalysisPage.jsx"));
+// Reliability prediction: a parts count from handbook base rates.
+const ReliabilityPredictions = lazy(() => import("./views/ReliabilityPredictions.jsx"));
+const ReliabilityPredictionNew = lazy(() => import("./views/ReliabilityPredictionNew.jsx"));
+const ReliabilityPredictionPage = lazy(() => import("./views/ReliabilityPredictionPage.jsx"));
+// Maintainability prediction: the list, the calculator and a saved prediction.
+const MaintainabilityHome = lazy(() => import("./views/MaintainabilityHome.jsx"));
+const MaintainabilityNewPage = lazy(() => import("./views/MaintainabilityNewPage.jsx"));
+const MaintainabilityPage = lazy(() => import("./views/MaintainabilityPage.jsx"));
 const MaintenanceHome = lazy(() => import("./views/MaintenanceHome.jsx"));
 const MaintenanceAssets = lazy(() => import("./views/MaintenanceAssets.jsx"));
 const MaintenancePosition = lazy(() => import("./views/MaintenancePosition.jsx"));
@@ -208,6 +218,9 @@ function Shell() {
             <Route path="/systems/runs" element={<RbdRuns />} />
             <Route path="/systems/runs/compare" element={<RbdRunsCompare />} />
             <Route path="/systems/runs/:runId" element={<RbdRunsDetail />} />
+            <Route path="/systems/fault-trees" element={<FaultTreeHome />} />
+            <Route path="/systems/fault-trees/new" element={<FaultTreeEditor />} />
+            <Route path="/systems/fault-trees/:id" element={<FaultTreeEditor />} />
             {maintenanceEnabled && <Route path="/systems/structure" element={<MaintenancePartsPage view="structure" />} />}
 
             {/* Operate: the assets as maintained (Reliafy Maintenance), and
@@ -254,6 +267,10 @@ function Shell() {
             <Route path="/models/joint" element={<JointHome />} />
             <Route path="/models/joint/new" element={<JointNewPage />} />
             <Route path="/models/joint/:id" element={<JointModelPage />} />
+            {/* Maintainability prediction: Mct, M_max and availability from a parts list. */}
+            <Route path="/maintainability" element={<MaintainabilityHome />} />
+            <Route path="/maintainability/new" element={<MaintainabilityNewPage />} />
+            <Route path="/maintainability/:id" element={<MaintainabilityPage />} />
             <Route path="/strategy" element={<StrategyAnalyses />} />
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
@@ -264,6 +281,10 @@ function Shell() {
             <Route path="/strategy/test-planning/accelerated" element={<StrategyTestPlanning />} />
             <Route path="/strategy/test-planning/comparison" element={<StrategyTestPlanning />} />
             <Route path="/strategy/analyses/:id" element={<StrategyAnalysisPage />} />
+            {/* Reliability prediction: the saved parts counts, the builder and each one's page. */}
+            <Route path="/predictions" element={<ReliabilityPredictions />} />
+            <Route path="/predictions/new" element={<ReliabilityPredictionNew />} />
+            <Route path="/predictions/:id" element={<ReliabilityPredictionPage />} />
             {/* The fleets' forecasts and (Reliafy Maintenance) the position classes'. */}
             <Route path="/forecasts" element={<FleetForecasts />} />
             <Route path="/forecasts/:id" element={<FleetForecastPage />} />

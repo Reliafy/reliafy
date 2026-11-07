@@ -6,7 +6,7 @@ import JointBlockSource from "./JointBlockSource.jsx";
 import { paramLabel } from "../paramLabels.js";
 import { unitInText } from "./unitText.js";
 import { formatNumber } from "../format.js";
-import { preferredModel, recentModel, rememberModel, savedModelRef } from "../modelNext.js";
+import { latestOnly, preferredModel, recentModel, rememberModel, savedModelRef } from "../modelNext.js";
 
 // The shape or spread a mean leaves open, in the words the Mean entry uses
 // (#299): a lognormal "takes mean + spread".
@@ -160,14 +160,20 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
       .catch(() => emitMean(id, meanVal, nextGiven));
   };
 
+  // The latest pick wins: the first choice made for the user (the newest
+  // saved model) can still be loading when they pick another one.
+  const pickSeq = useRef(null);
+  if (!pickSeq.current) pickSeq.current = latestOnly();
   const onPickSaved = async (id) => {
+    const current = pickSeq.current();
     setSavedId(id);
     if (!id) return onChange(null);
     rememberModel(id);
     try {
-      onChange(savedModelRef({ ...(await getModel(id)), id }));
+      const m = await getModel(id);
+      if (current()) onChange(savedModelRef({ ...m, id }));
     } catch {
-      onChange(null);
+      if (current()) onChange(null);
     }
   };
 
@@ -213,6 +219,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
         className="picker-seg"
         value={source}
         onChange={(v) => {
+          pickSeq.current(); // a saved model still loading no longer counts
           setSource(v);
           if (v === "mean") toMean();
           else if (v === "params") emitParams(distId, pvals);

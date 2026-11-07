@@ -10,10 +10,20 @@ import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
   ["GET", "/api/extensions"], // optional extensions' pages (an empty list without any)
+  // Reliability prediction: the parts count, the saved predictions, a product's parts list.
+  ["POST", "/api/predictions/compute"],
+  ["POST", "/api/predictions"],
+  ["GET", "/api/predictions"],
+  ["GET", "/api/predictions/smoke"],
+  ["GET", "/api/predictions/from-product/smoke"],
+  ["POST", "/api/v1/analyse/prediction"],
+  // Maintainability prediction: the calculator, the saved predictions, a product's lines.
+  ["POST", "/api/maintainability/analyse"],
+  ["GET", "/api/maintainability/predictions"],
+  ["GET", "/api/maintainability/products/smoke/lines"],
   // The Explorer's "Add the sample truck" (once: smoke/seed.js added it, so this adds nothing).
   ["POST", "/api/maintenance/sample-truck"],
-  // "Add the sample UAV" (the FME(C)A tab's scored sample quadcopter).
-  ["POST", "/api/maintenance/sample-uav"],
+  // "Add the sample UAV product" (Products; the Explorer's "Open the sample UAV product").
   ["POST", "/api/maintenance/sample-product"],
   // A dataset's measurements part (docs/datasets.md): add, paste, remove, split, life data for readings alone.
   ["PUT", "/api/datasets/smoke/measurements"],
@@ -34,6 +44,8 @@ const SIGNED_IN = [
   ["POST", "/api/strategy/calendar-replacement"], // replacement over a shutdown calendar
   ["POST", "/api/strategy/calendar-next"],
   ["POST", "/api/rbd-jobs/smoke/cancel"], // cancel a long calculation
+  ["GET", "/api/fault-trees"], // System models › Fault trees
+  ["POST", "/api/fault-trees/analyse"],
   ["POST", "/api/maintenance/photos/smoke/move"], // a photo on several places
   ["GET", "/api/maintenance/parts/levels"], // #435
   ["POST", "/api/maintenance/parts/import-bom"], // #435

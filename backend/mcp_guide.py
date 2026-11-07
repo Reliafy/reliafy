@@ -177,6 +177,32 @@ never the user's own data: say so, cite the record (licence.attribution), put th
 and suggest replacing it with their own data.
 - Library lookups are never counted against the Free plan's tool calls.
 """),
+    "prediction": ("Reliability prediction: a parts count from handbook base rates, before there's failure data.", """\
+A reliability prediction (analyse prediction; change prediction_save / prediction_update / prediction_delete; get kind \
+prediction; list kind predictions) estimates a design's failure rate from its parts \
+list and the library's handbook base rates (MIL-HDBK-217F), for a design that has no failure data yet.
+- The method is a parts count. Each line is a part type, how many there are and the handbook record for it: its \
+rate is λb × πE × πQ × quantity (λb the record's base failure rate per million hours, πE the record's factor for \
+the environment, πQ a quality factor per line, 1 unless given). The system is the sum, every part in series: \
+MTBF = 1/λ and R(t) = exp(−λt) at mission_time (hours). The result gives the rate per million hours and per hour, per line, per \
+assembly (a line's assembly is a name or a path such as "Power › BMS board") and in total, and a Pareto by line and by \
+part category.
+- Assign part types with list kind library (source mil-hdbk-217f-n2): "capacitor ceramic", "resistor film", \
+"connector rectangular", "mosfet". Only handbook records (basis prediction_model) count; a field-data record \
+(NRC / INL) is refused. A part the handbook has no type for (a motor, a microcircuit, a mechanical part) goes in \
+with no record_id: it's listed and left out of the total, and the result says so. Never invent a part type.
+- The environment is one symbol for the whole prediction (GB, GF, GM, NS, NU, AIC, AIF, AUC, AUF, ARW, SF, MF, ML, \
+CL): ask the user where the equipment works; never guess. A record's prediction.quality_factor_range is the \
+handbook's range for πQ; a line outside it warns.
+- Say what's applied and what isn't: λb, πE and πQ are; the handbook's other factors (temperature, electrical \
+stress, construction, power and so on: factors.not_applied) aren't, and real rates depend on them. The handbook \
+dates from 1995 and is for comparing designs early, not a measure of how equipment will fail: say so when quoting \
+a result, and prefer the user's own failure data when they have any.
+- Reliafy Maintenance users can start from a product: product_id reads its part's bill of materials as lines \
+(each lowest-level part under its assemblies) with no part types yet; assign them and call again with lines (and \
+product_id, which keeps the product as the prediction's source).
+- Saving is free, exact and keeps the results as computed; an update computes them again.
+"""),
     "rbd_analysis": ("Analysing RBDs: figures, simulation, jobs and the other analyses.", """\
 Analysing RBDs (analyse rbd and the other rbd_ actions).
 - rbd, non-repairable: reliability curve (~21 points; `times` gives exact values in reliability_at), MTTF, \
@@ -206,6 +232,29 @@ with change rbd_edit.
 - rbd_system_history: observed availability from the diagram's outage log. rbd_export_python: a standalone script \
 (SurPyval + RePyability) with the run command; rbd_export_json: RePyability's JSON (change import_rbd takes it \
 back)."""),
+
+    "fault_trees": ("Fault trees built by hand: gates, basic events, analysis, RBD and Open-PSA.", """\
+Fault trees: a top event, gates and basic events, saved as their own items (list kind fault_trees).
+- Gates: or (occurs when any input occurs), and (when all do), vote with k (when at least k of its inputs do). \
+NOT, XOR, INHIBIT and dynamic gates (priority-AND, spare, functional dependency, sequence) are refused: say \
+so, and suggest an RBD (standby there) for spares.
+- change fault_tree_save: name, top (the top event's gate id) and nodes. A gate: {id, type: gate, label, gate, \
+k (vote), inputs: [ids]}. A basic event: {id, type: event, label} plus model (as an RBD block's: \
+saved_model_id, or distribution_id + params, or mean) OR probability (a fixed unavailability q, 0 to 1). A \
+basic event may sit under several gates (a repeated event, counted once); a gate under one. unit: the models' \
+time unit. Up to 500 gates and events.
+- Never invent failure data: ask, or mark a guess placeholder=true and say so. A tree may be saved unfinished \
+(no_data lists the events still without data); analyse fault_tree says what it needs.
+- fault_tree_save with fault_tree_id replaces the tree's nodes (get kind fault_tree first, change, send back); \
+samples can't be changed: save a copy without fault_tree_id.
+- analyse fault_tree: the top event probability at t (default where it's about 10%; no t when every event is \
+a fixed probability), minimal cut sets (share_alone overlaps: shares don't add to 1) and each event's \
+importance (criticality = its share of the top event; Birnbaum; Fussell-Vesely; RAW; RRW). Exact and free. \
+export_openpsa=true adds the tree as Open-PSA XML.
+- make_rbd=true on fault_tree_save also saves the equivalent RBD (OR = series, AND = parallel, k of n failed \
+= n-k+1 of n working); a fixed-probability event becomes a block with no model, to be set before analysing it.
+- change import_rbd with as_fault_tree=true saves an Open-PSA or Galileo file's top events as fault trees.
+- change fault_tree_delete: own trees only, on the user's explicit request, confirmed by name."""),
 
     "strategy": ("Replacement (also over a shut calendar), proof-test and overhaul intervals; shape uncertainty.", """\
 Maintenance strategy (analyse actions).
@@ -318,4 +367,31 @@ resets, how to upgrade — and don't retry. Calls refused that way aren't counte
 parameters with change model_save; run a diagram's simulation locally with analyse rbd_export_python.
 - get kind upgrade_link gives the user a Stripe payment link to open themselves; nothing is charged until they complete \
 it. Never say an upgrade has happened."""),
+
+    "maintainability": ("Maintainability prediction: Mct, M_max and availability from a parts list's repair times.", """\
+Maintainability prediction (free on every plan).
+- What it answers: how long corrective maintenance takes on a system, from its parts list. For each line give \
+its repair time by element, in minutes or hours (unit): isolation (finding the fault), access (getting to it), \
+replace (remove and replace), restore (reassembling) and checkout (proving it works); or just mttr when it \
+isn't split. quantity is how many of that line are in one system.
+- Weights: each line counts by how often it's the one repaired, its failure_rate × quantity. Give failure_rate \
+on every line (failure_rate_unit: per_million_hours by default, or per_hour), or product_id with a saved \
+reliability prediction for that product (its rates are taken where a line's ref or name matches). With any line \
+still without a rate, every line counts the same; the result's weights.source and weights.note say which was \
+used — relay them.
+- Results: mct, the mean corrective maintenance time Σ(λ·q·MTTR)/Σ(λ·q); elements, where the time goes; \
+pareto, each line's share of the maintenance time (λ·q·MTTR/Σ), largest first with cumulative; assemblies, the \
+roll-up for lines whose assembly is given ('Propulsion › Motor 1' counts under Propulsion and under Motor 1); \
+availability, the inherent availability MTBF/(MTBF+Mct) when the rates give a system MTBF (1/Σλ·q) or mtbf \
+(hours) is given; m_max, the time by which the percentile's share of repairs (0.95 by default) is done.
+- M_max needs a spread on the lines: sigma (the lognormal sigma of ln t; repair times are usually 0.3 to 1.0), \
+or maximum, the time that share of the line's repairs is done by (e.g. twice its MTTR). Each line's repair time \
+is taken as lognormal with its MTTR as the mean and that spread; the system's repair time is the mix of the \
+lines' weighted by λ·q, and m_max is that mix's percentile. A line with no spread counts as always taking its \
+MTTR; with no spread anywhere m_max is null and m_max_note says why. Say which lines lack one.
+- Always quote the unit (results are in the lines' unit; mct_hours and mtbf_hours are in hours). Never invent \
+repair times or failure rates: ask, or use the product's saved reliability prediction.
+- analyse maintainability saves nothing; change maintainability_save keeps it (name, the same arguments), \
+change maintainability_update renames it or gives it new lines, change maintainability_delete removes it; get \
+kind maintainability_prediction and list kind maintainability_predictions read them (samples included)."""),
 }

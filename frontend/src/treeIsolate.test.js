@@ -75,3 +75,28 @@ test("isolate on the RCM tab: a function and the rows inside it", () => {
 test("the words said", () => {
   assert.deepEqual([1, 2, 3, "all"].map(depthWords), ["1 level", "2 levels", "3 levels", "every level"]);
 });
+
+import { incompleteRows, isolateIncompleteOpen, isolateIncompleteItem } from "./treeIsolate.js";
+import { flatten as flat2 } from "./assetTree.js";
+
+test("isolate incomplete rows: the way to what's unfinished opens, the rest closes", () => {
+  const rcm = { positions: [
+    { id: "pumpA", functions: [
+      { id: "f1", text: "Pump water", failures: [{ id: "ff1", text: "No flow", modes: [{ id: "m1", name: "Seal leaks", decision: { task: "x" } }] }], modes: [] },
+      { id: "f2", text: "Contain water", failures: [], modes: [] },
+    ], unassigned: [] },
+    { id: "pumpB", functions: [
+      { id: "f3", text: "Pump water", failures: [{ id: "ff3", text: "No flow", modes: [{ id: "m3", name: "Shaft breaks" }] }], modes: [] },
+    ], unassigned: [] },
+  ] };
+  const d = graftRcm(buildDisplay(DATA, "positions"), rcm);
+  const found = incompleteRows(d, "plant").map((r) => r.key);
+  assert.deepEqual(found, ["f2", "m3"]);
+  const all = new Set([...d.rows.values()].filter((r) => r.kids.length).map((r) => r.key));
+  const { open } = isolateIncompleteOpen(d, all, "plant");
+  assert.ok(open.has("pumpA") && open.has("pumpB") && open.has("f3") && open.has("ff3"));
+  assert.ok(!open.has("f1") && !open.has("ff1"));
+  assert.deepEqual(incompleteRows(d, "pumpA").map((r) => r.key), ["f2"]);
+  assert.deepEqual(isolateIncompleteItem(d.rows.get("plant"), { can: true }), [{ id: "isolate-incomplete", label: "Isolate incomplete rows" }]);
+  assert.deepEqual(isolateIncompleteItem(d.rows.get("m3"), { can: true }), []);
+});

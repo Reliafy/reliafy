@@ -34,3 +34,11 @@ test("the question names the action and isn't a warning", () => {
   assert.equal(q.cancelLabel, "Keep the one I have");
   assert.equal(q.destructive, false);
 });
+
+test("the sample product's id comes from either shape of the answer", async () => {
+  const { sampleProductId, SAMPLES } = await import("./sampleTruck.js");
+  assert.equal(sampleProductId({ added: true, product: { id: "p1" }, position: { id: "p1" } }), "p1");
+  assert.equal(sampleProductId({ added: false, position: { id: "p2" } }), "p2");
+  // One quadcopter example: the product; no asset-tree UAV any more.
+  assert.deepEqual(Object.keys(SAMPLES).sort(), ["product", "truck"]);
+});

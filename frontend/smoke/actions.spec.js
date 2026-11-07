@@ -306,7 +306,8 @@ test("a model's failure pattern, Use this model and B-lives", async ({ page, pro
   await expect(answer).toContainText(/we're 90% sure it's at least [\d,]+ hours/);
   await page.getByRole("group", { name: "B-lives" }).getByRole("button", { name: "B50" }).click();
   await expect(answer).toContainText("(the B50 life)");
-  await expect(page.getByLabel("Reliability %")).toHaveValue("50");
+  // The field is labelled "Reliability"; the % is a visible suffix beside the box.
+  await expect(page.getByLabel("Reliability", { exact: true })).toHaveValue("50");
   await expect(page.getByRole("region", { name: "B-lives and mean life" })).toHaveCount(0);
   await expectHealthy(page, problems, { label: "model calculator", chart: true });
 });
@@ -335,7 +336,7 @@ test("Model characteristics: the mean life and its bound", async ({ page, proble
   await expect(page.getByRole("region", { name: "B-lives" })).toContainText(/B10\s*582 hours\s*≥ \d+/);
   await page.getByRole("button", { name: /Another reliability: use Time at reliability/ }).click();
   await expect(page.locator(".calc-answer")).toContainText("(the B10 life)");
-  await expect(page.getByLabel("Confidence level %")).toHaveValue("95");
+  await expect(page.getByLabel("Confidence level", { exact: true })).toHaveValue("95");
 
   // An exponential's mean, and Kaplan-Meier's counted to a time.
   const pumps = { dataset_id: "sample-ds-pumps", x: "months", c: "censored", c_invert: "0", unit: "months" };
@@ -427,8 +428,10 @@ test("add the sample truck from the Explorer's menu", async ({ page, request, pr
   await ask.getByRole("button", { name: "Add another copy" }).click();
   await expect(page).toHaveURL(/tab=rcm/);
   await expect(page.locator(".tt-msg.ok")).toHaveText("Added the sample truck.");
+  // The message shows as soon as the copy is added; the panel moves to it once
+  // the tree has been read again (until then it still shows the one kept above).
+  await expect(page.locator(".tt-h1").first()).toHaveText(/^Delivery truck \(sample \d+\)$/);
   const name = (await page.locator(".tt-h1").first().textContent()).trim();
-  expect(name).toMatch(/^Delivery truck \(sample \d+\)$/);
   const grid = page.getByRole("treegrid", { name: /and their RCM/ });
   await expect(grid.getByRole("row", { name: /Stop the vehicle within the rated distance/ }).first()).toBeVisible();
   await expect(grid.getByRole("row", { name: /Wheel-bearing failure — legacy run-to-failure plan/ }).first()).toBeVisible();
@@ -441,7 +444,7 @@ test("add the sample truck from the Explorer's menu", async ({ page, request, pr
   await postOk(request, `/api/maintenance/positions/${copy.id}/retire`, { reason: "smoke test" });
 });
 
-test("the empty tree offers the sample truck", async ({ page, problems }) => {
+test("the empty tree offers the sample truck, and the sample UAV product on Products", async ({ page, problems }) => {
   // The tree read as empty (the suite's own isn't), and the add answered here: nothing is written.
   await page.route("**/api/maintenance/tree", async (route) => {
     const res = await route.fetch();
@@ -454,10 +457,66 @@ test("the empty tree offers the sample truck", async ({ page, problems }) => {
   });
   await open(page, "/asset-register/explorer?arrange=positions");
   const card = page.locator(".ae-sample").first();
-  await expect(card).toContainText("New here? Add the sample truck to see an RCM built on the tree.");
+  // With SMOKE_SHOTS_DIR set, the empty tree's card at desktop and phone width (for the pull request).
+  if (process.env.SMOKE_SHOTS_DIR) {
+    for (const [width, height] of [[1440, 900], [400, 860]]) {
+      await page.setViewportSize({ width, height });
+      await open(page, "/asset-register/explorer?arrange=positions");
+      await expect(card).toBeVisible();
+      await page.screenshot({ path: `${process.env.SMOKE_SHOTS_DIR}/${width}-explorer-empty-card.png` });
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await open(page, "/asset-register/explorer?arrange=positions");
+  }
+  await expect(card).toContainText("New here? Add the sample truck to see an RCM built on the tree, or open the sample UAV product for an FME(C)A on a design.");
+  await expect(card.getByRole("button", { name: "Add the sample UAV", exact: true })).toHaveCount(0); // no asset-tree copy any more
+  await expect(card.getByRole("button", { name: "Open the sample UAV product" })).toBeVisible();
   await card.getByRole("button", { name: "Add the sample truck" }).click();
   const ask = page.getByRole("alertdialog", { name: "The sample truck is already in your tree" });
   await ask.getByRole("button", { name: "Keep the one I have" }).click();
   expect(asked).toEqual([{ again: false }]);
   await expectHealthy(page, problems, { label: "the empty tree" });
+  // The quadcopter is a design: the card opens the sample product (smoke/seed.js added it, so
+  // nothing more is added and nothing is asked) on its structure's FME(C)A tab.
+  // The tree reads as empty only on the Explorer, not on the product's page.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  let empty = true;
+  await page.route("**/api/maintenance/tree", async (route) => {
+    const res = await route.fetch();
+    await route.fulfill(empty ? { response: res, json: { ...(await res.json()), positions: [], locations: [] } } : { response: res });
+  });
+  await open(page, "/asset-register/explorer?arrange=positions");
+  const opened = [];
+  page.on("request", (r) => { if (r.url().endsWith("/api/maintenance/sample-product")) opened.push(r.postDataJSON()); });
+  empty = false;
+  await page.locator(".ae-sample").first().getByRole("button", { name: "Open the sample UAV product" }).click();
+  await expect(page).toHaveURL(/\/products\/[^/?]+\?view=fmea&sel=/);
+  expect(opened).toEqual([{ again: false }]);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Survey quadcopter (sample");
+  await expect(page.getByRole("tab", { name: "FME(C)A" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("treegrid", { name: /and their FME\(C\)A/ })).toBeVisible();
+  await expect(page.getByRole("treegrid", { name: /and their FME\(C\)A/ }).getByRole("row", { name: /^Airframe/ }).first())
+    .toContainText("2 of 2 scored");
+  await expectHealthy(page, problems, { label: "the sample product's FME(C)A" });
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+// Maintenance on a phone: a task named with one unbreakable code (as imported
+// ones often are) widens the "Due in the next 30 days" table, which then
+// scrolls inside its card; the page itself never scrolls sideways.
+test("Maintenance at 400 px: a wide due table scrolls in its card, not the page", async ({ page, request, problems }) => {
+  const tag = `${Date.now() % 1000000}`;
+  const p = await postOk(request, "/api/maintenance/positions", { name: `GBX_${tag}` });
+  await postOk(request, `/api/maintenance/positions/${p.id}/tasks`,
+               { name: `PM_WEEKLY_LUBRICATION_CHECK_GEARBOX_BEARINGS_${tag}`, interval: 1, unit: "days", outcome: "on_condition" });
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, "/maintenance");
+  const row = page.getByRole("row", { name: new RegExp(`PM_WEEKLY_LUBRICATION_CHECK_GEARBOX_BEARINGS_${tag}`) });
+  await expect(row).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  // The table is wider than the card, and it is the card's scroller that holds it.
+  const box = await row.locator("xpath=ancestor::div[contains(@class, 'maint-scroll')]").evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(box).toBeGreaterThan(0);
+  await expectHealthy(page, problems, { label: "maintenance on a phone" });
+  await postOk(request, `/api/maintenance/positions/${p.id}/retire`, { reason: "smoke test" });
 });

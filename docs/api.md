@@ -152,8 +152,9 @@ priority, H, M or L) and `cm` (β × α × λ × t), never stored, and each posi
 in `get.rcm` carries an `fmea` summary (scored, high, medium, low, max_rpn,
 cr). A mode may sit directly under a function with no functional failure yet
 (`function_id` on `failure_modes.add`, `assign` and `move`); the RCM reads list
-it in the function's `modes`. `positions.add_sample_uav` copies a fully
-scored sample quadcopter into the tree.
+it in the function's `modes`. `products.add_sample` adds the sample
+quadcopter product, its design fully scored (on Products, not in the asset
+tree).
 
 Everything in the tree can be taken out of use and brought back (`retire` /
 `restore` on positions, locations, items, parts, manufacturers, measurement
@@ -201,6 +202,27 @@ power plant industry averages, and base failure rates for electronic parts
 from the MIL-HDBK-217F prediction handbook), not your own equipment's data;
 show each record's `licence.attribution` with its numbers. The record format
 and the sources: [library.md](library.md).
+
+### Reliability prediction (a parts count)
+
+A design's failure rate from its parts list and the library's handbook base
+rates (MIL-HDBK-217F), before there's any failure data. Each line is a part,
+how many there are and its handbook part type (a library record id); its
+rate is λb × πE (the environment's factor) × πQ (a quality factor per line,
+1 unless given) × quantity, and the system is the sum: MTBF, R(t) at a
+mission time, the rate per assembly and a Pareto. Free and exact.
+
+| Call | Does |
+|---|---|
+| `POST /api/v1/analyse/prediction` | The parts count, saving nothing: `lines` (`[{name, record_id, quantity, quality_factor?, assembly?, reference?}]`), `environment` (`GB`, `GF`, `GM`, `NS`, `NU`, `AIC`, `AIF`, `AUC`, `AUF`, `ARW`, `SF`, `MF`, `ML`, `CL`), `mission_time` (hours, default 1,000). Reliafy Maintenance users may give `product_id` instead of lines: the product's bill of materials comes back as lines to assign. |
+| `POST /api/v1/change/prediction_save` | Save one: `name` and the same arguments; the results are computed on save and kept as they were. `change/prediction_update` (`prediction_id`, any of `name`, `lines`, `environment`, `mission_time`, `notes`) computes them again; `change/prediction_delete` deletes one of yours. |
+| `POST /api/v1/list/predictions`, `POST /api/v1/get/prediction` (`id`) | The saved predictions, and one in full (inputs and results). |
+
+On the command line: `reliafy analyse prediction --lines '[{"name": "Ceramic
+capacitors", "record_id": "mil-hdbk-217f-n2:10-1-ck-11015", "quantity": 48}]'
+--environment GF`. The app's own routes are `POST /api/predictions/compute`,
+`GET /api/predictions/from-product/{product_id}` and the saved predictions at
+`/api/predictions`.
 
 ### Datasets: life data and measurements
 
@@ -251,6 +273,8 @@ rf.push_usage(fleet_id, [{"name": "Truck 01", "current_use": 5230}])
 reliafy login                                    # saves the token in your config folder
 reliafy tools                                    # every tool and action you may call
 reliafy analyse fit --help            # one action's arguments
+reliafy analyse maintainability --unit minutes \
+    --lines '[{"name": "Motor", "quantity": 4, "failure_rate": 180, "elements": {"isolation": 10, "replace": 15}}]'
 reliafy analyse optimal_replacement --distribution-id weibull \
     --params '[{"name":"alpha","value":1200},{"name":"beta","value":2.5}]' \
     --planned-cost 200 --unplanned-cost 1500

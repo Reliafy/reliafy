@@ -66,6 +66,9 @@ rf.call("life_data_analysis", "fit", data=[120, 340, 510, 700], censored=[0, 0, 
 rf.call("strategy", "optimal_replacement", distribution_id="weibull",
         params=[{"name": "alpha", "value": 1200}, {"name": "beta", "value": 2.5}],
         planned_cost=200, unplanned_cost=1500)
+rf.call("analyse", "maintainability", unit="minutes", lines=[   # Mct, M_max, availability from a parts list
+    {"name": "Motor", "quantity": 4, "failure_rate": 180, "elements": {"isolation": 10, "replace": 15}, "maximum": 60},
+    {"name": "Flight controller", "failure_rate": 90, "mttr": 80}])
 rf.call("guide", topic="life_data")             # a tool without actions
 rf.call("rbd_analysis", "analyze", rbd_id="…", wait=True)   # waits for a long job
 
@@ -149,6 +152,7 @@ reliafy fit failures.csv --dist best --criterion bic   # Best fit ranked by aic 
 reliafy push model.json                          # {distribution, params | data, name?, unit?}
 reliafy upload bearings.xlsx --name Bearings
 reliafy import rbd plant.xml
+reliafy analyse fault_tree --fault-tree-id TREE_ID  # a saved fault tree's top event, cut sets and importance
 reliafy photo add IMG_*.jpg --to POSITION_ID --caption Nameplate
 reliafy photo link PHOTO_ID --to LOCATION_ID      # show it there too
 reliafy photo move PHOTO_ID --to POSITION_ID      # only there
@@ -166,6 +170,10 @@ reliafy apply ops.json --run                     # maintenance changes in one ca
 reliafy list kind library --query "check valve" --kind rate   # published failure data
 reliafy get kind library_record --id nrc-inl-2020:ckv-fto
 reliafy get kind library_record --id mil-hdbk-217f-n2:9-1-rc-11 --environment GF   # a handbook rate, ground fixed
+reliafy analyse prediction --environment GF --mission-time 1000 \
+  --lines '[{"name": "Ceramic capacitors", "record_id": "mil-hdbk-217f-n2:10-1-ck-11015", "quantity": 48}]'   # a parts count
+reliafy change prediction_save --name "Controller box" --environment GF --lines @parts.json   # ... saved
+reliafy list kind predictions
 ```
 
 Values are read as their argument's type: text, numbers, `true`/`false`, JSON

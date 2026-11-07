@@ -141,8 +141,11 @@ const EDGE_TYPES = { bus: BusEdge };
 function gateText(gate, events, gates, name) {
   const n = gate.inputs.length;
   if (gate.role === "top") {
+    // A fault tree built by hand names its own top event (and gates, below).
+    if (gate.label) return { title: gate.label, sub: "Top event" };
     return { title: name ? `${name} fails` : "System fails", sub: "Top event" };
   }
+  if (gate.role === "gate" && gate.label) return { title: gate.label, sub: null };
   if (gate.role === "subsystem") return { title: `${gate.label} fails`, sub: "Sub-system" };
   if (gate.role === "ccf_member") {
     return { title: `${gate.label} fails`, sub: `Independently or by common cause (β = ${formatPercent(gate.beta)})` };
@@ -254,7 +257,7 @@ function allGateKeys(result) {
   return keys;
 }
 
-function TreeCanvas({ result, name, active }) {
+export function TreeCanvas({ result, name, active }) {
   const [collapsed, setCollapsed] = useState(() => initialCollapsed(result));
   const [showAll, setShowAll] = useState(() => new Set());
   const [ready, setReady] = useState(false);
@@ -383,7 +386,7 @@ function TreeCanvas({ result, name, active }) {
   );
 }
 
-function CutSetTable({ result }) {
+export function CutSetTable({ result }) {
   const [all, setAll] = useState(false);
   const cuts = result.cut_sets;
   const events = useMemo(() => Object.fromEntries(result.events.map((e) => [e.id, e])), [result.events]);
@@ -513,7 +516,7 @@ const IMP_COLS = [
     help: "Risk reduction worth: the factor by which the top event would be less likely if this event could not occur." },
 ];
 
-function ImportanceTable({ result }) {
+export function ImportanceTable({ result }) {
   const [all, setAll] = useState(false);
   const sorted = useMemo(
     () => [...result.events].sort(
@@ -545,6 +548,7 @@ function ImportanceTable({ result }) {
                 <td className="calc-row-label">
                   {fullLabel(e)}
                   {e.pinned && <span className="rbd-avail-pin">pinned {e.pinned}</span>}
+                  {e.placeholder && <span className="rbd-avail-pin" title="Guessed data">placeholder</span>}
                 </td>
                 <td>{fmtP(e.probability)}</td>
                 {IMP_COLS.map((c) => (
