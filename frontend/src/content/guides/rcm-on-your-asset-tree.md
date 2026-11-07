@@ -325,6 +325,23 @@ five chemistry failure modes. Both are in the failure mode's Details, under
 - **Remove…** in the task's **⋯** takes it off the failure mode: a task that serves only this
   mode is retired; one that serves others too is unlinked and stays.
 
+### Tasks raised by an event
+
+Some work isn't done on a calendar: after 120 mm of rain in 24 hours, test and
+re-dose the pool; after a lightning strike, inspect the chlorinator. In the
+task's **⋯** › **Edit…**, set **Trigger** to **When an event happens**, then
+choose what happens: **A reading passes a limit** (pick a measuring point and
+the limit, at or above 120 mm on the rain gauge) or **Someone logs an event**
+(type its name, *Lightning strike*). The decision stays as it is; the
+**Interval** column shows *on event: 120 mm on POOL-RAIN* for the task, and the
+CSV and Excel exports write the same words in that column. A reading past the
+limit raises the task's work order, dated the reading's day; a named event is
+logged on the position, or one above it, from its **⋯** › **Log an event…**
+(also at the foot of **Work** on the Summary tab). Each event raises one work
+order: another while it's open raises nothing. The task waits for the event,
+so it's never overdue; tick **Keep the interval too** if the interval should
+run as well.
+
 The **Task** column shows the decision's own task and *+1 task* when there are
 more; its Details list them all. The evidence linked on a decision applies to
 its own (first) task. Deleting a failure mode retires the tasks that served it

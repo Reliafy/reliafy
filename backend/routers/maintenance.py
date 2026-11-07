@@ -387,7 +387,7 @@ def _create_task(m: Maintenance, body: dict, **subject) -> JSONResponse:
                 body.get("source") or "manual", body.get("reference", ""), body.get("failure_mode_id"),
                 body.get("last_done"), body.get("trade", ""), while_stored=body.get("while_stored"),
                 include_positions=body.get("include_positions"), failure_mode_ids=body.get("failure_mode_ids"),
-                **subject)
+                trigger=body.get("trigger"), **subject)
 
 
 @router.post("/positions/{position_id}/tasks")
@@ -955,10 +955,28 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
                                  body["outcome"] if "outcome" in body else ..., body.get("trade"),
                                  body.get("while_stored"), body.get("include_positions"),
                                  body.get("last_done_reading"))
+        if "trigger" in body:
+            # What raises it besides (or instead of) its interval; null clears it.
+            view = m.set_task_trigger(task_id, body["trigger"])
         if view is None:
             raise Invalid("Nothing to change.")
         return view
     return _run(go)
+
+
+@router.get("/tasks/{task_id}/trigger-points")
+def task_trigger_points(task_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The condition points the task's trigger can watch: on what it's on, above it and
+    inside its top position, nearest first."""
+    return _run(lambda: {"points": m.task_trigger_points(task_id)})
+
+
+@router.post("/positions/{position_id}/events")
+def log_position_event(position_id: str, body: dict = Body(...),
+                       m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Log something that happened at a position (event_type, note, when): tasks there or
+    inside it triggered by that event raise their work orders (work_orders_raised)."""
+    return _run(m.log_position_event, position_id, body.get("event_type"), body.get("note", ""), body.get("when"))
 
 
 @router.post("/tasks/{task_id}/move")

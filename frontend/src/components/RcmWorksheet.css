@@ -484,6 +484,9 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rim-tform .rw-fhelp { margin: 0; }
 .rim-thint { color: var(--warn); }
 .rim-trow { display: flex; flex-wrap: wrap; gap: var(--sp-3); min-width: 0; }
+/* A task's trigger (When an event happens): its fields grouped, the checkbox on one line. */
+.rim-trigger { display: flex; flex-direction: column; gap: var(--sp-3); margin: 0; padding: 0; border: 0; min-width: 0; }
+.rim-trigger .rim-check { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-14); }
 .rim-trow > .rw-field { flex: 1 1 140px; }
 .rim-trow .rw-fin { display: flex; gap: 6px; }
 .rim-trow input[type="number"] { width: 6.5rem; flex: 1 1 5rem; }

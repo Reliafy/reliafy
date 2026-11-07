@@ -983,6 +983,38 @@ Keep to the project's rules (`CLAUDE.md`):
     not, one or two of them, either meter), the times against the clock
     walked a quarter of an hour at a time.
 
+## Tasks raised by an event
+
+A task is scheduled by its interval (on the calendar or by use). Some work
+waits for an event instead: after 120 mm of rain in 24 hours, test and re-dose
+the pool; after a lightning strike, inspect the chlorinator. The response may
+grow with the event, but its first step is a task raised when the event is
+recorded.
+
+- `task.trigger_set {id, trigger}` sets what raises the task (`trigger: null`
+  clears it). `trigger` is `{kind: "reading", point_id, above | below}` (a
+  reading on a condition point at or past the limit) or `{kind: "event",
+  event_type, note}` (a named event logged on the task's position or one above
+  it), with `with_interval: true` when the interval runs as well. The task's
+  interval stays on it, unused, so clearing the trigger puts the task back
+  on its interval as it was. `task.added` keeps its shape.
+- With a trigger and no interval running, the task is never due on a date:
+  no next due date, never overdue, left out of `due_tasks` and the tree's due
+  counts and work packages, with status *Waiting for the event*.
+- Raising goes through the usual work-order path (`open_work_order`, type
+  preventive), dated the day of the reading or event, with *Raised by: 128 mm
+  on POOL-RAIN, 7 Jan 2026 (at or over 120 mm)* in its notes. A reading is
+  checked where the alarm limits are (`_check_alarm`: manual, corrected,
+  automated and derived readings). A logged event is its own event,
+  `position.event_logged {id, position_id, event_type, note, when}`; tasks on
+  that position or inside it whose trigger names it (case and spacing aside)
+  are raised.
+- One event, one work order: a task with a work order open raises nothing
+  more until it is closed.
+- The worksheet's Interval column (and its CSV and Excel exports) reads *on
+  event: 120 mm on POOL-RAIN*. Importing that text back isn't supported: the
+  import asks for a number there.
+
 ## Candidates
 
 Questions to take up next, one at a time, in whatever order proves useful.
