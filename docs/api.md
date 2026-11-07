@@ -243,6 +243,22 @@ default, every position inside it), a location, an item or a part number, or
 the whole workspace, with filters by status, consequence, failure mode and
 date; `maintenance guide` topic `failures` has the loop.
 
+Work packages (the `packages` area: `propose`, `create`, `update`,
+`add_task`, `remove_task`, `pause`, `resume`, `retire`, `restore`; reads `get
+package` and `list packages`) bundle the tasks done on one visit, so each
+visit raises one work order. `packages.propose` drafts them from the tasks in
+no package (`position_id` or `location_id` for one branch or area); with
+`weekday` (`monday` … `sunday`) the drafts visit on that day and the longer
+cadences are layers on the shortest in each area and trade (monthly on the
+first Saturday, quarterly on the first Saturday of every 3 months). Each draft
+then has a `ref`, `layer_of` and `cadence_text`, and a layer's `create` has
+`parent_id: "@<its top's ref>"`, so the agreed drafts go straight into one
+`maintenance apply` (each operation's `ref` set to its draft's). The app's
+own routes do the same: `GET /api/maintenance/packages/propose?weekday=`,
+`POST /api/maintenance/packages/batch` (`packages`: the creates, all or
+nothing) and `GET /api/maintenance/packages?position_id=` (those there or
+inside it, or holding a task there).
+
 ### Things only the API can do
 
 MCP tool calls carry JSON, not files. These have no MCP twin, on purpose:

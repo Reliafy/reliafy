@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { LevelIcon } from "./RcmWorksheet.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { saveErrorText } from "../confirm.js";
@@ -7,6 +8,7 @@ import { OUTCOME_LABEL, addableOutcomes, decisionRows, decisionWithMember, every
 import { getTaskTriggerPoints } from "../api.js";
 import { asksInterval, pointLabel, triggerBody, triggerState, triggerWhy } from "../taskTrigger.js";
 import { secondTaskHint } from "../explorerRcm.js";
+import { explorerPath } from "../assetTree.js";
 import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 import Chip from "./ui/Chip.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
@@ -132,10 +134,17 @@ export default function RcmModeTasks({ r, ops = null, readOnly = false, addStart
                     ]} />
                   )}
                 </div>
-                {(every(t) || t.shared_with) ? (
+                {(every(t) || t.shared_with || t.package) ? (
                   <div className="rim-chips">
                     {every(t) && <Chip tone="accent">{every(t)}</Chip>}
                     {t.shared_with ? <Chip>Shared with {plural(t.shared_with, "other failure mode")}</Chip> : null}
+                    {t.package && (
+                      <Link className="chip chip-neutral chip-btn" title="Done on this work package's visits: open it on the Packages tab"
+                            to={explorerPath(t.package.subject?.kind === "location" ? "locations" : "positions",
+                                             { sel: t.package.subject?.id, tab: "packages", package: t.package.id })}>
+                        In: {t.package.name}
+                      </Link>
+                    )}
                   </div>
                 ) : null}
                 {t.instructions && <Instructions text={t.instructions} />}

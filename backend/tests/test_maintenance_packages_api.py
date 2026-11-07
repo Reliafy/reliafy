@@ -136,3 +136,26 @@ def test_out_of_service_routes(api):
     assert api.post(f"{M}/positions/{pos['id']}/back-in-service").json()["out_of_service"] is None
     assert api.post(f"{M}/positions/{pos['id']}/back-in-service").status_code == 422
     assert api.post(f"{M}/widgets/{pos['id']}/out-of-service", json={}).status_code == 404
+
+
+def test_package_the_tasks_routes(api):
+    """The Explorer's Packages tab: a layered proposal on a weekday, made in one batch, then
+    read for the branch."""
+    site = api.post(f"{M}/positions", json={"name": "Pool"}).json()
+    pump = api.post(f"{M}/positions", json={"name": "Pump", "parent_id": site["id"]}).json()
+    for name, interval, unit in (("Skim", 1, "weeks"), ("Test water", 1, "weeks"), ("Clean cell", 1, "months")):
+        api.post(f"{M}/positions/{pump['id']}/tasks", json={"name": name, "interval": interval, "unit": unit})
+    proposed = api.get(f"{M}/packages/propose", params={"position_id": site["id"], "weekday": "saturday"})
+    assert proposed.status_code == 200, proposed.text
+    drafts = proposed.json()["drafts"]
+    assert [d["layer_of"] is None for d in drafts] == [True, False]
+    assert api.get(f"{M}/packages/propose", params={"weekday": "funday"}).status_code == 422
+    batch = [{"ref": d["ref"], **d["create"]} for d in drafts]
+    assert api.post(f"{M}/packages/batch", json={"packages": []}).status_code == 422
+    made = api.post(f"{M}/packages/batch", json={"packages": batch})
+    assert made.status_code == 200, made.text
+    assert [c["layer_of"] for c in made.json()["created"]] == [None, f"@{drafts[0]['ref']}"]
+    here = api.get(f"{M}/packages", params={"position_id": pump["id"]}).json()["packages"]
+    assert {p["name"] for p in here} == {d["name"] for d in drafts}
+    elsewhere = api.post(f"{M}/positions", json={"name": "Shed"}).json()
+    assert api.get(f"{M}/packages", params={"position_id": elsewhere["id"]}).json()["packages"] == []

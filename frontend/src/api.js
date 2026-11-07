@@ -3257,3 +3257,41 @@ export function deleteMaintainabilityPrediction(id) {
 export function getProductMaintainabilityLines(productId) {
   return request(`/api/maintainability/products/${encodeURIComponent(productId)}/lines`);
 }
+
+// Work packages (Reliafy Maintenance; the Explorer's Packages tab): tasks done
+// together on one visit, one work order per visit. A scope ({position_id} or
+// {location_id}) lists those there or inside it, or holding a task there.
+const qs = (params = {}) => {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+  const s = q.toString();
+  return s ? `?${s}` : "";
+};
+export function listPackages(scope = {}) {
+  return request(`/api/maintenance/packages${qs(scope)}`);
+}
+export function getPackage(id) {
+  return request(`/api/maintenance/packages/${encodeURIComponent(id)}`);
+}
+// Drafts from the tasks in no package (nothing saved); with weekday, the longer
+// cadences are layers on the shortest.
+export function proposePackages(scope = {}, weekday = null) {
+  return request(`/api/maintenance/packages/propose${qs({ ...scope, weekday })}`);
+}
+// Several at once, all or nothing: [{ref?, ...a create's fields}], a layer's parent_id "@<ref>".
+export function createPackages(packages) {
+  return postJson("/api/maintenance/packages/batch", { packages });
+}
+export function createPackage(body) {
+  return postJson("/api/maintenance/packages", body);
+}
+export function addPackageTask(id, body) {
+  return postJson(`/api/maintenance/packages/${encodeURIComponent(id)}/tasks`, body);
+}
+export function removePackageTask(id, taskId) {
+  return request(`/api/maintenance/packages/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
+}
+// change: pause ({reason, until?, full_visit?}), resume, retire ({reason?}) or restore.
+export function changePackage(id, change, body = {}) {
+  return postJson(`/api/maintenance/packages/${encodeURIComponent(id)}/${change}`, body);
+}

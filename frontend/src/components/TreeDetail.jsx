@@ -18,6 +18,8 @@ import { withFullPage } from "../panelMenu.js";
 const PartsPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m) => ({ default: m.PartsPanel })));
 // The Measurements tab's body (it uses the position page's reading dialogs).
 const MeasurementsPanel = lazy(() => import("./MeasurementsPanel.jsx"));
+// The Packages tab's body (work packages: tasks done together on one visit).
+const PackagesPanel = lazy(() => import("./PackagesPanel.jsx"));
 const ClassesPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m) => ({ default: m.ClassesPanel })));
 
 // The panel beside the asset tree: what the selected row is, in a glance. A
@@ -268,6 +270,8 @@ const TreeDetail = forwardRef(function TreeDetail({
           ? (reports?.rollup ? reports.rollup(row) : <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} onMenu={onMenu} />)
           : shown === "measurements"
           ? <Suspense fallback={loading}><MeasurementsPanel row={row} display={display} today={today} onMenu={onMenu} /></Suspense>
+          : shown === "packages"
+          ? <Suspense fallback={loading}><PackagesPanel row={row} today={today} onMenu={onMenu} /></Suspense>
           : shown === "signals"
           ? <SignalsPanel row={row} onMenu={onMenu} />
           : shown === "parts"

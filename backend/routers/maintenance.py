@@ -2055,17 +2055,27 @@ def mark_line(work_order_id: str, task_id: str, body: dict = Body(...),
 # ---- work packages: tasks done on one visit, one work order per visit ---------------------
 
 @router.get("/packages")
-def list_packages(status: str | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+def list_packages(status: str | None = None, position_id: str | None = None, location_id: str | None = None,
+                  m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """Every work package (status active, paused, retired or all; default: not retired), with
-    its next visit and open work order (late, days_late, visits_missed)."""
-    return _run(m.packages, status)
+    its next visit and open work order (late, days_late, visits_missed). position_id or
+    location_id: those there or inside it, or holding a task there (the Explorer's Packages tab)."""
+    return _run(m.packages, status, position_id, location_id)
 
 
 @router.get("/packages/propose")
-def propose_packages(position_id: str | None = None, location_id: str | None = None,
+def propose_packages(position_id: str | None = None, location_id: str | None = None, weekday: str | None = None,
                      m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    """Drafts of packages from the tasks in none, by cadence, area and trade. Saves nothing."""
-    return _run(m.propose_packages, position_id, location_id)
+    """Drafts of packages from the tasks in none, by cadence, area and trade; weekday: visits on
+    that day, the longer cadences as layers on the shortest. Saves nothing."""
+    return _run(m.propose_packages, position_id, location_id, weekday)
+
+
+@router.post("/packages/batch")
+def create_packages(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Several packages at once (Package the tasks…): packages [{ref?, ...a create's fields}], a
+    layer's parent_id '@<an earlier one's ref>'. All or nothing."""
+    return _run(m.create_packages, body.get("packages"))
 
 
 @router.get("/packages/{package_id}")

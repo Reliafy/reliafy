@@ -298,7 +298,10 @@ on positions and locations that are in no package, grouped by cadence (weekly, f
 6-monthly, yearly, multi-year, within 10%), area (the location, else the top of the position tree) and trade, each \
 with a ready create and warnings (4 weeks mixed with 1 month, a task with its own open work order); an item's \
 task (it follows the serial number) and a task by use are left out and stay on their own. It saves nothing: show \
-the user, then packages.create (several at once: maintenance apply).
+the user, then packages.create (several at once: maintenance apply). With weekday (saturday), the drafts visit \
+on that day and the longer cadences are layers on the shortest in each area and trade (monthly on the first \
+Saturday): each draft has ref and layer_of, and a layer's create has parent_id '@<ref>', so send the agreed ones \
+as one maintenance apply with each operation's ref set to its draft's, tops first.
   - create: name; exactly one of position_id (its tasks on it or positions inside it) or location_id (tasks at \
 it); tasks (task ids). A task has one home package: a job needed on two schedules is two tasks.
   - When: timing fixed (default: set dates) or from_last_visit (the close date plus the interval). every + unit \
