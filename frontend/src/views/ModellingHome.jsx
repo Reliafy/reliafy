@@ -8,6 +8,7 @@ import { SectionHeader } from "../components/SectionPage.jsx";
 import UnsavedFitReminder from "../components/UnsavedFitReminder.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
+import { StorageCapNotice } from "../components/StorageCap.jsx";
 
 const HELP = { walkthrough: "fit", guide: "fit-your-first-model" };
 
@@ -42,6 +43,7 @@ export default function ModellingHome() {
       <UnsavedFitReminder />
 
       {error && <div className="card error">{error}</div>}
+      <StorageCapNotice kind="models" one="saved model" many="saved models" refreshKey={models} />
 
       <ModelLibrary
         models={loading ? null : models}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ErrorNotice } from "./StorageCap.jsx";
 import {
   getColumns,
   getDistributions,
@@ -424,7 +425,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     try {
       onSaved?.(await persist());
     } catch (err) {
-      setError(err.message);
+      setError(err);
       setSaving(false);
     }
   };
@@ -851,7 +852,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         </div>
       )}
 
-      {error && <div className="error">{error}</div>}
+      <ErrorNotice error={error} />
 
       <div className="fit-flow-foot">
         {stepper}

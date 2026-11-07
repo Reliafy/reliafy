@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { ErrorNotice } from "./StorageCap.jsx";
 import Select from "./Select.jsx";
 import Units from "./Units.jsx";
 import { getDistributions, createModelFromParams } from "../api.js";
@@ -47,7 +48,7 @@ export default function ParamsPanel({ onCreated, onCancel, onPerDemand }) {
       });
       onCreated(model);
     } catch (err) {
-      setError(err.message);
+      setError(err);
       setBusy(false);
     }
   };
@@ -121,7 +122,7 @@ export default function ParamsPanel({ onCreated, onCancel, onPerDemand }) {
         )}
       </div>
 
-      {error && <div className="error">{error}</div>}
+      <ErrorNotice error={error} />
 
       <div className="fit-flow-foot">
         <span />

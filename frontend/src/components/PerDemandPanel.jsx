@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ErrorNotice } from "./StorageCap.jsx";
 import { createPerDemandModel, getDataset, listDatasets } from "../api.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import PercentField from "./PercentField.jsx";
@@ -74,7 +75,7 @@ export default function PerDemandPanel({ onCreated, onBack }) {
             ...(cols.batch ? { batch_column: cols.batch } : {}) };
       onCreated(await createPerDemandModel(name.trim(), body, nc / 100));
     } catch (err) {
-      setError(err.message);
+      setError(err);
       setBusy(false);
     }
   };
@@ -176,7 +177,7 @@ export default function PerDemandPanel({ onCreated, onBack }) {
           come with the model.
         </p>
       ))}
-      {error && <div className="error">{error}</div>}
+      <ErrorNotice error={error} />
 
       <div className="fit-flow-foot">
         <span />

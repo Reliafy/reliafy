@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ErrorNotice } from "./StorageCap.jsx";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider.jsx";
 import { getWorkspace, saveModel } from "../api.js";
@@ -37,7 +38,7 @@ export default function UnsavedFitReminder() {
       forgetUnsavedFit(scope);
       navigate(`/models/m/${model.id}`);
     } catch (err) {
-      setError(err.message);
+      setError(err);
       setSaving(false);
     }
   };
@@ -60,7 +61,7 @@ export default function UnsavedFitReminder() {
         )}
         <button type="button" className="link" onClick={dismiss} disabled={saving}>Dismiss</button>
       </div>
-      {error && <div className="error" style={{ flexBasis: "100%", margin: 0 }}>{error}</div>}
+      <ErrorNotice error={error} style={{ flexBasis: "100%", margin: 0 }} />
     </section>
   );
 }

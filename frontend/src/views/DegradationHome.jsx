@@ -8,6 +8,7 @@ import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
+import { StorageCapNotice } from "../components/StorageCap.jsx";
 
 const HELP = { guide: "degradation-modelling" };
 
@@ -58,6 +59,7 @@ export default function DegradationHome() {
       />
 
       {error && <div className="card error">{error}</div>}
+      <StorageCapNotice kind="degradation_models" one="degradation model" many="degradation models" refreshKey={models} />
 
       <SectionList
         rows={models}

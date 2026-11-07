@@ -967,7 +967,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       await onSaveRbd(savedRbdName);
       setConnectHint("Saved.");
     } catch (e) {
-      setSaveError(e.message);
+      setSaveError(e);
       setTab("builder");
       setModal("saverbd");
     }

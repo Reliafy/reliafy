@@ -25,6 +25,7 @@ import {
   GATE_LABELS, GATE_WORDS, addChild, emptyTree, eventSummary, gateSummary, indentRow, moveRow, nodeOf,
   outdentRow, outlineRows, plainUnit, removeRow, rename, setEventData, setGate, treeIssues,
 } from "../faultTree.js";
+import { ErrorNotice } from "../components/StorageCap.jsx";
 import "../components/RbdFaultTree.css";
 import "./FaultTree.css";
 
@@ -387,7 +388,7 @@ export default function FaultTreeEditor() {
       setDirty(false);
       if (copy) navigate(`${FAULT_TREES_PATH}/${saved.id}`, { replace: !readOnly });
     } catch (err) {
-      setError(err.message);
+      setError(err); // past the Free limit: the upgrade card
     } finally {
       setSaving(false);
     }
@@ -408,7 +409,7 @@ export default function FaultTreeEditor() {
       setRbdNotes(made);
       setDoc((d) => ({ ...d, rbd_id: d.read_only ? d.rbd_id : made.rbd_id }));
     } catch (err) {
-      setError(err.message);
+      setError(err); // the RBD limit refuses it too
     }
   };
 
@@ -497,7 +498,7 @@ export default function FaultTreeEditor() {
       {doc?.rbd_id && !rbdNotes && (
         <p className="hint">An RBD was made from this tree: <a href={`/systems/b/${doc.rbd_id}`} onClick={(e) => { e.preventDefault(); navigate(`/systems/b/${doc.rbd_id}`); }}>open it</a>. It doesn't follow later edits to the tree.</p>
       )}
-      {error && <div className="card error" role="alert">{error}</div>}
+      <ErrorNotice error={error} className="card error" role="alert" />
 
       <div className="ft-layout">
         <section className="card ft-outline" aria-label="The tree">

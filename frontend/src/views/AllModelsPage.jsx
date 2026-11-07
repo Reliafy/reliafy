@@ -5,6 +5,7 @@ import { TYPE_LABEL, TYPE_FILTERS, deleteAnyModel, loadAllModels } from "../allM
 import Chip from "../components/ui/Chip.jsx";
 import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
+import { StorageCapNotice } from "../components/StorageCap.jsx";
 import { useActivation } from "../components/FirstRun.jsx";
 import UnsavedFitReminder from "../components/UnsavedFitReminder.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
@@ -50,6 +51,8 @@ export default function AllModelsPage() {
       <UnsavedFitReminder />
 
       {error && <div className="card error">{error}</div>}
+      {/* The Free limit counts non-repairable models (the server's "models"). */}
+      <StorageCapNotice kind="models" one="saved model" many="saved models" refreshKey={rows} />
 
       <SectionList
         rows={rows}

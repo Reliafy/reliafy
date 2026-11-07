@@ -8,6 +8,7 @@ import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { FAULT_TREES_PATH, FAULT_TREES_TITLE } from "../navigation.js";
+import { StorageCapNotice } from "../components/StorageCap.jsx";
 
 const HELP = { guide: "build-a-fault-tree" };
 const SAMPLE_PATH = `${FAULT_TREES_PATH}/sample-fault-tree-quadcopter`;
@@ -92,6 +93,7 @@ export default function FaultTreeHome() {
       />
 
       {error && <div className="card error">{error}</div>}
+      <StorageCapNotice kind="fault_trees" one="saved fault tree" many="saved fault trees" refreshKey={trees} />
 
       {imported && (
         <div className="card">
