@@ -315,3 +315,19 @@ class TrackedFleet(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model_id: str
+
+
+class MaintainabilityPrediction(BaseModel):
+    """A saved maintainability prediction (backend/services/maintainability.py):
+    the parts list with each line's repair elements and failure rate, and the
+    results computed from them when saved (Mct, M_max, availability, the
+    Pareto and the roll-up by assembly)."""
+
+    id: str
+    name: str
+    owner_id: Optional[str] = None
+    updated_by: Optional[dict] = None
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+    inputs: dict = Field(default_factory=dict)
+    results: dict = Field(default_factory=dict)

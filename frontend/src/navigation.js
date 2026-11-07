@@ -110,6 +110,8 @@ export const ENTRIES = [
           { to: "/models/joint", label: "Condition and life" },
         ],
       },
+      // Maintainability prediction: Mct, M_max and availability from a parts list's repair times.
+      { id: "maintainability", label: "Maintainability prediction", to: "/maintainability" },
       {
         // System models opens on its first child, the RBDs (a diagram's page,
         // under /systems/b, is under it).
@@ -312,6 +314,7 @@ export const COLLECTION_PATHS = {
   datasets: "/data/",
   rbds: "/systems/b/",
   strategy_analyses: "/strategy/analyses/",
+  maintainability_predictions: "/maintainability/",
   fleets: "/forecasts/",
   tracked_fleets: "/risk/",
 };

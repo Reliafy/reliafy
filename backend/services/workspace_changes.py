@@ -68,6 +68,7 @@ COLLECTIONS = {
     "fleets": ("Failure forecast", "/forecasts/"),
     "tracked_fleets": ("Tracked fleet", "/risk/"),
     "strategy_analyses": ("Strategy analysis", "/strategy/analyses/"),
+    "maintainability_predictions": ("Maintainability prediction", "/maintainability/"),
 }
 
 # Where a position's RCM opens: the Explorer's RCM tab, on that position.

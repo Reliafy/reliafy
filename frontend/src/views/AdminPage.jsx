@@ -33,6 +33,7 @@ const LABELS = {
   tracked_fleets: "Tracked fleets",
   strategy_analyses: "Strategy analyses",
   fleets: "Fleet forecasts",
+  maintainability_predictions: "Maintainability predictions",
 };
 
 // One range drives the whole page. Traffic and account-level usage keep 90
