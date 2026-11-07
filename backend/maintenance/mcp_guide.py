@@ -146,7 +146,7 @@ fails), fixed_interval (replace or restore on a schedule), failure_finding (chec
 (rtf_basis random: failures don't depend on age; uneconomic: prevention doesn't pay), redesign, accept. \
 evidence {type, id}: degradation_model for on_condition, strategy_analysis for fixed_interval, failure_finding \
 and rtf uneconomic, model (a non-repairable model) for rtf random; the result's status says whether it supports \
-the decision (supported, contradicted, inconclusive, unevidenced, stale) and why. Any decision can instead link \
+the decision (supported, contradicted, inconclusive, unevidenced, stale; partly for a combination) and why. Any decision can instead link \
 a report (type report: a saved report's id) or a function's notes and rationale, where the working behind its \
 performance standard is written (type working: the function's id; it needs notes written): linked, not checked, so its status is linked \
 (evidence_kind report or working), or stale once it has gone. decide replaces the whole \
@@ -262,11 +262,18 @@ say so in the decision's notes. maintenance failure_modes.add_task adds a task o
 maintenance tasks.link task_id failure_mode_id, or decide with task_id so an existing task is the decision's. A \
 task on a position may serve modes on it or on positions inside it. The task owns its interval: while it \
 serves one mode alone, decide changes it; once shared, change it with maintenance tasks.update (for every mode \
-it serves) or give the mode a task of its own. The evidence linked on a decision applies to its own (first) \
-task. Retiring a mode retires the tasks serving it alone and unlinks shared ones (unlink takes one off by \
+it serves) or give the mode a task of its own. A combination is evidenced when each scheduled member is: \
+the decision's evidence counts for every member it fits (a degradation model for on_condition, an \
+optimal-replacement analysis for fixed_interval; a report or function notes for any), and a member may link \
+its own, e.g. {outcomes: [{outcome: 'on_condition', ..., evidence: {type: 'working', id: '<function id>'}}, \
+{outcome: 'fixed_interval', ..., evidence: {type: 'strategy_analysis', id: '<analysis id>'}}]}. The status is \
+then supported (or linked) for all, partly ("Partly evidenced: the fixed-interval task has none"), unevidenced, \
+or the worst member's (contradicted, stale, inconclusive), and decision.outcomes carries each member's own check. \
+Retiring a mode retires the tasks serving it alone and unlinks shared ones (unlink takes one off by \
 hand); moving a mode takes its own tasks with it, and a shared task stays, still serving the mode while the \
-new position is inside the task's. A worksheet row that repeats a failure mode with another task adds that \
-task; a task named on several rows (or on the position already) is one task, linked.
+new position is inside the task's. A worksheet row that repeats a failure mode with another scheduled outcome \
+(or a redesign) joins the decision as a combination, in row order; one with the same outcome adds another task; \
+a task named on several rows (or on the position already) is one task, linked.
 - Failure modes without RCM: maintenance failure_modes.add on the position; a task links to one with \
 failure_mode_id (or several with failure_mode_ids).
 - Tasks done before they were tracked here: maintenance tasks.set_last_done, so the next due date counts from \

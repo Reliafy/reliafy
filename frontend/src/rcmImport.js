@@ -27,6 +27,7 @@ export function importSummary(counts) {
     c.failures ? n(c.failures, "functional failure") : null,
     c.modes ? n(c.modes, "failure mode") : null,
     c.tasks ? n(c.tasks, "task") : null,
+    c.combinations ? n(c.combinations, "combination of tasks", "combinations of tasks") : null,
     c.links ? n(c.links, "link between functional failures", "links between functional failures") : null,
   ].filter(Boolean);
   const there = [
@@ -86,7 +87,8 @@ export function causedBy(fail) {
 // no functional failure come first in their position's rows, with those cells
 // blank. A failure mode with several tasks gets one row per task: the first
 // carries everything, the others repeat the mode with that task and its
-// interval (the import reads a repeated mode's row as another task for it).
+// interval (the import reads a repeated mode's row as another task for it,
+// or, with another outcome, as the next member of a combination of tasks).
 // A function with a list of standards gets a row per standard first (the
 // function and the standard alone), and each failure's rows carry the
 // standard it breaches, if any; a function with its one text (no list) is
@@ -139,9 +141,17 @@ export function positionRcmRows(worksheet) {
       "", ...BLANK_FMEA, OUTCOME_LABEL[t.outcome] || OUTCOME_LABEL[m.decision?.outcome] || "", "", t.text || t.name || "",
       t.interval ?? "", t.interval ? t.unit || "" : "", "", "",
     ];
+    // A combination of tasks: a row per further member, in its order (a redesign
+    // with no task too), so the import builds the same combination; then any
+    // task outside the decision.
     const modeRows = (fn, fail, m) => {
       rows.push(modeRow(fn, fail, m));
-      for (const t of (m?.decision?.tasks || []).slice(1)) rows.push(taskRow(fn, fail, m, t));
+      const members = m?.decision?.outcomes || [];
+      for (const o of members.slice(1)) {
+        rows.push(taskRow(fn, fail, m, { outcome: o.outcome, text: o.task || "", interval: o.interval, unit: o.interval_unit }));
+      }
+      const inMembers = new Set(members.map((o) => o.task_id).filter(Boolean));
+      for (const t of (m?.decision?.tasks || []).slice(1)) if (!inMembers.has(t.id)) rows.push(taskRow(fn, fail, m, t));
     };
     for (const m of p.unassigned || []) modeRows(null, null, m);
     for (const fn of p.functions || []) {

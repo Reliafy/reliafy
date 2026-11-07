@@ -201,3 +201,133 @@ def test_advice_reads_every_member():
     assert "Hidden consequences usually take" in rcm_decisions.advice("hidden", "on_condition",
                                                                        ["on_condition", "fixed_interval"])
     assert rcm_decisions.advice("safety", "on_condition") is None
+
+
+# ---- a worksheet: repeated rows build the combination, the export writes it back ------------
+
+def _sheet_csv(rows) -> bytes:
+    import csv
+    import io
+
+    buf = io.StringIO()
+    csv.writer(buf).writerows(rows)
+    return buf.getvalue().encode()
+
+
+SHEET_HEADER = ["Function", "Functional failure", "Failure mode", "Consequence", "Decision", "Task", "Interval",
+                "Interval unit"]
+
+
+def _import(m, pid, rows, dry_run=False):
+    from backend.maintenance import rcm_sheet
+    from backend.services import excel
+
+    table = excel.read_csv(_sheet_csv([SHEET_HEADER, *rows]), "rcm.csv")
+    return rcm_sheet.run(m, pid, table, rcm_sheet.default_options(table), dry_run=dry_run)
+
+
+def _decisions(m, pid):
+    """Each mode's decision as a comparable shape: outcomes (or the one), with
+    each member's task, interval and unit; and the tasks outside it."""
+    out = {}
+    for fm in m.position(pid)["failure_modes"]:
+        d = m.rcm_mode(fm["id"])["decision"] or {}
+        members = d.get("outcomes") or ([{k: d.get(k) for k in ("outcome", "task", "interval", "interval_unit")}]
+                                        if d else [])
+        mine = {o.get("task_id") for o in d.get("outcomes") or []} | {d.get("task_id")}
+        out[fm["text"]] = (
+            m.rcm_mode(fm["id"])["consequence"],
+            [(o["outcome"], o.get("task"), o.get("interval"), o.get("interval_unit")) for o in members],
+            sorted((t["name"], t["outcome"]) for t in d.get("tasks") or [] if t["id"] not in mine),
+        )
+    return out
+
+
+def test_repeated_rows_with_other_outcomes_build_a_combination_in_row_order(m):
+    pid = m.create_position("Pump")["id"]
+    rows = [
+        ["Pump water", "No flow", "Bearing worn", "Safety", "On-condition", "Vibration check", "1", "months"],
+        ["", "", "Bearing worn", "", "Fixed interval", "Replace the bearing", "24", "months"],
+        # The same outcome again: another task outside the decision, as before.
+        ["", "", "Bearing worn", "", "On-condition", "Oil sample", "3", "months"],
+        ["", "", "Seal leaks", "Environmental", "Failure finding", "Test the leak alarm", "6", "months"],
+        ["", "", "Seal leaks", "", "Redesign", "", "", ""],
+        # rtf can't join: the row passes over (a repeat), as before.
+        ["", "", "Impeller wear", "Operational", "Fixed interval", "Swap impeller", "12", "months"],
+        ["", "", "Impeller wear", "", "Run to failure", "", "", ""],
+    ]
+    preview = _import(m, pid, rows, dry_run=True)
+    assert preview["ok"], preview["errors"]
+    assert preview["counts"]["combinations"] == 2 and preview["counts"]["tasks"] == 5
+    out = _import(m, pid, rows)
+    assert out["ok"], out["errors"]
+    got = _decisions(m, pid)
+    assert got["Bearing worn"] == ("safety", [("on_condition", "Vibration check", 1, "months"),
+                                              ("fixed_interval", "Replace the bearing", 24, "months")],
+                                   [("Oil sample", "on_condition")])
+    assert got["Seal leaks"] == ("environmental", [("failure_finding", "Test the leak alarm", 6, "months"),
+                                                   ("redesign", None, None, None)], [])
+    assert got["Impeller wear"][1] == [("fixed_interval", "Swap impeller", 12, "months")]
+    _rebuilds_the_same(m)
+
+
+def test_a_combination_exported_and_imported_gives_the_same_decisions(m):
+    from backend.maintenance import fmea_sheet, rcm_sheet
+    from backend.services import excel
+
+    pump = m.create_position("Pump")
+    fn = m.add_function(pump["id"], "Pump water")
+    ff = m.add_functional_failure(fn["id"], "No flow")
+    bearing = m.add_failure_mode(pump["id"], "Bearing worn", functional_failure_id=ff["id"])
+    seal = m.add_failure_mode(pump["id"], "Seal leaks", functional_failure_id=ff["id"])
+    alarm = m.add_failure_mode(pump["id"], "Leak alarm dead", functional_failure_id=ff["id"])
+    plain = m.add_failure_mode(pump["id"], "Impeller wear", functional_failure_id=ff["id"])
+    m.decide_failure_mode(bearing["id"], "safety", COMBO)
+    m.add_mode_task(bearing["id"], "Oil sample", 3, "months", "on_condition")  # outside the decision
+    m.decide_failure_mode(seal["id"], "environmental", {"outcomes": [
+        {"outcome": "redesign"},
+        {"outcome": "on_condition", "task": "Daily walk-round", "interval": 1, "interval_unit": "days"}]})
+    m.decide_failure_mode(alarm["id"], "hidden", {"outcomes": [
+        {"outcome": "failure_finding", "task": "Test the alarm", "interval": 6, "interval_unit": "months"},
+        {"outcome": "on_condition", "task": "Check the sensor", "interval": 1, "interval_unit": "months"},
+        {"outcome": "fixed_interval", "task": "Replace the sensor", "interval": 5, "interval_unit": "years"}]})
+    m.decide_failure_mode(plain["id"], "operational", {"outcome": "fixed_interval", "task": "Swap impeller",
+                                                       "interval": 12, "interval_unit": "months"})
+    rows = fmea_sheet.rows(m.rcm_worksheet(pump["id"], "this"))
+    col = {h: i for i, h in enumerate(rows[0])}
+    # One row per member, in its order (the redesign too), then the task outside the decision.
+    assert [(r[col["Failure mode"]], r[col["Decision"]], r[col["Task"]]) for r in rows[1:]] == [
+        ("Bearing worn", "On-condition (monitor)", "Vibration check"),
+        ("Bearing worn", "Fixed-interval replacement", "Replace the bearing"),
+        ("Bearing worn", "On-condition (monitor)", "Oil sample"),
+        ("Seal leaks", "On-condition (monitor)", "Daily walk-round"),
+        ("Seal leaks", "Redesign", ""),
+        ("Leak alarm dead", "Failure-finding task", "Test the alarm"),
+        ("Leak alarm dead", "On-condition (monitor)", "Check the sensor"),
+        ("Leak alarm dead", "Fixed-interval replacement", "Replace the sensor"),
+        ("Impeller wear", "Fixed-interval replacement", "Swap impeller"),
+    ]
+    table = excel.read_csv(_sheet_csv(rows), "Pump FMECA.csv")
+    fresh = m.create_position("Pump 2")["id"]
+    out = rcm_sheet.run(m, fresh, table, rcm_sheet.default_options(table), dry_run=False)
+    assert out["ok"], out["errors"]
+    assert _decisions(m, fresh) == _decisions(m, pump["id"])
+    # Onto the same position: nothing to add.
+    events = m.s.event_count(ORG)
+    assert rcm_sheet.run(m, pump["id"], table, rcm_sheet.default_options(table), dry_run=False)["ok"]
+    assert m.s.event_count(ORG) == events
+    _rebuilds_the_same(m)
+
+
+def test_the_tabs_csv_layout_reads_back_as_the_combination(m):
+    """The RCM tab's Export CSV (frontend/src/rcmImport.js positionRcmRows, its
+    test writes these rows): short outcome labels, a member per row."""
+    pid = m.create_position("Pump")["id"]
+    rows = [
+        ["Pump water", "No flow", "Bearing worn", "Safety", "On-condition", "Vibration check", "1", "months"],
+        ["Pump water", "No flow", "Bearing worn", "", "Fixed-interval", "Replace the bearing", "24", "months"],
+    ]
+    assert _import(m, pid, rows)["ok"]
+    [d] = [m.rcm_mode(fm["id"])["decision"] for fm in m.position(pid)["failure_modes"]]
+    assert [(o["outcome"], o["task"]) for o in d["outcomes"]] == [("on_condition", "Vibration check"),
+                                                                  ("fixed_interval", "Replace the bearing")]

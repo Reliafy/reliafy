@@ -18,7 +18,11 @@
   `{outcome, task, interval, interval_unit, task_id}` (a regular inspection
   plus a fixed-time replacement, say), in place of `outcome`, `task` and
   `interval`. Each scheduled entry gets a task of its own. Reads add
-  `decision.outcomes`. A single-outcome decision works as before.
+  `decision.outcomes`. A single-outcome decision works as before. Each entry
+  may link its own `evidence` (`{type, id}`); the decision's evidence counts
+  for every entry it fits. The evidence check covers every entry: `status`
+  `partly` when some tasks have evidence and some don't, and each entry of
+  `decision.outcomes` carries its own check.
 
 - **Delete an RCM row with everything under it**: `maintenance
   failure_modes.remove_function`, `remove_standard`,

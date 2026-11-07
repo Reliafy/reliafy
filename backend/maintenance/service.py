@@ -1351,7 +1351,9 @@ def _task_updated(s: GraphStore, org: str, p: dict) -> None:
 # The edge id comes from its ends, so linking twice or replaying is the same edge.
 
 def _failure_mode_outcomes_set(s: GraphStore, org: str, p: dict) -> None:
+    # A member's own evidence ({type, id}, optional: added Nov 2026) rides along when given.
     s.patch_node(org, p["id"], {"outcomes": [{"outcome": o["outcome"], "task_id": o.get("task_id")}
+                                             | ({"evidence": o["evidence"]} if o.get("evidence") else {})
                                              for o in p.get("outcomes") or []] or None})
 
 
@@ -2973,7 +2975,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             for fm in plan_row[4]:
                 if fm.get("outcomes"):
                     self._emit("failure_mode.outcomes_set", {"id": copied_modes[fm["id"]], "outcomes": [
-                        {"outcome": o["outcome"], "task_id": task_copies.get(o.get("task_id"))} for o in fm["outcomes"]]})
+                        {"outcome": o["outcome"], "task_id": task_copies.get(o.get("task_id"))}
+                        | ({"evidence": o["evidence"]} if o.get("evidence") else {}) for o in fm["outcomes"]]})
         skipped = self._copy_links(ff_ids, parent_id or None)
         return self.position(new) | ({"links_skipped": skipped} if skipped else {})
 
@@ -4346,8 +4349,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             cleaned = cleaned or {}
             task_id = task_id or cleaned.pop("task_id", None)
             members = cleaned.pop("outcomes", None)
-            linked = cleaned.get("evidence")
-            if linked and linked["type"] == "working" and linked != (fm.get("evidence") or None):
+            # The decision's evidence and each member's own (a combination's).
+            had = [fm.get("evidence")] + [o.get("evidence") for o in fm.get("outcomes") or []]
+            for linked in [cleaned.get("evidence")] + [mm.get("evidence") for mm in members or []]:
+                if not linked or linked["type"] != "working" or linked in had:
+                    continue
                 # A newly linked working is a function on this tree with notes and rationale written.
                 fn = self.s.node(self.org, linked["id"], "Function")
                 if fn is None or fn.get("removed"):
@@ -4525,7 +4531,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             task_of[mm["outcome"]] = tid
         if sched and fm.get("task_id") != task_of[sched[0]["outcome"]]:
             self._emit("failure_mode.analysed", {"id": mode_id, "changes": {"task_id": task_of[sched[0]["outcome"]]}})
-        now = [{"outcome": mm["outcome"], "task_id": task_of.get(mm["outcome"])} for mm in members] if combined else []
+        # Each member with its task, and its own evidence where it has some (checked for it alone).
+        now = [{"outcome": mm["outcome"], "task_id": task_of.get(mm["outcome"])}
+               | ({"evidence": mm["evidence"]} if mm.get("evidence") else {}) for mm in members] if combined else []
         if now != (fm.get("outcomes") or []):
             self._emit("failure_mode.outcomes_set", {"id": mode_id, "outcomes": now})
         # The old decision's tasks no member kept; every task, when the decision schedules none.
@@ -5307,14 +5315,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def _members_of(fm: dict, tasks: list[dict]) -> list[dict]:
         """A combination's members as reads show them: each outcome with its task
         (task, interval, interval_unit, task_id), task_id null when its task has
-        gone (retired or unlinked) or it schedules none (a redesign)."""
+        gone (retired or unlinked) or it schedules none (a redesign); evidence:
+        its own, when it has some (else the decision's stands for it)."""
         live = {t["id"]: t for t in tasks}
         out = []
         for o in fm.get("outcomes") or []:
             t = live.get(o.get("task_id"))
             out.append({"outcome": o["outcome"], "task_id": t["id"] if t else None}
                        | ({"task": Maintenance._task_text(t), "interval": t.get("interval"),
-                           "interval_unit": t.get("unit")} if t else {}))
+                           "interval_unit": t.get("unit")} if t else {})
+                       | ({"evidence": dict(o["evidence"])} if o.get("evidence") else {}))
         return out
 
     @staticmethod
@@ -5343,6 +5353,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if decision and (decision.get("evidence") or {}).get("type") == "working":
             # A working is on the graph: the read hands it to the evidence check (rcm_decisions).
             decision["working"] = self._working_ref(decision["evidence"].get("id"))
+        for member in (decision or {}).get("outcomes") or []:
+            if (member.get("evidence") or {}).get("type") == "working":
+                member["working"] = self._working_ref(member["evidence"].get("id"))
         return {
             "id": fm["id"], "text": fm["text"], "effects": fm.get("effects") or "", "notes": fm.get("notes") or "",
             "consequence": fm.get("consequence"), "decision": decision,

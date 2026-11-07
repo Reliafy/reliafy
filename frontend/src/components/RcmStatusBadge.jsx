@@ -13,6 +13,8 @@ const STATUS = {
   unevidenced: { label: "Not linked", tone: "neutral" },
   stale: { label: "Stale link", tone: "neutral" },
   linked: { label: "Linked", tone: "neutral" },
+  // A combination of tasks with evidence for some of its tasks, not all: a nudge, not a fault.
+  partly: { label: "Partly evidenced", tone: "neutral" },
 };
 
 // kind: what's linked (the read's evidence_kind), naming a linked-only one.

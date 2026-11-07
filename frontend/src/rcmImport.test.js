@@ -140,6 +140,34 @@ test("a failure mode with several tasks is one row per task, the first carrying 
   assert.equal(rows[2].length, EXPORT_HEADER.length);
 });
 
+test("a combination of tasks is one row per member in its order, a redesign too, then tasks outside the decision", () => {
+  const t = (id, name, interval, unit, outcome) => ({ id, name, text: name, interval, unit, outcome, shared_with: 0 });
+  const rows = positionRcmRows({ positions: [{ id: "p", name: "Pump", depth: 0, unassigned: [], functions: [
+    { id: "f", text: "Pump water", failures: [{ id: "x", text: "No flow", modes: [
+      { id: "m", text: "Bearing worn", consequence: "safety", notes: "",
+        decision: { outcome: "on_condition", task: "Vibration check", interval: 1, interval_unit: "months", task_id: "t1", status: "partly",
+          // The read lists tasks own first, then others in no member order: the export follows the members.
+          tasks: [t("t1", "Vibration check", 1, "months", "on_condition"), t("t3", "Oil sample", 3, "months", "on_condition"),
+            t("t2", "Replace the bearing", 24, "months", "fixed_interval")],
+          outcomes: [
+            { outcome: "on_condition", task: "Vibration check", interval: 1, interval_unit: "months", task_id: "t1" },
+            { outcome: "fixed_interval", task: "Replace the bearing", interval: 24, interval_unit: "months", task_id: "t2" },
+            { outcome: "redesign", task_id: null },
+          ] } },
+    ] }] },
+  ] }] });
+  // These rows are what backend/tests/test_maintenance_rcm_combination.py imports back.
+  assert.deepEqual(rows.slice(1).map((r) => cells(r, "Failure mode", "Consequence", "Decision", "Task", "Interval", "Interval unit")), [
+    ["Bearing worn", "Safety", "On-condition", "Vibration check", 1, "months"],
+    ["Bearing worn", "", "Fixed-interval", "Replace the bearing", 24, "months"],
+    ["Bearing worn", "", "Redesign", "", "", ""],
+    ["Bearing worn", "", "On-condition", "Oil sample", 3, "months"],
+  ]);
+  assert.deepEqual(cells(rows[1], "Evidence check"), ["Partly evidenced"]);
+  assert.deepEqual(importSummary({ modes: 1, tasks: 3, combinations: 1 }).adds,
+    ["1 failure mode", "3 tasks", "1 combination of tasks"]);
+});
+
 test("the FME(C)A's columns: scores, effects, the action, the criticality figures; a mode directly under a function has no functional failure", () => {
   const m = { id: "m", text: "Bearing seizes", effects: "Motor stops", consequence: "operational", cause: "Dust", effect_local: "Shaft locks",
     effect_next: "Thrust lost", detection_method: "Vibration", severity: 9, occurrence: 4, detection: 6, rpn: 216, ap: "H",

@@ -324,8 +324,8 @@ FAILURE_MODES: Table = {
         checked; or report / working (a function's id: its notes and rationale): linked, not checked} ({} clears it; values:
         guide topic plan); adds, changes or retires its task (task_id: an existing one is the decision's).
         A combination of tasks (an inspection plus a fixed-time replacement): decision.outcomes [{outcome, task,
-        interval, interval_unit, task_id?}, ...], each scheduled one with a task of its own. Returns it with the
-        evidence check and any advice to relay."""),
+        interval, interval_unit, task_id?, evidence?}, ...], each scheduled one with a task of its own and checked
+        against its own evidence, else the decision's. Returns it with the evidence check and any advice to relay."""),
     "add_task": ("failure_mode_id name interval", "unit outcome instructions", """Another task for the mode
         (an inspection plus a hard-time replacement); its decision's stays first."""),
     "assign": ("failure_mode_id", "functional_failure_id function_id", "Put it under one of its position's "
@@ -1399,7 +1399,8 @@ def register() -> None:
                                   decision: Annotated[dict[str, Any] | None, Field(description=(
                                       "decide: {outcome, rtf_basis, task, interval, interval_unit, notes, "
                                       "evidence}; a combination of tasks: outcomes [{outcome, task, interval, "
-                                      "interval_unit, task_id?}, ...] instead of outcome, task and interval."))] = None,
+                                      "interval_unit, task_id?, evidence?}, ...] instead of outcome, task and "
+                                      "interval (a member's evidence, else the decision's, is checked for it)."))] = None,
                                   cause_id: str | None = None, task_id: str | None = None,
                                   name: str | None = None, interval: float | None = None,
                                   unit: str | None = None, outcome: str | None = None,
