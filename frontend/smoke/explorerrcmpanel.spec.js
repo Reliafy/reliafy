@@ -344,13 +344,14 @@ test("one order at every level: its notes under the title and chips, what's insi
     // The FME(C)A's groups (scores, criticality) are on its own tab, not this one; the mode's
     // notes and rationale (the same section at every level) are above all of it, below the chips.
     // Its tasks come after the decision that drives them.
-    expect(await blocks(page)).toEqual(["own", "Decision", "Tasks", "foot"]);
+    expect(await blocks(page)).toEqual(["own", "Decision", "Tasks"]);
     expect(await notesFirst(page)).toBe(true);
     // The worksheet's order inside: effects, consequence, then the decision; where it sits last.
     const labels = await panel(page).locator(".rw-pbody .field-label").allInnerTexts();
     const at = (t) => labels.findIndex((x) => x.startsWith(t));
     expect(at("Failure effects")).toBeLessThan(at("Consequence"));
-    expect(at("Consequence")).toBeLessThan(at("Under"));
+    // No "Under" field: where a mode sits is the breadcrumb, moved by drag or the row menu.
+    expect(at("Under")).toBe(-1);
     expect(await overflow(page)).toBe(0);
   }
   await expectHealthy(page, problems, { label: "rcm panel order" });
