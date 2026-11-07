@@ -1166,6 +1166,7 @@ def seed_samples(db) -> None:
             logger.warning("Failed to seed sample model %r: %s", spec["id"], exc)
 
     _seed_strategy_analyses(db)
+    _seed_maintainability_predictions(db)
     _seed_fleet(db)
 
     for spec in SAMPLE_RBDS:
@@ -1401,6 +1402,61 @@ def _seed_strategy_analyses(db) -> None:
             logger.warning("Failed to seed sample analysis %r: %s", spec["id"], exc)
 
 
+def _seed_maintainability_predictions(db) -> None:
+    """The sample maintainability prediction: the sample survey quadcopter's
+    parts list (backend/maintenance/templates.py, SAMPLE_PRODUCT_BOM) with
+    invented repair times and failure rates. It stands alone (a sample product
+    is added per workspace, so it links no product id)."""
+    from backend.schema import MaintainabilityPrediction
+    from backend.services import maintainability
+
+    spec = {
+        "id": "sample-maintainability-quadcopter",
+        "name": "Survey quadcopter — maintainability prediction (sample)",
+        "inputs": SAMPLE_MAINTAINABILITY_INPUTS,
+    }
+    try:
+        if db.maintainability_predictions.find_one({"_id": spec["id"]}) is not None:
+            return
+        results = maintainability.compute(spec["inputs"])
+        doc = MaintainabilityPrediction(id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER,
+                                        inputs=spec["inputs"], results=results)
+        db.maintainability_predictions.insert_one(to_doc(doc))
+        logger.info("Seeded sample maintainability prediction %r.", spec["id"])
+    except Exception as exc:  # pragma: no cover - defensive; never block boot
+        logger.warning("Failed to seed sample maintainability prediction %r: %s", spec["id"], exc)
+
+
+# The sample quadcopter's lines: the bill of materials' lowest-level parts with
+# the assembly each sits in, a guessed failure rate per million flight hours,
+# and repair times in minutes split into the handbook's elements, with the
+# time 95% of that line's repairs are done by. All invented.
+def _mline(ref, name, assembly, quantity, rate, isolation, access, replace, restore, checkout, maximum):
+    return {"ref": ref, "name": name, "assembly": assembly, "quantity": quantity, "failure_rate": rate,
+            "elements": {"isolation": isolation, "access": access, "replace": replace, "restore": restore,
+                         "checkout": checkout}, "maximum": maximum}
+
+
+SAMPLE_MAINTAINABILITY_INPUTS = {
+    "unit": "minutes",
+    "failure_rate_unit": "per_million_hours",
+    "percentile": 0.95,
+    "lines": [
+        _mline("SQ-AF", "Airframe kit, carbon arms", "Airframe", 1, 40, 10, 20, 45, 25, 15, 220),
+        _mline("SQ-M2210", "Brushless motor 2210", "Propulsion", 4, 180, 10, 5, 15, 5, 10, 90),
+        _mline("SQ-ESC30", "Speed controller 30 A", "Propulsion", 4, 120, 15, 10, 15, 10, 10, 120),
+        _mline("SQ-P1045", "Propeller 10x4.5", "Propulsion", 4, 600, 2, 1, 3, 1, 3, 20),
+        _mline("SQ-FC7", "Flight controller", "Flight control", 1, 90, 20, 10, 10, 10, 30, 160),
+        _mline("SQ-IMU9", "Inertial measurement unit", "Flight control", 2, 60, 25, 10, 10, 10, 25, 160),
+        _mline("SQ-GPS8", "GPS module", "Flight control", 1, 70, 15, 5, 5, 5, 15, 90),
+        _mline("SQ-BP6S", "Battery pack 6S 10 Ah", "Power", 1, 250, 5, 2, 3, 2, 5, 35),
+        _mline("SQ-BMS6", "Battery management board", "Power", 1, 80, 20, 15, 10, 15, 10, 140),
+        _mline("SQ-RL24", "Telemetry radio 2.4 GHz", "Comms", 1, 100, 15, 5, 5, 5, 15, 90),
+        _mline("SQ-GB2", "Camera gimbal, 2 axis", "Payload gimbal", 1, 150, 15, 10, 20, 10, 15, 140),
+    ],
+}
+
+
 # ---------------------------------------------------------------------------
 # Per-user hiding ("delete" a sample for me only)
 # ---------------------------------------------------------------------------
@@ -1424,6 +1480,7 @@ def hide_sample(db, uid: str, sample_id: str) -> None:
 _SAMPLE_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models", "tracked_items",
     "tracked_fleets", "strategy_analyses", "fleets",
+    "maintainability_predictions",
 )
 
 

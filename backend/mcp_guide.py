@@ -318,4 +318,31 @@ resets, how to upgrade — and don't retry. Calls refused that way aren't counte
 parameters with change model_save; run a diagram's simulation locally with analyse rbd_export_python.
 - get kind upgrade_link gives the user a Stripe payment link to open themselves; nothing is charged until they complete \
 it. Never say an upgrade has happened."""),
+
+    "maintainability": ("Maintainability prediction: Mct, M_max and availability from a parts list's repair times.", """\
+Maintainability prediction (free on every plan).
+- What it answers: how long corrective maintenance takes on a system, from its parts list. For each line give \
+its repair time by element, in minutes or hours (unit): isolation (finding the fault), access (getting to it), \
+replace (remove and replace), restore (reassembling) and checkout (proving it works); or just mttr when it \
+isn't split. quantity is how many of that line are in one system.
+- Weights: each line counts by how often it's the one repaired, its failure_rate × quantity. Give failure_rate \
+on every line (failure_rate_unit: per_million_hours by default, or per_hour), or product_id with a saved \
+reliability prediction for that product (its rates are taken where a line's ref or name matches). With any line \
+still without a rate, every line counts the same; the result's weights.source and weights.note say which was \
+used — relay them.
+- Results: mct, the mean corrective maintenance time Σ(λ·q·MTTR)/Σ(λ·q); elements, where the time goes; \
+pareto, each line's share of the maintenance time (λ·q·MTTR/Σ), largest first with cumulative; assemblies, the \
+roll-up for lines whose assembly is given ('Propulsion › Motor 1' counts under Propulsion and under Motor 1); \
+availability, the inherent availability MTBF/(MTBF+Mct) when the rates give a system MTBF (1/Σλ·q) or mtbf \
+(hours) is given; m_max, the time by which the percentile's share of repairs (0.95 by default) is done.
+- M_max needs a spread on the lines: sigma (the lognormal sigma of ln t; repair times are usually 0.3 to 1.0), \
+or maximum, the time that share of the line's repairs is done by (e.g. twice its MTTR). Each line's repair time \
+is taken as lognormal with its MTTR as the mean and that spread; the system's repair time is the mix of the \
+lines' weighted by λ·q, and m_max is that mix's percentile. A line with no spread counts as always taking its \
+MTTR; with no spread anywhere m_max is null and m_max_note says why. Say which lines lack one.
+- Always quote the unit (results are in the lines' unit; mct_hours and mtbf_hours are in hours). Never invent \
+repair times or failure rates: ask, or use the product's saved reliability prediction.
+- analyse maintainability saves nothing; change maintainability_save keeps it (name, the same arguments), \
+change maintainability_update renames it or gives it new lines, change maintainability_delete removes it; get \
+kind maintainability_prediction and list kind maintainability_predictions read them (samples included)."""),
 }

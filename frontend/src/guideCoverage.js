@@ -20,6 +20,7 @@ export const GUIDE_COVERAGE = [
   { feature: "Degradation models", href: "/models/degradation" },
   { feature: "Condition and life (remaining life from readings)", href: "/models/joint" },
   { feature: "Per-demand (one-shot) models", href: "/models/new?mode=perdemand" },
+  { feature: "Maintainability prediction", href: "/maintainability" },
   // Data.
   { feature: "Data (datasets)", href: "/data" },
   // System modelling.

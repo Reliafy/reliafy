@@ -1,0 +1,80 @@
+/* Maintainability prediction: the lines table, the results' bars. */
+
+/* A wide table scrolls on its own (as .maint-scroll in Maintenance.css, which these pages don't load). */
+.mp-lines.maint-scroll, .mp-result .maint-scroll { overflow-x: auto; position: relative; max-width: 100%; }
+
+.mp-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--sp-3) var(--sp-4);
+  margin: var(--sp-3) 0;
+}
+
+.mp-start {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
+  align-items: center;
+  margin-bottom: var(--sp-3);
+}
+.mp-start .sel-trigger,
+.mp-start .select { min-width: 220px; }
+
+.mp-lines { margin-top: var(--sp-2); }
+.mp-lines table { min-width: 980px; }
+.mp-lines th { white-space: nowrap; }
+.mp-lines th.mp-el { font-weight: 500; color: var(--muted); }
+.mp-lines td { padding: 4px 6px; vertical-align: middle; }
+.mp-lines input[type="text"] {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: var(--fs-13);
+}
+.mp-lines td.mp-text input { min-width: 150px; }
+.mp-lines td.mp-cell input { width: 74px; text-align: right; font-variant-numeric: tabular-nums; }
+.mp-lines td.mp-cell.mp-qty input { width: 54px; }
+.mp-lines tr.mp-row-total td { color: var(--muted); font-size: var(--fs-13); }
+.mp-lines td.mp-sum { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mp-lines .mp-remove { padding: 2px 6px; line-height: 1; }
+.mp-add { margin-top: var(--sp-2); display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
+
+.mp-compute {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
+  align-items: center;
+  margin-top: var(--sp-4);
+}
+.mp-compute .compute-why { color: var(--muted); font-size: var(--fs-13); }
+
+.mp-result { margin-top: var(--sp-4); }
+.mp-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-3) 0 0; }
+.mp-section { margin-top: var(--sp-5); }
+.mp-section h3 { margin: 0 0 4px; font-size: var(--fs-15); }
+.mp-section .muted-line { margin: 0 0 var(--sp-2); }
+
+.mp-table th.mp-num, .mp-table td.mp-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mp-table th.mp-barcol, .mp-table td.mp-barcol { width: 28%; min-width: 120px; }
+
+.mp-bar {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--surf-2);
+  overflow: hidden;
+}
+.mp-bar-fill { display: block; height: 100%; background: var(--acc); border-radius: 5px; }
+.mp-bar-muted .mp-bar-fill { background: var(--muted); }
+
+.mp-paste textarea {
+  width: 100%;
+  min-height: 160px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--fs-13);
+}
+
+@media (max-width: 720px) {
+  .mp-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mp-table th.mp-barcol, .mp-table td.mp-barcol { min-width: 80px; }
+}

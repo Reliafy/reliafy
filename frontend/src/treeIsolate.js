@@ -49,3 +49,53 @@ export function isolateOpen(display, open, key, depth) {
   }
   return next;
 }
+
+// ---- "Isolate incomplete rows" (the RCM tab's rows menu) -------------------------
+// Opens the way to the RCM work still to finish under a row, and closes the
+// rest: a function with no functional failure, a functional failure with no
+// failure mode or cause, a failure mode still without a decision, and the two
+// holding rows (modes with no functional failure yet, and modes not under one).
+// A function's functional failures sit under it directly or under a standard.
+const hasFailure = (display, r) => r.kids.some((k) => {
+  const c = display.rows.get(k);
+  return c?.type === "fail" || c?.type === "nofail" || ((c?.type === "std" || c?.type === "nostd") && c.kids.some((f) => display.rows.get(f)?.type === "fail"));
+});
+export function isIncompleteRcm(display, r) {
+  if (!r) return false;
+  if (r.type === "fn") return !hasFailure(display, r);
+  if (r.type === "fail") return !r.kids.length;
+  if (r.type === "mode") return !r.ref.decision;
+  return r.type === "nofail" || r.type === "unassigned";
+}
+
+// The rows under `key` (and it) that are incomplete, in tree order.
+export function incompleteRows(display, key) {
+  const out = [];
+  const stack = [key];
+  while (stack.length) {
+    const r = display?.rows.get(stack.pop());
+    if (!r) continue;
+    if (isIncompleteRcm(display, r)) out.push(r);
+    stack.push(...[...r.kids].reverse());
+  }
+  return out;
+}
+
+// What's open after isolating the incomplete rows under `key`: the rows above
+// it and the rows leading to each incomplete row, nothing else in the display.
+// {open, rows}: `rows` is the incomplete ones found.
+export function isolateIncompleteOpen(display, open, key) {
+  const rows = incompleteRows(display, key);
+  const next = new Set([...(open || [])].filter((k) => !display?.rows.has(k)));
+  const up = (k) => { for (let p = display.rows.get(k)?.parent; p != null; p = display.rows.get(p)?.parent ?? null) next.add(p); };
+  up(key);
+  for (const r of rows) up(r.key);
+  return { open: next, rows };
+}
+
+// The menu entry, on an RCM-tab row that has something inside it (or is itself
+// the thing to finish).
+export function isolateIncompleteItem(r, { can } = {}) {
+  if (!r || !can || !r.kids?.length) return [];
+  return [{ id: "isolate-incomplete", label: "Isolate incomplete rows" }];
+}
