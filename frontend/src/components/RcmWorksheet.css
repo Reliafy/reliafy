@@ -463,10 +463,20 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-panel.sheet :is(input, textarea, select) { font-size: var(--fs-16); } /* no zoom on focus */
 .rw-panel.sheet button.rw-x { width: 40px; height: 40px; }
 
-/* A failure mode's tasks (RcmModeTasks.jsx): the list, and the add, edit and
-   link forms under it. */
-.rim-tasks { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
-.rim-tasks h3 { margin: 0; font-size: var(--fs-14); }
+/* A failure mode's decision (its Decision section): the decision in words, its
+   evidence, then its tasks (RcmModeTasks.jsx), one row each, with the add row
+   and the edit form in place. */
+.rw-dsum { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rw-dwords { margin: 0; font-size: var(--fs-14); overflow-wrap: anywhere; }
+.rw-dsum .rw-evlabel { color: var(--muted); }
+.rw-members { margin: 0; padding-left: 1.1em; font-size: var(--fs-13); }
+.rim-tasks { display: flex; flex-direction: column; gap: 8px; }
+.rim-tasks h4.rim-before { margin: 0; font-size: var(--fs-13); font-weight: 600; color: var(--muted); }
+.rim-tkind { font-weight: 600; }
+.rim-tev { margin: 0; padding-left: 20px; font-size: var(--fs-13); color: var(--muted); overflow-wrap: anywhere; }
+.rim-addform { border: 0; padding: 0; }
+.rim-addform .rim-use { align-self: flex-start; font-size: var(--fs-13); }
+.rim-addform .ctl-group > input[type="number"] { width: 6.5rem; }
 .rim-tlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .rim-tlist li { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .rim-tmain { display: flex; align-items: flex-start; gap: 6px; min-width: 0; font-size: var(--fs-14); }

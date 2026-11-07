@@ -69,10 +69,10 @@ test("a position's RCM as rows named as the import reads them", () => {
   // The FME(C)A's columns sit between Consequence and Decision (blank here).
   assert.deepEqual(cells(rows[2], ...HEAD), ["Plant › Conveyor C-2", "Move grain", "40 t/h", "", "Moves no grain", "Conveyor drive › No torque", "Belt torn", "Line stops",
     "Operational"]);
-  assert.deepEqual(cells(rows[2], ...TAIL), ["On-condition", "", "Walk the belt", 1, "weeks", "", "Severity 7"]);
+  assert.deepEqual(cells(rows[2], ...TAIL), ["On condition", "", "Walk the belt", 1, "weeks", "", "Severity 7"]);
   assert.deepEqual(cells(rows[2], ...FMEA_HEADER), FMEA_HEADER.map(() => ""));
   assert.equal(EXPORT_HEADER.indexOf("Decision"), EXPORT_HEADER.indexOf("Consequence") + F + 1);
-  assert.deepEqual(cells(rows[3], "Consequence", ...TAIL.slice(0, 6)), ["Non-operational", "Run-to-failure", "random", "Replace when it fails", "", "",
+  assert.deepEqual(cells(rows[3], "Consequence", ...TAIL.slice(0, 6)), ["Non-operational", "Run to failure", "random", "Replace when it fails", "", "",
     "Contradicted"]);
   assert.deepEqual(cells(rows[4], ...HEAD.slice(1, 7)), ["Move grain", "40 t/h", "", "Moves too little", "", ""]); // a failure with no modes
   assert.deepEqual(cells(rows[5], ...HEAD.slice(1, 7)), ["Stop on the lanyard", "", "", "", "", ""]); // a function with no failures
@@ -134,9 +134,9 @@ test("a failure mode with several tasks is one row per task, the first carrying 
     ] },
   ] }] });
   assert.equal(rows.length, 3);
-  assert.deepEqual(cells(rows[1], ...HEAD.slice(6), ...TAIL.slice(0, 5)), ["Acid under-dosed", "pH climbs", "Operational", "On-condition", "", "Weekly pH check", 1, "weeks"]);
+  assert.deepEqual(cells(rows[1], ...HEAD.slice(6), ...TAIL.slice(0, 5)), ["Acid under-dosed", "pH climbs", "Operational", "On condition", "", "Weekly pH check", 1, "weeks"]);
   assert.deepEqual(cells(rows[2], ...HEAD, ...TAIL), ["Pool", "Keep the water balanced", "pH 7.2-7.8", "", "pH above 7.8", "", "Acid under-dosed", "",
-    "", "Fixed-interval", "", "Replace the acid pump", 24, "months", "", ""]);
+    "", "Fixed interval", "", "Replace the acid pump", 24, "months", "", ""]);
   assert.equal(rows[2].length, EXPORT_HEADER.length);
 });
 
@@ -158,10 +158,10 @@ test("a combination of tasks is one row per member in its order, a redesign too,
   ] }] });
   // These rows are what backend/tests/test_maintenance_rcm_combination.py imports back.
   assert.deepEqual(rows.slice(1).map((r) => cells(r, "Failure mode", "Consequence", "Decision", "Task", "Interval", "Interval unit")), [
-    ["Bearing worn", "Safety", "On-condition", "Vibration check", 1, "months"],
-    ["Bearing worn", "", "Fixed-interval", "Replace the bearing", 24, "months"],
+    ["Bearing worn", "Safety", "On condition", "Vibration check", 1, "months"],
+    ["Bearing worn", "", "Fixed interval", "Replace the bearing", 24, "months"],
     ["Bearing worn", "", "Redesign", "", "", ""],
-    ["Bearing worn", "", "On-condition", "Oil sample", 3, "months"],
+    ["Bearing worn", "", "On condition", "Oil sample", 3, "months"],
   ]);
   assert.deepEqual(cells(rows[1], "Evidence check"), ["Partly evidenced"]);
   assert.deepEqual(importSummary({ modes: 1, tasks: 3, combinations: 1 }).adds,

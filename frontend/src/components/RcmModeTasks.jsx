@@ -3,69 +3,77 @@ import { LevelIcon } from "./RcmWorksheet.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { saveErrorText } from "../confirm.js";
 import { INTERVAL_UNITS, startUnit } from "../decisionCheck.js";
-import { OUTCOME_LABEL, everyText, tasksOf } from "../rcmWorksheet.js";
+import { OUTCOME_LABEL, addableOutcomes, decisionRows, decisionWithMember, everyText, isCombination, memberEvidenceText, tasksOf } from "../rcmWorksheet.js";
 import { getTaskTriggerPoints } from "../api.js";
 import { asksInterval, pointLabel, triggerBody, triggerState, triggerWhy } from "../taskTrigger.js";
 import { secondTaskHint } from "../explorerRcm.js";
 import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 import Chip from "./ui/Chip.jsx";
+import ChoiceChips from "./ui/ChoiceChips.jsx";
 import Field from "./ui/Field.jsx";
 import InputGroup from "./ui/InputGroup.jsx";
+import Modal from "./Modal.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
-import Section from "./ui/Section.jsx";
-import { InlineAddButton, InlineAddRow, useInlineAdd } from "./ui/InlineAdd.jsx";
+import { AddRow } from "./ui/Section.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 
-// A failure mode's tasks, in its details (the Explorer's RCM tab): the decision's own
-// task first, then any more (a combination: an inspection that catches the
-// slow failures plus a replacement at a hard life), each with its interval,
-// kind and instructions, and whether other failure modes share it. Add
-// another from the dashed row at the end: it becomes a new task card, its
-// name and how often (the two a task can't do without); Enter or leaving it
-// writes it, and its kind, instructions and measurement are then its ⋯ Edit…,
-// as for any other task. Change one (a shared task changes for every mode it serves),
-// take one off (a shared task is unlinked and stays; one serving this mode
-// alone is retired), or link a task that is on the position already, or on a
-// position above it. Each write goes at once through `ops` (useTreeRcm) and
-// the row is read again, so the list follows.
+// A failure mode's decision's tasks, inside its Decision section (the Explorer's
+// RCM tab; Derryn, 8 Nov 2026: in RCM the decision is the choice of task, so
+// they're one section). One row per member task: "<outcome> · <task name>",
+// how often, whether other failure modes share it, its instructions, its own
+// evidence (a combination's member), and its ⋯ (Edit…, which changes it in
+// place: a shared task changes for every mode it serves; Remove…: a shared
+// task is unlinked and stays, one serving this mode alone is retired). The
+// dashed "Add another task" row at the end adds a member to the decision (a
+// combination of tasks): one small dialog asks its kind first, then a new
+// task's name and how often, or an existing task on the position or above it.
+// With no decision, the tasks linked before it are rows under their own
+// heading, and nothing is added here (Decide… first). Each write goes at once
+// through `ops` (useTreeRcm) and the row is read again, so the list follows.
 //
-//   r       the failure mode's row (read afresh after each save)
-//   ops     modeTasks, addTask, editTask, removeTask, linkTask
-//   addStart  a value that, when it changes, opens the add row (the row menu's Add a task…)
-//   onSaid  (text) a few words in the page's status line once something's done
+//   r         the failure mode's row (read afresh after each save)
+//   ops       modeTasks, editTask, removeTask, decide; none: rows only
+//   readOnly  rows without their ⋯ and no add row
+//   addStart  a value that, when it changes, opens the add dialog (the row menu's Add a task…)
+//   onSaid    (text) a few words in the page's status line once something's done
 
 const SCHEDULED = ["on_condition", "fixed_interval", "failure_finding"];
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 // "every 6 months", or "on event: 120 mm on POOL-RAIN" for a task raised by an event.
 const every = (t) => everyText(t);
+const KIND_LABEL = { ...OUTCOME_LABEL, redesign: "Redesign (until the change is made)" };
 
-export default function RcmModeTasks({ r, ops, addStart = null, onSaid }) {
+export default function RcmModeTasks({ r, ops = null, readOnly = false, addStart = null, onSaid }) {
   const confirm = useConfirm();
-  const d = r.ref.decision;
-  const tasks = tasksOf(r.ref).filter((t) => t.id);
-  const [form, setForm] = useState(null); // {mode: "edit", task} | {mode: "link"}
+  const d = r.ref.decision || null;
+  const rows = decisionRows(d, tasksOf(r.ref));
+  const [editing, setEditing] = useState(null); // the task being changed in place
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
+  const [adding, setAdding] = useState(false);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
+  const can = !readOnly && !!ops;
+  const addable = can && d ? addableOutcomes(d) : [];
+  // The row menu's Add a task…: the dialog, opened (when another task can join the decision).
+  const opened = useRef(null);
+  useEffect(() => {
+    if (addStart == null || addStart === opened.current) return;
+    opened.current = addStart;
+    if (addable.length) setAdding(true);
+  }, [addStart, addable.length]);
 
-  const run = async (go, said) => {
+  const submitEdit = (task) => async (body) => {
     if (busy) return false;
     setBusy(true);
     setFailed(null);
     try {
-      await go();
-      if (alive.current) {
-        setBusy(false);
-        setForm(null);
-      }
-      onSaid?.(said);
+      await ops.editTask(task.id, body);
+      if (alive.current) { setBusy(false); setEditing(null); }
+      onSaid?.("Saved the task.");
       return true;
     } catch (e) {
-      if (alive.current) {
-        setBusy(false);
-        setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
-      }
+      if (alive.current) { setBusy(false); setFailed(saveErrorText(e, { offline: navigator.onLine === false })); }
       return false;
     }
   };
@@ -81,96 +89,191 @@ export default function RcmModeTasks({ r, ops, addStart = null, onSaid }) {
     if (ok) onSaid?.(t.shared_with ? "Removed the task from this failure mode." : "Retired the task.");
   };
 
-  // The add row: a task's name and how often, in a new card of the list.
-  const [interval, setInterval_] = useState("");
-  const [unit, setUnit] = useState(() => startUnit(d || {}));
-  const units = INTERVAL_UNITS.includes(unit) ? INTERVAL_UNITS : [unit, ...INTERVAL_UNITS];
-  const add = useInlineAdd({
-    disabled: busy,
-    startToken: addStart,
-    check: () => intervalWhy(interval) || null,
-    onSave: (name) => ops.addTask(r, { name, interval: Number(interval), unit }).then(() => {
-      setInterval_("");
-      onSaid?.("Added the task.");
-    }),
-    errorText: (e) => saveErrorText(e, { offline: navigator.onLine === false }),
-  });
-  const hint = secondTaskHint(r);
-  const link = () => { setFailed(null); setForm({ mode: "link" }); };
-  const submitTask = (task) => (body) => run(
-    () => (task ? ops.editTask(task.id, body) : ops.addTask(r, body)),
-    task ? "Saved the task." : "Added the task.",
-  );
+  const combo = isCombination(d);
+  if (!rows.length && !addable.length) return null;
   return (
-    <Section title="Tasks" count={tasks.length} className="rim-tasks">
-      {tasks.length === 0 && !add.open && (
-        <p className="rw-fhelp">
-          {d && SCHEDULED.includes(d.outcome)
-            ? "The decision schedules work, but no task does it yet: add one, or use an existing task."
-            : "No tasks yet."}
-        </p>
-      )}
-      {(tasks.length > 0 || add.open) && (
-        <ul className="rim-tlist">
-          {tasks.map((t, i) => (
-            <li key={t.id} className={"rim-card" + (form?.mode === "edit" && form.task.id === t.id ? " editing" : "")}>
-              {form?.mode === "edit" && form.task.id === t.id ? (
-                <TaskForm key={t.id} r={r} task={t} busy={busy} failed={failed}
-                          onCancel={() => { setForm(null); setFailed(null); }} onSubmit={submitTask(t)} />
-              ) : (
-                <>
+    <div className="rim-tasks">
+      {!d && rows.length > 0 && <h4 className="rim-before">Tasks linked before the decision</h4>}
+      {rows.length > 0 && (
+        <ul className="rim-tlist" aria-label={d ? "The decision's tasks" : "Tasks linked before the decision"}>
+          {rows.map((row) => {
+            const t = row.task;
+            const word = row.outcome ? OUTCOME_LABEL[row.outcome] || row.outcome : null;
+            if (!t) {
+              // A member with no task now: a redesign (the interim tasks are the others), or a task that has gone.
+              return (
+                <li key={row.key} className="rim-card">
                   <div className="rim-chead">
                     <LevelIcon type="task" className="rw-ic rw-ic-task" />
-                    <span className="rim-tname">{t.text || t.name}</span>
+                    <span className="rim-tname">{row.outcome === "redesign" ? KIND_LABEL.redesign : `${word} · no task now`}</span>
+                  </div>
+                  {combo && row.member?.status && <p className="rim-tev">Evidence: {memberEvidenceText(row.member)}</p>}
+                </li>
+              );
+            }
+            if (editing === t.id && can) {
+              return (
+                <li key={row.key} className="rim-card editing">
+                  <TaskForm key={t.id} r={r} task={t} busy={busy} failed={failed}
+                            onCancel={() => { setEditing(null); setFailed(null); }} onSubmit={submitEdit(t)} />
+                </li>
+              );
+            }
+            const name = t.text || t.name;
+            return (
+              <li key={row.key} className="rim-card">
+                <div className="rim-chead">
+                  <LevelIcon type="task" className="rw-ic rw-ic-task" />
+                  <span className="rim-tname">{word ? <><span className="rim-tkind">{word}</span> · </> : null}{name}</span>
+                  {can && (
                     <MoreMenu label={`Actions for ${t.name}`} disabled={busy} items={[
-                      { id: "edit", label: "Edit…", onSelect: () => { setFailed(null); setForm({ mode: "edit", task: t }); } },
+                      { id: "edit", label: "Edit…", onSelect: () => { setFailed(null); setEditing(t.id); } },
                       { id: "remove", label: t.shared_with ? "Remove from this failure mode…" : "Remove…", danger: true, onSelect: () => remove(t) },
                     ]} />
-                  </div>
+                  )}
+                </div>
+                {(every(t) || t.shared_with) ? (
                   <div className="rim-chips">
                     {every(t) && <Chip tone="accent">{every(t)}</Chip>}
-                    {OUTCOME_LABEL[t.outcome] && <Chip>{OUTCOME_LABEL[t.outcome]}</Chip>}
-                    {i === 0 && tasks.length > 1 && <Chip>The decision's own</Chip>}
                     {t.shared_with ? <Chip>Shared with {plural(t.shared_with, "other failure mode")}</Chip> : null}
                   </div>
-                  {t.instructions && <Instructions text={t.instructions} />}
-                </>
-              )}
-            </li>
-          ))}
-          {add.open && (
-            <InlineAddRow add={add} as="li" className="rim-card rim-new" lead={<LevelIcon type="task" className="rw-ic rw-ic-task" />}
-                          label="New task" placeholder="e.g. Replace the acid pump" help={hint}>
-              <span className="rim-every">
-                <span className="rim-every-word" aria-hidden="true">every</span>
-                <InputGroup label="How often">
-                  <TextInput type="number" inputMode="decimal" min="0" step="any" value={interval} readOnly={add.busy} aria-label="Interval"
-                             aria-invalid={add.error && !add.onText ? "true" : undefined} placeholder="e.g. 6" onChange={(e) => setInterval_(e.target.value)} />
-                  <Select value={unit} disabled={add.busy} aria-label="Interval unit" onChange={(e) => setUnit(e.target.value)}>
-                    {units.map((u) => <option key={u} value={u}>{u}</option>)}
-                  </Select>
-                </InputGroup>
-              </span>
-            </InlineAddRow>
-          )}
+                ) : null}
+                {t.instructions && <Instructions text={t.instructions} />}
+                {combo && row.member?.status && <p className="rim-tev">Evidence: {memberEvidenceText(row.member)}</p>}
+              </li>
+            );
+          })}
         </ul>
       )}
-      {form?.mode === "link" ? (
-        <div className="rim-card editing">
-          <LinkForm r={r} ops={ops} busy={busy} failed={failed} onCancel={() => { setForm(null); setFailed(null); }}
-                    onFailed={(e) => setFailed(saveErrorText(e, { offline: navigator.onLine === false }))}
-                    onSubmit={(taskId) => run(() => ops.linkTask(r, taskId), "Linked the task.")} />
-        </div>
-      ) : !form && (
-        <div className="rim-tadd">
-          {!add.open && <InlineAddButton add={add}>Add a task</InlineAddButton>}
-          <button type="button" className="link" disabled={busy} onClick={(e) => { if (e.detail < 2) link(); }}>
-            Use an existing task…
-          </button>
-        </div>
+      {addable.length > 0 && !editing && (
+        <AddRow disabled={busy} onClick={() => setAdding(true)}>{rows.length ? "Add another task" : "Add a task"}</AddRow>
       )}
-      {failed && !form && <p className="field-error" role="alert">{failed}</p>}
-    </Section>
+      {failed && !editing && <p className="field-error" role="alert">{failed}</p>}
+      {adding && (
+        <AddTaskDialog r={r} d={d} ops={ops} kinds={addable} onClose={() => setAdding(false)}
+                       onDone={(said) => { setAdding(false); onSaid?.(said); }} />
+      )}
+    </div>
+  );
+}
+
+// Another task for the decision (a combination of tasks), in one small dialog:
+// its kind first, then a new task's name and how often (Enter adds it), or
+// "Use an existing task…": one on this position or above it (read when asked
+// for), which keeps its own interval for every mode it serves. A redesign
+// needs no task: the others stand in until the change is made. Saved as the
+// whole decision with the new member (ops.decide), so the members it has keep
+// their tasks.
+function AddTaskDialog({ r, d, ops, kinds, onClose, onDone }) {
+  const [kind, setKind] = useState(kinds[0]);
+  const [use, setUse] = useState("new"); // "new" | "existing"
+  const [name, setName] = useState("");
+  const [interval, setInterval_] = useState("");
+  const [unit, setUnit] = useState(() => startUnit(d || {}));
+  const [choices, setChoices] = useState(null);
+  const [picked, setPicked] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(null);
+  const [tried, setTried] = useState(false);
+  const units = INTERVAL_UNITS.includes(unit) ? INTERVAL_UNITS : [unit, ...INTERVAL_UNITS];
+  const scheduled = SCHEDULED.includes(kind);
+  const nameBox = useRef(null);
+  useEffect(() => {
+    if (use !== "existing" || choices !== null) return undefined;
+    let on = true;
+    ops.modeTasks(r).then((out) => { if (on) setChoices(out.available || []); },
+      (e) => { if (on) { setChoices([]); setFailed(saveErrorText(e, { offline: navigator.onLine === false })); } });
+    return () => { on = false; };
+  }, [use, choices, ops, r]);
+  const n = Number(interval);
+  const why = !scheduled ? null
+    : use === "existing" ? (picked ? null : "Choose a task.")
+      : !name.trim() ? "Name the task." : intervalWhy(interval) || null;
+  const hint = scheduled && use === "new" ? secondTaskHint(r) : null;
+  const here = r.ref.position_id;
+  const save = async (e) => {
+    e?.preventDefault();
+    setTried(true);
+    if (busy || why) return;
+    const member = !scheduled ? { outcome: kind }
+      : use === "existing" ? { outcome: kind, task_id: picked }
+        : { outcome: kind, task: name.trim(), interval: n, interval_unit: unit };
+    setBusy(true);
+    setFailed(null);
+    try {
+      await ops.decide(r, { consequence: r.ref.consequence || null, decision: decisionWithMember(d, member) });
+      onDone(use === "existing" && scheduled ? "Linked the task." : "Added the task.");
+    } catch (err) {
+      setBusy(false);
+      setFailed(saveErrorText(err, { offline: navigator.onLine === false }));
+    }
+  };
+  const formId = `rim-add-${r.key}`;
+  return (
+    <Modal title="Add another task" onClose={onClose} locked={busy} trapFocus className="rim-add"
+           footer={(
+             <>
+               <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+               <button type="submit" form={formId} disabled={busy} aria-busy={busy || undefined}>
+                 {busy ? "Saving…" : use === "existing" && scheduled ? "Link task" : "Add task"}
+               </button>
+             </>
+           )}>
+      <form id={formId} className="rim-tform rim-addform" onSubmit={save}>
+        <p className="rw-fhelp">The decision becomes a combination of tasks: each one scheduled on its own.</p>
+        <Field label="Kind of task">
+          <ChoiceChips label="Kind of task" autoFocus value={kind} disabled={busy}
+                       options={kinds.map((k) => ({ value: k, label: KIND_LABEL[k] || k }))}
+                       onChange={(v) => { if (v) setKind(v); }} />
+        </Field>
+        {!scheduled ? (
+          <p className="rw-fhelp">A redesign needs no task here: the other task stands in until the change is made. Say what's to change in the decision notes.</p>
+        ) : use === "new" ? (
+          <>
+            <Field label="Task" help={hint}>
+              <TextInput ref={nameBox} value={name} readOnly={busy} placeholder="e.g. Replace the acid pump"
+                         aria-invalid={tried && !name.trim() ? "true" : undefined} onChange={(e) => setName(e.target.value)} />
+            </Field>
+            <Field label="Every" as="fieldset">
+              <InputGroup label="Every">
+                <TextInput type="number" inputMode="decimal" min="0" step="any" value={interval} readOnly={busy} aria-label="Interval"
+                           aria-invalid={tried && intervalWhy(interval) ? "true" : undefined} placeholder="e.g. 6"
+                           onChange={(e) => setInterval_(e.target.value)} />
+                <Select value={unit} disabled={busy} aria-label="Interval unit" onChange={(e) => setUnit(e.target.value)}>
+                  {units.map((u) => <option key={u} value={u}>{u}</option>)}
+                </Select>
+              </InputGroup>
+            </Field>
+            <button type="button" className="link rim-use" disabled={busy} onClick={() => { setFailed(null); setUse("existing"); }}>
+              Use an existing task…
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="rw-fhelp">A task on this position, or on a position above it, can serve this failure mode too. It keeps its own interval for every mode it serves.</p>
+            {choices === null ? <p className="rw-fhelp">Reading the tasks…</p> : choices.length === 0 ? (
+              <p className="rw-fhelp">No other task on this position or above it. Write a new task instead.</p>
+            ) : (
+              <Field label="Task">
+                <Select value={picked} disabled={busy} onChange={(e) => setPicked(e.target.value)} aria-label="Existing task">
+                  <option value="">Choose a task…</option>
+                  {choices.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}{every(t) ? ` · ${every(t)}` : ""}{t.position?.id !== here ? ` · on ${t.position?.name}` : ""}{t.serves ? ` · serves ${plural(t.serves, "failure mode")}` : ""}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+            <button type="button" className="link rim-use" disabled={busy} onClick={() => { setFailed(null); setUse("new"); }}>
+              Write a new task instead
+            </button>
+          </>
+        )}
+        {tried && why && !busy && <p className="rim-why">{why}</p>}
+        {failed && <p className="field-error" role="alert">{failed}</p>}
+      </form>
+    </Modal>
   );
 }
 
@@ -309,46 +412,6 @@ function TaskForm({ r, task, busy, failed, onCancel, onSubmit }) {
         {why && <p className="rim-why">{why}</p>}
         <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
         <button type="submit" className="sm" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save task"}</button>
-      </div>
-    </form>
-  );
-}
-
-// Linking a task the position has already, or one on a position above it
-// (a task serves the failure modes on its position and inside it): the list
-// is read when the form opens, each task with where it is and how many modes
-// it serves already.
-function LinkForm({ r, ops, busy, failed, onCancel, onFailed, onSubmit }) {
-  const [choices, setChoices] = useState(null);
-  const [picked, setPicked] = useState("");
-  useEffect(() => {
-    let on = true;
-    ops.modeTasks(r).then((out) => { if (on) setChoices(out.available || []); }, (e) => { if (on) { setChoices([]); onFailed(e); } });
-    return () => { on = false; };
-  }, [r, ops, onFailed]);
-  const here = r.ref.position_id;
-  return (
-    <form className="rim-tform" onSubmit={(e) => { e.preventDefault(); if (picked && !busy) onSubmit(picked); }}>
-      <h4>Use an existing task</h4>
-      <p className="rw-fhelp">A task on this position, or on a position above it, can serve this failure mode too. It keeps its own interval for every mode it serves.</p>
-      {choices === null ? <p className="rw-fhelp">Reading the tasks…</p> : choices.length === 0 ? (
-        <p className="rw-fhelp">No other task on this position or above it. Add a task instead.</p>
-      ) : (
-        <Field label="Task">
-          <Select value={picked} disabled={busy} onChange={(e) => setPicked(e.target.value)} aria-label="Existing task">
-            <option value="">Choose a task…</option>
-            {choices.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}{every(t) ? ` · ${every(t)}` : ""}{t.position?.id !== here ? ` · on ${t.position?.name}` : ""}{t.serves ? ` · serves ${plural(t.serves, "failure mode")}` : ""}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      )}
-      {failed && <p className="field-error" role="alert">{failed}</p>}
-      <div className="rim-tform-acts">
-        <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
-        <button type="submit" className="sm" disabled={!picked || busy} aria-busy={busy || undefined}>{busy ? "Linking…" : "Link task"}</button>
       </div>
     </form>
   );

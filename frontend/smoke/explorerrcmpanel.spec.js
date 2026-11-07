@@ -145,7 +145,8 @@ test("a click shows the details beside the table; a double-click on the name spr
     return [m.text, m.effects, m.consequence];
   }).toEqual([`Bearing seizes early ${tag}`, "Pump stops; no flow to the tank", "hidden"]);
   await expect(panel(page).getByRole("region", { name: "Decision" })).toContainText("No decision yet.");
-  await expect(panel(page).getByRole("region", { name: "Tasks" })).toBeVisible();
+  // No decision: no task rows and no add row (Decide… first).
+  await expect(panel(page).getByRole("button", { name: /^Add (another|a) task$/ })).toHaveCount(0);
   await expect(panel(page).getByRole("button", { name: "Save" })).toHaveCount(0); // no Save or Cancel: kept as you go
 
   // Esc: back to the table, the focus on the row; Expand and Back to table do the same by button.
@@ -212,14 +213,17 @@ test("Open… and Add a task… in the row menu expand the details; Enter shows 
   await expect(panel(page).getByRole("heading", { name: `Seal leaks ${tag}` })).toBeFocused();
   expect(await isExpanded(page)).toBe(false);
 
-  // Add a task…: across the table, on the add row, its name box focused; the two tasks and the new one listed.
+  // Add a task…: across the table, the Add another task dialog open on its kind; the two tasks listed.
   await sealRow.locator(".tp-nm").click({ button: "right" });
   await page.getByRole("menuitem", { name: "Add a task…" }).click();
-  const tasks = panel(page).getByRole("region", { name: "Tasks" });
-  await expect(tasks.getByRole("textbox", { name: "New task" })).toBeFocused();
+  const tasks = panel(page).getByRole("region", { name: "Decision" });
+  const add = page.getByRole("dialog", { name: "Add another task" });
+  await expect(add).toBeVisible();
+  await expect(add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio").first()).toBeFocused();
   expect(await isExpanded(page)).toBe(true);
-  await expect(tasks.getByRole("listitem")).toHaveCount(3);
+  await expect(tasks.getByRole("listitem")).toHaveCount(2);
   await page.keyboard.press("Escape");
+  await expect(add).toHaveCount(0);
   await expect(tasks.getByRole("listitem")).toHaveCount(2);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expectHealthy(page, problems, { label: "rcm open from menu" });
@@ -343,8 +347,8 @@ test("one order at every level: its notes under the title and chips, what's insi
     await expect(panel(page).getByRole("heading", { level: 2, name: `Seal leaks ${tag}` })).toBeVisible();
     // The FME(C)A's groups (scores, criticality) are on its own tab, not this one; the mode's
     // notes and rationale (the same section at every level) are above all of it, below the chips.
-    // Its tasks come after the decision that drives them.
-    expect(await blocks(page)).toEqual(["own", "Decision", "Tasks"]);
+    // Its tasks are rows of its decision (one section).
+    expect(await blocks(page)).toEqual(["own", "Decision"]);
     expect(await notesFirst(page)).toBe(true);
     // The worksheet's order inside: effects, consequence, then the decision; where it sits last.
     const labels = await panel(page).locator(".rw-pbody .field-label").allInnerTexts();
@@ -410,7 +414,7 @@ test("fields, chips, ⋯ and refusals: kept where you typed, the reason beside i
     .toBe("non_operational");
 
   // A task's ⋯ by keyboard: Enter opens it on its first item, Escape closes it back to the button.
-  const more = panel(page).getByRole("region", { name: "Tasks" }).getByRole("button", { name: `Actions for Replace the seal ${tag}` });
+  const more = panel(page).getByRole("region", { name: "Decision" }).getByRole("button", { name: `Actions for Replace the seal ${tag}` });
   await more.focus();
   await page.keyboard.press("Enter");
   const menu = page.getByRole("menu", { name: `Actions for Replace the seal ${tag}` });

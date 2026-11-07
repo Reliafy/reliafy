@@ -179,9 +179,9 @@ fields, then the quieter things at the foot:
 - a functional failure: its **Failure modes** (with its state in words at
   the top), then what it is **Caused by** and what it **Causes**, each with
   the position it is on;
-- a failure mode: its **Tasks**, then its **Failure effects**,
-  **Consequence** (one tap on a choice) and **Decision**, then where it sits
-  (**Under**).
+- a failure mode: its **Failure effects** and **Consequence** (one tap on a
+  choice), then its **Decision**, which lists the tasks it holds, then where
+  it sits (**Under**).
 
 Every row, whatever its level, opens its details with **Notes and rationale**,
 a section of its own directly below its title and status line and above
@@ -275,12 +275,12 @@ Sometimes no single task is good enough on its own. RCM II calls the answer a
 *combination of tasks*: a regular inspection plus a fixed-time replacement,
 say, usually where a failure could hurt someone or harm the environment. In the
 decision dialog, choose the first outcome, then pick another under **Add
-another task**: *On-condition*, *Fixed-interval replacement* or
-*Failure-finding*. Each one you add asks for its own task name and interval,
+another task**: *On condition*, *Fixed interval replacement* or
+*Failure finding*. Each one you add asks for its own task name and interval,
 and each becomes its own scheduled task on the position. A **Redesign** can
 sit beside one task, the task done until the change is made. Run-to-failure
 and accept stand alone. The notes are once for the whole decision, and the
-**Decision** column reads *On-condition + Fixed-interval*. For an operational
+**Decision** column reads *On condition + Fixed interval*. For an operational
 or non-operational consequence, say in the notes what the second task earns.
 
 Each task of a combination needs its own evidence. The evidence you link in
@@ -301,19 +301,25 @@ export imports back as the same decisions.
 Sometimes one task isn't enough: an inspection catches the slow failures, and
 a replacement at a hard life catches the ones it can't see. And sometimes one
 act of work answers several failure modes: one monthly water sample covers
-five chemistry failure modes. Both are in the failure mode's Details, under
-**Tasks**:
+five chemistry failure modes. Both are in the failure mode's Details, in its
+**Decision** section: the decision in words, then one row per task, each with
+its kind, name, how often and how many other failure modes share it.
 
-- **Add a task** adds another task to the failure mode as a new card of the
-  list: its name and how often, then Enter. Its kind and instructions are its
-  **⋯** › **Edit…**, as for any other task. For an operational or
-  non-operational consequence the new card asks what the second task catches
-  that the first doesn't: put the answer in the decision's notes. (**Add a
-  task…** in the row's menu opens the same card.)
-- **Use an existing task…** links a task that is already on the position, or
-  on a position above it, so one task serves several failure modes. A task on
-  a position can serve the failure modes on it and on the positions inside it,
-  never the other way round.
+- **Add another task**, the dashed row under the tasks, adds a task to the
+  decision, making it a combination of tasks. A small dialog asks its kind
+  first (*On condition*, *Fixed interval* or *Failure finding*, or a
+  *Redesign* beside one task), then its name and how often, then Enter. Its
+  instructions are its **⋯** › **Edit…**, as for any other task. For an
+  operational or non-operational consequence the dialog asks what the second
+  task catches that the first doesn't: put the answer in the decision's
+  notes. (**Add a task…** in the row's menu opens the same dialog, or the
+  decision dialog when there's no decision yet.)
+- **Use an existing task…** in the same dialog picks a task that is already
+  on the position, or on a position above it, so one task serves several
+  failure modes. A task on a position can serve the failure modes on it and on
+  the positions inside it, never the other way round.
+- Tasks linked before a failure mode had a decision show under **Tasks linked
+  before the decision** until you decide.
 - Each task shows how many other failure modes share it. A shared task keeps
   one interval for all of them: change it on the task (**Edit…** in the task's **⋯**),
   not in the decision dialog, which shows it read-only.
@@ -514,7 +520,7 @@ can drag rows in the RCM table to rearrange it:
   Shift-click, then drag one of them; the label shows how many.
 - **A task**: drag a failure mode's **Task** cell onto another failure mode. The
   task moves there and stops preventing the mode it came from. To have one task
-  prevent several modes, use **Add a task…** › **Use an existing task**.
+  prevent several modes, use **Add a task…** › **Use an existing task…**.
 
 While you drag, a line shows where it will go (above, below), or the row is
 outlined (inside). If it can't go there, the pointer changes to a no-entry sign

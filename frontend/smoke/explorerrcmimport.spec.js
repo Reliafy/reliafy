@@ -62,7 +62,7 @@ test("import a worksheet onto a position from the RCM tab, then again: nothing m
   await expect(trow(page, "^Function: Move grain from the pit to the silo")).toBeVisible();
   await expect(trow(page, "^Failure mode: Belt torn")).toBeVisible();
   await expect(trow(page, "^Failure mode: Pull-wire switch stuck")).toBeVisible();
-  await expect(trow(page, "^Failure mode: Head pulley bearing seizes")).toContainText("Fixed-interval");
+  await expect(trow(page, "^Failure mode: Head pulley bearing seizes")).toContainText("Fixed interval");
   await shot(page, "rcm-import-3-rows-1280");
 
   // Again, from the heading's ⋯ menu: nothing new, so nothing to add.
