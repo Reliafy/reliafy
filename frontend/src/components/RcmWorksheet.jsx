@@ -18,7 +18,7 @@ import { ancestorsOf } from "../outlineTree.js";
 import {
   CATEGORY_LABEL, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, EVIDENT_LABEL, consequenceText, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
   belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, checkCounts, decisionText, insideWords,
-  INTERVAL_OUTCOMES, intervalText, isCombination, memberEvidenceText, memberLine, moreTasks, nameOf, shownStatus, tasksOf, tasksTip, checkValue,
+  INTERVAL_OUTCOMES, intervalText, isCombination, memberEvidenceLine, moreTasks, nameOf, shownStatus, tasksOf, tasksTip, checkValue,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import { modeAnswers } from "../decisionCheck.js";
@@ -383,6 +383,9 @@ export function PhoneStatus({ r, fmea = false }) {
 // A standard's description is its text.
 export const EDITABLE = new Set(["fn", "std", "fail", "mode"]);
 
+// A failure mode's step heading: "1. What happens".
+const Step = ({ n, children }) => <><span className="rw-stepn">{n}.</span> {children}</>;
+
 // A status chip's tone from its words (the words always say it too).
 const toneOf = (text) => (/to decide|not analysed|no functional failure|no failure modes|nothing inside|not finished/i.test(text) ? "warning"
   : /all decided|covered/i.test(text) ? "success" : "neutral");
@@ -407,11 +410,10 @@ export function Details({
   const d = r.ref.decision;
   const up = ancestorsOf(display, r.key).map((k) => display.rows.get(k)).filter(Boolean);
   const tasks = r.type === "mode" ? tasksOf(r.ref) : [];
-  // A failure mode's tasks (RcmModeTasks, rows inside its Decision section) are
+  // A failure mode's tasks (RcmModeTasks, the lines of its decision card) are
   // where its tasks are changed; the decision's own task and interval stay as
   // fields only while no task does the work (an action on failure, a decision
   // written before tasks, the worksheet outside the Explorer).
-  const rowsHere = r.type === "mode" && tasks.some((t) => t.id) || (r.type === "mode" && !!ops?.decide && !!d);
   const ownFields = !tasks.some((t) => t.id);
   const sharedOwn = tasks[0]?.shared_with || 0;
   // "✓ Saved" by a field's label: a count per field that goes up on each save.
@@ -423,13 +425,13 @@ export function Details({
     else if (out && typeof out.then === "function") return out.then((v) => { if (v === true) markSaved(col); return v; });
     return out;
   };
-  const field = (label, col, { area, help, locked = false, optional = false } = {}) => {
+  const field = (label, col, { area, help, locked = false, optional = false, labelHidden = false, placeholder = null } = {}) => {
     const column = col === "name" ? NAME_COLUMN : COLUMN[col];
     const value = col === "name" ? r.ref.text || "" : column.onDecision ? d?.[column.field] ?? "" : r.ref[column.field] || "";
     return (
       <PanelField key={`${r.key}:${col}`} label={label} help={help} value={value} area={area} readOnly={readOnly || locked} optional={optional}
                   type={col === "interval" ? "number" : "text"} suffix={col === "interval" ? d?.interval_unit || "hours" : null}
-                  saved={saved[col]} onCommit={(raw) => keep(col, onCommit(r, col, raw))} />
+                  labelHidden={labelHidden} placeholder={placeholder} saved={labelHidden ? 0 : saved[col]} onCommit={(raw) => keep(col, onCommit(r, col, raw))} />
     );
   };
   // A standard's limit field, kept at once (as the table's cells are).
@@ -505,16 +507,16 @@ export function Details({
   const hiddenValue = answers?.hidden === true ? "hidden" : answers?.hidden === false ? "evident" : "";
   const consequenceField = r.type === "mode" && (
     <>
-      <Field label="Evident or hidden" saved={saved.hidden}
-             help="Hidden: the crew wouldn't notice the loss of function in normal operation, until something else fails too.">
+      <Field label="Evident or hidden" saved={saved.hidden} className="rw-eyebrow"
+             help={fmea?.on ? "Hidden: the crew wouldn't notice the loss of function in normal operation, until something else fails too." : null}>
         {readOnly ? <span className="rw-fval">{EVIDENT_LABEL[hiddenValue] || "Not set"}</span> : (
           <ChoiceChips label="Evident or hidden" clearable value={hiddenValue}
                        options={Object.entries(EVIDENT_LABEL).map(([value, label]) => ({ value, label }))}
                        onChange={(v) => keep("hidden", onCommit(r, "hidden", v))} />
         )}
       </Field>
-      <Field label="Consequence" saved={saved.consequence}
-             help={answers?.hidden ? "The consequence of the multiple failure: the hidden failure plus the one it protects against." : "The first that applies: safety, environmental, operational, non-operational."}>
+      <Field label="Consequence" saved={saved.consequence} className="rw-eyebrow"
+             help={!fmea?.on ? null : answers?.hidden ? "The consequence of the multiple failure: the hidden failure plus the one it protects against." : "The first that applies: safety, environmental, operational, non-operational."}>
         {readOnly ? <span className="rw-fval">{CATEGORY_LABEL[answers.consequence] || "Not set"}</span> : (
           <ChoiceChips label="Consequence" clearable value={answers.consequence || ""}
                        options={Object.entries(CATEGORY_LABEL).map(([value, label]) => ({ value, label }))}
@@ -523,6 +525,54 @@ export function Details({
       </Field>
     </>
   );
+  // The decision card's folded "Why": the evidence (Link evidence… when none), what it
+  // says, a combination's members' own evidence, and the decision notes.
+  const decisionWhy = r.type === "mode" && d && (
+    <>
+      <div className="rw-evidence">
+        <span className="rw-evlabel">Evidence</span>
+        {d.status === "unevidenced" ? (
+          <>
+            None linked{!readOnly && <> · <button type="button" className="link" onClick={() => onDecision(r)}
+                                                 title="Link the model, analysis, report or function notes behind this decision (optional)">Link evidence…</button></>}
+          </>
+        ) : (
+          <>
+            {d.status && <RcmStatusBadge status={d.status} kind={d.evidence_kind} />}
+            {d.artifact_name && (d.evidence_kind === "working" && d.working && onSelect
+              ? <button type="button" className="link" onClick={() => onSelect(d.working.id, { notes: true })}
+                        title="Open the function's notes and rationale">{d.artifact_name}</button>
+              : d.artifact_link_path
+                ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
+            {!d.status && !d.artifact_name && "None needed"}
+          </>
+        )}
+      </div>
+      {d.status !== "unevidenced" && (d.summary || d.reason) ? <p className="rw-dwhy">{d.summary || d.reason}</p> : null}
+      {isCombination(d) && d.outcomes.some((o) => o.status) && (
+        <ul className="rw-members">{d.outcomes.filter((o) => o.status).map((o, i) => <li key={`${o.outcome}:${i}`}>{memberEvidenceLine(o)}</li>)}</ul>
+      )}
+      {field("Decision notes", "dnotes", { area: true, optional: true })}
+    </>
+  );
+  // The decision's own task and interval (or run to failure's action on failure), edited in
+  // the card while no task does the work: open at once when a schedule has no task yet.
+  const ownTask = d && ownFields && !isCombination(d) && COLUMN.task.can(r) && !(readOnly && d.outcome === "rtf");
+  const ownInterval = d && ownFields && !isCombination(d) && COLUMN.interval.can(r);
+  const ownNeeded = !!(d && ownFields && !readOnly && !isCombination(d) && INTERVAL_OUTCOMES.has(d.outcome)
+    && (ops?.decide || !String(d.task || "").trim() || d.interval == null));
+  const ownBlock = r.type === "mode" && !readOnly && (ownTask || ownInterval) ? (
+    <>
+      {ownNeeded && ops?.decide && <p className="rw-fhelp">The decision schedules work, but no task does it yet: give it a task and an interval.</p>}
+      {ownTask && field(d.outcome === "rtf" ? "What's done on failure" : "Task", "task", { area: true, locked: sharedOwn > 0 && d.outcome !== "rtf" })}
+      {ownInterval && field("Interval", "interval", { locked: sharedOwn > 0 })}
+      {sharedOwn > 0 && (
+        <p className="rw-fhelp">
+          Shared with {sharedOwn} other failure mode{sharedOwn === 1 ? "" : "s"}: its name and interval are changed on the task, for all of them.
+        </p>
+      )}
+    </>
+  ) : null;
   // The FME(C)A's two groups on a failure mode (FmeaPanels.jsx): each field
   // kept as you go, as the others are; the RPN and action priority previewed
   // from the scores as they're typed.
@@ -610,69 +660,31 @@ export function Details({
         {insideList && inside}
 
         {/* 2. This level's own. A functional failure: its links to failures on other
-            positions. A failure mode: the worksheet's columns in their order (effects,
-            consequence, then the decision). */}
+            positions. A failure mode: its three steps (below). */}
         {r.type === "fail" && ops && links && (
           <CausedBySection r={r} where={where} readOnly={readOnly} links={links} onSelect={onSelect} />
         )}
         {r.type === "fail" && ops && links && (
           <CausesSection r={r} where={where} readOnly={readOnly} links={links} onSelect={onSelect} />
         )}
+        {/* A failure mode on the RCM tab: three numbered steps, the flow of the worksheet (Derryn,
+            9 Nov 2026): what happens, how bad it is, what we do. The help sentences stay in the
+            Decide dialog, where the choice is made; the decision is one card. */}
         {r.type === "mode" && !fmea?.on && (
-          <div className="rw-fields rw-own">
-            {field("Failure effects", "effects", { area: true })}
-            {consequenceField}
-          </div>
+          <Section title={<Step n={1}>What happens</Step>} label="What happens" className="rw-step"
+                   aside={<SavedMark saved={saved.effects} />}>
+            {field("Failure effects", "effects", { area: true, labelHidden: true, placeholder: "What's seen, what stops, what it costs" })}
+          </Section>
         )}
-        {/* The decision is the choice of task (Derryn, 8 Nov 2026): one section, the decision
-            in words, then a row per task it holds (RcmModeTasks), then its notes. */}
+        {r.type === "mode" && !fmea?.on && (
+          <Section title={<Step n={2}>How bad</Step>} label="How bad" className="rw-step rw-howbad">
+            {consequenceField}
+          </Section>
+        )}
         {r.type === "mode" && (
-          <Section title="Decision" label="Decision" className="rw-decision"
-                   action={readOnly ? null : { label: d ? "Change…" : "Decide…", ariaLabel: d ? "Change the decision…" : "Decide…", onClick: () => onDecision(r) }}>
-            {d ? (
-              <div className="rw-dsum">
-                <p className="rw-dwords"><b>{decisionText(d)}</b>{d.outcome === "rtf" && d.task ? <>: {d.task}</> : null}</p>
-                <div className="rw-evidence">
-                  <span className="rw-evlabel">Evidence</span>
-                  {d.status === "unevidenced" ? (
-                    <>
-                      None linked{!readOnly && <> · <button type="button" className="link" onClick={() => onDecision(r)}
-                                                           title="Link the model, analysis, report or function notes behind this decision (optional)">Link evidence…</button></>}
-                    </>
-                  ) : (
-                    <>
-                      {d.status && <RcmStatusBadge status={d.status} kind={d.evidence_kind} />}
-                      {d.artifact_name && (d.evidence_kind === "working" && d.working && onSelect
-                        ? <button type="button" className="link" onClick={() => onSelect(d.working.id, { notes: true })}
-                                  title="Open the function's notes and rationale">{d.artifact_name}</button>
-                        : d.artifact_link_path
-                          ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
-                      {!d.status && !d.artifact_name && "—"}
-                    </>
-                  )}
-                </div>
-                {d.status !== "unevidenced" && (d.summary || d.reason) ? <p className="rw-dwhy">{d.summary || d.reason}</p> : null}
-              </div>
-            ) : <p className="rw-dline">No decision yet.</p>}
-            {rowsHere ? (
-              <RcmModeTasks key={`${r.key}:tasks`} r={r} ops={ops} readOnly={readOnly || !ops?.decide} addStart={startOf("task")} onSaid={said} />
-            ) : isCombination(d) ? (
-              // No tasks with ids (the worksheet outside the Explorer): the members as lines.
-              <ul className="rw-members">{d.outcomes.map((o) => <li key={o.outcome}>{memberLine(o)}{o.status ? ` · Evidence: ${memberEvidenceText(o)}` : ""}</li>)}</ul>
-            ) : null}
-            {d && ownFields && ops?.decide && !isCombination(d) && INTERVAL_OUTCOMES.has(d.outcome) && (
-              <p className="rw-fhelp">The decision schedules work, but no task does it yet: give it a task and an interval below.</p>
-            )}
-            {/* Run to failure's action on failure is in the words above; edited here (read-only: said once). */}
-            {d && ownFields && !isCombination(d) && COLUMN.task.can(r) && !(readOnly && d.outcome === "rtf")
-              && field(d.outcome === "rtf" ? "What's done on failure" : "Task", "task", { area: true, locked: sharedOwn > 0 && d.outcome !== "rtf" })}
-            {d && ownFields && !isCombination(d) && COLUMN.interval.can(r) && field("Interval", "interval", { locked: sharedOwn > 0 })}
-            {d && ownFields && sharedOwn > 0 && (
-              <p className="rw-fhelp">
-                Shared with {sharedOwn} other failure mode{sharedOwn === 1 ? "" : "s"}: its name and interval are changed on the task, for all of them.
-              </p>
-            )}
-            {d && field("Decision notes", "dnotes", { area: true, optional: true })}
+          <Section title={fmea?.on ? "What we do" : <Step n={3}>What we do</Step>} label="What we do" className="rw-step rw-decision">
+            <RcmModeTasks key={`${r.key}:tasks`} r={r} ops={ops} readOnly={readOnly} addStart={startOf("task")} onSaid={said}
+                          onDecision={onDecision} why={decisionWhy} own={ownBlock} ownNeeded={ownNeeded} />
           </Section>
         )}
         {/* 3. The quieter things, last. */}

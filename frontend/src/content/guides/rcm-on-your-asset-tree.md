@@ -179,16 +179,21 @@ fields, then the quieter things at the foot:
 - a functional failure: its **Failure modes** (with its state in words at
   the top), then what it is **Caused by** and what it **Causes**, each with
   the position it is on;
-- a failure mode: its **Failure effects**, whether it's **Evident or hidden**
-  and its **Consequence** (one tap on a choice each), then its **Decision**, which lists the tasks it holds, then where
-  it sits (**Under**).
+- a failure mode: three numbered steps. **1. What happens** is its failure
+  effects. **2. How bad** is whether it's evident or hidden and its
+  consequence (one tap on a choice each). **3. What we do** is one card with
+  the decision and its tasks, such as *On condition · Weekly water level check
+  · every 1 week*. Its **⋯** holds **Change…**, **Link evidence…**, **Add
+  another task…** and each task's **Edit…** and **Remove…**. **Why**, folded
+  in the card, shows the evidence and the decision notes. With no decision
+  yet, the card says so and offers **Decide…**.
 
 Every row, whatever its level, opens its details with **Notes and rationale**,
 a section of its own directly below its title and status line and above
 everything else: the long description beside
 its title, where you write why it's there and what it rests on (why a
 performance standard is set where it is, the history behind a failure mode).
-Press **Edit** (or the dashed **Add notes** row when there are none yet) to
+Press **Edit** (or **+ Add notes** beside the heading when there are none yet) to
 write in a box in place, with a count up to 4,000 characters (25,000 on a
 function, whose notes also hold the working behind its performance standards:
 see below), then **Save** or **Cancel**. Line breaks are kept. A row with notes
@@ -332,14 +337,14 @@ Sometimes one task isn't enough: an inspection catches the slow failures, and
 a replacement at a hard life catches the ones it can't see. And sometimes one
 act of work answers several failure modes: one monthly water sample covers
 five chemistry failure modes. Both are in the failure mode's Details, in its
-**Decision** section: the decision in words, then one row per task, each with
-its kind, name, how often and how many other failure modes share it.
+decision card (**3. What we do**): one line per task, each with its kind,
+name and how often, and how many other failure modes share it.
 
-- **Add another task**, the dashed row under the tasks, adds a task to the
+- **Add another task…**, in the card's **⋯**, adds a task to the
   decision, making it a combination of tasks. A small dialog asks its kind
   first (*On condition*, *Fixed interval* or *Failure finding*, or a
   *Redesign* beside one task), then its name and how often, then Enter. Its
-  instructions are its **⋯** › **Edit…**, as for any other task. It offers
+  instructions are the card's **⋯** › **Edit “its name”…**, as for any other task. It offers
   only what the decision diagram allows: a second scheduled task on a safety
   or environmental consequence, failure finding on a hidden failure.
   (**Add a task…** in the row's menu opens the same dialog, or the
@@ -351,7 +356,7 @@ its kind, name, how often and how many other failure modes share it.
 - Tasks linked before a failure mode had a decision show under **Tasks linked
   before the decision** until you decide.
 - Each task shows how many other failure modes share it. A shared task keeps
-  one interval for all of them: change it on the task (**Edit…** in the task's **⋯**),
+  one interval for all of them: change it on the task (**Edit…** in the card's **⋯**),
   not in the decision dialog, which shows it read-only.
 - A task by use (hours, cycles, km) shows its **Measurement** when you edit it:
   what it counts, the latest reading and the reading when it was last done.
@@ -412,7 +417,8 @@ Each decision's **Evidence check** shows one of these:
 
 A decision with nothing linked yet shows **Not linked**, quietly: plenty of
 decisions are made from judgement, and linking evidence is optional. Its
-Details offer **Link evidence…** when you're ready. Redesign and accept-risk
+Details offer **Link evidence…** (in the decision card's **⋯**, or under its
+**Why**) when you're ready. Redesign and accept-risk
 decisions need no evidence, so they show no status unless you link a report
 or a function's notes.
 

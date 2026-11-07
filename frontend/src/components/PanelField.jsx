@@ -9,10 +9,11 @@ import { TextArea, TextInput } from "./ui/Controls.jsx";
 // the field again sends it again. `suffix`: the unit inside the box. `type`
 // "number" (with `range` {min, max, integer}) or "date". `onDraft`: told the
 // text as it's typed (the FME(C)A's live RPN and action priority). `title`:
-// the control's tooltip (a scale's ten hints).
+// the control's tooltip (a scale's ten hints). `labelHidden`: the label is the
+// control's name only (a section's title already says it).
 export function PanelField({
   label, help, value, area, readOnly, type, suffix, onCommit, placeholder = null, optional = false, saved = 0, range = null, onDraft = null,
-  title = null, shown = null,
+  title = null, shown = null, labelHidden = false,
 }) {
   const [draft, setDraft] = useState(String(value ?? ""));
   const [error, setError] = useState(null);
@@ -23,7 +24,7 @@ export function PanelField({
   if (readOnly) {
     return (
       <div className="field">
-        <span className="field-label">{label}</span>
+        <span className={"field-label" + (labelHidden ? " sr-only" : "")}>{label}</span>
         <span className="rw-fval">{value === "" || value == null ? "—" : `${shown ?? value}${suffix ? ` ${suffix}` : ""}`}</span>
       </div>
     );
@@ -56,7 +57,7 @@ export function PanelField({
                  step={num ? (range?.integer ? "1" : "any") : undefined}
                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }} />;
   return (
-    <Field label={label} help={help} error={error} optional={optional} saved={saved}>
+    <Field label={label} help={help} error={error} optional={optional} saved={saved} labelHidden={labelHidden}>
       {suffix ? <InputGroup>{control}<Addon>{suffix}</Addon></InputGroup> : control}
     </Field>
   );

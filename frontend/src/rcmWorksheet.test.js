@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { flatten, levelSet } from "./outlineTree.js";
 import {
-  addableOutcomes, decisionRows, decisionWithMember, memberEvidenceText,
+  addableOutcomes, cardLineText, decisionCardLines, decisionRows, decisionWithMember, memberEvidenceText,
   COLUMN, COLUMNS, DEFAULT_COLUMNS, FUNCTION_MAX, NAME_COLUMN, functionCount, buildRcmDisplay, checkValue, chipCounts, computeFilter,
   insideWords, intervalText, loadPrefs, savePrefs, siblingOrder, decisionBody, decisionText, hasTask, isCombination, memberEvidenceLine, memberLine, modeCounts, moreTasks, rowText, tasksOf,
   tasksTip } from "./rcmWorksheet.js";
@@ -266,6 +266,29 @@ test("a decision's rows: one per member task, then any other linked task; tasks 
   assert.deepEqual(decisionRows(null, tasks.slice(0, 1)).map((r) => r.outcome), [null]);
   // Tasks without an id (the worksheet outside the Explorer) aren't rows.
   assert.deepEqual(decisionRows(plain, [{ id: null, name: "x" }]), []);
+});
+
+test("the decision card's lines: the decision in words with its task, one line per task", () => {
+  const text = (d, tasks) => decisionCardLines(d, tasks).map(cardLineText);
+  // One task (the Explorer's, with an id): its kind, name and how often.
+  assert.deepEqual(text({ outcome: "on_condition", task_id: "t1" }, [{ id: "t1", name: "Weekly level check", interval: 1, unit: "weeks" }]),
+    ["On condition · Weekly level check · every 1 week"]);
+  // A combination: one line per member, a member with no task now said so, then any other task.
+  const tasks = [{ id: "t1", name: "Vibration check", interval: 1, unit: "months" }, { id: "t3", name: "Grease", interval: 3, unit: "months" }];
+  const combo = { outcomes: [{ outcome: "on_condition", task_id: "t1" }, { outcome: "fixed_interval", task_id: "gone" }, { outcome: "redesign" }] };
+  assert.deepEqual(text(combo, tasks),
+    ["On condition · Vibration check · every 1 month", "Fixed interval · no task now", "Redesign · until the change is made", "Grease · every 3 months"]);
+  // Run to failure: the decision and its action on failure.
+  assert.deepEqual(text({ outcome: "rtf", task: "Replace on failure" }, []), ["Run to failure · Replace on failure"]);
+  assert.deepEqual(text({ outcome: "accept" }, []), ["Accept"]);
+  // No task ids (outside the Explorer): read from the decision itself.
+  assert.deepEqual(text({ outcome: "fixed_interval", task: "Replace the seal", interval: 2, interval_unit: "years" }, tasksOf({ outcome: "fixed_interval", task: "Replace the seal", interval: 2 })),
+    ["Fixed interval · Replace the seal · every 2 years"]);
+  assert.deepEqual(text({ outcomes: [{ outcome: "on_condition", task: "Listen", interval: 1, interval_unit: "weeks" }, { outcome: "redesign" }] }, []),
+    ["On condition · Listen · every 1 week", "Redesign · until the change is made"]);
+  // A scheduled decision with no task yet: the decision alone.
+  assert.deepEqual(text({ outcome: "failure_finding" }, []), ["Failure finding"]);
+  assert.deepEqual(decisionCardLines(null, tasks), []);
 });
 
 test("the tasks that can join a decision follow the combination rules", () => {

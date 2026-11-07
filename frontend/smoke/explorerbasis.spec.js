@@ -57,11 +57,14 @@ test("the working goes in a function's notes: the hint, Markdown shown, inert HT
 
   // One long-text section on a function: no separate working section, and the hint says the working goes here.
   await expect(panel(page).getByRole("region", { name: "Working behind the performance standard" })).toHaveCount(0);
-  await expect(section(page)).toContainText("Why these limits: the working, the data and the sources behind the performance standard");
+  // Empty: only a quiet "+ Add notes" by the heading, the hint its tooltip; the hint shows in the box.
+  await expect(section(page).getByRole("button", { name: "Add notes" })).toHaveAttribute("title", /Why these limits: the working, the data and the sources behind the performance standard/);
+  await expect(section(page)).not.toContainText("Why these limits");
   await shot(page, "01-empty");
 
   // Write it: tables and code render; raw HTML and scripts are inert.
   await section(page).getByRole("button", { name: "Add notes" }).click();
+  await expect(section(page)).toContainText("Why these limits: the working, the data and the sources behind the performance standard");
   await section(page).getByRole("textbox").fill(WORKING);
   await shot(page, "02-write");
   await section(page).getByRole("button", { name: "Save" }).click();

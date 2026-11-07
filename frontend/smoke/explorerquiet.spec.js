@@ -117,15 +117,25 @@ test("no evidence linked: no warnings, no Evidence check column; the column come
   await modeRow.press("Enter");
   const panel = page.locator("aside.rw-panel");
   await expect(panel).toBeVisible();
-  // Said once, in the decision ("None linked"), not again as a chip by the title.
-  await expect(panel.getByRole("region", { name: "Decision" })).toContainText("None linked");
+  // Said once, in the decision card's folded Why ("None linked"), not again as a chip by the title.
+  const decision = panel.getByRole("region", { name: "What we do" });
+  await expect(decision).not.toContainText("None linked");
+  await decision.getByRole("button", { name: /^Why/ }).click();
+  await expect(decision.getByRole("button", { name: /^Why/ })).toHaveAttribute("aria-expanded", "true");
+  await expect(decision).toContainText("None linked");
   await expect(panel.locator(".rw-chips-row")).not.toContainText("No evidence linked");
   // Quiet: never a warning.
   await expect(panel.locator(".chip-warning, .chip-danger")).toHaveCount(0);
-  await panel.getByRole("button", { name: "Link evidence…" }).scrollIntoViewIfNeeded();
+  await decision.getByRole("button", { name: "Link evidence…" }).scrollIntoViewIfNeeded();
   await shot(page, "quiet-2-mode-panel-link-evidence");
-  await panel.getByRole("button", { name: "Link evidence…" }).click();
+  await decision.getByRole("button", { name: "Link evidence…" }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Link the evidence" });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  // The card's ⋯ offers it too.
+  await decision.getByRole("button", { name: "Actions for the decision" }).click();
+  await page.getByRole("menu", { name: "Actions for the decision" }).getByRole("menuitem", { name: "Link evidence…" }).click();
   await expect(dialog).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
