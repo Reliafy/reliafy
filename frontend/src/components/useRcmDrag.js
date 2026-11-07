@@ -36,7 +36,7 @@ export default function useRcmDrag({ whole, picked, enabled, check, drop, say, h
 
   const begin = useCallback((e, key, task = null) => {
     if (!enabled || e.button !== 0 || e.pointerType === "touch") return;
-    if (e.target.closest("input, textarea, select, button, a, .tp-chev, .rw-info, [contenteditable='true']")) return;
+    if (e.target.closest("input, textarea, select, button, a, .tp-chev, [contenteditable='true']")) return;
     const src = dragSource(env.current.whole, key, { picked: env.current.picked, task });
     if (!src) return;
     const scroller = e.currentTarget.closest(".tp-scroll");

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
 import {
-  NARROW_TABLE, TASK_WITH_INTERVAL, functionSummary, basisMarked, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, opensPanel, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardKeys, tableCols,
+  NARROW_TABLE, TASK_WITH_INTERVAL, functionSummary, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, opensPanel, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardKeys, tableCols,
   taskWithInterval, usualCols, withTableCols,
 } from "./explorerRcm.js";
 import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, checkValue, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
@@ -223,20 +223,13 @@ test("the Task cell with the interval folded in", () => {
   assert.equal(TASK_WITH_INTERVAL.edit, "text"); // still edits the task itself
 });
 
-test("the (i) for a working sits on each of the function's performance standards, or on the function with none", () => {
+test("each of a function's performance standards carries its function's working data (no marker in the table)", () => {
   const rcm = (fn) => ({ positions: [{ id: "pump", functions: [{ id: "f", text: "Keep it clean", has_basis: true, basis_preview: "Demand 4.3 ppm", failures: [], ...fn }] }] });
   const listed = graftRcm(buildDisplay(DATA, "positions"), rcm({ standards: [st("a", "FC 1-3 ppm"), st("b", "pH 7.2-7.8")] }));
-  assert.equal(basisMarked(listed.rows.get("f")), false);
-  assert.deepEqual(["a", "b"].map((k) => basisMarked(listed.rows.get(k))), [true, true]);
+  assert.deepEqual(["a", "b"].map((k) => listed.rows.get(k).ref.function_has_basis), [true, true]);
   assert.equal(listed.rows.get("a").ref.function_basis_preview, "Demand 4.3 ppm");
-  const one = graftRcm(buildDisplay(DATA, "positions"), rcm({ standard: "FC 1-3 ppm" }));
-  assert.equal(basisMarked(one.rows.get(legacyKey("f"))), true); // the one text's row
-  assert.equal(basisMarked(one.rows.get("f")), false);
-  const none = graftRcm(buildDisplay(DATA, "positions"), rcm({ standard: "" }));
-  assert.equal(basisMarked(none.rows.get("f")), true); // no performance standard: on the function
   const noWorking = graftRcm(buildDisplay(DATA, "positions"), rcm({ has_basis: false, standards: [st("a", "FC 1-3 ppm")] }));
-  assert.equal(basisMarked(noWorking.rows.get("a")), false);
-  assert.equal(basisMarked(null), false);
+  assert.equal(noWorking.rows.get("a").ref.function_has_basis, false);
 });
 
 test("the one search box also reaches the first words of a working, never the whole text", () => {

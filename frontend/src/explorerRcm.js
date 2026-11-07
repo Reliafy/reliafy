@@ -103,7 +103,7 @@ export function graftRcm(display, rcm) {
         add(stdKey(st), "std", {
           ...st, id: stdKey(st), standard_id: st.legacy ? null : st.id, position_id: r.key, function_id: fn.id,
           function_text: fn.text || "", standard_ids: stdIds,
-          // The function's working, marked on this row (basisMarked).
+          // The function's working, read in the standard's details.
           function_has_basis: !!fn.has_basis, function_basis_preview: fn.basis_preview || "",
         }, fn.id, d + 2);
       }
@@ -357,16 +357,6 @@ export function workingsFor(rcm, modeId) {
       .map(({ fn }) => ({ id: fn.id, label: fn.text, meta: fn.basis_preview || "" }));
   }
   return [];
-}
-
-// Where the (i) for a function's working sits: at the end of each of its
-// performance standards' names (the working is how they were worked out), or,
-// for a function with no performance standard, at the end of its own name.
-// Fixed size, so no row or column changes width with it.
-export function basisMarked(r) {
-  if (r?.type === "std") return !!r.ref.function_has_basis;
-  if (r?.type === "fn") return !!r.ref.has_basis && !standardsShown(r.ref).length;
-  return false;
 }
 
 const inOrder = (ids) => COLUMNS.map((c) => c.id).filter((id) => ids.includes(id));

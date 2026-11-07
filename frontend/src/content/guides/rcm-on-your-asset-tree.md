@@ -527,9 +527,8 @@ at the foot, after its functional failures. It is optional.
 - **Attach PDF** keeps a PDF of the working with the function, up to five, each
   up to 20 MB. Open one from its name; its **⋯** menu downloads, replaces or
   removes it.
-- A small **i** at the end of each of the function's performance standards in
-  the tree means a working is there (on a function with no performance
-  standard, at the end of the function's name). Click it to open the working.
+- The working is read and edited in the function's Details. From one of its
+  performance standards, open Details and choose **open the working**.
 
 When the position (or one above it) has an operating context, the working links
 to it, so the figures it uses are one click away. Over a spreadsheet, the

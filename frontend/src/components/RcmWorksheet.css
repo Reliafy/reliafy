@@ -541,19 +541,6 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 
 /* ---- the working behind a performance standard ------------------------------------- */
 
-/* The (i) in a table cell: fixed size and never shrunk, so a row keeps its
-   height and the text beside it is what gives way. */
-.rw-info {
-  flex: none; display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px; min-height: 0; padding: 0; margin-left: 4px;
-  border: 1px solid var(--acc); border-radius: 50%; background: var(--surf); color: var(--acc);
-  font: italic 700 12px/1 Georgia, "Times New Roman", serif; cursor: pointer;
-}
-.rw-info:hover { background: var(--acc-t); }
-.rw-info:focus-visible { outline: none; box-shadow: var(--focus); }
-.rw-c .rw-info:only-child { margin-left: 0; }
-.tt-tree .rw-info { margin-left: 6px; }
-
 .rw-basis { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); min-width: 0; }
 .rw-basis-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .rw-basis-head h3 { margin: 0; font-size: var(--fs-14); }
@@ -774,7 +761,6 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
   width: 16px; height: 16px; margin-left: 4px; color: var(--muted);
 }
 .tt-tree .rw-note-mark { margin-left: 6px; }
-.rw-info + .rw-note-mark { margin-left: 3px; }
 /* The section in the details (RcmNotes.jsx): the first thing under the title, so no rule above it;
    empty, just one quiet line. */
 .rw-notes { min-width: 0; }
