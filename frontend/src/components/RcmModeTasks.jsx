@@ -32,7 +32,12 @@ import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 //    second tap on the chosen chip clears it. A change that takes tasks off
 //    the mode asks first, naming them. Until step 2 is answered the chips are
 //    shown but disabled, with why.
-// 2. The tasks, as cards: each leads with what it's for, by its kind (Derryn,
+//    Under the chosen chip, a short bridge says what the card below holds
+//    (TaskChoice `bridge`); the worth-doing test is each chip's tooltip.
+// 2. The tasks, as cards of one shape in every state (shown, changed with
+//    Edit, not made yet: inputs where the words go; Derryn, 10 Nov 2026), with
+//    a thin accent border on the left so they hang off the chip row. Each
+//    leads with what it's for, by its kind (Derryn,
 //    9 Nov 2026: "you have an on-condition task, but then you might have an
 //    inspection for that, and that needs to be much more clear"): "Check:" the
 //    task · every N, then "Then, if found:" what's done when the check finds it
@@ -197,59 +202,65 @@ export default function RcmModeTasks({
 
   const card = (l) => {
     const t = l.task;
+    const role = roleLine(l, r.ref.notes);
     if (t && editing === t.id && can) {
       return (
-        <li key={l.key} className="rim-line rim-card editing">
-          <TaskForm key={t.id} r={r} task={t} busy={busy} failed={failed}
-                    found={l.found ? { label: ROLE[l.outcome].then.replace(/:$/, ""), text: l.found.text } : null}
-                    onCancel={() => { setEditing(null); setFailed(null); }} onSubmit={submitEdit(t, l)} />
+        <li key={l.key} className="rim-line rim-card rim-one editing">
+          <TaskEditCard key={t.id} r={r} task={t} lead={role.lead} busy={busy} failed={failed}
+                        found={l.found ? { label: ROLE[l.outcome].then, text: l.found.text } : null}
+                        onCancel={() => { setEditing(null); setFailed(null); }} onSubmit={submitEdit(t, l)} />
         </li>
       );
     }
-    const role = roleLine(l, r.ref.notes);
     // Run to failure's action on failure is edited in its card (`own`); accept and redesign read the notes.
     const ownHere = l.key === "decision" && d?.outcome === "rtf" && own;
     const empty = l.task || ownHere ? null : l.outcome === "accept" ? "Say why in Notes and rationale above"
       : l.outcome === "redesign" ? "Say what's to change in Notes and rationale above"
         : l.outcome === "rtf" ? "Say what's done when it fails" : null;
     const name = ownHere ? null : role.name;
+    const acts = t?.id && can ? (
+      <>
+        <button type="button" className="link" disabled={busy} aria-label={`Edit “${t.name}”`}
+                onClick={() => { setFailed(null); setAdding(false); setEditing(t.id); }}>Edit</button>
+        <button type="button" className="link" disabled={busy}
+                aria-label={t.shared_with ? `Remove “${t.name}” from this failure mode` : `Remove “${t.name}”`}
+                onClick={() => remove(t)}>Remove</button>
+      </>
+    ) : null;
+    const chips = t && (t.shared_with || t.package);
     return (
-      <li key={l.key} className="rim-line rim-card">
-        <div className="rim-chead">
-          <span className="rim-tname">
+      <li key={l.key} className="rim-line rim-card rim-one">
+        <div className="rim-r1">
+          <span className="rim-tname rim-r1-body">
             {role.lead && <span className="rim-trole">{role.lead}</span>}
             {role.lead && (name || role.every || (!name && empty)) ? " " : null}
             {name || (empty && <span className="rim-empty">{empty}</span>)}
             {(name || empty) && role.every ? " · " : null}
             {role.every && <span className="rim-tevery">{role.every}</span>}
           </span>
-          {t?.id && can && (
-            <span className="rim-tacts">
-              <button type="button" className="link" disabled={busy} aria-label={`Edit “${t.name}”`}
-                      onClick={() => { setFailed(null); setAdding(false); setEditing(t.id); }}>Edit</button>
-              <button type="button" className="link" disabled={busy}
-                      aria-label={t.shared_with ? `Remove “${t.name}” from this failure mode` : `Remove “${t.name}”`}
-                      onClick={() => remove(t)}>Remove</button>
-            </span>
-          )}
+          {acts && <span className="rim-tacts">{acts}</span>}
         </div>
-        {t && (t.shared_with || t.package) ? (
-          <span className="rim-chips">
-            {t.shared_with ? <Chip>Shared with {plural(t.shared_with, "other failure mode")}</Chip> : null}
-            {t.package && (
-              <Link className="chip chip-neutral chip-btn" title="Done on this work package's visits: open it on the Packages tab"
-                    to={explorerPath(t.package.subject?.kind === "location" ? "locations" : "positions",
-                                     { sel: t.package.subject?.id, tab: "packages", package: t.package.id })}>
-                In: {t.package.name}
-              </Link>
-            )}
-          </span>
-        ) : null}
-        {t?.instructions && <Instructions text={t.instructions} />}
         {ownHere && <div className="rim-own">{own}</div>}
         {l.found && t && (
           <FoundLine key={`${r.key}:${l.key}:found`} label={ROLE[l.outcome].then} value={l.found.text}
                      can={can} onSave={(text) => saveFound(l, text).then(() => onSaid?.("Saved what's done when it's found."))} />
+        )}
+        {(t?.instructions || chips) && (
+          <div className="rim-r3">
+            {t?.instructions && <Instructions text={t.instructions} />}
+            {chips ? (
+              <span className="rim-chips">
+                {t.shared_with ? <Chip>Shared with {plural(t.shared_with, "other failure mode")}</Chip> : null}
+                {t.package && (
+                  <Link className="chip chip-neutral chip-btn" title="Done on this work package's visits: open it on the Packages tab"
+                        to={explorerPath(t.package.subject?.kind === "location" ? "locations" : "positions",
+                                         { sel: t.package.subject?.id, tab: "packages", package: t.package.id })}>
+                    In: {t.package.name}
+                  </Link>
+                )}
+              </span>
+            ) : null}
+          </div>
         )}
       </li>
     );
@@ -258,14 +269,15 @@ export default function RcmModeTasks({
   return (
     <div className={"rim-step" + (editing ? " has-edit" : "")}>
       <TaskChoice options={options} hidden={answers.hidden} consequence={answers.consequence} value={pick} onChange={choose}
-                  disabled={!can || !answered || busy} locked={answered ? null : LOCKED} moveOnly saved={saved} />
+                  disabled={!can || !answered || busy} locked={answered ? null : LOCKED} moveOnly saved={saved} bridge />
       {failed && !editing && <p className="field-error" role="alert">{failed}</p>}
       {needsFirst && (
-        <NewTaskForm key={`${r.key}:${d.outcome}`} r={r} d={d} ops={ops} kind={d.outcome}
-                     intro="The decision schedules work, but no task does it yet: give it a task and an interval."
-                     start={{ name: d.task || "", interval: d.interval ?? "" }}
-                     onSave={(member) => decide(decisionWithFirstTask(d, member))}
-                     onDone={(said) => { setSaved((n) => n + 1); onSaid?.(said); }} />
+        <div className="rim-card rim-one editing" role="group" aria-label="The decision's task">
+          <NewTaskCard key={`${r.key}:${d.outcome}`} r={r} d={d} ops={ops} kind={d.outcome}
+                       start={{ name: d.task || "", interval: d.interval ?? "" }}
+                       onSave={(member) => decide(decisionWithFirstTask(d, member))}
+                       onDone={(said) => { setSaved((n) => n + 1); onSaid?.(said); }} />
+        </div>
       )}
       {d && cards.length > 0 && <ul className="rim-lines rim-cards" aria-label="The decision's tasks">{cards.map(card)}</ul>}
       {!d && cards.length > 0 && (
@@ -275,9 +287,8 @@ export default function RcmModeTasks({
         </>
       )}
       {canAdd && !editing && (adding ? (
-        <div className="rim-card rim-adding" role="group" aria-label="Add another task">
-          <NewTaskForm r={r} d={d} ops={ops} kinds={addable} title="Add another task"
-                       intro="The decision becomes a combination of tasks: each one scheduled on its own."
+        <div className="rim-card rim-one rim-adding editing" role="group" aria-label="Add another task">
+          <NewTaskCard r={r} d={d} ops={ops} kinds={addable}
                        onSave={(member) => decide(decisionWithMember(d, member))}
                        onCancel={() => setAdding(false)}
                        onDone={(said) => { setAdding(false); onSaid?.(said); }} />
@@ -297,15 +308,68 @@ export default function RcmModeTasks({
   );
 }
 
-// A task for the decision, in place: with `kinds` (another task for a
-// combination) its kind first as chips; then a new task's name and how often
-// (Enter saves), or "Use an existing task…": one on this position or above it
-// (read when asked for), which keeps its own interval for every mode it
-// serves. A redesign needs no task: the others stand in until the change is
-// made. `onSave(member)` writes it ({outcome, task, interval, interval_unit},
-// {outcome, task_id} or {outcome}) and returns a promise; a refusal shows here
-// with everything as typed. Escape cancels (when it can be cancelled).
-function NewTaskForm({ r, d, ops, kind: fixed = null, kinds = null, title = null, intro = null, start = {}, onSave, onCancel = null, onDone }) {
+// ---- one card shape in every state (Derryn, 10 Nov 2026) ---------------------------
+// "The final box changes appearance": a task's card is the same three rows whether it
+// is shown, being changed or not made yet. Row 1: the role ("Check:", "Do:", …) and
+// the task, with "every N unit"; its links (Edit, Remove) or Save at the right. Row 2,
+// for a check: "Then, if found:" (or "Then, if failed:") and what's done. Row 3, quiet:
+// the instructions' first line and the chips, or, while it's changed, its other fields.
+// Changing or making a task puts inputs exactly where the words were.
+
+function Row1({ lead, children, acts = null }) {
+  return (
+    <div className="rim-r1">
+      <div className="rim-r1-body">
+        {lead && <span className="rim-trole">{lead}</span>}
+        {children}
+      </div>
+      {acts && <span className="rim-tacts">{acts}</span>}
+    </div>
+  );
+}
+
+function Row2({ lead, id, children }) {
+  return (
+    <div className="rim-r2">
+      <label className="rim-trole" htmlFor={id}>{lead}</label>
+      {children}
+    </div>
+  );
+}
+
+// "every [6] [months]" in row 1: where the card's "· every 6 months" is.
+function EveryInputs({ interval, unit, onInterval, onUnit, busy, invalid = false }) {
+  const units = INTERVAL_UNITS.includes(unit) ? INTERVAL_UNITS : [unit, ...INTERVAL_UNITS];
+  return (
+    <span className="rim-every">
+      <span className="rim-every-word" aria-hidden="true">every</span>
+      <InputGroup label="Every">
+        <TextInput type="number" inputMode="decimal" min="0" step="any" value={interval} readOnly={busy} aria-label="Interval"
+                   aria-invalid={invalid ? "true" : undefined} placeholder="e.g. 6" onChange={(e) => onInterval(e.target.value)} />
+        <Select value={unit} disabled={busy} aria-label="Interval unit" onChange={(e) => onUnit(e.target.value)}>
+          {units.map((u) => <option key={u} value={u}>{u}</option>)}
+        </Select>
+      </InputGroup>
+    </span>
+  );
+}
+
+// The reason an interval can't be kept ("" when it can).
+function intervalWhy(raw) {
+  const n = Number(raw);
+  if (String(raw).trim() === "") return "Enter how often: an interval above 0.";
+  return Number.isFinite(n) && n > 0 ? "" : "Enter an interval above 0.";
+}
+
+// A task for the decision not made yet, in the card's shape: with `kinds` (another task
+// for a combination) its kind first as chips; then "New task · Existing task"; row 1 the
+// role and a new task's name and how often (Enter saves), or the picker of a task on
+// this position or above it (it keeps its own interval for every mode it serves); row 2,
+// for a check, what's done when it finds it. A redesign needs no task: the others stand
+// in until the change is made. `onSave(member)` writes it ({outcome, task, interval,
+// interval_unit, on_found?}, {outcome, task_id, on_found?} or {outcome}) and returns a
+// promise; a refusal shows here with everything as typed. Escape cancels (when it can be).
+function NewTaskCard({ r, d, ops, kind: fixed = null, kinds = null, start = {}, onSave, onCancel = null, onDone }) {
   const [kind, setKind] = useState(fixed || kinds?.[0]);
   const [use, setUse] = useState("new"); // "new" | "existing"
   const [name, setName] = useState(start.name || "");
@@ -319,7 +383,7 @@ function NewTaskForm({ r, d, ops, kind: fixed = null, kinds = null, title = null
   const [tried, setTried] = useState(false);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
-  const units = INTERVAL_UNITS.includes(unit) ? INTERVAL_UNITS : [unit, ...INTERVAL_UNITS];
+  const foundId = `rim-found${useId()}`;
   const scheduled = SCHEDULED.includes(kind);
   useEffect(() => {
     if (use !== "existing" || choices !== null) return undefined;
@@ -354,103 +418,89 @@ function NewTaskForm({ r, d, ops, kind: fixed = null, kinds = null, title = null
       setFailed(saveErrorText(err, { offline: navigator.onLine === false }));
     }
   };
+  const acts = (
+    <>
+      {onCancel && <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>}
+      <button type="submit" className="sm" disabled={busy} aria-busy={busy || undefined}>
+        {busy ? "Saving…" : use === "existing" && scheduled ? "Link task" : "Save"}
+      </button>
+    </>
+  );
   return (
-    <form className="rim-tform rim-addform" onSubmit={save}
+    <form className="rim-tform rim-addform rim-onecard" onSubmit={save}
           onKeyDown={(e) => {
             if (e.key !== "Escape" || !onCancel || busy) return;
             e.preventDefault();
             e.stopPropagation(); // the form closes, not the panel
             onCancel();
           }}>
-      {title && <h4>{title}</h4>}
-      {intro && <p className="rw-fhelp">{intro}</p>}
-      {kinds && (
-        <Field label="Kind of task">
-          <ChoiceChips label="Kind of task" autoFocus value={kind} disabled={busy}
-                       options={kinds.map((k) => ({ value: k, label: KIND_LABEL[k] || k }))}
-                       onChange={(v) => { if (v) setKind(v); }} />
-        </Field>
-      )}
-      {!scheduled ? (
-        <p className="rw-fhelp">A redesign needs no task here: the other task stands in until the change is made. Say what's to change in Notes and rationale, under the title.</p>
-      ) : use === "new" ? (
-        <>
-          <Field label="Task" help={hint}>
-            <TextInput value={name} readOnly={busy} placeholder="e.g. Replace the acid pump"
-                       aria-invalid={tried && !name.trim() ? "true" : undefined} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <Field label="Every" as="fieldset">
-            <InputGroup label="Every">
-              <TextInput type="number" inputMode="decimal" min="0" step="any" value={interval} readOnly={busy} aria-label="Interval"
-                         aria-invalid={tried && intervalWhy(interval) ? "true" : undefined} placeholder="e.g. 6"
-                         onChange={(e) => setInterval_(e.target.value)} />
-              <Select value={unit} disabled={busy} aria-label="Interval unit" onChange={(e) => setUnit(e.target.value)}>
-                {units.map((u) => <option key={u} value={u}>{u}</option>)}
-              </Select>
-            </InputGroup>
-          </Field>
-          <button type="button" className="link rim-use" disabled={busy} onClick={() => { setFailed(null); setUse("existing"); }}>
-            Use an existing task…
-          </button>
-        </>
-      ) : (
-        <>
-          <p className="rw-fhelp">A task on this position, or on a position above it, can serve this failure mode too. It keeps its own interval for every mode it serves.</p>
-          {choices === null ? <p className="rw-fhelp">Reading the tasks…</p> : choices.length === 0 ? (
-            <p className="rw-fhelp">No other task on this position or above it. Write a new task instead.</p>
-          ) : (
-            <Field label="Task">
-              <Select value={picked} disabled={busy} onChange={(e) => setPicked(e.target.value)} aria-label="Existing task">
-                <option value="">Choose a task…</option>
-                {choices.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}{every(t) ? ` · ${every(t)}` : ""}{t.position?.id !== here ? ` · on ${t.position?.name}` : ""}{t.serves ? ` · serves ${plural(t.serves, "failure mode")}` : ""}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+      {(kinds || scheduled) && (
+        <div className="rim-top">
+          {kinds && (
+            <ChoiceChips label="Kind of task" autoFocus value={kind} disabled={busy}
+                         options={kinds.map((k) => ({ value: k, label: KIND_LABEL[k] || k }))}
+                         onChange={(v) => { if (v) setKind(v); }} />
           )}
-          <button type="button" className="link rim-use" disabled={busy} onClick={() => { setFailed(null); setUse("new"); }}>
-            Write a new task instead
-          </button>
-        </>
+          {scheduled && (
+            <ChoiceChips label="New or existing task" className="rim-seg" value={use} disabled={busy}
+                         options={[{ value: "new", label: "New task" }, { value: "existing", label: "Existing task" }]}
+                         onChange={(v) => { if (v) { setFailed(null); setUse(v); } }} />
+          )}
+        </div>
       )}
+      <Row1 lead={ROLE[kind]?.lead} acts={acts}>
+        {!scheduled ? (
+          <span className="rim-empty">the other task stands in until the change is made. Say what's to change in Notes and rationale, under the title.</span>
+        ) : use === "new" ? (
+          <>
+            <TextInput className="rim-in-name" value={name} readOnly={busy} placeholder="e.g. Replace the acid pump" aria-label="Task"
+                       aria-invalid={tried && !name.trim() ? "true" : undefined} onChange={(e) => setName(e.target.value)} />
+            <EveryInputs interval={interval} unit={unit} onInterval={setInterval_} onUnit={setUnit} busy={busy}
+                         invalid={tried && !!intervalWhy(interval)} />
+          </>
+        ) : choices === null ? <span className="rim-empty">Reading the tasks…</span> : choices.length === 0 ? (
+          <span className="rim-empty">No other task on this position or above it: choose New task.</span>
+        ) : (
+          <Select className="rim-in-name" value={picked} disabled={busy} onChange={(e) => setPicked(e.target.value)} aria-label="Existing task">
+            <option value="">Choose a task…</option>
+            {choices.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}{every(t) ? ` · ${every(t)}` : ""}{t.position?.id !== here ? ` · on ${t.position?.name}` : ""}{t.serves ? ` · serves ${plural(t.serves, "failure mode")}` : ""}
+              </option>
+            ))}
+          </Select>
+        )}
+      </Row1>
       {scheduled && findsSomething(kind) && (
-        <Field label={ROLE[kind].then.replace(/:$/, "")} optional>
-          <TextInput value={found} readOnly={busy} placeholder={FOUND_EMPTY} maxLength={500} onChange={(e) => setFound(e.target.value)} />
-        </Field>
+        <Row2 lead={ROLE[kind].then} id={foundId}>
+          <TextInput id={foundId} value={found} readOnly={busy} placeholder={FOUND_EMPTY} maxLength={500} onChange={(e) => setFound(e.target.value)} />
+        </Row2>
       )}
-      {failed && <p className="field-error" role="alert">{failed}</p>}
-      <div className="rim-tform-acts">
-        {tried && why && !busy && <p className="rim-why">{why}</p>}
-        {onCancel && <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>}
-        <button type="submit" className="sm" disabled={busy} aria-busy={busy || undefined}>
-          {busy ? "Saving…" : use === "existing" && scheduled ? "Link task" : "Save"}
-        </button>
-      </div>
+      {(hint || (use === "existing" && scheduled) || failed || (tried && why && !busy)) && (
+        <div className="rim-r3">
+          {hint && <p className="rw-fhelp">{hint}</p>}
+          {use === "existing" && scheduled && <p className="rw-fhelp">It keeps its own interval for every failure mode it serves.</p>}
+          {failed && <p className="field-error" role="alert">{failed}</p>}
+          {tried && why && !busy && <p className="rim-why">{why}</p>}
+        </div>
+      )}
     </form>
   );
 }
 
-// The reason an interval can't be kept ("" when it can).
-function intervalWhy(raw) {
-  const n = Number(raw);
-  if (String(raw).trim() === "") return "Enter how often: an interval above 0.";
-  return Number.isFinite(n) && n > 0 ? "" : "Enter an interval above 0.";
-}
-
-// Changing a task (its card's Edit): its name, what raises it (Trigger: every
-// interval, or when an event happens: a reading past a limit, or an event
-// logged by name; taskTrigger.js), interval and unit, what kind of
-// task it is, its instructions; a task by use being changed, its measurement
-// (what it counts, with the last-done reading on a new one). Saved once (the button says so until the
-// server answers); a refusal shows here with everything as typed.
-function TaskForm({ r, task, busy, failed, found = null, onCancel, onSubmit }) {
+// Changing a task (its card's Edit), in the card's shape: row 1 its name and how
+// often in place of the words; row 2, for a check, what's done when it finds it;
+// row 3 its other fields: what raises it (every interval, or an event: a reading past
+// a limit, or an event logged by name; taskTrigger.js), a task by use's measurement
+// (what it counts, with the last-done reading on a new one) and its instructions.
+// Saved once (the button says so until the server answers); a refusal shows here with
+// everything as typed.
+function TaskEditCard({ r, task, lead, busy, failed, found = null, onCancel, onSubmit }) {
   const d = r.ref.decision;
-  const [foundText, setFoundText] = useState(found?.text || "");
   const [name, setName] = useState(task?.name || "");
   const [interval, setInterval_] = useState(task?.interval != null ? String(task.interval) : "");
   const [unit, setUnit] = useState(task?.unit || startUnit(d || {}));
+  const [foundText, setFoundText] = useState(found?.text || "");
   // The kind of task is the decision's (the chip in step 3), never asked again here.
   const outcome = task?.outcome || (d && SCHEDULED.includes(d.outcome) ? d.outcome : "");
   const [instructions, setInstructions] = useState(task?.instructions || "");
@@ -458,6 +508,7 @@ function TaskForm({ r, task, busy, failed, found = null, onCancel, onSubmit }) {
   const [trig, setTrig] = useState(() => triggerState(task));
   const setT = (k) => (e) => setTrig((x) => ({ ...x, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
   const [points, setPoints] = useState(null);
+  const foundId = `rim-found${useId()}`;
   useEffect(() => {
     if (trig.mode !== "event" || trig.by !== "reading" || points || !task?.id) return undefined;
     let on = true;
@@ -475,114 +526,107 @@ function TaskForm({ r, task, busy, failed, found = null, onCancel, onSubmit }) {
   const timed = asksInterval(trig);
   const intervalOk = !timed || (interval.trim() !== "" && Number.isFinite(n) && n > 0);
   const can = !!name.trim() && intervalOk && !triggerWhy(trig) && !busy && !meas.error;
-  const units = INTERVAL_UNITS.includes(unit) ? INTERVAL_UNITS : [unit, ...INTERVAL_UNITS];
   const why = busy ? null : !name.trim() ? "Name the task first."
     : timed && interval.trim() === "" ? "Enter how often: an interval above 0."
     : !intervalOk ? "Enter an interval above 0." : triggerWhy(trig) || (meas.error ? "Settle the measurement first." : null);
+  const acts = (
+    <>
+      <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
+      <button type="submit" className="sm" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save task"}</button>
+    </>
+  );
   return (
-    <form className="rim-tform" onSubmit={(e) => {
+    <form className="rim-tform rim-onecard" aria-label={`Change “${task?.name || "the task"}”`} onSubmit={(e) => {
       e.preventDefault();
       if (!can) return;
       onSubmit({ name: name.trim(), ...(timed ? { interval: n, unit } : {}), outcome: outcome || null,
         instructions: instructions.trim(), ...(timed ? meas.body || {} : {}), trigger: triggerBody(trig) },
       found ? foundText.trim() : undefined);
     }}>
-      <h4>Change the task</h4>
-      {task?.shared_with ? (
-        <p className="rw-fhelp">It also serves {plural(task.shared_with, "other failure mode")}: the change applies to all of them.</p>
-      ) : null}
-      <Field label="Task">
-        <TextInput ref={nameBox} value={name} readOnly={busy} placeholder="What to do, e.g. Replace the acid pump"
-                   onChange={(e) => setName(e.target.value)} />
-      </Field>
-      {/* What raises the task is the interval unless asked otherwise: a quiet link swaps
-          to an event (a reading past a limit, or a logged event) and back, so a task
-          chosen as fixed interval isn't asked "every interval or on condition" again
-          (Derryn, 9 Nov 2026). */}
-      {trig.mode === "event" && (
-        <fieldset className="rim-trigger">
-          <legend>Raised by an event · <button type="button" className="link" disabled={busy}
-                  onClick={() => setTrig((x) => ({ ...x, mode: "interval" }))}>Back to every interval</button></legend>
-          <Field label="What happens">
-            <Select value={trig.by} disabled={busy} onChange={setT("by")}>
-              <option value="reading">A reading passes a limit</option>
-              <option value="name">Someone logs an event</option>
-            </Select>
-          </Field>
-          {trig.by === "reading" ? (
-            <div className="rim-trow">
-              <Field label="Measuring point">
-                <Select value={trig.pointId} disabled={busy || points === null} onChange={setT("pointId")}>
-                  <option value="">{points === null ? "Reading the points…" : points.length ? "Choose a point…" : "No condition points nearby"}</option>
-                  {(points || []).map((p) => <option key={p.id} value={p.id}>{pointLabel(p)}</option>)}
-                </Select>
-              </Field>
-              <Field label="Limit" as="fieldset">
-                <InputGroup label="Limit">
-                  <Select value={trig.side} disabled={busy} aria-label="Above or below" onChange={setT("side")}>
-                    <option value="above">At or above</option>
-                    <option value="below">At or below</option>
-                  </Select>
-                  <TextInput type="number" inputMode="decimal" step="any" value={trig.limit} readOnly={busy}
-                             aria-label="Limit" placeholder="e.g. 120" onChange={setT("limit")} />
-                </InputGroup>
-              </Field>
-            </div>
-          ) : (
-            <Field label="Event name" help="Logged on this position, or one above it, from its ⋯ menu: Log an event…">
-              <TextInput value={trig.eventType} readOnly={busy} placeholder="e.g. Lightning strike" onChange={setT("eventType")} />
-            </Field>
-          )}
-          <label className="rim-check">
-            <input type="checkbox" checked={trig.withInterval} disabled={busy} onChange={setT("withInterval")} />
-            Keep the interval too (whichever comes first)
-          </label>
-          {!trig.withInterval && <p className="rw-fhelp">It waits for the event: never overdue, and each event raises one work order.</p>}
-        </fieldset>
-      )}
-      <div className="rim-trow">
-        {timed && <Field label="Every" as="fieldset" error={interval.trim() !== "" && !(Number.isFinite(n) && n > 0) ? "Enter an interval above 0." : null}>
-          <InputGroup label="Every">
-            <TextInput type="number" inputMode="decimal" min="0" step="any" value={interval} readOnly={busy} aria-label="Interval"
-                       onChange={(e) => setInterval_(e.target.value)} />
-            <Select value={unit} disabled={busy} aria-label="Interval unit" onChange={(e) => setUnit(e.target.value)}>
-              {units.map((u) => <option key={u} value={u}>{u}</option>)}
-            </Select>
-          </InputGroup>
-        </Field>}
-      </div>
-      {trig.mode !== "event" && (
-        <p className="rw-fhelp rim-trigger-swap">
-          <button type="button" className="link" disabled={busy} onClick={() => setTrig((x) => ({ ...x, mode: "event" }))}>
-            Raise it on an event instead…
-          </button>
-          {" "}(a reading past a limit, or an event someone logs)
-        </p>
-      )}
-      {task?.id && timed && (
-        <TaskMeasurementField taskId={task.id} unit={unit} disabled={busy} onChange={(body, error) => setMeas({ body, error })} />
-      )}
-      {meas.error && <p className="field-error" role="alert">{meas.error}</p>}
-      <Field label="Instructions" optional>
-        <TextArea value={instructions} readOnly={busy} onChange={(e) => setInstructions(e.target.value)} />
-      </Field>
+      <Row1 lead={lead} acts={acts}>
+        <TextInput ref={nameBox} className="rim-in-name" value={name} readOnly={busy} aria-label="Task"
+                   placeholder="What to do, e.g. Replace the acid pump" onChange={(e) => setName(e.target.value)} />
+        {timed ? (
+          <EveryInputs interval={interval} unit={unit} onInterval={setInterval_} onUnit={setUnit} busy={busy}
+                       invalid={interval.trim() !== "" && !(Number.isFinite(n) && n > 0)} />
+        ) : <span className="rim-tevery">on an event (below)</span>}
+      </Row1>
       {found && (
-        <Field label={found.label} optional>
-          <TextInput value={foundText} readOnly={busy} placeholder={FOUND_EMPTY} maxLength={500} onChange={(e) => setFoundText(e.target.value)} />
-        </Field>
+        <Row2 lead={found.label} id={foundId}>
+          <TextInput id={foundId} value={foundText} readOnly={busy} placeholder={FOUND_EMPTY} maxLength={500}
+                     onChange={(e) => setFoundText(e.target.value)} />
+        </Row2>
       )}
-      {failed && <p className="field-error" role="alert">{failed}</p>}
-      <div className="rim-tform-acts">
+      <div className="rim-r3">
+        {task?.shared_with ? (
+          <p className="rw-fhelp">It also serves {plural(task.shared_with, "other failure mode")}: the change applies to all of them.</p>
+        ) : null}
+        {/* What raises the task is the interval unless asked otherwise: a quiet link swaps
+            to an event (a reading past a limit, or a logged event) and back (Derryn, 9 Nov 2026). */}
+        {trig.mode === "event" ? (
+          <fieldset className="rim-trigger">
+            <legend>Raised by an event · <button type="button" className="link" disabled={busy}
+                    onClick={() => setTrig((x) => ({ ...x, mode: "interval" }))}>Back to every interval</button></legend>
+            <Field label="What happens">
+              <Select value={trig.by} disabled={busy} onChange={setT("by")}>
+                <option value="reading">A reading passes a limit</option>
+                <option value="name">Someone logs an event</option>
+              </Select>
+            </Field>
+            {trig.by === "reading" ? (
+              <div className="rim-trow">
+                <Field label="Measuring point">
+                  <Select value={trig.pointId} disabled={busy || points === null} onChange={setT("pointId")}>
+                    <option value="">{points === null ? "Reading the points…" : points.length ? "Choose a point…" : "No condition points nearby"}</option>
+                    {(points || []).map((p) => <option key={p.id} value={p.id}>{pointLabel(p)}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Limit" as="fieldset">
+                  <InputGroup label="Limit">
+                    <Select value={trig.side} disabled={busy} aria-label="Above or below" onChange={setT("side")}>
+                      <option value="above">At or above</option>
+                      <option value="below">At or below</option>
+                    </Select>
+                    <TextInput type="number" inputMode="decimal" step="any" value={trig.limit} readOnly={busy}
+                               aria-label="Limit" placeholder="e.g. 120" onChange={setT("limit")} />
+                  </InputGroup>
+                </Field>
+              </div>
+            ) : (
+              <Field label="Event name" help="Logged on this position, or one above it, from its ⋯ menu: Log an event…">
+                <TextInput value={trig.eventType} readOnly={busy} placeholder="e.g. Lightning strike" onChange={setT("eventType")} />
+              </Field>
+            )}
+            <label className="rim-check">
+              <input type="checkbox" checked={trig.withInterval} disabled={busy} onChange={setT("withInterval")} />
+              Keep the interval too (whichever comes first)
+            </label>
+            {!trig.withInterval && <p className="rw-fhelp">It waits for the event: never overdue, and each event raises one work order.</p>}
+          </fieldset>
+        ) : (
+          <p className="rw-fhelp rim-trigger-swap">
+            <button type="button" className="link" disabled={busy} onClick={() => setTrig((x) => ({ ...x, mode: "event" }))}>
+              Raise it on an event instead…
+            </button>
+            {" "}(a reading past a limit, or an event someone logs)
+          </p>
+        )}
+        {task?.id && timed && (
+          <TaskMeasurementField taskId={task.id} unit={unit} disabled={busy} onChange={(body, error) => setMeas({ body, error })} />
+        )}
+        {meas.error && <p className="field-error" role="alert">{meas.error}</p>}
+        <Field label="Instructions" optional>
+          <TextArea value={instructions} readOnly={busy} onChange={(e) => setInstructions(e.target.value)} />
+        </Field>
+        {failed && <p className="field-error" role="alert">{failed}</p>}
         {why && <p className="rim-why">{why}</p>}
-        <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
-        <button type="submit" className="sm" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save task"}</button>
       </div>
     </form>
   );
 }
 
-// A check's "Then, if found:" (or "Then, if failed:") line on its card: what's done
-// when the check finds it, one line, kept when you leave it or press Enter, "✓ Saved"
+// A check's row 2 on its card, shown: "Then, if found:" (or "Then, if failed:") and what's
+// done when the check finds it, one line, kept when you leave it or press Enter, "✓ Saved"
 // once it is; greyed "Say what's done when the check finds it" while empty. Read-only:
 // the words, or that greyed line.
 function FoundLine({ label, value, can, onSave }) {
@@ -595,9 +639,9 @@ function FoundLine({ label, value, can, onSave }) {
   const id = `rim-found${useId()}`;
   if (!can && !busy) {
     return (
-      <p className="rim-found">
+      <div className="rim-r2">
         <span className="rim-trole">{label}</span> {value || <span className="rim-empty">{FOUND_EMPTY}</span>}
-      </p>
+      </div>
     );
   }
   const commit = async () => {
@@ -617,19 +661,18 @@ function FoundLine({ label, value, can, onSave }) {
     }
   };
   return (
-    <div className="rim-found">
-      <label className="rim-trole" htmlFor={id}>{label}</label>
+    <Row2 lead={label} id={id}>
       <TextInput id={id} value={draft} readOnly={busy} placeholder={FOUND_EMPTY} maxLength={500}
                  aria-invalid={error ? "true" : undefined}
                  onChange={(e) => { setDraft(e.target.value); sent.current = null; }} onBlur={commit}
                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }} />
       <SavedMark saved={saved} />
       {error && <p className="field-error" role="alert">{error}</p>}
-    </div>
+    </Row2>
   );
 }
 
-// A task's instructions: two lines, with "Show all" when there's more.
+// A task's instructions in row 3: the first line, with "Show all" when there's more.
 function Instructions({ text }) {
   const [open, setOpen] = useState(false);
   const [long, setLong] = useState(false);
@@ -640,7 +683,7 @@ function Instructions({ text }) {
   }, [text, open]);
   return (
     <>
-      <span ref={box} className={"rim-tinst" + (open ? "" : " clamped")}>{text}</span>
+      <span ref={box} className={"rim-tinst" + (open ? "" : " clamped one")}>{text}</span>
       {(long || open) && (
         <button type="button" className="link rim-tmore" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           {open ? "Show less" : "Show all"}

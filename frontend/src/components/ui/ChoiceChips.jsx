@@ -7,7 +7,7 @@ import { useField } from "./Field.jsx";
 // alone). A radio group: ← → (and ↑ ↓) move and choose, Tab leaves. With
 // `clearable`, choosing the chosen one again clears it.
 //
-//   options   [{value, label}]
+//   options   [{value, label, title?}] (title: the chip's tooltip)
 //   value     the chosen value ("" or null: none)
 //   onChange  (value | "") on a choice
 //   moveOnly  arrows move the focus only; Enter, Space or a click chooses (a
@@ -46,7 +46,8 @@ export default function ChoiceChips({
         return (
           <button key={o.value} type="button" role="radio" aria-checked={on} className={"choice-chip" + (on ? " on" : "")}
                   tabIndex={i === at ? 0 : -1} disabled={disabled}
-                  title={on && clearable ? "Chosen: choose it again to clear it" : undefined}
+                  title={o.title ? `${o.title}${on && clearable ? " (choose it again to clear it)" : ""}`
+                    : on && clearable ? "Chosen: choose it again to clear it" : undefined}
                   onClick={() => pick(o.value)} onKeyDown={(e) => keys(e, i)}>
             {on && <span className="choice-tick" aria-hidden="true">✓</span>}
             {o.label}

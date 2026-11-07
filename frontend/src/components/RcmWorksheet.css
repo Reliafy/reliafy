@@ -854,3 +854,33 @@ button.rim-addrow:hover:not(:disabled) { border-color: var(--acc); background: t
 .rim-found > .ctl { flex: 1 1 12rem; min-width: 0; }
 .rim-found > .field-error { flex-basis: 100%; margin: 0; }
 .rim-card .rim-own { padding-left: 20px; }
+/* One card shape in every state (Derryn, 10 Nov 2026): row 1 the role and the task
+   (inputs in the same places while it's changed or made), row 2 a check's "Then, if
+   found:", row 3 quiet (instructions' first line, chips; the other fields while it's
+   changed). A thin accent border on the left: the card hangs off the chip row. */
+.rim-step .rim-card.rim-one { border-left: 3px solid var(--acc); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.rim-step .rim-card.rim-one.editing { box-shadow: none; border-color: var(--line); border-left-color: var(--acc); padding: 10px 12px; }
+.rim-onecard { display: flex; flex-direction: column; gap: 6px; border: 0; padding: 0; background: none; min-width: 0; }
+.rim-r1 { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; min-width: 0; }
+.rim-r1-body { flex: 1 1 16rem; min-width: 0; display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; overflow-wrap: anywhere; }
+span.rim-tname.rim-r1-body { display: block; }
+.rim-r1 .rim-tacts { margin-left: auto; display: flex; gap: 8px; align-items: center; flex: none; }
+.rim-r1 .rim-in-name { flex: 1 1 12rem; min-width: 0; }
+.rim-every { display: inline-flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; }
+.rim-every .ctl-group > input[type="number"] { width: 5.5rem; }
+.rim-every-word { color: var(--muted); }
+.rim-r2 { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: var(--fs-14); min-width: 0; overflow-wrap: anywhere; }
+.rim-r2 > .ctl { flex: 1 1 12rem; min-width: 0; }
+.rim-r2 > .field-error { flex-basis: 100%; margin: 0; }
+.rim-r3 { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rim-r3 .rim-chips, .rim-card.rim-one .rim-tinst { padding-left: 0; }
+.rim-card.rim-one .rim-tmore { margin-left: 0; }
+.rim-tinst.clamped.one { -webkit-line-clamp: 1; line-clamp: 1; }
+.rim-card.rim-one .rim-own { padding-left: 0; }
+.rim-top { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.rim-seg .choice-chip { font-size: var(--fs-13); }
+@media (max-width: 600px) {
+  .rim-r1 .rim-tacts { flex-basis: 100%; justify-content: flex-end; }
+  .rim-every { flex-basis: 100%; }
+  .rim-every .ctl-group { flex: 1 1 auto; }
+}
