@@ -1111,8 +1111,9 @@ def _rcm_rollup(index: dict, mode_ids: set) -> dict:
         "tasks": sum(1 for m in modes if m["id"] in index["tasks_of"]),
         # A decision that schedules work with no live task to do it (the task
         # was retired or unlinked): shown, never a gate.
-        "scheduled_without_task": sum(1 for m in modes if m.get("outcome") in SCHEDULED_OUTCOMES
-                                      and m["id"] not in index["tasks_of"]),
+        # A combination counts when any of its scheduled tasks has gone.
+        "scheduled_without_task": sum(1 for m in modes if Maintenance._members_without_task(
+            m, {t["id"] for t in index["tasks_of"].get(m["id"], [])})),
         "hidden": sum(1 for m in modes if m.get("consequence") == "hidden"),
         "safety": sum(1 for m in modes if m.get("consequence") in ("safety", "environmental")),
         "mode_ids": sorted(m["id"] for m in modes),
@@ -1321,6 +1322,11 @@ def _task_updated(s: GraphStore, org: str, p: dict) -> None:
 
 # A task serving one more failure mode (its other links kept), or one fewer.
 # The edge id comes from its ends, so linking twice or replaying is the same edge.
+
+def _failure_mode_outcomes_set(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"outcomes": [{"outcome": o["outcome"], "task_id": o.get("task_id")}
+                                             for o in p.get("outcomes") or []] or None})
+
 
 def _task_linked(s: GraphStore, org: str, p: dict) -> None:
     s.put_edge(org, "MITIGATES", p["id"], p["failure_mode_id"])
@@ -2522,6 +2528,9 @@ PROJECTORS = {
     "standard.moved": _standard_moved,
     "failure_mode.assigned": _failure_mode_assigned,
     "failure_mode.analysed": _patch,
+    # A combination of tasks: every outcome of the decision, each with its task
+    # ([{outcome, task_id}], the first the decision's own; [] when it's one again).
+    "failure_mode.outcomes_set": _failure_mode_outcomes_set,
     # FME(C)A: a mode's scores and criticality figures (fmea.FIELDS; None clears one).
     "failure_mode.scored": _patch,
     # A mode directly under a function, no functional failure between (or under none).
@@ -2831,6 +2840,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         ff_ids: dict[str, str] = {}  # each copied functional failure -> its copy
         copied_modes: dict[str, str] = {}  # every copied failure mode -> its copy (across the branch)
         copied_tasks: list[tuple[list, str]] = []  # (the modes a task prevented, its copy's id)
+        task_copies: dict[str, str] = {}  # every copied task -> its copy
         self._quota("Position", MAX_POSITIONS, adding=len(plan))
         self._quota("PartListing", MAX_PART_LISTINGS, adding=sum(len(x[6]) for x in plan), what="parts-list entries")
         for src, pid, label, parent, modes, tasks, listings, place in plan:
@@ -2913,6 +2923,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 } | ({"instructions": _with_first(full, task.get("instructions"))} if full else {})
                   | ({"failure_mode_ids": linked} if len(linked) > 1 else {}))
                 copied_tasks.append((mitigates, tid))
+                task_copies[task["id"]] = tid
                 # The decision's own task, where this task was one: the copy's.
                 for fm in modes:
                     if fm.get("task_id") == task["id"] and fm["id"] in mode_ids:
@@ -2928,6 +2939,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             for old_mode in mitigates:
                 if old_mode in copied_modes and self.s.edge(self.org, "MITIGATES", tid, copied_modes[old_mode]) is None:
                     self._emit("task.linked", {"id": tid, "failure_mode_id": copied_modes[old_mode], "on": today})
+        # A combination of tasks comes with its copies (a task above the branch isn't copied: none).
+        for plan_row in plan:
+            for fm in plan_row[4]:
+                if fm.get("outcomes"):
+                    self._emit("failure_mode.outcomes_set", {"id": copied_modes[fm["id"]], "outcomes": [
+                        {"outcome": o["outcome"], "task_id": task_copies.get(o.get("task_id"))} for o in fm["outcomes"]]})
         skipped = self._copy_links(ff_ids, parent_id or None)
         return self.position(new) | ({"links_skipped": skipped} if skipped else {})
 
@@ -3349,7 +3366,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def _mode_view(self, fm: dict) -> dict:
         return {k: fm.get(k) for k in ("id", "text", "function", "failure", "consequence", "outcome")} | {
             "ad_hoc": bool(fm.get("ad_hoc")),
-        }
+        } | ({"outcomes": [o["outcome"] for o in fm["outcomes"]]} if fm.get("outcomes") else {})
 
     def class_failure_modes(self, position_id: str) -> list[str]:
         """Failure modes recorded at other positions of the same class and not
@@ -4233,7 +4250,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         existing task on the position, or one above, is the decision's task instead);
         a decision that doesn't retires the mode's tasks, or unlinks the ones that
         serve other modes too. decision None clears the decision. A task that serves
-        other modes keeps its own interval and name: change those on the task."""
+        other modes keeps its own interval and name: change those on the task.
+        decision.outcomes [{outcome, task, interval, interval_unit, task_id}, ...]:
+        a combination of tasks (a regular inspection plus a fixed-time replacement),
+        each scheduled member with a task of its own (_decide_combination)."""
         fm, position = self._live_mode(mode_id)
         changes: dict = {}
         if consequence is not ...:
@@ -4251,6 +4271,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             except rcm_decisions.RcmValidationError as err:
                 raise Invalid(str(err)) from None
             cleaned = cleaned or {}
+            task_id = task_id or cleaned.pop("task_id", None)
+            members = cleaned.pop("outcomes", None)
             linked = cleaned.get("evidence")
             if linked and linked["type"] == "working" and linked != (fm.get("evidence") or None):
                 # A newly linked working is a function on this tree whose standard has one written.
@@ -4261,6 +4283,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 if not fn.get("standard_basis"):
                     raise Invalid(f"The function '{fn.get('text') or fn['id']}' has no working behind its performance "
                                   "standard yet: write it first, then link it.")
+            if members or fm.get("outcomes"):
+                # A combination of tasks, or a decision replacing one. A plain decision on a
+                # mode that never had one goes on below, emitting what it always has.
+                return self._decide_combination(fm, position, tasks, changes, cleaned, members, task_id)
             said = str(cleaned.get("task") or "").strip()
             outcome = cleaned.get("outcome")
             if task_id:
@@ -4319,6 +4345,122 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                         self._emit("failure_mode.analysed", {"id": mode_id, "changes": {"task_id": task["id"]}})
             else:
                 self._drop_mode_tasks(mode_id, tasks, "The failure mode's decision schedules no task now.")
+        return self.rcm_mode(mode_id)
+
+    def _decide_combination(self, fm: dict, position: dict, tasks: list[dict], changes: dict, cleaned: dict,
+                            members: list[dict] | None, task_id) -> dict:
+        """A decision that combines tasks (``members``: two or more, checked by
+        rcm_decisions), or any decision on a mode that had a combination. Each
+        scheduled member keeps the task it had (the one a member of the same
+        outcome had, else a live task of the mode with that outcome, else the
+        decision's own task for the first member), adopts the one its task_id
+        names, or gets a new one on the position. Tasks of the old decision no
+        member keeps are retired (or unlinked, when they serve other modes too).
+        The members are on the mode as ``outcomes`` [{outcome, task_id}]
+        (failure_mode.outcomes_set); the first is the decision's own (outcome,
+        task_id), so every reader of one outcome reads the combination's first."""
+        mode_id = fm["id"]
+        outcome = cleaned.get("outcome")
+        if members is None:
+            # One outcome (or none): a member when it schedules a task, as a plain decision does.
+            if task_id and outcome not in SCHEDULED_OUTCOMES:
+                raise Invalid("A task goes with a decision that schedules one (fixed_interval, failure_finding "
+                              "or on_condition).")
+            one = {k: cleaned[k] for k in ("outcome", "task", "interval", "interval_unit") if cleaned.get(k)}
+            members = [one] if outcome in SCHEDULED_OUTCOMES and (cleaned.get("interval") or task_id) else []
+            combined = False
+        else:
+            combined = True
+        members = [dict(mm) for mm in members]
+        if task_id and members and not members[0].get("task_id"):
+            members[0]["task_id"] = task_id
+        sched = [mm for mm in members if mm["outcome"] in SCHEDULED_OUTCOMES]
+        live = {t["id"]: t for t in tasks}
+        claimed: set = set()
+        found: dict[int, dict] = {}
+        adopted: set = set()
+        for i, mm in enumerate(sched):
+            if mm.get("task_id"):
+                t = self._linkable_task(mm["task_id"], position)
+                if t["id"] in claimed:
+                    raise Invalid(f"Each task of a combination is its own: {t['name']} is named twice.")
+                claimed.add(t["id"])
+                found[i] = t
+                adopted.add(i)
+        before = {o["outcome"]: o.get("task_id") for o in fm.get("outcomes") or []}
+        for i, mm in enumerate(sched):
+            if i in found:
+                continue
+            had = live.get(before.get(mm["outcome"]))
+            t = had if had and had["id"] not in claimed else next(
+                (x for x in tasks if x["id"] not in claimed and x.get("outcome") == mm["outcome"]), None)
+            if t is not None:
+                claimed.add(t["id"])
+                found[i] = t
+        own = live.get(fm.get("task_id"))
+        if own and own["id"] not in claimed:
+            spare = next((i for i in range(len(sched)) if i not in found), None)
+            if spare is not None:
+                claimed.add(own["id"])
+                found[spare] = own
+        # Every member's task as wanted, checked before anything is written.
+        plans = []
+        for i, mm in enumerate(sched):
+            t = found.get(i)
+            said = str(mm.get("task") or "").strip() or (t["name"] if t else "")
+            interval, unit = mm.get("interval"), _norm_unit(mm.get("interval_unit"))
+            if not interval and t is not None:
+                interval, unit = t["interval"], t["unit"]
+            unit = unit or "days"
+            name, full = shortened(said or f"{SCHEDULED_OUTCOMES[mm['outcome']]}: {fm['text']}")
+            full = shortened(said, LONG_TEXT)[0] if full else ""
+            wanted = {"name": name, "interval": _interval(interval, unit, f"interval for {str(name)[:80]}"),
+                      "unit": unit, "outcome": mm["outcome"]} | ({"instructions": full} if full else {})
+            task_changes = {}
+            if t is not None:
+                task_changes = {k: v for k, v in wanted.items() if t.get(k) != v}
+                shared = self._shared_with(t["id"], mode_id)
+                if shared:
+                    task_changes.pop("outcome", None)
+                    if task_changes:
+                        raise Invalid(f"{t['name']} also serves {shared} other failure mode{'s' if shared != 1 else ''}, "
+                                      "so its name and interval are changed on the task itself (maintenance "
+                                      "tasks.update), for all of them. Or give this failure mode a task of its own.")
+            plans.append((mm, t, wanted, task_changes, i in adopted))
+        self._quota("Task", MAX_TASKS, adding=sum(1 for p in plans if p[1] is None))
+        said = str(cleaned.get("task") or "").strip()
+        changes |= {
+            "outcome": outcome, "rtf_basis": cleaned.get("rtf_basis"), "evidence": cleaned.get("evidence"),
+            "decision_notes": _text(cleaned.get("notes"), "notes"),
+            "task_note": "" if sched else shortened(said, LONG_TEXT)[0],
+        }
+        changes = {k: v for k, v in changes.items() if fm.get(k) != v and not (fm.get(k) is None and v == "")}
+        if changes:
+            self._emit("failure_mode.analysed", {"id": mode_id, "changes": changes})
+        task_of: dict[str, str] = {}
+        for mm, t, wanted, task_changes, adopt in plans:
+            if t is None:
+                tid = new_id()
+                self._emit("task.added", {"id": tid, "position_id": position["id"], "failure_mode_id": mode_id,
+                                          "start": self.today(), **wanted})
+            else:
+                tid = t["id"]
+                if task_changes:
+                    self._emit("task.updated", {"id": tid, "changes": task_changes})
+                if self.s.edge(self.org, "MITIGATES", tid, mode_id) is None:
+                    self._emit("task.linked", {"id": tid, "failure_mode_id": mode_id, "on": self.today()})
+            task_of[mm["outcome"]] = tid
+        if sched and fm.get("task_id") != task_of[sched[0]["outcome"]]:
+            self._emit("failure_mode.analysed", {"id": mode_id, "changes": {"task_id": task_of[sched[0]["outcome"]]}})
+        now = [{"outcome": mm["outcome"], "task_id": task_of.get(mm["outcome"])} for mm in members] if combined else []
+        if now != (fm.get("outcomes") or []):
+            self._emit("failure_mode.outcomes_set", {"id": mode_id, "outcomes": now})
+        # The old decision's tasks no member kept; every task, when the decision schedules none.
+        former = {fm.get("task_id"), *before.values()}
+        drop = [t for t in tasks if t["id"] not in claimed and (not sched or t["id"] in former)]
+        if drop:
+            self._drop_mode_tasks(mode_id, drop, "The failure mode's decision schedules no task now." if not sched
+                                  else "The failure mode's decision no longer has this task.")
         return self.rcm_mode(mode_id)
 
     def _drop_mode_tasks(self, mode_id: str, tasks: list[dict], reason: str) -> tuple[list[str], list[str]]:
@@ -5081,7 +5223,32 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if fm.get("decision_notes"):
             d["notes"] = fm["decision_notes"]
         d["evidence"] = fm.get("evidence") or None
+        if fm.get("outcomes"):
+            d["outcomes"] = Maintenance._members_of(fm, tasks)
         return d
+
+    @staticmethod
+    def _members_of(fm: dict, tasks: list[dict]) -> list[dict]:
+        """A combination's members as reads show them: each outcome with its task
+        (task, interval, interval_unit, task_id), task_id null when its task has
+        gone (retired or unlinked) or it schedules none (a redesign)."""
+        live = {t["id"]: t for t in tasks}
+        out = []
+        for o in fm.get("outcomes") or []:
+            t = live.get(o.get("task_id"))
+            out.append({"outcome": o["outcome"], "task_id": t["id"] if t else None}
+                       | ({"task": Maintenance._task_text(t), "interval": t.get("interval"),
+                           "interval_unit": t.get("unit")} if t else {}))
+        return out
+
+    @staticmethod
+    def _members_without_task(fm: dict, live_ids) -> bool:
+        """Whether a decision schedules work with no live task to do it: its own
+        outcome, or any scheduled member of a combination of tasks."""
+        if fm.get("outcomes"):
+            return any(o["outcome"] in SCHEDULED_OUTCOMES and o.get("task_id") not in live_ids
+                       for o in fm["outcomes"])
+        return fm.get("outcome") in SCHEDULED_OUTCOMES and not live_ids
 
     def _working_ref(self, function_id) -> dict | None:
         """The working a decision links as its evidence ({id: the function's,

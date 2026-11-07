@@ -248,11 +248,17 @@ another function (alone: the functional failures breaching it stay, under no per
 with it (what dragging a performance standard in the app does), send one maintenance apply batch: move_standard, then move_functional_failure \
 for each failure that breached it (function_id: the same, standard_id: the standard). Several moves at once (five \
 modes under one functional failure): maintenance apply, all or nothing, and its undo list puts them back.
-- Several tasks for one failure mode, one task for several. A mode's decision has one task, the first in its \
-decision.tasks; maintenance failure_modes.add_task adds another (a combination: an inspection that catches the \
-slow failures plus a replacement at a hard life; the classic sources expect it for safety, environmental and \
-hidden consequences, and ask what a second task earns on operational and non-operational ones: say so in the \
-decision's notes). One act of work for several modes (one monthly water sample for five chemistry modes): \
+- Several tasks for one failure mode, one task for several. A combination of tasks (RCM II's words: an \
+inspection that catches the slow failures plus a replacement at a hard life) is one decision with several \
+outcomes: decide with decision.outcomes, e.g. {outcomes: [{outcome: 'on_condition', task: 'Vibration check', \
+interval: 1, interval_unit: 'months'}, {outcome: 'fixed_interval', task: 'Replace the bearing', interval: 24, \
+interval_unit: 'months'}], notes: '...'}. Members are two or more of on_condition, fixed_interval and \
+failure_finding (no outcome twice), or redesign beside one of them as the interim measure; rtf and accept stand \
+alone. Each scheduled member gets a task of its own (task_id adopts an existing one); the first is the decision's \
+own (outcome, task_id), and reads list them all in decision.outcomes. Sending one outcome again, or {}, ends the \
+combination and retires the tasks it no longer has. The classic sources expect a combination for safety, \
+environmental and hidden consequences, and ask what a second task earns on operational and non-operational ones: \
+say so in the decision's notes. maintenance failure_modes.add_task adds a task outside the decision. One act of work for several modes (one monthly water sample for five chemistry modes): \
 maintenance tasks.link task_id failure_mode_id, or decide with task_id so an existing task is the decision's. A \
 task on a position may serve modes on it or on positions inside it. The task owns its interval: while it \
 serves one mode alone, decide changes it; once shared, change it with maintenance tasks.update (for every mode \

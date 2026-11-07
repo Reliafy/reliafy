@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { flatten, levelSet } from "./outlineTree.js";
 import {
   COLUMN, COLUMNS, DEFAULT_COLUMNS, FUNCTION_MAX, NAME_COLUMN, functionCount, buildRcmDisplay, checkValue, chipCounts, computeFilter,
-  insideWords, intervalText, loadPrefs, savePrefs, siblingOrder, decisionBody, hasTask, moreTasks, rowText, tasksOf, tasksTip } from "./rcmWorksheet.js";
+  insideWords, intervalText, loadPrefs, savePrefs, siblingOrder, decisionBody, decisionText, hasTask, isCombination, memberLine, moreTasks, rowText, tasksOf,
+  tasksTip } from "./rcmWorksheet.js";
 
 // A house pool pump's RCM, as the server sends it back (decisions resolved).
 const RCM = [
@@ -160,6 +161,43 @@ test("a decision goes back without the evidence check, a change applied", () => 
     evidence: { type: "strategy_analysis", id: "a" } });
   assert.equal(decisionBody({ outcome: "fixed_interval" }, { interval: 3 }).interval_unit, "hours");
   assert.equal(decisionBody(null), null);
+});
+
+// A combination of tasks: an inspection plus a fixed-time replacement.
+const COMBO = {
+  outcome: "on_condition", task: "Vibration check", interval: 1, interval_unit: "months", task_id: "t1",
+  notes: "Neither alone is enough", status: "unevidenced", evidence: null,
+  outcomes: [
+    { outcome: "on_condition", task: "Vibration check", interval: 1, interval_unit: "months", task_id: "t1" },
+    { outcome: "fixed_interval", task: "Replace the bearing", interval: 24, interval_unit: "months", task_id: "t2" },
+  ],
+};
+
+test("a combination reads as its outcomes joined, one outcome as before", () => {
+  assert.equal(decisionText(COMBO), "On-condition + Fixed-interval");
+  assert.equal(decisionText({ outcome: "fixed_interval" }), "Fixed-interval");
+  assert.equal(decisionText({ outcome: "rtf", rtf_basis: "random" }), "Run-to-failure (random)");
+  assert.equal(decisionText({ outcome: "on_condition", outcomes: [{ outcome: "on_condition" }] }), "On-condition");
+  assert.equal(isCombination(COMBO), true);
+  assert.equal(isCombination({ outcome: "on_condition" }), false);
+  assert.equal(memberLine(COMBO.outcomes[1]), "Fixed-interval: Replace the bearing · every 24 months");
+  assert.equal(memberLine({ outcome: "redesign", task_id: null }), "Redesign (until the change is made)");
+  assert.equal(memberLine({ outcome: "fixed_interval", task_id: null }), "Fixed-interval: no task now");
+});
+
+test("a combination goes back whole, a cell's change on its first task", () => {
+  assert.deepEqual(decisionBody(COMBO), {
+    outcomes: [
+      { outcome: "on_condition", task: "Vibration check", interval: 1, interval_unit: "months" },
+      { outcome: "fixed_interval", task: "Replace the bearing", interval: 24, interval_unit: "months" },
+    ],
+    notes: "Neither alone is enough",
+  });
+  const changed = decisionBody(COMBO, { interval: 2 });
+  assert.equal(changed.outcomes[0].interval, 2);
+  assert.equal(changed.outcomes[1].interval, 24);
+  assert.equal(decisionBody(COMBO, { notes: null }).notes, undefined);
+  assert.equal(decisionBody(COMBO, { task: "Ultrasound check" }).outcomes[0].task, "Ultrasound check");
 });
 
 test("a function's text is kept to 200 characters where it's typed; one saved longer before stays editable", () => {

@@ -323,7 +323,9 @@ FAILURE_MODES: Table = {
         {outcome, rtf_basis, task, interval, interval_unit, notes, evidence: {type, id}: a model or analysis,
         checked; or report / working (a function's id): linked, not checked} ({} clears it; values:
         guide topic plan); adds, changes or retires its task (task_id: an existing one is the decision's).
-        Returns it with the evidence check and any advice to relay."""),
+        A combination of tasks (an inspection plus a fixed-time replacement): decision.outcomes [{outcome, task,
+        interval, interval_unit, task_id?}, ...], each scheduled one with a task of its own. Returns it with the
+        evidence check and any advice to relay."""),
     "add_task": ("failure_mode_id name interval", "unit outcome instructions", """Another task for the mode
         (an inspection plus a hard-time replacement); its decision's stays first."""),
     "assign": ("failure_mode_id", "functional_failure_id function_id", "Put it under one of its position's "
@@ -1393,7 +1395,10 @@ def register() -> None:
                                   notes: str | None = None, function_id: str | None = None,
                                   functional_failure_id: str | None = None, standard: str | None = None,
                                   standard_basis: str | None = None,
-                                  decision: dict[str, Any] | None = None,
+                                  decision: Annotated[dict[str, Any] | None, Field(description=(
+                                      "decide: {outcome, rtf_basis, task, interval, interval_unit, notes, "
+                                      "evidence}; a combination of tasks: outcomes [{outcome, task, interval, "
+                                      "interval_unit, task_id?}, ...] instead of outcome, task and interval."))] = None,
                                   cause_id: str | None = None, task_id: str | None = None,
                                   name: str | None = None, interval: float | None = None,
                                   unit: str | None = None, outcome: str | None = None,
@@ -1484,7 +1489,9 @@ def register() -> None:
             from backend.maintenance import rcm_decisions, rcm_graph
 
             out = rcm_graph.mode_status(_db(), mode, reader.read_owners)
-            advice = rcm_decisions.advice(out.get("consequence"), (out.get("decision") or {}).get("outcome"))
+            decided = out.get("decision") or {}
+            advice = rcm_decisions.advice(out.get("consequence"), decided.get("outcome"),
+                                          [o["outcome"] for o in decided.get("outcomes") or []])
             return out | ({"advice": advice} if advice else {})
         if action == "add_task":
             return run(m.add_mode_task, failure_mode_id, name, interval, _d(unit, "months"), outcome,

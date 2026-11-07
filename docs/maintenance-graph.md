@@ -360,6 +360,17 @@ the other way: a round at the pool covers the chlorinator's modes.
   counts modes with at least one live task; `scheduled_without_task` counts
   decisions that schedule work with no live task to do it (shown, never a
   gate: `analysed` rests on decisions, as before).
+- A combination of tasks (RCM II): one decision with several outcomes, a
+  regular inspection plus a fixed-time replacement, each scheduled one with a
+  task of its own. The members are `outcomes` on the mode, `[{outcome,
+  task_id}]`, set whole by `failure_mode.outcomes_set` (`[]` ends it); the
+  first is the decision's own (`outcome`, `task_id`), so readers of one
+  outcome read the combination's first. A plain decision on a mode that never
+  had a combination emits only what it always did. Reads add
+  `decision.outcomes` (each with its task, interval and `task_id`, null when
+  its task has gone), and `scheduled_without_task` counts a combination any
+  of whose scheduled tasks has gone. Copying a position copies it.
+  `PROJECTION_VERSION` stays: a new event, no existing shape changed.
 - Retiring a mode retires its sole tasks and unlinks shared ones; restoring
   it brings its sole tasks back (`tasks_restored`), not the shared links.
   Merging a mode moves every link across. Moving a mode (or a function) takes

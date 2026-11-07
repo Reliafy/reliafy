@@ -269,6 +269,21 @@ A decision with an interval becomes a scheduled task on the position, shown in
 the **Task** column. Change the decision and the task follows; a decision with
 no schedule (run-to-failure, redesign, accept) retires it.
 
+### Combine tasks in one decision
+
+Sometimes no single task is good enough on its own. RCM II calls the answer a
+*combination of tasks*: a regular inspection plus a fixed-time replacement,
+say, usually where a failure could hurt someone or harm the environment. In the
+decision dialog, choose the first outcome, then pick another under **Add
+another task**: *On-condition*, *Fixed-interval replacement* or
+*Failure-finding*. Each one you add asks for its own task name and interval,
+and each becomes its own scheduled task on the position. A **Redesign** can
+sit beside one task, the task done until the change is made. Run-to-failure
+and accept stand alone. The evidence and notes are once for the whole
+decision, and the **Decision** column reads *On-condition + Fixed-interval*.
+For an operational or non-operational consequence, say in the notes what the
+second task earns.
+
 ## Several tasks for one failure mode, one task for several
 
 Sometimes one task isn't enough: an inspection catches the slow failures, and

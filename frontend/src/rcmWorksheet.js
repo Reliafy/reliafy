@@ -220,10 +220,45 @@ export function failuresOn(display, positionId) {
   return out;
 }
 
+// A combination of tasks (RCM II): a decision with two or more outcomes, a
+// regular inspection plus a fixed-time replacement, each with its own task.
+// The server's `outcomes` on the decision ([{outcome, task, interval,
+// interval_unit, task_id}], the first the decision's own), only on a combination.
+export const isCombination = (d) => Array.isArray(d?.outcomes) && d.outcomes.length > 1;
+
+// A combination's member as a line: "Fixed-interval: Replace the bearing · every 24 months".
+export function memberLine(o) {
+  const label = OUTCOME_LABEL[o.outcome] || o.outcome;
+  if (o.outcome === "redesign") return `${label} (until the change is made)`;
+  if (!o.task_id && !o.task) return `${label}: no task now`;
+  return `${label}: ${[o.task, o.interval != null ? `every ${intervalText(o)}` : null].filter(Boolean).join(" · ")}`;
+}
+
 // A decision as the server takes it back: the fields a decision is made of,
-// without the evidence check the server added.
+// without the evidence check the server added. A combination goes back whole
+// (its members, the change applied to the first: the decision's own task), so
+// editing one cell never drops the other tasks.
 export function decisionBody(d, patch = {}) {
   if (!d) return null;
+  if (isCombination(d)) {
+    const given = (v) => v !== undefined && v !== null && v !== "";
+    const keep = (o) => Object.fromEntries(["outcome", "task", "interval", "interval_unit"]
+      .filter((k) => given(o[k])).map((k) => [k, o[k]]));
+    const first = keep(d.outcomes[0]);
+    for (const k of ["task", "interval", "interval_unit"]) {
+      if (!(k in patch)) continue;
+      if (given(patch[k])) first[k] = patch[k];
+      else delete first[k];
+    }
+    if (first.interval != null && !first.interval_unit) first.interval_unit = "hours";
+    if (first.interval == null) delete first.interval_unit;
+    const out = { outcomes: [first, ...d.outcomes.slice(1).map(keep)] };
+    for (const k of ["notes", "evidence"]) {
+      const v = k in patch ? patch[k] : d[k];
+      if (given(v)) out[k] = v;
+    }
+    return out;
+  }
   const out = {};
   for (const k of ["outcome", "rtf_basis", "task", "interval", "interval_unit", "notes", "evidence"]) {
     if (d[k] !== undefined && d[k] !== null && d[k] !== "") out[k] = d[k];
@@ -253,6 +288,7 @@ export function intervalText(d) {
 
 export function decisionText(d) {
   if (!d) return "";
+  if (isCombination(d)) return d.outcomes.map((o) => OUTCOME_LABEL[o.outcome] || o.outcome).join(" + ");
   const label = OUTCOME_LABEL[d.outcome] || d.outcome || "";
   return d.outcome === "rtf" && RTF_LABEL[d.rtf_basis] ? `${label} (${RTF_LABEL[d.rtf_basis]})` : label;
 }
@@ -324,7 +360,7 @@ export function phoneLine(r) {
   if (r.type === "fn" && r.ref.has_basis) return [insideWords(r), "has a working"].filter(Boolean).join(" · ");
   if (r.type !== "mode") return insideWords(r);
   const d = r.ref.decision;
-  return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", intervalText(d), d?.task || tasksOf(r.ref)[0]?.text, moreTasks(r.ref)]
+  return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", isCombination(d) ? "" : intervalText(d), d?.task || tasksOf(r.ref)[0]?.text, moreTasks(r.ref)]
     .filter(Boolean).join(" · ");
 }
 

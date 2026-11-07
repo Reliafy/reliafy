@@ -722,7 +722,9 @@ def decide_failure_mode(mode_id: str, body: dict = Body(...), session=Depends(ge
                         ctx: AccessCtx = Depends(get_access),
                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """The mode's consequence and decision ({outcome, rtf_basis, task, interval, interval_unit, notes,
-    evidence}; null clears it), checked by the RCM decision rules; the evidence must be one the writer can open."""
+    evidence}; null clears it), checked by the RCM decision rules; the evidence must be one the writer can open.
+    A combination of tasks: decision.outcomes [{outcome, task, interval, interval_unit, task_id}, ...] in place
+    of outcome, task and interval, each scheduled member with a task of its own."""
     from backend.maintenance import rcm_graph
 
     def go():

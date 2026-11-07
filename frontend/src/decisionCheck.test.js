@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkDecision } from "./decisionCheck.js";
+import { checkDecision, combinationOk, combineChoices, pruneExtras } from "./decisionCheck.js";
 
 // The fields each outcome asks for (as GET /api/maintenance/rcm/options says).
 const F = { on_condition: ["task", "interval"], fixed_interval: ["task", "interval"], failure_finding: ["task", "interval"], rtf: ["rtf_basis", "task"], redesign: ["notes"], accept: ["notes"] };
@@ -80,4 +80,49 @@ test("the interval's unit starts at the decision's own, else the one chosen last
   assert.equal(startUnit({}, broken), "hours");
   assert.doesNotThrow(() => rememberUnit("days", broken));
   assert.equal(startUnit({}, undefined), "hours");
+});
+
+// ---- a combination of tasks ------------------------------------------------------
+
+test("which outcomes combine: two or more scheduled, or redesign beside one; rtf and accept stand alone", () => {
+  assert.equal(combinationOk(["on_condition", "fixed_interval"]), true);
+  assert.equal(combinationOk(["on_condition", "fixed_interval", "failure_finding"]), true);
+  assert.equal(combinationOk(["redesign", "on_condition"]), true);
+  assert.equal(combinationOk(["redesign", "on_condition", "fixed_interval"]), false);
+  assert.equal(combinationOk(["on_condition", "on_condition"]), false);
+  assert.equal(combinationOk(["rtf", "on_condition"]), false);
+  assert.equal(combinationOk(["accept", "fixed_interval"]), false);
+  assert.equal(combinationOk(["rtf"]), true);
+  assert.deepEqual(combineChoices("rtf"), []);
+  assert.deepEqual(combineChoices("on_condition"), [
+    { id: "fixed_interval", allowed: true }, { id: "failure_finding", allowed: true }, { id: "redesign", allowed: true }]);
+  // Once a second scheduled task is in, a redesign can't join; once a redesign is in, nothing else can.
+  assert.deepEqual(combineChoices("on_condition", ["fixed_interval"]).find((c) => c.id === "redesign").allowed, false);
+  assert.deepEqual(combineChoices("on_condition", ["redesign"]).filter((c) => c.allowed).map((c) => c.id), ["redesign"]);
+  assert.deepEqual(combineChoices("redesign").map((c) => c.id), ["on_condition", "fixed_interval", "failure_finding"]);
+});
+
+test("a changed first outcome keeps only the further tasks that still combine with it", () => {
+  const extras = [{ outcome: "fixed_interval" }, { outcome: "redesign" }];
+  assert.deepEqual(pruneExtras("on_condition", extras), [{ outcome: "fixed_interval" }]);
+  assert.deepEqual(pruneExtras("fixed_interval", extras), [{ outcome: "redesign" }]);
+  assert.deepEqual(pruneExtras("rtf", extras), []);
+});
+
+test("in a combination every scheduled task needs its interval, the first one too", () => {
+  const extra = { outcome: "fixed_interval", interval: "24", intervalUnit: "months" };
+  // On its own an on-condition decision may go without an interval; in a combination it may not.
+  assert.deepEqual(check({ outcome: "on_condition" }).blockers, []);
+  assert.deepEqual(check({ outcome: "on_condition", extras: [extra] }).blockers, ["Give the task's interval."]);
+  const ok = check({ outcome: "on_condition", interval: "1", intervalUnit: "months", extras: [extra] });
+  assert.deepEqual(ok.blockers, []);
+  assert.deepEqual(ok.extraErrors, [null]);
+  assert.equal(ok.notice, null);
+  const missing = check({ outcome: "on_condition", interval: "1", extras: [{ outcome: "fixed_interval", interval: "" }] });
+  assert.deepEqual(missing.extraErrors, ["Give this task's interval."]);
+  assert.deepEqual(missing.blockers, ["Give each task of the combination a valid interval."]);
+  // A redesign beside it needs no interval.
+  assert.deepEqual(check({ outcome: "on_condition", interval: "1", extras: [{ outcome: "redesign" }] }).blockers, []);
+  assert.deepEqual(check({ outcome: "rtf", rtfBasis: "random", extras: [extra] }).blockers,
+    ["These outcomes can't be combined."]);
 });

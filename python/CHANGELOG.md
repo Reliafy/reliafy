@@ -2,6 +2,13 @@
 
 ## Unreleased (0.5.1)
 
+- **A combination of tasks on one RCM decision**: `maintenance
+  failure_modes.decide` takes `decision.outcomes`, a list of
+  `{outcome, task, interval, interval_unit, task_id}` (a regular inspection
+  plus a fixed-time replacement, say), in place of `outcome`, `task` and
+  `interval`. Each scheduled entry gets a task of its own. Reads add
+  `decision.outcomes`. A single-outcome decision works as before.
+
 - **Delete an RCM row with everything under it**: `maintenance
   failure_modes.remove_function`, `remove_standard`,
   `remove_functional_failure` and `retire` take `cascade` (everything under it

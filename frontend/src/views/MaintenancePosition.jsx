@@ -221,7 +221,7 @@ export default function MaintenancePosition() {
                   <td>{m.text}{m.ad_hoc && <> <span className="maint-badge" title="Recorded at a failure: confirm it or merge it into another">ad hoc</span></>}</td>
                   <td className="lib-date">{m.failure || "—"}</td>
                   <td className="lib-date">{m.consequence || "—"}</td>
-                  <td className="lib-date">{OUTCOME_LABELS[m.outcome] || "—"}</td>
+                  <td className="lib-date">{(m.outcomes?.length > 1 ? m.outcomes : [m.outcome]).map((o) => OUTCOME_LABELS[o]).filter(Boolean).join(" + ") || "—"}</td>
                   <td><button className="crumb-link" onClick={() => setModal({ mode: m })}>Edit</button></td>
                 </tr>
               ))}

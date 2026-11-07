@@ -12,11 +12,16 @@ const LINKED_ONLY = new Set(["report", "working"]);
 // The chosen tile's ✓, so the choice isn't shown by colour alone (not part of its name).
 const Tick = () => <span className="choice-tick" aria-hidden="true">✓ </span>;
 import { saveErrorText } from "../confirm.js";
-import { INTERVAL_UNITS, NEEDS_INTERVAL, checkDecision, rememberUnit, startUnit } from "../decisionCheck.js";
+import {
+  INTERVAL_UNITS, NEEDS_INTERVAL, SCHEDULED, checkDecision, combineChoices, pruneExtras, rememberUnit, startUnit,
+} from "../decisionCheck.js";
 
 // Guided RCM decision flow for one failure mode: consequence → outcome
 // (suggested first, per the classic decision diagram) → task details →
-// linked evidence. Saves back {consequence, decision} straight to the
+// linked evidence. A scheduled outcome (or a redesign) may take further tasks,
+// a combination of tasks (RCM II: a regular inspection plus a fixed-time
+// replacement), each with its own name and interval; the evidence and notes
+// are once per decision. Saves back {consequence, decision} straight to the
 // server (the Explorer): onSave returns a promise, and the dialog stays
 // open, Apply showing "Saving…", until it's done, and a refusal shows here
 // with everything as typed. Apply says what's missing whenever it can't be
@@ -45,6 +50,19 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
   const [intervalUnit, setIntervalUnit] = useState(() => startUnit(existing.interval_unit ? existing : { interval_unit: own?.unit }));
   const [notes, setNotes] = useState(existing.notes || "");
   const [evidence, setEvidence] = useState(existing.evidence || null);
+  // A combination's further tasks ([{outcome, task, interval, intervalUnit}]), the first being the decision's own.
+  const [extras, setExtras] = useState(() => (Array.isArray(existing.outcomes) && existing.outcomes.length > 1
+    ? existing.outcomes.slice(1).map((o) => ({
+      outcome: o.outcome, task: o.task || "", interval: o.interval ?? "", intervalUnit: o.interval_unit || startUnit(null),
+    }))
+    : []));
+  const chosen = extras.map((x) => x.outcome);
+  const choices = combineChoices(outcome, chosen);
+  const labelOf = (o) => options.outcomes.find((x) => x.id === o)?.label || o;
+  const toggleExtra = (o) => setExtras((xs) => (xs.some((x) => x.outcome === o)
+    ? xs.filter((x) => x.outcome !== o)
+    : [...xs, { outcome: o, task: "", interval: "", intervalUnit: startUnit(null) }]));
+  const setExtra = (o, patch) => setExtras((xs) => xs.map((x) => (x.outcome === o ? { ...x, ...patch } : x)));
   // A new outcome or basis expects other models: a linked model goes, a report or a working stays.
   const dropModel = () => setEvidence((e) => (e && LINKED_ONLY.has(e.type) ? e : null));
 
@@ -70,7 +88,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
   }, [options.outcomes, suggested]);
 
   const fields = outcomeOpt?.fields || [];
-  const check = checkDecision({ outcome, rtfBasis, task, interval, intervalUnit, notes, fields }, { limits });
+  const check = checkDecision({ outcome, rtfBasis, task, interval, intervalUnit, notes, fields, extras }, { limits });
   const canSave = check.blockers.length === 0;
   const needsInterval = NEEDS_INTERVAL.has(outcome) && fields.includes("interval");
   // One save at a time: a second click (or Enter) while one is on its way does nothing.
@@ -89,6 +107,19 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
       rememberUnit(intervalUnit); // the next decision starts at it
     }
     if (notes.trim()) decision.notes = notes.trim();
+    if (extras.length) {
+      // A combination: every task as one of outcomes, the decision's own first.
+      const first = { outcome };
+      for (const k of ["task", "interval", "interval_unit"]) if (decision[k] !== undefined) first[k] = decision[k];
+      delete decision.outcome;
+      delete decision.task;
+      delete decision.interval;
+      delete decision.interval_unit;
+      decision.outcomes = [first, ...extras.map((x) => (SCHEDULED.includes(x.outcome)
+        ? { outcome: x.outcome, ...(x.task.trim() ? { task: x.task.trim() } : {}), interval: Number(x.interval),
+          interval_unit: x.intervalUnit }
+        : { outcome: x.outcome }))];
+    }
     // A report or a working goes with any decision; a model only with one that expects its kind
     // (or the one linked before, left as it was: the check then says why it doesn't fit).
     decision.evidence = evidence && (LINKED_ONLY.has(evidence.type) || evidence.type === expectedEvidence
@@ -164,6 +195,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
               onClick={() => {
                 setOutcome(o.id);
                 if (o.id !== "rtf") setRtfBasis(null);
+                setExtras((xs) => pruneExtras(o.id, xs));
                 dropModel();
               }}
             >
@@ -248,6 +280,51 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
               resolve as inconclusive.
             </p>
           )}
+        </div>
+      )}
+
+      {choices.length > 0 && (
+        <div className="decision-step decision-combine">
+          <label className="field-label" id={`${id}-combine`}>Add another task (optional)</label>
+          <div className="option-grid" role="group" aria-labelledby={`${id}-combine`}>
+            {choices.map((c) => {
+              const on = chosen.includes(c.id);
+              return (
+                <button key={c.id} type="button" className={"option-tile" + (on ? " selected" : "")} aria-pressed={on}
+                        disabled={!c.allowed}
+                        title={c.allowed ? undefined : "Can't be combined with the tasks chosen: a redesign goes beside one scheduled task only."}
+                        onClick={() => toggleExtra(c.id)}>
+                  <span className="option-title">{on && <Tick />}+ {labelOf(c.id)}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="option-hint">
+            A combination of tasks: a regular inspection plus a fixed-time replacement, say. RCM II uses one where no
+            single task is good enough on its own, usually when a failure could hurt someone or harm the environment.
+            Each task is scheduled on its own. A redesign can sit beside one task, which is done until the change is made.
+          </p>
+          {extras.map((x, i) => SCHEDULED.includes(x.outcome) && (
+            <div key={x.outcome} className="decision-extra">
+              <label className="field-label" htmlFor={`${id}-x-${x.outcome}`}>{labelOf(x.outcome)}: task and interval (the interval is needed)</label>
+              <div className="field-row">
+                <input id={`${id}-x-${x.outcome}`} type="text" value={x.task}
+                       placeholder={x.outcome === "fixed_interval" ? "e.g. Replace the bearing" : "e.g. Vibration check"}
+                       onChange={(e) => setExtra(x.outcome, { task: e.target.value })} />
+                <input type="number" inputMode="decimal" className="interval-input" min="0" step="any"
+                       value={x.interval} placeholder="Interval"
+                       aria-label={`${labelOf(x.outcome)} interval (needed)`} aria-required="true"
+                       aria-invalid={check.extraErrors?.[i] ? "true" : undefined}
+                       aria-describedby={check.extraErrors?.[i] ? `${id}-x-${x.outcome}-error` : undefined}
+                       onChange={(e) => setExtra(x.outcome, { interval: e.target.value })} />
+                <Select value={x.intervalUnit} options={INTERVAL_UNITS}
+                        onChange={(u) => { setExtra(x.outcome, { intervalUnit: u }); rememberUnit(u); }} />
+              </div>
+              {check.extraErrors?.[i] && (
+                <p className="field-error decision-interval-error" id={`${id}-x-${x.outcome}-error`}>{check.extraErrors[i]}</p>
+              )}
+            </div>
+          ))}
         </div>
       )}
 

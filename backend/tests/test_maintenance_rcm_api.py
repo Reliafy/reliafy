@@ -288,3 +288,39 @@ def test_link_a_cause_over_mcp(env):  # noqa: F811
         return True
 
     assert _session(env["token"], go)
+
+
+COMBINATION = {"outcomes": [
+    {"outcome": "on_condition", "task": "Vibration check", "interval": 1, "interval_unit": "months"},
+    {"outcome": "fixed_interval", "task": "Replace the bearing", "interval": 24, "interval_unit": "months"}]}
+
+
+def test_a_combination_of_tasks_over_the_route(api):
+    M = "/api/maintenance"
+    pump = api.post(f"{M}/positions", json={"name": "Pump"}).json()
+    mode = api.post(f"{M}/positions/{pump['id']}/failure-modes", json={"text": "Bearing worn"}).json()
+    r = api.put(f"{M}/failure-modes/{mode['id']}/decision", json={"consequence": "safety", "decision": COMBINATION})
+    assert r.status_code == 200, r.text
+    d = r.json()["decision"]
+    assert d["outcome"] == "on_condition" and [o["outcome"] for o in d["outcomes"]] == ["on_condition",
+                                                                                         "fixed_interval"]
+    assert all(o["task_id"] for o in d["outcomes"])
+    bad = api.put(f"{M}/failure-modes/{mode['id']}/decision",
+                  json={"decision": {"outcomes": [{"outcome": "rtf"}, {"outcome": "on_condition", "interval": 1}]}})
+    assert bad.status_code == 422 and "stand alone" in bad.text
+    assert api.put(f"{M}/failure-modes/{mode['id']}/decision", json={"decision": None}).json()["decision"] is None
+
+
+def test_a_combination_of_tasks_over_mcp(env):  # noqa: F811
+    async def flow(client):
+        pid = _ok(await _do(client, "maintenance", "positions.create", name="Pump"))["id"]
+        mode = _ok(await _do(client, "maintenance", "failure_modes.add", position_id=pid, text="Bearing worn"))
+        out = _ok(await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=mode["id"],
+                            consequence="operational", decision=COMBINATION))
+        return out, _ok(await _get(client, "position", pid))
+
+    out, position = _session(env["token"], flow)
+    assert [o["outcome"] for o in out["decision"]["outcomes"]] == ["on_condition", "fixed_interval"]
+    assert "combination" in out["advice"]  # operational: say what the second task earns
+    assert sorted((t["name"], t["outcome"]) for t in position["tasks"]) == [
+        ("Replace the bearing", "fixed_interval"), ("Vibration check", "on_condition")]
