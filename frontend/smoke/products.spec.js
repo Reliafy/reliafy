@@ -60,7 +60,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expect(page.getByRole("tab", { name: "Items", exact: true })).toHaveCount(0);
     await expect(page.locator(".pp-head")).toHaveCount(0);
     await expect(page.getByRole("treeitem", { name: /^Propulsion/ }).first()).toBeVisible();
-    await expect(page.getByRole("treeitem", { name: /^Pump station|^Delivery truck/ })).toHaveCount(0);
+    await expect(page.getByRole("treeitem", { name: /^Pump station|^Depot conveyor/ })).toHaveCount(0);
     // One tree: no Positions / Locations switch, and the tree's last row adds inside the product.
     await expect(page.getByRole("radiogroup", { name: "Arrange by" })).toHaveCount(0);
     await expect(page.locator(".tp-addrow")).toHaveText(/^\+New position inside Survey quadcopter \(sample/);
@@ -208,7 +208,8 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     // As on the Explorer's FME(C)A tab: Add function, the worksheet in and out, Print view, Isolate, Pin.
     await expect(menu.getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Print view", "Isolate", "Pin this branch"]);
     await page.keyboard.press("Escape");
-    // The RCM tab: Isolate incomplete rows on the design (the winding and seal modes have no decision).
+    // The RCM tab: Isolate incomplete rows on the design (the landing-gear and thermal-runaway modes have
+    // no decision, on purpose).
     await page.getByRole("tab", { name: "RCM" }).click();
     const rcm = page.getByRole("treegrid", { name: /and their RCM/ });
     await rcm.getByRole("row", { name: /^Survey quadcopter \(sample/ }).first().locator(".tt-tree").click({ button: "right" });

@@ -1,6 +1,6 @@
 """Build a position's RCM in tests from a worksheet-shaped tree (functions ›
 failures › modes, each mode with its consequence and decision), the way the
-sample truck template and the worksheet import do: through the service's own
+sample product template and the worksheet import do: through the service's own
 methods, so every change is an ordinary event."""
 
 from __future__ import annotations

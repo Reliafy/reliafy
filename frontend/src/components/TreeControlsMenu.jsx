@@ -6,7 +6,7 @@ import { menuMove } from "../treeControls.js";
 
 // The tree pane's ⋯ menu, beside the filter box: how far the tree is open
 // (the levels, Close everything), what it shows (the Show only filters, ticked
-// when on), and the pane's other actions (Import, the samples), if any.
+// when on), and the pane's other actions (Import, the sample UAV product), if any.
 // Positions or Locations is the switch in the pane's heading. It stays open
 // while several things are changed, and closes on Esc, Tab, a click outside or
 // Done; Esc and Done put the focus back on the ⋯ button. The menu pattern:

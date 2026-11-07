@@ -22,10 +22,10 @@ export function productPath(id, tab = null) {
   return view ? `${base}?view=${view}` : base;
 }
 
-// A product's design on its FME(C)A tab, the top position picked (the
-// Explorer's way to the sample quadcopter).
-export function productFmeaPath(id) {
-  return `${productPath(id)}?view=fmea&sel=${encodeURIComponent(id)}`;
+// A product's design on one of its structure's tabs (view: "rcm", "fmea"), the
+// top position picked (the Explorer's way to the sample quadcopter).
+export function productViewPath(id, view = "fmea") {
+  return `${productPath(id)}?view=${encodeURIComponent(view)}&sel=${encodeURIComponent(id)}`;
 }
 
 // An item's own page, and its tree (the Explorer scoped to that one tree).

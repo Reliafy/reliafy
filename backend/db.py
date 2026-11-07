@@ -69,9 +69,23 @@ def _connect():
 
     import mongomock
 
+    _quiet_mongomock_clock(mongomock)
     _db = mongomock.MongoClient()[config.MONGODB_DB]
     _simulated = True
     return _db
+
+
+def _quiet_mongomock_clock(mongomock) -> None:
+    """Give the simulator a clock that raises no DeprecationWarning.
+
+    mongomock expires TTL-indexed documents on ``datetime.utcnow()`` (deprecated
+    since Python 3.12). A library that turns warnings into errors for a moment
+    (``warnings.catch_warnings`` is process-wide, not per thread) would make any
+    request that touches a TTL collection answer 500, intermittently. The same
+    naive UTC time, patched as mongomock's docs suggest."""
+    from datetime import datetime, timezone
+
+    mongomock.utcnow = lambda: datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def get_db():

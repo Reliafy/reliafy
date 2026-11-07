@@ -1,7 +1,7 @@
 ---
 title: "RCM analysis example: a pump system, worked end to end"
 description: "A complete reliability centred maintenance example — functions, functional failures, failure modes, consequences, and task selection for a cooling-water pump — with the worksheet filled in and the reasoning shown."
-cta_text: "RCM in Reliafy lives on your asset tree: every decision links to the non-repairable model or analysis that justifies it, and is flagged when new data contradicts it. The sample truck comes with its RCM built in, one decision contradicted on purpose."
+cta_text: "RCM in Reliafy lives on your asset tree: every decision links to the non-repairable model or analysis that justifies it, and is flagged when new data contradicts it. The sample UAV product comes with its RCM built in, one decision contradicted on purpose."
 cta_label: "See RCM on the asset tree"
 cta_href: "/rcm-software"
 ---

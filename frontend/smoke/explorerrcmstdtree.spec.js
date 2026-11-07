@@ -14,7 +14,7 @@
 // the shared workspace holds (rows below the fold aren't drawn).
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots at 1280 and 400 px: the
-// sample truck, and a function with three standards (for the pull request).
+// sample UAV product, and a function with three standards (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { frameOf, movedBetween } from "./explorer.js";
 
@@ -413,18 +413,19 @@ test("at 400 px the standard rows, their menus and the details sheet fit", async
   await expectHealthy(page, problems, { label: "rcm standards tree phone" });
 });
 
-test("screenshots: the sample truck, and a function with three standards (SMOKE_SHOTS_DIR)", async ({ page, request }) => {
+test("screenshots: the sample UAV product, and a function with three standards (SMOKE_SHOTS_DIR)", async ({ page, request }) => {
   test.skip(!SHOTS, "only when saving screenshots");
   const tag = "shot";
   const p = await plant(request, tag);
-  const truck = await postOk(request, `${M}/sample-truck`, { again: true });
-  const truckId = truck.position?.id || truck.id;
+  // smoke/seed.js added the sample product: once, so this adds nothing.
+  const sample = await postOk(request, `${M}/sample-product`, {});
+  const sampleId = sample.product?.id || sample.position.id;
   for (const [w, h] of [[1280, 800], [400, 860]]) {
     await page.setViewportSize({ width: w, height: h });
-    await open(page, `/asset-register/explorer?arrange=positions&sel=${truckId}&pin=${truckId}&tab=rcm`);
-    await expect(trow(page, "^Function: Stop the vehicle").first()).toBeVisible();
+    await open(page, `/products/${sampleId}?view=rcm&sel=${sampleId}`);
+    await expect(trow(page, "^Function: Fly a planned survey").first()).toBeVisible();
     await page.waitForTimeout(300);
-    await page.screenshot({ path: `${SHOTS}/rcm-standards-tree-truck-${w}.png` });
+    await page.screenshot({ path: `${SHOTS}/rcm-standards-tree-sample-product-${w}.png` });
     await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&pin=${p.pool.id}&tab=rcm`);
     await expect(trow(page, `^Performance standard: Calcium hardness 200-400 ppm ${tag}`).first()).toBeVisible();
     await page.waitForTimeout(300);

@@ -2,7 +2,7 @@
 title: "Score failure modes as an FMEA or FMECA on your asset tree"
 task: "How do I score severity, occurrence and detection for each failure mode, get an action priority and RPN, and work out criticality, on the same tree as my RCM?"
 category: "Maintenance strategy"
-prerequisites: "A position in your asset tree with failure modes, or the sample UAV product or sample truck."
+prerequisites: "A position in your asset tree with failure modes, or the sample UAV product."
 order: 26
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
 # FME(C)A tab itself and stays out of the index until Maintenance opens.
@@ -25,16 +25,17 @@ score or an effect edited on one shows on the other at once. Nothing is copied.
 
 A quadcopter is something you design, so the sample one is a product. On
 **Products**, press **Add the sample UAV product** (in **Assets → Explorer**,
-**Open the sample UAV product** in the tree's **⋯** menu, or on the empty
+**Open the sample UAV product** in the **⋯** beside the tree's search box, or on the empty
 tree's card, does the same and opens it). *Survey quadcopter (sample)* is a
 small fictional quadcopter: airframe, propulsion with four motors, power,
 flight control, comms and a payload gimbal, with every failure mode scored and
 its criticality figures filled in. Its **Functional structure** tab is the
 same Explorer, scoped to the design: pick its **FME(C)A** tab. Everything below
-works the same on a product's design and on your asset tree. For an FME(C)A on
-an operated asset, the sample truck (**Add the sample truck**) is scored too.
-The product's other tabs hold the rest of the sample: its parts list, the
-items built from it and their failure reports.
+works the same on a product's design and on your asset tree. Its **RCM** tab
+holds the same failure modes as an RCM, each with its decision (see
+[RCM on your asset tree](/guides/rcm-on-your-asset-tree)). The product's other
+tabs hold the rest of the sample: its parts list, the items built from it and
+their failure reports.
 
 ![The FME(C)A tab on the sample UAV product: each failure mode with its cause, effects, scores, RPN and action priority](/guides/img/fmea-01-worksheet.png)
 
