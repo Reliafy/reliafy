@@ -27,16 +27,34 @@ their performance standards, functional failures and failure modes, with the
 RCM's columns beside every row.
 
 The sample is a product: *Survey quadcopter (sample)*, a small fictional
-quadcopter's design. If your tree is empty, press **Open the sample UAV
-product**. (With positions already there, it's in the **⋯** beside the tree's
-search box; on **Products**, **Add the sample UAV product** adds it too.) It
-is added to your workspace the first time, and its **Functional structure**
-opens on the **RCM** tab: the same Explorer, scoped to the design. Its 25
-positions (airframe, four motors, speed controllers and propellers, power,
-flight control, comms and a payload gimbal) carry 25 functions, 34 functional
-failures and 41 failure modes, each with its consequence and, all but two, its
-decision. The higher positions' failures are explained by those below them
-(see *Working top down or bottom up*, below), and some decisions link the
+inspection quadcopter's design with a complete RCM study on it. If your tree
+is empty, press **Open the sample UAV product**. (With positions already
+there, it's in the **⋯** beside the tree's search box; on **Products**, **Add
+the sample UAV product** adds it too.) It is added to your workspace the first
+time, and its **Functional structure** opens on the **RCM** tab: the same
+Explorer, scoped to the design.
+
+The study starts from a mission, written in the product's description and as
+the top position's **operating context** (its Summary tab): monthly corridor
+inspection of a 12 km rural distribution feeder, sorties of up to 25 minutes,
+30 m above the conductors at 5 m/s, a 4K camera and a thermal imager, a 2 km
+link with return-to-home, a geofence and a 120 m height limit, about 150
+flight hours a year. Every performance standard below takes its numbers from
+it. The 33 positions (the airframe with its four arms, centre frame and
+landing gear; four motors, speed controllers and propellers; flight control
+with its two IMUs, GPS and compass; the battery pack and its BMS; comms; the
+gimbal and its camera) carry 47 functions with 63 performance standards, 79
+functional failures and 83 failure modes, each with its consequence and, all
+but two, its decision. The decisions use the whole logic: on-condition checks,
+scheduled discards (the propellers at 130 hours, the battery at 300 cycles)
+and restorations (the arm bolts re-torqued), failure-finding tests for the
+hidden protective functions, redesigns, run-to-failure and accepted risks.
+Read together, their tasks are the aircraft's maintenance programme: a
+pre-flight check before every flight, a flight log review every 10 hours, the
+25-hour, 100-hour and annual inspections and the failsafe function tests, each
+a shared task on the product with the modes' checks as its checklist, plus the
+parts' own limits. The higher positions' failures are explained by those below
+them (see *Working top down or bottom up*, below), and some decisions link the
 evidence behind them.
 
 ![The RCM tab on the sample UAV product: its functions, failures and modes, each decision with its evidence check](/guides/img/rcm-01-explorer.png)
@@ -47,8 +65,8 @@ The levels under a position are the ones classic RCM uses:
   (the GPS).
 - **Performance standard** — how well it must do it, one parameter and one
   limit each: *Horizontal position within 2 m*. A function may have several;
-  each is a row under the function. A function with none (most of the
-  sample's) has its functional failures right under it.
+  each is a row under the function. A function with none has its functional
+  failures right under it.
 - **Functional failure** — how it fails to do it, nested under the performance standard
   it is the loss of: *Position error over 2 m, or no fix*. A total loss, or a failure
   not tied to one performance standard yet, sits under a grey **No performance standard** row.
@@ -113,13 +131,18 @@ bearing failures are random. The linked bearing model says otherwise: *β = 2.50
 evidence. The worksheet says what was decided; the check says whether the data
 still agree.
 
-The rest of the sample shows the other cases. The BMS cut-off test and the
-propeller replacement are **Supported** by the analyses they link. The battery
-pack's retirement is **Inconclusive**: its task counts charge cycles, but the
-analysis behind it is in flight hours, so the check can't compare them until
-the units agree. Two failure modes are still undecided on purpose (**Show only
-→ Needs a decision**), and three are hidden failures, each with its
-failure-finding task (**Show only → Hidden failures**).
+The rest of the sample shows the other cases. The propeller replacement and
+the BMS cut-off test are **Supported** by the analyses they link; so are the
+speed controllers' thermal-pad check (a degradation model of their temperature
+rise), the radio's run-to-failure (an exponential fit: its failures are random)
+and the gimbal motor's (a replacement analysis that finds no interval worth
+having). The battery pack's retirement is **Inconclusive**: its task counts
+charge cycles, but the analysis behind it is in flight hours, so the check
+can't compare them until the units agree. Two failure modes are still
+undecided on purpose (**Show only → Needs a decision**), and eight are hidden
+failures (the four failsafes, each IMU failing silently, the BMS cut-off and
+its state of charge), each with its failure-finding task (**Show only → Hidden
+failures**).
 
 The sample product is yours to edit, so try things on it. Your own equipment
 goes the same way: on any position.

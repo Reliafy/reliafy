@@ -57,7 +57,7 @@ import Chip from "../components/ui/Chip.jsx";
 import Switch from "../components/ui/Switch.jsx";
 import { formatPercent } from "../format.js";
 import {
-  allInstant, chainPairs, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
+  allInstant, chainPairs, clearSpot, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
 } from "../rbdBuilderOps.js";
 import { safetyStarter } from "../rbdSafetyStarter.js";
 // Phased missions and undirected networks (#160).
@@ -1289,8 +1289,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     if (!r) return undefined;
     const step = (addOffset.current++ % 5) * 40;
     const p = screenToFlowPosition({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
-    return { x: p.x - 80 + step, y: p.y - 30 + step };
-  }, [screenToFlowPosition]);
+    return clearSpot(nodes, { x: p.x - 80 + step, y: p.y - 30 + step });
+  }, [screenToFlowPosition, nodes]);
 
   // "+ Add block" in place (#282): with a block, a line of blocks or a
   // connection selected, the new component is wired in — after the block or

@@ -61,8 +61,9 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expect(page.locator(".pp-head")).toHaveCount(0);
     await expect(page.getByRole("treeitem", { name: /^Propulsion/ }).first()).toBeVisible();
     await expect(page.getByRole("treeitem", { name: /^Pump station|^Depot conveyor/ })).toHaveCount(0);
-    // One tree: no Positions / Locations switch, and the tree's last row adds inside the product.
-    await expect(page.getByRole("radiogroup", { name: "Arrange by" })).toHaveCount(0);
+    // The Positions / Locations switch (its layout is the design's locations), opening on Positions;
+    // the tree's last row adds inside the product.
+    await expect(page.getByRole("radiogroup", { name: "Arrange by" }).getByRole("radio", { name: "Positions" })).toHaveAttribute("aria-checked", "true");
     await expect(page.locator(".tp-addrow")).toHaveText(/^\+New position inside Survey quadcopter \(sample/);
     // At most one h1: the product's row's name.
     expect(await page.getByRole("heading", { level: 1 }).count()).toBeLessThanOrEqual(1);
@@ -99,7 +100,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     const dialog = page.getByRole("dialog", { name: /Build an item/ });
     await dialog.getByLabel("Serial number").fill(serial);
     await dialog.getByRole("button", { name: "Check" }).click();
-    await expect(dialog).toContainText("25 positions");
+    await expect(dialog).toContainText("33 positions");
     await expect(dialog.locator(".pp-paths")).toContainText(`· ${serial} › Propulsion › Motor 1`);
     await shot(page, `${w}-build-dry-run`);
     await dialog.getByRole("button", { name: "Build item" }).click();
@@ -211,8 +212,8 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     const top = table.getByRole("row", { name: /^Survey quadcopter \(sample/ }).first();
     await top.locator(".tt-tree").click({ button: "right" });
     const menu = page.getByRole("menu", { name: /^Actions for Survey quadcopter/ });
-    // As on the Explorer's FME(C)A tab: Add function, the worksheet in and out, Print view, Isolate, Pin.
-    await expect(menu.getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Print view", "Isolate", "Pin this branch"]);
+    // As on the Explorer's FME(C)A tab: Add function, the worksheet in and out, Print view, Isolate, Pin, Delete… last.
+    await expect(menu.getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Print view", "Isolate", "Pin this branch", "Delete…"]);
     await page.keyboard.press("Escape");
     // The RCM tab: Isolate incomplete rows on the design (the landing-gear and thermal-runaway modes have
     // no decision, on purpose).

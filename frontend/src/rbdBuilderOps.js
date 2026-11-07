@@ -58,6 +58,25 @@ export const STEP_Y = 150;
 // A block's size before React Flow has measured it (a component's, as drawn).
 const BLOCK = { w: 171, h: 95 };
 const JUNCTION_W = 26;
+
+// A clear spot for a block added unwired (Add block > Component on a diagram
+// that already has blocks): the spot asked for, moved down a row at a time
+// until it overlaps no block already there. A block dropped on top of
+// another was hidden under it (the selected one draws above), so the add
+// looked as if it had done nothing.
+export function clearSpot(nodes, pos, size = BLOCK) {
+  if (!pos) return pos;
+  const gap = 12;
+  const hits = (p) => nodes.some((n) => {
+    const w = n.width ?? BLOCK.w;
+    const h = n.height ?? BLOCK.h;
+    const { x, y } = n.positionAbsolute ?? n.position ?? { x: 0, y: 0 };
+    return p.x < x + w + gap && x < p.x + size.w + gap && p.y < y + h + gap && y < p.y + size.h + gap;
+  });
+  let p = pos;
+  for (let i = 0; i < 50 && hits(p); i++) p = { x: p.x, y: p.y + size.h + gap * 2 };
+  return p;
+}
 const PAD = 16;
 
 const isEnd = (n) => n?.type === "input" || n?.type === "output";

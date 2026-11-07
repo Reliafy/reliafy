@@ -159,11 +159,11 @@ test("Summary row menu: new inside, rename, move to…, delete, pin; the server'
   await menu.getByRole("menuitem", { name: "Pin this branch" }).click();
   await expect.poll(() => query(page).get("pin")).toBe(p.heat.id);
 
-  // The RCM tab keeps its own menu (no Rename… or Move to… there).
+  // The RCM tab keeps its own menu (no Rename… or Move to… there; Delete… last, as on the Summary tab).
   await page.getByRole("tab", { name: "RCM" }).click();
   const trow = page.getByRole("row", { name: new RegExp(`^Menu heating ${tag}`) });
   await trow.locator(".tt-tree").click({ button: "right" });
-  await expect(rowMenu(page, `Menu heating ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Isolate incomplete rows", "Show whole tree"]);
+  await expect(rowMenu(page, `Menu heating ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Isolate incomplete rows", "Show whole tree", "Delete…"]);
   await page.keyboard.press("Escape");
   // The refusals above were made up here (a 422 each): the browser logs them.
   problems.splice(0, problems.length, ...problems.filter((x) => !/status of 422/.test(x)));
