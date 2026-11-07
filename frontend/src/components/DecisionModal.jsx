@@ -232,10 +232,15 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
                   aria-pressed={outcome === o.id}
                   aria-describedby={`${id}-o-${o.id}`}
                   disabled={!!why && outcome !== o.id}
+                  title={outcome === o.id ? "Click again to unselect" : undefined}
                   onClick={() => {
-                    setOutcome(o.id);
-                    if (o.id !== "rtf") setRtfBasis(null);
-                    setExtras((xs) => pruneExtras(o.id, xs));
+                    // A second click on the chosen tile unselects it (back to no
+                    // decision), so the "if no task is worth doing" choices below
+                    // can be reached after a task was tried.
+                    const next = outcome === o.id ? null : o.id;
+                    setOutcome(next);
+                    if (next !== "rtf") setRtfBasis(null);
+                    setExtras((xs) => (next ? pruneExtras(next, xs) : []));
                     dropModel();
                   }}
                 >
