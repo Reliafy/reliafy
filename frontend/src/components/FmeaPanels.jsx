@@ -3,7 +3,7 @@ import Chip from "./ui/Chip.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import Field from "./ui/Field.jsx";
 import Section from "./ui/Section.jsx";
-import { CloseIcon } from "./icons.jsx";
+import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
 import { PanelField } from "./PanelField.jsx";
 import { Field as FormField, FormModal } from "./MaintenanceParts.jsx";
 import {
@@ -138,17 +138,30 @@ export function CriticalityGroup({ r, readOnly, saved = {}, onCommit }) {
 // by the worst action priority among them, which the tooltip says too), the
 // counts, the item criticality and the modes ranked by Cm.
 //   summary   explorerFmea.js positionSummary
-export function FmeaPositionPanel({ row, summary, phone, headingRef, onClose, onSelect }) {
+export function FmeaPositionPanel({ row, summary, phone, headingRef, onClose, onSelect, expanded = false, onExpand = null, onCollapse = null }) {
+  const canExpand = !phone && onExpand && onCollapse;
   const name = row.ref.name || "(no name)";
   const { matrix, ranked, counts, own, cr, inside } = summary;
   const where = inside ? "here and in the positions inside" : "here";
   return (
-    <aside className={"rw-panel fm-pos" + (phone ? " sheet" : "")} aria-label="Details"
-           onKeyDown={(e) => { if (e.key === "Escape" && !e.defaultPrevented) { e.stopPropagation(); onClose(); } }}>
+    <aside className={"rw-panel fm-pos" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label="Details"
+           onKeyDown={(e) => {
+             if (e.key !== "Escape" || e.defaultPrevented) return;
+             e.stopPropagation();
+             if (expanded && canExpand) onCollapse();
+             else onClose();
+           }}>
       <div className="rw-panel-top">
         <div className="rw-panel-head">
           <div className="rw-panel-kind">Position · FME(C)A</div>
           <div className="rw-panel-btns">
+            {canExpand && (expanded ? (
+              <button type="button" className="ghost sm rw-x" onClick={onCollapse} title="Show the table again, with these details beside it (Esc)"
+                      aria-label="Back to table"><ShrinkIcon /></button>
+            ) : (
+              <button type="button" className="ghost sm rw-x" onClick={onExpand} title="Show these details across the table, the tree kept beside them"
+                      aria-label="Expand the details"><ExpandIcon /></button>
+            ))}
             <button type="button" className="ghost sm rw-x" onClick={onClose} aria-label="Close the details" title="Close (Esc)"><CloseIcon /></button>
           </div>
         </div>

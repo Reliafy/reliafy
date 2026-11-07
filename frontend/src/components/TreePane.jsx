@@ -5,7 +5,7 @@ import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
 import { BasisInfo, NotesMark, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
 import { ARRANGEMENTS, CHIPS, CHIP_MARK, PANE, TREE_ROW_MARKERS, clampWidth, markersOf, nextGutter } from "../assetTree.js";
-import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensItem } from "../explorerRcm.js";
+import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensPanel } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 import { isDeleteKey } from "../treeDelete.js";
@@ -315,7 +315,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
     // performance standard, functional failure or failure mode opens its
     // details across the table; not on a data cell (an editable one's own
     // double-click edits it in place), a control or the chevron.
-    onDoubleClick: table && !phone && table.onOpen && opensItem(r) ? (e) => {
+    onDoubleClick: table && !phone && table.onOpen && opensPanel(r) ? (e) => {
       if (e.target.closest("input, select, textarea, a, button, .tp-chev, .rw-c, [contenteditable='true']")) return;
       e.preventDefault();
       window.getSelection?.()?.removeAllRanges?.();

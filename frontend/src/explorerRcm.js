@@ -597,6 +597,10 @@ export function unlinkEmptiesFailure(whole, effectId, causeId) {
 // field kept as you go.
 export const ITEM_KINDS = new Set(["fn", "std", "fail", "mode"]);
 export const opensItem = (r) => !!r && ITEM_KINDS.has(r.type);
+// A double-click on the table also opens a position's own panel (its operating
+// context and functions, or its criticality matrix), expanded like the rest.
+// Its menu has no "Open…" (opensItem): a position is picked, not an item.
+export const opensPanel = (r) => opensItem(r) || r?.type === "pos";
 
 // A standard's structured limit, condition and source (its text is "name").
 export const STANDARD_FIELDS = ["parameter", "comparator", "value", "unit", "when", "source"];

@@ -27,7 +27,7 @@ import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
 import {
-  NARROW_TABLE, cellRow, functionSummary, graftRcm, hasLinkedEvidence, isRcmRow, newStandardRows, openFor, opensItem, positionOf, rowActions,
+  NARROW_TABLE, cellRow, functionSummary, graftRcm, hasLinkedEvidence, isRcmRow, newStandardRows, openFor, opensItem, opensPanel, positionOf, rowActions,
   standardKeys, tableCols, unlinkEmptiesFailure, usualCols,
   withTableCols, workingsFor,
 } from "../explorerRcm.js";
@@ -1007,6 +1007,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // open only to add inside them.
   const openItem = (key, start = null) => {
     const r = whole.rows.get(key);
+    // A position (a double-click on its row): its own panel, picked as a click does, then expanded.
+    if (r?.type === "pos" && !start) {
+      setEditing(null);
+      setRcmFocus(null);
+      setSelected((s) => ({ ...s, [mode]: key }));
+      setPanel(true);
+      if (!phone) setExpanded(true);
+      setTimeout(() => detailsHeading.current?.focus(), 0);
+      return;
+    }
     if (!opensItem(r) && !(start?.add && (r?.type === "nostd" || r?.type === "unassigned"))) return;
     setEditing(null);
     setRcmFocus(key);
@@ -1475,6 +1485,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     <div className="rw tt-side">
       {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
       <FmeaPositionPanel row={fmeaPosRow} summary={fmeaPos} phone={phone} headingRef={detailsHeading} onClose={closeDetails}
+                         expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
                          onSelect={(k) => { reveal(k); setPanel(true); }} />
     </div>
   ) : rcmPosRow ? (
@@ -1482,6 +1493,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
       <RcmPositionPanel row={rcmPosRow} kind={rowKind(rcmPosRow) || "Position"} functions={rcmPosFns} position={rcmPosition}
                         phone={phone} headingRef={detailsHeading} onClose={closeDetails}
+                        expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
                         onSelect={(k) => { reveal(k); setPanel(true); }}
                         onAdd={() => runAdd({ ref: { add: "fn", position_id: rcmPosRow.key } })}
                         onContextSaved={(text) => rememberChange(rcmPosRow.key, version, { operating_context: text })} />
