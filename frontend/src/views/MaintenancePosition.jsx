@@ -15,8 +15,6 @@ import {
   addMeasurementPoint,
   addItemMeasurementPoint,
   recordMeasurementReading,
-  correctMeasurementReading,
-  voidMeasurementReading,
   connectPositions,
   createRedundancyGroup,
   disconnectPositions,
@@ -44,7 +42,10 @@ import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import { roughDateValue } from "../maintenanceFields.js";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
 import Modal from "../components/Modal.jsx";
-import { isStruck, liveReadings, readingClock, readingStatusText, readingWhen } from "../maintenanceReadings.js";
+import { liveReadings, readingWhen } from "../maintenanceReadings.js";
+import ReadingsTable from "../components/ReadingsTable.jsx";
+import { READINGS_INTRO } from "../measuringPoint.js";
+import { pointPagePath } from "../measurementsTab.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { PART_ROLES, roleLabel, stockText } from "../maintenanceSpares.js";
 import { TasksCard } from "../components/MaintenanceTasks.jsx";
@@ -921,80 +922,23 @@ export function PointReadingModal({ point, onClose, onDone }) {
   );
 }
 
-// A manual point's readings, newest first, with the ones struck out or corrected
-// marked. A reading entered by mistake is voided; a wrong value or date is
-// corrected (the original is kept, struck out). Both need a reason.
+// A manual point's readings, newest first (the table its own page shows too),
+// with the ones struck out or corrected marked, and a link to the point's page
+// (its chart, limits and trend). A reading entered by mistake is voided; a
+// wrong value or date is corrected (the original is kept, struck out). Both
+// need a reason.
 export function ReadingsModal({ point: initial, onClose }) {
   const [point, setPoint] = useState(initial);
-  const [edit, setEdit] = useState(null); // { id, mode: "void" | "correct", value, on, reason }
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const unit = point.unit ? ` ${point.unit}` : "";
-  const start = (r, mode) => {
-    setError(null);
-    setEdit({ id: r.id, mode, value: String(r.value), on: r.on || r.at.slice(0, 10), time: readingClock(r), reason: "" });
-  };
-  const save = async () => {
-    setBusy(true); setError(null);
-    try {
-      setPoint(edit.mode === "void"
-        ? await voidMeasurementReading(edit.id, edit.reason)
-        : await correctMeasurementReading(edit.id, { value: Number(edit.value), on: edit.on,
-          at: edit.time ? `${edit.on}T${edit.time}` : undefined, reason: edit.reason }));
-      setEdit(null);
-    } catch (e) { setError(e.message); }
-    setBusy(false);
-  };
-  const set = (k) => (e) => setEdit({ ...edit, [k]: e.target.value });
   return (
-    <Modal title={`Readings: ${point.name}`} onClose={onClose} locked={busy}
-           footer={<button className="secondary" onClick={onClose} disabled={busy}>Done</button>}>
-      {error && <div className="card error">{error}</div>}
-      <p className="lib-date">The latest {point.readings.length}. Struck-out readings stay here, marked; rates, due dates
-        and alarms leave them out.</p>
-      <div className="maint-scroll">
-        <table className="lib-table">
-          <thead><tr><th>Read on</th><th>Value</th><th>What happened</th><th /></tr></thead>
-          <tbody>
-            {point.readings.map((r) => (
-              <tr key={r.id}>
-                <td className={isStruck(r) ? "maint-reading-struck" : ""}>{readingWhen(r, fmtDate)}</td>
-                <td className={isStruck(r) ? "maint-reading-struck" : ""}>{r.value}{unit}</td>
-                <td className="lib-date">{readingStatusText(r, fmtDate) || r.note || ""}</td>
-                <td>{!isStruck(r) && (
-                  <div className="maint-row" style={{ marginTop: 0 }}>
-                    <button className="crumb-link" onClick={() => start(r, "correct")}>Correct</button>
-                    <button className="crumb-link" onClick={() => start(r, "void")}>Void</button>
-                  </div>
-                )}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <Modal title={`Readings: ${point.name}`} onClose={onClose} className="readings-modal"
+           footer={<button className="secondary" onClick={onClose}>Done</button>}>
+      <div className="rt-modal-head">
+        <p className="lib-date">{READINGS_INTRO}</p>
+        <Link className="rt-open-page" to={pointPagePath(point.id)}>Open the full page</Link>
       </div>
-      {edit && (
-        <div className="maint-action">
-          <div className="rcm-form">
-            {edit.mode === "correct" && <>
-              <Field label={`Right value${unit ? ` (${point.unit})` : ""}`}>
-                <input type="number" inputMode="decimal" step="any" value={edit.value} onChange={set("value")} />
-              </Field>
-              <Field label="Really read on"><input type="date" value={edit.on} max={today()} onChange={set("on")} /></Field>
-              <Field label="At (optional)"><input type="time" value={edit.time} onChange={set("time")} /></Field>
-            </>}
-            <Field label={edit.mode === "void" ? "Why it's struck out" : "Why it's corrected"}>
-              <input autoFocus value={edit.reason} placeholder={edit.mode === "void" ? "e.g. entered twice" : "e.g. an old reading entered as today"}
-                     onChange={set("reason")} />
-            </Field>
-          </div>
-          <div className="maint-row">
-            <button onClick={save} disabled={busy || !edit.reason.trim() || (edit.mode === "correct" && edit.value === "")}>
-              {busy ? "Saving…" : edit.mode === "void" ? "Void the reading" : "Save the correction"}
-            </button>
-            <button className="secondary" onClick={() => setEdit(null)} disabled={busy}>Cancel</button>
-          </div>
-        </div>
-      )}
+      {point.readings.length
+        ? <ReadingsTable point={point} onChanged={setPoint} idPrefix="rdm" />
+        : <div className="card empty">No readings yet.</div>}
     </Modal>
   );
 }

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   STATES, branchQuery, latestNote, limitsText, needsAttention, placeOf, pointChip, pointHref, pointMenu, pointState,
-  pointSubline, pointsCsv, readMeasurementsQuery, readingDue, recentValues, recordedBy, rowAction, sortPoints, stateText,
+  nextReadingOn, pointPagePath, pointSubline, pointsCsv, readMeasurementsQuery, readingDue, recentValues, recordedBy, rowAction, sortPoints, stateText,
 } from "./measurementsTab.js";
 
 const TODAY = "2026-11-07";
@@ -56,6 +56,10 @@ test("a hand-read point is due when never read, or when it's been longer than us
   assert.equal(readingDue(cond({ reading: null }), TODAY), true);
   assert.equal(readingDue(cond({ readings: weekly.slice(0, 2) }), TODAY), false); // too few to know the round
   assert.equal(readingDue(cond({ source: "automated", reading: null }), TODAY), false);
+  // Due again half as long again as its usual round after the last: 7 days → 10.5 → 11 days on.
+  assert.equal(nextReadingOn(cond({ readings: weekly })), "2026-11-02");
+  assert.equal(nextReadingOn(cond({ readings: weekly.slice(0, 2) })), null);
+  assert.equal(nextReadingOn(cond({ source: "automated", readings: weekly })), null);
   assert.equal(needsAttention(cond({ readings: weekly }), TODAY), true);
   assert.equal(needsAttention(cond({ readings: weekly }), "2026-10-27"), false);
 });
@@ -145,14 +149,18 @@ test("clicking a row, and its ⋯ menu", () => {
   assert.equal(rowAction(cond({ source: "automated" })), null);
   assert.equal(pointHref(read), "/asset-register/positions/a");
   assert.equal(pointHref(cond({ item: { id: "i1" } })), "/asset-register/items/i1");
-  assert.deepEqual(pointMenu(read).map((i) => i.id), ["record", "history", "limits", "open"]);
+  assert.deepEqual(pointMenu(read).map((i) => i.id), ["page", "record", "history", "limits", "open"]);
+  assert.equal(pointMenu(read)[0].label, "Open");
   // A counter has no limits to edit; a feed's point can't be read by hand (greyed, with the reason).
-  assert.deepEqual(pointMenu(cond({ kind: "counter" })).map((i) => i.id), ["record"]);
+  assert.deepEqual(pointMenu(cond({ kind: "counter" })).map((i) => i.id), ["page", "record"]);
   const feed = pointMenu(cond({ source: "automated", tag: "sensor.ph", alarm_work_order: { id: "w", number: 4 } }));
-  assert.deepEqual(feed.map((i) => i.id), ["record", "limits", "work-order"]);
-  assert.equal(feed[0].disabled, true);
-  assert.equal(feed[0].reason, "Read by a feed (sensor.ph)");
-  assert.equal(feed[2].label, "Open work order #4");
+  assert.deepEqual(feed.map((i) => i.id), ["page", "record", "limits", "work-order"]);
+  assert.equal(feed[1].disabled, true);
+  assert.equal(feed[1].reason, "Read by a feed (sensor.ph)");
+  assert.equal(feed[3].label, "Open work order #4");
+  assert.equal(pointMenu(read).find((i) => i.id === "open").label, "Open its position");
+  assert.equal(pointMenu(cond({ item: { id: "i1" } })).find((i) => i.id === "open").label, "Open its item");
+  assert.equal(pointPagePath("p 1"), "/asset-register/points/p%201");
 });
 
 test("pointsCsv: one row per point shown, where it is, its latest reading, limits and state", () => {

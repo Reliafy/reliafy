@@ -70,6 +70,17 @@ export default async function seed(config) {
     await patch(`${m}/positions/${position_id}`, { location_id: location.id });
     await post(`${m}/positions/${position_id}/fit`, { item_id: item.id });
     await post(`${m}/work-orders`, { position_id, title: "Smoke test inspection" });
+    // A hand-read condition point with alarm limits and a few readings, one voided: its
+    // own page (/asset-register/points/:id) draws the chart and the readings table.
+    const vib = await post(`${m}/positions/${position_id}/points`, {
+      name: "Smoke test vibration", kind: "condition", unit: "mm/s", alarm_above: 7.1, alarm_below: 0.5 });
+    const dayAgo = (days) => new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+    let last = null;
+    for (const [days, value] of [[28, 2.8], [21, 3.0], [14, 3.1], [7, 3.4]]) {
+      last = await post(`${m}/points/${vib.id}/readings`, { value, on: dayAgo(days), note: days === 7 ? "After greasing" : "" });
+    }
+    const typo = (last.readings || [])[1];
+    if (typo?.id) await post(`${m}/readings/${typo.id}/void`, { reason: "smoke test" });
     const pad = await post(`${m}/parts`, { part_number: "SMOKE-PAD", name: "Smoke test brake pad" });
     // A product structure (#435): an axle brake set made of four pads, the item an instance of it.
     const brakes = await post(`${m}/parts`, { part_number: "SMOKE-BRAKES", name: "Smoke test axle brake set" });

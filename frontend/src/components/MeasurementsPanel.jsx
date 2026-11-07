@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { listMeasurementPoints, updateMeasurementPoint } from "../api.js";
 import { branchOf } from "../explorerTabs.js";
 import { Field, FormModal, fmtDate } from "./MaintenanceParts.jsx";
@@ -8,7 +8,7 @@ import Chip from "./ui/Chip.jsx";
 import RowMenu from "./RowMenu.jsx";
 import { readingWhen } from "../maintenanceReadings.js";
 import {
-  branchQuery, latestNote, needsAttention, pointChip, pointHref, pointMenu, pointSubline, pointsCsv, readMeasurementsQuery,
+  branchQuery, latestNote, needsAttention, pointChip, pointHref, pointMenu, pointPagePath, pointSubline, pointsCsv, readMeasurementsQuery,
   recentValues, recordedBy, rowAction, sortPoints,
 } from "../measurementsTab.js";
 import { usePanelMenu } from "../panelMenu.js";
@@ -95,7 +95,7 @@ const MoreIcon = () => (
 );
 
 // A condition point's alarm limits: either may be left blank (no limit that side).
-function LimitsModal({ point, onClose, onDone }) {
+export function LimitsModal({ point, onClose, onDone }) {
   const str = (v) => (v == null ? "" : String(v));
   const [above, setAbove] = useState(str(point.alarm_above));
   const [below, setBelow] = useState(str(point.alarm_below));
@@ -153,7 +153,8 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
   ]);
 
   const act = (id, p) => {
-    if (id === "record") setModal({ read: p });
+    if (id === "page") navigate(pointPagePath(p.id));
+    else if (id === "record") setModal({ read: p });
     else if (id === "history") q.setPoint(p.id);
     else if (id === "limits") setModal({ limits: p });
     else if (id === "open") navigate(pointHref(p));
@@ -216,17 +217,16 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
                 const when = p.read_at ? readingWhen({ when: p.read_when, precision: p.read_precision, at: p.read_at }, fmtDate) : "";
                 const by = recordedBy(p);
                 const action = rowAction(p);
-                const rowTitle = action === "history" ? "Open its readings" : action === "record" ? "Record its first reading" : action === "open" ? "Open the point" : undefined;
+                const rowTitle = action === "history" ? "Open its readings" : action === "record" ? "Record its first reading" : action === "open" ? `Open its ${p.position?.id ? "position" : "item"}` : undefined;
                 return (
                   <tr key={p.id} id={`ms-${p.id}`}
                       className={"ms-row" + (action ? " ms-clickable" : "") + (q.point === p.id || menu?.point.id === p.id ? " ms-picked" : "")}
-                      onClick={() => openRow(p)}
+                      onClick={() => openRow(p)} title={rowTitle}
                       onContextMenu={(e) => { e.preventDefault(); setMenu({ point: p, at: { x: e.clientX, y: e.clientY } }); }}>
                     <td className="ms-point">
-                      {action
-                        ? <button type="button" className="ms-name" title={`${p.name}: ${rowTitle.toLowerCase()}`}
-                                  onClick={(e) => { e.stopPropagation(); openRow(p); }}>{p.name}</button>
-                        : <span className="ms-name" title={p.name}>{p.name}</span>}
+                      {/* The name opens the point's own page; the rest of the row its readings (or first reading). */}
+                      <Link className="ms-name" to={pointPagePath(p.id)} title={`${p.name}: open its page`}
+                            onClick={(e) => e.stopPropagation()}>{p.name}</Link>
                       <span className="lib-date ms-sub" title={sub}>{sub}</span>
                     </td>
                     <td className="ms-latest">

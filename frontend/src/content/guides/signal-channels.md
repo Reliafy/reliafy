@@ -122,6 +122,13 @@ that range from every snapshot, old and new, and draws it in **Level over time**
   The **Measurements** tab lists it beside every other measuring point on the
   row and everything inside it, hand-read ones too, worst first, so you can see
   a whole system's readings and record new ones in one place.
+- **Every measuring point has a page of its own.** Click a point's name in the
+  Measurements tab, or choose **Open** from its **⋯** menu. The page shows the
+  latest reading against its alarm limits, a chart of the readings with the
+  limits drawn in, the trend and the date it should reach a limit, and every
+  recent reading. **Add reading…** and **Edit limits…** are at the top; each
+  reading's **⋯** menu corrects or voids it. A voided reading stays listed,
+  struck out, and is left out of rates, due dates and alarms.
 - **Stop watching** ends a band. What it recorded stays.
 
 ### Change a band, and set levels
