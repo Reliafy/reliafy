@@ -188,7 +188,7 @@ test("RCM: a mode written on the FME(C)A tab shows under \"No functional failure
   await expect(rcm).toBeVisible();
   const group = rcm.getByRole("row", { name: /No functional failure yet: No functional failure yet/ });
   await expect(group).toBeVisible();
-  await expect(group).toContainText("finish the RCM");
+  await expect(group).not.toContainText("finish the RCM"); // row markers are hidden (TREE_ROW_MARKERS)
   await expect(rcm.getByRole("row", { name: new RegExp(`^Failure mode: Bearing seizes ${tag}`) })).toBeVisible();
   // The same record: its row has the mode's id on both tabs.
   await expect(page.locator(`#tp-${p.direct.id}`)).toBeVisible();

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   nextGutter,
   ARRANGEMENTS, CHIPS, CHIP_MARK, ancestorsOf, arrangementFor, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
-  filterOpen, findByPrefix, flatten, insideWords, levelSet, loadTreeState, markersOf, pinnedRows, saveTreeState,
+  filterOpen, findByPrefix, flatten, insideWords, levelSet, loadTreeState, markersOf, TREE_ROW_MARKERS, pinnedRows, saveTreeState,
   scopedArrangeQuery, statusWords, windowOf,
 } from "./assetTree.js";
 
@@ -333,4 +333,11 @@ test("one tree on show (a product's page, an item's tree) has the Positions / Lo
   assert.equal(scopedArrangeQuery(page, "locations", { ownPage: true }).toString(), "view=rcm&arrange=locations");
   assert.equal(scopedArrangeQuery(new URLSearchParams("arrange=locations"), "positions", { ownPage: true }).toString(), "");
   assert.equal(scopedArrangeQuery(new URLSearchParams("root=b&arrange=positions"), "locations").toString(), "root=b&arrange=locations");
+});
+
+test("row markers are switched off (TREE_ROW_MARKERS) but markersOf and the filter data still work", () => {
+  // Derryn, 8 Nov 2026: hidden for now. Turning them back on is one line in assetTree.js.
+  assert.equal(TREE_ROW_MARKERS, false);
+  const d = buildDisplay(DATA, "positions");
+  assert.ok(markersOf(d.rows.get("house")).length > 0);
 });

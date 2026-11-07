@@ -83,8 +83,8 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await expect(detail(page)).toContainText(`Report unit ${tag} · serial RU-${tag}`);
   await expect(detail(page)).toContainText("Mechanical seal leak");
   await expect(detail(page)).toContainText("Safety");
-  await expect(row(page, `Report pump ${tag}`).locator(".tp-mini.report")).toHaveAttribute("title", "1 open failure report");
-  await expect(row(page, `Report pool ${tag}`).locator(".tp-mini.report")).toHaveAttribute("title", "1 open failure report inside");
+  await expect(row(page, `Report pump ${tag}`).locator(".tp-mini")).toHaveCount(0); // row markers are hidden (TREE_ROW_MARKERS)
+  await expect(row(page, `Report pool ${tag}`).locator(".tp-mini")).toHaveCount(0);
   const reportId = query(page).get("report");
   await shot(page, "reports-desktop-report");
 
@@ -147,8 +147,7 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await expect(status(page)).toHaveText("Closed");
   await expect(detail(page).locator(".fr-signoff")).toContainText(/^Closed on .* by Dev User: New seal fitted; dry after a week$/);
   await expect(detail(page)).toContainText("Closed: New seal fitted; dry after a week"); // in the history
-  // The tree's marker goes with the last open report.
-  await expect(row(page, `Report pump ${tag}`).locator(".tp-mini.report")).toHaveCount(0);
+  await expect(row(page, `Report pump ${tag}`).locator(".tp-mini")).toHaveCount(0);
   // A link opens on the report.
   await open(page, `/asset-register/explorer?arrange=positions&tab=reports&sel=${p.pump.id}&report=${reportId}`);
   await expect(detail(page).locator(".fr-h2")).toContainText(/Seal leaking at the drive end/);

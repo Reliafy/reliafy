@@ -321,6 +321,13 @@ export function computeFilter(display, { query = "", chips = [], extra = null } 
 
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 
+// Derryn, 8 Nov 2026: hidden for now, may come back. False: the tree rows draw
+// no status markers (overdue, open work, alarm, open reports, not analysed,
+// the RCM hints, the grey inside-count) and the tree's ⋯ menu drops its key to
+// them. markersOf still works and the Show only filters and their counts are
+// untouched; turning this on again is this one line.
+export const TREE_ROW_MARKERS = false;
+
 // A row's markers, each only when there's something to mark: overdue (a
 // count), open work (a count), "!" for an alarm, and open failure reports (a
 // count; the Failure reports tab). A row with something inside it counts

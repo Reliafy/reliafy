@@ -127,12 +127,12 @@ test("no evidence linked: no warnings, no Evidence check column; the column come
   await expect(chip).toHaveAttribute("title", /analysed when it has at least one function, every function has a functional failure, every functional failure has failure modes or is caused by failures on positions inside it that are answered in turn, and every failure mode has a decision/);
   await page.keyboard.press("Escape");
   // The pump is analysed (one function › one failure › one decided mode); the pool, with no function of its own, isn't.
-  await expect(trow(page, `^Quiet pump ${tag}`).locator(".tp-mini.rcm")).toHaveCount(0);
-  await expect(trow(page, `^Quiet pool ${tag}`).locator(".tp-mini.rcm")).toHaveAttribute("title", "1 position not analysed yet here and inside");
+  await expect(trow(page, `^Quiet pump ${tag}`).locator(".tp-mini")).toHaveCount(0);
+  await expect(trow(page, `^Quiet pool ${tag}`).locator(".tp-mini")).toHaveCount(0); // row markers are hidden (TREE_ROW_MARKERS)
   // One rule everywhere: a functional failure with no failure mode leaves the pump not analysed.
   await request.post(`${M}/functions/${p.fn.id}/failures`, { data: { text: `Leaks ${tag}` } });
   await page.reload();
-  await expect(trow(page, `^Quiet pump ${tag}`).locator(".tp-mini.rcm")).toHaveAttribute("title", "Not analysed yet (RCM)");
-  await expect(trow(page, `^Quiet pool ${tag}`).locator(".tp-mini.rcm")).toHaveAttribute("title", "2 positions not analysed yet here and inside");
+  await expect(trow(page, `^Quiet pump ${tag}`).locator(".tp-mini")).toHaveCount(0);
+  await expect(trow(page, `^Quiet pool ${tag}`).locator(".tp-mini")).toHaveCount(0);
   await expectHealthy(page, problems, { label: "explorer quiet evidence" });
 });
