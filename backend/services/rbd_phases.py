@@ -42,6 +42,7 @@ import math
 import warnings
 from typing import Any, Callable, Optional
 
+from backend.errors import client_message
 from backend.services import rbd_repeats
 from backend.services.rbd_analysis import AnalysisError
 
@@ -191,7 +192,7 @@ def validation_warnings(graph: dict) -> list[str]:
     try:
         phases = parse_phases(graph.get("phases"))
     except PhaseError as exc:
-        return [f"Phased mission: {exc}"]
+        return [f"Phased mission: {client_message(exc)}"]
     if graph.get("repairable"):
         return ["Phased mission: phases apply to a non-repairable diagram; this one is repairable, so its "
                 "phases aren't analysed."]

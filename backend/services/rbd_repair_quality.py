@@ -37,6 +37,7 @@ from __future__ import annotations
 import math
 from typing import Optional
 
+from backend.errors import client_message
 from backend.services.rbd_analysis import AnalysisError
 
 KEY = "repair_quality"
@@ -122,7 +123,7 @@ def errors(data: dict, label: str, ntype: str = "component") -> list[str]:
     try:
         quality = parse(data, label)
     except AnalysisError as exc:
-        return [str(exc)]
+        return [client_message(exc)]
     if quality is None:
         return []
     out = []

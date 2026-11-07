@@ -241,9 +241,10 @@ def list_models(db, owner_id: str | list[str], hidden=frozenset(), shared=frozen
 def get_model(db, model_id: str, owner_id: str | list[str] | None = None) -> Model | None:
     """Fetch a model by id. Shared sample models are visible to every owner.
     Ids are strings; anything else (e.g. from a JSON body) matches nothing."""
-    if not isinstance(model_id, str):
+    if not isinstance(model_id, str) or not model_id:
         return None
-    query = {"_id": model_id}
+    # ``$eq`` keeps the id a value to match, never an operator.
+    query = {"_id": {"$eq": str(model_id)}}
     if owner_id is not None:
         query["owner_id"] = {"$in": access.owner_in(owner_id)}
     return from_doc(Model, db.models.find_one(query))

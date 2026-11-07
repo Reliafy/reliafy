@@ -68,6 +68,7 @@ from typing import Any, Optional
 
 import numpy as np
 
+from backend.errors import client_message
 from backend.services.rbd_analysis import AnalysisError
 
 #: Block cost fields -> RePyability component spec keys.
@@ -456,7 +457,7 @@ def validation_errors(graph: dict) -> list[str]:
         diagram_costs(graph)
         discount(graph)
     except AnalysisError as exc:
-        errors.append(str(exc).replace("“Diagram”: the ", "The "))
+        errors.append(client_message(exc).replace("“Diagram”: the ", "The "))
     for node in graph.get("nodes") or []:
         if node.get("type") != "component":
             continue
@@ -482,7 +483,7 @@ def validation_errors(graph: dict) -> list[str]:
 
             errors.extend(rbd_repair_quality.errors(data, label))
         except AnalysisError as exc:
-            errors.append(str(exc))
+            errors.append(client_message(exc))
         except Exception:  # noqa: BLE001 - a duration model that won't build
             errors.append(f"“{label}”: a maintenance or test duration model can't be built.")
     return errors

@@ -43,7 +43,7 @@ from backend.services import recurrent as recurrent_service
 from backend.services import spares
 from backend.services.strategy import _model_from_params, StrategyError
 from backend.units import unit_in_text
-from backend.errors import client_message
+from backend.errors import client_message, client_reason
 
 
 class FleetNotFound(KeyError):
@@ -604,10 +604,11 @@ def _compute_covariate(db, fleet: Fleet, owners, model, item_periods: bool, spar
             live, ages, rates, periods, items, Z=Z, item_periods=item_periods, unit=info["unit"],
             limits=_period_limits(settings, items, ages, rates, periods))}
     except StrategyError as exc:
-        return {**base, "status": "stale", "reason": str(exc)}
+        return {**base, "status": "stale", "reason": client_message(exc)}
     except Exception as exc:  # noqa: BLE001 - SurPyval refusing these values
+        reason = client_reason(exc, "the model refused these values", where="fleet forecast")
         return {**base, "status": "stale",
-                "reason": f"The linked model couldn't be evaluated at these items' conditions: {exc}"}
+                "reason": f"The linked model couldn't be evaluated at these items' conditions: {reason}"}
     if notes:
         out["warnings"] = [*notes, *(out.get("warnings") or [])]
     for row, values, (rate, basis) in zip(out["per_item"], rows, chosen):
@@ -938,9 +939,10 @@ def _spares_or_reason(opts, method, model, ages, rates, periods, label, *, Z=Non
     try:
         return spares_answer(opts, method, model, ages, rates, periods, label, Z=Z)
     except StrategyError as exc:
-        return {"status": "error", "reason": str(exc)}
+        return {"status": "error", "reason": client_message(exc)}
     except Exception as exc:  # noqa: BLE001 - a model refusing these values
-        return {"status": "error", "reason": f"The spares answer couldn't be worked out: {exc}"}
+        reason = client_reason(exc, "the model refused these values", where="fleet spares")
+        return {"status": "error", "reason": f"The spares answer couldn't be worked out: {reason}"}
 
 
 def _amount(v: float, label: str) -> str:

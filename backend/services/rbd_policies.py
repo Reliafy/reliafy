@@ -40,6 +40,7 @@ from typing import Any, Optional
 
 import numpy as np
 
+from backend.errors import client_message
 from backend.services import rbd_maintenance as rm
 from backend.services import repy_compat
 from backend.services.method_labels import route_reason
@@ -275,7 +276,7 @@ def safety_summary(graph: dict, rbd, resolve_model, overrides: dict, steady, res
                 source = twin
         except (NotImplementedError, ValueError, AnalysisError) as exc:
             pfd = None
-            note = _named(str(exc), labels)
+            note = _named(client_message(exc), labels)
         out["common_cause"] = {"groups": len(groups), "included": pfd is not None, "note": note}
     if pfd is None and steady is not None:
         try:
@@ -502,7 +503,7 @@ def validation_errors(graph: dict) -> list[str]:
         try:
             check(graph)
         except AnalysisError as exc:
-            errors.append(str(exc))
+            errors.append(client_message(exc))
     for node in graph.get("nodes") or []:
         if node.get("type") != "standby":
             continue
@@ -513,7 +514,7 @@ def validation_errors(graph: dict) -> list[str]:
             rm.block_costs(data, label)
             rm.crew_priority(data, label)
         except AnalysisError as exc:
-            errors.append(str(exc))
+            errors.append(client_message(exc))
     return errors
 
 

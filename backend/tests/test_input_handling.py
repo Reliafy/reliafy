@@ -239,3 +239,61 @@ def test_set_plan_needs_a_plain_user_id():
     with pytest.raises(ValueError):
         billing.set_plan(db, {"$ne": None}, "pro")
     assert db.users.count_documents({}) == 0
+
+
+def test_set_plan_matches_the_user_by_value():
+    import mongomock
+
+    from backend.services import billing
+
+    db = mongomock.MongoClient()["plans"]
+    db.users.insert_one({"_id": "u1", "plan": "free"})
+    assert billing.set_plan(db, "u1", "pro") == "free"
+    assert db.users.find_one({"_id": "u1"})["plan"] == "pro"
+
+
+def test_get_model_matches_ids_by_value():
+    import mongomock
+
+    from backend.services import models
+
+    db = mongomock.MongoClient()["models"]
+    db.models.insert_one({"_id": "m1", "id": "m1", "owner_id": "u1", "name": "Pump"})
+    for bad in ({"$ne": None}, {"$gt": ""}, ["m1"], None, 1, ""):
+        assert models.get_model(db, bad) is None
+        assert models.get_model(db, bad, "u1") is None
+    assert models.get_model(db, "$ne") is None  # a string is only ever a value
+    found = models.get_model(db, "m1", "u1")
+    assert found is not None and found.id == "m1"
+    assert models.get_model(db, "m1", "someone-else") is None
+
+
+def test_plan_change_looks_up_plan_walls_by_value(monkeypatch):
+    import mongomock
+
+    from backend.services import usage
+
+    db = mongomock.MongoClient()["usage"]
+    monkeypatch.setattr(usage, "enabled", lambda: True)
+    recorded = []
+    monkeypatch.setattr(usage, "record", lambda _db, **kw: recorded.append(kw["feature"]))
+    db.usage_events.insert_one({"uid": "u1", "channel": "mcp", "outcome": next(iter(usage.WALL_OUTCOMES))})
+    usage.on_plan_change(db, "u1", "free", "pro")
+    assert recorded == [usage.PRO_UPGRADE, usage.UPGRADE_AFTER_LOCK]
+    recorded.clear()
+    usage.on_plan_change(db, {"$ne": None}, "free", "pro")  # not a user id: nothing looked up or recorded
+    assert recorded == []
+
+
+def test_contained_path_root_and_links(tmp_path):
+    from backend import main
+
+    root = tmp_path / "dist"
+    root.mkdir()
+    (tmp_path / "secret.txt").write_text("x")
+    (root / "link.txt").symlink_to(tmp_path / "secret.txt")
+    (tmp_path / "dist-other").mkdir()
+    assert main.contained_path(root, root) == root.resolve()
+    assert main.contained_path(root / "link.txt", root) is None
+    assert main.contained_path(root / ".." / "dist-other", root) is None  # a shared prefix isn't inside
+    assert main.contained_path(root / "a\x00b", root) is None

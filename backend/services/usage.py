@@ -255,13 +255,16 @@ def on_plan_change(db, uid: str, old_plan: str, new_plan: str) -> None:
     """Conversions: a move to Pro records ``pro_upgrade`` and, when the
     account had met an MCP plan wall (locked / limit / pro_only, within the
     90 days events are kept), ``upgrade_after_mcp_lock``. Never raises."""
+    if not isinstance(uid, str) or not uid:
+        return
     forget_plan(uid)
     if not enabled() or new_plan != "pro" or old_plan == "pro":
         return
     try:
         record(db, uid=uid, channel="billing", feature=PRO_UPGRADE, plan="pro")
+        # ``$eq`` keeps the id a value to match, never an operator.
         walled = db.usage_events.find_one(
-            {"uid": uid, "channel": "mcp", "outcome": {"$in": list(WALL_OUTCOMES)}}, {"_id": 1})
+            {"uid": {"$eq": str(uid)}, "channel": "mcp", "outcome": {"$in": list(WALL_OUTCOMES)}}, {"_id": 1})
         if walled is not None:
             record(db, uid=uid, channel="billing", feature=UPGRADE_AFTER_LOCK, plan="pro")
     except Exception:  # noqa: BLE001

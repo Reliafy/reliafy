@@ -3639,7 +3639,7 @@ def _availability_routes(graph: dict, with_status: bool = False):
         rbd, labels, *_ = _build_repairable_rbd(graph)
         summary = _routes_summary(rbd.analysis_routes(), labels, _priced(rbd))
     except AnalysisError as exc:
-        refusal = str(exc) if _is_ccf_identity_refusal(exc) else None
+        refusal = client_message(exc) if _is_ccf_identity_refusal(exc) else None
         return (None, None, refusal) if with_status else None
     except Exception:  # noqa: BLE001 - only a label; Calculate reports problems
         return (None, None, None) if with_status else None
@@ -3758,7 +3758,7 @@ def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float]
                 else:
                     cost_note = (summary.get("expected_cost") or {}).get("reason")
     except NotImplementedError as exc:
-        return simulation_only(_with_labels(str(exc), labels))
+        return simulation_only(_with_labels(client_message(exc), labels))
     except (ValueError, TypeError) as exc:
         # A current state the blocks can't be in (a repair longer than it can
         # last, say): the user's input, not a bug.

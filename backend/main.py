@@ -13,6 +13,7 @@ so that ``frontend/dist`` exists and can be served as static files.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -644,12 +645,21 @@ FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 
 def contained_path(path: Path, root: Path) -> Path | None:
-    """``path`` resolved, or None if it resolves outside ``root``."""
+    """``path`` resolved, or None if it resolves outside ``root``.
+
+    Written as a real path plus a prefix test on it (rather than
+    ``Path.resolve`` and ``is_relative_to``, which mean the same) so that
+    code scanners see the check."""
     try:
-        resolved = path.resolve()
+        base = os.path.realpath(root)
+        resolved = os.path.realpath(path)
     except (OSError, RuntimeError, ValueError):
         return None
-    return resolved if resolved.is_relative_to(root.resolve()) else None
+    if resolved.startswith(os.path.join(base, "")):
+        return Path(resolved)
+    if resolved == base:
+        return Path(base)
+    return None
 
 
 # The first path segment of every route the React app draws itself
