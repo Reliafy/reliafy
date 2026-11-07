@@ -141,8 +141,8 @@ test("a click shows the details beside the table; a double-click on the name spr
   await expect(evident.getByRole("radio", { name: "Hidden" })).toHaveAttribute("aria-checked", "true");
   await expect(panel(page).getByRole("status").filter({ hasText: "✓ Saved" }).first()).toBeVisible();
   const consequence = panel(page).getByRole("radiogroup", { name: "Consequence" });
-  await consequence.getByRole("radio", { name: "Operational" }).click();
-  await expect(consequence.getByRole("radio", { name: "Operational" })).toHaveAttribute("aria-checked", "true");
+  await consequence.getByRole("radio", { name: "Operational", exact: true }).click();
+  await expect(consequence.getByRole("radio", { name: "Operational", exact: true })).toHaveAttribute("aria-checked", "true");
   await expect.poll(async () => {
     const m = (await rcmOf(request, p)).functions[0].failures[0].modes.find((x) => x.id === p.mode.id);
     return [m.text, m.effects, m.hidden, m.consequence];
