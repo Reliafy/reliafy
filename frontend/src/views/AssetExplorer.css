@@ -1305,9 +1305,9 @@ button.rw-cklink {
    "No standard" heading (the function's failures that breach no one
    standard), and the quiet "no failure yet" marker on a standard with none. */
 .tp-row.tt.tt-std .tp-nm { font-weight: 500; }
-.tt-std .tp-ic { color: var(--acc); }
+.tt-std .tp-ic { color: var(--std); }
 .tp-row.tt.tt-nostd .tp-nm { font-weight: 500; color: var(--muted); }
-.tt-nostd .tp-ic { color: var(--muted); }
+.tt-nostd .tp-ic, .tt-nostd .tp-ic.rw-ic-std { color: var(--muted); }
 .tp-mini.nofail {
   background: transparent;
   color: var(--muted);
