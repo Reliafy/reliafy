@@ -1,4 +1,4 @@
-/* The Explorer's Signals tab. */
+/* A signal channel's page (and the Explorer's Signals tab, hidden for now). */
 .sg {
   display: flex;
   flex-direction: column;

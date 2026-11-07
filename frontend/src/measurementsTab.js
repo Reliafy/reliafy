@@ -251,10 +251,89 @@ export function readMeasurementsQuery(params) {
   return { attention: params.get("only") === "attention", point: params.get("point") || null };
 }
 
+// ---- signal channels as rows ---------------------------------------------------------
+
+// A row is fed (the "Fed" chip) when nobody reads it by hand: a signal channel,
+// a feed's point, or a point worked out from a channel.
+export const isFed = (row) => row?.kind === "channel" || row?.source !== "manual" || !!row?.derived;
+
+// The channel's state, from its watch bands and levels: Needs attention when
+// any is past its alarm limit, OK when all are inside, else no bands or no
+// data yet. The same shape as pointChip.
+export function channelChip(ch) {
+  const bands = ch?.bands || [];
+  const past = bands.filter((b) => b.status === "high" || b.status === "low");
+  const names = (bs) => bs.map((b) => b.name).join(", ");
+  if (past.length) return { key: "attention", label: "Needs attention", tone: "danger", title: `Past its alarm: ${names(past)}` };
+  if (!ch?.latest) {
+    return { key: "never", label: "No data yet", tone: "neutral", title: `Waiting for its first snapshot${ch?.tag ? ` (${ch.tag})` : ""}` };
+  }
+  if (!bands.length) return { key: "nolimit", label: "No bands", tone: "neutral", title: "No watch bands or levels: add one to be warned" };
+  return { key: "ok", label: "OK", tone: "success", title: `Inside its limits: ${names(bands)}` };
+}
+
+export const channelNeedsAttention = (ch) => channelChip(ch).key === "attention";
+
+// Where the channel is: its position, or the item it's on (and where that's fitted).
+export function channelPlace(ch, fittedAt = new Map()) {
+  if (ch?.position) return ch.position.name;
+  if (ch?.item) {
+    const at = ch.item.fitted_to?.name || fittedAt.get(ch.item.id);
+    return at ? `${at} (on ${ch.item.name})` : ch.item.name;
+  }
+  return "";
+}
+
+// The muted line under a channel's name: where (in a branch), "sensor", its
+// unit, and which level the latest value is ("overall RMS" for a burst).
+export function channelSubline(ch, { branch = false, fittedAt = new Map() } = {}) {
+  const level = ch.stat === "rms" ? `overall RMS${ch.axis ? ` (${ch.axis})` : ""}` : "";
+  return [branch && channelPlace(ch, fittedAt), "sensor", ch.unit, level].filter(Boolean).join(" · ");
+}
+
+// The recent levels, oldest first, as recentValues gives a point's.
+export const channelValues = (ch, n = 12) => (ch?.recent || []).filter((r) => r.value != null)
+  .slice(-n).map((r) => ({ at: r.t, value: Number(r.value) }));
+
+// The channel row's ⋯ menu: Open (its own page: spectrum, bands, settings) and
+// Edit bands… (the same page, at its watch bands).
+export function channelMenu(ch) {
+  const items = [{ id: "page", label: "Open" }, { id: "bands", label: "Edit bands…" }];
+  if (ch.position?.id) items.push({ id: "open", label: "Open its position" });
+  else if (ch.item?.id) items.push({ id: "open", label: "Open its item" });
+  return items;
+}
+
+// Points and channels as one list, worst first: past alarm or a channel past a
+// band's alarm, near a limit, due, OK, no limits, never read; then by place
+// and name. Each row is { kind: "point" | "channel", key, row }.
+export function measurementRows(points, channels, today, fittedAt = new Map()) {
+  const cmp = (a, b) => a.localeCompare(b, "en", { numeric: true, sensitivity: "base" });
+  const pointRank = (p) => {
+    const s = pointState(p, today);
+    if (s === STATES.past) return 0;
+    if (s === STATES.near) return 1;
+    if (readingDue(p, today)) return 2;
+    return s.rank + 1;
+  };
+  const chRank = { attention: 0, ok: STATES.ok.rank + 1, nolimit: STATES.nolimit.rank + 1, never: STATES.none.rank + 1 };
+  const rows = [
+    ...(points || []).map((p) => ({ kind: "point", key: p.id, row: p, rank: pointRank(p), place: placeOf(p, fittedAt) })),
+    ...(channels || []).map((c) => ({
+      kind: "channel", key: `channel:${c.id}`, row: c, rank: chRank[channelChip(c).key], place: channelPlace(c, fittedAt),
+    })),
+  ];
+  return rows.sort((a, b) => a.rank - b.rank || cmp(a.place, b.place) || cmp(a.row.name, b.row.name))
+    .map(({ kind, key, row }) => ({ kind, key, row }));
+}
+
+// Needs a look: a point past or near its limit or due a reading; a channel past a band's alarm.
+export const rowNeedsAttention = (r, today) => (r.kind === "channel" ? channelNeedsAttention(r.row) : needsAttention(r.row, today));
+
 // The points shown, as a CSV file (the panel heading's "…" › Export CSV): one
 // row each, in the order shown, with where it is, its latest reading and
 // when, its limits and its state in words.
-export function pointsCsv(points, today, fittedAt = new Map()) {
+export function pointsCsv(points, today, fittedAt = new Map(), channels = []) {
   const head = ["Point", "Where", "Kind", "Unit", "Latest reading", "Read on", "Source", "Alarm below", "Alarm above", "State"];
   const num = (v) => (v == null ? "" : v);
   const rows = (points || []).map((p) => [
@@ -263,5 +342,10 @@ export function pointsCsv(points, today, fittedAt = new Map()) {
     p.read_at ? (p.derived ? "signal" : p.source === "manual" ? "by hand" : "feed") : "",
     num(p.alarm_below), num(p.alarm_above), pointChip(p, today).label,
   ]);
-  return toCsv([head, ...rows]);
+  // A channel: its latest level, from its sensor; its limits are its bands'.
+  const chRows = (channels || []).map((c) => [
+    c.name || "", channelPlace(c, fittedAt), "sensor", c.unit || "", num(c.latest?.value),
+    c.latest?.t ? String(c.latest.t).slice(0, 10) : "", c.latest ? "sensor" : "", "", "", channelChip(c).label,
+  ]);
+  return toCsv([head, ...rows, ...chRows]);
 }

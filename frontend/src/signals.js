@@ -1,8 +1,7 @@
-// Signal channels (Assets › Explorer › Signals): the small pieces of
+// Signal channels (a channel's own page, reached from its row in the
+// Explorer's Measurements tab): the small pieces of
 // logic behind the spectrum chart and its player, kept apart from the screen so
 // they can be tested.
-
-import { EXPLORER_SIGNALS_TAB } from "./explorerTabs.js";
 
 // ---- the player ---------------------------------------------------------------------
 //
@@ -366,21 +365,12 @@ export function snapshotColor(colors, n) {
   return colors[n % colors.length];
 }
 
-// ---- where a channel lives in the Explorer ----------------------------------------
+// ---- a channel's own page ----------------------------------------------------------
 //
-// A channel is on a position or on an item. A fitted item has no row of its own
-// in the Explorer: its channels show on its position's Signals tab, so a link to
-// one opens that position. A loose item (a spare, or one with no home yet) has
-// its row in Locations. While the Signals tab is hidden (EXPLORER_SIGNALS_TAB),
-// the link opens that row's Summary (no `tab`), so it never lands on a tab that
-// isn't there.
-export function channelExplorerPath(c) {
-  const on = c?.item?.fitted_to
-    ? { mode: "positions", sel: c.item.fitted_to.id }
-    : c?.item ? { mode: "locations", sel: c.item.id }
-    : { mode: "positions", sel: c?.position?.id };
-  const q = new URLSearchParams({ arrange: on.mode });
-  if (on.sel) q.set("sel", on.sel);
-  if (EXPLORER_SIGNALS_TAB) q.set("tab", "signals");
-  return `/asset-register/explorer?${q}`;
+// A channel is a row of the Explorer's Measurements tab (beside the hand-read
+// points on its position, or its item's); its spectrum, watch bands and
+// settings are on its own page. `#bands` opens the page at its watch bands.
+export function channelPath(c, { bands = false } = {}) {
+  const id = typeof c === "string" ? c : c?.id;
+  return `/asset-register/channels/${encodeURIComponent(id || "")}${bands ? "#bands" : ""}`;
 }

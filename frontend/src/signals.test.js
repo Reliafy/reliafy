@@ -183,15 +183,9 @@ test("limit lines name their kind in words as well as colour", () => {
   assert.deepEqual(limitLines(null), []);
 });
 
-test("a channel's link opens where it shows: a fitted item's on its position (its Summary while the Signals tab is hidden)", async () => {
-  const { channelExplorerPath } = await import("./signals.js");
-  const { EXPLORER_SIGNALS_TAB } = await import("./explorerTabs.js");
-  const base = "/asset-register/explorer?arrange=";
-  const tab = EXPLORER_SIGNALS_TAB ? "&tab=signals" : "";
-  assert.equal(channelExplorerPath({ position: { id: "p1" }, item: null }), `${base}positions&sel=p1${tab}`);
-  assert.equal(channelExplorerPath({ position: null, item: { id: "i1", fitted_to: { id: "p2", name: "Feed" } } }),
-    `${base}positions&sel=p2${tab}`);
-  assert.equal(channelExplorerPath({ position: null, item: { id: "i3", fitted_to: null } }), `${base}locations&sel=i3${tab}`);
-  // Hidden, no link names the tab.
-  if (!EXPLORER_SIGNALS_TAB) assert.ok(!channelExplorerPath({ position: { id: "p1" }, item: null }).includes("tab="));
+test("a channel's link opens its own page (the Signals tab is hidden), at its bands when asked", async () => {
+  const { channelPath } = await import("./signals.js");
+  assert.equal(channelPath({ id: "c1", position: { id: "p1" } }), "/asset-register/channels/c1");
+  assert.equal(channelPath("c 2", { bands: true }), "/asset-register/channels/c%202#bands");
+  assert.ok(!channelPath({ id: "c1" }).includes("tab="));
 });

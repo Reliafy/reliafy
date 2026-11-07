@@ -545,7 +545,7 @@ SIGNALS: Table = {
     "update_band": ("point_id", "name low high axis unit alarm_above alarm_below warn_above warn_below clear_limits",
                     """Change a band: name and limits in place; a new range starts a new version from now (the old
         values stay as measured, the trend shows the change). clear_limits: list of limit names to remove."""),
-    "set_storage_cap": ("", "cap_mb", "Warn on the Signals tab above cap_mb of snapshots (none clears; deletes nothing)."),
+    "set_storage_cap": ("", "cap_mb", "Warn on channel pages above cap_mb of snapshots (none clears; deletes nothing)."),
     "add_level": ("channel_id name stat", "axis alarm_above alarm_below warn_above warn_below", """An overall level of each snapshot as a
         measurement point: stat rms, peak, crest, kurtosis, mean or value (a scalar channel, e.g. pressure)."""),
     "remove_band": ("point_id", "reason", """Stop a band or level adding values (its recorded values stay)."""),

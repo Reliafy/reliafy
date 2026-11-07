@@ -2965,7 +2965,10 @@ export async function listMeasurementPoints({ positionIds = [], itemIds = [] } =
     asks.push(request(`/api/maintenance/points?${q}`));
   }
   const got = await Promise.all(asks);
-  return { points: got.flatMap((g) => g.points || []), more: got.some((g) => g.more) };
+  return {
+    points: got.flatMap((g) => g.points || []), more: got.some((g) => g.more),
+    channels: got.flatMap((g) => g.channels || []),
+  };
 }
 // A point's name, alarm limits (null clears one) or feed tag. Returns the point.
 export function updateMeasurementPoint(pointId, body) {
