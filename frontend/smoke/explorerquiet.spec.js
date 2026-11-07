@@ -38,20 +38,28 @@ async function plant(request, tag) {
 // The workspace's RCM as if no decision had evidence linked.
 async function nothingLinked(page) {
   await page.route(`**${M}/rcm`, async (route) => {
-    const res = await route.fetch();
-    const body = await res.json();
-    const strip = (m) => {
-      if (!m.decision) return;
-      delete m.decision.evidence;
-      for (const k of ["artifact_name", "artifact_link_path", "summary"]) delete m.decision[k];
-      if (m.decision.status) m.decision.status = "unevidenced";
-    };
-    for (const p of body.positions || []) {
-      for (const m of p.unassigned || []) strip(m);
-      for (const fn of p.functions || []) for (const ff of fn.failures || []) for (const m of ff.modes || []) strip(m);
-      if (p.rollup) p.rollup = { ...p.rollup, unevidenced: (p.rollup.unevidenced || 0) + (p.rollup.supported || 0) + (p.rollup.contradicted || 0) + (p.rollup.inconclusive || 0) + (p.rollup.stale || 0), supported: 0, contradicted: 0, inconclusive: 0, stale: 0 };
+    // A reload or a navigation can land while this handler is awaiting the
+    // fetch: Playwright then disposes the response ("Response has been
+    // disposed"). The page that asked is gone and its replacement makes a new
+    // request that comes through here again, so an abandoned one is dropped.
+    try {
+      const res = await route.fetch();
+      const body = JSON.parse(await res.text());
+      const strip = (m) => {
+        if (!m.decision) return;
+        delete m.decision.evidence;
+        for (const k of ["artifact_name", "artifact_link_path", "summary"]) delete m.decision[k];
+        if (m.decision.status) m.decision.status = "unevidenced";
+      };
+      for (const p of body.positions || []) {
+        for (const m of p.unassigned || []) strip(m);
+        for (const fn of p.functions || []) for (const ff of fn.failures || []) for (const m of ff.modes || []) strip(m);
+        if (p.rollup) p.rollup = { ...p.rollup, unevidenced: (p.rollup.unevidenced || 0) + (p.rollup.supported || 0) + (p.rollup.contradicted || 0) + (p.rollup.inconclusive || 0) + (p.rollup.stale || 0), supported: 0, contradicted: 0, inconclusive: 0, stale: 0 };
+      }
+      await route.fulfill({ response: res, json: body });
+    } catch (e) {
+      if (!/disposed|closed|already handled|Target page|Test ended/i.test(String(e))) throw e;
     }
-    await route.fulfill({ response: res, json: body });
   });
 }
 
