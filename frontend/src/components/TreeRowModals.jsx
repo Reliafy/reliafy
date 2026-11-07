@@ -36,10 +36,12 @@ export function RenameModal({ row, onClose, onDone }) {
 
 // `targets`: where it may go ([{id, name, depth}], never itself nor anything
 // inside it); `parentId`: where it is now.
-export function MoveModal({ row, targets, parentId, onClose, onDone }) {
+// topLabel: what the top level is called, where it isn't the register's (a
+// product's layout).
+export function MoveModal({ row, targets, parentId, topLabel = null, onClose, onDone }) {
   const [to, setTo] = useState(parentId || "");
   const kind = KIND[row.type];
-  const top = row.type === "loc" ? "Top level (an asset of its own)" : "Top level (inside nothing)";
+  const top = topLabel || (row.type === "loc" ? "Top level (an asset of its own)" : "Top level (inside nothing)");
   const nameOf = (id) => (id ? targets.find((t) => t.id === id)?.name : null);
   return (
     <FormModal title={`Move ${quoted(row.ref.name)}`} submitLabel="Move" pendingLabel="Moving…" onClose={onClose}

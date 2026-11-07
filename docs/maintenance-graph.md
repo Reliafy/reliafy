@@ -808,6 +808,42 @@ item. The tree rows carry `design` (a design's top), `design_position_id`
 (a built position) and `built_from` (a built tree's top), so the app can keep
 designs and built items out of the Assets landing.
 
+### A product's physical layout (design locations)
+
+A product has locations of its own (Forward left arm, Centre body › Battery
+bay): ordinary `Location` nodes marked as the design's. Two more event types,
+new (no projection version bump):
+
+- `location.design_declared {id, product_id}`, straight after the location's
+  `location.created`, sets `design_of` (the product's top position id). A
+  location made inside a design location gets one too.
+- `location.carried {id, position_id, design_location_id?}` sets `carried_by`
+  (a built tree's top position) and `design_location_id` (the design location
+  it copies).
+
+Design locations are never assets: `places`, `location_tree`, `locations` and
+the app's Explorer leave them (and carried ones) out; `location_tree(of=…)` /
+`locations(of=…)` (`GET /locations?of=`, MCP `list.locations product_id`) list
+a product's or a built unit's own. A design's positions may be placed only at
+its own design locations (inheritance as for assets); an asset's never; a
+built unit's at the places you look after or its own carried ones. Design
+locations hold no items, stock, tasks or work orders. Moving a location keeps
+it in its own layout.
+
+`build_item` copies the design locations (parents first) as `location.created`
++ `location.carried`, and each copied position's `location_id` is the copy of
+its design position's. A carried location's top has no parent: it is wherever
+its unit is, so its path (`_location_path`) starts with the location of the
+unit's top position, and moving the unit moves it with no event of its own. A
+location's read counts the positions on the units kept there through their
+carried locations.
+
+Deleting a design or carried location (`delete_tree`, kind location) takes the
+locations inside it but not the positions placed there: each gets
+`position.updated {location_id: null}` and the record's `unplaced` keeps the
+[position, location] pairs, which an undo puts back. Deleting a product's top
+position, or a built tree's, takes its locations with it.
+
 ## Signal channels and derived points
 
 A `SignalChannel` node sits on a position or an item (an `ON` edge) and holds a

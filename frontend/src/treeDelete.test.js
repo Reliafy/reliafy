@@ -69,3 +69,13 @@ test("Delete and Backspace open it, not while typing or with a modifier", () => 
   assert.equal(isUndoKey({ key: "z", metaKey: true, shiftKey: true, target: row }), false);
   assert.equal(isUndoKey({ key: "z", ctrlKey: true, target: input }), false);
 });
+
+test("a product's design location: the positions placed there stay, with no place", () => {
+  const arm = {
+    kind: "location", name: "Forward left arm", positions: 0, positions_inside: 0, locations: 2, locations_inside: 1,
+    items_unfitted: 0, positions_on_unfitted_items: 0, items_placed: 0, stock_lines: 0, tasks: 0, work_packages: 0,
+    open_work_orders: 0, functions: 0, failure_modes: 0, positions_unplaced: 3,
+  };
+  assert.deepEqual(deleteLines(arm), ["1 location inside it", "3 positions placed there kept, with no place in the layout"]);
+  assert.equal(deleteButton(arm), "Delete 2 locations");
+});

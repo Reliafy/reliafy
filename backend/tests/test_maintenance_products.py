@@ -147,7 +147,7 @@ def test_build_dry_run_lists_the_paths_and_writes_nothing(m):
         "UAV Mk2 · 0007", "UAV Mk2 · 0007 › Power", "UAV Mk2 · 0007 › Power › Battery",
         "UAV Mk2 · 0007 › Propulsion", "UAV Mk2 · 0007 › Propulsion › Motor 1"]
     assert d["positions"][0]["design_position_id"] == ids["root"] and "id" not in d["positions"][0]
-    assert d["counts"] == {"positions": 5, "failure_modes": 1, "tasks": 1, "parts_list": 0}
+    assert d["counts"] == {"positions": 5, "failure_modes": 1, "tasks": 1, "parts_list": 0, "locations": 0}
     assert d["top_position_id"] is None
     # A rev and a name of its own.
     named = m.build_item(ids["root"], "0008", rev="B", name="Drone 8")

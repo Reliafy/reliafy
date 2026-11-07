@@ -582,6 +582,14 @@ anywhere: topic register).
 (implements.gone on maintenance get.position), never unlinked. A change to the design doesn't reach items already \
 built: say so if the user expects it.
 - Failure reports go on an item's position (topic failures), never on the design's: the design is a template.
+- Physical layout: a product also has design locations (Forward left arm > Motor 1; Centre body > Battery bay). \
+Make one with maintenance locations.create (name, design_of = the product's id; one inside another of its \
+locations needs only parent_id), then place the design's positions there with positions.update location_id \
+(inherited down the tree as for assets). Only the product's own positions go there, and its positions go nowhere \
+else; they hold no items, stock or work, and never show as assets. list.locations with product_id lists them. \
+products.build copies them: the item carries its own copy (list.locations product_id = the built tree's top \
+position), its positions placed the same way, wherever the item is kept. Deleting a design location (retire \
+cascade) keeps the positions placed there, with no place.
 - Reading: maintenance list.products (part, rev, items built, open reports); list.product_items (product_id: \
 each item's serial, rev, built_on, hours when an hours counter is on the item or its tree's top, open reports); \
 get.design_rollup (id = a design position or the product: the items implementing it, what's fitted there on \

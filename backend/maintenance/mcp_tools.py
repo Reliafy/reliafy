@@ -185,8 +185,9 @@ LIST_KINDS: Table = {
     "parts": ("", "item_class_id manufacturer_id", """The catalogue: stock by location, reorder points (low =
         at or below), a year's use and months of cover, used_at, critical_short, item_class and
         manufacturer_entry. Filters as items."""),
-    "locations": ("", "", """The physical tree, each with positions (located there, set or inherited) and
-        items (placed there), and all_positions / all_items counting the locations inside it."""),
+    "locations": ("", "product_id", """The physical tree, each with positions (located there, set or inherited) and
+        items (placed there), and all_positions / all_items counting the locations inside it. product_id: that
+        product's design locations instead (or a built item's top position: the locations it carries)."""),
     "places": ("", "", """The assets: each top-level location with the positions, items, open work orders
         and tasks due in 30 days inside it; not_placed: the same for positions with no location."""),
     "position_classes": ("", "", """Each position class with its positions, fitments and failures, costs,
@@ -557,9 +558,10 @@ SIGNAL_DATA: Table = {
 }
 
 LOCATIONS: Table = {
-    "create": ("name", "parent_id description", """A physical place (site, area, building, room, substation,
+    "create": ("name", "parent_id description design_of", """A physical place (site, area, building, room, substation,
         store), optionally inside another. Don't mirror the positions here: make the places, then give positions
-        a location_id."""),
+        a location_id. design_of: a product's id: one of its design locations (its physical layout: Forward left
+        arm), where only its design's positions go; items built from it carry a copy."""),
     "update": ("location_id", "name description parent_id move_to_top_level", """Rename it, change its
         description, or move it inside another (parent_id) or to the top level."""),
     "retire": ("location_id", "reason cascade dry_run", """Take a place out of use (kept in the history): nothing
@@ -1134,7 +1136,7 @@ def register() -> None:
         if kind == "parts":
             return {"parts": run(m.parts, item_class_id, manufacturer_id)}
         if kind == "locations":
-            return {"tree": run(m.location_tree)}
+            return {"tree": run(m.location_tree, product_id)}
         if kind == "places":
             found = run(m.places)
             # Counts only: the app's filter needs the ids, an agent can find them by name.
@@ -1962,13 +1964,15 @@ def register() -> None:
                               name: str | None = None, parent_id: str | None = None,
                               description: str | None = None, move_to_top_level: bool | None = None,
                               reason: str | None = None, cascade: bool | None = None,
-                              dry_run: bool | None = None) -> dict[str, Any]:
+                              dry_run: bool | None = None,
+                              design_of: Annotated[str | None, Field(description=(
+                                  "create: a product's id (its design's top position)."))] = None) -> dict[str, Any]:
         """Locations: the physical tree (sites, areas, buildings, rooms, substations, stores), separate
         from the positions (the functional tree). Positions get a location_id; unfitted items are placed
         at one (maintenance items.place)."""
         m = m_for(ctx)
         if action == "create":
-            return run(m.create_location, name, parent_id, description or "")
+            return run(m.create_location, name, parent_id, description or "", design_of)
         if action == "retire":
             return run(m.retire_location, location_id, reason or "", bool(cascade), bool(dry_run))
         if action == "restore":

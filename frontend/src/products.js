@@ -59,13 +59,35 @@ export function productTreeIds(positions = []) {
   return out;
 }
 
+// The locations a tree read keeps for a scope: with a root, that product's
+// design locations (`design_of`) or the ones that built item carries
+// (`carried_by`), a design's marked `in_design`; without, the places you look
+// after (neither: a product's layout is never an asset).
+export function scopeLocations(locations = [], root = null, design = false) {
+  if (!root) return locations.filter((l) => !l.design_of && !l.carried_by);
+  return locations.filter((l) => (design ? l.design_of === root : l.carried_by === root))
+    .map((l) => (design ? { ...l, in_design: true } : l));
+}
+
 // The tree read as the Explorer shows it. With a root: only that tree (a
 // product's design, or an item's tree); a design's positions are each marked
 // `in_design` (the tree read marks only its top `design`), so the panel knows
 // they're a design's, with no maintenance. Without: everything but the
 // products' designs and the items' trees (they're under Products and Items).
+// Its locations as scopeLocations keeps them; with a root, `scope` says whose
+// tree it is ({kind: "design" | "unit", id, name}) for the Locations arrangement.
 export function scopeTree(data, root = null) {
   if (!data?.positions) return data;
+  const top = root ? data.positions.find((p) => p.id === root) : null;
+  const locations = root && !top ? [] : scopeLocations(data.locations || [], root, !!top?.design);
+  // Nothing to leave out: the same read.
+  if (!root && locations.length === (data.locations || []).length && !productTreeIds(data.positions).size) return data;
+  const scoped = { ...data, locations: data.locations ? locations : data.locations };
+  if (top) scoped.scope = { kind: top.design ? "design" : "unit", id: root, name: top.name || "" };
+  return scopePositions(scoped, root);
+}
+
+function scopePositions(data, root) {
   let keep;
   if (root) {
     const kids = new Map();
@@ -83,7 +105,6 @@ export function scopeTree(data, root = null) {
     if (data.positions.some((p) => p.id === root)) walk(root);
   } else {
     const drop = productTreeIds(data.positions);
-    if (!drop.size) return data;
     keep = new Set(data.positions.filter((p) => !drop.has(p.id)).map((p) => p.id));
   }
   const design = !!(root && data.positions.find((p) => p.id === root)?.design);

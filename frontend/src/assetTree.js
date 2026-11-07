@@ -41,6 +41,27 @@ export function arrangementOf(param, remembered) {
   return MODES.has(remembered) ? remembered : "positions";
 }
 
+// The arrangement the Explorer shows: by positions on the RCM and FME(C)A
+// tabs (they're by position); one tree on show (`scoped`: a product's page, an
+// item's tree) by positions unless its address says Locations (its own layout,
+// never the arrangement remembered for the whole register); else as
+// arrangementOf.
+export function arrangementFor({ param = null, remembered = null, rcm = false, scoped = false } = {}) {
+  if (rcm) return "positions";
+  if (scoped) return param === "locations" ? "locations" : "positions";
+  return arrangementOf(param, remembered);
+}
+
+// One tree's address for an arrangement (a product's page leaves Positions
+// out of it: that's how it opens), without a pin from the other arrangement.
+export function scopedArrangeQuery(params, mode, { ownPage = false } = {}) {
+  const q = new URLSearchParams(params);
+  if (ownPage && mode === "positions") q.delete("arrange");
+  else q.set("arrange", mode);
+  q.delete("pin");
+  return q;
+}
+
 // The Explorer's address for an arrangement, with any other query
 // ({sel, place}; empty values left out).
 export function explorerPath(mode = "positions", extra = {}) {
@@ -102,6 +123,15 @@ export const byName = (a, b) => collator.compare(a.name || "", b.name || "");
 // alarm limit, open failure reports (the Failure reports tab), and its next due.
 const blank = () => ({ overdue: 0, open_work: 0, alarms: 0, open_reports: 0, next_due: null, not_analysed: 0 });
 
+// The last group in Locations: what's at no location. On a product's page,
+// the positions not placed in its layout yet; on an item's tree, those not
+// placed on the item (they're where the item is kept).
+export const NO_HOME = {
+  assets: { name: "No home yet", note: "Not at a location and not fitted" },
+  design: { name: "Not placed in the layout", note: "Positions not placed at one of the product's locations yet (the ones inside a placed position are where it is)" },
+  unit: { name: "Not placed on the item", note: "Positions not placed at one of the item's own locations: they're where the item is kept" },
+};
+
 // The display tree for one arrangement: rows {key, type (pos | loc | item |
 // group), ref, parent, kids, depth, own, sum} keyed by id, and the tops.
 // Every position appears exactly once: one the arrangement has no place for
@@ -117,6 +147,11 @@ export function buildDisplay(data, mode) {
     return r;
   };
   const positions = data?.positions || [];
+  // In Locations, a position goes under its location when that's one on show
+  // (a product's page shows only its design's locations: a position set at a
+  // place outside it is where its parent is there).
+  const known = new Set(mode === "locations" ? (data?.locations || []).map((l) => l.id) : []);
+  const placedHere = (p) => !!p.location_id && known.has(p.location_id);
   const kidsOf = new Map();
   for (const p of positions) {
     const k = p.parent_id ?? null;
@@ -129,7 +164,7 @@ export function buildDisplay(data, mode) {
   const addPosTree = (p, parent, skipPlaced) => {
     if (!add(p.id, "pos", p, parent)) return;
     for (const c of kidsOf.get(p.id) || []) {
-      if (skipPlaced && c.location_id) continue;
+      if (skipPlaced && placedHere(c)) continue;
       addPosTree(c, p.id, skipPlaced);
     }
   };
@@ -144,14 +179,13 @@ export function buildDisplay(data, mode) {
   const addItem = (item, parent, skipPlaced) => {
     if (!add(item.id, "item", item, parent)) return;
     for (const p of loose.get(item.id)?.positions || []) {
-      if (skipPlaced && p.location_id) continue;
+      if (skipPlaced && placedHere(p)) continue;
       addPosTree(p, item.id, skipPlaced);
     }
   };
 
   if (mode === "locations") {
     const locs = data?.locations || [];
-    const known = new Set(locs.map((l) => l.id));
     const locKids = new Map();
     for (const l of locs) {
       const k = known.has(l.parent_id) ? l.parent_id : null;
@@ -179,10 +213,10 @@ export function buildDisplay(data, mode) {
       for (const c of locKids.get(l.id) || []) addLoc(c, l.id);
     };
     for (const l of locKids.get(null) || []) addLoc(l, null);
-    const homeless = tops.filter((p) => !p.location_id);
-    const unhomed = [...(data?.unhomed || [])];
+    const homeless = tops.filter((p) => !placedHere(p));
+    const unhomed = data?.scope ? [] : [...(data?.unhomed || [])];
     if (homeless.length || unhomed.length) {
-      add("G:nohome", "group", { name: "No home yet", note: "Not at a location and not fitted" });
+      add("G:nohome", "group", NO_HOME[data?.scope?.kind] || NO_HOME.assets);
       for (const p of homeless) addPosTree(p, "G:nohome", true);
       for (const it of unhomed.sort(byName)) addItem(it, "G:nohome", true);
     }

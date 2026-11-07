@@ -26,6 +26,13 @@ make the delete and its undo possible (older logs replay unchanged):
   is back at the status it had;
 * ``placement.ended {id, on}``: an item stored at a deleted location no longer is
   (it has no place); ``placement.reinstated {id}`` puts it back there.
+
+A product's design locations and the locations a built unit carries
+(products.py) are its physical layout, not where its positions live: deleting
+one takes the locations inside it, and the positions placed there lose their
+place but stay (``position.updated`` clearing ``location_id``; the record's
+``unplaced`` lists [position, location] pairs, and an undo puts them back).
+Deleting a product's design, or a built unit's tree, takes its locations too.
 """
 
 from __future__ import annotations
@@ -43,7 +50,8 @@ _RECORD = ("root_id", "kind", "name", "on", "reason", "positions", "locations", 
 
 
 def _tree_deleted(s: GraphStore, org: str, p: dict) -> None:
-    s.put_node(org, p["id"], "Deletion", {k: p.get(k) for k in _RECORD} | {"n": p["n"], "restored": False})
+    s.put_node(org, p["id"], "Deletion", {k: p.get(k) for k in _RECORD} | {"n": p["n"], "restored": False}
+               | ({"unplaced": p["unplaced"]} if p.get("unplaced") else {}))
 
 
 def _tree_restored(s: GraphStore, org: str, p: dict) -> None:
@@ -117,8 +125,18 @@ class TreeDeleteOps:
             return out
 
         locations: list[str] = subtree(root["id"], "Location") if kind == "location" else []
+        unplaced: list[list[str]] = []
         if kind == "position":
             tops = [root["id"]]
+            # A product's design or a built unit's tree: its own locations go with it.
+            realm = self._position_realm(root["id"])
+            if realm and realm[1] == root["id"]:
+                locations = [loc["id"] for loc in self._realm_locations(realm)]
+        elif self._location_realm(root):
+            # A product's or built unit's layout: what's placed there stays, with no place.
+            tops = []
+            unplaced = [[n["id"], lid] for lid in locations for n in self.s.inn(self.org, lid, "LOCATED_AT")
+                        if n["label"] == "Position" and not n.get("retired")]
         else:
             tops = [n["id"] for lid in locations for n in self.s.inn(self.org, lid, "LOCATED_AT")
                     if n["label"] == "Position" and not n.get("retired")]
@@ -176,7 +194,7 @@ class TreeDeleteOps:
         carried = sum(len(live_kids(f["item_id"], "Position")) for f in fitments)
         return {
             "root": root, "kind": kind, "positions": positions, "locations": locations, "fitments": fitments,
-            "placements": placements,
+            "placements": placements, "unplaced": unplaced,
             "work_orders": work_orders, "tasks": tasks, "packages": packages, "links": links,
             "counts": {
                 "positions": len(positions),
@@ -185,7 +203,7 @@ class TreeDeleteOps:
                 "locations_inside": max(len(locations) - 1, 0),
                 "items_unfitted": len(fitments),
                 "positions_on_unfitted_items": carried,
-                "items_placed": len(placements), "stock_lines": stock,
+                "items_placed": len(placements), "stock_lines": stock, "positions_unplaced": len(unplaced),
                 "tasks": len(tasks), "work_packages": len(packages), "open_work_orders": len(work_orders),
                 "functions": functions, "failure_modes": modes, "links": len(links),
             },
@@ -203,6 +221,8 @@ class TreeDeleteOps:
             parts.append(_plural(c["locations_inside"], "location"))
         if c["items_unfitted"]:
             parts.append(f"{_plural(c['items_unfitted'], 'fitted item')} kept, unfitted")
+        if c.get("positions_unplaced"):
+            parts.append(f"{_plural(c['positions_unplaced'], 'position')} placed there kept, with no place")
         if c["tasks"]:
             parts.append(_plural(c["tasks"], "task"))
         if c["open_work_orders"]:
@@ -239,6 +259,8 @@ class TreeDeleteOps:
             self._emit("task.retired", {"id": t, "on": today, "reason": why})
         for effect_id, cause_id in plan["links"]:
             self._link_event("functional_failure.unlinked", effect_id, cause_id)
+        for pid, _ in plan["unplaced"]:
+            self._emit("position.updated", {"id": pid, "changes": {"location_id": None}})
         for pid in plan["positions"]:
             self._emit("position.retired", {"id": pid, "on": today, "reason": reason})
         for lid in plan["locations"]:
@@ -252,7 +274,7 @@ class TreeDeleteOps:
             "fitments": [{k: f[k] for k in ("id", "position_id", "item_id")} for f in plan["fitments"]],
             "placements": plan["placements"],
             "work_orders": plan["work_orders"], "links": plan["links"],
-        })
+        } | ({"unplaced": plan["unplaced"]} if plan["unplaced"] else {}))
         return {"deleted": root["id"], "deletion_id": did, "kind": kind, "name": root.get("name"),
                 **plan["counts"], "summary": self._delete_summary(plan).replace("?", ".", 1).replace(
                     "Delete ", "Deleted ", 1),
@@ -260,6 +282,7 @@ class TreeDeleteOps:
                 "tasks_retired": plan["tasks"],
                 "items_unfitted": [f["item_id"] for f in plan["fitments"]],
                 "items_unplaced": [pl["item_id"] for pl in plan["placements"]],
+                "positions_unplaced": [pid for pid, _ in plan["unplaced"]],
                 "work_orders_cancelled": [w["id"] for w in plan["work_orders"]]}
 
     def _latest_deletion(self, root_id: str) -> dict | None:
@@ -319,6 +342,15 @@ class TreeDeleteOps:
                 continue
             self._emit("placement.reinstated", {"id": pl["id"]})
             placements.append(pl["id"])
+        replaced = 0
+        for pid, lid in d.get("unplaced") or []:
+            pos, loc = self.s.node(self.org, pid), self.s.node(self.org, lid)
+            if not pos or pos.get("retired") or not loc or loc.get("retired") or self._own_location(pid):
+                skipped.append(f"{(pos or {}).get('name') or 'A position'} wasn't placed back at "
+                               f"{(loc or {}).get('name') or 'its location'}: it has changed since.")
+                continue
+            self._emit("position.updated", {"id": pid, "changes": {"location_id": lid}})
+            replaced += 1
         tasks = back(d.get("tasks") or [], "task.restored")
         packages = back(list(reversed(d.get("packages") or [])), "package.restored")
         work_orders = []
@@ -339,5 +371,6 @@ class TreeDeleteOps:
         return {"restored": d["root_id"], "deletion_id": d["id"], "kind": d["kind"], "name": d.get("name"),
                 "positions_restored": len(positions), "locations_restored": len(locations),
                 "items_refitted": len(fitments), "items_replaced": len(placements), "tasks_restored": len(tasks),
+                "positions_placed_back": replaced,
                 "work_packages_restored": len(packages), "work_orders_reopened": len(work_orders),
                 "links_restored": links, "skipped": skipped}

@@ -55,6 +55,30 @@ have no failure reports, signals, stock, work or due dates. Its tabs:
 Products) deletes the design and everything inside it. Items built from it stay. Its
 history stays, and **Undo** in the message that follows brings it back.
 
+## Physical layout
+
+A product has a physical layout as well as a functional structure: where each
+part of it sits (the forward left arm, the battery bay). On the product's page,
+switch the tree from **Positions** to **Locations** to see it.
+
+- **New location inside** the product (the tree's last row) adds a place at the
+  top of its layout; a location's row menu adds one inside it, renames, moves or
+  deletes it.
+- To place a position, open its full page and set its **Location** to one of
+  the product's locations. The positions inside it are there too, unless they
+  say otherwise. The ones not placed yet are listed last.
+- Deleting a location keeps the positions placed there: they just have no
+  place in the layout until you give them one.
+
+A product's locations are part of its design, never assets: they don't show on
+**Assets**. An item built from the product carries a copy of the layout, its
+positions placed the same way. The copy is wherever the item is kept, and moves
+with it.
+
+The sample quadcopter's layout has four arms (each with its motor, speed
+controller and propeller), the centre body with its battery bay, and the
+payload bay.
+
 ## Items
 
 **Items** lists every serial-numbered thing, built from a product or not,
