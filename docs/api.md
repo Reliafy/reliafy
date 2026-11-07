@@ -147,6 +147,27 @@ task, interval and `task_id`) beside the first entry's `outcome` and `task`.
 The app's own route takes the same body (`PUT
 /api/maintenance/failure-modes/{id}/decision`).
 
+The evidence check covers every task of a combination. The decision's
+`evidence` counts for each entry it fits (a degradation model for
+`on_condition`, a replacement analysis for `fixed_interval`, a failure-finding
+analysis for `failure_finding`; a report or a function's notes for any), and an
+entry can link its own `evidence` where one piece can't cover them all:
+
+```json
+{"outcomes": [
+   {"outcome": "on_condition", "task": "Vibration check", "interval": 1, "interval_unit": "months"},
+   {"outcome": "fixed_interval", "task": "Replace the bearing", "interval": 24, "interval_unit": "months",
+    "evidence": {"type": "strategy_analysis", "id": "<analysis id>"}}],
+ "evidence": {"type": "degradation_model", "id": "<model id>"}}
+```
+
+The read's `status` is then `supported` (or `linked`) when every scheduled
+task is evidenced, `partly` when some are ("Partly evidenced: the
+fixed-interval task has none."), `unevidenced` when none are, or the worst
+task's (`contradicted`, `stale`, `inconclusive`, named in `reason`). Each entry
+of `decision.outcomes` carries its own check (`status`, `reason` or `summary`,
+`evidence_from`: `own` or `decision`).
+
 `dry_run` true checks and reports without writing; it's the default when a
 batch deletes or has over 25 operations. `on_error` (`stop`, the default, or
 `continue`) says what to do if an operation fails during the real run (rare:

@@ -176,7 +176,7 @@ export function waitingFigures(rollup = null, maintenance = null) {
     figures.push(
       { label: "RCM decisions supported", n: n("supported"), to: rcm },
       { label: "contradicted by evidence", n: n("contradicted"), to: rcm, alert: true },
-      { label: "without evidence", n: n("unevidenced") + n("inconclusive"), to: rcm },
+      { label: "without evidence", n: n("unevidenced") + n("inconclusive") + n("partly"), to: rcm },
     );
   }
   if (maintenance) {

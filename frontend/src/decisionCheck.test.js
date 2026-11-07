@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkDecision, combinationOk, combineChoices, pruneExtras } from "./decisionCheck.js";
+import { analysisKindOf, checkDecision, combinationOk, combineChoices, extraBody, pruneExtras } from "./decisionCheck.js";
 
 // The fields each outcome asks for (as GET /api/maintenance/rcm/options says).
 const F = { on_condition: ["task", "interval"], fixed_interval: ["task", "interval"], failure_finding: ["task", "interval"], rtf: ["rtf_basis", "task"], redesign: ["notes"], accept: ["notes"] };
@@ -125,4 +125,21 @@ test("in a combination every scheduled task needs its interval, the first one to
   assert.deepEqual(check({ outcome: "on_condition", interval: "1", extras: [{ outcome: "redesign" }] }).blockers, []);
   assert.deepEqual(check({ outcome: "rtf", rtfBasis: "random", extras: [extra] }).blockers,
     ["These outcomes can't be combined."]);
+});
+
+test("a further task goes back with its own evidence when it fits the task, or was linked before", () => {
+  const row = { outcome: "fixed_interval", task: " Replace the bearing ", interval: "24", intervalUnit: "months" };
+  assert.deepEqual(extraBody({ ...row, evidence: null }, "strategy_analysis"),
+    { outcome: "fixed_interval", task: "Replace the bearing", interval: 24, interval_unit: "months" });
+  const sa = { type: "strategy_analysis", id: "sa1", name: "ignored" };
+  assert.deepEqual(extraBody({ ...row, evidence: sa }, "strategy_analysis").evidence, { type: "strategy_analysis", id: "sa1" });
+  // A report or notes fit any task; another kind only when it was there before (the check then says why).
+  assert.deepEqual(extraBody({ ...row, evidence: { type: "working", id: "f1" } }, "strategy_analysis").evidence, { type: "working", id: "f1" });
+  const dm = { type: "degradation_model", id: "d1" };
+  assert.equal(extraBody({ ...row, evidence: dm }, "strategy_analysis").evidence, undefined);
+  assert.deepEqual(extraBody({ ...row, evidence: dm, had: dm }, "strategy_analysis").evidence, { type: "degradation_model", id: "d1" });
+  assert.deepEqual(extraBody({ outcome: "redesign", evidence: dm }, null), { outcome: "redesign" });
+  assert.equal(analysisKindOf("fixed_interval"), "optimal_replacement");
+  assert.equal(analysisKindOf("failure_finding"), "failure_finding");
+  assert.equal(analysisKindOf("on_condition"), null);
 });

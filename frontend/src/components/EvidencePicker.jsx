@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { listModels, listReports, listStrategyAnalyses, listDegradationModels } from "../api.js";
 import { EVIDENCE_KIND_LABEL, evidenceKinds, startKind } from "../rcmWorksheet.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
@@ -57,6 +57,8 @@ async function loadOptions(kind, expectedType, analysisKind) {
 // verdicts so users can pick a defensible one for RTF decisions.
 export default function EvidencePicker({ expectedType, analysisKind, value, onChange, workings = [] }) {
   const kinds = evidenceKinds(expectedType);
+  // Its own radio group: a combination's dialog shows a picker per task.
+  const group = useId();
   const [kind, setKind] = useState(() => startKind(value, expectedType));
   const shown = kinds.includes(kind) ? kind : kinds[0];
   const [options, setOptions] = useState(null);
@@ -105,7 +107,7 @@ export default function EvidencePicker({ expectedType, analysisKind, value, onCh
               <label key={o.id} className={"evidence-option" + (chosen === o.id ? " selected" : "")}>
                 <input
                   type="radio"
-                  name="evidence"
+                  name={`evidence-${group}`}
                   checked={chosen === o.id}
                   onChange={() => onChange({ type: typeOf(shown), id: o.id })}
                 />

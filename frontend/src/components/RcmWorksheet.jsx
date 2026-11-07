@@ -18,7 +18,7 @@ import { ancestorsOf } from "../outlineTree.js";
 import {
   COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
   belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, failuresOn, checkCounts, decisionText, insideWords,
-  intervalText, isCombination, memberLine, moreTasks, nameOf, shownStatus, taskLine, tasksOf, tasksTip, checkValue,
+  intervalText, isCombination, memberEvidenceLine, memberLine, moreTasks, nameOf, shownStatus, taskLine, tasksOf, tasksTip, checkValue,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import RcmFunctionStandards from "./RcmFunctionStandards.jsx";
@@ -645,6 +645,12 @@ export function Details({
                               ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
                           {!d.status && !d.artifact_name && "—"}
                         </>
+                      )}
+                      {isCombination(d) && d.status !== "unevidenced" && (
+                        // A combination is checked task by task: each one's evidence, its own or the decision's.
+                        <ul className="rw-members" style={{ margin: "0.25em 0 0", paddingLeft: "1.1em" }}>
+                          {d.outcomes.map((o) => <li key={o.outcome}>{memberEvidenceLine(o)}</li>)}
+                        </ul>
                       )}
                     </dd>
                   </div>

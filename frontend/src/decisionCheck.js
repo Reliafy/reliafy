@@ -62,6 +62,25 @@ export function pruneExtras(primary, extras) {
   return kept;
 }
 
+// The strategy analysis an outcome expects (EvidencePicker's analysisKind).
+export const analysisKindOf = (outcome) => ({ fixed_interval: "optimal_replacement", failure_finding: "failure_finding" }[outcome] || null);
+
+// A combination's further task as the server takes it ({outcome, task,
+// interval, interval_unit, evidence}). `x`: the dialog's row ({outcome, task,
+// interval, intervalUnit, evidence, had: the evidence it had}); `expected`: the
+// evidence type its outcome expects. Its own evidence goes with it when it's a
+// report or notes (fit for any task), the kind it expects, or what it had.
+export function extraBody(x, expected) {
+  if (!SCHEDULED.includes(x.outcome)) return { outcome: x.outcome };
+  const out = { outcome: x.outcome, ...(String(x.task || "").trim() ? { task: x.task.trim() } : {}),
+    interval: Number(x.interval), interval_unit: x.intervalUnit };
+  const e = x.evidence;
+  if (e?.type && e?.id && (e.type === "report" || e.type === "working" || e.type === expected || e === x.had)) {
+    out.evidence = { type: e.type, id: e.id };
+  }
+  return out;
+}
+
 // What's wrong with an interval as typed (null when nothing is).
 function intervalProblem(raw, unit, limits) {
   const n = Number(raw);
