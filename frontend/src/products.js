@@ -25,6 +25,12 @@ export function productPath(id, tab = "structure") {
   return tab && tab !== "structure" ? `${base}?tab=${tab}` : base;
 }
 
+// A product's design on its FME(C)A tab, the top position picked (the
+// Explorer's way to the sample quadcopter).
+export function productFmeaPath(id) {
+  return `${productPath(id)}?view=fmea&sel=${encodeURIComponent(id)}`;
+}
+
 // An item's own page, and its tree (the Explorer scoped to that one tree).
 export const itemPagePath = (id) => `/asset-register/items/${encodeURIComponent(id)}`;
 export function itemTreePath(topPositionId, sel = null) {

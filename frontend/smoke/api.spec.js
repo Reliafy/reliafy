@@ -22,8 +22,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintainability/products/smoke/lines"],
   // The Explorer's "Add the sample truck" (once: smoke/seed.js added it, so this adds nothing).
   ["POST", "/api/maintenance/sample-truck"],
-  // "Add the sample UAV" (the FME(C)A tab's scored sample quadcopter).
-  ["POST", "/api/maintenance/sample-uav"],
+  // "Add the sample UAV product" (Products; the Explorer's "Open the sample UAV product").
   ["POST", "/api/maintenance/sample-product"],
   // A dataset's measurements part (docs/datasets.md): add, paste, remove, split, life data for readings alone.
   ["PUT", "/api/datasets/smoke/measurements"],

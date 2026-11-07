@@ -444,7 +444,7 @@ test("add the sample truck from the Explorer's menu", async ({ page, request, pr
   await postOk(request, `/api/maintenance/positions/${copy.id}/retire`, { reason: "smoke test" });
 });
 
-test("the empty tree offers the sample truck", async ({ page, problems }) => {
+test("the empty tree offers the sample truck, and the sample UAV product on Products", async ({ page, problems }) => {
   // The tree read as empty (the suite's own isn't), and the add answered here: nothing is written.
   await page.route("**/api/maintenance/tree", async (route) => {
     const res = await route.fetch();
@@ -457,14 +457,47 @@ test("the empty tree offers the sample truck", async ({ page, problems }) => {
   });
   await open(page, "/asset-register/explorer?arrange=positions");
   const card = page.locator(".ae-sample").first();
-  await expect(card).toContainText("New here? Add the sample truck to see an RCM built on the tree, or the sample UAV for an FME(C)A.");
-  await expect(card.getByRole("button", { name: "Add the sample UAV" })).toBeVisible();
+  // With SMOKE_SHOTS_DIR set, the empty tree's card at desktop and phone width (for the pull request).
+  if (process.env.SMOKE_SHOTS_DIR) {
+    for (const [width, height] of [[1440, 900], [400, 860]]) {
+      await page.setViewportSize({ width, height });
+      await open(page, "/asset-register/explorer?arrange=positions");
+      await expect(card).toBeVisible();
+      await page.screenshot({ path: `${process.env.SMOKE_SHOTS_DIR}/${width}-explorer-empty-card.png` });
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await open(page, "/asset-register/explorer?arrange=positions");
+  }
+  await expect(card).toContainText("New here? Add the sample truck to see an RCM built on the tree, or open the sample UAV product for an FME(C)A on a design.");
+  await expect(card.getByRole("button", { name: "Add the sample UAV", exact: true })).toHaveCount(0); // no asset-tree copy any more
+  await expect(card.getByRole("button", { name: "Open the sample UAV product" })).toBeVisible();
   await card.getByRole("button", { name: "Add the sample truck" }).click();
   const ask = page.getByRole("alertdialog", { name: "The sample truck is already in your tree" });
   await ask.getByRole("button", { name: "Keep the one I have" }).click();
   expect(asked).toEqual([{ again: false }]);
   await expectHealthy(page, problems, { label: "the empty tree" });
-  // The page reads the tree again after the answer; a read still in flight when the test ends must not fail the worker.
+  // The quadcopter is a design: the card opens the sample product (smoke/seed.js added it, so
+  // nothing more is added and nothing is asked) on its structure's FME(C)A tab.
+  // The tree reads as empty only on the Explorer, not on the product's page.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  let empty = true;
+  await page.route("**/api/maintenance/tree", async (route) => {
+    const res = await route.fetch();
+    await route.fulfill(empty ? { response: res, json: { ...(await res.json()), positions: [], locations: [] } } : { response: res });
+  });
+  await open(page, "/asset-register/explorer?arrange=positions");
+  const opened = [];
+  page.on("request", (r) => { if (r.url().endsWith("/api/maintenance/sample-product")) opened.push(r.postDataJSON()); });
+  empty = false;
+  await page.locator(".ae-sample").first().getByRole("button", { name: "Open the sample UAV product" }).click();
+  await expect(page).toHaveURL(/\/products\/[^/?]+\?view=fmea&sel=/);
+  expect(opened).toEqual([{ again: false }]);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Survey quadcopter (sample");
+  await expect(page.getByRole("tab", { name: "FME(C)A" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("treegrid", { name: /and their FME\(C\)A/ })).toBeVisible();
+  await expect(page.getByRole("treegrid", { name: /and their FME\(C\)A/ }).getByRole("row", { name: /^Airframe/ }).first())
+    .toContainText("2 of 2 scored");
+  await expectHealthy(page, problems, { label: "the sample product's FME(C)A" });
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 

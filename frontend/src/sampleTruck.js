@@ -1,19 +1,17 @@
-// "Add the sample truck" and "Add the sample UAV" on the Explorer: the sample
-// delivery truck, with its RCM (POST /api/maintenance/sample-truck), or the
-// sample quadcopter UAV, with its FME(C)A (POST /api/maintenance/sample-uav),
-// copied into the workspace's own tree. Once: when a copy is there already,
-// the server adds nothing and says which one, and the person is asked whether
-// to add another copy or keep theirs.
+// "Add the sample truck" on the Explorer: the sample delivery truck, with its
+// RCM (POST /api/maintenance/sample-truck), copied into the workspace's own
+// tree. Once: when a copy is there already, the server adds nothing and says
+// which one, and the person is asked whether to add another copy or keep theirs.
 
 export const SAMPLE_TRUCK_LABEL = "Add the sample truck";
-export const SAMPLE_UAV_LABEL = "Add the sample UAV";
 // On Products: a quadcopter's design, three items built from it and their reports
-// (POST /api/maintenance/sample-product).
+// (POST /api/maintenance/sample-product). It is the one quadcopter example: the
+// Explorer's FME(C)A sample opens it (adding it first when there's none).
 export const SAMPLE_PRODUCT_LABEL = "Add the sample UAV product";
+export const OPEN_SAMPLE_PRODUCT_LABEL = "Open the sample UAV product";
 
 export const SAMPLES = {
   truck: { label: SAMPLE_TRUCK_LABEL, what: "sample truck", tab: "rcm", added: "Added the sample truck." },
-  uav: { label: SAMPLE_UAV_LABEL, what: "sample UAV", tab: "fmea", added: "Added the sample UAV." },
   product: { label: SAMPLE_PRODUCT_LABEL, what: "sample product", where: "workspace", added: "Added the sample UAV product." },
 };
 
@@ -34,6 +32,8 @@ export function anotherCopyConfirm(name, what = "sample truck", where = "tree") 
 export async function addSampleTruck(add, ask) {
   return addSample(add, ask, "truck");
 }
+// The product the server's answer names (added, or the copy already there).
+export const sampleProductId = (r) => r?.product?.id || r?.position?.id;
 export async function addSample(add, ask, kind = "truck") {
   const first = await add(false);
   if (first.added || !first.position) return first;

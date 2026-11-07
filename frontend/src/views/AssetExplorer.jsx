@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  addSampleTruck as postSampleTruck, addSampleUav as postSampleUav, getFmeaExcelBlob, getMaintenanceTree, getPositionRcm, getRcmOptions,
+  addSampleProduct, addSampleTruck as postSampleTruck, getFmeaExcelBlob, getMaintenanceTree, getPositionRcm, getRcmOptions,
   hasFmeaExcel, listMaintenanceItems,
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
@@ -65,8 +65,10 @@ import { canIsolate, depthWords, isolateIncompleteItem, isolateIncompleteOpen, i
 import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals.jsx";
 import NewFailureReportModal from "../components/NewFailureReportModal.jsx";
 import usePhone from "../usePhone.js";
-import { SAMPLES, SAMPLE_TRUCK_LABEL, SAMPLE_UAV_LABEL, addSample as addSampleOf } from "../sampleTruck.js";
-import { designActions, isDesignScope, scopeTree } from "../products.js";
+import {
+  OPEN_SAMPLE_PRODUCT_LABEL, SAMPLES, SAMPLE_TRUCK_LABEL, addSample as addSampleOf, sampleProductId,
+} from "../sampleTruck.js";
+import { designActions, isDesignScope, productFmeaPath, scopeTree } from "../products.js";
 import { DesignReports } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
@@ -893,7 +895,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       else if (id === "assign-fail") setAssigning(r);
       else if (id === "add-fail" || id === "add-mode") openItem(r.key, { add: "inside" });
       else if (id === "score") openItem(r.key);
-      else if (id === "print") navigate(`/asset-register/positions/${r.key}/fmea`);
+      else if (id === "print") openPrint(r.key);
       else if (id === "export-excel") exportExcel(r);
       else if (id === "move-to") setMoving({ src: dragSource(whole, r.key, { picked }) });
       else if (id === "move-task") setMoving({ taskFrom: r.key });
@@ -1135,16 +1137,28 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setModal(null);
     setNewParent(null);
   };
-  // "Add the sample truck" (shown picked on the RCM tab) and "Add the sample
-  // UAV" (on the FME(C)A tab): copied into this workspace's tree. With a copy
-  // there already, the person is asked whether to add another; keeping theirs
-  // picks it instead.
-  const [addingSample, setAddingSample] = useState(null); // "truck" | "uav" while one is being added
+  // "Add the sample truck" (shown picked on the RCM tab): copied into this
+  // workspace's tree. With a copy there already, the person is asked whether
+  // to add another; keeping theirs picks it instead. "Open the sample UAV
+  // product": the quadcopter is a design, so it lives on Products; it opens
+  // there on its FME(C)A tab, added first when there's none.
+  const [addingSample, setAddingSample] = useState(null); // "truck" | "product" while one is being added
+  // The FME(C)A print view; its "Back" returns here (a product's structure
+  // tab included: a design isn't in the Explorer's own tree).
+  const openPrint = (id) => navigate(`/asset-register/positions/${id}/fmea`,
+    { state: { back: `${location.pathname}${location.search}` } });
   const addSample = (kind = "truck") => {
     if (addingSample) return;
     setAddingSample(kind);
+    if (kind === "product") {
+      addSampleProduct(false) // never a second copy from here: nothing to ask
+        .then((r) => navigate(productFmeaPath(sampleProductId(r))),
+          (e) => say(`The sample product didn't open: ${e.message}`, "error"))
+        .finally(() => setAddingSample(null));
+      return;
+    }
     const s = SAMPLES[kind];
-    addSampleOf(kind === "uav" ? postSampleUav : postSampleTruck, confirm, kind)
+    addSampleOf(postSampleTruck, confirm, kind)
       .then((r) => {
         created(r.position.id);
         if (r.added) {
@@ -1226,13 +1240,13 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       </div>
       {mode !== "locations" && mode !== "items" && (
         <div className="ae-sample">
-          <p><strong>New here?</strong> Add the sample truck to see an RCM built on the tree, or the sample UAV for an FME(C)A.</p>
+          <p><strong>New here?</strong> Add the sample truck to see an RCM built on the tree, or open the sample UAV product for an FME(C)A on a design.</p>
           <div className="ae-sample-btns">
             <button type="button" className="secondary" onClick={() => addSample("truck")} disabled={!!addingSample}>
               {addingSample === "truck" ? "Adding…" : SAMPLE_TRUCK_LABEL}
             </button>
-            <button type="button" className="secondary" onClick={() => addSample("uav")} disabled={!!addingSample}>
-              {addingSample === "uav" ? "Adding…" : SAMPLE_UAV_LABEL}
+            <button type="button" className="secondary" onClick={() => addSample("product")} disabled={!!addingSample}>
+              {addingSample === "product" ? "Opening…" : OPEN_SAMPLE_PRODUCT_LABEL}
             </button>
           </div>
         </div>
@@ -1368,7 +1382,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                       </button>
                       <button type="button" className="ovm-item" onClick={() => exportRcm(posRow)}>Export CSV</button>
                       {fmeaOn && excel && <button type="button" className="ovm-item" onClick={() => exportExcel(posRow)}>Export Excel</button>}
-                      {fmeaOn && <button type="button" className="ovm-item" onClick={() => navigate(`/asset-register/positions/${posRow.key}/fmea`)}>Print view</button>}
+                      {fmeaOn && <button type="button" className="ovm-item" onClick={() => openPrint(posRow.key)}>Print view</button>}
                       {fmeaOn && <button type="button" className="ovm-item" onClick={() => openGuide(HELP_FMEA.guide)}>Show me how</button>}
                     </OverflowMenu>
                   </>
@@ -1562,7 +1576,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         menuActions={[...(data && !root && mode !== "locations" && mode !== "items" ? [
           { id: "import", label: "Import from a spreadsheet", onSelect: () => setModal("import") },
           { id: "sample", label: SAMPLE_TRUCK_LABEL, onSelect: () => addSample("truck") },
-          { id: "sample-uav", label: SAMPLE_UAV_LABEL, onSelect: () => addSample("uav") },
+          { id: "sample-product", label: OPEN_SAMPLE_PRODUCT_LABEL, onSelect: () => addSample("product") },
         ] : []), ...REGISTER_LINKS(navigate)]}
         notice={notice}
         statusText={statusText}

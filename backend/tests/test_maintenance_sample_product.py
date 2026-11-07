@@ -1,5 +1,5 @@
 """The sample product: "Add the sample UAV product" on Products adds an invented
-quadcopter's design (the FME(C)A sample's modes on every position they belong to),
+quadcopter's design (the sample failure modes on every position they belong to),
 its part with a bill of materials, three items built from it, a replaced motor, two
 failure reports and a flight-critical RBD with placeholder failure rates, through the
 ordinary service methods (events), once unless asked again; over the app's route,
@@ -100,8 +100,6 @@ def test_once_unless_asked_again_and_another_workspace_is_untouched(store, db):
     assert again["added"] and again["product"]["name"] == "Survey quadcopter (sample 2)"
     assert sorted(p["part"]["part_number"] for p in m.products()["products"]) == ["SQ-4", "SQ-4-2"]
     assert db.rbds.count_documents({"owner_id": ORG}) == 2
-    # The FME(C)A sample is its own: its button still adds it.
-    assert templates.add_sample_uav(m)["added"]
     other = Maintenance(store, OTHER, "other")
     assert other.products()["products"] == [] and templates.add_sample_product(other, db)["added"]
     _rebuilds_the_same(m)

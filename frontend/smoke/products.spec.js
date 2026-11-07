@@ -130,6 +130,61 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
   });
 }
 
+// The one quadcopter example is the sample product: its functional structure's
+// FME(C)A tab works as on the Explorer (scored rows, the row menus of a design,
+// Isolate incomplete rows, the print view and back), at both widths.
+for (const [width, height] of [[1440, 900], [400, 860]]) {
+  test(`the sample UAV product's FME(C)A at ${width} px`, async ({ page, request, problems }) => {
+    test.setTimeout(120000);
+    await page.setViewportSize({ width, height });
+    const { products } = await (await request.get(`${M}/products`)).json();
+    const product = products.find((p) => /^Survey quadcopter \(sample/.test(p.name));
+    await open(page, `/products/${product.id}?view=fmea&sel=${product.id}`);
+    await expect(page.getByRole("tab", { name: "FME(C)A" })).toHaveAttribute("aria-selected", "true");
+    if (width < 600) {
+      // A phone: the tree, the FME(C)A tab picked; nothing scrolls the page sideways.
+      await expect(page.getByText(/Survey quadcopter \(sample/).first()).toBeVisible();
+      await shot(page, `${width}-product-fmea`);
+      expect(await sideways(page)).toBeLessThanOrEqual(0);
+      await expectHealthy(page, problems, { label: `sample product fmea ${width}` });
+      return;
+    }
+    const table = page.getByRole("treegrid", { name: /and their FME\(C\)A/ });
+    await expect(table).toBeVisible();
+    // The top picked: each assembly's roll-up (Airframe's two modes, both scored).
+    await expect(table.getByRole("row", { name: /^Airframe/ }).first()).toContainText("2 of 2 scored");
+    await shot(page, `${width}-product-fmea`);
+    expect(await sideways(page)).toBeLessThanOrEqual(0);
+    // The design's top row: its FME(C)A menu, with no failure report (a report is about an item).
+    const top = table.getByRole("row", { name: /^Survey quadcopter \(sample/ }).first();
+    await top.locator(".tt-tree").click({ button: "right" });
+    const menu = page.getByRole("menu", { name: /^Actions for Survey quadcopter/ });
+    // As on the Explorer's FME(C)A tab: Add function, the worksheet in and out, Print view, Isolate, Pin.
+    await expect(menu.getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Print view", "Isolate", "Pin this branch"]);
+    await page.keyboard.press("Escape");
+    // The RCM tab: Isolate incomplete rows on the design (the winding and seal modes have no decision).
+    await page.getByRole("tab", { name: "RCM" }).click();
+    const rcm = page.getByRole("treegrid", { name: /and their RCM/ });
+    await rcm.getByRole("row", { name: /^Survey quadcopter \(sample/ }).first().locator(".tt-tree").click({ button: "right" });
+    await menu.getByRole("menuitem", { name: "Isolate incomplete rows" }).click();
+    await expect(page.locator(".sr-only[role='status']")).toContainText(/Collapsed the rest of the tree: \d+ incomplete rows? under Survey quadcopter/);
+    await expect(rcm.getByRole("row", { name: /^Failure mode: / }).first()).toBeVisible();
+    await shot(page, `${width}-product-rcm-incomplete`);
+    // The print view of a design position, from the FME(C)A tab, and Back to the product's tab.
+    await page.getByRole("tab", { name: "FME(C)A" }).click();
+    await top.locator(".tt-tree").click({ button: "right" });
+    await menu.getByRole("menuitem", { name: "Print view" }).click();
+    await expect(page).toHaveURL(new RegExp(`/asset-register/positions/${product.id}/fmea$`));
+    const sheet = page.locator("table.fm-sheet");
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole("row", { name: /Bearing seizure/ }).first()).toContainText("216");
+    await shot(page, `${width}-product-fmea-print`);
+    await page.getByRole("button", { name: "Back" }).click();
+    await expect(page).toHaveURL(new RegExp(`/products/${product.id}\\?.*view=fmea`));
+    await expectHealthy(page, problems, { label: `sample product fmea ${width}` });
+  });
+}
+
 test("Assets leaves the products' designs and items' trees out", async ({ page, request, problems }) => {
   const places = await (await request.get(`${M}/places`)).json();
   const tree = await (await request.get(`${M}/tree`)).json();

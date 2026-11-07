@@ -2,6 +2,11 @@
 
 ## Unreleased (0.5.1)
 
+- **One sample quadcopter**: `maintenance positions.add_sample_uav` is gone.
+  The sample quadcopter is now the sample product only (`maintenance
+  products.add_sample`): its design carries the same scored FME(C)A. Copies
+  the old action made stay in a workspace as they are.
+
 - **Maintainability prediction**: `analyse maintainability` gives the mean
   corrective maintenance time (Mct), M_max at a percentile, inherent
   availability, where the repair time goes by element, the Pareto of the lines

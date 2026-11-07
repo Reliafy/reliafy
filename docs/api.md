@@ -152,8 +152,9 @@ priority, H, M or L) and `cm` (β × α × λ × t), never stored, and each posi
 in `get.rcm` carries an `fmea` summary (scored, high, medium, low, max_rpn,
 cr). A mode may sit directly under a function with no functional failure yet
 (`function_id` on `failure_modes.add`, `assign` and `move`); the RCM reads list
-it in the function's `modes`. `positions.add_sample_uav` copies a fully
-scored sample quadcopter into the tree.
+it in the function's `modes`. `products.add_sample` adds the sample
+quadcopter product, its design fully scored (on Products, not in the asset
+tree).
 
 Everything in the tree can be taken out of use and brought back (`retire` /
 `restore` on positions, locations, items, parts, manufacturers, measurement
