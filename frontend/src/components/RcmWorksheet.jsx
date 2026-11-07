@@ -17,7 +17,7 @@ import { Highlight } from "./OutlineBits.jsx";
 import { ancestorsOf } from "../outlineTree.js";
 import {
   COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
-  belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, failuresOn, checkCounts, decisionText, insideWords,
+  belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, checkCounts, decisionText, insideWords,
   intervalText, isCombination, memberEvidenceLine, memberLine, moreTasks, nameOf, shownStatus, taskLine, tasksOf, tasksTip, checkValue,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
@@ -32,7 +32,6 @@ import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
 import { failureRows, failureStatusWords, failureSummary } from "../explorerRcm.js";
 import { AP_LABEL, AP_TONE } from "../fmea.js";
 import { apWords } from "../fmeaWorksheet.js";
-import { failuresOn as failuresFromRcm, functionsOn } from "../explorerFmea.js";
 import { CriticalityGroup, FmeaGroup } from "./FmeaPanels.jsx";
 import { PanelField } from "./PanelField.jsx";
 import "./RcmWorksheet.css";
@@ -398,8 +397,7 @@ const toneOf = (text) => (/to decide|not analysed|no functional failure|no failu
 //   onMove     (r, {task}) opens Move to… for the row (or a failure mode's task); none: no Move in the ⋯
 //   fmea       {on, opts, rcm}: the FME(C)A's fields on a failure mode (FmeaPanels.jsx), shown only when
 //              that tab is `on` (then first, and a function lists its failure modes, added directly
-//              under it); `opts` the action priority table (fmea.js readFmeaOptions); `rcm` the read,
-//              for the "Under" choice's functions and functional failures
+//              under it); `opts` the action priority table (fmea.js readFmeaOptions); `rcm` the read
 export function Details({
   r, display, whole = display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef, ops, links,
   expanded = false, onExpand = null, onCollapse = null, addStart = null, onSaid = null, onMove = null, fmea = null,
@@ -519,15 +517,6 @@ export function Details({
                         onCommit={(col, raw) => keep(col, onCommit(r, col, raw))} />
     </>
   );
-  // A mode's "Under" choice: the position's functional failures, or directly
-  // under one of its functions (no functional failure yet), or none. From the
-  // RCM read when the page passes it (the FME(C)A tab's tree has no
-  // functional failure rows), else from the tree.
-  const underFailures = fmea?.rcm ? failuresFromRcm(fmea.rcm, r.ref.position_id) : failuresOn(whole, r.ref.position_id);
-  const underFunctions = fmea?.rcm ? functionsOn(fmea.rcm, r.ref.position_id)
-    : [...whole.rows.values()].filter((x) => x.type === "fn" && x.ref.position_id === r.ref.position_id).map((x) => ({ id: x.key, text: x.ref.text || "" }));
-  const direct = r.type === "mode" && !r.ref.functional_failure_id && !!r.ref.function_id && r.ref.direct !== false;
-  const underValue = r.ref.functional_failure_id || (direct ? `fn:${r.ref.function_id}` : "");
   return (
     <aside className={"rw-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label="Details"
            onKeyDown={(e) => {
@@ -686,38 +675,6 @@ export function Details({
           </Section>
         )}
         {/* 3. The quieter things, last. */}
-        {r.type === "mode" && (
-          <div className="rw-fields rw-foot">
-            {ops && (
-              <Field label="Under" saved={saved.under}
-                     help={r.ref.was_under && !r.ref.functional_failure_id ? `It was noted as under: ${r.ref.was_under}` : null}>
-                {readOnly ? <span className="rw-fval">{display.rows.get(r.parent)?.ref.text}</span> : (
-                  <Select value={underValue}
-                          onChange={(e) => {
-                            // A functional failure; or "fn:<id>", directly under that function.
-                            const v = e.target.value;
-                            const out = v.startsWith("fn:") ? ops.assign(r, null, v.slice(3)) : ops.assign(r, v || null);
-                            if (out && typeof out.then === "function") out.then((x) => { if (x !== false) markSaved("under"); });
-                          }}>
-                    <option value="">No functional failure yet</option>
-                    {underFunctions.length > 0 && (
-                      <optgroup label="Directly under a function (no functional failure yet)">
-                        {underFunctions.map((f) => <option key={`fn:${f.id}`} value={`fn:${f.id}`}>{f.text}</option>)}
-                      </optgroup>
-                    )}
-                    {underFailures.length > 0 && (
-                      <optgroup label="Under a functional failure">
-                        {underFailures.map((f) => (
-                          <option key={f.id} value={f.id}>{f.function ? `${f.function} › ` : ""}{f.text}</option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </Select>
-                )}
-              </Field>
-            )}
-          </div>
-        )}
         {/* Which standard a failure breaches is where it sits in the tree (moved by drag or Move
             to…); said here only when the way up doesn't show it (a pinned branch, say). */}
         {r.type === "fail" && r.ref.standard?.id && !up.some((a) => a.key === r.ref.standard.id) && (

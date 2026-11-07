@@ -10395,19 +10395,28 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         Explorer's Measurements tab: a branch of the tree), each as ``point`` gives it
         (its position or item, latest reading, limits, status and recent readings).
         Ids that aren't a position or an item here are skipped. At most
-        MAX_POINTS_AT points; ``more`` says some were left out."""
-        out, seen = [], set()
+        MAX_POINTS_AT points; ``more`` says some were left out. ``channels``: the live
+        signal channels (sensors that send snapshots) on the same positions and items,
+        each as ``channel_row`` gives it (the tab lists them beside the points)."""
+        out, channels, seen = [], [], set()
+        more = False
         for label, ids in (("Position", position_ids), ("Item", item_ids)):
             for nid in ids:
                 if nid in seen or not self.s.node(self.org, nid, label):
                     continue
                 seen.add(nid)
-                for mp in self.s.inn(self.org, nid, "ON"):
-                    if mp["label"] == "MeasurementPoint" and not mp.get("retired"):
+                for x in self.s.inn(self.org, nid, "ON"):
+                    if x.get("retired"):
+                        continue
+                    if x["label"] == "SignalChannel":
+                        channels.append(self.channel_row(x))
+                    elif x["label"] == "MeasurementPoint" and not more:
                         if len(out) >= self.MAX_POINTS_AT:
-                            return {"points": out, "more": True}
-                        out.append(self.point(mp["id"]))
-        return {"points": out, "more": False}
+                            more = True
+                            continue
+                        out.append(self.point(x["id"]))
+        channels.sort(key=lambda c: c["name"].lower())
+        return {"points": out, "more": more, "channels": channels}
 
     def item(self, id: str) -> dict:
         """An item: its details and nameplate, where it's fitted and where it is now

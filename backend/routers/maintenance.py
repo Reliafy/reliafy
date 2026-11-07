@@ -1152,7 +1152,7 @@ def add_item_point(item_id: str, body: dict = Body(...), m: Maintenance = Depend
                 item_id=item_id)
 
 
-# ---- signal channels (the Explorer's Signals tab) --------------------------------------
+# ---- signal channels (rows of the Explorer's Measurements tab; their own pages) --------------------------------------
 # The same operations as the maintenance tool's signals.* / signal_data.* actions.
 
 @router.get("/signals/channels")

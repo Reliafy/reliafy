@@ -81,6 +81,13 @@ export default async function seed(config) {
     }
     const typo = (last.readings || [])[1];
     if (typo?.id) await post(`${m}/readings/${typo.id}/void`, { reason: "smoke test" });
+    // A fed sensor channel beside it (a smart plug's power, single values) with a level to
+    // watch: a row of the Explorer's Measurements tab, and its own page (/asset-register/channels/:id).
+    const plug = await post(`${m}/signals/channels`, { position_id, name: "Smoke test pump power", unit: "W", tag: "smoke.plug" });
+    await post(`${m}/signals/channels/${plug.id}/levels`, { name: "Smoke test power level", stat: "value", alarm_above: 900 });
+    for (const [hours, value] of [[30, 610], [20, 640], [10, 655]]) {
+      await post(`${m}/signals/snapshots`, { channel_id: plug.id, time: new Date(Date.now() - hours * 3600000).toISOString(), value });
+    }
     const pad = await post(`${m}/parts`, { part_number: "SMOKE-PAD", name: "Smoke test brake pad" });
     // A product structure (#435): an axle brake set made of four pads, the item an instance of it.
     const brakes = await post(`${m}/parts`, { part_number: "SMOKE-BRAKES", name: "Smoke test axle brake set" });
