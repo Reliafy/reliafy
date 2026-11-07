@@ -58,6 +58,9 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
   const [hidden, setHidden] = useState(answers0.hidden);
   const [consequence, setConsequence] = useState(answers0.consequence);
   const [outcome, setOutcome] = useState(existing.outcome || null);
+  // "No task is worth doing" picked: the default actions show (Derryn, 9 Nov 2026).
+  // Starts on when the saved decision is already one of them.
+  const [noTask, setNoTask] = useState(() => DEFAULT_OUTCOMES.includes(existing.outcome));
   const [rtfBasis, setRtfBasis] = useState(existing.rtf_basis || null);
   const [task, setTask] = useState(existing.task || own?.text || own?.name || "");
   const [interval, setInterval_] = useState(existing.interval ?? own?.interval ?? "");
@@ -103,6 +106,31 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
     : null;
 
   // The tasks in the diagram's order, then what's done if none is worth doing.
+  // One outcome tile with its one-line test; a second click unselects it.
+  const tile = (o, extra = "") => {
+    const line = worthLine(o.id, hidden, consequence) || o.hint;
+    return (
+      <div key={o.id} className={"decision-row" + extra}>
+        <button
+          type="button"
+          className={"option-tile" + (outcome === o.id ? " selected" : "")}
+          aria-pressed={outcome === o.id}
+          aria-describedby={`${id}-o-${o.id}`}
+          title={outcome === o.id ? "Click again to unselect" : undefined}
+          onClick={() => {
+            const next = outcome === o.id ? null : o.id;
+            setOutcome(next);
+            if (next !== "rtf") setRtfBasis(null);
+            setExtras((xs) => (next ? pruneExtras(next, xs) : []));
+            dropModel();
+          }}
+        >
+          <span className="option-title">{outcome === o.id && <Tick />}{o.label}</span>
+        </button>
+        <p className="decision-line" id={`${id}-o-${o.id}`}>{line}</p>
+      </div>
+    );
+  };
   const taskTiles = useMemo(() => TASK_ORDER.map(outcomeById).filter(Boolean), [options.outcomes]); // eslint-disable-line react-hooks/exhaustive-deps
   const otherTiles = useMemo(() => DEFAULT_OUTCOMES.map(outcomeById).filter(Boolean), [options.outcomes]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -220,36 +248,29 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
       <div className="decision-step">
         <label className="field-label" id={`${id}-q3`}>3. Which task is worth doing?</label>
         <div className="decision-list" role="group" aria-labelledby={`${id}-q3`}>
-          {[...taskTiles, ...otherTiles].map((o, i) => {
-            const why = doctrineRefusal(hidden, consequence, [o.id]);
-            const line = why || worthLine(o.id, hidden, consequence) || o.hint;
-            return (
-              <div key={o.id} className={"decision-row" + (i === taskTiles.length ? " decision-row-gap" : "")}>
-                {i === taskTiles.length && <p className="decision-sub">If no task is worth doing</p>}
-                <button
-                  type="button"
-                  className={"option-tile" + (outcome === o.id ? " selected" : "")}
-                  aria-pressed={outcome === o.id}
-                  aria-describedby={`${id}-o-${o.id}`}
-                  disabled={!!why && outcome !== o.id}
-                  title={outcome === o.id ? "Click again to unselect" : undefined}
-                  onClick={() => {
-                    // A second click on the chosen tile unselects it (back to no
-                    // decision), so the "if no task is worth doing" choices below
-                    // can be reached after a task was tried.
-                    const next = outcome === o.id ? null : o.id;
-                    setOutcome(next);
-                    if (next !== "rtf") setRtfBasis(null);
-                    setExtras((xs) => (next ? pruneExtras(next, xs) : []));
-                    dropModel();
-                  }}
-                >
-                  <span className="option-title">{outcome === o.id && <Tick />}{o.label}</span>
-                </button>
-                <p className={"decision-line" + (why ? " refused" : "")} id={`${id}-o-${o.id}`}>{why ? `Not here: ${why}` : line}</p>
-              </div>
-            );
-          })}
+          {/* Only what the doctrine allows here is shown (a failure-finding task on an
+              evident failure isn't offered at all). The default actions appear once "No
+              task is worth doing" is picked, or when the saved decision is one of them. */}
+          {taskTiles.filter((o) => !doctrineRefusal(hidden, consequence, [o.id])).map((o) => tile(o))}
+          <div className="decision-row decision-row-gap">
+            <button
+              type="button"
+              className={"option-tile" + (noTask ? " selected" : "")}
+              aria-pressed={noTask}
+              aria-describedby={`${id}-o-notask`}
+              title={noTask ? "Click again to unselect" : undefined}
+              onClick={() => {
+                const next = !noTask;
+                setNoTask(next);
+                // Leaving the task choice for the default actions (or back) clears what was picked.
+                setOutcome(null); setRtfBasis(null); setExtras([]); dropModel();
+              }}
+            >
+              <span className="option-title">{noTask && <Tick />}No task is worth doing</span>
+            </button>
+            <p className="decision-line" id={`${id}-o-notask`}>None of the tasks above reduces the risk enough, or costs less than the failures it prevents. Pick what's done instead.</p>
+          </div>
+          {noTask && otherTiles.filter((o) => !doctrineRefusal(hidden, consequence, [o.id])).map((o) => tile(o, " decision-row-indent"))}
         </div>
         {outcomeOpt && <p className="option-hint">{outcomeOpt.hint}</p>}
         {fallback && (

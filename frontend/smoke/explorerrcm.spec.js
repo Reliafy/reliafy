@@ -776,6 +776,8 @@ test("adding, deleting and deciding go once: a double-click, three clicks at onc
   await pickRow(page, `^Failure mode: Burns out ${tag}`);
   await page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: "Decide…" }).dblclick();
   const decide = page.getByRole("dialog", { name: /^Decision/ });
+  // The default actions show once "No task is worth doing" is picked.
+  await decide.getByRole("button", { name: /^No task is worth doing/ }).click();
   await decide.getByRole("button", { name: /^Run to failure/ }).click();
   await decide.getByRole("button", { name: "Failures are random" }).click();
   await decide.getByRole("button", { name: "Apply" }).dblclick();
@@ -814,7 +816,9 @@ test("the decision dialog says what's missing: the interval a schedule needs, wh
   const why = dialog.locator(".decision-why");
   await expect(apply).toBeDisabled();
   await expect(why).toHaveText("Choose a maintenance decision.");
-  // Run to failure: Apply waits for the reason, and says so.
+  // Run to failure (behind "No task is worth doing"): Apply waits for the reason, and says so.
+  await expect(dialog.getByRole("button", { name: /^Run to failure/ })).toHaveCount(0);
+  await dialog.getByRole("button", { name: /^No task is worth doing/ }).click();
   await dialog.getByRole("button", { name: /^Run to failure/ }).click();
   await expect(apply).toBeDisabled();
   await expect(why).toHaveText("Choose why it can run to failure.");
@@ -824,6 +828,13 @@ test("the decision dialog says what's missing: the interval a schedule needs, wh
   await expect(apply).toBeEnabled();
   await expect(why).toHaveCount(0);
   // Fixed interval and failure finding: the interval is needed, marked and said.
+  // Back to the tasks: picking one unselects "No task is worth doing". Failure finding is
+  // offered on a hidden failure (and while the question is still open, as here); Evident
+  // takes it off the list, Hidden brings it back.
+  await dialog.getByRole("button", { name: "Evident" }).click();
+  await expect(dialog.getByRole("button", { name: /^Failure finding/ })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Hidden" }).click();
+  await expect(dialog.getByRole("button", { name: /^Failure finding/ })).toHaveCount(1);
   for (const [tile, words] of [[/^Fixed interval/, "how often it's replaced or restored"], [/^Failure finding/, "how often the hidden function is checked"]]) {
     await dialog.getByRole("button", { name: tile }).click();
     const interval = dialog.getByRole("spinbutton", { name: "Interval (needed)" });
