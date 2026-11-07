@@ -154,23 +154,23 @@ test("switching arrangements keeps the same thing picked where it can", () => {
   assert.equal(carryOver(items.rows.get("sp"), "locations"), "sp");
   assert.equal(carryOver(items.rows.get("bench"), "positions"), "bench"); // its row among the items fitted nowhere
   assert.equal(carryOver(items.rows.get("sp"), "flat"), null);
-  // A location: itself in Locations; in Positions the top position at that
-  // place (so its RCM tab opens there); never in Items; a heading never.
+  // A location: itself in Locations; in Positions the position above
+  // everything at that place and the places inside it (so its RCM tab opens
+  // there); never in Items; a heading never.
   assert.equal(carryOver(loc.rows.get("site"), "locations"), "site");
   assert.equal(carryOver(loc.rows.get("site"), "items"), null);
   assert.equal(carryOver(loc.rows.get("site"), "positions"), null);
-  const placed = [
-    { id: "pool", name: "Pool", parent_id: "house", location_id: "site" },
-    { id: "house", name: "House", parent_id: null, location_id: "site" },
-    { id: "shed", name: "Shed", parent_id: "yard", location_id: "site" }, // its parent is elsewhere: a top here too
-    { id: "yard", name: "Yard", parent_id: null, location_id: "other" },
-    { id: "annex", name: "Annex (sample)", parent_id: null, location_id: "site" }, // first A–Z, but nothing beneath it
-    { id: "pump", name: "Pump", parent_id: "pool" }, // inherits its place from the pool: still counts for the house
-  ];
-  assert.equal(carryOver(loc.rows.get("site"), "positions", placed), "house");
-  // Without the house, the pool (its parent elsewhere) is a top with the pump beneath it.
-  assert.equal(carryOver(loc.rows.get("site"), "positions", placed.filter((p) => p.id !== "house")), "pool");
-  assert.equal(carryOver(loc.rows.get("site"), "positions", []), null);
+  const ctx = { display: loc, positions: DATA.positions };
+  assert.equal(carryOver(loc.rows.get("site"), "positions", ctx), "house"); // the shed inside it holds the pool pump
+  assert.equal(carryOver(loc.rows.get("shed"), "positions", ctx), "pool");
+  assert.equal(carryOver(loc.rows.get("store"), "positions", ctx), null);
+  // Two trees at one place: the root with the most positions there.
+  const two = { positions: [
+    { id: "a", name: "Plant", parent_id: null, location_id: "site" }, { id: "a1", name: "Line", parent_id: "a" },
+    { id: "b", name: "Annex (sample)", parent_id: null, location_id: "site" },
+  ], locations: [{ id: "site", name: "Site", parent_id: null }] };
+  const twoLoc = buildDisplay(two, "locations");
+  assert.equal(carryOver(twoLoc.rows.get("site"), "positions", { display: twoLoc, positions: two.positions }), "a");
   assert.equal(carryOver(items.rows.get("G:fitted"), "positions"), null);
   assert.equal(carryOver(null, "items"), null);
 });
