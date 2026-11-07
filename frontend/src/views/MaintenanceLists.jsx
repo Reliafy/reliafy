@@ -55,6 +55,7 @@ import { PageTitle } from "../components/usePageTitle.js";
 import LoadFailed from "../components/LoadFailed.jsx";
 import { isNotFound } from "../components/loadFailed.js";
 import { explorerPath } from "../assetTree.js";
+import { DeleteTreeModal } from "../components/DeleteTree.jsx";
 import { partsInBranch } from "../explorerTabs.js";
 import { EXPLORER_LABEL } from "../navigation.js";
 
@@ -153,6 +154,7 @@ export function MaintenanceLocation() {
           || (loc.path.length ? "Location" : "Asset")}
         actions={<button className="secondary" onClick={() => setModal("child")}><PlusIcon /> Location inside</button>}
         primary={<button onClick={() => setModal("rename")}>Rename</button>}
+        menu={<button className="ovm-item danger" onClick={() => setModal("delete")}>Delete…</button>}
       />
       {loc.children.length > 0 && (
         <section className="card">
@@ -194,6 +196,11 @@ export function MaintenanceLocation() {
       {modal === "child" && <NewLocationModal locations={all} parentId={loc.id} onClose={() => setModal(null)}
                                               onDone={(l) => { setModal(null); navigate(`/asset-register/locations/${l.id}`); }} />}
       {modal === "rename" && <RenameLocation loc={loc} onClose={() => setModal(null)} onDone={(d) => { setLoc(d); setModal(null); }} />}
+      {modal === "delete" && (
+        // Gone with the places inside and the positions there: the Explorer shows the toast with Undo.
+        <DeleteTreeModal kind="location" id={loc.id} name={loc.name} onClose={() => setModal(null)}
+                         onDone={(answer, done) => navigate(explorerPath("locations"), { state: { deleted: done } })} />
+      )}
     </div>
   );
 }

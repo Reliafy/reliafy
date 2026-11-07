@@ -951,7 +951,9 @@ def retire_task(task_id: str, body: dict = Body(default={}), m: Maintenance = De
 @router.post("/positions/{position_id}/retire")
 def retire_position(position_id: str, body: dict = Body(default={}),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.retire_position, position_id, body.get("reason", ""), bool(body.get("cascade")))
+    # cascade: a delete (everything inside goes, nothing refuses); dry_run: only count what would go.
+    return _run(m.retire_position, position_id, body.get("reason", ""), bool(body.get("cascade")),
+                bool(body.get("dry_run")))
 
 
 @router.post("/fitments/{fitment_id}/void")
@@ -2132,19 +2134,23 @@ def clear_coordinates(node_id: str, m: Maintenance = Depends(maintenance_write))
 # The same service methods the agent's tools call, so the app can offer them.
 
 @router.post("/positions/{position_id}/restore")
-def restore_position(position_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.restore_position, position_id)
+def restore_position(position_id: str, body: dict = Body(default={}),
+                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    # cascade: undo its latest delete, with everything that took.
+    return _run(m.restore_position, position_id, bool((body or {}).get("cascade")))
 
 
 @router.post("/locations/{location_id}/retire")
 def retire_location(location_id: str, body: dict = Body(default={}),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.retire_location, location_id, body.get("reason", ""), bool(body.get("cascade")))
+    return _run(m.retire_location, location_id, body.get("reason", ""), bool(body.get("cascade")),
+                bool(body.get("dry_run")))
 
 
 @router.post("/locations/{location_id}/restore")
-def restore_location(location_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.restore_location, location_id)
+def restore_location(location_id: str, body: dict = Body(default={}),
+                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.restore_location, location_id, bool((body or {}).get("cascade")))
 
 
 @router.post("/items/{item_id}/retire")

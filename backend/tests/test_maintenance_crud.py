@@ -92,18 +92,17 @@ def test_a_location_tree_retires_with_cascade_and_restores_top_down(m):
 
 # ---- positions -------------------------------------------------------------------------
 
-def test_a_position_subtree_retires_with_cascade_all_or_nothing(m):
+def test_a_position_subtree_retires_with_cascade(m):
     plant = m.create_position("Plant")["id"]
     pump = m.create_position("Pump", parent_id=plant)["id"]
     motor = m.create_position("Motor", parent_id=pump)["id"]
     m.fit(motor, new_item={"name": "M1"})
     with pytest.raises(Invalid, match="cascade true"):
         m.retire_position(plant)
-    with pytest.raises(Invalid, match="Motor: something is still fitted"):
-        m.retire_position(plant, cascade=True)
-    assert not m.position(pump)["retired"]
-    m.remove(motor)
+    # A cascade is a delete: it never refuses (what's fitted is taken out and kept;
+    # test_maintenance_tree_delete.py has the rest).
     out = m.retire_position(plant, "demolished", cascade=True)
+    assert out["items_unfitted"] and m.current_fitment(motor) is None
     assert out["also_retired"] == [motor, pump]
     assert all(m.position(p)["retired"] for p in (plant, pump, motor))
     with pytest.raises(Invalid, match="Plant \\(what it sits inside\\) is retired: restore that first"):

@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { addSampleProduct, listMaintenancePlaces, listProductItems } from "../api.js";
 import RegisterList, { CountCell } from "../components/RegisterList.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
+import { DeleteTreeModal, DeletedToast } from "../components/DeleteTree.jsx";
 import { fmtDate } from "../components/MaintenanceParts.jsx";
 import { NewLocationModal } from "./MaintenanceLists.jsx";
 import {
@@ -25,9 +26,18 @@ export default function MaintenanceAssets() {
   const [modal, setModal] = useState(false);
   const [error, setError] = useState(null);
   const [adding, setAdding] = useState(false);
-  useEffect(() => {
+  const reload = useCallback(() => {
     listMaintenancePlaces().then(setView).catch((e) => setError(e.message));
   }, []);
+  useEffect(() => reload(), [reload]);
+  // Delete… on a row: the asset with everything at it ({id, name}), then the toast with Undo.
+  const [deleting, setDeleting] = useState(null);
+  const location = useLocation();
+  const [deleted, setDeleted] = useState(() => location.state?.deleted || null);
+  useEffect(() => {
+    // Shown once: a reload of the page doesn't bring the toast back.
+    if (location.state?.deleted) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rest = view?.not_placed;
   const horizon = view?.horizon_days ?? 30;
@@ -65,6 +75,7 @@ export default function MaintenanceAssets() {
       {columns.map((c) => (
         <td key={c.key} className={c.num ? "num" : undefined} data-label={c.label}>{c.cell({ ...rest, name: "no place" })}</td>
       ))}
+      <td />
     </tr>
   );
 
@@ -77,7 +88,7 @@ export default function MaintenanceAssets() {
         error={error} rows={view ? view.places || [] : null} noun={["asset", "assets"]}
         count={assetsSummary(view)} search={(p) => [p.name, p.description]}
         name={(p) => ({ to: assetPath(p.id), label: p.name, sub: [p.description, insideText(p)].filter(Boolean).join(" · ") })}
-        columns={columns} after={notPlaced || null}
+        columns={columns} after={notPlaced || null} onDelete={setDeleting}
         empty={{
           title: "No assets yet",
           text: "An asset is a place you look after: a house, a site, a plant. Add one, then add the rooms or areas inside it and say where each position is. Or open the sample quadcopter: one of three built from the sample product, with its flight hours and failure reports.",
@@ -87,6 +98,11 @@ export default function MaintenanceAssets() {
       />
       {modal && <NewLocationModal asset locations={[]} onClose={() => setModal(false)}
                                   onDone={(l) => navigate(placePath(l.id))} />}
+      {deleting && (
+        <DeleteTreeModal kind="location" id={deleting.id} name={deleting.name} onClose={() => setDeleting(null)}
+                         onDone={(answer, done) => { setDeleting(null); setDeleted(done); reload(); }} />
+      )}
+      {deleted && <DeletedToast key={deleted.id} deleted={deleted} onClose={() => setDeleted(null)} onRestored={reload} />}
     </>
   );
 }

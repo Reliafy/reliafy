@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { SectionHeader, ShowMe } from "./SectionPage.jsx";
 import ListSearch, { matches } from "./ListSearch.jsx";
+import { RowActions } from "./LibRows.jsx";
 import "./RegisterList.css";
 
 // The landing page of a register: Assets (the places you look after) and
@@ -17,9 +18,11 @@ import "./RegisterList.css";
 // query matches. `count`: the counts line with no query. `after`: rows after
 // the list (Assets' "Not at a place yet"), given the same columns.
 // `empty`: { title, text, sample (a button), more (a line under it) }.
+// `onDelete(row)`: a bin at the end of each row (Delete…); the `after` rows
+// then end in an empty cell of their own.
 export default function RegisterList({
   title, purpose, help, primary, menu, error, rows, noun, count, search, placeholder, columns, name, after = null, empty,
-  className = "",
+  className = "", onDelete = null,
 }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -54,11 +57,13 @@ export default function RegisterList({
               <colgroup>
                 <col className="reg-col-name" />
                 {columns.map((c) => <col key={c.key} className="reg-col" />)}
+                {onDelete && <col className="reg-col-act" />}
               </colgroup>
               <thead>
                 <tr>
                   <th>{one[0].toUpperCase() + one.slice(1)}</th>
                   {columns.map((c) => <th key={c.key} className={c.num ? "num" : undefined}>{c.label}</th>)}
+                  {onDelete && <th><span className="sr-only">Actions</span></th>}
                 </tr>
               </thead>
               <tbody>
@@ -73,6 +78,7 @@ export default function RegisterList({
                       {columns.map((c) => (
                         <td key={c.key} className={c.num ? "num" : undefined} data-label={c.label}>{c.cell(r)}</td>
                       ))}
+                      {onDelete && <RowActions item={r} onDelete={() => onDelete(r)} />}
                     </tr>
                   );
                 })}

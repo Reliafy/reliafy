@@ -94,6 +94,13 @@ To find your way around a big tree:
   can still see where you are; open and close rows by hand after as usual.
 - **Pin this branch** in a position's row menu shows that position and what's
   inside it on its own; **Show whole tree** brings the rest back.
+- **Delete…** in a position's or location's menu on the Summary tab (or press
+  **Delete** on the row) deletes it. Everything inside it goes too: the
+  positions inside, their tasks and their RCM; open work orders are cancelled.
+  Items are never deleted: those fitted there are taken out and kept, loose,
+  in Items. The dialog counts what will go before you confirm. Its history
+  stays, and **Undo** in the message that follows (or Ctrl+Z, Cmd+Z on a Mac)
+  brings it all back.
 - **Columns** shows or hides columns, such as **Evidence**, **What the evidence shows** and **Decision notes**. Drag a
   column's edge to resize it. The Explorer remembers these choices on this
   device.

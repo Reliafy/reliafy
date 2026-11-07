@@ -1377,6 +1377,8 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
   display: flex;
   align-items: center;
   gap: 10px;
+  /* Its own width (not half the screen's, which is all left: 50% leaves it). */
+  width: max-content;
   max-width: min(640px, calc(100vw - 32px));
   padding: 8px 8px 8px 14px;
   border-radius: 8px;

@@ -2684,6 +2684,19 @@ export function retireMaintenanceTask(id, reason) {
 export function retireMaintenancePosition(id, reason) {
   return postJson(`/api/maintenance/positions/${id}/retire`, { reason });
 }
+// Delete… in a tree: a position, location or item with everything below it
+// (retire with cascade: never refused, its history kept). The preview counts
+// what would go and writes nothing; restoreTree undoes the latest delete.
+const TREE_PATHS = { position: "positions", location: "locations", item: "items" };
+export function deleteTreePreview(kind, id) {
+  return postJson(`/api/maintenance/${TREE_PATHS[kind]}/${id}/retire`, { cascade: true, dry_run: true });
+}
+export function deleteTree(kind, id, reason = "") {
+  return postJson(`/api/maintenance/${TREE_PATHS[kind]}/${id}/retire`, { cascade: true, reason });
+}
+export function restoreTree(kind, id) {
+  return postJson(`/api/maintenance/${TREE_PATHS[kind]}/${id}/restore`, { cascade: true });
+}
 export function getMaintenanceLocation(id) {
   return request(`/api/maintenance/locations/${id}`);
 }

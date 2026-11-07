@@ -26,7 +26,6 @@ import {
   setGroupDuty,
   correctMaintenanceFitment,
   removeMaintenanceItem,
-  retireMaintenancePosition,
   updateMaintenancePosition,
   voidMaintenanceFitment,
   addPositionPart,
@@ -54,6 +53,8 @@ import "./Maintenance.css";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import { productPath } from "../products.js";
+import { DeleteTreeModal } from "../components/DeleteTree.jsx";
+import { explorerPath } from "../assetTree.js";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
 // here), its work orders, and the life data its fitments give.
@@ -90,7 +91,7 @@ export default function MaintenancePosition() {
         menu={
           <>
             <button className="ovm-item" onClick={() => setModal("edit")}>Edit position</button>
-            <button className="ovm-item" onClick={() => setModal("retire")}>Retire position</button>
+            <button className="ovm-item danger" onClick={() => setModal("delete")}>Delete…</button>
           </>
         }
         actions={
@@ -256,12 +257,10 @@ export default function MaintenancePosition() {
 
       {modal === "location" && <LocationModal p={p} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal === "edit" && <EditPositionModal p={p} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
-      {modal === "retire" && (
-        <FormModal title={`Retire ${p.name}`} submitLabel="Retire" onClose={() => setModal(null)}
-                   onSubmit={async () => { await retireMaintenancePosition(p.id, ""); navigate("/maintenance"); }}>
-          <p>It leaves the plant tree and stops scheduling tasks. Its history stays. Nothing may be fitted,
-            nothing inside it in use, and no work order open.</p>
-        </FormModal>
+      {modal === "delete" && (
+        // Gone from the tree with everything inside it: the Explorer shows the toast with Undo.
+        <DeleteTreeModal kind="position" id={p.id} name={p.name} onClose={() => setModal(null)}
+                         onDone={(answer, done) => navigate(explorerPath("positions"), { state: { deleted: done } })} />
       )}
       {modal?.mode && <FailureModeModal p={p} mode={modal.mode} onClose={() => setModal(null)}
                                         onDone={() => { setModal(null); refresh(); }} />}

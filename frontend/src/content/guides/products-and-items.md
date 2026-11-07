@@ -51,6 +51,10 @@ have no failure reports, signals, stock, work or due dates. Its tabs:
 - **Classes**: the position classes used there and inside it; tick **Show all
   classes** for every class and the item classes.
 
+**Delete…** (in the product's row menu in its tree, or the bin on its row in
+Products) deletes the design and everything inside it. Items built from it stay. Its
+history stays, and **Undo** in the message that follows brings it back.
+
 ## Items
 
 **Items** lists every serial-numbered thing, built from a product or not,

@@ -273,7 +273,7 @@ export function LocationPicker({ locations, value, onChange, emptyLabel = "Choos
 // Enter sends nothing more (a ref, set before React draws again). A refusal
 // shows in the modal, in the server's words, or what to do when there was no
 // answer at all.
-export function FormModal({ title, submitLabel, pendingLabel = "Saving…", onClose, onSubmit, canSubmit = true, children }) {
+export function FormModal({ title, submitLabel, pendingLabel = "Saving…", onClose, onSubmit, canSubmit = true, danger = false, children }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const inFlight = useRef(false);
@@ -301,7 +301,7 @@ export function FormModal({ title, submitLabel, pendingLabel = "Saving…", onCl
       footer={
         <>
           <button className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-          <button onClick={submit} disabled={busy || !canSubmit} aria-busy={busy || undefined}>{busy ? pendingLabel : submitLabel}</button>
+          <button className={danger ? "secondary danger" : undefined} onClick={submit} disabled={busy || !canSubmit} aria-busy={busy || undefined}>{busy ? pendingLabel : submitLabel}</button>
         </>
       }
     >

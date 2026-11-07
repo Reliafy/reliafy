@@ -5,6 +5,11 @@
   width: 9.5rem;
 }
 
+/* The row's bin (Delete…), when the page offers it. */
+.reg-table .reg-col-act {
+  width: 3rem;
+}
+
 .reg-table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;

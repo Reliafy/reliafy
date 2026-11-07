@@ -68,10 +68,10 @@ test("isolate at 1, 2, 3 levels and everything: the rest closed but on show, the
   if (await page.getByRole("menu", { name: "Tree options" }).isVisible()) await page.keyboard.press("Escape");
   await expect(row(page, `Works pump B ${tag}`)).toBeVisible();
 
-  // The menu: Isolate › (the four levels beside it), before Pin this branch and Retire.
+  // The menu: Isolate › (the four levels beside it), before Pin this branch and Delete.
   await row(page, `Works line A ${tag}`).locator(".tp-nm").click({ button: "right" });
   const menu = rowMenu(page, `Works line A ${tag}`);
-  await expect(menu.getByRole("menuitem")).toHaveText(["New position inside", "Add failure report…", "Rename…", "Move to…", "Isolate", "Pin this branch", /^Retire…/]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["New position inside", "Add failure report…", "Rename…", "Move to…", "Isolate", "Pin this branch", "Delete…"]);
   await expect(menu.getByRole("menuitem", { name: "Isolate" })).toHaveAttribute("aria-haspopup", "menu");
   await menu.getByRole("menuitem", { name: "Isolate" }).hover();
   const sub = page.getByRole("menu", { name: "Isolate" });

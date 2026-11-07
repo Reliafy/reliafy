@@ -66,7 +66,7 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.lineA.id}`);
   await expect(row(page, `Works line A ${tag}`)).toHaveAttribute("aria-level", "2");
 
-  // Right-click the line: Pin this branch (after the changes to the tree, before Retire).
+  // Right-click the line: Pin this branch (after the changes to the tree, before Delete).
   await row(page, `Works line A ${tag}`).locator(".tp-nm").click({ button: "right" });
   const menu = rowMenu(page, `Works line A ${tag}`);
   await expect(menu.getByRole("menuitem", { name: "Pin this branch" })).toBeVisible();

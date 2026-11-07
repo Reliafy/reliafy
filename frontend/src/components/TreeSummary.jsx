@@ -15,7 +15,7 @@ import { safeHref } from "../maintenanceFields.js";
 // chips), Operating context (edited in place), Directly inside (rows, sorted
 // as you choose, ending in "+ New position inside"), Measurements and
 // Documents when there are any, then a footer with the row's own changes
-// (Retire in red). Everything links on: an item, a work order, a row inside.
+// (Delete… in red). Everything links on: an item, a work order, a row inside.
 //
 // A product's design (`design`) has no maintenance done to it: no status
 // chips, nothing fitted or located, no work, measurements or due dates, only
@@ -318,7 +318,7 @@ function Documents({ data, fullPage }) {
 }
 
 // The row's own changes, at the foot: Rename and Move as small buttons,
-// Retire as red text. Each is greyed with its reason where it can't be done.
+// Delete… as red text. Each is greyed with its reason where it can't be done.
 function Footer({ actions }) {
   if (!actions.length) return null;
   return (

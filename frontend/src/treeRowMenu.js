@@ -1,16 +1,15 @@
 // The Explorer's row menu on the Summary tab (right-click a row, its ⋯
 // button, or Shift+F10): changing the tree itself. New position (or location)
 // inside, Add failure report… (a position: a report sits at a position),
-// Rename, Move to… and Retire, beside Isolate › and Pin this branch. The RCM tab's
-// rows keep their own menu (explorerRcm.js rowActions).
+// Rename, Move to… and Delete…, beside Isolate › and Pin this branch. The RCM
+// tab's rows keep their own menu (explorerRcm.js rowActions).
 //
-// Each item is offered only where the server allows it: a position can be
-// renamed, moved (PATCH parent_id) and retired; a location renamed and moved
-// (there's no retiring a location); an item renamed. An item the server
-// would refuse, when the tree already says so (something fitted, positions
-// inside, open work, a team that's view only), is shown greyed with the
-// reason, so the menu never offers what can't be done. The server checks
-// again, and its reason shows if it still refuses.
+// A position can be renamed, moved (PATCH parent_id) and deleted; a location
+// renamed, moved and deleted; an item renamed (never deleted from the tree:
+// a delete keeps every item, and items are retired on the Items pages).
+// Delete… is never greyed for what's inside (a delete takes everything below
+// it, items kept, and Undo brings it back: treeDelete.js); only a team that's
+// view only greys the changes, with the reason.
 //
 // Pure functions (no React), tested in treeRowMenu.test.js.
 
@@ -25,22 +24,12 @@ export function viewOnlyReason(team) {
   return null;
 }
 
-// Why a position can't be retired now, from what the tree knows (null: try).
-// The server's rules: nothing fitted, no position inside still in use, no
-// open work order.
-export function retireBlock(r, liveKids = 0) {
-  if (r.ref.item) return "Something is fitted here. Remove it or fit it elsewhere first.";
-  if (liveKids > 0) return `${liveKids === 1 ? "A position is" : `${liveKids} positions are`} inside it. Move or retire ${liveKids === 1 ? "it" : "them"} first.`;
-  if (r.ref.status?.open_work > 0) return "It has open work orders. Close or cancel them first.";
-  return null;
-}
-
 // What a row's menu offers on the Summary tab, in this arrangement (mode):
 // [{id, label, danger?, disabled?, reason?}]. `viewOnly`: the reason the
-// workspace can't be changed (every change greyed), else null. `kidsOf(id)`:
-// how many live positions sit directly inside a position (from the tree's
-// rows, whatever the arrangement shows). Pin this branch is added by the page.
-export function summaryActions(r, { mode, viewOnly = null, kidsOf = () => 0 } = {}) {
+// workspace can't be changed (every change greyed), else null. Pin this
+// branch is added by the page.
+const DELETE = { id: "tree-delete", label: "Delete…", danger: true };
+export function summaryActions(r, { mode, viewOnly = null } = {}) {
   if (!r) return [];
   const out = [];
   if (r.type === "pos") {
@@ -53,11 +42,12 @@ export function summaryActions(r, { mode, viewOnly = null, kidsOf = () => 0 } = 
       out.push(write({ id: "tree-move", label: "Move to…" },
         viewOnly || (r.ref.carried_by ? "It sits on an item and moves with it: fit the item elsewhere to move it." : null)));
     }
-    out.push(write({ id: "tree-retire", label: "Retire…", danger: true }, viewOnly || retireBlock(r, kidsOf(r.key))));
+    out.push(write(DELETE, viewOnly));
   } else if (r.type === "loc") {
     out.push(write({ id: "tree-new", label: "New location inside" }, viewOnly));
     out.push(write({ id: "tree-rename", label: "Rename…" }, viewOnly));
     out.push(write({ id: "tree-move", label: "Move to…" }, viewOnly));
+    out.push(write(DELETE, viewOnly));
   } else if (r.type === "item") {
     out.push(write({ id: "tree-rename", label: "Rename…" }, viewOnly));
   }
@@ -65,7 +55,7 @@ export function summaryActions(r, { mode, viewOnly = null, kidsOf = () => 0 } = 
 }
 
 // The menu with Pin this branch (or Show whole tree) added: after the
-// changes, before Retire.
+// changes, before Delete.
 export function withPin(items, pin) {
   const at = items.findIndex((i) => i.danger);
   if (at < 0) return [...items, ...pin];

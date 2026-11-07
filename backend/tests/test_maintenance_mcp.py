@@ -1057,3 +1057,22 @@ def test_an_over_long_name_is_refused_with_what_to_do_and_generate_lists_skipped
         "task's instructions.") in refused.content[0].text
     assert titled.is_error and "at most 200 characters; this one is 250" in titled.content[0].text
     assert made["skipped"] == [] and len(made["work_orders"]) == 1
+
+
+def test_a_delete_and_its_undo_through_mcp(env):
+    """positions.retire with cascade (dry_run counts first) deletes a branch with what's fitted
+    in it; positions.restore with cascade brings it back as a unit."""
+    async def flow(client):
+        top = _ok(await _do(client, "maintenance", "positions.create", name="Propulsion"))
+        motor = _ok(await _do(client, "maintenance", "positions.create", name="Motor", parent_id=top["id"]))
+        _ok(await _do(client, "maintenance", "fitments.fit", position_id=motor["id"], item_name="M1"))
+        preview = _ok(await _do(client, "maintenance", "positions.retire", position_id=top["id"], cascade=True,
+                                dry_run=True))
+        done = _ok(await _do(client, "maintenance", "positions.retire", position_id=top["id"], cascade=True))
+        back = _ok(await _do(client, "maintenance", "positions.restore", position_id=top["id"], cascade=True))
+        return preview, done, back
+
+    preview, done, back = _session(env["token"], flow)
+    assert preview["dry_run"] and preview["positions_inside"] == 1 and preview["items_unfitted"] == 1
+    assert done["positions"] == 2 and len(done["items_unfitted"]) == 1
+    assert back["positions_restored"] == 2 and back["items_refitted"] == 1

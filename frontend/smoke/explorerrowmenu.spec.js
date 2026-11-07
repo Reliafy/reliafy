@@ -2,10 +2,10 @@
 // right-click a row, its ⋯ button, or Shift+F10. New position inside (the +
 // button's dialog, "Inside" set to the row), Rename…, Move to… (a picker of
 // the new parent: never the row itself or anything inside it; the row shown
-// in its new place and kept picked), Retire… (a confirm naming it; greyed with
-// the reason when something is fitted, positions are inside or work is open),
-// and Pin this branch as before. A refusal from the server shows its reason
-// in the dialog. Locations: new inside, rename, move. The RCM tab keeps its
+// in its new place and kept picked), Delete… (never greyed for what's inside:
+// explorerdelete.spec.js has the dialog and Undo), and Pin this branch as
+// before. A refusal from the server shows its reason in the dialog.
+// Locations: new inside, rename, move, delete. The RCM tab keeps its
 // own menu. At 400 px the ⋯ opens it and nothing scrolls sideways.
 // Each test makes its own small plant through the API.
 //
@@ -51,33 +51,26 @@ async function menuOf(page, name) {
   return menu;
 }
 
-test("Summary row menu: new inside, rename, move to…, retire, pin; the server's refusals in words", async ({ page, request, problems }) => {
+test("Summary row menu: new inside, rename, move to…, delete, pin; the server's refusals in words", async ({ page, request, problems }) => {
   const tag = `m${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 720 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.skim.id}`); // the way down to it opens
   await expect(row(page, `Menu skimmer ${tag}`)).toHaveAttribute("aria-selected", "true");
 
-  // The menu: the changes, then Isolate and Pin this branch, then Retire (greyed: positions are inside it).
+  // The menu: the changes, then Isolate and Pin this branch, then Delete (never greyed for what's inside).
   let menu = await menuOf(page, `Menu circulation ${tag}`);
-  await expect(menu.getByRole("menuitem")).toHaveText(["New position inside", "Add failure report…", "Rename…", "Move to…", "Isolate", "Pin this branch", /^Retire…/]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["New position inside", "Add failure report…", "Rename…", "Move to…", "Isolate", "Pin this branch", "Delete…"]);
   await expect(menu.getByRole("menuitem", { name: "New position inside" })).toBeFocused();
-  const retire = menu.getByRole("menuitem", { name: "Retire…" });
-  await expect(retire).toHaveAttribute("aria-disabled", "true");
-  await expect(retire).toHaveAccessibleDescription("3 positions are inside it. Move or retire them first.");
+  await expect(menu.getByRole("menuitem", { name: "Delete…" })).not.toHaveAttribute("aria-disabled", "true");
   await shot(page, "rowmenu-1-summary-row-menu-1280");
-  await retire.click({ force: true }); // greyed: nothing happens, the menu stays
-  await expect(menu).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
   await expect(row(page, `Menu circulation ${tag}`)).toBeFocused();
 
-  // Fitted, open work: greyed with the reason too.
+  // Fitted, open work: still offered (a delete takes the item out and cancels the work).
   menu = await menuOf(page, `Menu pump ${tag}`);
-  await expect(menu.getByRole("menuitem", { name: "Retire…" })).toHaveAccessibleDescription(/Something is fitted here/);
-  await page.keyboard.press("Escape");
-  menu = await menuOf(page, `Menu valve ${tag}`);
-  await expect(menu.getByRole("menuitem", { name: "Retire…" })).toHaveAccessibleDescription(/open work orders/);
+  await expect(menu.getByRole("menuitem", { name: "Delete…" })).not.toHaveAttribute("aria-disabled", "true");
   await page.keyboard.press("Escape");
 
   // New position inside: the + button's dialog, Inside set to the row; the new row is picked inside it.
@@ -150,26 +143,16 @@ test("Summary row menu: new inside, rename, move to…, retire, pin; the server'
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await page.unroute(`**${M}/positions/${p.heat.id}`);
 
-  // Retire…: a confirm naming it; gone, the row it was inside picked.
+  // Delete…: a confirm naming it; gone, the row it was inside picked.
   menu = await menuOf(page, `Menu heater ${tag}`);
-  await menu.getByRole("menuitem", { name: "Retire…" }).click();
-  dialog = page.getByRole("dialog", { name: `Retire “Menu heater ${tag}”?` });
+  await menu.getByRole("menuitem", { name: "Delete…" }).click();
+  dialog = page.getByRole("dialog", { name: `Delete “Menu heater ${tag}”?` });
   await expect(dialog).toContainText("Its history stays");
-  await dialog.getByRole("button", { name: "Retire position" }).click();
+  await dialog.getByRole("button", { name: "Delete the position" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(row(page, `Menu heater ${tag}`)).toHaveCount(0);
   await expect(row(page, `Menu heating ${tag}`)).toHaveAttribute("aria-selected", "true");
-
-  // The server refuses a retire (work opened since the tree was read): its reason and what to do.
-  await page.route(`**${M}/positions/${p.skim.id}/retire`, (route) => route.fulfill({
-    status: 422, json: { detail: "It has open work orders. Close or cancel them first." } }));
-  menu = await menuOf(page, `Menu skimmer box ${tag}`);
-  await menu.getByRole("menuitem", { name: "Retire…" }).click();
-  dialog = page.getByRole("dialog", { name: `Retire “Menu skimmer box ${tag}”?` });
-  await dialog.getByRole("button", { name: "Retire position" }).click();
-  await expect(dialog).toContainText("It has open work orders. Close or cancel them first.");
-  await dialog.getByRole("button", { name: "Cancel" }).click();
-  await expect(row(page, `Menu skimmer box ${tag}`)).toBeVisible();
+  await page.locator(".rcm-toast").getByRole("button", { name: "Dismiss" }).click();
 
   // Pin this branch still works from the same menu.
   menu = await menuOf(page, `Menu heating ${tag}`);
@@ -187,13 +170,13 @@ test("Summary row menu: new inside, rename, move to…, retire, pin; the server'
   await expectHealthy(page, problems, { label: "summary row menu", root: ".tx" });
 });
 
-test("Locations: a location's menu has new inside, rename and move; at 400 px the ⋯ opens the menu", async ({ page, request, problems }) => {
+test("Locations: a location's menu has new inside, rename, move and delete; at 400 px the ⋯ opens the menu", async ({ page, request, problems }) => {
   const tag = `l${Date.now()}`;
   const p = await plant(request, tag, { small: true });
   await page.setViewportSize({ width: 1280, height: 720 });
   await open(page, `/asset-register/explorer?arrange=locations&sel=${p.shed.id}`);
   let menu = await menuOf(page, `Menu shed ${tag}`);
-  await expect(menu.getByRole("menuitem")).toHaveText(["New location inside", "Rename…", "Move to…", "Isolate", "Pin this branch"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["New location inside", "Rename…", "Move to…", "Isolate", "Pin this branch", "Delete…"]);
   await menu.getByRole("menuitem", { name: "Move to…" }).click();
   const dialog = page.getByRole("dialog", { name: `Move “Menu shed ${tag}”` });
   await dialog.getByRole("combobox").selectOption(p.store.id);

@@ -7,14 +7,15 @@
 // the items built, their failure reports and its analyses (ProductSummary);
 // the parts list is the tree's Parts tab. A design has no maintenance done to
 // it: no failure reports, signals or stock on its rows (explorerTabs.js).
-import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { addSampleProduct, getProduct, listProducts } from "../api.js";
 import RegisterList, { CountCell } from "../components/RegisterList.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import { PageTitle } from "../components/usePageTitle.js";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { NewProductModal } from "../components/ProductPanels.jsx";
+import { DeleteTreeModal, DeletedToast } from "../components/DeleteTree.jsx";
 import AssetExplorer from "./AssetExplorer.jsx";
 import { SAMPLES, addSample } from "../sampleProduct.js";
 import { PRODUCTS_GUIDE, PRODUCTS_PATH, productPath, productTab } from "../products.js";
@@ -45,9 +46,20 @@ export default function MaintenanceProducts() {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(false);
-  useEffect(() => {
+  const reload = useCallback(() => {
     listProducts().then((d) => setRows(d.products || [])).catch((e) => setError(e.message));
   }, []);
+  useEffect(() => reload(), [reload]);
+  // Delete… on a row (or on a product's own tree, arriving here): its design
+  // with everything inside it ({id, name}), then the toast with Undo. Items
+  // built from it stay.
+  const [deleting, setDeleting] = useState(null);
+  const location = useLocation();
+  const [deleted, setDeleted] = useState(() => location.state?.deleted || null);
+  useEffect(() => {
+    // Shown once: a reload of the page doesn't bring the toast back.
+    if (location.state?.deleted) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const sample = useSampleProduct((r) => navigate(productPath(r.product?.id || r.position.id)));
   const newProduct = <button onClick={() => setModal(true)}><PlusIcon /> New product</button>;
   const sampleButton = (
@@ -82,7 +94,7 @@ export default function MaintenanceProducts() {
           sub: [p.description, p.part?.part_number && `Part ${p.part.part_number}`,
             `${p.positions} ${p.positions === 1 ? "position" : "positions"}`].filter(Boolean).join(" · "),
         })}
-        columns={columns}
+        columns={columns} onDelete={setDeleting}
         empty={{
           title: "No products yet",
           text: "A product is a design: what each part of it does (its functional structure, with its FME(C)A and RCM) and the part it is, with its bill of materials. Build items from it by serial number; their failures roll up to the design.",
@@ -91,6 +103,11 @@ export default function MaintenanceProducts() {
         }}
       />
       {modal && <NewProductModal onClose={() => setModal(false)} onDone={(p) => navigate(productPath(p.id))} />}
+      {deleting && (
+        <DeleteTreeModal kind="position" id={deleting.id} name={deleting.name} onClose={() => setDeleting(null)}
+                         onDone={(answer, done) => { setDeleting(null); setDeleted(done); reload(); }} />
+      )}
+      {deleted && <DeletedToast key={deleted.id} deleted={deleted} onClose={() => setDeleted(null)} onRestored={reload} />}
     </>
   );
 }
