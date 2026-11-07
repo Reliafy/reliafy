@@ -179,6 +179,10 @@ test("on a phone, switching tabs leaves the title, the tabs, the search box and 
   const tag = `p${Date.now()}`;
   const p = await plant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}`);
+  // The row picked brought into view first (late in a full run the tree is long and it's far
+  // down), so the Summary's scroll is read once it's where it stays, as the tests above do.
+  await expect(page.getByRole("treeitem", { name: new RegExp(`^Steady unit 4 ${tag}`) })).toHaveAttribute("aria-selected", "true");
+  await settled(page);
   // On a phone the RCM tab's rows are two lines (the second its RCM in words),
   // so the rows themselves change; the frame round them doesn't.
   const scrolls = { Summary: (await frameOf(page)).scrollTop };

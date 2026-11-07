@@ -204,8 +204,9 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     }
     const table = page.getByRole("treegrid", { name: /and their FME\(C\)A/ });
     await expect(table).toBeVisible();
-    // The top picked: each assembly's roll-up (Airframe's two modes, both scored).
-    await expect(table.getByRole("row", { name: /^Airframe/ }).first()).toContainText("2 of 2 scored");
+    // The top picked: each assembly's own failure modes summed up (the payload gimbal's three, all
+    // scored; the airframe's are on its frame, arms and landing gear, so its row is blank).
+    await expect(table.getByRole("row", { name: /^Payload gimbal/ }).first()).toContainText("3 of 3 scored");
     await shot(page, `${width}-product-fmea`);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
     // The design's top row: its FME(C)A menu, with no failure report (a report is about an item).

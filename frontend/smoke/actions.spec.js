@@ -431,7 +431,7 @@ test("the Explorer's menu opens the sample UAV product on its RCM tab, evidence 
   await expect(page.getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
   const grid = page.getByRole("treegrid", { name: /and their RCM/ });
   // Top down: the product's own function, its failures explained by those below.
-  await expect(grid.getByRole("row", { name: /^Function: Fly a planned survey and land safely/ }).first()).toBeVisible();
+  await expect(grid.getByRole("row", { name: /^Function: Fly the planned inspection sortie and land back on the pad/ }).first()).toBeVisible();
   await expect(grid.getByRole("row", { name: /Aircraft lost or crashes/ }).first()).toBeVisible();
   await expect(grid.getByRole("columnheader", { name: "Evidence check" })).toBeVisible();
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/1440-product-rcm.png` });
@@ -469,15 +469,18 @@ test("the Explorer's menu opens the sample UAV product on its RCM tab, evidence 
   // Hidden failures: the BMS cut-off and each IMU failing silently, each with its failure-finding task.
   await showOnly("Hidden failures");
   await options.getByRole("menuitem", { name: "Done" }).click();
-  await expect(grid.getByRole("row", { name: /^Failure mode: Cut-off relay welded closed/ }).first()).toContainText("Supported");
+  // The sample has more hidden failures now, so the relay's own row is below the fold (the
+  // tree draws only the rows on screen); its functional failure's row carries its check.
   await expect(grid.getByRole("row", { name: /^Failure mode: Fails silently while the other IMU carries on/ }).first()).toBeVisible();
+  await expect(grid.getByRole("row", { name: /^Functional failure: Does not cut off when a cell is outside its limits/ }).first())
+    .toContainText("1 supported");
   await done("Hidden failures");
   await expectHealthy(page, problems, { label: "the sample product on the RCM tab" });
   if (SHOTS) {
     await page.setViewportSize({ width: 400, height: 860 });
     await page.reload();
     await expect(page.getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByText(/Fly a planned survey/).first()).toBeVisible();
+    await expect(page.getByText(/Fly the planned inspection sortie/).first()).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/400-product-rcm.png` });
     await page.getByRole("button", { name: /^Tree options/ }).click();
     await options.getByRole("menuitemcheckbox", { name: "Evidence to look at" }).scrollIntoViewIfNeeded();
@@ -538,8 +541,9 @@ test("the empty tree offers only the sample UAV product; it opens on the RCM tab
   expect(opened).toEqual([{ again: false }, { again: false }]);
   await expect(page.getByRole("tab", { name: "FME(C)A" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("treegrid", { name: /and their FME\(C\)A/ })).toBeVisible();
-  await expect(page.getByRole("treegrid", { name: /and their FME\(C\)A/ }).getByRole("row", { name: /^Airframe/ }).first())
-    .toContainText("2 of 2 scored");
+  // A position's row sums up its own failure modes (the airframe's are on its frame, arms and landing gear).
+  await expect(page.getByRole("treegrid", { name: /and their FME\(C\)A/ }).getByRole("row", { name: /^Payload gimbal/ }).first())
+    .toContainText("3 of 3 scored");
   await expectHealthy(page, problems, { label: "the sample product's FME(C)A" });
 });
 
