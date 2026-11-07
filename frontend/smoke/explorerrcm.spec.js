@@ -105,8 +105,7 @@ test("RCM: the tree and the RCM are one table; Summary: the tree and the page; t
   await trow(page, `^Function: Contain the water ${tag}`).locator(".tp-chev").click();
   await expect(trow(page, "Not under a functional failure").first()).toBeVisible();
   await expect(trow(page, `Coupling fails ${tag}`).getByText("Contradicted")).toBeVisible();
-  // RCM is by position: Locations waits for Summary (the counts' tooltip and the greyed switch say so).
-  await expect(page.locator(".tt-top .tp-status")).toHaveAttribute("title", /RCM is by position$/);
+  // RCM is by position: Locations waits for Summary (the greyed switch says so).
   const sw = page.getByRole("radiogroup", { name: "Arrange by" });
   await expect(sw).toHaveAttribute("aria-disabled", "true");
   await expect(sw).toHaveAttribute("title", /RCM is by position/);

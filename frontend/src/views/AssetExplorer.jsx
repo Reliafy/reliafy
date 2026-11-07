@@ -1278,23 +1278,15 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       <>Nothing matches{query.trim() ? ` “${query.trim()}”` : ""}. <button type="button" className="link" onClick={() => { setQuery(""); setChips([]); }}>Clear the filter</button></>
     ) : nothing ? `${EMPTY[mode]?.[0] || "No positions yet"}.` : "Nothing here.";
 
-  const placedCount = data ? display.positions : 0;
   const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
-  // Pinned: the branch's own counts.
-  const notAnalysed = !data ? 0 : pinKey ? display.notAnalysed : data.positions.filter((p) => p.not_analysed).length;
-  const locationCount = !data ? 0 : pinKey ? display.locations : data.locations.length;
   const what = fmeaOn ? "FME(C)A" : "RCM";
-  // The counts under the tree's title stay short on every tab, so they fit
-  // beside its buttons: the RCM tab adds how many aren't analysed (its ○
-  // markers); why the tree is by position is in the tooltip and the ⋯ menu.
+  // The line under the tree's title shows only what needs saying: that the
+  // RCM didn't load, or how many rows match the filter. No counts otherwise.
   const statusText = !data ? "" : rcmOn && !filter
-    ? (rcmError ? `The ${what} didn't load: ${rcmError}` : !rcm ? `${n(placedCount, "position")} · loading the ${what}…`
-      : fmeaOn ? n(placedCount, "position") : `${n(placedCount, "position")} · ${notAnalysed.toLocaleString("en-AU")} not analysed`)
+    ? (rcmError ? `The ${what} didn't load: ${rcmError}` : "")
     : filter
     ? [`${n(filter.match.size, "match", "matches")}, shown with what they're inside`, showingOnly(chipsOn.map((c) => c.label))].filter(Boolean).join(" · ")
-    : mode === "locations"
-      ? `${n(locationCount, "location")} · ${n(placedCount, "position")}`
-      : n(placedCount, "position");
+    : "";
 
   const notice = root && !rootProp ? (
     <p className="tp-notice">
@@ -1629,7 +1621,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         ] : []), ]}
         notice={notice}
         statusText={statusText}
-        statusTitle={rcmOn && !filter && rcm && !rcmError ? `${statusText} · ${what} is by position` : undefined}
         empty={phone && (error || nothing) ? emptyDetail : paneEmpty}
         scrollTo={scrollTo}
         onEnter={(key) => {

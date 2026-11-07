@@ -83,7 +83,6 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   await expect(row(page, `Works line A ${tag}`)).toHaveAttribute("aria-expanded", "true");
   await expect(row(page, `Works pump A ${tag}`)).toBeVisible();
   for (const gone of [`Works plant ${tag}`, `Works line B ${tag}`, `Works other ${tag}`]) await expect(row(page, gone)).toHaveCount(0);
-  await expect(page.locator(".tp-status")).toHaveText("3 positions");
   await expect(page.getByRole("button", { name: "Tree options: 1 changed" })).toBeVisible();
   // The panel's heading: the pin is on; the way up still shows the plant.
   await expect(panel(page).getByRole("button", { name: "Pin this branch" })).toHaveAttribute("aria-pressed", "true");
@@ -137,7 +136,6 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   await expect(pin).toHaveAttribute("aria-pressed", "false");
   await pin.click();
   await expect(bar(page)).toContainText(`Works pump A ${tag}`);
-  await expect(page.locator(".tp-status")).toHaveText("2 positions");
   await expect(pin).toHaveAttribute("aria-pressed", "true");
   // Full screen keeps the pin, and its note.
   await page.locator(".td-title").click();
@@ -161,7 +159,6 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   await bar(page).getByRole("button", { name: "Show everything" }).click();
   await expect(bar(page)).toHaveCount(0);
   await expect.poll(() => query(page).get("pin")).toBe(null);
-  await expect(page.locator(".tp-status")).not.toHaveText("6 positions");
   await expectHealthy(page, problems, { label: "pinned branch", root: ".tx" });
 });
 
@@ -181,7 +178,8 @@ test("the RCM tab with a pin: the one table shows only the branch, its rows' men
   await expect(trow(`Failure mode: Seal leaks ${tag}`)).toBeVisible();
   await expect(trow(`^Works plant ${tag}`)).toHaveCount(0);
   await expect(trow(`^Works line B ${tag}`)).toHaveCount(0);
-  await expect(page.locator(".tt-top .tp-status")).toHaveText(/^3 positions · \d+ not analysed$/);
+  // The tree's title carries no counts line.
+  await expect(page.locator(".tt-top .tp-status")).toHaveCount(0);
   // A position's menu: Add function, the worksheet in and out, then Pin this branch (the pinned row: Show whole tree), Delete… last.
   await trow(`^Works pump A ${tag}`).locator(".tt-tree").click({ button: "right" });
   await expect(rowMenu(page, `Works pump A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Isolate incomplete rows", "Pin this branch", "Delete…"]);
@@ -234,7 +232,6 @@ test("a row outside the branch shows the whole tree again; a pin that's gone qui
   await rowMenu(page, `Works site ${tag}`).getByRole("menuitem", { name: "Pin this branch" }).click();
   await expect(bar(page)).toContainText(`Works site ${tag}`);
   await expect(row(page, `Works plant ${tag}`)).toBeVisible();
-  await expect(page.locator(".tp-status")).toHaveText(/^1 location · 6 positions$/);
   await expectHealthy(page, problems, { label: "pin outside and gone", root: ".tx" });
 });
 
