@@ -897,19 +897,11 @@ def rcm_options(user: dict = Depends(get_current_user)) -> dict:
     return {**rcm_decisions.options(), "fmea": fmea.options()}
 
 
-@router.post("/sample-truck")
-def add_sample_truck(body: dict | None = Body(None), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Copy the sample delivery truck, with its RCM, into this workspace's tree. When
-    a copy is there already nothing is added (added false) unless again is true."""
-    from backend.maintenance import templates
-
-    return _run(templates.add_sample_truck, m, bool((body or {}).get("again")))
-
-
 @router.post("/sample-product")
 def add_sample_product(body: dict | None = Body(None), session=Depends(get_session),
                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Add the sample product: a quadcopter's design (every failure mode scored as an FME(C)A), its part with
+    """Add the sample product: a quadcopter's design (its RCM, some decisions linked to sample evidence, and
+    every failure mode scored as an FME(C)A), its part with
     a bill of materials, three items built from it with two failure reports, and a flight-critical RBD with
     placeholder failure rates. When a copy is there already nothing is added (added false) unless again is
     true."""

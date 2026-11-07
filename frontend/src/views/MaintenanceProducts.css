@@ -1,16 +1,6 @@
 /* Products and Items (MaintenanceProducts.jsx, MaintenanceItemsList.jsx). */
 
-/* A product's page: the header and tabs over the tab's body; on Functional
-   structure the Explorer fills the rest, edge to edge as on its own page. */
-.pp-head {
-  padding-bottom: 0;
-}
-.pp-head .pp-tabs {
-  margin-top: 8px;
-}
-.pp-body {
-  padding-top: 16px;
-}
+/* A product's Summary (ProductSummary.jsx): what was just built. */
 .pp-said {
   margin: 4px 0 8px;
   color: var(--ok, var(--accent));

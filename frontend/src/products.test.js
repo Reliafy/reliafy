@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildProblem, designActions, hoursText, isDesignScope, itemFilters, itemTreePath, productFmeaPath, productPath,
+  buildProblem, designActions, hoursText, isDesignScope, itemFilters, itemTreePath, productViewPath, productPath,
   productRbds, productTab, productTreeIds, scopeTree, statusText,
 } from "./products.js";
 
@@ -15,20 +15,27 @@ const positions = [
 ];
 const data = { positions, locations: [] };
 
-test("the product page's tabs: Functional structure unless the address names another", () => {
-  assert.equal(productTab(null), "structure");
-  assert.equal(productTab("items"), "items");
-  assert.equal(productTab("rcm"), "structure");
+test("the product page is the Explorer on its design: the earlier page tabs land on the tree's Parts tab or the Summary", () => {
+  assert.equal(productTab(null), null);
+  assert.equal(productTab("parts"), "parts");
+  assert.equal(productTab("items"), null);
+  assert.equal(productTab("rcm"), null);
   assert.equal(productPath("p 1"), "/products/p%201");
-  assert.equal(productPath("p1", "reports"), "/products/p1?tab=reports");
+  assert.equal(productPath("p1", "parts"), "/products/p1?view=parts");
+  assert.equal(productPath("p1", "reports"), "/products/p1");
   assert.equal(productPath("p1", "structure"), "/products/p1");
-  assert.equal(productFmeaPath("p 1"), "/products/p%201?view=fmea&sel=p%201");
+  assert.equal(productViewPath("p 1"), "/products/p%201?view=fmea&sel=p%201");
+  assert.equal(productViewPath("p 1", "rcm"), "/products/p%201?view=rcm&sel=p%201");
 });
 
 test("designs and built trees are left out of the whole Explorer, and shown alone when scoped", () => {
   assert.deepEqual([...productTreeIds(positions)].sort(), ["b", "b1", "d", "d1", "d2"]);
   assert.deepEqual(scopeTree(data).positions.map((p) => p.id), ["plant", "pump"]);
   assert.deepEqual(scopeTree(data, "d").positions.map((p) => p.id), ["d", "d1", "d2"]);
+  // A design's positions are marked as a design's (the top already is); a built tree's aren't.
+  assert.deepEqual(scopeTree(data, "d").positions.map((p) => !!(p.design || p.in_design)), [true, true, true]);
+  assert.ok(!scopeTree(data, "b").positions.some((p) => p.in_design));
+  assert.ok(!scopeTree(data).positions.some((p) => p.in_design));
   assert.deepEqual(scopeTree(data, "b").positions.map((p) => p.id), ["b", "b1"]);
   assert.deepEqual(scopeTree(data, "gone").positions, []);
   const plain = { positions: positions.slice(0, 2) };

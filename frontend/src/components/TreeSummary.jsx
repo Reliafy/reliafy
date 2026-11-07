@@ -16,6 +16,12 @@ import { safeHref } from "../maintenanceFields.js";
 // as you choose, ending in "+ New position inside"), Measurements and
 // Documents when there are any, then a footer with the row's own changes
 // (Delete… in red). Everything links on: an item, a work order, a row inside.
+//
+// A product's design (`design`) has no maintenance done to it: no status
+// chips, nothing fitted or located, no work, measurements or due dates, only
+// its class, operating context, what's inside and its documents. A product's
+// own row passes its facts (`facts`) and its sections (`children`: the items
+// built, their failure reports, its analyses) in their place.
 
 const OPEN = new Set(["open", "planned", "in_progress", "waiting"]);
 const STATUS = { open: "Open", planned: "Planned", in_progress: "In progress", waiting: "Waiting" };
@@ -32,10 +38,11 @@ function StatusChips({ r }) {
   );
 }
 
-function Facts({ r, display, fittedFrom }) {
+function Facts({ r, display, fittedFrom, design = false }) {
   const p = r.ref;
   const rows = [];
-  if (r.type === "pos") {
+  if (r.type === "pos" && design) rows.push(["Class", p.position_class || quiet("None")]);
+  if (r.type === "pos" && !design) {
     rows.push(["Class", p.position_class || quiet("None")]);
     rows.push(["Fitted", p.item ? (
       <>
@@ -194,10 +201,10 @@ function insideChips(k) {
   );
 }
 
-function Inside({ r, display, onSelect, add }) {
+function Inside({ r, display, onSelect, add, design = false }) {
   const [sort, setSort] = useState("tree");
   const ofItems = r.kids.length > 0 && r.kids.every((k) => display.rows.get(k).type === "item");
-  const sorts = SORTS.filter((s) => !(ofItems && s.positionsOnly));
+  const sorts = SORTS.filter((s) => !(ofItems && s.positionsOnly) && !(design && s.get && !s.positionsOnly));
   const kids = useMemo(() => {
     const rows = r.kids.map((k) => display.rows.get(k));
     const s = SORTS.find((x) => x.id === sort);
@@ -210,6 +217,7 @@ function Inside({ r, display, onSelect, add }) {
   const metaOf = (k) => {
     if (ofItems) return [k.ref.serial && `Serial ${k.ref.serial}`, where(k) || "No home yet"].filter(Boolean).join(" · ");
     const s = k.sum;
+    if (design) return [k.ref.position_class, s.positions ? `${n(s.positions, "position")} inside` : null].filter(Boolean).join(" · ");
     return [
       k.ref.item?.name || (k.type === "pos" && k.ref.position_class ? "Nothing fitted" : null),
       s.positions ? `${n(s.positions, "position")} inside` : null,
@@ -237,7 +245,7 @@ function Inside({ r, display, onSelect, add }) {
                      {k.ref.name || "(no name)"}
                    </button>
                  )}
-                 meta={metaOf(k)} chips={insideChips(k)} />
+                 meta={metaOf(k)} chips={design ? null : insideChips(k)} />
           ))}
         </ul>
       )}
@@ -329,22 +337,25 @@ function Footer({ actions }) {
 // `actions`: the row's changes from the tree's row menu, [{id, label, danger?,
 // disabled?, reason?, onSelect}]; "tree-new" becomes the add row ending
 // Directly inside, the rest the footer.
-export default function TreeSummary({ row, display, today, onSelect, position, fullPage, onContextSaved, actions = [] }) {
+export default function TreeSummary({
+  row, display, today, onSelect, position, fullPage, onContextSaved, actions = [], design = false, facts = null, children = null,
+}) {
   const add = actions.find((a) => a.id === "tree-new") || null;
   const rest = actions.filter((a) => a.id !== "tree-new");
   return (
     <div className="td-sum">
-      <StatusChips r={row} />
+      {!design && <StatusChips r={row} />}
       {row.type === "pos" && position.data?.description && (
         <ClampLines className="td-desc" text={position.data.description} what="the description" />
       )}
-      <Facts r={row} display={display} fittedFrom={row.type === "pos" ? position.data?.fitted : null} />
-      {row.type === "pos" && <Work r={row} state={position} today={today} fullPage={fullPage} />}
+      {facts || <Facts r={row} display={display} design={design} fittedFrom={row.type === "pos" ? position.data?.fitted : null} />}
+      {children}
+      {row.type === "pos" && !design && <Work r={row} state={position} today={today} fullPage={fullPage} />}
       {row.type === "pos" && (
         <OperatingContextCard positionId={row.key} state={position} onSaved={onContextSaved} />
       )}
-      <Inside r={row} display={display} onSelect={onSelect} add={add} />
-      {row.type === "pos" && <Measurements data={position.data} fullPage={fullPage} />}
+      <Inside r={row} display={display} onSelect={onSelect} add={add} design={design} />
+      {row.type === "pos" && !design && <Measurements data={position.data} fullPage={fullPage} />}
       {row.type === "pos" && <Documents data={position.data} fullPage={fullPage} />}
       <Footer actions={rest} />
     </div>

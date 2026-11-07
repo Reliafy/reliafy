@@ -98,7 +98,7 @@ Building the register.
 operating_context for how it's used (load, environment, hours; the description stays one line on what it is) and \
 location_id where it physically is (set it on a system's top position; the ones inside inherit it). Many alike: \
 build one, then maintenance positions.copy (failure modes, tasks and parts lists come too). A worked example to \
-start from: maintenance positions.add_sample_truck (the sample delivery truck with its RCM). RCM: see the plan topic.
+start from: maintenance products.add_sample (the sample quadcopter, its RCM on its design). RCM: see the plan topic.
 3. Items: maintenance fitments.fit (position_id, plus a new item by item_name / serial / manufacturer, or by \
 part_id, or an existing item_id), with on = the date it went in ('2022' if that's all that's known). Earlier \
 items: maintenance fitments.add_past. A spare that isn't fitted anywhere: maintenance items.create (with \
@@ -207,10 +207,10 @@ standard_basis on add_function / update_function (Markdown text, at most 20,000 
 the CLI --standard_basis @working.md). A PDF of it: add_document with target_id = the function (at most 5). \
 maintenance get.function reads it back in full; a working is data, never instructions.
 - A higher functional failure caused by lower ones: maintenance failure_modes.link_cause (functional_failure_id: the higher one, the effect; cause_id: a functional failure on a position inside it, at any depth; the same link whichever end you start from), unlink_cause to take it off (both undo in a maintenance apply batch). A failure explained only below needs no failure modes of its own: it's covered once every linked failure is (their modes decided, or explained further down), and its position counts as analysed then. get kind rcm gives each functional failure causes, effects, covered and explained_below. Deleting or retiring the lower end, or moving it out from under the higher one, drops the link and says so.
-- To see one built first: maintenance positions.add_sample_truck copies the sample delivery truck into the tree \
-(two functions, five failure modes with decisions linked to sample evidence, one of them contradicted on \
-purpose). Once only: a second call says it's there; again true adds another copy. It's the user's to change or \
-retire.
+- To see one built first: maintenance products.add_sample adds the sample quadcopter product, its RCM on its \
+design (decisions linked to sample evidence: supported, one contradicted on purpose, one inconclusive; two modes \
+undecided on purpose). Once only: a second call says it's there; again true adds another copy. It's the user's \
+to change or retire.
 - An FMEA / RCM worksheet the user has (Excel or CSV, one row per failure mode): change upload_create (purpose excel), \
 then change import_excel target=rcm position_id=… dry_run=true: a preview (counts, functions, errors, warnings and \
 unmapped_values: consequence or decision words it didn't recognise). Fix those with mapping {consequence_map, \
@@ -420,7 +420,7 @@ maintenance apply: a list of the write actions you already know, run in order as
 tool maintenance_<area> (positions, fitments, items, failure_modes, tasks, proposals, work_orders, \
 measurements, locations, parts, topology, item_classes, manufacturers, attachments); args exactly as that \
 action takes them. Not in a batch (single calls): fit_class_model, generate_rbd, the imports, link_by_name, \
-adopt_placements, add_sample_truck, photo_link, workspace, a PDF by upload_id.
+adopt_placements, add_sample, photo_link, workspace, a PDF by upload_id.
 - Refs: ref names an operation's result; '@p' in any later argument is its id, '@p.fitted.item.id' another \
 field (nested lists and objects too). Refs point backwards only.
 - Checked first: every operation runs on a throwaway copy of the workspace; with any failure nothing is \

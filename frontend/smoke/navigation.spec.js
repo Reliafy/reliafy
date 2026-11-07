@@ -100,21 +100,30 @@ test("no roles: every entry in one flat list, nothing under More", async ({ page
   await open(page, "/systems/fmeca");
   await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=fmea(&|$)/);
   await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
-  // Assets is one entry, lit on every page of the register; its landing page
-  // links the rest. An RCM study's old address lands on the Explorer's RCM tab.
+  // Assets is one entry, lit on every page of the register. An RCM study's old
+  // address lands on the Explorer's RCM tab.
   await open(page, "/maintenance/rcm");
   await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=rcm(&|$)/);  // the Explorer adds its own view state
   await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
   await mainMenu(page).getByRole("link", { name: "Assets", exact: true }).click();
   await expect(page).toHaveURL(/\/asset-register$/);
   await expect(mainMenu(page).locator(".side-children")).toHaveCount(0);
-  const register = page.getByRole("navigation", { name: "The asset register" });
-  await register.getByRole("link", { name: "Parts and stock" }).click();
-  await expect(page).toHaveURL(/\/asset-register\/parts$/);
+  // Its landing page has no links line: Parts and stock and Classes are tabs of the tree.
+  await expect(page.getByRole("navigation", { name: "The asset register" })).toHaveCount(0);
+  await expect(mainMenu(page).getByRole("link", { name: /^(Parts and stock|Classes)$/ })).toHaveCount(0);
+  // Their old addresses open those tabs on everything, still under Assets.
+  await open(page, "/asset-register/parts");
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=parts&scope=all(&|$)/);
+  await expect(page.getByRole("tab", { name: "Parts and stock" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByLabel("Show all parts")).toBeChecked();
   await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
   await open(page, "/asset-register/classes");
-  await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=classes&scope=all(&|$)/);
+  await expect(page.getByRole("tab", { name: "Classes" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByLabel("Show all classes")).toBeChecked();
+  await expect(page.getByRole("heading", { name: "Item classes" })).toBeVisible();
   await open(page, "/systems/structure");
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=parts&scope=all&show=structure(&|$)/);
   await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
   // Decisions opens on Strategy. Risk opens on, and lists, Condition monitoring;
   // a tracked fleet's page lights it and names it.
@@ -268,7 +277,8 @@ test("the collapsed menu and the keyboard", async ({ page, request, problems }) 
 
 const PHONE_PAGES = [
   "/home", "/systems/rbds", "/asset-register", "/asset-register/explorer?arrange=positions", "/asset-register/explorer?arrange=locations",
-  "/items", "/asset-register/explorer?tab=rcm", "/asset-register/parts", "/maintenance", "/data",
+  "/items", "/asset-register/explorer?tab=rcm", "/asset-register/explorer?tab=parts&scope=all",
+  "/asset-register/explorer?tab=classes&scope=all", "/products", "/maintenance", "/data",
   "/models", "/models/recurrent", "/strategy", "/risk", "/forecasts", "/reports", "/settings",
 ];
 

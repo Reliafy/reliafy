@@ -29,17 +29,30 @@ failure rates are placeholders.
 
 ## A product's page
 
-- **Functional structure**: the design's tree, with its RCM and FME(C)A tabs.
-  No failure report is filed on a design: a report is about an item.
-- **Parts list**: the product's part and what it's made of.
-- **Items**: the items built from it, with **Build an item**: give the serial
-  and revision, check the positions it will make, then build.
-- **Failure reports**: every report on the items built from it, with the item
-  and the place in the design.
-- **Analysis**: the product's RBDs, and **Make an RBD from this structure**.
+A product's page is its design's tree, laid out like the asset tree on
+**Assets**: the tree on the left, the panel about the row you pick on the
+right. A design is not an operated thing, so nothing is done to it: its rows
+have no failure reports, signals, stock, work or due dates. Its tabs:
 
-**Delete…** (in the page's **⋯** menu, or the bin on its row in Products)
-deletes the design and everything inside it. Items built from it stay. Its
+- **Summary**: on the product's own row (the top of the tree), its facts
+  (revision, part, positions, items built, open failure reports), then:
+  - **Built items**: the items built from it, with **Build an item…**: give
+    the serial and revision, check the positions it will make, then build.
+  - **Failure reports on the built items**: every report on the items built
+    from it, with the item and the place in the design. A report is filed on
+    an item's own tree, not on the design.
+  - **Analyses of this design**: the product's RBDs, **Make an RBD from this
+    structure**, and a reliability prediction from its parts list.
+- **RCM** and **FME(C)A**: the design's maintenance programme and its failure
+  modes. The items built from it carry the programme out.
+- **Parts**: the parts list. On the product's row, its part and what it's made
+  of; on any row, the parts on the parts lists of the positions there and
+  inside it. No stock: stock is kept for assets.
+- **Classes**: the position classes used there and inside it; tick **Show all
+  classes** for every class and the item classes.
+
+**Delete…** (in the product's row menu in its tree, or the bin on its row in
+Products) deletes the design and everything inside it. Items built from it stay. Its
 history stays, and **Undo** in the message that follows brings it back.
 
 ## Items

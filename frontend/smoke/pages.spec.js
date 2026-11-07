@@ -99,7 +99,6 @@ const LIST_LINKS = [
   // Forecasts also lists the position classes (Reliafy Maintenance on).
   ["/forecasts", /^\/forecasts\/[^/]+$|^\/asset-register\/classes\/[^/]+$/],
   ["/risk", /^\/risk\/[^/]+$/],
-  ["/asset-register/classes", /^\/asset-register\/classes\/[^/]+$/],
 ];
 
 test("list rows link to their pages", async ({ page }) => {

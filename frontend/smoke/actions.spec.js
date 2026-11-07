@@ -20,7 +20,9 @@ test("fit and save a Weibull model from a sample dataset", async ({ page, proble
 // #31: a class with a fitted model and a spare with a lead time shows how many to
 // hold, and the chance a typed stock runs out (smoke/seed.js makes the class).
 test("a class's spares stock levels and the what-if", async ({ page, problems }) => {
+  // A class's old address opens the Explorer's Classes tab on that class.
   await open(page, `/asset-register/classes/${encodeURIComponent("Smoke test pump")}`);
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=classes&scope=all&class=Smoke(%20|\+)test(%20|\+)pump/);
   const stocking = page.getByTestId("spares-stocking");
   await expect(stocking.getByRole("heading", { name: "Stock to hold" })).toBeVisible({ timeout: 30_000 });
   const row = stocking.getByRole("row", { name: /SMOKE-PUMP/ });
@@ -49,8 +51,8 @@ test("the assets are the top-level places, and the positions at none stay reacha
   await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=positions&place=none$/);
   await expect(page.locator(".tp-notice")).toContainText("Not at a location yet");
   await expect(page.getByRole("treeitem", { name: /^Smoke pump 1\b/ })).toBeVisible();
-  // The seeded sample truck is at the depot (a copy another test adds, "(sample 2)", may not be).
-  await expect(page.getByRole("treeitem", { name: /^Delivery truck \(sample\)/ })).toHaveCount(0);
+  // The seeded conveyor is at the depot.
+  await expect(page.getByRole("treeitem", { name: /^Depot conveyor \(smoke test\)/ })).toHaveCount(0);
   await page.getByRole("link", { name: "Show every position" }).click();
   await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=positions$/);
   await expect(page.getByRole("heading", { name: "Explorer", exact: true })).toBeVisible();
@@ -407,98 +409,138 @@ test("the calculator's Axes dialog", async ({ page, problems }) => {
   await expectHealthy(page, problems, { label: "calculator axes", chart: true });
 });
 
-// "Add the sample truck" (the Explorer's ⋯ menu, and the empty tree's card):
-// the sample delivery truck, with its RCM, copied into the workspace's tree.
-// smoke/seed.js added the first copy, so here it asks first; another copy opens
-// on the RCM tab with the sample's functions and its contradicted decision.
-test("add the sample truck from the Explorer's menu", async ({ page, request, problems }) => {
-  await open(page, "/asset-register/explorer?arrange=positions");
-  const menu = async () => {
-    await page.getByRole("button", { name: /^Tree options/ }).click();
-    await page.getByRole("menu", { name: "Tree options" }).getByRole("menuitem", { name: "Add the sample truck" }).click();
-  };
-  const ask = page.getByRole("alertdialog", { name: "The sample truck is already in your tree" });
-  await menu();
-  await expect(ask).toContainText("Delivery truck (sample)");
-  await ask.getByRole("button", { name: "Keep the one I have" }).click();
-  await expect(ask).toHaveCount(0);
-  await expect(page).not.toHaveURL(/tab=rcm/);
-
-  await menu();
-  await ask.getByRole("button", { name: "Add another copy" }).click();
-  await expect(page).toHaveURL(/tab=rcm/);
-  await expect(page.locator(".tt-msg.ok")).toHaveText("Added the sample truck.");
-  // The message shows as soon as the copy is added; the panel moves to it once
-  // the tree has been read again (until then it still shows the one kept above).
-  await expect(page.locator(".tt-h1").first()).toHaveText(/^Delivery truck \(sample \d+\)$/);
-  const name = (await page.locator(".tt-h1").first().textContent()).trim();
+// "Open the sample UAV product" (the Explorer's ⋯ menu, and the empty tree's card): the
+// one sample for the RCM and FME(C)A tabs is the sample product. smoke/seed.js added it,
+// so nothing more is added and nothing is asked; from the RCM tab it opens on the
+// product structure's RCM tab: its functions top down, the evidence check (supported,
+// contradicted on purpose, inconclusive) and the RCM's Show only chips.
+const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
+test("the Explorer's menu opens the sample UAV product on its RCM tab, evidence checked", async ({ page, problems }) => {
+  // Wide enough for the usual columns to include the Evidence check.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, "/asset-register/explorer?arrange=positions&tab=rcm");
+  const opened = [];
+  page.on("request", (r) => { if (r.url().endsWith("/api/maintenance/sample-product")) opened.push(r.postDataJSON()); });
+  await page.getByRole("button", { name: /^Tree options/ }).click();
+  const options = page.getByRole("menu", { name: "Tree options" });
+  await expect(options.getByRole("menuitem", { name: "Add the sample truck" })).toHaveCount(0); // gone
+  await options.getByRole("menuitem", { name: "Open the sample UAV product" }).click();
+  await expect(page).toHaveURL(/\/products\/[^/?]+\?view=rcm&sel=/);
+  expect(opened).toEqual([{ again: false }]);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Survey quadcopter (sample");
+  await expect(page.getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
   const grid = page.getByRole("treegrid", { name: /and their RCM/ });
-  await expect(grid.getByRole("row", { name: /Stop the vehicle within the rated distance/ }).first()).toBeVisible();
-  await expect(grid.getByRole("row", { name: /Wheel-bearing failure — legacy run-to-failure plan/ }).first()).toBeVisible();
-  await expect(page.locator(".tt-rollup")).toContainText(/contradicted/i);
-  await expectHealthy(page, problems, { label: "the sample truck on the RCM tab" });
+  // Top down: the product's own function, its failures explained by those below.
+  await expect(grid.getByRole("row", { name: /^Function: Fly a planned survey and land safely/ }).first()).toBeVisible();
+  await expect(grid.getByRole("row", { name: /Aircraft lost or crashes/ }).first()).toBeVisible();
+  await expect(grid.getByRole("columnheader", { name: "Evidence check" })).toBeVisible();
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/1440-product-rcm.png` });
 
-  // Tidy up: the copy goes (the seeded one stays for the other tests).
-  const tree = await (await request.get("/api/maintenance/tree")).json();
-  const copy = tree.positions.find((p) => p.name === name);
-  await postOk(request, `/api/maintenance/positions/${copy.id}/retire`, { reason: "smoke test" });
+  // Show only › Evidence to look at: the motors' legacy run-to-failure plan (contradicted
+  // on purpose) and the battery's retirement (inconclusive: cycles against flight hours).
+  const showOnly = async (name) => {
+    await page.getByRole("button", { name: /^Tree options/ }).click();
+    await options.getByRole("menuitemcheckbox", { name }).click();
+    await expect(options.getByRole("menuitemcheckbox", { name })).toHaveAttribute("aria-checked", "true");
+  };
+  const done = async (name) => {
+    await page.getByRole("button", { name: /^Tree options/ }).click();
+    if (SHOTS && name === "Evidence to look at") await page.screenshot({ path: `${SHOTS}/1440-product-rcm-chips.png` });
+    await options.getByRole("menuitemcheckbox", { name }).click();
+    await options.getByRole("menuitem", { name: "Done" }).click();
+  };
+  await showOnly("Evidence to look at");
+  await options.getByRole("menuitem", { name: "Done" }).click();
+  const bearing = grid.getByRole("row", { name: /^Failure mode: Bearing seizure/ }).first();
+  await expect(bearing).toBeVisible();
+  await expect(bearing).toContainText("Contradicted");
+  const pack = grid.getByRole("row", { name: /^Failure mode: Cell capacity fade/ }).first();
+  await expect(pack).toContainText("Inconclusive");
+  await expect(grid.getByRole("row", { name: /^Failure mode: Cut-off relay welded closed/ })).toHaveCount(0); // supported
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/1440-product-rcm-evidence.png` });
+  await done("Evidence to look at");
+  // Needs a decision: the two left undecided on purpose.
+  await showOnly("Needs a decision");
+  await options.getByRole("menuitem", { name: "Done" }).click();
+  await expect(grid.getByRole("row", { name: /^Failure mode: Landing gear leg breaks on touchdown/ }).first()).toBeVisible();
+  await expect(grid.getByRole("row", { name: /^Failure mode: Internal cell short/ }).first()).toBeVisible();
+  await expect(grid.getByRole("row", { name: /^Failure mode: Bearing seizure/ })).toHaveCount(0);
+  await done("Needs a decision");
+  // Hidden failures: the BMS cut-off and each IMU failing silently, each with its failure-finding task.
+  await showOnly("Hidden failures");
+  await options.getByRole("menuitem", { name: "Done" }).click();
+  await expect(grid.getByRole("row", { name: /^Failure mode: Cut-off relay welded closed/ }).first()).toContainText("Supported");
+  await expect(grid.getByRole("row", { name: /^Failure mode: Fails silently while the other IMU carries on/ }).first()).toBeVisible();
+  await done("Hidden failures");
+  await expectHealthy(page, problems, { label: "the sample product on the RCM tab" });
+  if (SHOTS) {
+    await page.setViewportSize({ width: 400, height: 860 });
+    await page.reload();
+    await expect(page.getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByText(/Fly a planned survey/).first()).toBeVisible();
+    await page.screenshot({ path: `${SHOTS}/400-product-rcm.png` });
+    await page.getByRole("button", { name: /^Tree options/ }).click();
+    await options.getByRole("menuitemcheckbox", { name: "Evidence to look at" }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${SHOTS}/400-product-rcm-chips.png` });
+    await options.getByRole("menuitemcheckbox", { name: "Evidence to look at" }).click();
+    await options.getByRole("menuitem", { name: "Done" }).click();
+    await expect(page.getByText(/Bearing seizure/).first()).toBeVisible();
+    await page.screenshot({ path: `${SHOTS}/400-product-rcm-evidence.png` });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth))
+      .toBeLessThanOrEqual(0);
+    await page.getByRole("button", { name: /^Tree options/ }).click();
+    await options.getByRole("menuitemcheckbox", { name: "Evidence to look at" }).click();
+    await options.getByRole("menuitem", { name: "Done" }).click();
+  }
 });
 
-test("the empty tree offers the sample truck, and the sample UAV product on Products", async ({ page, problems }) => {
-  // The tree read as empty (the suite's own isn't), and the add answered here: nothing is written.
-  await page.route("**/api/maintenance/tree", async (route) => {
-    const res = await route.fetch();
-    await route.fulfill({ response: res, json: { ...(await res.json()), positions: [], locations: [] } });
-  });
-  const asked = [];
-  await page.route("**/api/maintenance/sample-truck", async (route) => {
-    asked.push(route.request().postDataJSON());
-    await route.fulfill({ json: { added: false, position: { id: "x", name: "Delivery truck (sample)" }, message: "" } });
-  });
-  await open(page, "/asset-register/explorer?arrange=positions");
-  const card = page.locator(".ae-sample").first();
-  // With SMOKE_SHOTS_DIR set, the empty tree's card at desktop and phone width (for the pull request).
-  if (process.env.SMOKE_SHOTS_DIR) {
-    for (const [width, height] of [[1440, 900], [400, 860]]) {
-      await page.setViewportSize({ width, height });
-      await open(page, "/asset-register/explorer?arrange=positions");
-      await expect(card).toBeVisible();
-      await page.screenshot({ path: `${process.env.SMOKE_SHOTS_DIR}/${width}-explorer-empty-card.png` });
-    }
-    await page.setViewportSize({ width: 1280, height: 720 });
-    await open(page, "/asset-register/explorer?arrange=positions");
-  }
-  await expect(card).toContainText("New here? Add the sample truck to see an RCM built on the tree, or open the sample UAV product for an FME(C)A on a design.");
-  await expect(card.getByRole("button", { name: "Add the sample UAV", exact: true })).toHaveCount(0); // no asset-tree copy any more
-  await expect(card.getByRole("button", { name: "Open the sample UAV product" })).toBeVisible();
-  await card.getByRole("button", { name: "Add the sample truck" }).click();
-  const ask = page.getByRole("alertdialog", { name: "The sample truck is already in your tree" });
-  await ask.getByRole("button", { name: "Keep the one I have" }).click();
-  expect(asked).toEqual([{ again: false }]);
-  await expectHealthy(page, problems, { label: "the empty tree" });
-  // The quadcopter is a design: the card opens the sample product (smoke/seed.js added it, so
-  // nothing more is added and nothing is asked) on its structure's FME(C)A tab.
-  // The tree reads as empty only on the Explorer, not on the product's page.
-  await page.unrouteAll({ behavior: "ignoreErrors" });
+test("the empty tree offers only the sample UAV product; it opens on the RCM tab, or the FME(C)A from there", async ({ page, problems }) => {
+  // The tree read as empty (the suite's own isn't): only on the Explorer, not on the product's page.
   let empty = true;
   await page.route("**/api/maintenance/tree", async (route) => {
     const res = await route.fetch();
     await route.fulfill(empty ? { response: res, json: { ...(await res.json()), positions: [], locations: [] } } : { response: res });
   });
   await open(page, "/asset-register/explorer?arrange=positions");
+  const card = page.locator(".ae-sample").first();
+  // With SMOKE_SHOTS_DIR set, the empty tree's card at desktop and phone width (for the pull request).
+  if (SHOTS) {
+    for (const [width, height] of [[1440, 900], [400, 860]]) {
+      await page.setViewportSize({ width, height });
+      await open(page, "/asset-register/explorer?arrange=positions");
+      await expect(card).toBeVisible();
+      await page.screenshot({ path: `${SHOTS}/${width}-explorer-empty-card.png` });
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await open(page, "/asset-register/explorer?arrange=positions");
+  }
+  await expect(card).toContainText("New here? Open the sample UAV product to see an RCM and an FME(C)A built on a design, with decisions checked against their evidence.");
+  await expect(card.getByRole("button")).toHaveText(["Open the sample UAV product"]); // no truck, no asset-tree UAV
+  await expect(page.locator(".section-empty").first()).toContainText("Add the first position, or import a worksheet.");
+  await expectHealthy(page, problems, { label: "the empty tree" });
+  // The card opens the product on its structure's RCM tab (smoke/seed.js added it, so
+  // nothing more is added and nothing is asked).
   const opened = [];
   page.on("request", (r) => { if (r.url().endsWith("/api/maintenance/sample-product")) opened.push(r.postDataJSON()); });
   empty = false;
-  await page.locator(".ae-sample").first().getByRole("button", { name: "Open the sample UAV product" }).click();
-  await expect(page).toHaveURL(/\/products\/[^/?]+\?view=fmea&sel=/);
+  await card.getByRole("button", { name: "Open the sample UAV product" }).click();
+  await expect(page).toHaveURL(/\/products\/[^/?]+\?view=rcm&sel=/);
   expect(opened).toEqual([{ again: false }]);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Survey quadcopter (sample");
+  await expect(page.getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("treegrid", { name: /and their RCM/ })).toBeVisible();
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  // From the FME(C)A tab, the tree's ⋯ menu opens it on its structure's FME(C)A tab.
+  await open(page, "/asset-register/explorer?arrange=positions&tab=fmea");
+  await page.getByRole("button", { name: /^Tree options/ }).click();
+  await page.getByRole("menu", { name: "Tree options" }).getByRole("menuitem", { name: "Open the sample UAV product" }).click();
+  await expect(page).toHaveURL(/\/products\/[^/?]+\?view=fmea&sel=/);
+  expect(opened).toEqual([{ again: false }, { again: false }]);
   await expect(page.getByRole("tab", { name: "FME(C)A" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("treegrid", { name: /and their FME\(C\)A/ })).toBeVisible();
   await expect(page.getByRole("treegrid", { name: /and their FME\(C\)A/ }).getByRole("row", { name: /^Airframe/ }).first())
     .toContainText("2 of 2 scored");
   await expectHealthy(page, problems, { label: "the sample product's FME(C)A" });
-  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 // Maintenance on a phone: a task named with one unbreakable code (as imported

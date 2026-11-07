@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  addSampleProduct, addSampleTruck as postSampleTruck, getFmeaExcelBlob, getMaintenanceTree, getPositionRcm, getRcmOptions,
+  addSampleProduct, getFmeaExcelBlob, getMaintenanceTree, getPositionRcm, getRcmOptions,
   hasFmeaExcel, restoreTree,
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
-import TreeDetail, { HeaderTabs, KIND, SlimHeader, forgetPositions, prefetchPosition } from "../components/TreeDetail.jsx";
+import TreeDetail, { HeaderTabs, SlimHeader, forgetPositions, prefetchPosition } from "../components/TreeDetail.jsx";
 import DecisionModal from "../components/DecisionModal.jsx";
 import LinkFailurePicker from "../components/FailureLinks.jsx";
 import RcmImportModal from "../components/RcmImportModal.jsx";
@@ -47,7 +47,7 @@ import { saveErrorText } from "../confirm.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
 import { hasOpenLayer, isFullScreenKey, isTyping } from "../fullScreen.js";
-import { shownTab, tabParam, tabsFor } from "../explorerTabs.js";
+import { rowKind, shownTab, tabParam, tabsFor } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { openGuide } from "../components/HelpButton.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
@@ -59,7 +59,7 @@ import {
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
-import { EXPLORER_LABEL } from "../navigation.js";
+import { EXPLORER_LABEL, EXPLORER_PATH } from "../navigation.js";
 import { isolateItems, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
 import { canIsolate, depthWords, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen } from "../treeIsolate.js";
 import { MoveModal, RenameModal } from "../components/TreeRowModals.jsx";
@@ -67,10 +67,8 @@ import { DeleteTreeModal } from "../components/DeleteTree.jsx";
 import { DELETE_KIND, undoneText } from "../treeDelete.js";
 import NewFailureReportModal from "../components/NewFailureReportModal.jsx";
 import usePhone from "../usePhone.js";
-import {
-  OPEN_SAMPLE_PRODUCT_LABEL, SAMPLES, SAMPLE_TRUCK_LABEL, addSample as addSampleOf, sampleProductId,
-} from "../sampleTruck.js";
-import { designActions, isDesignScope, productFmeaPath, scopeTree } from "../products.js";
+import { OPEN_SAMPLE_PRODUCT_LABEL, sampleProductId, sampleProductView } from "../sampleProduct.js";
+import { PRODUCTS_PATH, designActions, isDesignScope, productViewPath, scopeTree } from "../products.js";
 import { DesignReports } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
@@ -162,8 +160,9 @@ const FMEA_ROLLUP_COLS = new Set(["failure", "cause", "effect_local", "effect_ne
 // Scoped to one tree (`root`, or ?root=: a product's design from its page, an
 // item's tree from Items) it shows that tree alone, by position; unscoped, it
 // leaves the products' designs and items' trees out (products.js). `tabKey`:
-// the address's name for its tabs (the product page keeps ?tab= for its own).
-export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", title: titleProp = null }) {
+// the address's name for its tabs (?view= on a product's page). `heading`: the
+// picked row's heading level (1 where the tree is the page, as a product's is).
+export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", title: titleProp = null, heading: headingProp = null }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
@@ -183,7 +182,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const notPlaced = mode === "positions" && params.get("place") === "none";
   const title = titleProp || EXPLORER_LABEL;
   // Inside a product's page (its own h1), the picked row's name is an h2.
-  const heading = rootProp ? 2 : 1;
+  const heading = headingProp ?? (rootProp ? 2 : 1);
   const treeLabel = ARRANGEMENTS.find((a) => a.value === mode).tree;
 
   // The address always says the arrangement, so it can be shared as it is.
@@ -1141,38 +1140,22 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setModal(null);
     setNewParent(null);
   };
-  // "Add the sample truck" (shown picked on the RCM tab): copied into this
-  // workspace's tree. With a copy there already, the person is asked whether
-  // to add another; keeping theirs picks it instead. "Open the sample UAV
-  // product": the quadcopter is a design, so it lives on Products; it opens
-  // there on its FME(C)A tab, added first when there's none.
-  const [addingSample, setAddingSample] = useState(null); // "truck" | "product" while one is being added
+  // "Open the sample UAV product", the one sample for the RCM and FME(C)A tabs:
+  // the quadcopter is a design, so it lives on Products; it opens there on its
+  // structure's FME(C)A tab when that's the tab in view, its RCM tab otherwise,
+  // added first when there's none (never a second copy from here).
+  const [addingSample, setAddingSample] = useState(false);
   // The FME(C)A print view; its "Back" returns here (a product's structure
   // tab included: a design isn't in the Explorer's own tree).
   const openPrint = (id) => navigate(`/asset-register/positions/${id}/fmea`,
     { state: { back: `${location.pathname}${location.search}` } });
-  const addSample = (kind = "truck") => {
+  const openSample = () => {
     if (addingSample) return;
-    setAddingSample(kind);
-    if (kind === "product") {
-      addSampleProduct(false) // never a second copy from here: nothing to ask
-        .then((r) => navigate(productFmeaPath(sampleProductId(r))),
-          (e) => say(`The sample product didn't open: ${e.message}`, "error"))
-        .finally(() => setAddingSample(null));
-      return;
-    }
-    const s = SAMPLES[kind];
-    addSampleOf(postSampleTruck, confirm, kind)
-      .then((r) => {
-        created(r.position.id);
-        if (r.added) {
-          loadRcm();
-          setTab(s.tab);
-          // Short: it shows in the heading's slim row (the server's message is longer).
-          say(s.added);
-        }
-      }, (e) => say(`The ${s.what} wasn't added: ${e.message}`, "error"))
-      .finally(() => setAddingSample(null));
+    setAddingSample(true);
+    addSampleProduct(false) // never a second copy from here: nothing to ask
+      .then((r) => navigate(productViewPath(sampleProductId(r), sampleProductView(tab))),
+        (e) => say(`The sample product didn't open: ${e.message}`, "error"))
+      .finally(() => setAddingSample(false));
   };
   // After a rename, move or retire from the row menu: the tree read again,
   // the row kept picked (moved: shown in its new place; retired: the row it
@@ -1224,7 +1207,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     <div className="card empty section-empty">
       <h2>{EMPTY[mode]?.[0] || "No positions yet"}</h2>
       <p>{EMPTY[mode]?.[1]
-        || "Add the first position, add the sample truck, or import a worksheet."}</p>
+        || "Add the first position, or import a worksheet."}</p>
       <div className="section-empty-action">
         {mode === "locations" ? (
           <button type="button" onClick={() => setModal("location")}><PlusIcon /> New location</button>
@@ -1237,13 +1220,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       </div>
       {mode !== "locations" && (
         <div className="ae-sample">
-          <p><strong>New here?</strong> Add the sample truck to see an RCM built on the tree, or open the sample UAV product for an FME(C)A on a design.</p>
+          <p><strong>New here?</strong> Open the sample UAV product to see an RCM and an FME(C)A built on a design, with decisions checked against their evidence.</p>
           <div className="ae-sample-btns">
-            <button type="button" className="secondary" onClick={() => addSample("truck")} disabled={!!addingSample}>
-              {addingSample === "truck" ? "Adding…" : SAMPLE_TRUCK_LABEL}
-            </button>
-            <button type="button" className="secondary" onClick={() => addSample("product")} disabled={!!addingSample}>
-              {addingSample === "product" ? "Opening…" : OPEN_SAMPLE_PRODUCT_LABEL}
+            <button type="button" className="secondary" onClick={openSample} disabled={addingSample}>
+              {addingSample ? "Opening…" : OPEN_SAMPLE_PRODUCT_LABEL}
             </button>
           </div>
         </div>
@@ -1387,7 +1367,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   ) : summaryRow && (
     <SlimHeader display={whole} row={summaryRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 pin={pinFor(summaryRow)} headingRef={headingRef} fullScreenButton={fullButton} heading={heading}
-                meta={KIND[summaryRow.type] ? <span className="tt-kind">{KIND[summaryRow.type]}</span> : null} primaryOpen
+                meta={rowKind(summaryRow) ? <span className="tt-kind">{rowKind(summaryRow)}</span> : null} primaryOpen
                 message={message?.fade ? msg : null} />
   );
   const tabsRow = rcmOn ? (posRow?.type === "pos" ? posRow : null) : summaryRow;
@@ -1593,9 +1573,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         onReset={resetView}
         menuActions={[...(data && !root && mode !== "locations" ? [
           { id: "import", label: "Import from a spreadsheet", onSelect: () => setModal("import") },
-          { id: "sample", label: SAMPLE_TRUCK_LABEL, onSelect: () => addSample("truck") },
-          { id: "sample-product", label: OPEN_SAMPLE_PRODUCT_LABEL, onSelect: () => addSample("product") },
-        ] : [])]}
+          { id: "sample-product", label: OPEN_SAMPLE_PRODUCT_LABEL, onSelect: openSample },
+        ] : []), ]}
         notice={notice}
         statusText={statusText}
         statusTitle={rcmOn && !filter && rcm && !rcmError ? `${statusText} · ${what} is by position` : undefined}
@@ -1691,8 +1670,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                          onDone={(answer, done) => {
                            // The tree read again, the row it was inside picked, and the toast with Undo.
                            const row = rowModal.row;
-                           const up = row.ref.parent_id && display.rows.has(row.ref.parent_id) ? row.ref.parent_id : null;
                            setRowModal(null);
+                           // The tree's own top (a product's design, or a tree opened on its own): nothing left
+                           // to show here, so Products (or the whole Explorer) shows the toast.
+                           if (root && row.key === root) {
+                             navigate(rootProp ? PRODUCTS_PATH : EXPLORER_PATH, { state: { deleted: done } });
+                             return;
+                           }
+                           const up = row.ref.parent_id && display.rows.has(row.ref.parent_id) ? row.ref.parent_id : null;
                            if (up != null) pending.current = up;
                            load();
                            setToast({ text: done.text, restore: { kind: done.kind, id: done.id, name: done.name }, at: Date.now() });

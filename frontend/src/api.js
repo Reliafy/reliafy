@@ -2270,12 +2270,8 @@ export function removeMaintenanceItem(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/remove`, body);
 }
 
-// The sample delivery truck, with its RCM, copied into the workspace's tree. Once:
-// with a copy there, nothing is added ({ added: false, position }) unless again.
-export function addSampleTruck(again = false) {
-  return postJson("/api/maintenance/sample-truck", { again: !!again });
-}
-// The sample product: a quadcopter's design with its FME(C)A, its part and bill
+// The sample product: a quadcopter's design with its RCM (some decisions linked to
+// sample evidence) and FME(C)A, its part and bill
 // of materials, three items built from it with two failure reports, and a
 // flight-critical RBD (placeholder failure rates). Once, unless again.
 export function addSampleProduct(again = false) {
