@@ -247,8 +247,6 @@ POSITIONS: Table = {
     "restore": ("position_id", "", "Bring a retired position back (its parent must be in use)."),
     "out_of_service": ("position_id reason", "until start", "Out of service (being rebuilt, drained) from start (today) until a date, or open-ended: its tasks aren't due or late meanwhile."),
     "back_in_service": ("position_id", "", "Back in service now."),
-    "add_sample_truck": ("", "again", """Copy the sample delivery truck, with its RCM, into the tree; once
-        only unless again is true."""),
     "adopt_placements": ("", "dry_run", """One-off tidy-up for a workspace that placed fitted items at
         locations: each such placement becomes its position's location where it has none. dry_run (default
         true) lists the changes: show them, then run with dry_run false."""),
@@ -404,8 +402,9 @@ PRODUCTS: Table = {
     "build": ("product_id serial", "rev name dry_run", """Build an item from a product: a copy of its design tree
         named by the serial, the item (its part, this serial) fitted at the top, every position linked to its
         design position. dry_run (default true) lists the paths it would make."""),
-    "add_sample": ("", "again", """Add the sample product (a quadcopter: design with a scored FME(C)A, part and
-        BOM, three items built, two failure reports, an RBD with placeholder rates); once unless again is true."""),
+    "add_sample": ("", "again", """Add the sample product (a quadcopter: design with its RCM, evidence linked, and a
+        scored FME(C)A, part and BOM, three items built, two failure reports, an RBD with placeholder rates); once
+        unless again is true."""),
 }
 
 TASKS: Table = {
@@ -1234,7 +1233,7 @@ def register() -> None:
                               location_id: str | None = None, move_to_top_level: bool | None = None,
                               clear_location: bool | None = None,
                               reason: str | None = None, cascade: bool | None = None,
-                              dry_run: bool | None = None, again: bool | None = None,
+                              dry_run: bool | None = None,
                               until: Annotated[str | None, Field(description=(
                                   "out_of_service: the return date (none: open-ended)."))] = None,
                               start: Annotated[str | None, Field(description=(
@@ -1265,10 +1264,6 @@ def register() -> None:
             return run(m.take_out_of_service, position_id, reason, until, start)
         if action == "back_in_service":
             return run(m.return_to_service, position_id)
-        if action == "add_sample_truck":
-            from backend.maintenance import templates
-
-            return run(templates.add_sample_truck, m, bool(again))
         return run(m.adopt_placements, _d(dry_run, True))
 
     @tool("maintenance_fitments", _WRITE, "Fit, remove and correct items in positions", FITMENTS)

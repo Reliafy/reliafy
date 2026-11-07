@@ -1350,8 +1350,10 @@ def seed_samples(db) -> None:
 
 
 def _seed_strategy_analyses(db) -> None:
-    """Sample saved strategy analyses (the evidence the sample truck's RCM
-    links: backend/maintenance/templates.py).
+    """Sample saved strategy analyses: the evidence the sample quadcopter's RCM
+    decisions link (backend/maintenance/templates.py), and the bearing
+    replacement and brake-circuit ones (still linked by copies of the earlier
+    sample truck some workspaces keep).
 
     The bearing replacement analysis reads the just-seeded bearing model's
     fitted parameters, so this runs after the SAMPLE_MODELS loop.
@@ -1390,6 +1392,47 @@ def _seed_strategy_analyses(db) -> None:
             "unit": "hours",
         },
     })
+
+    # The sample quadcopter's (all invented, in flight hours): propeller fatigue
+    # and pack retirement as age-based replacements, and the BMS cut-off's
+    # failure-finding test interval.
+    specs += [
+        {
+            "id": "sample-strategy-quad-propeller-replacement",
+            "name": "Quadcopter propeller — preventive replacement (sample)",
+            "kind": "optimal_replacement",
+            "inputs": {
+                "distribution_id": "weibull",
+                "params": [{"name": "alpha", "value": 400.0}, {"name": "beta", "value": 3.0}],
+                "planned_cost": 60.0,
+                "unplanned_cost": 900.0,
+                "unit": "hours",
+            },
+        },
+        {
+            "id": "sample-strategy-quad-battery-retirement",
+            "name": "Quadcopter battery pack — retirement age (sample)",
+            "kind": "optimal_replacement",
+            "inputs": {
+                "distribution_id": "weibull",
+                "params": [{"name": "alpha", "value": 600.0}, {"name": "beta", "value": 3.0}],
+                "planned_cost": 150.0,
+                "unplanned_cost": 1200.0,
+                "unit": "hours",
+            },
+        },
+        {
+            "id": "sample-strategy-quad-bms-failure-finding",
+            "name": "Quadcopter BMS cut-off — failure finding (sample)",
+            "kind": "failure_finding",
+            "inputs": {
+                "distribution_id": "exponential",
+                "params": [{"name": "failure_rate", "value": 2.5e-5}],
+                "target_availability": 0.998,
+                "unit": "hours",
+            },
+        },
+    ]
 
     for spec in specs:
         try:

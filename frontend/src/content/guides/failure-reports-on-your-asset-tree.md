@@ -2,7 +2,7 @@
 title: "Record a failure, find its cause and check the fix worked"
 task: "How do I report a failure at a position, investigate it, record the corrective action, verify it worked and close the loop?"
 category: "Maintenance strategy"
-prerequisites: "A position in your asset tree, or the sample truck."
+prerequisites: "A position in your asset tree, or an item built from the sample UAV product."
 order: 26
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
 # Failure reports tab itself and stays out of the index until Maintenance opens.
@@ -36,7 +36,7 @@ the row you picked. Pick a higher row to see more of the tree; pick a location
 to see the reports at the positions there; pick an item to see the failures it
 was involved in.
 
-![The Explorer's Failure reports tab on the sample truck: the open reports at the truck and below it, with their stage and consequence](/guides/img/reports-01-list.png)
+![The Explorer's Failure reports tab on a quadcopter built from the sample UAV product: the open reports on it and below it, with their stage and consequence](/guides/img/reports-01-list.png)
 
 The chips above the list narrow it to one stage, or show everything that has
 ever been reported. Search finds a report by what happened, who found it, the

@@ -1,5 +1,7 @@
-"""The sample product: "Add the sample UAV product" on Products adds an invented
-quadcopter's design (the sample failure modes on every position they belong to),
+"""The sample product: "Add the sample UAV product" on Products (and "Open the sample
+UAV product" on the Explorer) adds an invented quadcopter's design, the one sample for
+the RCM and FME(C)A tabs (its RCM, some decisions linked to sample evidence, on every
+position the modes belong to),
 its part with a bill of materials, three items built from it, a replaced motor, two
 failure reports and a flight-critical RBD with placeholder failure rates, through the
 ordinary service methods (events), once unless asked again; over the app's route,
@@ -9,7 +11,7 @@ Assets list."""
 import mongomock
 import pytest
 
-from backend.maintenance import templates
+from backend.maintenance import rcm_graph, templates
 from backend.maintenance.service import PROJECTORS, Maintenance
 from backend.maintenance.store import GraphStore
 from backend.tests.test_maintenance_mcp import _do, _ok, _session
@@ -40,9 +42,9 @@ def test_the_sample_product_is_a_design_with_items_built_and_reports(store, db):
     out = templates.add_sample_product(m, db)
     assert out["added"] and out["product"]["name"] == "Survey quadcopter (sample)"
     pid = out["product"]["id"]
-    # The design: 25 positions, the FME(C)A sample's modes on each motor, ESC, propeller and IMU.
-    assert {k: out[k] for k in ("positions", "failure_modes", "scored", "direct")} == {
-        "positions": 25, "failure_modes": 35, "scored": 35, "direct": 3}
+    # The design: 25 positions, the sample's modes on each motor, ESC, propeller and IMU.
+    assert {k: out[k] for k in ("positions", "failure_modes", "scored")} == {
+        "positions": 25, "failure_modes": 41, "scored": 41}
     [product] = m.products()["products"]
     assert product["id"] == pid and product["rev"] == "C" and product["part"]["part_number"] == "SQ-4"
     assert product["positions"] == 25 and product["items_built"] == 3 and product["open_reports"] == 2
@@ -127,6 +129,79 @@ def test_a_position_says_which_product_design_it_is_in(store, db):
     assert m.position(built)["in_design"] is None
 
 
+def _modes(sheet: dict) -> list[dict]:
+    return [mo for p in sheet["positions"] for fn in p["functions"] for f in fn["failures"] for mo in f["modes"]]
+
+
+def test_the_design_carries_a_whole_rcm(store, db):
+    """Every position has a function, every function a functional failure, every mode sits
+    under one, and every mode has a decision but the two left undecided on purpose; the
+    performance standards are each breached by a functional failure; the higher positions'
+    failures are explained by those below them; the decisions that schedule a task have one."""
+    m = Maintenance(store, ORG, "tester")
+    out = templates.add_sample_product(m, db)
+    assert {k: out[k] for k in ("functions", "standards", "functional_failures", "failure_modes", "decisions",
+                                "causes_linked")} == {
+        "functions": 25, "standards": 4, "functional_failures": 34, "failure_modes": 41, "decisions": 39,
+        "causes_linked": 29}
+    sheet = m.rcm_worksheet(out["product"]["id"], "below")
+    gaps = rcm_graph.gaps(sheet)
+    assert gaps["counts"]["functions_without_failure"] == 0 and gaps["counts"]["no_functional_failure"] == 0
+    assert gaps["counts"]["standards_without_failure"] == 0 and gaps["counts"]["functional_failures_empty"] == 0
+    assert sorted((r["position"]["name"], r["text"]) for r in gaps["undecided"]) == [
+        ("Airframe", "Landing gear leg breaks on touchdown"), ("Battery pack", "Internal cell short (thermal runaway)")]
+    # Not analysed: only where an undecided mode is, and the positions above it.
+    assert sorted(p["name"] for p in sheet["positions"] if not p["analysed"]) == [
+        "Airframe", "Battery pack", "Power", "Survey quadcopter (sample)"]
+    propulsion = next(p for p in sheet["positions"] if p["name"] == "Propulsion")
+    [thrust] = propulsion["functions"][0]["failures"]
+    assert thrust["modes"] == [] and len(thrust["causes"]) == 16  # four motors, ESCs and propellers (two failures each)
+    by_text = {mo["text"]: mo for mo in _modes(sheet)}
+    assert "waits on the crushable-foot trial" in by_text["Landing gear leg breaks on touchdown"]["notes"]
+    # Three hidden failures (the BMS cut-off, each IMU failing silently), each with its failure-finding task.
+    hidden = [mo for mo in _modes(sheet) if mo["consequence"] == "hidden"]
+    assert len(hidden) == 3 and gaps["counts"]["hidden_without_failure_finding"] == 0
+    gps = next(p for p in sheet["positions"] if p["name"] == "GPS")
+    [fn] = gps["functions"]
+    assert [st["text"] for st in fn["standards"]] == ["Horizontal position within 2 m"]
+    assert [f["text"] for f in fn["failures"]] == ["Position error over 2 m, or no fix"]
+    bms = next(p for p in sheet["positions"] if p["name"] == "BMS")
+    [cutoff] = _modes({"positions": [bms]})
+    assert cutoff["decision"]["interval"] == 160 and cutoff["decision"]["interval_unit"] == "hours"
+    assert [(t["interval"], t["unit"], t["outcome"]) for t in cutoff["tasks"]] == [(160, "hours", "failure_finding")]
+    # New ids everywhere: nothing carries the template's.
+    assert not any(n["id"].startswith("sample-") for label in ("Function", "FunctionalFailure", "FailureMode")
+                   for n in store.nodes(ORG, label))
+    _rebuilds_the_same(m)
+
+
+def test_the_evidence_check_shows_each_case(store, db):
+    """The decisions linked to sample evidence: the BMS failure-finding test and the
+    propeller replacement supported; the motors' legacy run-to-failure plan contradicted
+    on purpose (the bearing model shows wear-out); the battery's retirement inconclusive
+    (its task counts cycles, its analysis flight hours)."""
+    from backend.services import samples
+    from backend.services.samples import SAMPLE_OWNER
+
+    samples.seed_samples(db)
+    m = Maintenance(store, ORG, "tester")
+    pid = templates.add_sample_product(m, db)["product"]["id"]
+    graph = rcm_graph.resolve(db, m.rcm_worksheet(pid, "below"), [ORG, SAMPLE_OWNER])
+    status = {(p["name"], mo["text"]): (mo.get("decision") or {}).get("status")
+              for p in graph["positions"] for fn in p["functions"] for f in fn["failures"] for mo in f["modes"]}
+    assert status[("BMS", "Cut-off relay welded closed")] == "supported"
+    assert status[("Propeller 3", "Blade fatigue crack at the hub")] == "supported"
+    assert status[("Motor 2", "Bearing seizure")] == "contradicted"
+    assert status[("Battery pack", "Cell capacity fade")] == "inconclusive"
+    assert graph["rollup"] == {"modes": 41, "decided": 39, "supported": 5, "contradicted": 4,
+                               "inconclusive": 1, "unevidenced": 23, "stale": 0}
+    check = rcm_graph.gaps(graph)["evidence_to_check"]
+    assert sorted({(r["text"], r["status"]) for r in check}) == [
+        ("Bearing seizure", "contradicted"), ("Cell capacity fade", "inconclusive")]
+    assert any("wear-out" in r["reason"] for r in check)
+    assert any("Unit mismatch" in r["reason"] for r in check)
+
+
 def test_over_the_route(api):  # noqa: F811
     M = "/api/maintenance"
     r = api.post(f"{M}/sample-product")
@@ -138,12 +213,14 @@ def test_over_the_route(api):  # noqa: F811
     assert any(r["id"] == made["rbd"]["id"] for r in rbds)
     assert api.get(f"{M}/products").json()["products"][0]["items_built"] == 3
     assert api.get(f"{M}/places").json()["not_placed"]["positions"] == 0
+    # The sample truck's route is gone: the sample product is the one sample.
+    assert api.post(f"{M}/sample-truck", json={}).status_code in (404, 405)
 
 
 def test_over_mcp(env):  # noqa: F811
     async def go(client):
         made = _ok(await _do(client, "maintenance", "products.add_sample"))
-        assert made["added"] and made["failure_modes"] == 35
+        assert made["added"] and made["failure_modes"] == 41
         assert made["rbd"]["name"].endswith("(placeholder failure rates)")
         twice = _ok(await _do(client, "maintenance", "products.add_sample"))
         assert twice["added"] is False

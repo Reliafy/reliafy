@@ -1176,7 +1176,7 @@ a.rw-cklink:focus-visible {
 .tt-actions button.tt-pin { min-width: 32px; padding: 0 8px; justify-content: center; }
 .tt-actions button.tt-pin.on { background: var(--acc-t); border-color: var(--acc); color: var(--acc); }
 
-/* The empty tree's "New here? Add the sample truck" card. */
+/* The empty tree's "New here? Open the sample UAV product" card. */
 .ae-sample {
   margin: 1.25rem auto 0;
   max-width: 34rem;

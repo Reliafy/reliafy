@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildProblem, designActions, hoursText, isDesignScope, itemFilters, itemTreePath, productFmeaPath, productPath,
+  buildProblem, designActions, hoursText, isDesignScope, itemFilters, itemTreePath, productViewPath, productPath,
   productRbds, productTab, productTreeIds, scopeTree, statusText,
 } from "./products.js";
 
@@ -22,7 +22,8 @@ test("the product page's tabs: Functional structure unless the address names ano
   assert.equal(productPath("p 1"), "/products/p%201");
   assert.equal(productPath("p1", "reports"), "/products/p1?tab=reports");
   assert.equal(productPath("p1", "structure"), "/products/p1");
-  assert.equal(productFmeaPath("p 1"), "/products/p%201?view=fmea&sel=p%201");
+  assert.equal(productViewPath("p 1"), "/products/p%201?view=fmea&sel=p%201");
+  assert.equal(productViewPath("p 1", "rcm"), "/products/p%201?view=rcm&sel=p%201");
 });
 
 test("designs and built trees are left out of the whole Explorer, and shown alone when scoped", () => {
