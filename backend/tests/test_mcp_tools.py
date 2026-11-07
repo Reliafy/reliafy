@@ -66,13 +66,18 @@ NEW_ACTIONS = {
     # Maintainability prediction (Nov 2026).
     ("get", "maintainability_prediction"), ("list", "maintainability_predictions"), ("analyse", "maintainability"),
     ("change", "maintainability_save"), ("change", "maintainability_update"), ("change", "maintainability_delete"),
+    # Reliability prediction: a parts count from handbook base rates (Nov 2026).
+    ("analyse", "prediction"), ("get", "prediction"), ("list", "predictions"),
+    ("change", "prediction_save"), ("change", "prediction_update"), ("change", "prediction_delete"),
     # Fault trees built by hand (Nov 2026).
     ("get", "fault_tree"), ("list", "fault_trees"), ("analyse", "fault_tree"), ("change", "fault_tree_save"),
     ("change", "fault_tree_delete"),
 }
 NEW_HEAVY = {"analyse.fault_tree"}
 NEW_TEXT = {"get.maintainability_prediction", "list.maintainability_predictions",
-            "list.fault_trees", "get.fault_tree", "analyse.fault_tree"}
+            "list.fault_trees", "get.fault_tree", "analyse.fault_tree",
+            # A reliability prediction's lines and assemblies are named by people (or a product's parts list).
+            "list.predictions", "get.prediction", "analyse.prediction"}
 
 # The earlier tools' sets (to 1 Nov 2026), by their old keys: the new sets must be these, renamed.
 OLD_PRO_ONLY = {"life_data_analysis.fit", "models.fit", "models.fit_alt", "models.fit_recurrent", "list.fleets",
@@ -112,7 +117,6 @@ OLD_TOOLS = {
     "report_problem": {"report", "status", "triage", "update"},
     "upgrade_link": {""},
 }
-
 
 def _tools(token):
     return {t.name: t for t in _run(token, lambda c: c.list_tools()).tools}
@@ -208,7 +212,10 @@ def test_every_action_is_in_its_tool_description_and_schema(env):
 def test_the_listed_tools_are_small(env):
     """Every connection loads tools/list and the instructions into the agent's
     context: under 8,000 characters for the six tools (192,060 as 16 tools with
-    full schemas) and about 1,000 for the instructions (3,663 before)."""
+    full schemas; 7,914 with the maintainability prediction, fault tree and
+    reliability prediction actions, Nov 2026, after shortening the shared
+    args and guide text) and
+    about 1,000 for the instructions (3,663 before)."""
     from backend import mcp_server
 
     tools = _tools(env.oauth[PRO])

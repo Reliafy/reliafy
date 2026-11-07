@@ -177,6 +177,32 @@ never the user's own data: say so, cite the record (licence.attribution), put th
 and suggest replacing it with their own data.
 - Library lookups are never counted against the Free plan's tool calls.
 """),
+    "prediction": ("Reliability prediction: a parts count from handbook base rates, before there's failure data.", """\
+A reliability prediction (analyse prediction; change prediction_save / prediction_update / prediction_delete; get kind \
+prediction; list kind predictions) estimates a design's failure rate from its parts \
+list and the library's handbook base rates (MIL-HDBK-217F), for a design that has no failure data yet.
+- The method is a parts count. Each line is a part type, how many there are and the handbook record for it: its \
+rate is λb × πE × πQ × quantity (λb the record's base failure rate per million hours, πE the record's factor for \
+the environment, πQ a quality factor per line, 1 unless given). The system is the sum, every part in series: \
+MTBF = 1/λ and R(t) = exp(−λt) at mission_time (hours). The result gives the rate per million hours and per hour, per line, per \
+assembly (a line's assembly is a name or a path such as "Power › BMS board") and in total, and a Pareto by line and by \
+part category.
+- Assign part types with list kind library (source mil-hdbk-217f-n2): "capacitor ceramic", "resistor film", \
+"connector rectangular", "mosfet". Only handbook records (basis prediction_model) count; a field-data record \
+(NRC / INL) is refused. A part the handbook has no type for (a motor, a microcircuit, a mechanical part) goes in \
+with no record_id: it's listed and left out of the total, and the result says so. Never invent a part type.
+- The environment is one symbol for the whole prediction (GB, GF, GM, NS, NU, AIC, AIF, AUC, AUF, ARW, SF, MF, ML, \
+CL): ask the user where the equipment works; never guess. A record's prediction.quality_factor_range is the \
+handbook's range for πQ; a line outside it warns.
+- Say what's applied and what isn't: λb, πE and πQ are; the handbook's other factors (temperature, electrical \
+stress, construction, power and so on: factors.not_applied) aren't, and real rates depend on them. The handbook \
+dates from 1995 and is for comparing designs early, not a measure of how equipment will fail: say so when quoting \
+a result, and prefer the user's own failure data when they have any.
+- Reliafy Maintenance users can start from a product: product_id reads its part's bill of materials as lines \
+(each lowest-level part under its assemblies) with no part types yet; assign them and call again with lines (and \
+product_id, which keeps the product as the prediction's source).
+- Saving is free, exact and keeps the results as computed; an update computes them again.
+"""),
     "rbd_analysis": ("Analysing RBDs: figures, simulation, jobs and the other analyses.", """\
 Analysing RBDs (analyse rbd and the other rbd_ actions).
 - rbd, non-repairable: reliability curve (~21 points; `times` gives exact values in reliability_at), MTTF, \

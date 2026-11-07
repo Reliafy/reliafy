@@ -1166,6 +1166,7 @@ def seed_samples(db) -> None:
             logger.warning("Failed to seed sample model %r: %s", spec["id"], exc)
 
     _seed_strategy_analyses(db)
+    _seed_reliability_prediction(db)
     _seed_maintainability_predictions(db)
     _seed_fleet(db)
 
@@ -1405,6 +1406,92 @@ def _seed_strategy_analyses(db) -> None:
             logger.warning("Failed to seed sample analysis %r: %s", spec["id"], exc)
 
 
+# The sample reliability prediction: a parts count for the sample product's
+# electronics (backend/maintenance/templates.py: "Survey quadcopter (sample)",
+# part SQ-4, rev C), at part level as a design team's parts lists would be.
+# Entirely invented, like the product. Airborne, rotary winged (ARW); a
+# 100-hour season of flights. Motors and propellers are listed with no part
+# type: they're mechanical, outside the handbook, so the result says so.
+_R = "mil-hdbk-217f-n2:"
+SAMPLE_PREDICTION = {
+    "id": "sample-prediction-quadcopter",
+    "name": "Survey quadcopter electronics (sample)",
+    "inputs": {
+        "environment": "ARW",
+        "mission_time": 100.0,
+        "product": {"id": None, "name": "Survey quadcopter (sample)", "rev": "C", "part_number": "SQ-4"},
+        "notes": (
+            "An invented part-level parts list for the sample quadcopter's electronics, as a design team's parts "
+            "lists would be. Microcircuits (the processor, the sensor and radio chips) aren't among the library's "
+            "handbook records, so they aren't counted; motors and propellers are mechanical, outside the "
+            "handbook, and are listed without a part type. Quality factors are 1 except where the design uses "
+            "commercial plastic parts (πQ 5.5) or commercial connectors (πQ 2)."
+        ),
+        "lines": [
+            # name, record, quantity, assembly path, πQ, reference
+            ("Decoupling capacitors, 0.1 µF ceramic", "10-1-ck-11015", 48, ["Flight controller"], 1, ""),
+            ("Chip resistors", "9-1-rm-55342", 62, ["Flight controller"], 1, ""),
+            ("Schottky diodes, power input", "6-1-power-rectifier-schottky-power-diode", 3, ["Flight controller"],
+             5.5, ""),
+            ("MOSFETs, power switching", "6-4-mosfet", 2, ["Flight controller"], 5.5, ""),
+            ("Rectangular connectors (sensors, radio)", "15-1-rectangular", 4, ["Flight controller"], 2, ""),
+            ("Reflow solder joints", "17-1-reflow-solder", 620, ["Flight controller"], 1, ""),
+            ("MOSFETs, motor drive (6 per ESC)", "6-4-mosfet", 24, ["Speed controllers (4)"], 5.5, ""),
+            ("Ceramic capacitors", "10-1-ck-11015", 32, ["Speed controllers (4)"], 1, ""),
+            ("Electrolytic capacitors, aluminium", "10-1-cu-39018", 8, ["Speed controllers (4)"], 1, ""),
+            ("Chip resistors", "9-1-rm-55342", 80, ["Speed controllers (4)"], 1, ""),
+            ("Power connectors", "15-1-power", 4, ["Speed controllers (4)"], 2, ""),
+            ("Reflow solder joints", "17-1-reflow-solder", 1200, ["Speed controllers (4)"], 1, ""),
+            ("MOSFETs, charge and discharge switch", "6-4-mosfet", 4, ["Power", "BMS board"], 5.5, ""),
+            ("Thermistors, cell temperature", "9-1-rth-23648", 2, ["Power", "BMS board"], 1, ""),
+            ("Chip resistors", "9-1-rm-55342", 24, ["Power", "BMS board"], 1, ""),
+            ("Ceramic capacitors", "10-1-ck-11015", 16, ["Power", "BMS board"], 1, ""),
+            ("Power connectors, battery and load", "15-1-power", 2, ["Power"], 2, ""),
+            ("Ceramic capacitors", "10-1-ck-11015", 12, ["IMUs (2)"], 1, ""),
+            ("Chip resistors", "9-1-rm-55342", 8, ["IMUs (2)"], 1, ""),
+            ("RF coaxial connector, antenna", "15-1-rf-coaxial", 1, ["GPS module"], 2, ""),
+            ("Ceramic capacitors", "10-1-ck-11015", 10, ["GPS module"], 1, ""),
+            ("Chip resistors", "9-1-rm-55342", 6, ["GPS module"], 1, ""),
+            ("RF transformer (balun)", "11-1-rf-10k-10m-hz", 1, ["Telemetry radio"], 1, ""),
+            ("RF coaxial connector, antenna", "15-1-rf-coaxial", 1, ["Telemetry radio"], 2, ""),
+            ("Ceramic capacitors", "10-1-ck-11015", 14, ["Telemetry radio"], 1, ""),
+            ("Chip resistors", "9-1-rm-55342", 10, ["Telemetry radio"], 1, ""),
+            ("Brushless motor 2210", None, 4, ["Propulsion"], 1, "SQ-M2210"),
+            ("Propeller 10x4.5", None, 4, ["Propulsion"], 1, "SQ-P1045"),
+        ],
+    },
+}
+
+
+def sample_prediction_inputs() -> dict:
+    """The sample prediction's inputs as the service takes them."""
+    spec = SAMPLE_PREDICTION["inputs"]
+    lines = [{"name": name, "record_id": (_R + rec) if rec else None, "quantity": qty, "assembly": list(path),
+              "quality_factor": q, "reference": ref}
+             for name, rec, qty, path, q, ref in spec["lines"]]
+    return {**spec, "lines": lines}
+
+
+def _seed_reliability_prediction(db) -> None:
+    """The sample reliability prediction (the parts count of the sample
+    product's electronics), computed from the library's handbook records."""
+    from backend.schema import ReliabilityPrediction
+    from backend.services import reliability_prediction as prediction_service
+
+    spec = SAMPLE_PREDICTION
+    try:
+        if db.reliability_predictions.find_one({"_id": spec["id"]}) is not None:
+            return
+        inputs = prediction_service.normalise_inputs(sample_prediction_inputs())
+        results = prediction_service.results_for(inputs)
+        doc = ReliabilityPrediction(id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER, inputs=inputs,
+                                    results=results)
+        db.reliability_predictions.insert_one(to_doc(doc))
+        logger.info("Seeded sample reliability prediction %r.", spec["id"])
+    except Exception as exc:  # pragma: no cover - defensive; never block boot
+        logger.warning("Failed to seed sample reliability prediction %r: %s", spec["id"], exc)
+
+
 def _seed_maintainability_predictions(db) -> None:
     """The sample maintainability prediction: the sample survey quadcopter's
     parts list (backend/maintenance/templates.py, SAMPLE_PRODUCT_BOM) with
@@ -1482,7 +1569,7 @@ def hide_sample(db, uid: str, sample_id: str) -> None:
 # Every collection that can hold a shared-sample artifact.
 _SAMPLE_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models", "tracked_items",
-    "tracked_fleets", "strategy_analyses", "fleets", "fault_trees",
+    "tracked_fleets", "strategy_analyses", "fleets", "reliability_predictions", "fault_trees",
     "maintainability_predictions",
 )
 

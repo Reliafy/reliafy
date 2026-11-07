@@ -9,6 +9,13 @@
 import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
+  // Reliability prediction: the parts count, the saved predictions, a product's parts list.
+  ["POST", "/api/predictions/compute"],
+  ["POST", "/api/predictions"],
+  ["GET", "/api/predictions"],
+  ["GET", "/api/predictions/smoke"],
+  ["GET", "/api/predictions/from-product/smoke"],
+  ["POST", "/api/v1/analyse/prediction"],
   // Maintainability prediction: the calculator, the saved predictions, a product's lines.
   ["POST", "/api/maintainability/analyse"],
   ["GET", "/api/maintainability/predictions"],

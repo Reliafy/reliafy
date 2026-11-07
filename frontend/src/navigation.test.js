@@ -27,6 +27,7 @@ const REACHED_FROM = {
   "/models/joint/new": "Models › Condition and life › New model",
   "/maintainability/new": "Maintainability prediction › New prediction",
   "/systems/b": "RBDs › New diagram, Home's starts",
+  "/predictions/new": "Reliability prediction › New prediction, a product's Analysis tab",
   "/systems/runs/compare": "Simulation runs › Compare",
   "/systems/structure": "Parts and stock's Structure view",
   "/asset-register/explorer": "Assets' landing page, and every position's, location's and item's breadcrumbs",
@@ -76,7 +77,8 @@ test("the menu is one flat list: Home, Products, Assets, Items, Maintenance, Mod
 test("Modelling and Decisions are groups: their entries, each with its children", () => {
   const live = liveEntries(ALL);
   const group = (id) => live.find((e) => e.id === id).entries.map((e) => e.label);
-  assert.deepEqual(group("modelling"), ["Data", "Models", "Maintainability prediction", "System models"]);
+  assert.deepEqual(group("modelling"), ["Data", "Models", "Reliability prediction", "Maintainability prediction", "System models"]);
+  assert.deepEqual(kids(live, "prediction"), []);
   assert.deepEqual(group("decisions"), ["Strategy", "Forecasts", "Risk"]);
   assert.deepEqual(kids(live, "data"), []);
   assert.deepEqual(kids(live, "models"), ["Non-repairable", "Repairable", "Accelerated life", "Degradation",
@@ -117,6 +119,7 @@ test("a menu word is the title of the page it opens", () => {
   // The page titles (SectionHeader's title) of each entry's landing page.
   const TITLES = {
     home: "Home", products: "Products", assets: "Assets", items: "Items", maintenance: "Maintenance", data: "Data", models: "Models",
+    prediction: "Reliability prediction",
     strategy: "Strategy", forecasts: "Forecasts", reports: "Reports", agent: "Reliability Agent",
     maintainability: "Maintainability prediction",
   };

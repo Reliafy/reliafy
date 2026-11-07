@@ -202,6 +202,27 @@ from the MIL-HDBK-217F prediction handbook), not your own equipment's data;
 show each record's `licence.attribution` with its numbers. The record format
 and the sources: [library.md](library.md).
 
+### Reliability prediction (a parts count)
+
+A design's failure rate from its parts list and the library's handbook base
+rates (MIL-HDBK-217F), before there's any failure data. Each line is a part,
+how many there are and its handbook part type (a library record id); its
+rate is λb × πE (the environment's factor) × πQ (a quality factor per line,
+1 unless given) × quantity, and the system is the sum: MTBF, R(t) at a
+mission time, the rate per assembly and a Pareto. Free and exact.
+
+| Call | Does |
+|---|---|
+| `POST /api/v1/analyse/prediction` | The parts count, saving nothing: `lines` (`[{name, record_id, quantity, quality_factor?, assembly?, reference?}]`), `environment` (`GB`, `GF`, `GM`, `NS`, `NU`, `AIC`, `AIF`, `AUC`, `AUF`, `ARW`, `SF`, `MF`, `ML`, `CL`), `mission_time` (hours, default 1,000). Reliafy Maintenance users may give `product_id` instead of lines: the product's bill of materials comes back as lines to assign. |
+| `POST /api/v1/change/prediction_save` | Save one: `name` and the same arguments; the results are computed on save and kept as they were. `change/prediction_update` (`prediction_id`, any of `name`, `lines`, `environment`, `mission_time`, `notes`) computes them again; `change/prediction_delete` deletes one of yours. |
+| `POST /api/v1/list/predictions`, `POST /api/v1/get/prediction` (`id`) | The saved predictions, and one in full (inputs and results). |
+
+On the command line: `reliafy analyse prediction --lines '[{"name": "Ceramic
+capacitors", "record_id": "mil-hdbk-217f-n2:10-1-ck-11015", "quantity": 48}]'
+--environment GF`. The app's own routes are `POST /api/predictions/compute`,
+`GET /api/predictions/from-product/{product_id}` and the saved predictions at
+`/api/predictions`.
+
 ### Datasets: life data and measurements
 
 A dataset is one document holding its **life data** (one row per unit) and,
