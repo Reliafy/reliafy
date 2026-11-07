@@ -9902,10 +9902,14 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 main.content:focus { outline: none; }
 
 /* Touch targets on a phone: at least 44 px to press, without moving the
-   layout (inline links grow their hit area, not their box). */
+   layout (inline links grow their hit area, not their box). The padding and
+   the margin must land together: button.link.sm and the mapper's link reset
+   padding at a higher specificity, so they are named here too. Why: with the
+   margin alone a small link lost 24 px and sat on the text above it ("Read
+   more" on "Attach a PDF…" in the RCM sheet). */
 @media (max-width: 720px) {
   .side-subitem { min-height: 44px; display: flex; align-items: center; }
-  .crumb-link, button.link { padding-block: 12px; margin-block: -12px; }
+  .crumb-link, button.link, button.link.sm, .mapper button.link.rec-map-link { padding-block: 12px; margin-block: -12px; }
 }
 
 /* Shell touch targets on a phone (UX audit, Nov 2026): the menu button, help,
