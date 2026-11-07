@@ -9,6 +9,8 @@ import OperatingContextCard from "./OperatingContextCard.jsx";
 import { byName, insideWords, statusWords } from "../assetTree.js";
 import { safeHref } from "../maintenanceFields.js";
 import { taskDueText } from "../taskTrigger.js";
+import { nextVisit } from "../packagesTab.js";
+import { explorerPath } from "../assetTree.js";
 
 // The Explorer's Summary tab (#UI, the RCM details panel's patterns): one
 // column, a readable width at most. Status chips and the description first,
@@ -132,6 +134,8 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
     const wos = (data.work_orders || []).filter((w) => OPEN.has(w.status))
       .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
     count = tasks.length + wos.length;
+    // In a work package: the next visit that does any of its tasks.
+    const visit = nextVisit(data.tasks || []);
     if (!count) {
       body = <p className="td-quiet">No tasks or open work on this position itself.{r.kids.length ? " What's inside it has its own: see Directly inside." : ""}</p>;
     } else {
@@ -155,6 +159,11 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
                 })}
               </ul>
             </div>
+          )}
+          {visit && (
+            <p className="td-quiet td-next-visit">
+              Next visit: <Link to={explorerPath("positions", { sel: r.key, tab: "packages", package: visit.id })}>{visit.name}</Link> on {fmtDate(visit.on)}
+            </p>
           )}
           {tasks.length > 0 && (
             <div className="td-group">

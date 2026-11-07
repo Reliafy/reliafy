@@ -420,6 +420,7 @@ def _dicts(value, what: str, limit: int = MAX_LIST) -> list[dict]:
 
 DATE_PRECISIONS = ("exact", "month", "year", "estimated")
 ESTIMATE_MONTHS = 3
+_WEEKDAY_NAMES = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
@@ -5486,6 +5487,15 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 row["trigger"] = triggers.get(row.get("id") or row.get("task_id"))
             if decision:
                 decision["trigger"] = triggers.get(decision.get("task_id"))
+        # In a work package: the RCM's task cards say which (and open it on the package's position).
+        index = self._package_index()
+        if any(t["id"] in index for t in tasks):
+            for row in [*brief, *((decision or {}).get("tasks") or [])]:
+                entry = index.get(row.get("id"))
+                if entry:
+                    on = self._package_subject(entry["package"])
+                    row["package"] = {"id": entry["package"]["id"], "name": entry["package"]["name"],
+                                      "subject": self._subject_brief(on)}
         return {
             "id": fm["id"], "text": fm["text"], "effects": fm.get("effects") or "", "notes": fm.get("notes") or "",
             "consequence": fm.get("consequence"), "decision": decision,
@@ -9005,18 +9015,56 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return f"{int(md[3:])} {_MONTHS[int(md[:2]) - 1]}"
         return f"from {words(season['start'])} to {words(season['end'])}"
 
-    def packages(self, status=None) -> dict:
+    def packages(self, status=None, position_id=None, location_id=None) -> dict:
         """Every work package (status: active, paused, retired or all; default: all but
         retired), top packages first with their layers after them, and how many work
-        orders from them are open and late."""
+        orders from them are open and late. position_id / location_id: only the
+        packages there or inside it, or holding a task there (a package on the site
+        that bundles a pump's check shows on the pump), each top with its layers."""
         if status not in (None, "", "all", "active", "paused", "retired"):
             raise Invalid("status is active, paused, retired or all.")
-        rows = [self._package_brief(p) for p in self.s.nodes(self.org, "WorkPackage")]
+        found = self.s.nodes(self.org, "WorkPackage")
+        scope = self._package_scope(position_id, location_id)
+        if scope is not None:
+            found = [p for p in found if self._package_touches(self._package_chain(p)[-1], scope)]
+        rows = [self._package_brief(p) for p in found]
         rows = [r for r in rows if (status in ("all", r["status"])) or (not status and r["status"] != "retired")]
         rows.sort(key=lambda r: ((r["parent"] or {}).get("name", r["name"]).lower(), r["parent"] is not None,
                                  r["name"].lower(), r["id"]))
         opened = [r["open_work_order"] for r in rows if r["open_work_order"] and r["parent"] is None]
         return {"packages": rows, "open_work_orders": len(opened), "late": sum(1 for w in opened if w["late"])}
+
+    def _package_scope(self, position_id=None, location_id=None) -> dict | None:
+        """The position or location a read is limited to (None: the whole workspace)."""
+        if position_id not in (None, "") and location_id not in (None, ""):
+            raise Invalid("Give position_id or location_id, not both.")
+        if position_id not in (None, ""):
+            return self._get(str(position_id), "Position")
+        if location_id not in (None, ""):
+            return self._get(str(location_id), "Location")
+        return None
+
+    def _package_touches(self, root: dict, scope: dict) -> bool:
+        """Whether a top package is on ``scope`` or inside it, or one of its (or its
+        layers') tasks is."""
+        memo = self._memo.setdefault("package_touches", {})
+        key = (root["id"], scope["id"])
+        if key in memo:
+            return memo[key]
+        subject = self._package_subject(root)
+        hit = subject is not None and self._in_area(scope, subject)
+        if not hit:
+            for pkg in self._package_tree(root):
+                for member in pkg.get("members") or []:
+                    task = self.s.node(self.org, member["task_id"], "Task")
+                    on = task and _subject(self.s, self.org, task)
+                    if on and self._in_area(scope, on):
+                        hit = True
+                        break
+                if hit:
+                    break
+        memo[key] = hit
+        return hit
 
     def package(self, package_id: str) -> dict:
         """A package in full: its cadence, tolerance, layers, its tasks (each with its visit
@@ -9096,21 +9144,20 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return next((pid for pid in chains[0] if pid in shared
                      and (self.s.node(self.org, pid) or {}).get("label") == "Position"), position_ids[0])
 
-    def propose_packages(self, position_id=None, location_id=None) -> dict:
+    def propose_packages(self, position_id=None, location_id=None, weekday=None) -> dict:
         """Drafts of work packages from the live tasks on positions and locations that are
         in no package (an item's task follows its item, and a task by use goes by its
         counter: both are left out): grouped by cadence (within ±10%: weekly,
         fortnightly, monthly, quarterly, 6-monthly, yearly, multi-year), area (the
         location, else the top of the position tree) and trade, each named, with a
         ready create and warnings. position_id / location_id: only that branch or area.
-        Saves nothing."""
-        scope = None
-        if position_id not in (None, "") and location_id not in (None, ""):
-            raise Invalid("Give position_id or location_id, not both.")
-        if position_id not in (None, ""):
-            scope = self._get(str(position_id), "Position")
-        elif location_id not in (None, ""):
-            scope = self._get(str(location_id), "Location")
+        weekday: visits on that day, with the longer cadences as layers on the
+        shortest in each area and trade (see _layered). Saves nothing."""
+        scope = self._package_scope(position_id, location_id)
+        if weekday not in (None, ""):
+            weekday = str(weekday).strip().lower()
+            if weekday not in _WEEKDAY_NAMES:
+                raise Invalid("weekday is a day of the week: monday to sunday.")
         index = self._package_index()
         today = self.today()
         groups: dict = {}
@@ -9170,9 +9217,130 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                       "unit": g["unit"], "anchor": anchor,
                                       "tasks": [t["id"] for t in g["tasks"]],
                                       **({"trade": g["trade"]} if g["trade"] else {})}})
+        if weekday:
+            drafts = self._layered(drafts, weekday)
+            return {"drafts": drafts, "left_out": left_out, "already_in_packages": packaged, "saved": False,
+                    "weekday": weekday,
+                    "note": "Nothing was saved. Show the drafts to the user. A layer's create has parent_id "
+                            "'@<its top's ref>': send the agreed ones as one maintenance apply, each operation "
+                            "with ref set to its draft's ref, tops before their layers."}
         return {"drafts": drafts, "left_out": left_out, "already_in_packages": packaged, "saved": False,
                 "note": "Nothing was saved. Show the drafts to the user; each create is ready for maintenance "
                         "packages.create once they've agreed it (several at once: maintenance apply)."}
+
+    @staticmethod
+    def _on_weekday(every: int, unit: str, weekday: str) -> dict | None:
+        """A draft's cadence on a weekday: weeks on it (every 4 weeks on Saturday),
+        months and years on its first in the month (the first Saturday of every 3
+        months). None for one that can't be (every 10 days)."""
+        if unit == "days":
+            if every % 7:
+                return None
+            every, unit = every // 7, "weeks"
+        if unit == "weeks":
+            return {"every": every, "unit": "weeks", "weekday": weekday}
+        months = every * (12 if unit == "years" else 1)
+        return {"every": months, "unit": "months", "weekday": weekday, "nth": 1}
+
+    def _layered(self, drafts: list[dict], weekday: str) -> list[dict]:
+        """Flat drafts as visits on ``weekday``: in each area and trade, the shortest
+        cadence is a top package and each longer one that falls on its visits is a
+        layer on it (weekly on Saturdays; monthly on the first Saturday; quarterly,
+        yearly on the first Saturday of every 3 or 12 months). A cadence that doesn't
+        fall on them (monthly on a fortnightly package) is a top of its own, with
+        its own layers. Each draft gets ref, layer_of (its top's ref or None) and
+        cadence (in words); a layer's create has parent_id '@<ref>'."""
+        groups: dict = {}
+        for d in drafts:
+            groups.setdefault((d["area"]["id"], d["trade"]), []).append(d)
+        out: list[dict] = []
+        n = 0
+        for group in groups.values():
+            shaped = []
+            for d in group:
+                c = d["create"]
+                on = self._on_weekday(c["every"], c["unit"], weekday)
+                fields = None
+                if on:
+                    fields = self._cadence_fields("fixed", on["every"], on["unit"], on["weekday"], on.get("nth"),
+                                                  None, c["anchor"])
+                shaped.append((d, on, fields))
+            # Shortest first: a fixed visit length per draft, by its cadence.
+            per = {"days": 1, "weeks": 7, "months": 30.4375, "years": 365.25}
+            shaped.sort(key=lambda x: x[0]["create"]["every"] * per[x[0]["create"]["unit"]])
+            remaining = shaped
+            while remaining:
+                (top, on, fields), rest = remaining[0], remaining[1:]
+                n += 1
+                ref = f"p{n}"
+                create = {**top["create"], **(on or {})}
+                if fields:
+                    create["anchor"] = fields["anchor"]
+                top_pkg = {"name": top["name"], **fields} if fields else None
+                out.append({**top, "ref": ref, "layer_of": None, "create": create,
+                            "cadence_text": self._cadence_text(top_pkg or {**create, "timing": "fixed"})})
+                left = []
+                for d, d_on, d_fields in rest:
+                    if top_pkg is None or d_fields is None:
+                        left.append((d, d_on, d_fields))
+                        continue
+                    layer = {**d_fields, "anchor": max(d_fields["anchor"], top_pkg["anchor"])}
+                    try:
+                        self._check_layer_dates(layer, top_pkg, d["name"])
+                    except Invalid:
+                        left.append((d, d_on, d_fields))
+                        continue
+                    n += 1
+                    c = {k: v for k, v in d["create"].items() if k not in ("position_id", "location_id")}
+                    out.append({**d, "ref": f"p{n}", "layer_of": ref,
+                                "create": {**c, **d_on, "anchor": layer["anchor"], "parent_id": f"@{ref}"},
+                                "cadence_text": self._cadence_text({**layer, "name": d["name"]})})
+                remaining = left
+        return out
+
+    MAX_BATCH_PACKAGES = 50
+
+    def create_packages(self, packages) -> dict:
+        """Several packages in one go (the drafts of propose_packages with a weekday,
+        as the user ticked and named them): [{ref?, ...create_package's arguments}],
+        where a layer's parent_id may be '@<an earlier one's ref>'. Every one is first
+        made on a throwaway copy of the workspace: with any refusal nothing is written
+        and the error names which. Returns {created: [{ref, id, name, layer_of}]}."""
+        items = _list(packages, "packages", self.MAX_BATCH_PACKAGES)
+        if not items:
+            raise Invalid("Tick at least one package to make.")
+        from backend.maintenance.store import scratch_copy
+
+        rehearsal = Maintenance(scratch_copy(self.s, self.org), self.org, self.actor, limited=self.limited,
+                                time_zone=self.time_zone)
+        rehearsal._create_package_batch(items)
+        return {"created": self._create_package_batch(items)}
+
+    _BATCH_FIELDS = ("name", "position_id", "location_id", "parent_id", "timing", "every", "unit", "weekday", "nth",
+                     "day", "anchor", "tolerance", "tolerance_unit", "trade", "notes", "tasks", "season")
+
+    def _create_package_batch(self, items: list) -> list[dict]:
+        made: dict = {}
+        out = []
+        for i, item in enumerate(items, 1):
+            if not isinstance(item, dict):
+                raise Invalid("Each package is an object: {ref?, name, position_id or location_id or parent_id, ...}.")
+            args = {k: item.get(k) for k in self._BATCH_FIELDS if item.get(k) not in (None, "")}
+            parent = args.get("parent_id")
+            if isinstance(parent, str) and parent.startswith("@"):
+                if parent[1:] not in made:
+                    raise Invalid(f"Package {i} ({item.get('name') or 'no name'}) is a layer on {parent}, which "
+                                  "isn't an earlier package in the list: put its top package first.")
+                args["parent_id"] = made[parent[1:]]
+            try:
+                pkg = self.create_package(**args)
+            except Invalid as err:
+                raise Invalid(f"Nothing was made: package {i} ({item.get('name') or 'no name'}): {err}") from None
+            if item.get("ref"):
+                made[str(item["ref"])] = pkg["id"]
+            out.append({"ref": item.get("ref"), "id": pkg["id"], "name": pkg["name"],
+                        "layer_of": parent if isinstance(parent, str) and parent.startswith("@") else None})
+        return out
 
     def _also_limit(self, also_interval, also_unit, current_unit=None) -> dict:
         """A task's second limit, whichever comes first: {} with none given, both

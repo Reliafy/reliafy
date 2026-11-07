@@ -587,3 +587,83 @@ def test_equipment_out_of_service_holds_its_tasks(m, today):
     m.take_out_of_service(item, "awaiting parts")
     assert m.item(item)["out_of_service"]["flag"] == "no_return_date"
     _same_after_rebuild(m)
+
+
+# ---- the Explorer's Packages tab: layered proposals, one batch, a branch's packages -------
+
+def test_propose_on_a_weekday_layers_the_longer_cadences_and_saves_nothing(m):
+    plant = _plant(m)
+    count = m.s.event_count(m.org)
+    out = m.propose_packages(position_id=plant["lagoon"], weekday="Saturday")
+    assert m.s.event_count(m.org) == count and out["saved"] is False and out["weekday"] == "saturday"
+    by = {d["cadence"]: d for d in out["drafts"]}
+    weekly, monthly, quarterly = by["weekly"], by["monthly"], by["quarterly"]
+    assert weekly["layer_of"] is None and weekly["cadence_text"] == "every Saturday"
+    assert weekly["create"]["weekday"] == "saturday" and weekly["create"]["position_id"] == plant["lagoon"]
+    assert monthly["layer_of"] == quarterly["layer_of"] == weekly["ref"]
+    assert monthly["create"]["parent_id"] == f"@{weekly['ref']}" and "position_id" not in monthly["create"]
+    assert monthly["cadence_text"] == "the first Saturday of every month"
+    assert quarterly["cadence_text"] == "the first Saturday of every 3 months"
+    # Tops come before their layers.
+    refs = [d["ref"] for d in out["drafts"]]
+    assert refs.index(weekly["ref"]) < refs.index(monthly["ref"])
+    with pytest.raises(Invalid, match="day of the week"):
+        m.propose_packages(position_id=plant["lagoon"], weekday="someday")
+
+
+def test_a_cadence_off_the_top_packages_visits_is_a_package_of_its_own(m):
+    site = m.create_position("Site")["id"]
+    fortnightly = m.create_task(site, "Hose down", 2, "weeks")["id"]
+    monthly = m.create_task(site, "Test alarms", 1, "months")["id"]
+    odd = m.create_task(site, "Flush lines", 10, "days")["id"]
+    out = m.propose_packages(position_id=site, weekday="friday")
+    by = {d["create"]["tasks"][0]: d for d in out["drafts"]}
+    assert by[fortnightly]["layer_of"] is None and by[fortnightly]["cadence_text"] == "every 2 weeks on Friday"
+    # The first Friday of the month isn't always one of a fortnightly package's Fridays.
+    assert by[monthly]["layer_of"] is None and "position_id" in by[monthly]["create"]
+    assert by[odd]["layer_of"] is None and "weekday" not in by[odd]["create"]
+
+
+def test_create_packages_makes_tops_and_layers_in_one_go_or_nothing(m):
+    plant = _plant(m)
+    drafts = m.propose_packages(position_id=plant["lagoon"], weekday="saturday")["drafts"]
+    batch = [{"ref": d["ref"], **d["create"], **({"tolerance": 1} if not d["layer_of"] else {})} for d in drafts]
+    # A refusal anywhere (here the last: a task in two packages) writes nothing.
+    bad = [*batch, {"name": "Again", "position_id": plant["lagoon"], "tasks": [plant["weekly"][0]]}]
+    count = m.s.event_count(m.org)
+    with pytest.raises(Invalid, match=r"Nothing was made: package 4 \(Again\)"):
+        m.create_packages(bad)
+    assert m.s.event_count(m.org) == count and m.packages()["packages"] == []
+    with pytest.raises(Invalid, match="isn't an earlier package"):
+        m.create_packages([{"name": "Layer", "parent_id": "@nope", "every": 1, "unit": "months"}])
+    out = m.create_packages(batch)
+    assert [c["name"] for c in out["created"]] == [d["name"] for d in drafts]
+    listed = m.packages()["packages"]
+    top = next(p for p in listed if p["parent"] is None)
+    assert {x["name"] for x in top["layers"]} == {"Lagoon monthly check", "Lagoon quarterly check"}
+    assert top["tolerance"]["amount"] == 1
+    _same_after_rebuild(m)
+
+
+def test_packages_for_a_branch_and_the_rcm_task_cards_name_theirs(m):
+    plant = _plant(m)
+    weekly, monthly, _ = _packages(m, plant)
+    other = m.create_position("Workshop")["id"]
+    m.create_package("Workshop check", position_id=other, every=1, unit="weeks", weekday="monday",
+                     tasks=[m.create_task(other, "Sweep", 1, "weeks")["id"]])
+    pump = plant["pids"]["Circulation pump"]
+    names = {p["name"] for p in m.packages(position_id=plant["lagoon"])["packages"]}
+    assert names == {"Lagoon weekly check", "Lagoon monthly check", "Lagoon quarterly check"}
+    # On the pump: the lagoon's package holds its tasks, so it shows there too.
+    assert "Lagoon weekly check" in [p["name"] for p in m.packages(position_id=pump)["packages"]]
+    assert [p["name"] for p in m.packages(position_id=other)["packages"]] == ["Workshop check"]
+    with pytest.raises(Invalid, match="not both"):
+        m.packages(position_id=pump, location_id="x")
+    # A task card in the RCM names its package and where the package is.
+    fn = m.add_function(pump, "Circulate water")
+    ff = m.add_functional_failure(fn["id"], "No flow")
+    fm = m.add_failure_mode(pump, "Bearing worn", functional_failure_id=ff["id"])
+    m.link_task(plant["weekly"][3], fm["id"])
+    [card] = m.rcm_mode(fm["id"])["tasks"]
+    assert card["package"] == {"id": weekly["id"], "name": "Lagoon weekly check",
+                               "subject": {"kind": "position", "id": plant["lagoon"], "name": "Lagoon"}}

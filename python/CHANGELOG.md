@@ -2,6 +2,14 @@
 
 ## Unreleased (0.5.1)
 
+- **Packages proposed as visits on a weekday**: `maintenance packages.propose`
+  takes `weekday` (`monday` … `sunday`). The drafts then visit on that day,
+  with the longer cadences as layers on the shortest in each area and trade;
+  each draft gains `ref`, `layer_of` and `cadence_text`, and a layer's
+  `create` has `parent_id: "@<ref>"`, ready for one `maintenance apply`. On
+  the command line: `reliafy maintenance packages.propose --position-id <id>
+  --weekday saturday`. No client code changed.
+
 - **Tasks raised by an event**: `maintenance tasks.create` and `tasks.update`
   take `trigger` (`{kind: "reading", point_id, above | below}` or `{kind:
   "event", event_type, note}`, with `with_interval` to keep the interval too;

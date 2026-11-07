@@ -1070,6 +1070,14 @@ fortnightly, monthly, quarterly, 6-monthly, yearly, multi-year), area (the
 location, else the top of the position tree) and trade, each with a ready
 `create` and warnings (intervals mixed in one bucket, a task with its own open
 work order).
+With `weekday`, the drafts visit on that day: in each area and trade the
+shortest cadence is a top package, and each longer one whose dates fall on its
+visits is a layer on it (checked with the same rule as a layer being made); one
+that doesn't (monthly on a fortnightly package) is a top of its own. A layer's
+create names its top as `parent_id: "@<ref>"`, so the drafts run as one
+`maintenance apply`, or through the app's `create_packages` (all or nothing,
+rehearsed first on a scratch copy of the graph). The Explorer's Packages tab
+uses both, and `packages(position_id | location_id)` for its list.
 
 Not built yet: tolerance in hours, packages by use, shutdown packages, review
 flags when a member changes after packaging, planned hours, and turning rounds

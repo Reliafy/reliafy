@@ -497,8 +497,9 @@ WORK_ORDERS: Table = {
 }
 
 PACKAGES: Table = {
-    "propose": ("", "position_id location_id", """Drafts grouping the tasks in no package by cadence, area and
-        trade, each with a ready create and warnings. Saves nothing: show the user."""),
+    "propose": ("", "position_id location_id weekday", """Drafts grouping the tasks in no package by cadence, area
+        and trade, each with a ready create and warnings; weekday: longer cadences as layers on the shortest.
+        Saves nothing: show the user."""),
     "create": ("name", "position_id location_id parent_id timing every unit weekday nth day anchor tolerance "
                "tolerance_unit trade notes tasks season", """A package on exactly one of position_id or location_id, or
         a layer on parent_id. Timing, cadence and visit rules: maintenance guide topic plan."""),
@@ -1840,7 +1841,7 @@ def register() -> None:
         guide topic plan (making them) and run (their work orders)."""
         m = m_for(ctx)
         if action == "propose":
-            return run(m.propose_packages, position_id, location_id)
+            return run(m.propose_packages, position_id, location_id, weekday)
         if action == "create":
             return run(m.create_package, name, position_id, location_id, parent_id, _d(timing, "fixed"),
                        _d(every, 1), _d(unit, "weeks"), weekday, nth, day, anchor, tolerance, tolerance_unit,
