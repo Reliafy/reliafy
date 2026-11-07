@@ -51,15 +51,29 @@ export function explorerPath(mode = "positions", extra = {}) {
 // stays itself (in Items, the item fitted there); an item stays itself (in
 // Positions and Flat, the position it's fitted to); a location stays itself
 // in Locations. null: nothing to carry over.
-export function carryOver(row, to) {
+export function carryOver(row, to, positions = null) {
   if (!row) return null;
   if (row.type === "pos") return to === "items" ? row.ref.item?.id ?? null : row.key;
   if (row.type === "item") {
     if (to === "items" || to === "locations") return row.key;
     return row.ref.fitted_to?.id ?? (to === "positions" ? row.key : null);
   }
-  if (row.type === "loc") return to === "locations" ? row.key : null;
+  if (row.type === "loc") {
+    if (to === "locations") return row.key;
+    // To Positions (the RCM and FME(C)A tabs live there): the top position at
+    // this place, so its RCM opens; one whose parent is elsewhere, or has none.
+    if (to === "positions" && positions) return topPositionAt(row.key, positions);
+    return null;
+  }
   return null;
+}
+
+// The first position at a place whose parent isn't at the same place (A–Z).
+export function topPositionAt(locationId, positions) {
+  const here = (positions || []).filter((p) => p.location_id === locationId);
+  const ids = new Set(here.map((p) => p.id));
+  const tops = here.filter((p) => !p.parent_id || !ids.has(p.parent_id)).sort(byName);
+  return tops[0]?.id ?? null;
 }
 
 // Natural A–Z: "Zone 2" before "Zone 10", case ignored.
