@@ -241,7 +241,7 @@ test("Home for a user with no data, every role's cards", async ({ page, request,
 test("the collapsed menu and the keyboard", async ({ page, request, problems }) => {
   await setRoles(request, ["technician"]);
   await open(page, "/home");
-  await page.getByRole("button", { name: "Collapse menu" }).click();
+  await page.getByRole("button", { name: "Hide the menu" }).click();
   await expect(mainMenu(page).locator(".side-label")).toHaveCount(0);
   // Icons only, each named; no headings and nothing below an entry.
   expect(await shown(page)).toEqual(["Home", "Assets", "Items", "Maintenance"]);
@@ -270,7 +270,7 @@ test("the collapsed menu and the keyboard", async ({ page, request, problems }) 
   await page.keyboard.press("Space");
   await expect(moreButton(page)).toHaveAttribute("aria-expanded", "true");
 
-  await page.getByRole("button", { name: "Expand menu" }).click();
+  await page.getByRole("button", { name: "Show the menu" }).click();
   await expect(mainMenu(page).locator(".side-label").first()).toBeVisible();
   await expectHealthy(page, problems, { label: "collapsed menu" });
 });

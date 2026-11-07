@@ -277,19 +277,43 @@ h6 {
   margin: 0;
 }
 
+/* The toggle is the "sidebar" glyph (SidebarIcon) in the same square ghost
+   button as the Explorer pane's fold button (views/AssetExplorer.css,
+   .tp button.tp-icon-btn: 30px, same border, fill and colours), so the two
+   read as one family. */
 .sidebar-toggle {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  background: transparent;
+  background: var(--surf);
   color: var(--muted);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  width: 26px;
-  height: 26px;
+  box-shadow: none;
+  width: 30px;
+  height: 30px;
   padding: 0;
   font-size: var(--fs-14);
   line-height: 1;
+}
+
+.sidebar-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* On the desktop rail the toggle's centre sits on the Explorer pane's title
+   row, so the two buttons share one line at desktop width: the rail's top
+   padding and the header's height put the centre 23.5px under the top bar
+   (the Explorer's row is a 30px button centred in its header, whose top
+   padding is 14px). The menu below keeps its place (the margin takes up
+   what the padding gave). */
+.sidebar:not(.drawer) {
+  padding-top: 8px;
+}
+.sidebar:not(.drawer) .side-head {
+  height: 31px;
+  margin-bottom: 15px;
 }
 
 .sidebar-toggle:hover:not(:disabled) {
