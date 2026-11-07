@@ -13,6 +13,7 @@
 
 import { liveReadings } from "./maintenanceReadings.js";
 import { toCsv } from "./csv.js";
+import { EXPLORER_PATH } from "./navigation.js";
 
 export const STATES = {
   past: { key: "past", label: "Past alarm", rank: 0 },
@@ -167,7 +168,22 @@ export function pointSubline(point, { branch = false, fittedAt = new Map() } = {
 }
 
 // The measuring point's own page.
-export const pointPagePath = (id) => `/asset-register/points/${encodeURIComponent(id)}`;
+// A point or a sensor channel opens inside the Explorer's Measurements tab
+// (?tab=measurements&point= or &channel=), the tree still on the left with its
+// place picked: its position (a fitted item's channel: the item's position), or
+// its item's row arranged by locations. With no place known (a bare id), the
+// old address, which reads the point or channel and comes back here.
+export function measurementAddress(thing, kind = "point", { bands = false } = {}) {
+  const id = typeof thing === "string" ? thing : thing?.id;
+  const pos = thing?.position?.id || thing?.item?.fitted_to?.id;
+  const sel = pos || thing?.item?.id;
+  if (!sel) return `/asset-register/${kind === "channel" ? "channels" : "points"}/${encodeURIComponent(id || "")}${bands ? "#bands" : ""}`;
+  const q = new URLSearchParams({ arrange: pos ? "positions" : "locations", sel, tab: "measurements", [kind]: id || "" });
+  return `${EXPLORER_PATH}?${q}${bands ? "#bands" : ""}`;
+}
+
+// A measuring point's own view (in the Explorer, as above).
+export const pointPagePath = (point) => measurementAddress(point, "point");
 
 // The page a point lives on: its position's, or its item's.
 export function pointHref(point) {
@@ -254,11 +270,21 @@ export function branchQuery(display, branch) {
   return { positionIds, itemIds: [...items], fittedAt };
 }
 
-// The tab's own address: ?only=attention (the filter) and ?point= (the point
-// whose history is open).
+// The tab's own address: ?only=attention (the filter), ?readings= (the point
+// whose Readings dialog is open), and ?point= or ?channel= (the one open in
+// full in the tab, with a link back to the list).
 export function readMeasurementsQuery(params) {
-  return { attention: params.get("only") === "attention", point: params.get("point") || null };
+  return {
+    attention: params.get("only") === "attention",
+    readings: params.get("readings") || null,
+    point: params.get("point") || null,
+    channel: params.get("channel") || null,
+  };
 }
+
+// What leaves the address with the point or channel view: going back to the
+// list, another row, or another tab.
+export const VIEW_PARAMS = ["point", "channel", "readings"];
 
 // ---- signal channels as rows ---------------------------------------------------------
 

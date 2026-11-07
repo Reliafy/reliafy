@@ -32,8 +32,8 @@ const saveFlag = (key, on) => {
 };
 
 // Signal channels: SignalsPanel is the Explorer's Signals tab (hidden for now,
-// EXPLORER_SIGNALS_TAB); ChannelView is a channel's own page
-// (/asset-register/channels/:id, views/SignalChannel.jsx). The
+// EXPLORER_SIGNALS_TAB); ChannelView is a channel in full, in the Measurements
+// tab (&channel=, MeasurementViews.jsx ChannelPane). The
 // sensors on a position or an item that send snapshots (vibration bursts,
 // spectra, pressures). One spectrum chart (overlay chosen snapshots and a
 // baseline; hover a legend entry to find a snapshot; drag a frequency range to

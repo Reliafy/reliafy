@@ -934,7 +934,7 @@ export function ReadingsModal({ point: initial, onClose }) {
            footer={<button className="secondary" onClick={onClose}>Done</button>}>
       <div className="rt-modal-head">
         <p className="lib-date">{READINGS_INTRO}</p>
-        <Link className="rt-open-page" to={pointPagePath(point.id)}>Open the full page</Link>
+        <Link className="rt-open-page" to={pointPagePath(point)}>Open the full page</Link>
       </div>
       {point.readings.length
         ? <ReadingsTable point={point} onChanged={setPoint} idPrefix="rdm" />

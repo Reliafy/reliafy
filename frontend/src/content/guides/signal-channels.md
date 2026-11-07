@@ -32,8 +32,9 @@ flow you read on your round. The row shows:
   yet*. **Needs attention** at the top of the tab lists only those rows (and the
   points past or near a limit, or due a reading);
 - a **trend** of its recent values;
-- a **⋯** menu: **Open** goes to the channel's own page (its spectrum, bands
-  and settings), and **Edit bands…** opens that page at its watch bands.
+- a **⋯** menu: **Open** shows the channel in full in the tab (its spectrum,
+  bands and settings), with the tree still on the left, and **Edit bands…**
+  opens it at its watch bands. **← Measurements** goes back to the list.
 
 A fitted item has no row of its own: its channels show on the position it's
 fitted to, and go with the item when it moves.
@@ -101,8 +102,8 @@ only the first part. Nothing is sent until you press **Add the snapshot**.
 
 ## 3. Read the spectrum
 
-Open the channel's page: click its name on the Measurements tab, or choose
-**Open** from its **⋯** menu.
+Open the channel: click its name on the Measurements tab, or choose
+**Open** from its **⋯** menu. It opens in the tab, the tree still on the left.
 
 ![A channel's page: the spectrum of the latest snapshot against a baseline, and a watched band's level over time](/guides/img/signals-01-spectrum.png)
 
@@ -137,15 +138,17 @@ that range from every snapshot, old and new, and draws it in **Level over time**
   (marked **Fed**) beside the channel itself and every other measuring point on
   the row and everything inside it, hand-read ones too, worst first. Give it
   alarm limits there and a snapshot past the limit opens an inspection.
-- **Every measuring point has a page of its own.** Click a point's name in the
-  Measurements tab, or choose **Open** from its **⋯** menu. The page shows the
-  latest reading against its alarm limits, a chart of the readings with the
-  limits drawn in, the trend and the date it should reach a limit, and every
-  recent reading. **Add reading…** and **Edit limits…** are at the top; each
-  reading's **⋯** menu corrects or voids it. A voided reading stays listed,
-  struck out, and is left out of rates, due dates and alarms.
+- **Open a measuring point in full.** Click a point's name in the Measurements
+  tab, or choose **Open** from its **⋯** menu. The tab then shows that point,
+  with the tree still on the left: the latest reading against its alarm
+  limits, a chart of the readings with the limits drawn in, the trend and the
+  date it should reach a limit, and every recent reading. **Add reading…**,
+  **Edit limits…** and **Move…** are in the panel's **…** menu; each reading's
+  **⋯** menu corrects or voids it. A voided reading stays listed, struck out,
+  and is left out of rates, due dates and alarms. **← Measurements** goes back
+  to the list.
 - **Move…** (in a point's **⋯** menu in the Measurements tab, or in the **⋯**
-  menu on its page) moves a hand-read or fed point to another position, for when it
+  menu when the point is open) moves a hand-read or fed point to another position, for when it
   was added to the wrong one. Its readings and any open alarm work order go
   with it, and tasks that counted it keep counting it. A band or level stays
   with its channel.

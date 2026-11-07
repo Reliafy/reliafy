@@ -3,6 +3,8 @@
 // logic behind the spectrum chart and its player, kept apart from the screen so
 // they can be tested.
 
+import { measurementAddress } from "./measurementsTab.js";
+
 // ---- the player ---------------------------------------------------------------------
 //
 // The player steps through snapshots and holds each for its share of the real
@@ -365,12 +367,13 @@ export function snapshotColor(colors, n) {
   return colors[n % colors.length];
 }
 
-// ---- a channel's own page ----------------------------------------------------------
+// ---- a channel's own view ----------------------------------------------------------
 //
 // A channel is a row of the Explorer's Measurements tab (beside the hand-read
 // points on its position, or its item's); its spectrum, watch bands and
-// settings are on its own page. `#bands` opens the page at its watch bands.
+// settings open in full in that tab (&channel=), the tree still on the left.
+// `#bands` opens it at its watch bands. A bare id goes to the old address,
+// which reads the channel and comes back to the tab.
 export function channelPath(c, { bands = false } = {}) {
-  const id = typeof c === "string" ? c : c?.id;
-  return `/asset-register/channels/${encodeURIComponent(id || "")}${bands ? "#bands" : ""}`;
+  return measurementAddress(c, "channel", { bands });
 }

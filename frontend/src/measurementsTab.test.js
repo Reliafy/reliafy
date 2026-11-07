@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   STATES, branchQuery, latestNote, limitsText, needsAttention, placeOf, pointChip, pointHref, pointMenu, pointState,
-  nextReadingOn, pointPagePath, pointSubline, pointsCsv, readMeasurementsQuery, readingDue, recentValues, recordedBy, rowAction, sortPoints, stateText,
+  VIEW_PARAMS, measurementAddress, nextReadingOn, pointPagePath, pointSubline, pointsCsv, readMeasurementsQuery, readingDue, recentValues, recordedBy, rowAction, sortPoints, stateText,
   channelChip, channelMenu, channelPlace, channelSubline, channelValues, isFed, measurementRows, rowNeedsAttention,
 } from "./measurementsTab.js";
 
@@ -107,8 +107,11 @@ test("branchQuery asks for the branch's positions, its items and the items fitte
 });
 
 test("the tab's address: the filter and the open point", () => {
-  assert.deepEqual(readMeasurementsQuery(new URLSearchParams("tab=measurements&only=attention&point=x1")), { attention: true, point: "x1" });
-  assert.deepEqual(readMeasurementsQuery(new URLSearchParams("tab=measurements")), { attention: false, point: null });
+  assert.deepEqual(readMeasurementsQuery(new URLSearchParams("tab=measurements&only=attention&readings=x1")),
+    { attention: true, readings: "x1", point: null, channel: null });
+  assert.deepEqual(readMeasurementsQuery(new URLSearchParams("tab=measurements&point=p1")), { attention: false, readings: null, point: "p1", channel: null });
+  assert.deepEqual(readMeasurementsQuery(new URLSearchParams("tab=measurements&channel=c1")), { attention: false, readings: null, point: null, channel: "c1" });
+  assert.deepEqual(VIEW_PARAMS, ["point", "channel", "readings"]);
 });
 
 test("the row's one state chip: the worst state, with the detail in its tooltip", () => {
@@ -161,7 +164,13 @@ test("clicking a row, and its ⋯ menu", () => {
   assert.equal(feed[3].label, "Open work order #4");
   assert.equal(pointMenu(read).find((i) => i.id === "open").label, "Open its position");
   assert.equal(pointMenu(cond({ item: { id: "i1" } })).find((i) => i.id === "open").label, "Open its item");
+  // A point opens in the Explorer's Measurements tab, its position picked; an item's by locations.
+  assert.equal(pointPagePath(read), "/asset-register/explorer?arrange=positions&sel=a&tab=measurements&point=p");
+  assert.equal(pointPagePath(cond({ item: { id: "i1" } })), "/asset-register/explorer?arrange=locations&sel=i1&tab=measurements&point=p");
+  // A bare id: the old address, which finds the place and comes back.
   assert.equal(pointPagePath("p 1"), "/asset-register/points/p%201");
+  assert.equal(measurementAddress({ id: "c1", item: { id: "i1", fitted_to: { id: "f1" } } }, "channel", { bands: true }),
+    "/asset-register/explorer?arrange=positions&sel=f1&tab=measurements&channel=c1#bands");
   // Move…: a position's point; an item's travels with the item, a band stays with its channel.
   assert.deepEqual(pointMenu(read).at(-1), { id: "move", label: "Move…" });
   assert.equal(pointMenu(cond({ item: { id: "i1" } })).at(-1).reason, "An item's point travels with the item");
