@@ -7716,6 +7716,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .decision-row { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; }
 .decision-row .option-tile { min-width: 8.5rem; }
 .decision-row-gap { margin-top: 6px; }
+.decision-row-indent { margin-left: 16px; }
 .decision-sub { flex-basis: 100%; margin: 0; font-size: var(--fs-12); font-weight: 600; color: var(--muted); }
 .decision-line { flex: 1 1 14rem; margin: 0; font-size: var(--fs-12); color: var(--muted); line-height: 1.5; }
 .decision-line.refused { font-style: italic; }
