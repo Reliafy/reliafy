@@ -721,8 +721,10 @@ def assign_failure_mode(mode_id: str, body: dict = Body(...),
 def decide_failure_mode(mode_id: str, body: dict = Body(...), session=Depends(get_session),
                         ctx: AccessCtx = Depends(get_access),
                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """The mode's consequence and decision ({outcome, rtf_basis, task, interval, interval_unit, notes,
-    evidence}; null clears it), checked by the RCM decision rules; the evidence must be one the writer can open.
+    """The mode's two answers (hidden: true when the failure can't be seen in normal operation; consequence:
+    safety, environmental, operational or non_operational, "hidden" a deprecated alias for hidden true) and its
+    decision ({outcome, rtf_basis, task, interval, interval_unit, notes, evidence}; null clears it), checked by
+    the RCM decision rules and diagram; the evidence must be one the writer can open.
     A combination of tasks: decision.outcomes [{outcome, task, interval, interval_unit, task_id, evidence}, ...]
     in place of outcome, task and interval, each scheduled member with a task of its own and checked against its
     own evidence, else the decision's."""
@@ -734,7 +736,8 @@ def decide_failure_mode(mode_id: str, body: dict = Body(...), session=Depends(ge
             access_service.check_references(session, ctx, rcm_graph.evidence_refs(body["decision"]),
                                             keep=rcm_graph.evidence_refs(old))
         return m.decide_failure_mode(mode_id, body["consequence"] if "consequence" in body else ...,
-                                     body["decision"] if "decision" in body else ..., task_id=body.get("task_id"))
+                                     body["decision"] if "decision" in body else ..., task_id=body.get("task_id"),
+                                     hidden=body["hidden"] if "hidden" in body else ...)
     try:
         return _rcm_read(session, ctx, go)
     except access_service.UnreadableReference as exc:

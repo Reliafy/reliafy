@@ -62,14 +62,14 @@ def test_one_piece_for_one_member_is_partly_evidenced_in_plain_words():
     # A degradation model fits the inspection, not the replacement: that one has none.
     out = _check([OC, FI], evidence=DM)
     assert out["status"] == "partly"
-    assert out["reason"] == "Partly evidenced: the fixed-interval task has none."
+    assert out["reason"] == "Partly evidenced: the fixed interval task has none."
     assert [o["status"] for o in out["outcomes"]] == ["supported", "unevidenced"]
     assert out["outcomes"][0]["evidence_from"] == "decision"
     assert "for another of its tasks" in out["outcomes"][1]["reason"]
     # The chip opens the evidence there is.
     assert out["artifact_name"] == "Bearing vibration"
     three = _check([OC, FI, {"outcome": "failure_finding", "interval": 6, "interval_unit": "months"}], evidence=DM)
-    assert three["reason"] == "Partly evidenced: the fixed-interval and failure-finding tasks have none."
+    assert three["reason"] == "Partly evidenced: the fixed interval and failure finding tasks have none."
 
 
 def test_per_member_evidence_with_the_decisions_as_the_fallback():
@@ -92,10 +92,10 @@ def test_a_report_or_notes_fit_every_member_and_read_as_linked():
 
 def test_the_worst_member_decides_and_is_named():
     out = _check([{**OC, "evidence": DM}, {**FI, "evidence": {"type": "strategy_analysis", "id": "sa2"}}])
-    assert out["status"] == "contradicted" and out["reason"].startswith("Fixed-interval task:")
+    assert out["status"] == "contradicted" and out["reason"].startswith("Fixed interval task:")
     assert out["artifact_name"] == "Not worth it"
     gone = _check([{**OC, "evidence": {"type": "degradation_model", "id": "gone"}}, {**FI, "evidence": SA}])
-    assert gone["status"] == "stale" and gone["reason"].startswith("On-condition task:")
+    assert gone["status"] == "stale" and gone["reason"].startswith("On condition task:")
     # A member's own evidence of the wrong kind is inconclusive (it was linked for it).
     wrong = _check([{**OC, "evidence": SA}, {**FI, "evidence": SA}])
     assert wrong["status"] == "inconclusive"
@@ -174,7 +174,7 @@ def test_the_worksheet_rolls_up_a_partly_evidenced_combination(m, db):
     sheet = rcm_graph.resolve(db, m.rcm_worksheet(pid, "this"), [ORG])
     [md] = sheet["positions"][0]["unassigned"]
     assert md["decision"]["status"] == "partly"
-    assert md["decision"]["reason"] == "Partly evidenced: the fixed-interval task has none."
+    assert md["decision"]["reason"] == "Partly evidenced: the fixed interval task has none."
     assert sheet["rollup"]["partly"] == 1
 
 

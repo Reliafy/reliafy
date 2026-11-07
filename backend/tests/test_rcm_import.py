@@ -80,7 +80,8 @@ def test_build_tree_carries_down_and_maps_values():
                                    "interval": 1.0, "interval_unit": "months", "evidence": None}
     assert impeller["decision"]["outcome"] == "fixed_interval"
     assert impeller["decision"]["interval"] == 2.0 and impeller["decision"]["interval_unit"] == "years"
-    assert casing["consequence"] == "hidden"
+    # "H" is the old fifth value: the casing's failure is hidden, its category still to say.
+    assert casing["hidden"] is True and casing["consequence"] is None
     assert casing["decision"]["outcome"] == "failure_finding"
     assert casing["decision"]["interval"] == 1.0 and casing["decision"]["interval_unit"] == "years"
     # Run-to-failure needs a basis the sheet doesn't give: undecided; the action is on the mode.

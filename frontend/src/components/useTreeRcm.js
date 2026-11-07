@@ -104,6 +104,7 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       // mode's notes: one PATCH each, null clearing the field.
       if (col === "notes" || FMEA_FIELDS.has(col)) return after(updateFailureMode(id, { [col]: value }));
       if (col === "consequence") return after(decideFailureMode(id, { consequence: value || null }));
+      if (col === "hidden") return after(decideFailureMode(id, { hidden: value ?? null }));
       return after(decideFailureMode(id, { decision: decisionBody(r.ref.decision, { [COLUMN[col].field]: value }) }));
     },
     // A row's fields saved from its details (values checked by checkValue):
@@ -275,8 +276,10 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       }
       return n;
     },
-    decide(r, { consequence, decision }) {
-      return after(decideFailureMode(r.ref.id, { consequence: consequence || null, decision }));
+    decide(r, { hidden, consequence, decision }) {
+      return after(decideFailureMode(r.ref.id, {
+        ...(hidden !== undefined ? { hidden } : {}), consequence: consequence || null, decision,
+      }));
     },
     // A failure mode's tasks (the dialog's Tasks section): the tasks it has and
     // the ones on its position, or above it, that could serve it; another task

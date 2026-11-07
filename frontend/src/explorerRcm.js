@@ -11,7 +11,7 @@
 
 import {
   COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, blank as rcmBlank, checkValue, intervalText, modeCounts, moreTasks,
-  rowText as rcmText, tasksOf,
+  isHidden, rowText as rcmText, tasksOf,
 } from "./rcmWorksheet.js";
 import { standardsShown } from "./rcmStandards.js";
 import { withPositionDelete } from "./rcmDelete.js";
@@ -314,7 +314,7 @@ const isMode = (r) => r.type === "mode";
 // own, fmeaWorksheet.js CHIPS).
 export const RCM_CHIPS = [
   { id: "undecided", label: "Needs a decision", rcmOnly: true, tab: "rcm", test: (r) => isMode(r) && !r.ref.decision },
-  { id: "hidden", label: "Hidden failures", rcmOnly: true, tab: "rcm", test: (r) => isMode(r) && r.ref.consequence === "hidden" },
+  { id: "hidden", label: "Hidden failures", rcmOnly: true, tab: "rcm", test: (r) => isMode(r) && isHidden(r.ref) },
   // A linked report or working ("linked") isn't checked, so it's never one to look at.
   { id: "check", label: "Evidence to look at", rcmOnly: true, tab: "rcm",
     title: "Linked evidence that contradicts the decision, doesn't settle it, or has gone (a stale link)",
@@ -452,8 +452,8 @@ export function taskWithInterval(r) {
 }
 
 // A second task for a mode whose consequence is only a cost (operational or
-// non-operational) should earn its place: the classic sources ask why. For
-// safety, environmental and hidden consequences a combination is expected.
+// non-operational) should earn its place: the RCM decision diagram allows a
+// combination only on safety and environmental consequences.
 export function secondTaskHint(r) {
   const tasks = tasksOf(r?.ref);
   if (!tasks.length || !["operational", "non_operational"].includes(r.ref.consequence)) return null;
@@ -660,7 +660,11 @@ export function itemWrites(r, values) {
     // PATCH takes them), in one write.
     const body = pick(["name", "effects", "notes", ...FMEA_FIELDS], { name: "text" });
     if (Object.keys(body).length) out.push({ api: "mode", body });
-    if ("consequence" in values) out.push({ api: "decide", body: { consequence: values.consequence || null } });
+    // The two answers in one write (evident or hidden, then the category).
+    const answers = {};
+    if ("hidden" in values) answers.hidden = values.hidden === "hidden" ? true : values.hidden === "evident" ? false : null;
+    if ("consequence" in values) answers.consequence = values.consequence || null;
+    if (Object.keys(answers).length) out.push({ api: "decide", body: answers });
   }
   return out;
 }

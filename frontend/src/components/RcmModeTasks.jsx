@@ -54,7 +54,7 @@ export default function RcmModeTasks({ r, ops = null, readOnly = false, addStart
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
   const can = !readOnly && !!ops;
-  const addable = can && d ? addableOutcomes(d) : [];
+  const addable = can && d ? addableOutcomes(d, r.ref) : [];
   // The row menu's Add a task…: the dialog, opened (when another task can join the decision).
   const opened = useRef(null);
   useEffect(() => {

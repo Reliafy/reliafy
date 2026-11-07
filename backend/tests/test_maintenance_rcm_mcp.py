@@ -114,8 +114,10 @@ def test_an_agent_builds_reads_and_questions_a_pumps_rcm(env):
     assert linked["changed"] and [c["id"] for c in linked["causes"]] == [ids["motor_stops"]]
     assert up["explained_below"] and up["covered"]
 
-    # A hidden failure run to failure is kept, with a word to relay.
-    assert "Hidden consequences usually take failure_finding" in ids["relief_decided"]["advice"]
+    # A hidden failure (the deprecated consequence 'hidden') run to failure is kept, with a word to relay:
+    # its category isn't set yet.
+    assert ids["relief_decided"]["hidden"] is True and ids["relief_decided"]["consequence"] is None
+    assert "say what the multiple failure would do" in ids["relief_decided"]["advice"]
 
     # The read back: the standards with their limits, each functional failure under the one it breaches.
     fn = rcm["positions"][0]["functions"][0]

@@ -2646,7 +2646,7 @@ export async function getFmeaExcelBlob(positionId) {
   if (!res.ok) throw new Error(res.status === 404 ? "Excel export isn't available on this server." : `The export failed (${res.status}). Try again.`);
   return res.blob();
 }
-// {consequence?, decision?}: a key left out is left as it is; decision null clears it.
+// {hidden?, consequence?, decision?}: a key left out is left as it is; decision null clears it.
 export function decideFailureMode(id, body) {
   return sendJson("PUT")(`/api/maintenance/failure-modes/${id}/decision`, body);
 }

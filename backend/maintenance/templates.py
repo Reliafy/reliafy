@@ -683,7 +683,7 @@ SAMPLE_UAV_RCM = [
                               "connector",
                     "action_owner": "Electronics lead", "action_due": "2026-12-20", "action_status": "open",
                     "failure_rate": 5e-5, "mode_ratio": 0.4, "loss_probability": 0.5, "severity_class": "II",
-                    "consequence": "hidden",
+                    "consequence": "safety", "hidden": True,
                     "decision": {"outcome": "failure_finding", "task": "Test the BMS cut-off with a bench supply",
                                  "interval": 160, "interval_unit": "hours",
                                  "notes": "Failure-finding on a hidden function: the interval comes from the "
@@ -724,7 +724,7 @@ SAMPLE_UAV_RCM = [
                     "action": "Re-learn the capacity on a full discharge every 50 cycles",
                     "action_owner": "Electronics lead", "action_due": "2026-12-15", "action_status": "open",
                     "failure_rate": 5e-5, "mode_ratio": 0.2, "loss_probability": 0.5, "severity_class": "I",
-                    "consequence": "hidden",
+                    "consequence": "safety", "hidden": True,
                     "decision": {"outcome": "failure_finding",
                                  "task": "Compare the reported state of charge with a measured discharge",
                                  "interval": 50, "interval_unit": "cycles",
@@ -1150,7 +1150,7 @@ SAMPLE_UAV_RCM = [
                     "action": "Show an IMU disagreement in the arming checks", "action_owner": "Software lead",
                     "action_due": "2026-12-12", "action_status": "open",
                     "failure_rate": 4e-5, "mode_ratio": 0.4, "loss_probability": 0.5, "severity_class": "II",
-                    "consequence": "hidden",
+                    "consequence": "safety", "hidden": True,
                     "decision": {"outcome": "failure_finding", "task": "Compare both IMUs in the arming self-test log",
                                  "interval": 10, "interval_unit": "hours",
                                  "notes": "Failure-finding: the arming self-test writes both IMUs' readings to the "
@@ -1227,7 +1227,7 @@ SAMPLE_UAV_RCM = [
                     "action": "Failsafe test after every firmware update and every 25 flight hours",
                     "action_owner": "Software lead", "action_due": "2026-11-15", "action_status": "done",
                     "failure_rate": 1e-5, "mode_ratio": 0.15, "loss_probability": 0.8, "severity_class": "I",
-                    "consequence": "hidden",
+                    "consequence": "safety", "hidden": True,
                     "decision": {"outcome": "failure_finding", "programme": "failsafe",
                                  "check": "Link loss: switch the transmitter off in a hover at 3 m over the pad; "
                                           "the aircraft returns and lands within 3 s of the loss",
@@ -1249,7 +1249,7 @@ SAMPLE_UAV_RCM = [
                     "action": "Lock the threshold in the operator's configuration file",
                     "action_owner": "Software lead", "action_due": "2026-12-05", "action_status": "in_progress",
                     "failure_rate": 1e-5, "mode_ratio": 0.1, "loss_probability": 1.0, "severity_class": "I",
-                    "consequence": "hidden",
+                    "consequence": "safety", "hidden": True,
                     "decision": {"outcome": "failure_finding", "programme": "failsafe",
                                  "check": "Low battery: on the bench supply, bring the pack voltage down to the 20 % "
                                           "point; the land warning and the landing come within 3 s",
@@ -1278,7 +1278,7 @@ SAMPLE_UAV_RCM = [
                     "action": "The planner refuses to arm without today's fence (software change requested)",
                     "action_owner": "Operations", "action_due": "2027-01-15", "action_status": "open",
                     "failure_rate": 1e-5, "mode_ratio": 0.1, "loss_probability": 0.2, "severity_class": "II",
-                    "consequence": "hidden",
+                    "consequence": "safety", "hidden": True,
                     "decision": {"outcome": "failure_finding", "programme": "failsafe",
                                  "check": "Geofence: fly at the boundary at 10 m; the aircraft stops and holds at "
                                           "the fence",
@@ -1298,7 +1298,7 @@ SAMPLE_UAV_RCM = [
                     "action": "Reference fixed to 'above take-off' in the operator's configuration",
                     "action_owner": "Software lead", "action_due": "2026-11-30", "action_status": "done",
                     "failure_rate": 1e-5, "mode_ratio": 0.1, "loss_probability": 0.2, "severity_class": "II",
-                    "consequence": "hidden",
+                    "consequence": "safety", "hidden": True,
                     "decision": {"outcome": "failure_finding", "programme": "failsafe",
                                  "check": "Height limit: climb over the pad; the aircraft stops at 120 m above "
                                           "take-off",
@@ -1489,11 +1489,14 @@ def _add_uav_rcm(m, at_of: dict[str, list[str]], counts: dict) -> None:
                         m.score_failure_mode(fm["id"], _scores(mode, SAMPLE_UAV_BASIS))
                         counts["scored"] += 1
                         if not mode.get("decision"):
-                            m.decide_failure_mode(fm["id"], consequence=mode.get("consequence"))
+                            m.decide_failure_mode(fm["id"], consequence=mode.get("consequence"),
+                                                  hidden=mode.get("hidden", ...))
                             continue
                         decision, task_id = _decision_for(mode["decision"], programme)
+                        # strict=False: one sample keeps a legacy decision the diagram now refuses, to show
+                        # the evidence check and the advice that flags it.
                         m.decide_failure_mode(fm["id"], consequence=mode.get("consequence"), decision=decision,
-                                              task_id=task_id)
+                                              task_id=task_id, hidden=mode.get("hidden", ...), strict=False)
                         counts["decisions"] += 1
                         if task_id:
                             check = mode["decision"]["check"]

@@ -776,7 +776,7 @@ test("adding, deleting and deciding go once: a double-click, three clicks at onc
   await pickRow(page, `^Failure mode: Burns out ${tag}`);
   await page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: "Decide…" }).dblclick();
   const decide = page.getByRole("dialog", { name: /^Decision/ });
-  await decide.getByRole("button", { name: /^Run-to-failure/ }).click();
+  await decide.getByRole("button", { name: /^Run to failure/ }).click();
   await decide.getByRole("button", { name: "Failures are random" }).click();
   await decide.getByRole("button", { name: "Apply" }).dblclick();
   await expect(decide.getByRole("button", { name: "Saving…" })).toBeDisabled();
@@ -815,7 +815,7 @@ test("the decision dialog says what's missing: the interval a schedule needs, wh
   await expect(apply).toBeDisabled();
   await expect(why).toHaveText("Choose a maintenance decision.");
   // Run to failure: Apply waits for the reason, and says so.
-  await dialog.getByRole("button", { name: /^Run-to-failure/ }).click();
+  await dialog.getByRole("button", { name: /^Run to failure/ }).click();
   await expect(apply).toBeDisabled();
   await expect(why).toHaveText("Choose why it can run to failure.");
   await expect(apply).toHaveAccessibleDescription("Choose why it can run to failure.");
@@ -824,7 +824,7 @@ test("the decision dialog says what's missing: the interval a schedule needs, wh
   await expect(apply).toBeEnabled();
   await expect(why).toHaveCount(0);
   // Fixed interval and failure finding: the interval is needed, marked and said.
-  for (const [tile, words] of [[/^Fixed-interval replacement/, "how often it's replaced or restored"], [/^Failure-finding task/, "how often the hidden function is checked"]]) {
+  for (const [tile, words] of [[/^Fixed interval/, "how often it's replaced or restored"], [/^Failure finding/, "how often the hidden function is checked"]]) {
     await dialog.getByRole("button", { name: tile }).click();
     const interval = dialog.getByRole("spinbutton", { name: "Interval (needed)" });
     await expect(interval).toHaveAttribute("aria-invalid", "true");
@@ -833,7 +833,7 @@ test("the decision dialog says what's missing: the interval a schedule needs, wh
     await expect(apply).toBeDisabled();
     await expect(why).toHaveText("Give the task's interval.");
   }
-  await dialog.getByRole("button", { name: /^Fixed-interval replacement/ }).click();
+  await dialog.getByRole("button", { name: /^Fixed interval/ }).click();
   await shot(page, "decide-missing-interval");
   await dialog.getByRole("spinbutton", { name: "Interval (needed)" }).fill("0");
   await expect(dialog.getByText("The interval must be more than 0.")).toBeVisible();
@@ -842,7 +842,7 @@ test("the decision dialog says what's missing: the interval a schedule needs, wh
   await expect(apply).toBeEnabled();
   // On condition with no interval: Apply stays on, with a quiet notice.
   await dialog.getByRole("spinbutton", { name: "Interval (needed)" }).fill("");
-  await dialog.getByRole("button", { name: /^On-condition/ }).click();
+  await dialog.getByRole("button", { name: /^On condition/ }).click();
   await expect(dialog.getByRole("spinbutton", { name: "Interval", exact: true })).not.toHaveAttribute("aria-invalid", "true");
   await expect(dialog.getByText("No task will be created: this decision will show as having no task. Say in the notes what covers it.")).toBeVisible();
   await expect(apply).toBeEnabled();

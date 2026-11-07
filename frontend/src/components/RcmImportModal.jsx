@@ -11,16 +11,16 @@ const CONSEQUENCES = [
   ["environmental", "Environmental"],
   ["operational", "Operational"],
   ["non_operational", "Non-operational"],
-  ["hidden", "Hidden"],
+  ["hidden", "Hidden (category to say)"],
 ];
 const OUTCOMES = [
-  ["on_condition", "On condition (monitor)"],
-  ["fixed_interval", "Fixed interval replacement"],
+  ["on_condition", "On condition"],
+  ["fixed_interval", "Fixed interval"],
   ["rtf:random", "Run to failure — failures are random"],
   ["rtf:uneconomic", "Run to failure — prevention isn't economic"],
-  ["failure_finding", "Failure finding task"],
+  ["failure_finding", "Failure finding"],
   ["redesign", "Redesign"],
-  ["accept", "Accept risk / no scheduled maintenance"],
+  ["accept", "Accept"],
 ];
 
 // Import an FMEA / RCM worksheet onto a position's RCM (``position``: {id,
