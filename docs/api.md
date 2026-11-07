@@ -180,6 +180,44 @@ MCP tool calls carry JSON, not files. These have no MCP twin, on purpose:
 | `POST /api/v1/maintenance/photos?target_id=…&caption=…` | Adds a photo to a maintenance position, item, location or work order. The body is the image (JPEG, PNG, WebP or HEIC; at most 20 MB), or multipart with a `file` field. Cleaned and stripped of camera and location metadata, like a photo added in the app. Reliafy Maintenance only; `write` scope. |
 | `PUT /api/uploads/{upload_id}?t=…` | Sends a file's bytes to the single-use link from `change upload_create` (no other credentials; at most 30 MB). Then import it: `change dataset_upload`, `change import_rbd`, `change import_excel` or `change rbd_upload_outage_log` with that `upload_id`; a PDF (purpose `document`, at most 20 MB) goes on a maintenance item, position or class with `maintenance attachments.add_document`. |
 
+### Support replies (operators only)
+
+Operators (`ADMIN_EMAILS`, with a verified address) can answer mail sent to
+the support inbox as Reliafy, from a script or a scheduled agent. Anyone else
+gets `403`. It isn't an MCP tool and has no CLI command: it isn't a user
+feature.
+
+| Call | Does |
+|---|---|
+| `POST /api/v1/support/replies` | Sends one reply. `write` scope. |
+| `GET /api/v1/support/replies` | The last 50 sent, newest first: recipient, subject, a 120-character preview, who sent it. `read` scope. |
+
+```json
+{
+  "to": "customer@example.com",
+  "subject": "Re: Weibull fit question",
+  "text": "Hi, ...",
+  "html": "<p>Hi, ...</p>",
+  "in_reply_to": "<CAB123@mail.example.com>",
+  "references": ["<root456@mail.example.com>"]
+}
+```
+
+`to`, `subject` and `text` are required; `to` is one address. `in_reply_to`
+is the `Message-ID` of the mail being answered, and with `references` (the
+thread's earlier IDs) makes the reply thread in the recipient's mailbox.
+The reply comes from `SUPPORT_FROM` (default `hello@reliafy.com`, named by
+`SUPPORT_FROM_NAME`, default "Reliafy support"), with that address as
+Reply-To, a blind copy to `SUPPORT_COPY_TO` (default `hello@reliafy.com`;
+empty sends none) and an `X-Reliafy-Support-Reply` header carrying the log
+id, so an inbox reader can skip its own copies. It sends over the server's
+SMTP settings and answers once the mail server has taken it: `200` with the
+log entry (including the new `message_id`), `502` if the mail server refused,
+`503` if the server has no SMTP settings, `429` past
+`SUPPORT_REPLIES_PER_HOUR` (default 20, shared by every caller), `422` for a
+bad body. Every attempt is logged in `support_replies` without the message
+body.
+
 ### The reliability data library
 
 Published generic failure data (failure rates and probabilities of failure
