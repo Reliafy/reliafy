@@ -582,33 +582,18 @@ export function Details({
           then the quieter things (the working, the checkable limit, where it sits) last. */}
       <div className="rw-pbody">
         {/* The FME(C)A tab: a failure mode's two groups first (the end effect and the
-            consequence are in the first), its tasks and decision after. */}
+            consequence are in the first), its decision and tasks after. */}
         {r.type === "mode" && fmea?.on && fmeaGroups}
         {/* 1. What's inside it. A function: its performance standards, then the functional
             failures under them. A standard (and "No performance standard"): its functional
             failures. A functional failure (and "Not under a functional failure"): its failure
-            modes. A failure mode: its tasks. */}
+            modes. A failure mode has no list here: its tasks come after its decision. */}
         {/* On the FME(C)A tab a function's details are about its failure modes: the
             performance standards and the working stay on the RCM tab. */}
         {r.type === "fn" && ops?.standards && !fmea?.on && (
           <RcmFunctionStandards key={`${r.key}:std`} r={r} ops={ops} readOnly={readOnly} addStart={startOf("std")} onSaid={said} />
         )}
         {insideList && inside}
-        {taskList && !readOnly && (
-          <RcmModeTasks key={`${r.key}:tasks`} r={r} ops={ops} addStart={startOf("task")} onSaid={said} />
-        )}
-        {r.type === "mode" && (!taskList || readOnly) && tasks.length > 0 && (
-          <Section title="Tasks" count={tasks.length} className="rw-kids">
-            <ul className="rw-tasks">
-              {tasks.map((t, i) => (
-                <li key={t.id || i}>
-                  <LevelIcon type="task" className="rw-ic rw-ic-task" />
-                  <span>{taskLine(t)}</span>
-                </li>
-              ))}
-            </ul>
-          </Section>
-        )}
 
         {/* 2. This level's own. A functional failure: its links to failures on other
             positions. A failure mode: the worksheet's columns in their order (effects,
@@ -666,6 +651,23 @@ export function Details({
                 {field("Decision notes", "dnotes", { area: true, optional: true })}
               </>
             ) : <p className="rw-dline">No decision yet.</p>}
+          </Section>
+        )}
+        {/* A failure mode's tasks come after the decision that drives them (Derryn, 8 Nov 2026):
+            effects, consequence, the decision, then the tasks it calls for. */}
+        {taskList && !readOnly && (
+          <RcmModeTasks key={`${r.key}:tasks`} r={r} ops={ops} addStart={startOf("task")} onSaid={said} />
+        )}
+        {r.type === "mode" && (!taskList || readOnly) && tasks.length > 0 && (
+          <Section title="Tasks" count={tasks.length} className="rw-kids">
+            <ul className="rw-tasks">
+              {tasks.map((t, i) => (
+                <li key={t.id || i}>
+                  <LevelIcon type="task" className="rw-ic rw-ic-task" />
+                  <span>{taskLine(t)}</span>
+                </li>
+              ))}
+            </ul>
           </Section>
         )}
         {/* 3. The quieter things, last. */}
