@@ -159,3 +159,14 @@ def test_package_the_tasks_routes(api):
     assert {p["name"] for p in here} == {d["name"] for d in drafts}
     elsewhere = api.post(f"{M}/positions", json={"name": "Shed"}).json()
     assert api.get(f"{M}/packages", params={"position_id": elsewhere["id"]}).json()["packages"] == []
+
+
+def test_task_table_route(api):
+    site = api.post(f"{M}/positions", json={"name": "Pool"}).json()
+    pump = api.post(f"{M}/positions", json={"name": "Pump", "parent_id": site["id"]}).json()
+    api.post(f"{M}/positions/{pump['id']}/tasks", json={"name": "Skim", "interval": 1, "unit": "weeks"})
+    got = api.get(f"{M}/task-table", params={"position_id": site["id"]})
+    assert got.status_code == 200, got.text
+    [row] = got.json()["tasks"]
+    assert row["name"] == "Skim" and row["subject"]["name"] == "Pump" and row["package"] is None
+    assert api.get(f"{M}/task-table").status_code == 422

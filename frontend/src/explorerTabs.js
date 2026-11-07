@@ -63,7 +63,7 @@ export const TABS = [
   },
   { id: "classes", label: "Classes", title: "The classes used here and inside it, and every class in the register", kinds: ["pos", "loc"] },
   { id: "measurements", label: "Measurements", title: "Every measuring point here and inside it: the latest reading, its limits and whether it's past them", kinds: ["pos", "loc", "item"], asset: true },
-  { id: "packages", label: "Packages", title: "Work packages: the tasks done together on one visit here and inside it, and when each is next due", kinds: ["pos", "loc"], asset: true },
+  { id: "packages", label: "Packages", title: "Every task here and below in a table: search, sort and tick the ones done on one visit to package them", kinds: ["pos", "loc"], asset: true },
   { id: "signals", label: "Signals", title: "Vibration and other sensors that send snapshots: spectra, watch bands and how they change", kinds: ["pos", "item"], asset: true },
 ];
 const BY_ID = new Map(TABS.filter(offered).map((t) => [t.id, t]));

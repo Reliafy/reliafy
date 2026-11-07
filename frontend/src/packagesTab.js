@@ -3,6 +3,8 @@
 // package bundles tasks done on one visit, so each visit raises one work
 // order). The logic here; the page is components/PackagesPanel.jsx.
 
+import { OUTCOME_LABEL, triggerText, whenText } from "./rcmWorksheet.js";
+
 const DAY = 86400000;
 const toDay = (s) => Date.parse(`${String(s).slice(0, 10)}T00:00:00Z`);
 
@@ -45,47 +47,6 @@ export function daysLate(pkg, today) {
 
 export function lateText(days) {
   return days > 0 ? `Late by ${days} day${days === 1 ? "" : "s"}` : "";
-}
-
-// The packages as tops, each with its layers (and theirs) under it, depth set:
-// [{pkg, depth, top}] in display order. A layer whose top isn't in the list
-// (the read is limited to a branch) stands as a top.
-function treeOf(rows) {
-  const byId = new Map(rows.map((p) => [p.id, p]));
-  const kids = new Map();
-  const tops = [];
-  for (const p of rows) {
-    const parent = p.parent?.id;
-    if (parent && byId.has(parent)) {
-      if (!kids.has(parent)) kids.set(parent, []);
-      kids.get(parent).push(p);
-    } else tops.push(p);
-  }
-  return { tops, kids };
-}
-
-// Worst first: late (most days first), then the soonest next visit (or open
-// work order's visit), then paused, then retired; A–Z between equals. Layers
-// stay under their top, soonest first.
-export function packageRows(rows = [], today = null) {
-  const { tops, kids } = treeOf(rows);
-  const when = (p) => p.open_work_order?.visit_on || p.next_visit || "9999";
-  const rank = (p) => (p.status === "retired" ? 3 : p.status === "paused" ? 2 : daysLate(p, today) > 0 ? 0 : 1);
-  const cmp = (a, b) => (rank(a) - rank(b)) || (daysLate(b, today) - daysLate(a, today))
-    || when(a).localeCompare(when(b)) || a.name.localeCompare(b.name, "en", { sensitivity: "base", numeric: true });
-  const out = [];
-  const walk = (p, depth, top) => {
-    out.push({ pkg: p, depth, top });
-    for (const k of [...(kids.get(p.id) || [])].sort(cmp)) walk(k, depth + 1, top);
-  };
-  for (const t of [...tops].sort(cmp)) walk(t, 0, t);
-  return out;
-}
-
-// The few words under a package's name: its cadence, trade and how many tasks.
-export function packageSubline(pkg) {
-  const n = pkg.task_count || 0;
-  return [cadenceWords(pkg), pkg.trade || null, `${n} task${n === 1 ? "" : "s"}`].filter(Boolean).join(" · ");
 }
 
 // The Package the tasks… table: each draft a row, ticked, with the name it'll
@@ -153,3 +114,141 @@ export function nextVisit(tasks = []) {
 
 export const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 export const dayName = (d) => d[0].toUpperCase() + d.slice(1);
+
+// ---- the tab's table of tasks --------------------------------------------------------
+// The Packages tab is a table of every task on the picked row and below it (the
+// server's task-table read), formatted like the RCM table: search it, sort it,
+// tick tasks and package them together.
+
+
+export const TASK_COLUMNS = [
+  { id: "position", label: "Position", width: 170, title: "The position or place the task is on" },
+  { id: "mode", label: "Failure mode", width: 230, title: "The failure mode it prevents, with its function › functional failure" },
+  { id: "task", label: "Task", width: 240 },
+  { id: "kind", label: "Kind", width: 140, title: "On condition, fixed interval or failure finding" },
+  { id: "interval", label: "Interval", width: 130 },
+  { id: "trade", label: "Trade", width: 110 },
+  { id: "due", label: "Next due", width: 110 },
+  { id: "package", label: "Package", width: 200, title: "The work package it's done in; blank when it's done on its own" },
+];
+export const DEFAULT_TASK_COLUMNS = TASK_COLUMNS.map((c) => c.id);
+const COLUMN_IDS = new Set(DEFAULT_TASK_COLUMNS);
+
+// What each column shows for a task (and what it sorts and searches by).
+export function kindText(t) {
+  if (t.on_event) return triggerText(t.trigger) || "on event";
+  return OUTCOME_LABEL[t.kind] || "";
+}
+export function modeLine(m) {
+  return m ? [m.function, m.failure].filter(Boolean).join(" › ") : "";
+}
+export function cellText(t, col) {
+  switch (col) {
+    case "position": return t.subject?.name || "";
+    case "mode": return t.modes?.[0]?.text || "";
+    case "task": return t.name || "";
+    case "kind": return kindText(t);
+    case "interval": return t.on_event ? "" : whenText({ interval: t.interval, interval_unit: t.unit, trigger: t.trigger });
+    case "trade": return t.trade || "";
+    case "due": return t.next_due || "";
+    case "package": return t.package?.name || "";
+    default: return "";
+  }
+}
+
+const DAYS = { hours: 1 / 24, days: 1, weeks: 7, months: 30.4375, years: 365.25 };
+// The value a column sorts by: an interval by its length in days, the rest by text.
+function sortValue(t, col) {
+  if (col === "interval") return t.on_event || t.interval == null ? null : t.interval * (DAYS[t.unit] ?? 1);
+  const v = cellText(t, col);
+  return v === "" ? null : v.toLowerCase();
+}
+
+// Every word of the search somewhere in the row's columns (and the second line
+// of its failure mode, and its other failure modes).
+export function searchTasks(tasks, q) {
+  const words = String(q || "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return tasks;
+  return tasks.filter((t) => {
+    const hay = [...DEFAULT_TASK_COLUMNS.map((c) => cellText(t, c)), ...(t.modes || []).flatMap((m) => [m.text, modeLine(m)])]
+      .join(" ").toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
+}
+
+// ?sort=due,-interval: the keys in order, "-" for descending.
+export function parseSort(param) {
+  return String(param || "").split(",").map((s) => s.trim()).filter(Boolean)
+    .map((s) => (s.startsWith("-") ? { col: s.slice(1), dir: -1 } : { col: s, dir: 1 }))
+    .filter((k) => COLUMN_IDS.has(k.col)).slice(0, 3);
+}
+export function sortParam(keys) {
+  return keys.map((k) => (k.dir < 0 ? `-${k.col}` : k.col)).join(",");
+}
+
+// A header clicked: the only key (again: the other way round, then off).
+// Shift-clicked: added as the next key (again: the other way round, then off).
+export function nextSort(keys, col, shift = false) {
+  const at = keys.findIndex((k) => k.col === col);
+  if (!shift) {
+    if (at === 0 && keys.length === 1) return keys[0].dir === 1 ? [{ col, dir: -1 }] : [];
+    return [{ col, dir: 1 }];
+  }
+  if (at < 0) return [...keys, { col, dir: 1 }].slice(0, 3);
+  if (keys[at].dir === 1) return keys.map((k, i) => (i === at ? { col, dir: -1 } : k));
+  return keys.filter((_, i) => i !== at);
+}
+
+// Blank values last whichever way; then position and task A–Z.
+export function sortTasks(tasks, keys) {
+  const cmpKey = (a, b, { col, dir }) => {
+    const x = sortValue(a, col), y = sortValue(b, col);
+    if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+    const c = typeof x === "number" ? x - y : x.localeCompare(y, "en", { numeric: true });
+    return c * dir;
+  };
+  const tail = [{ col: "position", dir: 1 }, { col: "task", dir: 1 }];
+  return [...tasks].sort((a, b) => {
+    for (const k of [...keys, ...tail]) {
+      const c = cmpKey(a, b, k);
+      if (c) return c;
+    }
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+}
+
+// The tick box for every task shown: all, some or none ticked.
+export function tickState(shown, picked) {
+  const n = shown.filter((t) => picked.has(t.id)).length;
+  return n === 0 ? "none" : n === shown.length ? "all" : "some";
+}
+export function tickAll(shown, picked, on) {
+  const next = new Set(picked);
+  for (const t of shown) if (on) next.add(t.id); else next.delete(t.id);
+  return next;
+}
+
+// A new package's cadence from the tasks picked: the commonest calendar
+// interval among them (weekly → every week on the weekday; monthly and longer
+// → the first weekday of every N months), and a note when they differ.
+export function cadenceFor(tasks) {
+  const count = new Map();
+  for (const t of tasks) {
+    if (t.on_event || t.interval == null || !(t.unit in DAYS) || t.unit === "hours") continue;
+    const key = `${t.interval} ${t.unit}`;
+    count.set(key, (count.get(key) || 0) + 1);
+  }
+  if (!count.size) return { every: 1, unit: "weeks", mixed: false };
+  const [best] = [...count].sort((a, b) => b[1] - a[1] || DAYS[a[0].split(" ")[1]] * Number(a[0].split(" ")[0]) - DAYS[b[0].split(" ")[1]] * Number(b[0].split(" ")[0]));
+  let [every, unit] = best[0].split(" ");
+  every = Number(every);
+  if (unit === "days" && every % 7 === 0) { every /= 7; unit = "weeks"; }
+  if (unit === "years") { every *= 12; unit = "months"; }
+  if (!Number.isInteger(every) || every < 1) { every = Math.max(1, Math.round(every)); }
+  return { every, unit, mixed: count.size > 1 };
+}
+
+// Which of the picked tasks can't join a package (an item's, by use, a round), and why.
+export function cantJoin(tasks) {
+  return tasks.filter((t) => t.why_not);
+}

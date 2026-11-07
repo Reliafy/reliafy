@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  addPackageTask, changePackage, createPackage, createPackages, getPackage, listPackages, proposePackages, removePackageTask,
+  addPackageTask, changePackage, createPackage, createPackages, getPackage, getTaskTable, listPackages, proposePackages,
+  removePackageTask,
 } from "../api.js";
 import { Field, FormModal, fmtDate } from "./MaintenanceParts.jsx";
 import Chip from "./ui/Chip.jsx";
@@ -10,22 +11,29 @@ import { ShowMe } from "./SectionPage.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import {
-  WEEKDAYS, cadenceWords, dayName, daysLate, freeTasks, lateText, packageRows, packageScope, packageSubline,
-  proposalBatch, proposalProblem, proposalRows, renameRow, toggleRow, visitRuleText,
+  DEFAULT_TASK_COLUMNS, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, cellText, dayName, daysLate, freeTasks, kindText,
+  lateText, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows, renameRow, searchTasks,
+  sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
 } from "../packagesTab.js";
+import { ColumnChooser } from "./RcmWorksheet.jsx";
+import "./RcmWorksheet.css";
+import "./Outline.css";
 import "../views/Maintenance.css";
 import "./PackagesPanel.css";
 
-// The Packages tab of the Explorer's panel (Assets › Explorer, ?tab=packages):
-// the work packages planned at the picked position or place and inside it, or
-// holding a task there. A package bundles tasks done on one visit (the weekly
-// check of an area), so each visit raises one work order; a layer adds lines
-// on some of its visits (the first Saturday of the month). Worst first: late,
-// then the soonest visit. A package opens in the same tab (?package=, with a
-// back link): its tasks, its layers, and its ⋯ (Pause…, Resume, Retire…, Add
-// tasks…). The heading's "…" has Package the tasks… (drafts from the tasks
-// here that are in no package, grouped by how often and by trade, the longer
-// ones as layers on the weekly visit) and Add a package… (by hand).
+// The Packages tab of the Explorer's panel (Assets › Explorer, ?tab=packages;
+// Derryn, 8 Nov 2026: the tree, and a table of every task below the row picked
+// to search, sort and package from). One row per task on the picked position
+// or place and everything inside it: position, failure mode (its function ›
+// functional failure under it), task, kind, interval, trade, next due and its
+// package. Formatted as the RCM table (RcmWorksheet.css), with the Columns
+// chooser in the heading's "…". Search (?q=) and sort (?sort=, Shift-click a
+// header for a second key) stay in the address. Tick tasks and the bar at the
+// foot offers Package selected… (a new package with them, its cadence from
+// their intervals) and Add to a package… (one already on this tree). A
+// package's name opens it in the same tab (?package=, with a back link): its
+// tasks, layers and ⋯ (Pause…, Resume, Retire…, Add tasks…). "Package the
+// tasks…" in the heading's "…" drafts packages from every loose task here.
 
 const HELP = { guide: "work-packages" };
 
@@ -156,15 +164,19 @@ export function PackageTasksDialog({ scope, where, onClose, onDone }) {
 const UNITS = ["days", "weeks", "months", "years"];
 const NTH = [[1, "first"], [2, "second"], [3, "third"], [4, "fourth"], [-1, "last"]];
 
-// Add a package…: by hand, on the picked position or place.
-export function AddPackageDialog({ scope, where, onClose, onDone }) {
+// Package selected… (and Add a package…, with no tasks): a new package on the
+// picked position or place, with the tasks ticked; its cadence starts from
+// their commonest interval.
+export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) {
+  const start = useMemo(() => cadenceFor(tasks), [tasks]);
+  const trades = [...new Set(tasks.map((t) => t.trade).filter(Boolean))];
   const [name, setName] = useState("");
   const [timing, setTiming] = useState("fixed");
-  const [every, setEvery] = useState("1");
-  const [unit, setUnit] = useState("weeks");
+  const [every, setEvery] = useState(String(start.every));
+  const [unit, setUnit] = useState(start.unit);
   const [weekday, setWeekday] = useState("saturday");
   const [nth, setNth] = useState("1");
-  const [trade, setTrade] = useState("");
+  const [trade, setTrade] = useState(trades.length === 1 ? trades[0] : "");
   const [tolerance, setTolerance] = useState("1");
   const patterned = timing === "fixed" && (unit === "weeks" || unit === "months");
   const n = Number(every);
@@ -174,13 +186,19 @@ export function AddPackageDialog({ scope, where, onClose, onDone }) {
       ...scope, name: name.trim(), timing, every: n, unit, trade: trade.trim(),
       ...(patterned ? { weekday, ...(unit === "months" ? { nth: Number(nth) } : {}) } : {}),
       ...(tolerance !== "" && Number(tolerance) > 0 ? { tolerance: Math.round(Number(tolerance)), tolerance_unit: "days" } : {}),
+      ...(tasks.length ? { tasks: tasks.map((t) => t.id) } : {}),
     };
     const made = await createPackage(body);
-    onDone(`Made ${made.name}. Add its tasks from its ⋯.`, made.id);
+    onDone(tasks.length ? `Made ${made.name} with ${plural(tasks.length, "task")}.` : `Made ${made.name}. Add its tasks from its ⋯.`, made.id);
   };
   return (
-    <FormModal title="Add a package" submitLabel="Add package" canSubmit={!!ok} onClose={onClose} onSubmit={submit}>
-      <p className="lib-date">A package {where}: the tasks done together on one visit. Add its tasks after.</p>
+    <FormModal title={tasks.length ? `Package ${plural(tasks.length, "task")}` : "Add a package"} submitLabel={tasks.length ? "Make package" : "Add package"}
+               canSubmit={!!ok} onClose={onClose} onSubmit={submit}>
+      <p className="lib-date">
+        {tasks.length
+          ? <>A package {where}, done on one visit: {tasks.map((t) => t.name).join(", ")}.{start.mixed ? " Their intervals differ: the visit goes by the one below, and each task is done on every visit." : ""}</>
+          : <>A package {where}: the tasks done together on one visit. Add its tasks after.</>}
+      </p>
       <Field label="Name" text={name}><input autoFocus value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder="e.g. Pool weekly check" /></Field>
       <Field label="Dates">
         <select value={timing} onChange={(e) => setTiming(e.target.value)}>
@@ -275,6 +293,56 @@ function AddTasksDialog({ pkg, onClose, onDone }) {
               <label className="pk-check">
                 <input type="checkbox" checked={picked.has(t.id)} onChange={() => flip(t.id)} />
                 <span>{t.name} <span className="lib-date">· {t.subject?.name} · every {t.interval} {t.unit}</span></span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="pk-dialog-row">
+        <Field label="On">
+          <select value={rule} onChange={(e) => setRule(e.target.value)}>
+            <option value="every">Every visit</option>
+            <option value="nth">Every Nth visit</option>
+          </select>
+        </Field>
+        {rule === "nth" && <Field label="N"><input type="number" min="2" max="100" step="1" inputMode="numeric" value={nth} onChange={(e) => setNth(e.target.value)} /></Field>}
+      </div>
+    </FormModal>
+  );
+}
+
+// Add to a package…: the packages on this tree; the ticked tasks join the one picked.
+function AddToPackageDialog({ scope, tasks, onClose, onDone }) {
+  const [list, setList] = useState(null);
+  const [error, setError] = useState(null);
+  const [pick, setPick] = useState(null);
+  const [rule, setRule] = useState("every");
+  const [nth, setNth] = useState("4");
+  useEffect(() => {
+    let live = true;
+    listPackages(scope).then((d) => live && setList(d.packages.filter((p) => p.status !== "retired")))
+      .catch((e) => live && setError(e.message));
+    return () => { live = false; };
+  }, [scope]);
+  const submit = async () => {
+    for (const t of tasks) {
+      await addPackageTask(pick, { task_id: t.id, visit_rule: rule, ...(rule === "nth" ? { every_nth: Number(nth) } : {}) });
+    }
+    onDone(`Added ${plural(tasks.length, "task")} to ${list.find((p) => p.id === pick)?.name || "the package"}.`);
+  };
+  return (
+    <FormModal title={`Add ${plural(tasks.length, "task")} to a package`} submitLabel="Add" pendingLabel="Adding…"
+               canSubmit={!!pick && (rule === "every" || Number(nth) >= 2)} onClose={onClose} onSubmit={submit}>
+      {error && <div className="card error">{error}</div>}
+      {!list && !error && <p className="lib-date">Loading…</p>}
+      {list && list.length === 0 && <p className="lib-date">No packages on this part of the tree yet: use Package selected… to make one.</p>}
+      {list && list.length > 0 && (
+        <ul className="pk-pick" role="radiogroup" aria-label="Packages">
+          {list.map((p) => (
+            <li key={p.id}>
+              <label className="pk-check">
+                <input type="radio" name="pk-target" checked={pick === p.id} onChange={() => setPick(p.id)} />
+                <span>{p.parent ? "↳ " : ""}{p.name} <span className="lib-date">· {cadenceWords(p)}{p.trade ? ` · ${p.trade}` : ""} · {plural(p.task_count, "task")}</span></span>
               </label>
             </li>
           ))}
@@ -399,76 +467,215 @@ function PackageView({ id, today, onBack, onOpen, onChanged }) {
   );
 }
 
-// ---- the tab ------------------------------------------------------------------------------
+// ---- the tab: every task here and below, as a table --------------------------------
+
+const COLS_KEY = "reliafy.packages.columns";
+function readCols() {
+  try {
+    const got = JSON.parse(localStorage.getItem(COLS_KEY) || "null");
+    if (Array.isArray(got) && got.length) return DEFAULT_TASK_COLUMNS.filter((id) => got.includes(id));
+  } catch { /* storage blocked: the usual columns */ }
+  return DEFAULT_TASK_COLUMNS;
+}
+function saveCols(cols) {
+  try { localStorage.setItem(COLS_KEY, JSON.stringify(cols)); } catch { /* not kept */ }
+}
+
+// ?q= and ?sort= (with ?package=, the package open), kept in the address.
+function useTableQuery() {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const set = (changes) => {
+    const next = new URLSearchParams(location.search);
+    for (const [k, v] of Object.entries(changes)) if (v) next.set(k, v); else next.delete(k);
+    navigate(`${location.pathname}?${next}${location.hash}`, { replace: true, state: location.state });
+  };
+  return {
+    q: params.get("q") || "", setQ: (v) => set({ q: v }),
+    sort: parseSort(params.get("sort")), setSort: (keys) => set({ sort: sortParam(keys) }),
+  };
+}
+
+function TaskCell({ t, col, onPackage }) {
+  if (col === "mode") {
+    const m = t.modes?.[0];
+    if (!m) return <span className="rw-blank">No failure mode</span>;
+    const more = t.modes.length - 1;
+    return (
+      <span className="pk-two" title={[m.text, modeLine(m)].filter(Boolean).join("\n")}>
+        <span className="rw-txt">{m.text}{more > 0 ? <span className="rw-sum"> +{more}</span> : null}</span>
+        {modeLine(m) && <span className="rw-sum">{modeLine(m)}</span>}
+      </span>
+    );
+  }
+  if (col === "kind") {
+    const text = kindText(t);
+    return text ? <Chip tone={t.on_event ? "neutral" : "accent"} className="pk-kind" title={text}>{text}</Chip> : null;
+  }
+  if (col === "due") {
+    if (!t.next_due) return null;
+    return <span className={t.overdue ? "pk-overdue" : undefined} title={t.overdue ? "Overdue" : undefined}>{fmtDate(t.next_due)}</span>;
+  }
+  if (col === "package") {
+    if (t.package) {
+      return <button type="button" className="link pk-pkg-link" onClick={() => onPackage(t.package.id)} title={`Open ${t.package.name}`}>{t.package.name}</button>;
+    }
+    return t.why_not ? <span className="rw-sum" title={`Stays on its own: ${t.why_not}`}>On its own</span> : null;
+  }
+  const text = cellText(t, col);
+  return <span className="rw-txt" title={text}>{text}</span>;
+}
+
+const TICK_W = 36;
 
 export default function PackagesPanel({ row, today, onMenu = null }) {
-  const q = usePackageQuery();
+  const open = usePackageQuery();
+  const tq = useTableQuery();
   const scope = useMemo(() => packageScope(row), [row]);
-  const [state, setState] = useState({ key: null, rows: null, error: null });
+  const [state, setState] = useState({ key: null, data: null, error: null });
+  const [picked, setPicked] = useState(() => new Set());
   const [modal, setModal] = useState(null);
   const [said, setSaid] = useState(null);
   const [version, setVersion] = useState(0);
+  const [cols, setColsState] = useState(readCols);
+  const [colsOpen, setColsOpen] = useState(false);
+  const [query, setQuery] = useState(tq.q);
   const key = `${row.key}:${version}`;
   useEffect(() => {
     if (!scope) return undefined;
     let live = true;
-    listPackages(scope)
-      .then((d) => live && setState({ key, rows: d.packages, error: null }))
-      .catch((e) => live && setState({ key, rows: [], error: e.message }));
+    getTaskTable(scope)
+      .then((data) => live && setState({ key, data, error: null }))
+      .catch((e) => live && setState({ key, data: null, error: e.message }));
     return () => { live = false; };
   }, [scope, key]);
-  const rows = state.key === key ? state.rows : null;
-  const shown = useMemo(() => rows && packageRows(rows, today), [rows, today]);
-  const where = `at ${row.ref.name || "this row"} and below`;
+  // A new row picked: nothing ticked.
+  useEffect(() => { setPicked(new Set()); }, [row.key]);
+  // The search box writes the address a moment after typing stops.
+  useEffect(() => {
+    if (query === tq.q) return undefined;
+    const t = setTimeout(() => tq.setQ(query), 250);
+    return () => clearTimeout(t);
+  }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
+  const data = state.key === key ? state.data : null;
+  const all = data?.tasks || null;
+  const shown = useMemo(() => all && sortTasks(searchTasks(all, query), tq.sort), [all, query, tq.sort]);
+  const columns = TASK_COLUMNS.filter((c) => cols.includes(c.id));
+  const total = TICK_W + columns.reduce((n, c) => n + c.width, 0);
   const refresh = () => setVersion((v) => v + 1);
+  const setCols = (next) => { setColsState(next); saveCols(next); };
+  const chosen = all ? all.filter((t) => picked.has(t.id)) : [];
+  const where = `at ${row.ref.name || "this row"}`;
   usePanelMenu(onMenu, [
-    { id: "pkg-propose", label: "Package the tasks…", onSelect: () => setModal("propose") },
+    { id: "pkg-cols", label: "Columns…", onSelect: () => setColsOpen(true) },
+    { id: "pkg-propose", label: "Package the tasks…", onSelect: () => setModal("propose"), title: "Drafts packages from every task here not in one, by how often and by trade" },
     { id: "pkg-new", label: "Add a package…", onSelect: () => setModal("new") },
   ]);
   if (!scope) return null;
-  const late = shown ? shown.filter((r) => daysLate(r.pkg, today) > 0).length : 0;
+  if (open.open) {
+    return (
+      <div className="td-tab-page pk-panel">
+        <PackageView id={open.open} today={today} onBack={() => open.setOpen(null)} onOpen={open.setOpen} onChanged={refresh} />
+      </div>
+    );
+  }
+  const tick = shown ? tickState(shown.filter((t) => !t.why_not), picked) : "none";
+  const flip = (id) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const done = (text) => { setModal(null); setSaid(text); setPicked(new Set()); refresh(); };
+  const free = chosen.filter((t) => !t.package && !t.why_not);
+  const inOne = chosen.filter((t) => t.package);
   return (
-    <div className="td-tab-page pk-panel">
-      {q.open ? (
-        <PackageView id={q.open} today={today} onBack={() => q.setOpen(null)} onOpen={q.setOpen} onChanged={refresh} />
-      ) : (
-        <>
-          <p className="lib-date pk-purpose">Tasks done together on one visit, one work order each visit. Late first, then the soonest visit.</p>
-          {said && <p className="lib-date" role="status">{said}</p>}
-          {state.error && <div className="card error">Couldn&apos;t load the packages: {state.error}</div>}
-          {shown === null ? <div className="card empty">Loading…</div> : shown.length === 0 ? (
-            <div className="card empty pk-empty">
-              <p>No packages here yet. <button type="button" className="link" onClick={() => setModal("propose")}>Package the tasks…</button> groups what&apos;s due together, so each visit raises one work order.</p>
-              <p className="section-empty-more"><ShowMe help={HELP}>How work packages work</ShowMe></p>
-            </div>
-          ) : (
-            <>
-              <p className="lib-date pk-count">{plural(shown.length, "package")} {where}{late ? ` · ${late} late` : ""}</p>
-              <ul className="pk-list" aria-label="Work packages">
-                {shown.map(({ pkg, depth }) => (
-                  <li key={pkg.id} className={"pk-row" + (depth ? " pk-layer" : "")} style={depth ? { "--pk-depth": depth } : undefined}>
-                    <button type="button" className="pk-open" onClick={() => q.setOpen(pkg.id)} title="Open its tasks and layers">
-                      <span className="pk-name">{depth ? <span className="pk-layer-mark" aria-label="Layer">↳ </span> : null}{pkg.name}</span>
-                      <span className="lib-date pk-sub">{packageSubline(pkg)}{pkg.subject && !depth && pkg.subject.id !== row.key ? ` · at ${pkg.subject.name}` : ""}</span>
+    <div className="td-tab-page pk-panel rw">
+      <p className="lib-date pk-purpose">
+        Every task here and below. Tick the ones done on the same visit and package them: each visit then raises one work order.
+      </p>
+      <div className="pk-bar">
+        <label className="tp-filter pk-filter">
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter: position, failure mode, task, package"
+                 aria-label="Search the tasks" />
+        </label>
+        {shown && <span className="lib-date pk-count">{shown.length === all.length ? plural(all.length, "task") : `${shown.length} of ${plural(all.length, "task")}`}</span>}
+        {colsOpen && (
+          <div className="pk-cols">
+            <ColumnChooser cols={cols} onCols={setCols} usual={DEFAULT_TASK_COLUMNS} columns={TASK_COLUMNS} open={colsOpen}
+                           onClose={() => setColsOpen(false)} />
+          </div>
+        )}
+      </div>
+      {said && <p className="lib-date" role="status">{said}</p>}
+      {state.error && <div className="card error">Couldn&apos;t load the tasks: {state.error}</div>}
+      {data?.truncated && <p className="lib-date">Showing the first {all.length} of {data.total} tasks: pick a smaller branch to see the rest.</p>}
+      {!shown && !state.error ? <div className="card empty">Loading…</div> : shown && all.length === 0 ? (
+        <div className="card empty pk-empty">
+          <p>No tasks here or below yet. Decide the failure modes on the RCM tab: their tasks show here to package.</p>
+          <p className="section-empty-more"><ShowMe help={HELP}>How work packages work</ShowMe></p>
+        </div>
+      ) : shown && (
+        <div className="maint-scroll rw-grid pk-grid">
+          <div className="pk-table" role="table" aria-label="Tasks here and below" aria-rowcount={shown.length + 1} style={{ minWidth: total }}>
+            <div className="rw-head" role="row">
+              <div className="rw-h pk-tick" role="columnheader" style={{ width: TICK_W }}>
+                <input type="checkbox" aria-label="Tick every task shown" checked={tick === "all"} disabled={!shown.length}
+                       ref={(el) => { if (el) el.indeterminate = tick === "some"; }}
+                       onChange={(e) => setPicked(tickAll(shown.filter((t) => !t.why_not), picked, e.target.checked))} />
+              </div>
+              {columns.map((c) => {
+                const at = tq.sort.findIndex((k) => k.col === c.id);
+                const dir = at >= 0 ? tq.sort[at].dir : 0;
+                return (
+                  <div key={c.id} role="columnheader" className="rw-h" style={{ width: c.width }}
+                       aria-sort={dir ? (dir < 0 ? "descending" : "ascending") : "none"} title={c.title ? `${c.label}: ${c.title}` : c.label}>
+                    <button type="button" className="rw-hs" onClick={(e) => tq.setSort(nextSort(tq.sort, c.id, e.shiftKey))}
+                            aria-label={`${c.label}: sort (Shift-click to add it as a second sort)`}>
+                      {c.label}{dir ? <span className="tt-sortarrow" aria-hidden="true">{dir < 0 ? " ▼" : " ▲"}{tq.sort.length > 1 ? at + 1 : ""}</span> : null}
                     </button>
-                    <span className="pk-right">
-                      <WhenCell pkg={pkg} />
-                      <span className="pk-chips"><StatusChips pkg={pkg} today={today} /></span>
-                    </span>
-                  </li>
+                  </div>
+                );
+              })}
+              <div className="rw-h rw-fill" aria-hidden="true" />
+            </div>
+            {shown.length === 0 ? (
+              <p className="lib-date pk-none">No tasks match “{query}”. <button type="button" className="link" onClick={() => setQuery("")}>Clear the search</button></p>
+            ) : shown.map((t) => (
+              <div key={t.id} role="row" className={"rw-row pk-trow" + (picked.has(t.id) ? " focus" : "")}
+                   onClick={(e) => { if (!t.why_not && !e.target.closest("button, a, input")) flip(t.id); }}>
+                <div className="rw-c pk-tick" role="cell" style={{ width: TICK_W }}>
+                  <input type="checkbox" checked={picked.has(t.id)} disabled={!!t.why_not} onChange={() => flip(t.id)}
+                         aria-label={`Tick ${t.name}`} title={t.why_not ? `Can't join a package: ${t.why_not}` : undefined} />
+                </div>
+                {columns.map((c) => (
+                  <div key={c.id} role="cell" className="rw-c" style={{ width: c.width }}>
+                    <TaskCell t={t} col={c.id} onPackage={open.setOpen} />
+                  </div>
                 ))}
-              </ul>
-            </>
-          )}
-        </>
+                <div className="rw-c rw-fill" aria-hidden="true" />
+              </div>
+            ))}
+          </div>
+        </div>
       )}
+      {picked.size > 0 && (
+        <div className="pk-actions" role="region" aria-label="Selected tasks">
+          <span className="pk-actions-n">{plural(picked.size, "task")} selected</span>
+          <button type="button" className="link" disabled={!free.length} onClick={() => setModal("package")}
+                  title={free.length ? undefined : "They're all in a package already"}>Package selected…</button>
+          <button type="button" className="link" disabled={!free.length} onClick={() => setModal("add-to")}>Add to a package…</button>
+          <button type="button" className="link" onClick={() => setPicked(new Set())}>Clear</button>
+          {inOne.length > 0 && <span className="lib-date pk-actions-note">{plural(inOne.length, "task")} already in a package stay{inOne.length === 1 ? "s" : ""} there.</span>}
+        </div>
+      )}
+      {modal === "package" && (
+        <AddPackageDialog scope={scope} where={where} tasks={free} onClose={() => setModal(null)} onDone={(text) => done(text)} />
+      )}
+      {modal === "add-to" && <AddToPackageDialog scope={scope} tasks={free} onClose={() => setModal(null)} onDone={done} />}
       {modal === "propose" && (
-        <PackageTasksDialog scope={scope} where={where} onClose={() => setModal(null)}
-                            onDone={(text) => { setModal(null); setSaid(text); q.setOpen(null); refresh(); }} />
+        <PackageTasksDialog scope={scope} where={`${where} and below`} onClose={() => setModal(null)} onDone={done} />
       )}
       {modal === "new" && (
-        <AddPackageDialog scope={scope} where={`at ${row.ref.name || "this row"}`} onClose={() => setModal(null)}
-                          onDone={(text, id) => { setModal(null); setSaid(text); refresh(); q.setOpen(id); }} />
+        <AddPackageDialog scope={scope} where={where} onClose={() => setModal(null)}
+                          onDone={(text, id) => { done(text); open.setOpen(id); }} />
       )}
     </div>
   );

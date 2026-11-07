@@ -257,7 +257,9 @@ then has a `ref`, `layer_of` and `cadence_text`, and a layer's `create` has
 own routes do the same: `GET /api/maintenance/packages/propose?weekday=`,
 `POST /api/maintenance/packages/batch` (`packages`: the creates, all or
 nothing) and `GET /api/maintenance/packages?position_id=` (those there or
-inside it, or holding a task there).
+inside it, or holding a task there). `GET /api/maintenance/task-table?position_id=` (or
+`location_id=`) is the Explorer's Packages tab: every task there and below, one
+row each, with its failure modes, kind, interval, trade, next due and package.
 
 ### Things only the API can do
 

@@ -1,24 +1,10 @@
 /* The Explorer's Packages tab (PackagesPanel.jsx). One column; rows wrap on a
    phone so nothing scrolls sideways. */
 .pk-purpose { margin: 0 0 10px; }
-.pk-count { margin: 0 0 6px; }
-.pk-list, .pk-members, .pk-pick { list-style: none; margin: 0; padding: 0; }
-.pk-row {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
-  padding: 8px 0 8px calc(var(--pk-depth, 0) * 18px); border-bottom: 1px solid var(--border);
-}
-.pk-open {
-  flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  background: none; border: 0; box-shadow: none; border-radius: 0; padding: 0; height: auto; min-height: 0;
-  white-space: normal; text-align: left; color: inherit; cursor: pointer; font: inherit;
-}
-.pk-open:hover { background: none; }
-.pk-open:hover .pk-name { text-decoration: underline; }
-.pk-name, .pk-member-name { font-weight: 600; overflow-wrap: anywhere; }
-.pk-layer .pk-name { font-weight: 500; }
-.pk-layer-mark { color: var(--muted, inherit); }
+.pk-count { margin: 0; }
+.pk-members, .pk-pick { list-style: none; margin: 0; padding: 0; }
+.pk-member-name { font-weight: 600; overflow-wrap: anywhere; }
 .pk-sub { display: block; overflow-wrap: anywhere; }
-.pk-right { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; justify-content: flex-end; }
 .pk-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .pk-when { white-space: nowrap; font-size: 13px; }
 .pk-empty p { margin: 0 0 6px; }
@@ -41,3 +27,36 @@
 .pk-left-out { margin-top: 8px; font-size: 13px; }
 .pk-check { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; }
 .pk-pick { max-height: 280px; overflow-y: auto; margin-bottom: 8px; }
+
+/* The task table (formatted as the RCM table: RcmWorksheet.css's rw-*). */
+.pk-panel.rw { display: block; }
+.pk-bar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 8px; }
+.pk-filter { flex: 1 1 240px; max-width: 420px; min-width: 0; }
+.pk-filter input { padding: 5px 0; }
+.pk-cols { position: absolute; right: 0; top: 0; z-index: 20; }
+.pk-grid { max-height: calc(100vh - 260px); min-height: 120px; }
+.pk-table { position: relative; }
+.pk-trow { position: relative; min-height: 30px; }
+.pk-trow .rw-c { padding-top: 4px; padding-bottom: 4px; }
+.pk-tick { justify-content: center; padding: 0; }
+.rw-h.pk-tick { position: sticky; left: 0; z-index: 2; background: var(--surf-2); }
+.rw-c.pk-tick { position: sticky; left: 0; z-index: 1; background: inherit; }
+.pk-trow .rw-c.pk-tick { background: var(--surf); }
+.pk-trow.focus .rw-c.pk-tick, .pk-trow:hover .rw-c.pk-tick { background: linear-gradient(var(--acc-hover), var(--acc-hover)), var(--surf); }
+.pk-two { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.pk-two .rw-sum { white-space: nowrap; }
+.pk-kind { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.pk-overdue { color: var(--danger); font-weight: 600; }
+.pk-pkg-link { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; text-align: left; }
+.pk-none { padding: 10px 12px; margin: 0; }
+.pk-actions {
+  position: sticky; bottom: 0; z-index: 8; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+  margin-top: 8px; padding: 8px 12px; background: var(--surf-2); border: 1px solid var(--line); border-radius: var(--r-sm);
+  box-shadow: 0 -2px 8px -4px rgba(20, 23, 28, 0.18);
+}
+.pk-actions-n { font-weight: 600; }
+.pk-actions-note { flex-basis: 100%; }
+@media (max-width: 640px) {
+  .pk-grid { max-height: 60vh; }
+  .pk-filter input { padding: 9px 0; }
+}

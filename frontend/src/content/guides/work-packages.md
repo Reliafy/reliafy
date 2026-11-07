@@ -24,42 +24,55 @@ visit.
 ## See the packages here
 
 Open **Assets → Explorer**, pick a position or a location and choose the
-**Packages** tab. It lists the packages planned there and inside it, and any
-package that holds a task there, each with its layers indented under it:
+**Packages** tab. It's a table of every task on that row and everything
+inside it, set out like the RCM table, one row per task:
 
-- how often it visits ("Every Saturday", "The first Saturday of every month");
-- its trade and how many tasks it holds;
-- the next visit, or the work order open for it;
-- **Late by N days** when a visit is past its tolerance (how many days after
-  the date still counts as on time), and **Paused** with the return date.
+- **Position** — where the task is done;
+- **Failure mode** — what it prevents, with its function and functional
+  failure under it;
+- **Task**, **Kind** (on condition, fixed interval or failure finding; a task
+  raised by an event says which), **Interval**, **Trade** and **Next due**;
+- **Package** — the package it's done in, or blank when it's done on its own.
 
-Late packages come first, then the soonest visit.
+Pick a higher row in the tree to see more of it. Choose which columns show
+from the panel's **More actions (…)** › **Columns…**.
 
-## Package the tasks
+## Find the tasks that go together
 
-From the panel's **More actions (…)**, choose **Package the tasks…** (the empty
-tab has the same link). Reliafy reads the tasks here and below that aren't in
-a package yet and groups them by how often they're due and by trade:
+Type in the search box to narrow the table: every word must appear somewhere
+in the row (the pump's name, "bearing", "fitter", a package's name). Click a
+column's heading to sort by it, again to sort the other way. **Shift-click**
+another heading to sort by it second: Trade, then Interval puts each trade's
+weekly tasks together. The search and the sort stay in the address, so a link
+opens the table as you left it.
 
-- the weekly tasks become a package that visits on the day you pick;
-- monthly and longer tasks become layers on it (the first Saturday of the
-  month, of every third month, of every twelfth month);
-- a cadence that can't fall on those visits (a monthly task with only a
-  fortnightly package) becomes a package of its own.
+## Package them
 
-Untick any you don't want (unticking a package unticks its layers), rename
-them, set how many days after the visit is still on time, and choose **Make**.
-They're all made together, or none are.
+Tick the tasks done on the same visit (the box in the heading ticks every
+task shown). A bar at the foot of the table says how many you've ticked:
 
-Tasks on an item (they follow the serial number), tasks counted by use (run
-hours) and rounds stay on their own; the dialog lists them and says why.
+- **Package selected…** makes a new package with them. Give it a name, how
+  often it visits (it starts at the ticked tasks' commonest interval), the
+  day of the week, the trade and how many days after the visit still count as
+  on time.
+- **Add to a package…** puts them in a package already on this part of the
+  tree, on every visit or every Nth one.
+- **Clear** unticks them.
 
-To make one by hand, choose **Add a package…** and give it a name, how often
-it visits and its trade, then add its tasks.
+The **Package** column fills in at once. Tasks counted by use (run hours) and
+rounds stay on their own, so their boxes can't be ticked; tasks already in a
+package stay where they are.
+
+To let Reliafy draft the packages for you, choose **Package the tasks…** from
+**More actions (…)**. It groups every task here that isn't in a package by
+how often it's due and by trade: the weekly ones visit on the day you pick,
+and monthly and longer ones become layers on those visits (the first Saturday
+of the month). Untick or rename the drafts, then **Make** them, all together
+or none.
 
 ## Look after a package
 
-Click a package to open it in the tab. You see its tasks, each with where it
+Click a package's name in the **Package** column to open it in the tab (**← All packages here** goes back to the table). You see its tasks, each with where it
 is, its visit rule ("every visit", "every 4th visit"), what it covers and
 **Owed** when it wasn't done on the last visit (it goes on the next one), and
 its layers. Its **⋯** has:
