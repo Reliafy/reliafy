@@ -85,10 +85,12 @@ export function StructureTree({ tree, onEdit, onRemove, showTop = true }) {
 
 // ---- quantities rolled up ------------------------------------------------------------------
 
-export function RollupCard({ structure }) {
+// On a product's design (`design`) it's the bill of materials only: how many go
+// into one, with no stock (on hand) and nothing installed (a design isn't operated).
+export function RollupCard({ structure, design = false }) {
   const [every, setEvery] = useState(false);
   const rows = (structure.rollup || []).filter((r) => every || r.lowest);
-  const installed = structure.items > 0;
+  const installed = !design && structure.items > 0;
   return (
     <section className="card">
       <div className="maint-head">
@@ -104,7 +106,8 @@ export function RollupCard({ structure }) {
       </p>
       <div className="maint-scroll"><table className="lib-table">
         <thead><tr><th>Part number</th><th>Part</th><th>Level</th><th>In one</th>
-          {installed && <th>Installed ({structure.items} {structure.items === 1 ? "item" : "items"})</th>}<th>On hand</th></tr></thead>
+          {installed && <th>Installed ({structure.items} {structure.items === 1 ? "item" : "items"})</th>}
+          {!design && <th>On hand</th>}</tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}>
@@ -113,7 +116,7 @@ export function RollupCard({ structure }) {
               <td className="lib-date">{r.level || "—"}</td>
               <td>{qtyNumber(r.total)} {r.unit && r.unit !== "each" ? r.unit : ""}</td>
               {installed && <td>{qtyNumber(r.installed)}</td>}
-              <td className="lib-date">{qtyNumber(r.on_hand)}</td>
+              {!design && <td className="lib-date">{qtyNumber(r.on_hand)}</td>}
             </tr>
           ))}
         </tbody>

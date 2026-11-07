@@ -1,118 +1,93 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { listMaintenancePlaces } from "../api.js";
-import { SectionHeader } from "../components/SectionPage.jsx";
-import ListSearch, { matches } from "../components/ListSearch.jsx";
+import { addSampleProduct, listMaintenancePlaces, listProductItems } from "../api.js";
+import RegisterList, { CountCell } from "../components/RegisterList.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import { fmtDate } from "../components/MaintenanceParts.jsx";
 import { NewLocationModal } from "./MaintenanceLists.jsx";
 import {
-  NOT_PLACED_PATH, POSITIONS_PATH, assetPath, assetsSummary, dueText, insideText, openWorkPath, placePath,
+  NOT_PLACED_PATH, assetPath, assetsSummary, dueText, insideText, openWorkPath, placePath,
 } from "../maintenanceAssets.js";
-import { EXPLORER_LABEL, EXPLORER_PATH } from "../navigation.js";
+import { OPEN_SAMPLE_UNITS_LABEL, sampleUnitsPath } from "../sampleProduct.js";
 import "./Maintenance.css";
 
-// Assets (the menu entry's landing page): the assets themselves, the top-level places (a house, a
-// site, a plant), each with what it holds anywhere inside it. The positions at
-// no place are one row at the end, opening the Explorer filtered to them.
-// Assets has no children in the menu, so the register's other pages (the
-// Explorer, Parts and stock, Classes) are linked from here.
+const HELP = { guide: "rcm-on-your-asset-tree" };
+
+// Assets (the menu entry's landing page): the assets themselves, the top-level
+// places (a house, a site, a plant), each with what it holds anywhere inside
+// it. The positions at no place are one row at the end, opening the Explorer
+// filtered to them. Opening an asset opens the Explorer on it; Parts and stock
+// and Classes are tabs there. The same page as Products (RegisterList), with
+// the maintenance columns: open work and what's due.
 export default function MaintenanceAssets() {
   const navigate = useNavigate();
   const [view, setView] = useState(null);
-  const [query, setQuery] = useState("");
   const [modal, setModal] = useState(false);
   const [error, setError] = useState(null);
+  const [adding, setAdding] = useState(false);
   useEffect(() => {
     listMaintenancePlaces().then(setView).catch((e) => setError(e.message));
   }, []);
 
-  const places = view?.places || [];
   const rest = view?.not_placed;
-  const visible = places.filter((p) => matches(query, p.name, p.description));
+  const horizon = view?.horizon_days ?? 30;
   const newAsset = <button onClick={() => setModal(true)}><PlusIcon /> New asset</button>;
+  // The sample quadcopter: the first of the three items built from the sample
+  // product, on its own tree (the sample is added first when there's none).
+  const openSample = () => {
+    if (adding) return;
+    setAdding(true);
+    setError(null);
+    sampleUnitsPath(addSampleProduct, listProductItems)
+      .then((path) => navigate(path))
+      .catch((e) => { setError(`The sample quadcopter didn't open: ${e.message}`); setAdding(false); });
+  };
+  const sampleButton = (
+    <button type="button" className="secondary" onClick={openSample} disabled={adding}>{adding ? "Opening…" : OPEN_SAMPLE_UNITS_LABEL}</button>
+  );
+  const columns = [
+    { key: "positions", label: "Positions", num: true, cell: (p) => p.positions },
+    { key: "items", label: "Items", num: true, cell: (p) => p.items },
+    {
+      key: "work", label: "Open work", num: true,
+      cell: (p) => <CountCell n={p.open_work_orders} to={p.id ? openWorkPath(p.id) : null}
+                              label={`${p.open_work_orders} open work order${p.open_work_orders === 1 ? "" : "s"} at ${p.name}`} />,
+    },
+    { key: "due", label: `Due in ${horizon} days`, cell: (p) => <Due row={p} /> },
+  ];
+  const notPlaced = rest?.positions > 0 && (
+    <tr className="lib-row maint-not-placed" onClick={() => navigate(NOT_PLACED_PATH)}>
+      <td>
+        <Link to={NOT_PLACED_PATH} className="lib-name maint-node-name" onClick={(e) => e.stopPropagation()}>
+          Not at a place yet</Link>
+        <div className="lib-date">Positions with no place set. Set one on a position's page, or on the position above it.</div>
+      </td>
+      {columns.map((c) => (
+        <td key={c.key} className={c.num ? "num" : undefined} data-label={c.label}>{c.cell({ ...rest, name: "no place" })}</td>
+      ))}
+    </tr>
+  );
 
   return (
-    <div className="app">
-      <SectionHeader title="Assets" purpose="The places you look after, and everything at each one."
-                     primary={newAsset} />
-      <nav className="assets-links" aria-label="The asset register">
-        <Link to={EXPLORER_PATH}>{EXPLORER_LABEL}</Link>
-        <Link to="/asset-register/parts">Parts and stock</Link>
-        <Link to="/asset-register/classes">Classes</Link>
-      </nav>
-      {error && <div className="card error">{error}</div>}
-      {view === null ? (
-        !error && <div className="card empty">Loading…</div>
-      ) : places.length === 0 ? (
-        <div className="card empty section-empty">
-          <h2>No assets yet</h2>
-          <p>An asset is a place you look after: a house, a site, a plant. Add one, then add the rooms or areas
-            inside it and say where each position is.</p>
-          <div className="section-empty-action">{newAsset}</div>
-          <p className="section-empty-more">
-            {rest?.positions > 0
-              ? <>Your {rest.positions === 1 ? "position isn't" : `${rest.positions} positions aren't`} at a place
-                yet: <Link to={NOT_PLACED_PATH}>see {rest.positions === 1 ? "it" : "them"}</Link>.</>
-              : <>Or start with the <Link to={POSITIONS_PATH}>positions</Link>: what each slot in your
-                plant does.</>}
-          </p>
-        </div>
-      ) : (
-        <>
-          <div className="tablebar section-tablebar">
-            <span className="count">{query ? `${visible.length} of ${places.length} assets` : assetsSummary(view)}</span>
-            <span className="grow" />
-            <ListSearch value={query} onChange={setQuery} placeholder="Search assets…" />
-          </div>
-          <div className="lib maint-scroll">
-            <table className="lib-table maint-assets">
-              <thead>
-                <tr><th>Asset</th><th className="num">Positions</th><th className="num">Items</th>
-                  <th className="num">Open work</th><th>Due in {view.horizon_days} days</th></tr>
-              </thead>
-              <tbody>
-                {visible.map((p) => (
-                  <tr key={p.id} className="lib-row" onClick={() => navigate(assetPath(p.id))}>
-                    <td>
-                      <Link to={assetPath(p.id)} className="lib-name maint-node-name" onClick={(e) => e.stopPropagation()}>
-                        {p.name}</Link>
-                      {(p.description || p.locations > 0) && (
-                        <div className="lib-date">{[p.description, insideText(p)].filter(Boolean).join(" · ")}</div>
-                      )}
-                    </td>
-                    <td className="num" data-label="Positions">{p.positions}</td>
-                    <td className="num" data-label="Items">{p.items}</td>
-                    <td className="num" data-label="Open work">{p.open_work_orders > 0
-                      ? <Link to={openWorkPath(p.id)} onClick={(e) => e.stopPropagation()}
-                              aria-label={`${p.open_work_orders} open work order${p.open_work_orders === 1 ? "" : "s"} at ${p.name}`}>{p.open_work_orders}</Link>
-                      : <span className="lib-date">0</span>}</td>
-                    <td data-label={`Due in ${view.horizon_days} days`}><Due row={p} /></td>
-                  </tr>
-                ))}
-                {rest?.positions > 0 && (
-                  <tr className="lib-row maint-not-placed" onClick={() => navigate(NOT_PLACED_PATH)}>
-                    <td>
-                      <Link to={NOT_PLACED_PATH} className="lib-name maint-node-name" onClick={(e) => e.stopPropagation()}>
-                        Not at a place yet</Link>
-                      <div className="lib-date">Positions with no place set. Set one on a position's page, or on
-                        the position above it.</div>
-                    </td>
-                    <td className="num" data-label="Positions">{rest.positions}</td>
-                    <td className="num" data-label="Items">{rest.items}</td>
-                    <td className="num" data-label="Open work">{rest.open_work_orders || <span className="lib-date">0</span>}</td>
-                    <td data-label={`Due in ${view.horizon_days} days`}><Due row={rest} /></td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-            {!visible.length && <p className="section-nomatch">No asset matches.</p>}
-          </div>
-        </>
-      )}
+    <>
+      <RegisterList
+        title="Assets" purpose="The places you look after, and everything at each one."
+        help={HELP} primary={newAsset}
+        menu={<button type="button" className="ovm-item" onClick={openSample} disabled={adding}>{OPEN_SAMPLE_UNITS_LABEL}</button>}
+        error={error} rows={view ? view.places || [] : null} noun={["asset", "assets"]}
+        count={assetsSummary(view)} search={(p) => [p.name, p.description]}
+        name={(p) => ({ to: assetPath(p.id), label: p.name, sub: [p.description, insideText(p)].filter(Boolean).join(" · ") })}
+        columns={columns} after={notPlaced || null}
+        empty={{
+          title: "No assets yet",
+          text: "An asset is a place you look after: a house, a site, a plant. Add one, then add the rooms or areas inside it and say where each position is. Or open the sample quadcopter: one of three built from the sample product, with its flight hours and failure reports.",
+          sample: sampleButton,
+          guide: "How the asset tree works",
+        }}
+      />
       {modal && <NewLocationModal asset locations={[]} onClose={() => setModal(false)}
                                   onDone={(l) => navigate(placePath(l.id))} />}
-    </div>
+    </>
   );
 }
 

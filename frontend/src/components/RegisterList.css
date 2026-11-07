@@ -1,0 +1,72 @@
+/* The register landing pages (Assets, Products): the same column rhythm on
+   both. The name takes the room; each number column is the same width,
+   right-aligned in tabular figures. */
+.reg-table .reg-col {
+  width: 9.5rem;
+}
+
+.reg-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.reg-table td:first-child {
+  min-width: 11rem;
+}
+
+/* Assets' last row, the positions at no place. */
+.reg-table .maint-not-placed td {
+  border-top: 2px solid var(--line);
+}
+
+.reg-table .maint-not-placed td:first-child > a {
+  font-style: italic;
+}
+
+/* On a phone each row is a block: its name, then the numbers three to a row,
+   each labelled (no table to scroll sideways). */
+@media (max-width: 640px) {
+  .reg-table colgroup,
+  .reg-table thead {
+    display: none;
+  }
+
+  .reg-table tr {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.35rem 0.75rem;
+    padding: 0.75rem 0.25rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .reg-table td {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+
+  .reg-table td:first-child {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .reg-table .num {
+    text-align: left;
+  }
+
+  .reg-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .reg-table .maint-not-placed {
+    border-top: 2px solid var(--line);
+  }
+
+  .reg-table .maint-not-placed td {
+    border-top: 0;
+  }
+}

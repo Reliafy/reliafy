@@ -6,7 +6,7 @@ import {
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
-import TreeDetail, { HeaderTabs, KIND, SlimHeader, forgetPositions, prefetchPosition } from "../components/TreeDetail.jsx";
+import TreeDetail, { HeaderTabs, SlimHeader, forgetPositions, prefetchPosition } from "../components/TreeDetail.jsx";
 import DecisionModal from "../components/DecisionModal.jsx";
 import LinkFailurePicker from "../components/FailureLinks.jsx";
 import RcmImportModal from "../components/RcmImportModal.jsx";
@@ -47,7 +47,7 @@ import { saveErrorText } from "../confirm.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
 import { hasOpenLayer, isFullScreenKey, isTyping } from "../fullScreen.js";
-import { shownTab, tabParam, tabsFor } from "../explorerTabs.js";
+import { rowKind, shownTab, tabParam, tabsFor } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { openGuide } from "../components/HelpButton.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
@@ -158,8 +158,9 @@ const FMEA_ROLLUP_COLS = new Set(["failure", "cause", "effect_local", "effect_ne
 // Scoped to one tree (`root`, or ?root=: a product's design from its page, an
 // item's tree from Items) it shows that tree alone, by position; unscoped, it
 // leaves the products' designs and items' trees out (products.js). `tabKey`:
-// the address's name for its tabs (the product page keeps ?tab= for its own).
-export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", title: titleProp = null }) {
+// the address's name for its tabs (?view= on a product's page). `heading`: the
+// picked row's heading level (1 where the tree is the page, as a product's is).
+export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", title: titleProp = null, heading: headingProp = null }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
@@ -179,7 +180,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const notPlaced = mode === "positions" && params.get("place") === "none";
   const title = titleProp || EXPLORER_LABEL;
   // Inside a product's page (its own h1), the picked row's name is an h2.
-  const heading = rootProp ? 2 : 1;
+  const heading = headingProp ?? (rootProp ? 2 : 1);
   const treeLabel = ARRANGEMENTS.find((a) => a.value === mode).tree;
 
   // The address always says the arrangement, so it can be shared as it is.
@@ -1339,7 +1340,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   ) : summaryRow && (
     <SlimHeader display={whole} row={summaryRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 pin={pinFor(summaryRow)} headingRef={headingRef} fullScreenButton={fullButton} heading={heading}
-                meta={KIND[summaryRow.type] ? <span className="tt-kind">{KIND[summaryRow.type]}</span> : null} primaryOpen
+                meta={rowKind(summaryRow) ? <span className="tt-kind">{rowKind(summaryRow)}</span> : null} primaryOpen
                 message={message?.fade ? msg : null} />
   );
   const tabsRow = rcmOn ? (posRow?.type === "pos" ? posRow : null) : summaryRow;
