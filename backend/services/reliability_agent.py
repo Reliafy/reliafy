@@ -832,6 +832,22 @@ def _find_model(db, uid: str, model_id: str, kind: str | None):
     return None
 
 
+def _cap_refusal(db, uid: str, kind: str) -> dict | None:
+    """A tool result refusing a save past the plan's storage cap, or None when
+    there is room (Pro, operators and billing-off installs never hit one).
+    Same check and wording as the web app and MCP; returned as an ordinary
+    tool error the assistant can relay, never raised."""
+    doc = db.users.find_one({"_id": uid}) or {}
+    user = {"uid": uid, "email": doc.get("email"), "email_verified": doc.get("email_verified")}
+    if billing_service.is_admin_user(user):
+        return None
+    if not billing_service.would_exceed_cap(db, uid, kind):
+        return None
+    base = config.PUBLIC_BASE_URL or "https://reliafy.com"
+    return {"error": f"{billing_service.cap_message(db, uid, kind)} Upgrade at {base}/billing. "
+                     "Nothing was saved: tell the user, and don't retry."}
+
+
 def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
     """Run a custom tool on the Reliafy side and return a small JSON-safe result
     (the ``summary`` is shown to the user; the rest is fed back to the agent)."""
@@ -882,6 +898,8 @@ def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
 
         # ---- Write ----------------------------------------------------------
         if name == "create_dataset":
+            if (refused := _cap_refusal(db, uid, "datasets")):
+                return refused
             csv = inp.get("csv") or ""
             if not csv.strip():
                 return {"error": "empty CSV"}
@@ -891,6 +909,8 @@ def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
                     "summary": f"Created dataset “{ds.name}” ({ds.n_rows} rows)."}
 
         if name == "create_life_model":
+            if (refused := _cap_refusal(db, uid, "models")):
+                return refused
             ds = datasets_service.get_dataset(db, inp.get("dataset_id", ""), owner_id=uid)
             if ds is None:
                 return {"error": "dataset not found — create it first"}
@@ -917,6 +937,8 @@ def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
                     "summary": f"Created non-repairable model “{model.name}” — {r.get('distribution')}."}
 
         if name == "create_recurrent_model":
+            if (refused := _cap_refusal(db, uid, "models")):
+                return refused
             from backend.services import recurrent as recurrent_service
             ds = datasets_service.get_dataset(db, inp.get("dataset_id", ""), owner_id=uid)
             if ds is None:
@@ -944,6 +966,8 @@ def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
                                f"{(r.get('model') or {}).get('name')}, {r.get('growth') or 'no trend'}."}
 
         if name == "create_alt_model":
+            if (refused := _cap_refusal(db, uid, "models")):
+                return refused
             from backend.services import alt as alt_service
             ds = datasets_service.get_dataset(db, inp.get("dataset_id", ""), owner_id=uid)
             if ds is None:
@@ -976,6 +1000,8 @@ def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
                                f"{r.get('distribution')} / {r.get('life_model')}."}
 
         if name == "create_degradation_model":
+            if (refused := _cap_refusal(db, uid, "degradation_models")):
+                return refused
             from backend.services import degradation as degradation_service
             ds = datasets_service.get_dataset(db, inp.get("dataset_id", ""), owner_id=uid)
             if ds is None:
@@ -1004,6 +1030,8 @@ def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
                                f"{r.get('distribution')} to threshold {spec['threshold']}."}
 
         if name == "create_rbd":
+            if (refused := _cap_refusal(db, uid, "rbds")):
+                return refused
             from backend.services import rbds as rbds_service
             stages = inp.get("stages") or []
             if not stages:
