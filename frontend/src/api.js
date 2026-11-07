@@ -3295,3 +3295,7 @@ export function removePackageTask(id, taskId) {
 export function changePackage(id, change, body = {}) {
   return postJson(`/api/maintenance/packages/${encodeURIComponent(id)}/${change}`, body);
 }
+// Every task on a position or place and below it, one row each (the Packages tab's table).
+export function getTaskTable(scope = {}) {
+  return request(`/api/maintenance/task-table${qs(scope)}`);
+}

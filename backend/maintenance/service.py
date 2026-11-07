@@ -9071,6 +9071,64 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         opened = [r["open_work_order"] for r in rows if r["open_work_order"] and r["parent"] is None]
         return {"packages": rows, "open_work_orders": len(opened), "late": sum(1 for w in opened if w["late"])}
 
+    def task_table(self, position_id=None, location_id=None, limit: int = 5000) -> dict:
+        """Every live task on a position or location and everything inside it (the
+        Explorer's Packages tab: a table to search, sort and package from), one row
+        each: where it is, the failure modes it prevents (each with its function ›
+        functional failure), its kind (the decision's outcome), interval or trigger,
+        trade, next due, its package (if any) and whether it can join one (an item's
+        task, a task by use and a round can't: ``why_not``)."""
+        scope = self._package_scope(position_id, location_id)
+        if scope is None:
+            raise Invalid("Give position_id or location_id.")
+        index = self._rcm_index()
+        modes_of: dict[str, list] = {}
+        for mode_id, found in index["tasks_of"].items():
+            for t in found:
+                modes_of.setdefault(t["id"], []).append(index["mode"][mode_id])
+        packages = self._package_index()
+        rows = []
+        for task in self.s.nodes(self.org, "Task"):
+            if task.get("retired"):
+                continue
+            subject = _subject(self.s, self.org, task)
+            if subject is None or subject.get("retired") or subject["label"] not in ("Position", "Location"):
+                continue
+            if not self._in_area(scope, subject):
+                continue
+            modes = []
+            kind = task.get("outcome")
+            for fm in modes_of.get(task["id"], []):
+                ff_id = index["ff_of"].get(fm["id"])
+                fn_id = index["ff_fn"].get(ff_id) if ff_id else index["direct_of"].get(fm["id"])
+                fn, ff = index["fn"].get(fn_id) if fn_id else None, index["ff"].get(ff_id) if ff_id else None
+                modes.append({"id": fm["id"], "text": fm["text"], "function": fn and fn.get("text"),
+                              "failure": ff and ff.get("text")})
+                if not kind:
+                    member = next((o for o in fm.get("outcomes") or [] if o.get("task_id") == task["id"]), None)
+                    kind = (member or {}).get("outcome") or fm.get("outcome")
+            view = self._task_view(task)
+            why_not = None
+            if not _is_calendar(task["unit"]) or (task.get("also_unit") and not _is_calendar(task["also_unit"])):
+                why_not = "by use: it goes by its counter"
+            elif task.get("include_positions"):
+                why_not = "a round: it stays on its own"
+            entry = packages.get(task["id"])
+            pkg = None
+            if entry:
+                on = self._package_subject(entry["package"])
+                pkg = {"id": entry["package"]["id"], "name": entry["package"]["name"],
+                       "subject": self._subject_brief(on)}
+            rows.append({"id": task["id"], "name": task["name"], "subject": self._subject_brief(subject),
+                         "modes": modes, "kind": kind, "interval": task.get("interval"), "unit": task.get("unit"),
+                         "trigger": self._trigger_view(task.get("trigger")) if task.get("trigger") else None,
+                         "on_event": _on_event_only(task), "trade": task.get("trade", ""),
+                         "next_due": view["next_due"], "overdue": bool(view["overdue"]), "package": pkg,
+                         "why_not": why_not})
+        rows.sort(key=lambda r: (r["subject"]["name"].lower(), r["name"].lower(), r["id"]))
+        return {"scope": self._subject_brief(scope), "tasks": rows[:limit], "total": len(rows),
+                "truncated": len(rows) > limit}
+
     def _package_scope(self, position_id=None, location_id=None) -> dict | None:
         """The position or location a read is limited to (None: the whole workspace)."""
         if position_id not in (None, "") and location_id not in (None, ""):

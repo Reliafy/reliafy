@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  cadenceWords, daysLate, freeTasks, lateText, nextVisit, ordinal, packageRows, packageScope, packageSubline,
+  cadenceFor, cadenceWords, cantJoin, cellText, daysLate, freeTasks, kindText, lateText, nextSort, nextVisit, ordinal, packageScope,
+  parseSort, searchTasks, sortParam, sortTasks, tickAll, tickState,
   proposalBatch, proposalProblem, proposalRows, renameRow, toggleRow, visitRuleText,
 } from "./packagesTab.js";
 
@@ -17,7 +18,6 @@ test("scope, cadence and visit rules in words", () => {
   assert.equal(ordinal(22), "22nd");
   assert.equal(visitRuleText({ visit_rule: "nth", every_nth: 4 }), "every 4th visit");
   assert.equal(visitRuleText({ visit_rule: "every" }), "every visit");
-  assert.equal(packageSubline(pkg({ trade: "Fitter", task_count: 1 })), "Every Saturday · Fitter · 1 task");
 });
 
 test("late: the open work order says; with none, a visit past its tolerance", () => {
@@ -29,20 +29,6 @@ test("late: the open work order says; with none, a visit past its tolerance", ()
   assert.equal(daysLate({ ...due, pause: { until: null } }, "2026-11-18"), 0);
   assert.equal(lateText(1), "Late by 1 day");
   assert.equal(lateText(0), "");
-});
-
-test("rows: worst first, layers under their top", () => {
-  const rows = [
-    pkg({ id: "a", name: "Alpha", next_visit: "2026-12-01" }),
-    pkg({ id: "b", name: "Bravo", next_visit: "2026-11-21" }),
-    pkg({ id: "c", name: "Charlie", open_work_order: { late: true, days_late: 2, visit_on: "2026-11-07" } }),
-    pkg({ id: "d", name: "Delta", status: "paused" }),
-    pkg({ id: "bl", name: "Bravo monthly", parent: { id: "b", name: "Bravo" }, next_visit: "2026-12-05" }),
-    pkg({ id: "orphan", name: "Orphan layer", parent: { id: "gone", name: "Gone" }, next_visit: "2026-11-30" }),
-  ];
-  const out = packageRows(rows, "2026-11-10");
-  assert.deepEqual(out.map((r) => [r.pkg.id, r.depth]), [["c", 0], ["b", 0], ["bl", 1], ["orphan", 0], ["a", 0], ["d", 0]]);
-  assert.equal(out[2].top.id, "b");
 });
 
 test("the proposal table: tick, rename, batch", () => {
@@ -71,4 +57,72 @@ test("the Summary's next visit", () => {
     { due_by: "package", package: { id: "a", name: "Weekly" }, next_due: "2026-11-14" },
     { due_by: "package", package: { id: "a", name: "Weekly" }, next_due: "2026-11-21" },
   ]), { id: "a", name: "Weekly", on: "2026-11-14" });
+});
+
+const task = (over) => ({
+  id: "t", name: "Task", subject: { id: "p", name: "Pump" }, modes: [], kind: "fixed_interval", interval: 1, unit: "months",
+  trigger: null, on_event: false, trade: "", next_due: null, package: null, why_not: null, ...over,
+});
+const tasks = [
+  task({ id: "a", name: "Grease bearings", subject: { name: "Pump 2" }, interval: 3, unit: "months", next_due: "2026-12-01", trade: "Fitter",
+         modes: [{ id: "m", text: "Bearing worn", function: "Pump water", failure: "No flow" }] }),
+  task({ id: "b", name: "Check pH", subject: { name: "Pool" }, kind: "on_condition", interval: 1, unit: "weeks", next_due: "2026-11-14",
+         package: { id: "k", name: "Pool weekly" } }),
+  task({ id: "c", name: "Test alarm", subject: { name: "Pool" }, kind: "failure_finding", interval: 6, unit: "months" }),
+  task({ id: "d", name: "Clear drain", subject: { name: "Pump 2" }, on_event: true, trigger: { text: "120 mm rain" }, interval: null }),
+];
+
+test("the table's cells in words", () => {
+  assert.equal(kindText(tasks[1]), "On condition");
+  assert.equal(kindText(tasks[3]), "on event: 120 mm rain");
+  assert.equal(cellText(tasks[0], "interval"), "3 months");
+  assert.equal(cellText(tasks[1], "interval"), "1 week");
+  assert.equal(cellText(tasks[3], "interval"), "");
+  assert.equal(cellText(tasks[0], "mode"), "Bearing worn");
+  assert.equal(cellText(tasks[1], "package"), "Pool weekly");
+});
+
+test("search: every word somewhere in the row, the failure mode's function and failure too", () => {
+  assert.deepEqual(searchTasks(tasks, "").map((t) => t.id), ["a", "b", "c", "d"]);
+  assert.deepEqual(searchTasks(tasks, "pool").map((t) => t.id), ["b", "c"]);
+  assert.deepEqual(searchTasks(tasks, "no flow fitter").map((t) => t.id), ["a"]);
+  assert.deepEqual(searchTasks(tasks, "POOL weekly").map((t) => t.id), ["b"]);
+  assert.deepEqual(searchTasks(tasks, "rain").map((t) => t.id), ["d"]);
+});
+
+test("sort: a click sorts by one column, again reverses, again clears; shift adds a key", () => {
+  let keys = nextSort([], "due");
+  assert.deepEqual(keys, [{ col: "due", dir: 1 }]);
+  assert.deepEqual(nextSort(keys, "due"), [{ col: "due", dir: -1 }]);
+  assert.deepEqual(nextSort([{ col: "due", dir: -1 }], "due"), []);
+  assert.deepEqual(nextSort(keys, "task"), [{ col: "task", dir: 1 }]);
+  keys = nextSort([{ col: "position", dir: 1 }], "interval", true);
+  assert.equal(sortParam(keys), "position,interval");
+  assert.equal(sortParam(nextSort(keys, "interval", true)), "position,-interval");
+  assert.equal(sortParam(nextSort(nextSort(keys, "interval", true), "interval", true)), "position");
+  assert.deepEqual(parseSort("position,-interval,bogus"), [{ col: "position", dir: 1 }, { col: "interval", dir: -1 }]);
+  assert.deepEqual(parseSort(null), []);
+  // Blank values last either way; intervals by length.
+  assert.deepEqual(sortTasks(tasks, parseSort("due")).map((t) => t.id), ["b", "a", "c", "d"]);
+  assert.deepEqual(sortTasks(tasks, parseSort("-due")).map((t) => t.id), ["a", "b", "c", "d"]);
+  assert.deepEqual(sortTasks(tasks, parseSort("interval")).map((t) => t.id), ["b", "a", "c", "d"]);
+  assert.deepEqual(sortTasks(tasks, parseSort("position,-interval")).map((t) => t.id), ["c", "b", "a", "d"]);
+  // No keys: position, then task.
+  assert.deepEqual(sortTasks(tasks, []).map((t) => t.id), ["b", "c", "d", "a"]);
+});
+
+test("ticking, and a new package's cadence from the tasks ticked", () => {
+  const shown = tasks.slice(0, 2);
+  let picked = new Set(["c"]);
+  assert.equal(tickState(shown, picked), "none");
+  picked = tickAll(shown, picked, true);
+  assert.deepEqual([...picked].sort(), ["a", "b", "c"]);
+  assert.equal(tickState(shown, picked), "all");
+  assert.equal(tickState(shown, new Set(["a"])), "some");
+  assert.deepEqual([...tickAll(shown, picked, false)], ["c"]);
+  assert.deepEqual(cadenceFor([tasks[1], task({ interval: 1, unit: "weeks" }), tasks[0]]), { every: 1, unit: "weeks", mixed: true });
+  assert.deepEqual(cadenceFor([task({ interval: 14, unit: "days" })]), { every: 2, unit: "weeks", mixed: false });
+  assert.deepEqual(cadenceFor([task({ interval: 1, unit: "years" })]), { every: 12, unit: "months", mixed: false });
+  assert.deepEqual(cadenceFor([tasks[3]]), { every: 1, unit: "weeks", mixed: false });
+  assert.deepEqual(cantJoin([tasks[0], task({ id: "z", why_not: "by use" })]).map((t) => t.id), ["z"]);
 });

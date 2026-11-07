@@ -667,3 +667,27 @@ def test_packages_for_a_branch_and_the_rcm_task_cards_name_theirs(m):
     [card] = m.rcm_mode(fm["id"])["tasks"]
     assert card["package"] == {"id": weekly["id"], "name": "Lagoon weekly check",
                                "subject": {"kind": "position", "id": plant["lagoon"], "name": "Lagoon"}}
+
+
+def test_task_table_lists_every_task_below_with_its_failure_mode_and_package(m):
+    plant = _plant(m)
+    weekly, _, _ = _packages(m, plant)
+    pump = plant["pids"]["Circulation pump"]
+    fn = m.add_function(pump, "Circulate water")
+    ff = m.add_functional_failure(fn["id"], "No flow")
+    fm = m.add_failure_mode(pump, "Bearing worn", functional_failure_id=ff["id"])
+    m.link_task(plant["quarterly"][0], fm["id"])
+    loose = m.create_task(pump, "Wipe down", 2, "weeks")["id"]
+    out = m.task_table(position_id=pump)
+    rows = {r["id"]: r for r in out["tasks"]}
+    grease = rows[plant["quarterly"][0]]
+    assert grease["modes"] == [{"id": fm["id"], "text": "Bearing worn", "function": "Circulate water",
+                                "failure": "No flow"}]
+    assert grease["package"]["name"] == "Lagoon quarterly check" and grease["subject"]["id"] == pump
+    assert rows[loose]["package"] is None and rows[loose]["modes"] == [] and rows[loose]["why_not"] is None
+    assert rows[plant["weekly"][3]]["package"]["id"] == weekly["id"]
+    # Only the branch: the lagoon's other positions' tasks aren't on the pump's table.
+    assert all(r["subject"]["id"] == pump for r in out["tasks"])
+    assert len(m.task_table(position_id=plant["lagoon"])["tasks"]) == len(plant["weekly"]) + 10 + 3 + 1
+    with pytest.raises(Invalid, match="position_id or location_id"):
+        m.task_table()

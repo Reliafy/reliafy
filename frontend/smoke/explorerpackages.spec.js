@@ -1,12 +1,11 @@
-// The Explorer's Packages tab (Operate › Assets › Explorer, ?tab=packages):
-// a position with weekly and monthly tasks shows the empty state; the
-// heading's "…" › Package the tasks… proposes a weekly package with the
-// monthly tasks as a layer on it, and making them lists the package with its
-// layer under it; a package opens in the tab with its tasks. At 400 px the
-// empty state's own link opens the same dialog and nothing scrolls sideways.
+// The Explorer's Packages tab (Operate › Assets › Explorer, ?tab=packages): a
+// table of every task on the picked row and below it, formatted as the RCM
+// table. Search it (?q=), sort it (a header click, Shift-click for a second
+// key: ?sort=), tick two tasks and Package selected… makes a package with
+// them: the Package column fills in, and the package's name opens it in the
+// tab. At 400 px the table scrolls inside its card, the action bar shows,
+// and nothing scrolls the page sideways.
 // Each test makes its own small plant through the API.
-//
-// With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { headMenu } from "./explorer.js";
 
@@ -28,62 +27,83 @@ async function plant(request, tag) {
 
 const query = (page) => new URL(page.url()).searchParams;
 const panel = (page) => page.locator(".pk-panel");
+const rows = (page) => panel(page).locator(".pk-trow");
 const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth);
 
-test("Packages: empty, then Package the tasks… makes a weekly package with its monthly layer", async ({ page, request, problems }) => {
+test("Packages: search and sort the tasks below, tick two and package them", async ({ page, request, problems }) => {
   const tag = `k${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 800 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}`);
   await page.getByRole("tab", { name: "Packages" }).click();
   await expect.poll(() => query(page).get("tab")).toBe("packages");
-  await expect(panel(page)).toContainText("No packages here yet");
-  await expect(panel(page).getByRole("button", { name: "How work packages work" })).toBeVisible();
-  await expect((await headMenu(page)).locator(".ovm-menu .ovm-item")).toHaveText(["Package the tasks…", "Add a package…", "Open the full page"]);
-  await page.locator(".ovm-menu").getByRole("button", { name: "Package the tasks…" }).click();
+  await expect(rows(page)).toHaveCount(3);
+  await expect(panel(page).getByRole("columnheader")).toHaveText(
+    ["", "Position", "Failure mode", "Task", "Kind", "Interval", "Trade", "Next due", "Package"]);
+  await expect((await headMenu(page)).locator(".ovm-menu .ovm-item")).toHaveText(["Columns…", "Package the tasks…", "Add a package…", "Open the full page"]);
+  await page.keyboard.press("Escape");
 
-  const dialog = page.getByRole("dialog", { name: "Package the tasks" });
-  await expect(dialog.locator(".pk-prow")).toHaveCount(2);
-  await expect(dialog).toContainText("Every Saturday");
-  await expect(dialog).toContainText("The first Saturday of every month");
-  await shot(page, "packages-desktop-propose");
-  await dialog.getByRole("button", { name: "Make 2 packages" }).click();
+  // Search: every column; kept in the address.
+  const search = panel(page).getByRole("searchbox", { name: "Search the tasks" });
+  await search.fill("water");
+  await expect(rows(page)).toHaveCount(1);
+  await expect.poll(() => query(page).get("q")).toBe("water");
+  await search.fill("");
+  await expect(rows(page)).toHaveCount(3);
+
+  // Sort: by interval (the monthly one last), then Shift-click Task for a second key.
+  await panel(page).getByRole("button", { name: /^Interval: sort/ }).click();
+  await expect.poll(() => query(page).get("sort")).toBe("interval");
+  await expect(rows(page).last()).toContainText(`Clean cell ${tag}`);
+  await panel(page).getByRole("button", { name: /^Task: sort/ }).click({ modifiers: ["Shift"] });
+  await expect.poll(() => query(page).get("sort")).toBe("interval,task");
+  await expect(rows(page).first()).toContainText(`Skim ${tag}`);
+
+  // Tick the two weekly tasks: the bar offers Package selected…
+  await panel(page).getByRole("checkbox", { name: `Tick Skim ${tag}` }).check();
+  await panel(page).getByRole("checkbox", { name: `Tick Test water ${tag}` }).check();
+  const bar = panel(page).getByRole("region", { name: "Selected tasks" });
+  await expect(bar).toContainText("2 tasks selected");
+  await shot(page, "packages-table-desktop");
+  await bar.getByRole("button", { name: "Package selected…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Package 2 tasks" });
+  await expect(dialog.getByRole("spinbutton", { name: "Every" })).toHaveValue("1");
+  await expect(dialog.getByRole("combobox", { name: "Unit" })).toHaveValue("weeks");
+  await dialog.getByRole("textbox", { name: "Name" }).fill(`Pool weekly ${tag}`);
+  await dialog.getByRole("button", { name: "Make package" }).click();
   await expect(dialog).toHaveCount(0);
 
-  const rows = panel(page).locator(".pk-row");
-  await expect(rows).toHaveCount(2);
-  await expect(rows.nth(0)).toContainText(`Package pool ${tag} weekly check`);
-  await expect(rows.nth(1)).toHaveClass(/pk-layer/);
-  await expect(rows.nth(1)).toContainText("monthly check");
-  await shot(page, "packages-desktop-list");
-
-  // A package opens in the tab, with its tasks and the layer.
-  await rows.nth(0).getByRole("button").first().click();
+  // The Package column fills in; the bar goes.
+  await expect(panel(page).getByRole("button", { name: `Pool weekly ${tag}` })).toHaveCount(2);
+  await expect(bar).toHaveCount(0);
+  await panel(page).getByRole("button", { name: `Pool weekly ${tag}` }).first().click();
   await expect.poll(() => query(page).get("package")).toBeTruthy();
-  await expect(panel(page).locator(".pk-member")).toHaveCount(3); // two tasks and the layer
-  await expect(panel(page)).toContainText(`Skim ${tag}`);
-  await expect(panel(page)).toContainText("every visit");
+  await expect(panel(page).locator(".pk-member")).toHaveCount(2);
   await panel(page).getByRole("button", { name: "← All packages here" }).click();
-  await expect(rows).toHaveCount(2);
+  await expect(rows(page)).toHaveCount(3);
   await expectHealthy(page, problems, { label: "packages", root: ".tx" });
 });
 
-test("Packages at 400 px: the empty state opens Package the tasks… and nothing scrolls sideways", async ({ page, request }) => {
+test("Packages at 400 px: the table scrolls in its card, the bar shows, nothing scrolls sideways", async ({ page, request }) => {
   const tag = `m${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=packages`);
   // On a phone the panel is its own screen: tap the row to open it.
   await page.getByRole("treeitem", { name: new RegExp(`^Package pump ${tag}`) }).locator(".tp-nm").click();
-  await expect(panel(page)).toContainText("No packages here yet");
+  await expect(rows(page)).toHaveCount(3);
   expect(await sideways(page)).toBeLessThanOrEqual(400);
-  await panel(page).getByRole("button", { name: "Package the tasks…" }).click();
-  const dialog = page.getByRole("dialog", { name: "Package the tasks" });
-  await expect(dialog.locator(".pk-prow")).toHaveCount(2);
+  await panel(page).getByRole("checkbox", { name: `Tick Skim ${tag}` }).check();
+  const bar = panel(page).getByRole("region", { name: "Selected tasks" });
+  await expect(bar).toBeVisible();
+  await shot(page, "packages-table-phone-ticked");
   expect(await sideways(page)).toBeLessThanOrEqual(400);
-  await shot(page, "packages-phone-propose");
-  await dialog.getByRole("button", { name: "Make 2 packages" }).click();
-  await expect(panel(page).locator(".pk-row")).toHaveCount(2);
+  await bar.getByRole("button", { name: "Package selected…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Package 1 task" });
+  await dialog.getByRole("textbox", { name: "Name" }).fill(`Pump weekly ${tag}`);
   expect(await sideways(page)).toBeLessThanOrEqual(400);
-  await shot(page, "packages-phone-list");
+  await dialog.getByRole("button", { name: "Make package" }).click();
+  await expect(panel(page).getByRole("button", { name: `Pump weekly ${tag}` })).toHaveCount(1);
+  await shot(page, "packages-table-phone");
+  expect(await sideways(page)).toBeLessThanOrEqual(400);
 });

@@ -2063,6 +2063,14 @@ def list_packages(status: str | None = None, position_id: str | None = None, loc
     return _run(m.packages, status, position_id, location_id)
 
 
+@router.get("/task-table")
+def task_table(position_id: str | None = None, location_id: str | None = None,
+               m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Every task on a position or location and below it, one row each, for the Explorer's
+    Packages tab: where, failure modes, kind, interval, trade, next due, package."""
+    return _run(m.task_table, position_id, location_id)
+
+
 @router.get("/packages/propose")
 def propose_packages(position_id: str | None = None, location_id: str | None = None, weekday: str | None = None,
                      m: Maintenance = Depends(maintenance)) -> JSONResponse:
