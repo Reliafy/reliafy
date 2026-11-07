@@ -204,7 +204,7 @@ export function ProductPartsList({ productId }) {
         {empty ? <p>Nothing inside {part.part_number} yet: add what goes in it on the part's page, or import a BOM below.</p>
           : <div className="maint-scroll"><StructureTree tree={structure.tree} /></div>}
       </section>
-      {!empty && <RollupCard structure={structure} />}
+      {!empty && <RollupCard structure={structure} design />}
     </>
   );
 }

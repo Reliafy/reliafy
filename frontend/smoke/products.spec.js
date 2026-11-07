@@ -69,6 +69,8 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     if (phone) await page.getByRole("treeitem", { name: /^Survey quadcopter \(sample/ }).first().click();
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Survey quadcopter (sample");
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+    // The product's own row is headed "Product" (its design's positions stay "Position").
+    await expect(page.locator(".tt-kind").first()).toHaveText("Product");
     // A design has no maintenance: no Failure reports or Signals tab; Parts (the parts list), not Parts and stock.
     await expect(page.getByRole("tab", { name: "RCM" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Parts", exact: true })).toBeVisible();
@@ -143,6 +145,10 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expect(page.locator(".td-tab-page .count")).toContainText(/parts? at Survey quadcopter/);
     await expect(page.locator(".td-tab-page table").first().getByRole("columnheader", { name: "On hand" })).toHaveCount(0);
     await expect(page.locator(".td-tab-page").getByRole("button", { name: "Stock" })).toHaveCount(0);
+    // The bill of materials rolled up stays, with no stock and nothing installed on it.
+    await expect(page.getByRole("heading", { name: "Quantities rolled up" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "On hand" })).toHaveCount(0);
+    await expect(page.getByRole("columnheader", { name: /^Installed/ })).toHaveCount(0);
     await shot(page, `${w}-product-parts`);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
 
@@ -250,6 +256,39 @@ test("Assets leaves the products' designs and items' trees out", async ({ page, 
   await expectHealthy(page, problems, { label: "assets without products" });
 });
 
+// Assets' sample is the quadcopter: "Open the sample quadcopter" (the ⋯ menu, and the
+// empty page) opens the first item built from the sample product on its own tree.
+// smoke/seed.js added it, so nothing more is added and nothing is asked.
+test("Assets opens the sample quadcopter: an item built from the sample product, on its tree", async ({ page, problems }) => {
+  for (const [width, height] of [[1440, 900], [400, 860]]) {
+    await page.setViewportSize({ width, height });
+    const posted = [];
+    const watch = (r) => { if (r.url().endsWith("/api/maintenance/sample-product")) posted.push(r.postDataJSON()); };
+    page.on("request", watch);
+    await open(page, "/asset-register");
+    await page.getByRole("button", { name: "More actions" }).click();
+    await expect(page.getByRole("button", { name: /sample truck/ })).toHaveCount(0);
+    await page.getByRole("button", { name: "Open the sample quadcopter" }).click();
+    await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=positions&root=/);
+    if (width < 600) await page.getByRole("treeitem", { name: /^Survey quadcopter \(sample\) · 0007/ }).first().click();
+    await expect(page.getByRole("heading", { level: 1 }).first()).toContainText("· 0007");
+    await expect(page.getByRole("tab", { name: "Failure reports" })).toBeVisible(); // an operated thing, not a design
+    page.off("request", watch);
+    expect(posted).toEqual([{ again: false }]);
+    await shot(page, `${width}-assets-sample-quadcopter`);
+    expect(await sideways(page)).toBeLessThanOrEqual(0);
+  }
+  // With no assets, the empty page offers it too.
+  await page.route("**/api/maintenance/places", (route) => route.fulfill({
+    json: { places: [], not_placed: { positions: 0, items: 0, position_ids: [] }, horizon_days: 30 } }));
+  await open(page, "/asset-register");
+  const empty = page.locator(".section-empty");
+  await expect(empty).toContainText("No assets yet");
+  await expect(empty).toContainText("sample quadcopter");
+  await expect(empty.getByRole("button", { name: "Open the sample quadcopter" })).toBeVisible();
+  await expectHealthy(page, problems, { label: "assets sample quadcopter" });
+});
+
 // With no products (the read answered empty here), the page says what a product is and offers the sample and the guide.
 test("Products and Items empty states offer the sample and the guide", async ({ page, problems }) => {
   await page.route("**/api/maintenance/products", (route) => (route.request().method() === "GET"
@@ -276,7 +315,7 @@ test("Products and Items empty states offer the sample and the guide", async ({ 
 // Assets and Products: two landing pages of one shape (RegisterList), and the
 // asset tree's Parts and stock and Classes tabs (they were pages of their
 // own), each scoped to the row picked, with "Show all" for everything.
-// smoke/seed.js puts the sample truck in the depot.
+// smoke/seed.js puts a plain position in the smoke-test depot.
 for (const [width, height] of [[1440, 900], [400, 860]]) {
   test(`Assets and Products landing pages share one shape at ${width} px`, async ({ page, problems }) => {
     await page.setViewportSize({ width, height });

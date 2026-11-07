@@ -6,7 +6,7 @@ import FailureReportsPanel from "./FailureReportsPanel.jsx";
 import SignalsPanel from "./SignalsPanel.jsx";
 import { PinIcon } from "./OutlineBits.jsx";
 import { ancestorsOf } from "../assetTree.js";
-import { branchOf, classesInBranch, isDesignRow, isProductRow, shownTab, tabsFor } from "../explorerTabs.js";
+import { branchOf, classesInBranch, isDesignRow, isProductRow, rowKind, shownTab, tabsFor } from "../explorerTabs.js";
 import TreeSummary from "./TreeSummary.jsx";
 import ProductSummary, { ProductPartsList } from "./ProductSummary.jsx";
 import "./TreeSummary.css";
@@ -36,8 +36,6 @@ const ClassesPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m)
 // HeaderTabs) sit in the two slim rows over the tree on both tabs, so they stay
 // put when the tab changes; the panel itself is then `headless`. On the RCM tab
 // the tree and the RCM are one table (TreePane with its columns).
-
-export const KIND = { pos: "Position", loc: "Location", item: "Item", group: "" };
 
 export function fullPagePath(r) {
   if (r.type === "pos") return `/asset-register/positions/${r.key}`;
@@ -243,7 +241,7 @@ const TreeDetail = forwardRef(function TreeDetail({
         <div className="td-head">
           <SlimHeader display={display} row={row} onSelect={onSelect} onCrumb={onCrumb || onSelect} above={above} pin={pin}
                       fullScreenButton={fullScreenButton} headingRef={headingRef} heading={heading}
-                      meta={KIND[row.type] ? <span className="tt-kind">{KIND[row.type]}</span> : null} primaryOpen />
+                      meta={rowKind(row) ? <span className="tt-kind">{rowKind(row)}</span> : null} primaryOpen />
           <HeaderTabs row={row} tab={tab} onTab={onTab} />
         </div>
       )}

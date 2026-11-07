@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEFAULT_TAB, TABS, branchOf, classesInBranch, isDesignRow, isProductRow, partsInBranch, shownTab, tabParam, tabsFor,
+  DEFAULT_TAB, TABS, branchOf, classesInBranch, isDesignRow, isProductRow, partsInBranch, rowKind, shownTab, tabParam, tabsFor,
 } from "./explorerTabs.js";
 
 const pos = { type: "pos" };
@@ -62,6 +62,12 @@ test("a product's design has no maintenance: no Failure reports, Signals or stoc
   }
   assert.ok(isProductRow(top));
   assert.ok(!isProductRow(inside));
+  // The product's row is headed "Product"; its design's positions stay "Position".
+  assert.equal(rowKind(top), "Product");
+  assert.equal(rowKind(inside), "Position");
+  assert.equal(rowKind(asset), "Position");
+  assert.equal(rowKind({ type: "item", ref: {} }), "Item");
+  assert.equal(rowKind({ type: "group", ref: {} }), "");
   // An asset (an item's tree built from a design is an asset too) keeps everything.
   assert.ok(!isDesignRow(asset));
   assert.ok(!isDesignRow({ type: "pos", ref: { design_position_id: "d1" } }));

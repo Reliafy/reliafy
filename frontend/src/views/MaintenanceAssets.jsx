@@ -1,16 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { addSampleTruck as postSampleTruck, listMaintenancePlaces } from "../api.js";
+import { addSampleProduct, listMaintenancePlaces, listProductItems } from "../api.js";
 import RegisterList, { CountCell } from "../components/RegisterList.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import { fmtDate } from "../components/MaintenanceParts.jsx";
-import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { NewLocationModal } from "./MaintenanceLists.jsx";
 import {
   NOT_PLACED_PATH, assetPath, assetsSummary, dueText, insideText, openWorkPath, placePath,
 } from "../maintenanceAssets.js";
-import { EXPLORER_PATH } from "../navigation.js";
-import { SAMPLES, addSample } from "../sampleTruck.js";
+import { OPEN_SAMPLE_UNITS_LABEL, sampleUnitsPath } from "../sampleProduct.js";
 import "./Maintenance.css";
 
 const HELP = { guide: "rcm-on-your-asset-tree" };
@@ -23,7 +21,6 @@ const HELP = { guide: "rcm-on-your-asset-tree" };
 // the maintenance columns: open work and what's due.
 export default function MaintenanceAssets() {
   const navigate = useNavigate();
-  const confirm = useConfirm();
   const [view, setView] = useState(null);
   const [modal, setModal] = useState(false);
   const [error, setError] = useState(null);
@@ -35,17 +32,18 @@ export default function MaintenanceAssets() {
   const rest = view?.not_placed;
   const horizon = view?.horizon_days ?? 30;
   const newAsset = <button onClick={() => setModal(true)}><PlusIcon /> New asset</button>;
-  // The sample truck (with its RCM), opened in the Explorer.
-  const addTruck = () => {
+  // The sample quadcopter: the first of the three items built from the sample
+  // product, on its own tree (the sample is added first when there's none).
+  const openSample = () => {
     if (adding) return;
     setAdding(true);
     setError(null);
-    addSample(postSampleTruck, confirm, "truck")
-      .then((r) => navigate(`${EXPLORER_PATH}?tab=rcm&sel=${encodeURIComponent(r.position.id)}`))
-      .catch((e) => { setError(`The sample truck wasn't added: ${e.message}`); setAdding(false); });
+    sampleUnitsPath(addSampleProduct, listProductItems)
+      .then((path) => navigate(path))
+      .catch((e) => { setError(`The sample quadcopter didn't open: ${e.message}`); setAdding(false); });
   };
   const sampleButton = (
-    <button type="button" className="secondary" onClick={addTruck} disabled={adding}>{adding ? "Adding…" : SAMPLES.truck.label}</button>
+    <button type="button" className="secondary" onClick={openSample} disabled={adding}>{adding ? "Opening…" : OPEN_SAMPLE_UNITS_LABEL}</button>
   );
   const columns = [
     { key: "positions", label: "Positions", num: true, cell: (p) => p.positions },
@@ -75,14 +73,14 @@ export default function MaintenanceAssets() {
       <RegisterList
         title="Assets" purpose="The places you look after, and everything at each one."
         help={HELP} primary={newAsset}
-        menu={<button type="button" className="ovm-item" onClick={addTruck} disabled={adding}>{SAMPLES.truck.label}</button>}
+        menu={<button type="button" className="ovm-item" onClick={openSample} disabled={adding}>{OPEN_SAMPLE_UNITS_LABEL}</button>}
         error={error} rows={view ? view.places || [] : null} noun={["asset", "assets"]}
         count={assetsSummary(view)} search={(p) => [p.name, p.description]}
         name={(p) => ({ to: assetPath(p.id), label: p.name, sub: [p.description, insideText(p)].filter(Boolean).join(" · ") })}
         columns={columns} after={notPlaced || null}
         empty={{
           title: "No assets yet",
-          text: "An asset is a place you look after: a house, a site, a plant. Add one, then add the rooms or areas inside it and say where each position is. Or add the sample truck to see an RCM built on its tree.",
+          text: "An asset is a place you look after: a house, a site, a plant. Add one, then add the rooms or areas inside it and say where each position is. Or open the sample quadcopter: one of three built from the sample product, with its flight hours and failure reports.",
           sample: sampleButton,
           guide: "How the asset tree works",
         }}

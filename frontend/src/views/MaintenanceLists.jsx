@@ -751,7 +751,8 @@ export function PartsPanel({ branch, scopeName = "", all = false, onAll, design 
       {!design && all && parts?.length > 0 && !filtered && <SparesCoverCard parts={parts} />}
       {shown === null ? <div className="card empty">Loading…</div> : shown.length === 0 ? (
         <div className="card empty"><p>{filtered ? "No parts match."
-          : parts.length === 0 ? "No parts yet. Add the spares you keep: anodes, filters, bearings; or import a BOM."
+          : parts.length === 0 ? (design ? "No parts yet. Add the parts that go into it, or import a BOM."
+            : "No parts yet. Add the spares you keep: anodes, filters, bearings; or import a BOM.")
           : design ? `No part is on a parts list inside ${scopeName || "this row"} yet. Add parts to a position's parts list on its page, or show all parts.`
           : `No parts are kept or used at ${scopeName || "this row"} or inside it. Show all parts to see the catalogue.`}</p></div>
       ) : view === "structure" ? <PartsStructure parts={shown} /> : (

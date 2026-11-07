@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { normaliseConfirm } from "./confirm.js";
-import { SAMPLES, addSample, anotherCopyConfirm, sampleProductId, sampleProductView } from "./sampleProduct.js";
+import { SAMPLES, addSample, anotherCopyConfirm, sampleProductId, sampleProductView, sampleUnitsPath } from "./sampleProduct.js";
 
 const NAME = "Survey quadcopter (sample)";
 const made = (name) => ({ added: true, product: { id: name, name }, position: { id: name, name }, message: `Added “${name}”.` });
@@ -51,4 +51,19 @@ test("the Explorer opens it on the FME(C)A tab from there, on the RCM tab otherw
   assert.equal(sampleProductView("rcm"), "rcm");
   assert.equal(sampleProductView("summary"), "rcm");
   assert.equal(sampleProductView(undefined), "rcm");
+});
+
+test("Assets' sample opens the first item built from it, on its tree, adding nothing twice", async () => {
+  const fresh = { ...made(NAME), items: [{ serial: "SQ-0007", top_position_id: "t7" }, { serial: "SQ-0008", top_position_id: "t8" }] };
+  const calls = [];
+  assert.equal(await sampleUnitsPath(async (again) => { calls.push(again); return fresh; },
+    async () => assert.fail("the answer carries the items")), "/asset-register/explorer?arrange=positions&root=t7");
+  assert.deepEqual(calls, [false]);
+  // A copy there already: its items are read.
+  assert.equal(await sampleUnitsPath(async () => there, async (id) => {
+    assert.equal(id, "p1");
+    return { items: [{ serial: "SQ-0009", top_position_id: "t9" }] };
+  }), "/asset-register/explorer?arrange=positions&root=t9");
+  // No item built: the product's page.
+  assert.equal(await sampleUnitsPath(async () => there, async () => ({ items: [] })), "/products/p1");
 });
