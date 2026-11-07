@@ -42,8 +42,8 @@ Open [Fault trees](/systems/fault-trees) under System models and press
 **New fault tree**. The tree shows as an outline: the top event first, and each
 gate's inputs indented beneath it.
 
-1. Select the top event and give it a name that says what must not happen.
-   Choose its gate: OR, AND or vote.
+1. Select the top event and give it a name that says what must not happen
+   ("Loss of thrust in flight"). Choose its gate: OR, AND or vote.
 2. Use **Add gate** and **Add basic event** to build the tree downwards. Every
    row has a **⋯** menu (or right-click the row) to add, rename, change the
    gate, move a row up or down, move it into the gate above or out of its
@@ -67,11 +67,12 @@ Open it, change anything, and **Save a copy** to keep your version.
 ## Read the results
 
 The results appear under the tree as soon as every gate has inputs and every
-basic event has data.
+basic event has data: the answer in one sentence, then the figures.
 
 - **Top event probability**: the chance the top event has happened by the
-  time shown. Reliafy picks the time where it reaches about 10% (system
-  reliability about 90%); type another time and press **Evaluate**. When every
+  time shown, with the **reliability** (the chance it hasn't) beside it.
+  Reliafy picks the time where it reaches about 10% (reliability about 90%);
+  type another time in **Evaluate at t** and press **Evaluate**. When every
   event is a fixed probability, time doesn't matter and there's one number.
 - **Top event probability over time**: the same, as a curve.
 - **The tree, drawn**: the gates and events with each one's probability.

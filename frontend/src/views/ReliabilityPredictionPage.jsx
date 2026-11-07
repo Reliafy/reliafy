@@ -42,8 +42,8 @@ export default function ReliabilityPredictionPage() {
   if (error) {
     return (
       <div className="app">
-        <header><h1>Reliability prediction</h1></header>
-        <LoadFailed error={error} to={PREDICTIONS_PATH} label="See all predictions" />
+        <PageHeader crumbs={[{ label: PREDICTIONS_LABEL, to: PREDICTIONS_PATH }]} title="Prediction" />
+        <LoadFailed error={error} to={PREDICTIONS_PATH} label="See all predictions" notFound="Prediction not found." />
       </div>
     );
   }
@@ -62,7 +62,7 @@ export default function ReliabilityPredictionPage() {
         meta={[
           env ? `${env.name} (${env.code})` : null,
           `${counts.lines ?? 0} ${counts.lines === 1 ? "line" : "lines"}`,
-          "computed when saved; the results are stored, not refreshed",
+          "results as computed when it was saved",
         ].filter(Boolean).join(" · ")}
         id={doc.id}
         primary={<button onClick={() => navigate(newPredictionPath({ from: doc.id }))}>{doc.read_only ? "Edit a copy" : "Edit"}</button>}

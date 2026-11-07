@@ -51,7 +51,7 @@ export default function StrategyAnalysisPage() {
             {doc.shared_by && <Chip title={`Shared by ${doc.shared_by}`}>Shared</Chip>}
           </>
         }
-        meta={<>{KIND_LABEL[doc.kind] || doc.kind} · computed when saved; results are stored, not refreshed.</>}
+        meta={<>{KIND_LABEL[doc.kind] || doc.kind} · results as computed when it was saved.</>}
         id={doc.id}
         menu={
           <ShareButton

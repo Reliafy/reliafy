@@ -264,6 +264,17 @@ export function availabilityText(a) {
   return `${p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: digits })}%`;
 }
 
+// The server's one-line headline for a list row ("Mct 29.9 minutes · M_max
+// 94.1 minutes · A 99.78%") in the words the page uses, so a first-timer can
+// read the row without knowing the symbols: "Mean repair 29.9 minutes · most
+// done by 94.1 minutes · availability 99.78%".
+export function plainHeadline(headline) {
+  return String(headline || "")
+    .replace(/^Mct\b/, "Mean repair")
+    .replace(/(^|· )M_max\b/, "$1most done by")
+    .replace(/(^|· )A (?=\d)/, "$1availability ");
+}
+
 // The weights' source in a few words.
 export function weightsText(result) {
   const w = result?.weights;

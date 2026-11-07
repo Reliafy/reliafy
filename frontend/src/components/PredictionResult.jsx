@@ -56,10 +56,10 @@ export default function PredictionResult({ results, name = "Reliability predicti
         tone={none || warnings.length ? "caveat" : "neutral"}
         sentence={sentence}
         stats={[
-          { label: "Failure rate", value: none ? "—" : `${fmtPerMillion(rate)} / 10⁶ h`,
+          { label: "Failure rate (per million hours)", value: none ? "—" : fmtPerMillion(rate),
             hint: none ? undefined : `${fmtPerHour(r.failure_rate_per_hour)} per hour` },
-          { label: "MTBF", value: none ? "—" : `${fmtHours(r.mtbf_hours)} h`, hint: "1 / failure rate" },
-          { label: `Reliability at ${fmtHours(t)} h`, value: fmtReliability(r.reliability_at_mission), hint: "exp(−λt)" },
+          { label: "MTBF", value: none ? "—" : `${fmtHours(r.mtbf_hours)} hours`, hint: "1 ÷ the failure rate" },
+          { label: `Reliability over ${fmtHours(t)} hours`, value: fmtReliability(r.reliability_at_mission), hint: "chance of no failure in that time" },
           { label: "Parts counted", value: `${fmtQuantity(counts.parts_assigned)} in ${counts.assigned ?? 0} ${counts.assigned === 1 ? "line" : "lines"}`,
             hint: counts.unassigned ? `${counts.unassigned} ${counts.unassigned === 1 ? "line" : "lines"} left out` : "every line has a part type" },
         ]}
@@ -103,7 +103,8 @@ export default function PredictionResult({ results, name = "Reliability predicti
               <thead>
                 <tr>
                   <th>Assembly</th><th className="num">Lines</th><th className="num">Parts</th>
-                  <th className="num">Failures / 10⁶ h</th><th className="num">Share</th><th className="num">MTBF (h)</th>
+                  <th className="num">Failure rate<span className="th-unit">per million hours</span></th>
+                  <th className="num">Share</th><th className="num">MTBF<span className="th-unit">hours</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -136,8 +137,10 @@ export default function PredictionResult({ results, name = "Reliability predicti
             <thead>
               <tr>
                 <th>Part</th><th>Assembly</th><th className="num">Qty</th><th>Handbook part type</th>
-                <th className="num">λb / 10⁶ h</th><th className="num">πE</th><th className="num">πQ</th>
-                <th className="num">Failures / 10⁶ h</th><th className="num">Share</th>
+                <th className="num" title="The handbook's base failure rate for the part type, per million hours">Base rate<span className="th-unit">λb, per million hours</span></th>
+                <th className="num" title="The handbook's factor for the environment">Environment<span className="th-unit">πE</span></th>
+                <th className="num" title="The quality factor set on the line (1 unless set)">Quality<span className="th-unit">πQ</span></th>
+                <th className="num">Failure rate<span className="th-unit">per million hours</span></th><th className="num">Share</th>
               </tr>
             </thead>
             <tbody>
@@ -170,6 +173,7 @@ export default function PredictionResult({ results, name = "Reliability predicti
             </tbody>
           </table>
         </div>
+        <p className="hint">A line's failure rate is its base rate × the environment factor × its quality factor × its quantity.</p>
       </section>
 
       <ResultDetails summary="How it was worked out">

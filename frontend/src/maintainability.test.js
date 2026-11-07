@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   ELEMENTS, availabilityText, emptyForm, emptyLine, formProblem, fromInputs, hasElements, isBlank, lineMttr,
-  linesFromProduct, parsePartsList, toInputs, usedElements, weightsText,
+  linesFromProduct, parsePartsList, plainHeadline, toInputs, usedElements, weightsText,
 } from "./maintainability.js";
 
 const line = (over = {}) => ({ ...emptyLine(), ...over, elements: { ...emptyLine().elements, ...(over.elements || {}) } });
@@ -134,6 +134,15 @@ test("availability keeps its decimals: never rounded up to 100%", () => {
   assert.equal(availabilityText(0.95), "95.00%");
   assert.equal(availabilityText(1), "100.00%");
   assert.equal(availabilityText(null), "—");
+});
+
+test("a list row's headline reads in plain words, not symbols", () => {
+  assert.equal(plainHeadline("Mct 29.9 minutes · M_max 94.1 minutes · A 99.78%"),
+    "Mean repair 29.9 minutes · most done by 94.1 minutes · availability 99.78%");
+  assert.equal(plainHeadline("Mct 2.5 hours"), "Mean repair 2.5 hours");
+  assert.equal(plainHeadline("Mct 2.5 hours · A 99.9%"), "Mean repair 2.5 hours · availability 99.9%");
+  assert.equal(plainHeadline("Maintainability prediction"), "Maintainability prediction");
+  assert.equal(plainHeadline(null), "");
 });
 
 test("the weights' source in words", () => {

@@ -186,7 +186,7 @@ export function treeIssues(tree) {
   for (const n of tree.nodes) {
     if (n.type === "gate") {
       const size = (n.inputs || []).length;
-      if (!size) out.push({ id: n.id, text: `${n.label}: add its inputs` });
+      if (!size) out.push({ id: n.id, text: `${n.label}: add a gate or basic event under it` });
       else if (n.gate === "vote" && (n.k || 0) > size) out.push({ id: n.id, text: `${n.label}: needs ${n.k} of its inputs but has ${size}` });
     } else if (!n.model && (n.probability === undefined || n.probability === null)) {
       out.push({ id: n.id, text: `${n.label}: no failure data yet` });
@@ -204,15 +204,22 @@ const short = (v) => {
   return r !== 0 && Math.abs(r) < 1e-3 ? r.toExponential() : String(r);
 };
 
-// One line about a basic event's data, for its row.
+// A time unit as it reads inside a sentence: "Hours" → "hours"; "km" stays.
+export function plainUnit(unit) {
+  const u = String(unit || "");
+  return /^[A-Z][a-z]+$/.test(u) ? u.toLowerCase() : u;
+}
+
+// One line about a basic event's data, for its row (plain words: the panel
+// calls these "Fixed probability" and "Failure rate").
 export function eventSummary(node, unit = "") {
-  if (node.probability !== undefined && node.probability !== null) return `q = ${node.probability}`;
+  if (node.probability !== undefined && node.probability !== null) return `Fixed probability ${node.probability}`;
   const m = node.model;
   if (!m) return "No failure data";
   if (m.source === "saved" || m.modelId) return m.name ? `Saved model: ${m.name}` : "Saved model";
   const p = Object.fromEntries((m.params || []).map((x) => [x.name, x.value]));
-  const u = unit ? ` /${unit.toLowerCase().replace(/s$/, "")}` : "";
-  if (m.distribution_id === "exponential" && p.failure_rate != null) return `λ = ${short(p.failure_rate)}${u}`;
+  const u = unit ? ` per ${plainUnit(unit).replace(/s$/, "")}` : "";
+  if (m.distribution_id === "exponential" && p.failure_rate != null) return `Failure rate ${short(p.failure_rate)}${u}`;
   if (m.distribution_id === "weibull" && p.alpha != null) return `Weibull α = ${short(p.alpha)}, β = ${short(p.beta)}`;
   return m.distribution || m.distribution_id || "Model";
 }
