@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  STATES, branchQuery, limitsText, needsAttention, placeOf, pointState, readMeasurementsQuery, readingDue, recentValues,
-  recordedBy, sortPoints, stateText,
+  STATES, branchQuery, latestNote, limitsText, needsAttention, placeOf, pointChip, pointHref, pointMenu, pointState,
+  pointSubline, readMeasurementsQuery, readingDue, recentValues, recordedBy, rowAction, sortPoints, stateText,
 } from "./measurementsTab.js";
 
 const TODAY = "2026-11-07";
@@ -75,7 +75,12 @@ test("sortPoints: past alarm, near, due, OK, no limits, never read; then by plac
 });
 
 test("who recorded it, and where the point is", () => {
-  assert.equal(recordedBy(cond({ readings: [{ value: 1, note: "read at the work order", status: "ok" }] })), "by hand: read at the work order");
+  // The note isn't part of it (it can run to a paragraph): latestNote gives it, for a mark.
+  const noted = cond({ readings: [{ value: 1, note: " read at the work order ", status: "ok" }] });
+  assert.equal(recordedBy(noted), "by hand");
+  assert.equal(latestNote(noted), "read at the work order");
+  assert.equal(latestNote(cond()), "");
+  assert.equal(latestNote(cond({ source: "automated", readings: [{ value: 1, note: "x" }] })), "");
   assert.equal(recordedBy(cond()), "by hand");
   assert.equal(recordedBy(cond({ source: "automated", tag: "sensor.pool_ph" })), "feed: sensor.pool_ph");
   assert.equal(recordedBy(cond({ derived: { from: "c1" } })), "from a signal channel");
@@ -99,4 +104,53 @@ test("branchQuery asks for the branch's positions, its items and the items fitte
 test("the tab's address: the filter and the open point", () => {
   assert.deepEqual(readMeasurementsQuery(new URLSearchParams("tab=measurements&only=attention&point=x1")), { attention: true, point: "x1" });
   assert.deepEqual(readMeasurementsQuery(new URLSearchParams("tab=measurements")), { attention: false, point: null });
+});
+
+test("the row's one state chip: the worst state, with the detail in its tooltip", () => {
+  const weekly = trail([["2026-10-01", 7.1], ["2026-10-08", 7.2], ["2026-10-15", 7.3], ["2026-10-22", 7.2]]);
+  const past = pointChip(cond({ status: "high", reading: 8.1, alarm_work_order: { id: "w1", number: 12 } }), TODAY);
+  assert.deepEqual([past.label, past.tone], ["Past alarm", "danger"]);
+  assert.equal(past.title, "Past alarm: above 7.8. Alarm below 7 or above 7.8. Work order #12 open");
+  const near = pointChip(cond({ projected_alarm: "2026-11-20" }), TODAY);
+  assert.deepEqual([near.label, near.tone], ["Near limit", "warning"]);
+  assert.match(near.title, /reaches it about 2026-11-20/);
+  const due = pointChip(cond({ readings: weekly, read_at: "2026-10-22" }), TODAY);
+  assert.deepEqual([due.label, due.tone], ["Due", "warning"]);
+  assert.match(due.title, /Last read 16 days ago/);
+  assert.deepEqual([pointChip(cond(), TODAY).label, pointChip(cond(), TODAY).tone], ["OK", "success"]);
+  assert.equal(pointChip(cond(), TODAY).title, "Inside its limits. Alarm below 7 or above 7.8");
+  const counter = pointChip(cond({ kind: "counter", alarm_above: null, alarm_below: null, reading: 900 }), TODAY);
+  assert.deepEqual([counter.label, counter.tone], ["No limits", "neutral"]);
+  assert.equal(pointChip(cond({ alarm_above: null, alarm_below: null }), TODAY).label, "No limits");
+  // Never read: a hand-read point is due its first reading; a feed's is waiting.
+  assert.deepEqual([pointChip(cond({ reading: null }), TODAY).label, pointChip(cond({ reading: null }), TODAY).tone], ["Never read", "warning"]);
+  const feed = pointChip(cond({ reading: null, source: "automated", tag: "sensor.ph" }), TODAY);
+  assert.deepEqual([feed.label, feed.tone], ["Never read", "neutral"]);
+  assert.match(feed.title, /Waiting for its feed \(sensor\.ph\)/);
+});
+
+test("the muted line under a point's name: the place only for a branch", () => {
+  const p = cond({ unit: "ppm", position: { id: "a", name: "Main pool" } });
+  assert.equal(pointSubline(p), "condition · ppm");
+  assert.equal(pointSubline(p, { branch: true }), "Main pool · condition · ppm");
+  assert.equal(pointSubline(cond({ kind: "counter", unit: "hours" })), "counter · hours");
+  assert.equal(pointSubline(cond()), "condition");
+});
+
+test("clicking a row, and its ⋯ menu", () => {
+  const read = cond({ position: { id: "a", name: "Pool" }, readings: [{ id: "r1", at: "2026-11-01", value: 7.2, status: "ok" }] });
+  assert.equal(rowAction(read), "history");
+  assert.equal(rowAction(cond({ readings: [] })), "record");
+  assert.equal(rowAction(cond({ source: "automated", item: { id: "i1", name: "Pump" } })), "open");
+  assert.equal(rowAction(cond({ source: "automated" })), null);
+  assert.equal(pointHref(read), "/asset-register/positions/a");
+  assert.equal(pointHref(cond({ item: { id: "i1" } })), "/asset-register/items/i1");
+  assert.deepEqual(pointMenu(read).map((i) => i.id), ["record", "history", "limits", "open"]);
+  // A counter has no limits to edit; a feed's point can't be read by hand (greyed, with the reason).
+  assert.deepEqual(pointMenu(cond({ kind: "counter" })).map((i) => i.id), ["record"]);
+  const feed = pointMenu(cond({ source: "automated", tag: "sensor.ph", alarm_work_order: { id: "w", number: 4 } }));
+  assert.deepEqual(feed.map((i) => i.id), ["record", "limits", "work-order"]);
+  assert.equal(feed[0].disabled, true);
+  assert.equal(feed[0].reason, "Read by a feed (sensor.ph)");
+  assert.equal(feed[2].label, "Open work order #4");
 });
