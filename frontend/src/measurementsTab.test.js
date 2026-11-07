@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   STATES, branchQuery, latestNote, limitsText, needsAttention, placeOf, pointChip, pointHref, pointMenu, pointState,
   nextReadingOn, pointPagePath, pointSubline, pointsCsv, readMeasurementsQuery, readingDue, recentValues, recordedBy, rowAction, sortPoints, stateText,
+  channelChip, channelMenu, channelPlace, channelSubline, channelValues, isFed, measurementRows, rowNeedsAttention,
 } from "./measurementsTab.js";
 
 const TODAY = "2026-11-07";
@@ -179,4 +180,64 @@ test("pointsCsv: one row per point shown, where it is, its latest reading, limit
   // A name a spreadsheet would read as a formula is kept as text; no reading leaves the cells blank.
   assert.equal(lines[2], "'=Run hours,Bay 2 (on Pump 7),counter,h,,,,,,Never read");
   assert.equal(pointsCsv([], TODAY).split("\n").length, 1);
+});
+
+// A signal channel as GET /api/maintenance/points sends it in `channels`.
+const chan = (over = {}) => ({
+  id: "c", kind: "channel", name: "Pump power", unit: "W", tag: "plug.power", stat: "value", axis: "value",
+  position: { id: "pos", name: "Filter pump" }, item: null,
+  latest: { t: "2026-11-06T10:00:00Z", value: 650 },
+  recent: [{ t: "2026-11-05T10:00:00Z", value: 610 }, { t: "2026-11-06T10:00:00Z", value: 650 }],
+  bands: [{ point_id: "b", name: "Power level", status: "ok", alarm_above: 900 }], attention: false, ...over,
+});
+
+test("channelChip: Needs attention when a band is past its alarm, else OK, no bands or no data yet", () => {
+  assert.equal(channelChip(chan()).label, "OK");
+  assert.equal(channelChip(chan()).tone, "success");
+  const past = channelChip(chan({ bands: [{ name: "Power level", status: "high" }, { name: "1x", status: "ok" }] }));
+  assert.deepEqual([past.key, past.label, past.tone], ["attention", "Needs attention", "danger"]);
+  assert.match(past.title, /Power level/);
+  assert.equal(channelChip(chan({ bands: [] })).label, "No bands");
+  assert.equal(channelChip(chan({ latest: null, recent: [] })).label, "No data yet");
+  assert.match(channelChip(chan({ latest: null })).title, /plug\.power/);
+});
+
+test("measurementRows: channels sit in the same list as points, worst first, then by place and name", () => {
+  const pastPoint = cond({ id: "p1", name: "pH", status: "high", reading: 8.1, position: { id: "pos", name: "Pool" } });
+  const okPoint = cond({ id: "p2", name: "Chlorine", position: { id: "pos", name: "Pool" } });
+  const okChan = chan({ id: "c1", name: "Pump power" });
+  const badChan = chan({ id: "c2", name: "Bearing", bands: [{ name: "1x", status: "high" }] });
+  const quietChan = chan({ id: "c3", name: "Spare plug", latest: null, recent: [] });
+  const rows = measurementRows([okPoint, pastPoint], [quietChan, okChan, badChan], TODAY);
+  assert.deepEqual(rows.map((r) => `${r.kind}:${r.row.id}`),
+    // OK rows by place: Filter pump's channel before the Pool's point.
+    ["channel:c2", "point:p1", "channel:c1", "point:p2", "channel:c3"]);
+  assert.ok(rows.every((r) => r.key));
+  assert.notEqual(rows.find((r) => r.row.id === "c1").key, "c1"); // a channel's key can't clash with a point's id
+  assert.deepEqual(measurementRows([okPoint], undefined, TODAY).map((r) => r.kind), ["point"]);
+  // The attention filter takes both kinds.
+  assert.deepEqual(rows.filter((r) => rowNeedsAttention(r, TODAY)).map((r) => r.row.id), ["c2", "p1"]);
+});
+
+test("a channel row: Fed, where it is, its subline, recent values and its menu", () => {
+  assert.equal(isFed(chan()), true);
+  assert.equal(isFed(cond()), false);
+  assert.equal(isFed(cond({ source: "automated" })), true);
+  assert.equal(isFed(cond({ derived: { from: "c" } })), true);
+  assert.equal(channelPlace(chan()), "Filter pump");
+  const onItem = chan({ position: null, item: { id: "i", name: "Motor", fitted_to: { id: "p", name: "Filter pump" } } });
+  assert.equal(channelPlace(onItem), "Filter pump (on Motor)");
+  assert.equal(channelPlace(chan({ position: null, item: { id: "i", name: "Motor", fitted_to: null } })), "Motor");
+  assert.equal(channelSubline(chan()), "sensor · W");
+  assert.equal(channelSubline(chan({ stat: "rms", axis: "X", unit: "g" }), { branch: true }), "Filter pump · sensor · g · overall RMS (X)");
+  assert.deepEqual(channelValues(chan()).map((r) => r.value), [610, 650]);
+  assert.deepEqual(channelMenu(chan()).map((i) => i.label), ["Open", "Edit bands…", "Open its position"]);
+  assert.deepEqual(channelMenu(onItem).map((i) => i.label), ["Open", "Edit bands…", "Open its item"]);
+});
+
+test("pointsCsv adds the channels shown after the points", () => {
+  const csv = pointsCsv([cond()], TODAY, new Map(), [chan()]);
+  const lines = csv.trim().split(/\r?\n/);
+  assert.equal(lines.length, 3);
+  assert.match(lines[2], /^Pump power,Filter pump,sensor,W,650,2026-11-06,sensor,,,OK$/);
 });

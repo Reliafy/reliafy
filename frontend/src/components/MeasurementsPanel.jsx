@@ -8,9 +8,12 @@ import Chip from "./ui/Chip.jsx";
 import RowMenu from "./RowMenu.jsx";
 import { readingWhen } from "../maintenanceReadings.js";
 import {
-  branchQuery, latestNote, needsAttention, pointChip, pointHref, pointMenu, pointPagePath, pointSubline, pointsCsv, readMeasurementsQuery,
-  recentValues, recordedBy, rowAction, sortPoints,
+  branchQuery, latestNote, pointChip, pointHref, pointMenu, pointPagePath, pointSubline, pointsCsv, readMeasurementsQuery,
+  recentValues, recordedBy, rowAction,
+  channelChip, channelMenu, channelSubline, channelValues, isFed, measurementRows, rowNeedsAttention,
 } from "../measurementsTab.js";
+import { channelPath } from "../signals.js";
+import NewChannel from "./SignalChannelForm.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import { saveText } from "../sparesPlan.js";
 import { exportFilename } from "../rcmImport.js";
@@ -31,6 +34,12 @@ import "./MeasurementsPanel.css";
 // panel is narrow (a phone) each point becomes a block. A new point: the
 // dashed "+ Add a measuring point" row over the list, or the panel heading's
 // "…" (given through `onMenu`), which also exports the points shown as CSV.
+//
+// Signal channels (sensors that send snapshots: a vibration sensor, a smart
+// plug's power) are rows of the same list, marked "Fed" like a feed's points:
+// the latest level, the state of its watch bands, the recent trend, and a ⋯
+// menu (Open: its own page with the spectrum; Edit bands…). The heading's "…"
+// adds one ("Add a sensor channel…").
 
 function useMeasurementsQuery() {
   const [params] = useSearchParams();
@@ -51,8 +60,8 @@ function useMeasurementsQuery() {
 
 // The last few readings as a line at a fixed 120 × 28 px, with the alarm limits dashed.
 const TREND_W = 120, TREND_H = 28;
-function Trend({ point }) {
-  const rs = recentValues(point, 12);
+function Trend({ point, values = null }) {
+  const rs = values || recentValues(point, 12);
   if (rs.length < 2) {
     return <span className="lib-date ms-no-trend" title={rs.length ? "One reading so far" : "No readings yet"}>—</span>;
   }
@@ -114,12 +123,53 @@ export function LimitsModal({ point, onClose, onDone }) {
   );
 }
 
+// Not read by hand: a sensor channel, a feed's point, or one worked out from a channel.
+const FedChip = () => <Chip tone="neutral" className="ms-fed" title="Fed automatically: nobody reads it by hand">Fed</Chip>;
+
+// A sensor channel as a row: its name (to its own page) and "Fed", the latest
+// level and when, its bands' state, the recent levels, and its ⋯ menu.
+function ChannelRow({ ch, branchy, fittedAt, picked, onOpen, onMenu, onContextMenu }) {
+  const chip = channelChip(ch);
+  const sub = channelSubline(ch, { branch: branchy, fittedAt });
+  const when = ch.latest?.t ? fmtDate(String(ch.latest.t).slice(0, 10)) : "";
+  return (
+    <tr id={`ms-channel-${ch.id}`} className={"ms-row ms-clickable ms-channel" + (picked ? " ms-picked" : "")}
+        onClick={onOpen} title="Open its page: spectrum, watch bands and settings" onContextMenu={onContextMenu}>
+      <td className="ms-point">
+        <span className="ms-name-line">
+          <Link className="ms-name" to={channelPath(ch)} title={`${ch.name}: open its page`} onClick={(e) => e.stopPropagation()}>{ch.name}</Link>
+          <FedChip />
+        </span>
+        <span className="lib-date ms-sub" title={sub}>{sub}</span>
+      </td>
+      <td className="ms-latest">
+        <span className="ms-value-line">
+          <strong className="ms-value">{ch.latest ? `${fmtValue(ch.latest.value)}${ch.unit ? ` ${ch.unit}` : ""}` : "—"}</strong>
+        </span>
+        <span className="lib-date ms-sub" title={when ? `${when}, from the sensor${ch.tag ? ` (${ch.tag})` : ""}` : "No snapshot yet"}>
+          {when ? `${when} · sensor` : "no data yet"}
+        </span>
+      </td>
+      <td className="ms-state-cell">
+        <Chip tone={chip.tone} className={`ms-chip ms-${chip.key}`} title={chip.title}>{chip.label}</Chip>
+      </td>
+      <td className="ms-trend-cell"><Trend point={ch} values={channelValues(ch, 12)} /></td>
+      <td className="ms-menu-cell">
+        <button type="button" className={"ms-more" + (picked ? " open" : "")} aria-haspopup="menu" aria-expanded={picked}
+                aria-label={`Actions for ${ch.name}`} title="Actions" onClick={onMenu}>
+          <MoreIcon />
+        </button>
+      </td>
+    </tr>
+  );
+}
+
 export default function MeasurementsPanel({ row, display, today, onMenu = null }) {
   const q = useMeasurementsQuery();
   const navigate = useNavigate();
   const branch = useMemo(() => branchOf(display, row.key), [display, row.key]);
   const ask = useMemo(() => branchQuery(display, branch), [display, branch]);
-  const [state, setState] = useState({ key: null, points: null, more: false, error: null });
+  const [state, setState] = useState({ key: null, points: null, channels: [], more: false, error: null });
   const [modal, setModal] = useState(null);
   const [menu, setMenu] = useState(null); // {point, at}
   const [moved, setMoved] = useState(null); // what the last Move… said
@@ -127,30 +177,37 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
   const load = useCallback(() => {
     let live = true;
     listMeasurementPoints({ positionIds: ask.positionIds, itemIds: ask.itemIds })
-      .then((d) => live && setState({ key, points: d.points, more: d.more, error: null }))
-      .catch((e) => live && setState({ key, points: [], more: false, error: e.message }));
+      .then((d) => live && setState({ key, points: d.points, channels: d.channels || [], more: d.more, error: null }))
+      .catch((e) => live && setState({ key, points: [], channels: [], more: false, error: e.message }));
     return () => { live = false; };
   }, [ask, key]);
   useEffect(() => load(), [load]);
 
   const points = state.key === key ? state.points : null;
-  const sorted = useMemo(() => points && sortPoints(points, today, ask.fittedAt), [points, today, ask.fittedAt]);
-  const shown = sorted && (q.attention ? sorted.filter((p) => needsAttention(p, today)) : sorted);
-  const attention = sorted ? sorted.filter((p) => needsAttention(p, today)).length : 0;
+  const channels = state.key === key ? state.channels : null;
+  // Points and sensor channels, worst first, as one list.
+  const sorted = useMemo(() => points && measurementRows(points, channels, today, ask.fittedAt), [points, channels, today, ask.fittedAt]);
+  const shown = sorted && (q.attention ? sorted.filter((r) => rowNeedsAttention(r, today)) : sorted);
+  const attention = sorted ? sorted.filter((r) => rowNeedsAttention(r, today)).length : 0;
   const branchy = branch.pos.size + branch.item.size + branch.loc.size > 1;
   const open = q.point && points?.find((p) => p.id === q.point);
   // A point is added to the picked position or item (a place has none of its own).
   const target = row.type === "pos" ? { kind: "position", id: row.key } : row.type === "item" ? { kind: "item", id: row.key } : null;
   const done = () => { setModal(null); load(); };
   const where = `at ${row.ref.name || "this row"}${branchy ? " and inside it" : ""}`;
-  const count = sorted && (q.attention
-    ? `${shown.length} of ${sorted.length} measuring point${sorted.length === 1 ? "" : "s"} ${where}`
-    : `${sorted.length} measuring point${sorted.length === 1 ? "" : "s"} ${where}`);
+  const nChannels = channels?.length || 0;
+  const things = sorted && (nChannels
+    ? `${sorted.length - nChannels} measuring point${sorted.length - nChannels === 1 ? "" : "s"} and ${nChannels} sensor channel${nChannels === 1 ? "" : "s"}`
+    : `${sorted.length} measuring point${sorted.length === 1 ? "" : "s"}`);
+  const count = sorted && (q.attention ? `${shown.length} of ${things} ${where}` : `${things} ${where}`);
 
   const noTarget = "Pick a position or an item to add a measuring point: a place has none of its own.";
-  const exportCsv = () => saveText(pointsCsv(shown || [], today, ask.fittedAt), exportFilename(row.ref.name, { what: "measuring points" }));
+  const shownOf = (kind) => (shown || []).filter((r) => r.kind === kind).map((r) => r.row);
+  const exportCsv = () => saveText(pointsCsv(shownOf("point"), today, ask.fittedAt, shownOf("channel")), exportFilename(row.ref.name, { what: "measuring points" }));
+  const noChannelTarget = "Pick a position or an item to add a sensor channel: a place has none of its own.";
   usePanelMenu(onMenu, [
     { id: "point-new", label: "Add a measuring point…", onSelect: () => setModal({ add: true }), disabled: !target, title: target ? "" : noTarget },
+    { id: "channel-new", label: "Add a sensor channel…", onSelect: () => setModal({ channel: true }), disabled: !target, title: target ? "" : noChannelTarget },
     { id: "points-csv", label: "Export CSV", onSelect: exportCsv, disabled: !shown?.length, title: shown?.length ? "" : "No measuring points to export" },
   ]);
 
@@ -162,6 +219,17 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
     else if (id === "open") navigate(pointHref(p));
     else if (id === "work-order") navigate(`/maintenance/work-orders/${p.alarm_work_order.id}`);
     else if (id === "move") setModal({ move: p });
+  };
+  // A channel row's menu: its own page (the spectrum, bands, settings), at its bands, or its position or item.
+  const actChannel = (id, c) => {
+    if (id === "page") navigate(channelPath(c));
+    else if (id === "bands") navigate(channelPath(c, { bands: true }));
+    else if (id === "open") navigate(c.position?.id ? `/asset-register/positions/${c.position.id}` : `/asset-register/items/${c.item.id}`);
+  };
+  const openChannelMenu = (e, c) => {
+    e.stopPropagation();
+    const b = e.currentTarget.getBoundingClientRect();
+    setMenu({ channel: c, at: { x: b.right, y: b.bottom + 2 } });
   };
   const openRow = (p) => {
     const a = rowAction(p);
@@ -200,7 +268,7 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
           {q.attention && sorted.length > 0
             ? <>Nothing past alarm, near a limit or due a reading {where}. <button type="button" className="crumb-link" onClick={() => q.setAttention(false)}>Show every point</button></>
             : <>Nothing measured {where}. Add a counter (run hours, cycles) or a condition point (pH, chlorine, pressure,
-              vibration) with alarm limits{target ? "" : " on one of the positions here"}.</>}
+              vibration) with alarm limits, or a sensor channel that sends readings{target ? "" : " on one of the positions here"}.</>}
         </div>
       ) : (
         <div className="ms-list">
@@ -214,7 +282,13 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
               </tr>
             </thead>
             <tbody>
-              {shown.map((p) => {
+              {shown.map((r) => {
+                if (r.kind === "channel") {
+                  return <ChannelRow key={r.key} ch={r.row} branchy={branchy} fittedAt={ask.fittedAt} picked={menu?.channel?.id === r.row.id}
+                                     onOpen={() => actChannel("page", r.row)} onMenu={(e) => openChannelMenu(e, r.row)}
+                                     onContextMenu={(e) => { e.preventDefault(); setMenu({ channel: r.row, at: { x: e.clientX, y: e.clientY } }); }} />;
+                }
+                const p = r.row;
                 const chip = pointChip(p, today);
                 const note = latestNote(p);
                 const sub = pointSubline(p, { branch: branchy, fittedAt: ask.fittedAt });
@@ -224,13 +298,16 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
                 const rowTitle = action === "history" ? "Open its readings" : action === "record" ? "Record its first reading" : action === "open" ? `Open its ${p.position?.id ? "position" : "item"}` : undefined;
                 return (
                   <tr key={p.id} id={`ms-${p.id}`}
-                      className={"ms-row" + (action ? " ms-clickable" : "") + (q.point === p.id || menu?.point.id === p.id ? " ms-picked" : "")}
+                      className={"ms-row" + (action ? " ms-clickable" : "") + (q.point === p.id || menu?.point?.id === p.id ? " ms-picked" : "")}
                       onClick={() => openRow(p)} title={rowTitle}
                       onContextMenu={(e) => { e.preventDefault(); setMenu({ point: p, at: { x: e.clientX, y: e.clientY } }); }}>
                     <td className="ms-point">
                       {/* The name opens the point's own page; the rest of the row its readings (or first reading). */}
-                      <Link className="ms-name" to={pointPagePath(p.id)} title={`${p.name}: open its page`}
-                            onClick={(e) => e.stopPropagation()}>{p.name}</Link>
+                      <span className="ms-name-line">
+                        <Link className="ms-name" to={pointPagePath(p.id)} title={`${p.name}: open its page`}
+                              onClick={(e) => e.stopPropagation()}>{p.name}</Link>
+                        {isFed(p) && <FedChip />}
+                      </span>
                       <span className="lib-date ms-sub" title={sub}>{sub}</span>
                     </td>
                     <td className="ms-latest">
@@ -248,8 +325,8 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
                     </td>
                     <td className="ms-trend-cell"><Trend point={p} /></td>
                     <td className="ms-menu-cell">
-                      <button type="button" className={"ms-more" + (menu?.point.id === p.id ? " open" : "")} aria-haspopup="menu"
-                              aria-expanded={menu?.point.id === p.id} aria-label={`Actions for ${p.name}`} title="Actions"
+                      <button type="button" className={"ms-more" + (menu?.point?.id === p.id ? " open" : "")} aria-haspopup="menu"
+                              aria-expanded={menu?.point?.id === p.id} aria-label={`Actions for ${p.name}`} title="Actions"
                               onClick={(e) => openMenu(e, p)}>
                         <MoreIcon />
                       </button>
@@ -261,7 +338,16 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
           </table>
         </div>
       )}
-      {menu && (
+      {menu?.channel && (
+        <RowMenu items={channelMenu(menu.channel)} at={menu.at} label={`Actions for ${menu.channel.name}`} anchorId={`ms-channel-${menu.channel.id}`}
+                 onChoose={(id) => actChannel(id, menu.channel)}
+                 onClose={() => {
+                   const id = menu.channel.id;
+                   setMenu(null);
+                   document.getElementById(`ms-channel-${id}`)?.querySelector(".ms-more")?.focus({ preventScroll: true });
+                 }} />
+      )}
+      {menu?.point && (
         <RowMenu items={pointMenu(menu.point)} at={menu.at} label={`Actions for ${menu.point.name}`} anchorId={`ms-${menu.point.id}`}
                  onChoose={(id) => act(id, menu.point)}
                  onClose={() => {
@@ -269,6 +355,10 @@ export default function MeasurementsPanel({ row, display, today, onMenu = null }
                    setMenu(null);
                    document.getElementById(`ms-${id}`)?.querySelector(".ms-more")?.focus({ preventScroll: true });
                  }} />
+      )}
+      {modal?.channel && target && (
+        <NewChannel target={target.kind === "item" ? { itemId: target.id } : { positionId: target.id }}
+                    onCancel={() => setModal(null)} onDone={done} />
       )}
       {modal?.add && target && <PointModal target={target} onClose={() => setModal(null)} onDone={done} />}
       {modal?.read && <PointReadingModal point={modal.read} onClose={() => setModal(null)} onDone={done} />}

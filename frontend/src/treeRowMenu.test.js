@@ -27,16 +27,16 @@ const opts = (mode, extra = {}) => ({ mode, kidsOf: (k) => liveKids(DATA.positio
 test("a position's menu: new inside, add failure report, rename, move, delete; Pin goes before Delete", () => {
   const d = buildDisplay(DATA, "positions");
   const skim = summaryActions(d.rows.get("skim"), opts("positions"));
-  assert.deepEqual(ids(skim), ["tree-new", "report-new", "tree-rename", "tree-move", "tree-delete"]);
-  assert.deepEqual(skim.map((i) => i.label), ["New position inside", "Add failure report…", "Rename…", "Move to…", "Delete…"]);
+  assert.deepEqual(ids(skim), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "tree-delete"]);
+  assert.deepEqual(skim.map((i) => i.label), ["New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Delete…"]);
   assert.ok(skim.every((i) => !i.disabled));
   assert.equal(skim.at(-1).danger, true);
   assert.deepEqual(ids(withPin(skim, [{ id: "pin", label: "Pin this branch" }])),
-    ["tree-new", "report-new", "tree-rename", "tree-move", "pin", "tree-delete"]);
+    ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "pin", "tree-delete"]);
   assert.deepEqual(ids(withPin([{ id: "tree-rename" }], [{ id: "pin" }])), ["tree-rename", "pin"]);
   // Locations: a position's place there is where it is, so no Move.
   assert.deepEqual(ids(summaryActions({ key: "skim", type: "pos", ref: DATA.positions[4], kids: [] }, opts("locations"))),
-    ["tree-new", "report-new", "tree-rename", "tree-delete"]);
+    ["tree-new", "report-new", "event-log", "tree-rename", "tree-delete"]);
 });
 
 test("Delete is never greyed for what's inside: a delete takes it all (and Undo brings it back)", () => {
@@ -95,7 +95,7 @@ test("Isolate: a submenu of levels; just Isolate on a row with nothing inside; n
   assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: false }), []);
   // Before Delete, with Pin this branch after it.
   const skim = summaryActions({ key: "a", type: "pos", kids: ["b"], ref: {} }, { mode: "positions" });
-  assert.deepEqual(withPin(skim, [...items, { id: "pin" }]).map((i) => i.id), ["tree-new", "report-new", "tree-rename", "tree-move", "isolate", "pin", "tree-delete"]);
+  assert.deepEqual(withPin(skim, [...items, { id: "pin" }]).map((i) => i.id), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "isolate", "pin", "tree-delete"]);
 });
 
 test("Add failure report…: positions only (a report sits at a position), greyed when the team is view only", () => {
@@ -109,4 +109,13 @@ test("Add failure report…: positions only (a report sits at a position), greye
     .find((i) => i.id === "report-new");
   assert.equal(viewOnly.disabled, true);
   assert.match(viewOnly.reason, /View only/);
+});
+
+test("Log an event…: positions only, greyed when the team is view only", () => {
+  const d = buildDisplay(DATA, "positions");
+  const log = summaryActions(d.rows.get("pump"), opts("positions")).find((i) => i.id === "event-log");
+  assert.equal(log.label, "Log an event…");
+  assert.ok(!summaryActions(buildDisplay(DATA, "locations").rows.get("shed"), opts("locations")).some((i) => i.id === "event-log"));
+  const viewOnly = summaryActions(d.rows.get("pump"), opts("positions", { viewOnly: "View only." })).find((i) => i.id === "event-log");
+  assert.equal(viewOnly.disabled, true);
 });

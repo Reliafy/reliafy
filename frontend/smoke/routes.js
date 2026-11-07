@@ -105,6 +105,8 @@ export const DETAIL_IDS = {
   // smoke test position's condition point that smoke/seed.js adds), from the event log.
   "/asset-register/points/:id": ["/api/maintenance/events?type=point.added&limit=500",
     (body) => (body.events || []).map((e) => ({ id: e.payload?.id })).filter((x) => x.id)],
+  // A signal channel: smoke/seed.js adds a smart plug's power channel on the smoke test position.
+  "/asset-register/channels/:id": ["/api/maintenance/signals/channels", list("channels")],
 };
 
 // An earlier address with an id takes its records from the page it moved to;

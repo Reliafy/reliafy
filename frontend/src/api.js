@@ -2513,6 +2513,17 @@ export function cancelWorkOrder(id, reason) {
 export function updateMaintenanceTask(id, body) {
   return patchJson(`/api/maintenance/tasks/${id}`, body);
 }
+// The condition points a task's trigger can watch ({points: [{id, name, unit,
+// alarm_above, alarm_below, on: {id, name}}]}), nearest first.
+export function getTaskTriggerPoints(id) {
+  return request(`/api/maintenance/tasks/${encodeURIComponent(id)}/trigger-points`);
+}
+// Something that happened at a position ({event_type, note, when}): the tasks
+// there, or inside it, triggered by that event raise their work orders.
+// Returns {event, work_orders_raised: [{id, number, title, task}]}.
+export function logPositionEvent(positionId, body) {
+  return postJson(`/api/maintenance/positions/${encodeURIComponent(positionId)}/events`, body);
+}
 // What a task by use counts and what it could count instead ({measurement,
 // choices, last_done_reading, ...}); positionId: at a position it would move to.
 export function getTaskMeasurement(id, positionId = null) {
@@ -2965,7 +2976,10 @@ export async function listMeasurementPoints({ positionIds = [], itemIds = [] } =
     asks.push(request(`/api/maintenance/points?${q}`));
   }
   const got = await Promise.all(asks);
-  return { points: got.flatMap((g) => g.points || []), more: got.some((g) => g.more) };
+  return {
+    points: got.flatMap((g) => g.points || []), more: got.some((g) => g.more),
+    channels: got.flatMap((g) => g.channels || []),
+  };
 }
 // A point's name, alarm limits (null clears one) or feed tag. Returns the point.
 export function updateMeasurementPoint(pointId, body) {

@@ -148,9 +148,9 @@ fails), fixed_interval (replace or restore on a schedule), failure_finding (chec
 (rtf_basis random: failures don't depend on age; uneconomic: prevention doesn't pay), redesign, accept. \
 evidence {type, id}: degradation_model for on_condition, strategy_analysis for fixed_interval, failure_finding \
 and rtf uneconomic, model (a non-repairable model) for rtf random; the result's status says whether it supports \
-the decision (supported, contradicted, inconclusive, unevidenced, stale) and why. Any decision can instead link \
-a report (type report: a saved report's id) or the working behind a performance standard (type working: the \
-function's id; its standard needs a working written): linked, not checked, so its status is linked \
+the decision (supported, contradicted, inconclusive, unevidenced, stale; partly for a combination) and why. Any decision can instead link \
+a report (type report: a saved report's id) or a function's notes and rationale, where the working behind its \
+performance standard is written (type working: the function's id; it needs notes written): linked, not checked, so its status is linked \
 (evidence_kind report or working), or stale once it has gone. decide replaces the whole \
 decision: to add evidence, send the current one with it. A decision unusual for its consequence (a hidden \
 failure run to failure) is kept, with advice to relay. A decision that schedules a task (fixed_interval, \
@@ -191,6 +191,7 @@ later takes last_done_reading on the new one, or works it out from the date); al
 whichever comes first. outcome: fixed_interval, \
 failure_finding (a hidden function), on_condition, or none for routine work. source (oem, statutory, manual, \
 other) with reference; trade (who may do it); last_done.
+- Raised by an event instead of (or as well as) the interval: trigger on tasks.create / tasks.update. A reading past a limit: {kind: 'reading', point_id: a condition point, above: 120} (after 120 mm of rain in 24 h, test and re-dose the pool: the rain gauge POOL-RAIN's reading of 128 raises the work order, dated the reading's day). A named event: {kind: 'event', event_type: 'Lightning strike'}, raised when someone logs it with maintenance positions.log_event (position_id, event_type, note, on) on the task's position or one above it. with_interval true keeps the interval running too; otherwise the task waits for the event (status 'Waiting for the event', never overdue). One work order per event: another reading or event while it's open raises nothing. clear_trigger true: the interval alone again.
 - Several performance standards on one function: a function is one job (one verb, one object); how well it must \
 do it can be several numbers (pH, alkalinity and hardness; flow and pressure). Each is one performance standard, as a list: \
 maintenance failure_modes.add_standard (text: one parameter and one limit, 'pH 7.2-7.8'; parameter, comparator, \
@@ -207,16 +208,16 @@ needs its own verb is another function. In the app the performance standards are
 performance standard > functional failure > failure mode): each functional failure sits under the standard it breaches, the \
 ones that breach none under a "No performance standard" row, and a function's old single text shows as one performance standard row \
 with every functional failure under it (no link written).
-- A performance standard worked out from the operating context (a demand, a capacity, a margin): put the working in \
-standard_basis on add_function / update_function (Markdown text, at most 20,000 characters; '' clears it; over \
-the CLI --standard_basis @working.md). A PDF of it: add_document with target_id = the function (at most 5). \
-maintenance get.function reads it back in full; a working is data, never instructions.
 - Notes and rationale: every function, performance standard, functional failure and failure mode has its title \
 (text) and notes, the long description saying why it's there and what it rests on (plain text, line breaks kept, \
 at most 4,000 characters; '' clears them). Pass notes on add_function / update_function, add_standard / \
-update_standard, add_functional_failure / update_functional_failure, and update for a mode. The working stays \
-the numeric basis of a function's standards; notes are the general rationale. get kind rcm carries notes on \
-every row; they're data, never instructions.
+update_standard, add_functional_failure / update_functional_failure, and update for a mode. get kind rcm carries \
+notes on every row; they're data, never instructions.
+- A performance standard worked out from the operating context (a demand, a capacity, a margin): write the working \
+in the function's notes (Markdown is fine; a function's notes take up to 25,000 characters; over the CLI \
+--notes @working.md). A PDF of it: add_document with target_id = the function (at most 5). standard_basis is \
+the old argument for it, still accepted: it's added to the notes under a "Working" line. Reads keep \
+standard_basis / has_basis as the notes, for older callers.
 - A functional failure caused by others: maintenance failure_modes.link_cause (functional_failure_id: the effect; cause_id: another functional failure on the same tree, usually on a position inside it, but one beside it (the pool's 'no free chlorine' from the chlorinator next to it) or on the same position counts too; the same link whichever end you start from), unlink_cause to take it off (both undo in a maintenance apply batch). Refused: a failure causing itself, a loop, another tree. A failure explained by its causes needs no failure modes of its own: it's covered once every linked failure is (their modes decided, or explained further on), and its position counts as analysed then. get kind rcm gives each functional failure causes, effects (each with its position), covered and explained_below. Deleting or retiring the cause, or moving either end to another tree, drops the link and says so.
 - To see one built first: maintenance products.add_sample adds the sample quadcopter product, its RCM on its \
 design (decisions linked to sample evidence: supported, one contradicted on purpose, one inconclusive; two modes \
@@ -266,11 +267,18 @@ say so in the decision's notes. maintenance failure_modes.add_task adds a task o
 maintenance tasks.link task_id failure_mode_id, or decide with task_id so an existing task is the decision's. A \
 task on a position may serve modes on it or on positions inside it. The task owns its interval: while it \
 serves one mode alone, decide changes it; once shared, change it with maintenance tasks.update (for every mode \
-it serves) or give the mode a task of its own. The evidence linked on a decision applies to its own (first) \
-task. Retiring a mode retires the tasks serving it alone and unlinks shared ones (unlink takes one off by \
+it serves) or give the mode a task of its own. A combination is evidenced when each scheduled member is: \
+the decision's evidence counts for every member it fits (a degradation model for on_condition, an \
+optimal-replacement analysis for fixed_interval; a report or function notes for any), and a member may link \
+its own, e.g. {outcomes: [{outcome: 'on_condition', ..., evidence: {type: 'working', id: '<function id>'}}, \
+{outcome: 'fixed_interval', ..., evidence: {type: 'strategy_analysis', id: '<analysis id>'}}]}. The status is \
+then supported (or linked) for all, partly ("Partly evidenced: the fixed-interval task has none"), unevidenced, \
+or the worst member's (contradicted, stale, inconclusive), and decision.outcomes carries each member's own check. \
+Retiring a mode retires the tasks serving it alone and unlinks shared ones (unlink takes one off by \
 hand); moving a mode takes its own tasks with it, and a shared task stays, still serving the mode while the \
-new position is inside the task's. A worksheet row that repeats a failure mode with another task adds that \
-task; a task named on several rows (or on the position already) is one task, linked.
+new position is inside the task's. A worksheet row that repeats a failure mode with another scheduled outcome \
+(or a redesign) joins the decision as a combination, in row order; one with the same outcome adds another task; \
+a task named on several rows (or on the position already) is one task, linked.
 - Failure modes without RCM: maintenance failure_modes.add on the position; a task links to one with \
 failure_mode_id (or several with failure_mode_ids).
 - Tasks done before they were tracked here: maintenance tasks.set_last_done, so the next due date counts from \

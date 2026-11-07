@@ -127,7 +127,7 @@ export function isDesignScope(data, root) {
 export const BUILD_ITEM = { id: "build-item", label: "Build an item…" };
 export function designActions(actions, design, { row = null, viewOnly = null } = {}) {
   if (!design) return actions;
-  const out = actions.filter((a) => a.id !== "report-new");
+  const out = actions.filter((a) => a.id !== "report-new" && a.id !== "event-log");
   if (row?.type !== "pos" || !row.ref?.design) return out;
   return [viewOnly ? { ...BUILD_ITEM, disabled: true, reason: viewOnly } : BUILD_ITEM, ...out];
 }

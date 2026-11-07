@@ -1,16 +1,19 @@
 """A position's FME(C)A as an Excel workbook (``GET /api/maintenance/positions/{id}/fmea.xlsx``).
 
 One sheet, "FMECA", one row per failure mode (a second row per further task,
-as the RCM tab's CSV export writes them), the header frozen. The columns are
+as the RCM tab's CSV export writes them; a combination of tasks one row per
+member, in its order), the header frozen. The columns are
 the RCM export's with the FME(C)A fields after Consequence, named as the
 worksheet import's synonyms, so the file imports again adding nothing. A mode
 directly under a function (no functional failure yet) has a blank Functional
 failure cell; a mode under none has blank function cells too.
 
 Notes and rationale: a function's (Function notes) and a functional
-failure's (Functional failure notes) on its first row, as the working is; a
-performance standard's (Standard notes) on its own row; a failure mode's
-(Failure mode notes) on its row. The import reads each back.
+failure's (Functional failure notes) on its first row; a performance
+standard's (Standard notes) on its own row; a failure mode's (Failure mode
+notes) on its row. The import reads each back. A function's notes hold the
+working behind its standard, so the Standard working column stays blank (it
+is kept so older files and this one line up).
 """
 
 from __future__ import annotations
@@ -36,9 +39,9 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 _CONSEQUENCE = {c["id"]: c["label"] for c in rcm_decisions.CONSEQUENCE_OPTIONS}
 _OUTCOME = {o["id"]: o["label"] for o in rcm_decisions.OUTCOME_OPTIONS}
 _STATUS = {"supported": "Supported", "contradicted": "Contradicted", "inconclusive": "Inconclusive",
-           "stale": "Stale link"}
-# Linked, not checked: what's linked says which ("Report linked", "Working linked").
-_LINKED = {"report": "Report linked", "working": "Working linked"}
+           "stale": "Stale link", "partly": "Partly evidenced"}
+# Linked, not checked: what's linked says which ("Report linked", "Notes linked": a function's notes and rationale).
+_LINKED = {"report": "Report linked", "working": "Notes linked"}
 _AP = fmea.AP_LABELS
 _FILENAME_BAD = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
 
@@ -63,6 +66,15 @@ def _scores(m: dict) -> list:
         m.get("rate_source") or "", m.get("mode_ratio"), m.get("loss_probability"), m.get("operating_time"),
         m.get("cm"), m.get("severity_class") or "",
     ]
+
+
+def _interval_cells(x: dict, unit) -> list:
+    """The Interval and Interval unit cells: a task raised only by an event says
+    so in words ("on event: 120 mm on POOL-RAIN"), its unit blank."""
+    trigger = x.get("trigger") or {}
+    if trigger and not trigger.get("with_interval"):
+        return [f"on event: {trigger.get('text', '')}", ""]
+    return [x.get("interval") if x.get("interval") is not None else "", (unit or "") if x.get("interval") else ""]
 
 
 def rows(worksheet: dict) -> list[list]:
@@ -91,14 +103,13 @@ def rows(worksheet: dict) -> list[list]:
             return [
                 where, (fn or {}).get("text") or "", (first and (fn or {}).get("notes")) or "",
                 _standard_cell(fn or {}, fail), "",
-                (first and (fn or {}).get("standard_basis")) or "", (fail or {}).get("text") or "",
+                "", (fail or {}).get("text") or "",
                 (first_fail and (fail or {}).get("notes")) or "",
                 _caused_by(fail or {}), (m or {}).get("text") or "", (m or {}).get("effects") or "",
                 _CONSEQUENCE.get((m or {}).get("consequence") or "", ""),
                 *(_scores(m) if m else blank_scores),
                 _OUTCOME.get(d.get("outcome") or "", ""), d.get("rtf_basis") or "", d.get("task") or "",
-                d.get("interval") if d.get("interval") is not None else "",
-                (d.get("interval_unit") or "") if d.get("interval") else "",
+                *_interval_cells(d, d.get("interval_unit")),
                 (_LINKED.get(d.get("evidence_kind"), "Linked") if status == "linked" else _STATUS.get(status, status))
                 if status and status != "unevidenced" else "",
                 (m or {}).get("notes") or "",
@@ -109,14 +120,23 @@ def rows(worksheet: dict) -> list[list]:
                 where, (fn or {}).get("text") or "", "", _standard_cell(fn or {}, fail), "", "",
                 (fail or {}).get("text") or "", "", _caused_by(fail or {}), m.get("text") or "", "", "", *blank_scores,
                 _OUTCOME.get(t.get("outcome") or (m.get("decision") or {}).get("outcome") or "", ""), "",
-                t.get("text") or t.get("name") or "", t.get("interval") if t.get("interval") is not None else "",
-                (t.get("unit") or "") if t.get("interval") else "", "", "",
+                t.get("text") or t.get("name") or "", *_interval_cells(t, t.get("unit")), "", "",
             ]
 
         def mode_rows(fn, fail, m) -> None:
             out.append(mode_row(fn, fail, m))
-            for t in ((m.get("decision") or {}).get("tasks") or [])[1:]:
-                out.append(task_row(fn, fail, m, t))
+            d = m.get("decision") or {}
+            members = d.get("outcomes") or []
+            # A combination of tasks: a row per further member, in its order (a redesign
+            # with no task too), so the import builds the same combination; then any
+            # task outside the decision.
+            for o in members[1:]:
+                out.append(task_row(fn, fail, m, {"outcome": o["outcome"], "text": o.get("task") or "",
+                                                  "interval": o.get("interval"), "unit": o.get("interval_unit")}))
+            in_members = {o.get("task_id") for o in members}
+            for t in (d.get("tasks") or [])[1:]:
+                if t.get("id") not in in_members:
+                    out.append(task_row(fn, fail, m, t))
 
         for m in p.get("unassigned") or []:
             mode_rows(None, None, m)
@@ -126,7 +146,7 @@ def rows(worksheet: dict) -> list[list]:
                 for i, st in enumerate(fn["standards"]):
                     out.append([where, fn.get("text") or "", (first and i == 0 and fn.get("notes")) or "",
                                 st.get("text") or "", st.get("notes") or "",
-                                (first and i == 0 and fn.get("standard_basis")) or "", "", "", "", "", "", "",
+                                "", "", "", "", "", "", "",
                                 *blank_scores, "", "", "", "", "", "", ""])
             for m in fn.get("modes") or []:  # directly under the function: no functional failure yet
                 mode_rows(fn, None, m)

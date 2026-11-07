@@ -77,6 +77,13 @@ Measurement = Annotated[dict[str, Any] | str | None, Field(description=(
     "interval, unit}."))]
 
 
+# A task's trigger: what raises its work order besides (or instead of) its interval.
+Trigger = Annotated[dict[str, Any] | None, Field(description=(
+    "Raise it when an event happens: {kind: 'reading', point_id (a condition point), above | below} or "
+    "{kind: 'event', event_type (e.g. 'Lightning strike'), note?}; with_interval true keeps the interval running "
+    "too (otherwise it waits for the event, never overdue)."))]
+
+
 # ---- actions: what each takes -------------------------------------------------------
 #
 # action: (required arguments, optional arguments, what it does). "Required"
@@ -157,7 +164,7 @@ GET_KINDS: Table = {
     "photo_link": ("id", "", """id = a link_id from maintenance attachments.photo_link. The photos added
         through it so far, and any location a photo carried with the user's answer (saved / declined / null =
         not answered). Unanswered: ask the user before set_coordinates; never save it unasked."""),
-    "function": ("id", "", "A function in full: standard_basis (Markdown) and its documents."),
+    "function": ("id", "", "A function in full: its notes (with the working behind its standard) and documents."),
     "document": ("id", "", """A document on an item, position, function or class. A stored PDF has open_url and
         download_url: no sign-in, for 15 minutes; read it again for new ones."""),
     "manufacturer_match": ("text", "", """Which register entry a maker as written ('K.S.B.', 'KSB AG') is:
@@ -250,6 +257,9 @@ POSITIONS: Table = {
         true undoes its latest delete with everything that took."""),
     "out_of_service": ("position_id reason", "until start", "Out of service (being rebuilt, drained) from start (today) until a date, or open-ended: its tasks aren't due or late meanwhile."),
     "back_in_service": ("position_id", "", "Back in service now."),
+    "log_event": ("position_id event_type", "note on", """Log something that happened there (a storm, a
+        lightning strike, an overflow; on: the day, default today): each task on it or inside it whose trigger
+        names that event raises its work order, unless one is open. Returns work_orders_raised."""),
     "adopt_placements": ("", "dry_run", """One-off tidy-up for a workspace that placed fitted items at
         locations: each such placement becomes its position's location where it has none. dry_run (default
         true) lists the changes: show them, then run with dry_run false."""),
@@ -321,11 +331,11 @@ FAILURE_MODES: Table = {
         I-IV: cm = βαλt). clear: fields to unset. Guide topic plan."""),
     "decide": ("failure_mode_id", "consequence decision task_id", """consequence and the whole decision
         {outcome, rtf_basis, task, interval, interval_unit, notes, evidence: {type, id}: a model or analysis,
-        checked; or report / working (a function's id): linked, not checked} ({} clears it; values:
+        checked; or report / working (a function's id: its notes and rationale): linked, not checked} ({} clears it; values:
         guide topic plan); adds, changes or retires its task (task_id: an existing one is the decision's).
         A combination of tasks (an inspection plus a fixed-time replacement): decision.outcomes [{outcome, task,
-        interval, interval_unit, task_id?}, ...], each scheduled one with a task of its own. Returns it with the
-        evidence check and any advice to relay."""),
+        interval, interval_unit, task_id?, evidence?}, ...], each scheduled one with a task of its own and checked
+        against its own evidence, else the decision's. Returns it with the evidence check and any advice to relay."""),
     "add_task": ("failure_mode_id name interval", "unit outcome instructions", """Another task for the mode
         (an inspection plus a hard-time replacement); its decision's stays first."""),
     "assign": ("failure_mode_id", "functional_failure_id function_id", "Put it under one of its position's "
@@ -334,9 +344,9 @@ FAILURE_MODES: Table = {
                "recorded failures keep it). cascade: undo_delete can bring it all back; dry_run: only count."),
     "restore": ("failure_mode_id", "", "Put a deleted mode back, with its decision and the task retired with it."),
     "add_function": ("position_id text", "standard standard_basis notes", "A function the position performs (its "
-                     "performance standards: add_standard), with the working behind them (standard_basis)."),
+                     "performance standards: add_standard); notes: its rationale and the working behind them."),
     "update_function": ("function_id", "text standard standard_basis notes", "Change its text, single standard text "
-                        "(before add_standard), standard_basis or notes ('' clears it)."),
+                        "(before add_standard) or notes ('' clears it)."),
     "add_standard": ("function_id text", "parameter comparator value unit when source notes", """One of the function's
         performance standards, one parameter and one limit ('pH 7.2-7.8'); the structured limit, when it
         applies and its source are optional. A function may hold several."""),
@@ -416,9 +426,9 @@ PRODUCTS: Table = {
 }
 
 TASKS: Table = {
-    "create": ("name interval", "position_id item_id location_id unit outcome also_interval also_unit point_id "
+    "create": ("name", "interval position_id item_id location_id unit outcome also_interval also_unit point_id "
                "instructions checklist source reference failure_mode_id failure_mode_ids last_done trade while_stored "
-               "include_positions", """A scheduled task added directly (not from an RCM decision), on exactly one subject:
+               "include_positions trigger", """A scheduled task added directly (not from an RCM decision), on exactly one subject:
         position_id (the job: lubricate the pump), item_id (follows the serial number: calibration,
         certification, a rotable's overhaul, preserving a stored spare) or location_id (a round; calendar units
         only). unit (default months): days, weeks, months, years, or hours / cycles / km from a counter
@@ -426,13 +436,15 @@ TASKS: Table = {
         on_condition or none. source: manual (default), oem, statutory, other, with reference.
         failure_mode_id (or failure_mode_ids, several): modes it prevents, on the position or inside it.
         last_done if known. trade: who may do it. while_stored (item): run or pause. include_positions
-        (location): list the positions there. maintenance guide topic plan has examples."""),
+        (location): list the positions there. interval is required unless trigger raises it instead (an event
+        or a reading past a limit). maintenance guide topic plan has examples."""),
     "update": ("task_id", "name interval unit also_interval also_unit point_id last_done_reading instructions "
                "checklist failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade "
-               "while_stored include_positions", """Rename it or change its interval, second limit (also_interval 0
+               "while_stored include_positions trigger clear_trigger", """Rename it or change its interval, second limit (also_interval 0
         removes it), measurement (point_id, last_done_reading), instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
         true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
-        or include_positions. Its subject can't change: move it, or retire it and create another."""),
+        or include_positions, or its trigger (clear_trigger true: the interval alone again). Its subject can't
+        change: move it, or retire it and create another."""),
     "link": ("task_id failure_mode_id", "", "The task also prevents that mode (on its position or one inside it); "
              "its other links stay."),
     "unlink": ("task_id failure_mode_id", "", "Take that one mode off it."),
@@ -546,7 +558,7 @@ SIGNALS: Table = {
     "update_band": ("point_id", "name low high axis unit alarm_above alarm_below warn_above warn_below clear_limits",
                     """Change a band: name and limits in place; a new range starts a new version from now (the old
         values stay as measured, the trend shows the change). clear_limits: list of limit names to remove."""),
-    "set_storage_cap": ("", "cap_mb", "Warn on the Signals tab above cap_mb of snapshots (none clears; deletes nothing)."),
+    "set_storage_cap": ("", "cap_mb", "Warn on channel pages above cap_mb of snapshots (none clears; deletes nothing)."),
     "add_level": ("channel_id name stat", "axis alarm_above alarm_below warn_above warn_below", """An overall level of each snapshot as a
         measurement point: stat rms, peak, crest, kurtosis, mean or value (a scalar channel, e.g. pressure)."""),
     "remove_band": ("point_id", "reason", """Stop a band or level adding values (its recorded values stay)."""),
@@ -1249,7 +1261,10 @@ def register() -> None:
                               until: Annotated[str | None, Field(description=(
                                   "out_of_service: the return date (none: open-ended)."))] = None,
                               start: Annotated[str | None, Field(description=(
-                                  "out_of_service: the first day out (default today)."))] = None) -> dict[str, Any]:
+                                  "out_of_service: the first day out (default today)."))] = None,
+                              event_type: str | None = None, note: str | None = None,
+                              on: Annotated[str | None, Field(description=(
+                                  "log_event: the day it happened (default today)."))] = None) -> dict[str, Any]:
         """Positions: the functional tree (functional locations, SAP's FLOC): the slot, by what it does.
         Items are fitted to them; tasks, failure modes, parts lists and life data belong to them."""
         m = m_for(ctx)
@@ -1276,6 +1291,8 @@ def register() -> None:
             return run(m.take_out_of_service, position_id, reason, until, start)
         if action == "back_in_service":
             return run(m.return_to_service, position_id)
+        if action == "log_event":
+            return run(m.log_position_event, position_id, event_type, note or "", on)
         return run(m.adopt_placements, _d(dry_run, True))
 
     @tool("maintenance_fitments", _WRITE, "Fit, remove and correct items in positions", FITMENTS)
@@ -1395,11 +1412,13 @@ def register() -> None:
                                   consequence: str | None = None, effects: str | None = None,
                                   notes: str | None = None, function_id: str | None = None,
                                   functional_failure_id: str | None = None, standard: str | None = None,
-                                  standard_basis: str | None = None,
+                                  standard_basis: Annotated[str | None, Field(description=(
+                                      "Deprecated: write the working in notes; this is added to them."))] = None,
                                   decision: Annotated[dict[str, Any] | None, Field(description=(
                                       "decide: {outcome, rtf_basis, task, interval, interval_unit, notes, "
                                       "evidence}; a combination of tasks: outcomes [{outcome, task, interval, "
-                                      "interval_unit, task_id?}, ...] instead of outcome, task and interval."))] = None,
+                                      "interval_unit, task_id?, evidence?}, ...] instead of outcome, task and "
+                                      "interval (a member's evidence, else the decision's, is checked for it)."))] = None,
                                   cause_id: str | None = None, task_id: str | None = None,
                                   name: str | None = None, interval: float | None = None,
                                   unit: str | None = None, outcome: str | None = None,
@@ -1569,7 +1588,8 @@ def register() -> None:
                           include_positions: bool | None = None,
                           on: Annotated[str | None, Field(description="set_last_done: a date like 2026-10-13.")] = None,
                           reason: str | None = None, measurement: Measurement = None,
-                          last_done_reading: float | None = None) -> dict[str, Any]:
+                          last_done_reading: float | None = None, trigger: Trigger = None,
+                          clear_trigger: bool | None = None) -> dict[str, Any]:
         """Scheduled tasks: they fall due and raise work orders (maintenance work_orders.generate). A task
         is on a position (the job; it counts again from each new item fitted), an item (follows the serial
         number, into a store too) or a location (a round). A task from an RCM decision comes with
@@ -1582,13 +1602,14 @@ def register() -> None:
                        also_unit, point_id, instructions or "", checklist, _d(source, "manual"), reference or "",
                        failure_mode_id, last_done, trade or "", item_id=item_id, location_id=location_id,
                        while_stored=while_stored, include_positions=include_positions,
-                       failure_mode_ids=failure_mode_ids)
+                       failure_mode_ids=failure_mode_ids, trigger=trigger)
         if action == "update":
             mode = "" if unlink_failure_mode else failure_mode_id
             return run(m.update_task, task_id, name, interval, unit, also_interval, also_unit, point_id,
                        instructions, checklist, mode, source, reference,
                        None if clear_outcome else outcome if outcome is not None else ..., trade, while_stored,
-                       include_positions, last_done_reading)
+                       include_positions, last_done_reading,
+                       None if clear_trigger else trigger if trigger is not None else ...)
         if action == "link":
             return run(m.link_task, task_id, failure_mode_id)
         if action == "unlink":

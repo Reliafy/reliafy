@@ -3,7 +3,9 @@ import { LevelIcon } from "./RcmWorksheet.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { saveErrorText } from "../confirm.js";
 import { INTERVAL_UNITS, startUnit } from "../decisionCheck.js";
-import { OUTCOME_LABEL, intervalText, tasksOf } from "../rcmWorksheet.js";
+import { OUTCOME_LABEL, everyText, tasksOf } from "../rcmWorksheet.js";
+import { getTaskTriggerPoints } from "../api.js";
+import { asksInterval, pointLabel, triggerBody, triggerState, triggerWhy } from "../taskTrigger.js";
 import { secondTaskHint } from "../explorerRcm.js";
 import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 import Chip from "./ui/Chip.jsx";
@@ -34,7 +36,8 @@ import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 
 const SCHEDULED = ["on_condition", "fixed_interval", "failure_finding"];
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
-const every = (t) => (t.interval != null && t.unit ? `every ${intervalText({ interval: t.interval, interval_unit: t.unit })}` : "");
+// "every 6 months", or "on event: 120 mm on POOL-RAIN" for a task raised by an event.
+const every = (t) => everyText(t);
 
 export default function RcmModeTasks({ r, ops, addStart = null, onSaid }) {
   const confirm = useConfirm();
@@ -178,7 +181,9 @@ function intervalWhy(raw) {
   return Number.isFinite(n) && n > 0 ? "" : "Enter an interval above 0.";
 }
 
-// Changing a task (its ⋯ Edit…): its name, interval and unit, what kind of
+// Changing a task (its ⋯ Edit…): its name, what raises it (Trigger: every
+// interval, or when an event happens: a reading past a limit, or an event
+// logged by name; taskTrigger.js), interval and unit, what kind of
 // task it is, its instructions; a task by use being changed, its measurement
 // (what it counts, with the last-done reading on a new one). Saved once (the button says so until the
 // server answers); a refusal shows here with everything as typed.
@@ -190,6 +195,15 @@ function TaskForm({ r, task, busy, failed, onCancel, onSubmit }) {
   const [outcome, setOutcome] = useState(task?.outcome || (d && SCHEDULED.includes(d.outcome) ? d.outcome : ""));
   const [instructions, setInstructions] = useState(task?.instructions || "");
   const [meas, setMeas] = useState({ body: null, error: null });
+  const [trig, setTrig] = useState(() => triggerState(task));
+  const setT = (k) => (e) => setTrig((x) => ({ ...x, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
+  const [points, setPoints] = useState(null);
+  useEffect(() => {
+    if (trig.mode !== "event" || trig.by !== "reading" || points || !task?.id) return undefined;
+    let on = true;
+    getTaskTriggerPoints(task.id).then((out) => { if (on) setPoints(out.points || []); }, () => { if (on) setPoints([]); });
+    return () => { on = false; };
+  }, [trig.mode, trig.by, points, task?.id]);
   const nameBox = useRef(null);
   useEffect(() => {
     // Focused, its start in view (a long name isn't shown scrolled to its end).
@@ -198,16 +212,19 @@ function TaskForm({ r, task, busy, failed, onCancel, onSubmit }) {
     if (el) el.scrollLeft = 0;
   }, []);
   const n = Number(interval);
-  const can = !!name.trim() && interval.trim() !== "" && Number.isFinite(n) && n > 0 && !busy && !meas.error;
+  const timed = asksInterval(trig);
+  const intervalOk = !timed || (interval.trim() !== "" && Number.isFinite(n) && n > 0);
+  const can = !!name.trim() && intervalOk && !triggerWhy(trig) && !busy && !meas.error;
   const units = INTERVAL_UNITS.includes(unit) ? INTERVAL_UNITS : [unit, ...INTERVAL_UNITS];
   const why = busy ? null : !name.trim() ? "Name the task first."
-    : interval.trim() === "" ? "Enter how often: an interval above 0."
-    : !(Number.isFinite(n) && n > 0) ? "Enter an interval above 0." : meas.error ? "Settle the measurement first." : null;
+    : timed && interval.trim() === "" ? "Enter how often: an interval above 0."
+    : !intervalOk ? "Enter an interval above 0." : triggerWhy(trig) || (meas.error ? "Settle the measurement first." : null);
   return (
     <form className="rim-tform" onSubmit={(e) => {
       e.preventDefault();
       if (!can) return;
-      onSubmit({ name: name.trim(), interval: n, unit, outcome: outcome || null, instructions: instructions.trim(), ...(meas.body || {}) });
+      onSubmit({ name: name.trim(), ...(timed ? { interval: n, unit } : {}), outcome: outcome || null,
+        instructions: instructions.trim(), ...(timed ? meas.body || {} : {}), trigger: triggerBody(trig) });
     }}>
       <h4>Change the task</h4>
       {task?.shared_with ? (
@@ -217,8 +234,54 @@ function TaskForm({ r, task, busy, failed, onCancel, onSubmit }) {
         <TextInput ref={nameBox} value={name} readOnly={busy} placeholder="What to do, e.g. Replace the acid pump"
                    onChange={(e) => setName(e.target.value)} />
       </Field>
+      <Field label="Trigger">
+        <Select value={trig.mode} disabled={busy} onChange={setT("mode")}>
+          <option value="interval">Every interval</option>
+          <option value="event">When an event happens</option>
+        </Select>
+      </Field>
+      {trig.mode === "event" && (
+        <fieldset className="rim-trigger">
+          <legend className="sr-only">The event</legend>
+          <Field label="What happens">
+            <Select value={trig.by} disabled={busy} onChange={setT("by")}>
+              <option value="reading">A reading passes a limit</option>
+              <option value="name">Someone logs an event</option>
+            </Select>
+          </Field>
+          {trig.by === "reading" ? (
+            <div className="rim-trow">
+              <Field label="Measuring point">
+                <Select value={trig.pointId} disabled={busy || points === null} onChange={setT("pointId")}>
+                  <option value="">{points === null ? "Reading the points…" : points.length ? "Choose a point…" : "No condition points nearby"}</option>
+                  {(points || []).map((p) => <option key={p.id} value={p.id}>{pointLabel(p)}</option>)}
+                </Select>
+              </Field>
+              <Field label="Limit" as="fieldset">
+                <InputGroup label="Limit">
+                  <Select value={trig.side} disabled={busy} aria-label="Above or below" onChange={setT("side")}>
+                    <option value="above">At or above</option>
+                    <option value="below">At or below</option>
+                  </Select>
+                  <TextInput type="number" inputMode="decimal" step="any" value={trig.limit} readOnly={busy}
+                             aria-label="Limit" placeholder="e.g. 120" onChange={setT("limit")} />
+                </InputGroup>
+              </Field>
+            </div>
+          ) : (
+            <Field label="Event name" help="Logged on this position, or one above it, from its ⋯ menu: Log an event…">
+              <TextInput value={trig.eventType} readOnly={busy} placeholder="e.g. Lightning strike" onChange={setT("eventType")} />
+            </Field>
+          )}
+          <label className="rim-check">
+            <input type="checkbox" checked={trig.withInterval} disabled={busy} onChange={setT("withInterval")} />
+            Keep the interval too (whichever comes first)
+          </label>
+          {!trig.withInterval && <p className="rw-fhelp">It waits for the event: never overdue, and each event raises one work order.</p>}
+        </fieldset>
+      )}
       <div className="rim-trow">
-        <Field label="Every" as="fieldset" error={interval.trim() !== "" && !(Number.isFinite(n) && n > 0) ? "Enter an interval above 0." : null}>
+        {timed && <Field label="Every" as="fieldset" error={interval.trim() !== "" && !(Number.isFinite(n) && n > 0) ? "Enter an interval above 0." : null}>
           <InputGroup label="Every">
             <TextInput type="number" inputMode="decimal" min="0" step="any" value={interval} readOnly={busy} aria-label="Interval"
                        onChange={(e) => setInterval_(e.target.value)} />
@@ -226,7 +289,7 @@ function TaskForm({ r, task, busy, failed, onCancel, onSubmit }) {
               {units.map((u) => <option key={u} value={u}>{u}</option>)}
             </Select>
           </InputGroup>
-        </Field>
+        </Field>}
         <Field label="Kind of task">
           <Select value={outcome} disabled={busy} onChange={(e) => setOutcome(e.target.value)}>
             <option value="">Routine work</option>
@@ -234,7 +297,7 @@ function TaskForm({ r, task, busy, failed, onCancel, onSubmit }) {
           </Select>
         </Field>
       </div>
-      {task?.id && (
+      {task?.id && timed && (
         <TaskMeasurementField taskId={task.id} unit={unit} disabled={busy} onChange={(body, error) => setMeas({ body, error })} />
       )}
       {meas.error && <p className="field-error" role="alert">{meas.error}</p>}

@@ -2,6 +2,27 @@
 
 ## Unreleased (0.5.1)
 
+- **Tasks raised by an event**: `maintenance tasks.create` and `tasks.update`
+  take `trigger` (`{kind: "reading", point_id, above | below}` or `{kind:
+  "event", event_type, note}`, with `with_interval` to keep the interval too;
+  `tasks.update clear_trigger` removes it), and `tasks.create` needs no
+  `interval` when a trigger raises it. The new `maintenance
+  positions.log_event` (`position_id`, `event_type`, `note`, `on`) logs an
+  event and returns `work_orders_raised`. On the command line: `reliafy
+  maintenance positions.log_event --position-id <id> --event-type "Lightning
+  strike"`.
+
+- **A function's working is in its notes and rationale**: the working behind a
+  performance standard now goes in the function's `notes` (`maintenance
+  failure_modes.add_function` / `update_function`; up to 25,000 characters on
+  a function, Markdown is fine; `--notes @working.md` reads a file).
+  `standard_basis` is still accepted but deprecated: it is added to the notes
+  under a "Working" line. Reads keep `standard_basis`, `has_basis` and
+  `basis_preview`, now describing the notes, and a function's notes read with
+  any working written before as one text. Evidence `{type: "working", id}` on
+  a decision now means that function's notes and rationale; links made before
+  still resolve. No client code changed.
+
 - **Cause links anywhere on the same tree**: `maintenance
   failure_modes.link_cause` now takes a cause on any position of the effect's
   tree: inside it as before, beside it (the pool water's chlorine failure from
@@ -27,7 +48,11 @@
   `{outcome, task, interval, interval_unit, task_id}` (a regular inspection
   plus a fixed-time replacement, say), in place of `outcome`, `task` and
   `interval`. Each scheduled entry gets a task of its own. Reads add
-  `decision.outcomes`. A single-outcome decision works as before.
+  `decision.outcomes`. A single-outcome decision works as before. Each entry
+  may link its own `evidence` (`{type, id}`); the decision's evidence counts
+  for every entry it fits. The evidence check covers every entry: `status`
+  `partly` when some tasks have evidence and some don't, and each entry of
+  `decision.outcomes` carries its own check.
 
 - **Delete an RCM row with everything under it**: `maintenance
   failure_modes.remove_function`, `remove_standard`,

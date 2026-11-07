@@ -577,7 +577,7 @@ class SignalOps:
         item = None
         if target and target["label"] == "Item":
             # Where the item is fitted now (None: loose): the Explorer shows a fitted
-            # item's channels on that position's Signals tab.
+            # item's channels on that position (its Measurements tab).
             fitment = self._current_fitment_of_item(target["id"])
             at = fitment and self.s.out(self.org, fitment["id"], "AT")
             item = {"id": target["id"], "name": target["name"],
@@ -588,6 +588,37 @@ class SignalOps:
                 "speed_channel_id": ch.get("speed_channel_id") or None,
                 "position": target and target["label"] == "Position" and {"id": target["id"], "name": target["name"]} or None,
                 "item": item}
+
+    ROW_RECENT = 24  # snapshots behind a Measurements row's sparkline
+
+    def channel_row(self, ch: dict) -> dict:
+        """A channel as a row of the Explorer's Measurements tab: its heading, the latest
+        overall level (``value`` for single values, else the RMS) on its first axis, the
+        recent trend of that level, and each live watch band's state (``attention`` when
+        any is past its alarm limit)."""
+        on = self.s.out(self.org, ch["id"], "ON")
+        heads = self.s.snapshots.heads(self.org, ch["id"], limit=self.ROW_RECENT)
+        axis = (ch.get("axes") or [None])[0]
+        if heads and (axis is None or axis not in (heads[-1].get("levels") or {})):
+            axis = next(iter(heads[-1].get("levels") or {}), None)
+
+        def level(h):
+            lv = (h.get("levels") or {}).get(axis) or {}
+            stat = "value" if lv.get("value") is not None else "rms"
+            v = lv.get(stat)
+            return stat, None if v is None else float(f"{v:.5g}")
+
+        recent = [{"t": _iso(h["t_ms"]), "value": level(h)[1]} for h in heads if level(h)[1] is not None]
+        stat = level(heads[-1])[0] if heads else None
+        latest = recent[-1] if recent else None
+        bands = [self._channel_band(p, ch["id"]) for p in derived.points_of(self, ch["id"])
+                 if not p.get("superseded_by")]
+        bands = [{k: b[k] for k in ("point_id", "name", "unit", "alarm_above", "alarm_below", "latest", "status")}
+                 for b in sorted(bands, key=lambda b: b["name"].lower())]
+        return self._channel_head(ch, on) | {
+            "kind": "channel", "axis": axis, "stat": stat, "latest": latest, "recent": recent, "bands": bands,
+            "attention": any(b["status"] in ("high", "low") for b in bands),
+            "snapshots": self._stats_view(self.s.snapshots.stats(self.org, ch["id"]))}
 
     def signal_channel(self, channel_id, snapshots=300, series=1000) -> dict:
         """One channel: its settings, watch bands (with their series), a size count and its
@@ -1079,7 +1110,7 @@ class SignalOps:
         return out
 
     def set_signal_storage_cap(self, cap_mb=None) -> dict:
-        """Set (or, with no value, clear) the size in MB at which the Signals tab warns. Default: off."""
+        """Set (or, with no value, clear) the size in MB at which channel pages warn. Default: off."""
         sv = _sv()
         cap = None if cap_mb in (None, "", 0) else sv._number(cap_mb, "cap (MB)", 1, 1e6)
         self._emit("signal_settings.set", {"storage_cap_mb": cap})

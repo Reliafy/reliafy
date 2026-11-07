@@ -30,7 +30,10 @@ function has more than one, a functional failure's own row names the one it
 breaches. The export writes them that way. A failure mode may have several tasks: a second row for the same failure mode
 (the same text, under the same function and functional failure) whose task
 differs is that mode's next task, so the export's one-row-per-task layout
-reads back. A task named in the sheet that is on the position already (the
+reads back. A second row whose decision is another scheduled outcome (or a
+redesign beside one), where the combination rules allow it, joins the first
+row's decision as a combination of tasks, in row order: the export writes a
+combination one row per member, so it reads back as the same decision. A task named in the sheet that is on the position already (the
 same name, case and spacing aside) is linked, not made again: one task then
 serves several modes. A shared task keeps its own interval: a row that names
 it with another interval is a row error.
@@ -44,10 +47,10 @@ from __future__ import annotations
 
 import re
 
-from backend.maintenance import fmea
+from backend.maintenance import fmea, rcm_decisions
 from backend.maintenance.service import (
     BASIS_TEXT, LONG_TEXT, MAX_CAUSES, MAX_EVENTS, MAX_TASKS, SCHEDULED_OUTCOMES, SHORT_TEXT, Invalid, LimitReached,
-    Maintenance, _basis_text, _interval, _norm_unit, _same_text, shortened,
+    Maintenance, _basis_text, _interval, _norm_unit, _same_text, merged_notes, shortened,
 )
 from backend.services import excel, rcm_import
 
@@ -213,7 +216,7 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
     functions: list[dict] = []
     counts = {"functions": 0, "failures": 0, "modes": 0, "decisions": 0, "scored": 0, "tasks": 0, "tasks_linked": 0,
               "standards": 0, "functions_existing": 0, "failures_existing": 0, "modes_existing": 0, "links": 0,
-              "links_existing": 0, "modes_direct": 0}
+              "links_existing": 0, "modes_direct": 0, "combinations": 0}
     places = _Places(m, position_id)
 
     def plan_mode(mode: dict) -> dict | None:
@@ -232,8 +235,16 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
             return None
         decision = mode.get("decision")
         if key in seen:
-            # The same failure mode again: another task for it (the export
-            # writes one row per task), or a repeat to pass over.
+            # The same failure mode again: another member of its decision (a
+            # combination of tasks), another task for it (the export writes one
+            # row per task), or a repeat to pass over.
+            member = _member(decision, seen[key], live_tasks, sheet_tasks, row, errors)
+            if member is not None:
+                counts["combinations"] += not seen[key]["members"]
+                seen[key]["members"].append(member)
+                if member.get("task"):
+                    counts["tasks_linked" if member["shared"] else "tasks"] += 1
+                return None
             extra = _extra_task(decision, seen[key], live_tasks, sheet_tasks, row, errors)
             if extra is None:
                 repeated.append(row)
@@ -263,6 +274,7 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
             "row": row, "text": text, "effects": mode.get("effects") or "", "notes": notes,
             "consequence": mode.get("consequence"), "decision": decision, "task": task,
             "shared": shared, "extra_tasks": [], "scores": scores,
+            "members": [],  # further outcomes of its decision, from repeated rows (a combination)
         }
         seen[key] = planned
         counts["modes"] += 1
@@ -293,7 +305,9 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
             except Invalid as err:
                 errors.append(f"“{fn['text'][:60]}”: {err}")
                 basis = ""
-        if match and basis and not _same_text(match.get("standard_basis"), basis):
+        # The working goes into a new function's notes and rationale (add_function); a function
+        # already there keeps its notes as they are, unless they hold it already.
+        if match and basis and basis not in merged_notes(match.get("notes"), match.get("standard_basis")):
             workings_kept.append(match["text"])
         # Each standard's notes (by its text): new standards take them; one already
         # there only when it has none (the function's old single text has none).
@@ -378,7 +392,8 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
     for what in notes_kept[:5]:
         warnings.append(f"{what} is on {name} already with notes of its own; they were left as they are.")
     for text in workings_kept[:5]:
-        warnings.append(f"“{text[:80]}” is on {name} already with another working behind its performance standard; it was left as it is.")
+        warnings.append(f"“{text[:80]}” is on {name} already with notes and rationale of its own; the sheet's working "
+                        "wasn't added to them (add it there by hand if it belongs).")
 
     if m.limited:
         events = counts["functions"] + counts["failures"] + 4 * counts["modes"] + counts["tasks"] + counts["links"] \
@@ -414,6 +429,41 @@ def _shared_task(decision: dict, live_tasks: dict, sheet_tasks: dict, row: int, 
                       f"row says every {interval:g} {unit}. Use the task's interval (it is shared), or give this "
                       "task another name.")
     return True
+
+
+def _member(decision, planned: dict, live_tasks: dict, sheet_tasks: dict, row: int,
+            errors: list[str]) -> dict | None:
+    """A repeat row's decision as the next member of the first row's (a
+    combination of tasks: {outcome, task, interval, unit, shared}), or None
+    when it can't be one: no decision, the first row's outcome or one already
+    joined, an outcome the combination rules don't allow beside them, or a
+    scheduled member without an interval (a combination's every task needs
+    one, the first row's too)."""
+    first = planned["decision"] or {}
+    if not decision or not first:
+        return None
+    outcomes = [first["outcome"], *(x["outcome"] for x in planned["members"])]
+    outcome = decision["outcome"]
+    if outcome in outcomes or not rcm_decisions.combination_ok([*outcomes, outcome]):
+        return None
+    if first["outcome"] in SCHEDULED_OUTCOMES and not first.get("interval"):
+        return None
+    if outcome == "redesign":
+        return {"outcome": outcome, "task": None, "shared": False}
+    if not decision.get("interval"):
+        return None
+    unit = _norm_unit(decision.get("interval_unit")) or "days"
+    try:
+        interval = _interval(decision["interval"], unit, "interval")
+    except Invalid as err:
+        errors.append(f"Row {row}: {err} Change it in the sheet and try again.")
+        return None
+    name = str(decision.get("task") or "").strip()
+    if name and _norm(name) in [_norm(first.get("task"))] + [_norm(x.get("task")) for x in planned["members"]]:
+        return None  # one task can't be two members of a combination
+    shared = _shared_task(decision, live_tasks, sheet_tasks, row, errors)
+    return {"outcome": outcome, "task": shortened(name, SHORT_TEXT)[0] if name else "", "interval": interval,
+            "unit": unit, "shared": shared}
 
 
 def _extra_task(decision, planned: dict, live_tasks: dict, sheet_tasks: dict, row: int,
@@ -456,6 +506,20 @@ def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
             decision = mode["decision"]
             # A task the position has (or an earlier row made) is the decision's, linked.
             shared = task_named(decision.get("task")) if mode.get("shared") and decision else None
+            if decision and mode.get("members"):
+                # A combination of tasks: the first row's decision, then each repeated row's outcome.
+                first = {k: decision[k] for k in ("outcome", "task", "interval", "interval_unit") if decision.get(k)}
+                if shared:
+                    first["task_id"] = shared
+                decision = {k: v for k, v in decision.items() if k not in ("outcome", "task", "interval",
+                                                                         "interval_unit", "rtf_basis")}
+                decision["outcomes"] = [first] + [
+                    {"outcome": x["outcome"]} if x["outcome"] == "redesign" else
+                    {"outcome": x["outcome"], "interval": x["interval"], "interval_unit": x["unit"]}
+                    | ({"task": x["task"]} if x["task"] else {})
+                    | ({"task_id": task_named(x["task"])} if x["shared"] and task_named(x["task"]) else {})
+                    for x in mode["members"]]
+                shared = None
             m.decide_failure_mode(mode_id, mode["consequence"] or None, decision if decision else ...,
                                   task_id=shared)
         for extra in mode.get("extra_tasks") or []:

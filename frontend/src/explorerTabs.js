@@ -39,9 +39,9 @@ export const EXPLORER_PARTS_CLASSES_TABS = false;
 
 // Derryn, 8 Nov 2026: hidden for now. Off, `tabsFor` leaves out Signals on
 // every row (positions, items, a product's design), so `?tab=signals` shows
-// Summary. The body (SignalsPanel) and the Signals data and API stay; the
-// links that opened the tab (signals.js channelExplorerPath) open the
-// position's Summary meanwhile.
+// Summary. Channels are rows of the Measurements tab instead, beside the
+// hand-read points; a channel's spectrum, bands and settings are on its own
+// page (/asset-register/channels/:id, signals.js channelPath).
 export const EXPLORER_SIGNALS_TAB = false;
 
 const HIDDEN_WHEN_OFF = { parts: EXPLORER_PARTS_CLASSES_TABS, classes: EXPLORER_PARTS_CLASSES_TABS, signals: EXPLORER_SIGNALS_TAB };

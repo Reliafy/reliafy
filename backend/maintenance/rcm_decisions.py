@@ -10,7 +10,8 @@ therefore never stored; they are recomputed from the linked artifacts each
 time the RCM is read.
 
 A decision can also link a report (the app's Reports) or the working behind a
-performance standard (a function's ``standard_basis``) as the case for it.
+performance standard (a function's notes and rationale, where the working is
+written) as the case for it.
 Nothing is computed from those: the check says only that one is linked
 ("linked", with ``evidence_kind`` report or working), or that it has gone
 ("stale"); it never says supported or contradicted.
@@ -54,8 +55,22 @@ COMBINES = (
     "A combination is two or more of on_condition, fixed_interval and failure_finding (no outcome twice), or "
     "redesign beside one of them as the interim measure; rtf and accept stand alone."
 )
+
+
+def combination_ok(outcomes) -> bool:
+    """Whether a list of outcomes may be one decision (one outcome always may):
+    the rules _clean_members holds a combination to (frontend/src/decisionCheck.js
+    combinationOk is the same)."""
+    if len(outcomes) < 2:
+        return True
+    if len(set(outcomes)) != len(outcomes) or any(o not in (*SCHEDULED, "redesign") for o in outcomes):
+        return False
+    scheduled = sum(1 for o in outcomes if o in SCHEDULED)
+    return scheduled == 1 if "redesign" in outcomes else scheduled >= 2
+
+
 # Evidence that's checked against the decision (a model or a saved analysis),
-# then evidence that's only linked: a report, or a standard's working (its id is
+# then evidence that's only linked: a report, or a function's working, now its notes and rationale (its id is
 # the function's whose performance standard the working sits behind).
 CHECKED_TYPES = ("model", "strategy_analysis", "degradation_model")
 LINKED_TYPES = ("report", "working")
@@ -220,13 +235,32 @@ def _clean_interval(given: dict, cleaned: dict) -> None:
             cleaned["interval_unit"] = unit
 
 
+def _clean_evidence(evidence) -> dict | None:
+    """A linked piece of evidence ({type, id}), or None for none."""
+    if not evidence:
+        return None
+    if not isinstance(evidence, dict):
+        raise RcmValidationError("Evidence is {type, id}: the linked model, analysis, report or function.")
+    etype = evidence.get("type")
+    eid = evidence.get("id")
+    if etype not in EVIDENCE_TYPES:
+        raise RcmValidationError(f"Unknown evidence type '{etype}': it's one of {', '.join(EVIDENCE_TYPES)}.")
+    if not isinstance(eid, str) or not eid.strip():
+        raise RcmValidationError("Evidence needs the linked artifact's id.")
+    # A type that doesn't match the outcome is allowed at write time and
+    # resolves to 'inconclusive' at read — users can link first, fix later.
+    return {"type": etype, "id": eid.strip()}
+
+
 def _clean_members(raw) -> list[dict]:
     """A combination's members ({outcome, task, interval, interval_unit,
-    task_id}), checked against the combination rules, the scheduled ones first
-    in the order given and a redesign last. One member is a plain decision."""
+    task_id, evidence}), checked against the combination rules, the scheduled
+    ones first in the order given and a redesign last. One member is a plain
+    decision. A member's own evidence is what's checked for it; one without
+    any falls back to the decision's."""
     if not isinstance(raw, list) or not all(isinstance(x, dict) for x in raw):
-        raise RcmValidationError("outcomes is a list of {outcome, task, interval, interval_unit, task_id}, one per "
-                                 "task of the combination.")
+        raise RcmValidationError("outcomes is a list of {outcome, task, interval, interval_unit, task_id, evidence}, "
+                                 "one per task of the combination.")
     members = []
     for given in raw:
         outcome = given.get("outcome")
@@ -247,6 +281,9 @@ def _clean_members(raw) -> list[dict]:
         elif any(given.get(k) not in (None, "") for k in ("task", "interval", "task_id")):
             raise RcmValidationError(f"Only a task that schedules work takes a task and an interval ({outcome} "
                                      "doesn't): say what's meant in the decision's notes.")
+        evidence = _clean_evidence(given.get("evidence"))
+        if evidence:
+            member["evidence"] = evidence
         members.append(member)
     if len(members) < 2:
         return members
@@ -276,8 +313,11 @@ def _clean_decision(decision) -> dict | None:
         decision = {k: v for k, v in decision.items() if k not in ("outcomes", "task", "interval", "interval_unit")}
         decision |= {k: first[k] for k in ("outcome", "task", "interval", "interval_unit") if k in first}
         if len(members) == 1:
-            # One member is a plain decision; its task_id (if any) is the decision's.
+            # One member is a plain decision; its task_id (if any) is the decision's, and
+            # its evidence too when the decision gives none.
             members, single_task = None, first.get("task_id")
+            if first.get("evidence") and not decision.get("evidence"):
+                decision["evidence"] = first["evidence"]
     outcome = decision.get("outcome")
     if not outcome:
         # A decision is replaced whole, so a change to one field still sends the rest.
@@ -308,19 +348,7 @@ def _clean_decision(decision) -> dict | None:
     elif single_task:
         cleaned["task_id"] = single_task  # the decide call's task_id, when it gives none of its own
 
-    evidence = decision.get("evidence")
-    if evidence:
-        etype = evidence.get("type")
-        eid = evidence.get("id")
-        if etype not in EVIDENCE_TYPES:
-            raise RcmValidationError(f"Unknown evidence type '{etype}': it's one of {', '.join(EVIDENCE_TYPES)}.")
-        if not isinstance(eid, str) or not eid.strip():
-            raise RcmValidationError("Evidence needs the linked artifact's id.")
-        # A type that doesn't match the outcome is allowed at write time and
-        # resolves to 'inconclusive' at read — users can link first, fix later.
-        cleaned["evidence"] = {"type": etype, "id": eid.strip()}
-    else:
-        cleaned["evidence"] = None
+    cleaned["evidence"] = _clean_evidence(decision.get("evidence"))
     return cleaned
 
 
@@ -442,19 +470,124 @@ def _report(db, report_id, owner_id):
 
 def blank_rollup() -> dict:
     return {"modes": 0, "decided": 0, "supported": 0, "contradicted": 0,
-            "inconclusive": 0, "unevidenced": 0, "stale": 0}
+            "inconclusive": 0, "unevidenced": 0, "stale": 0, "partly": 0}
 
 
 def resolve_decision(decision: dict, fetch) -> dict:
     """A decision's evidence status ({status, reason or summary, artifact_name,
     artifact_link_path, expected_evidence, evidence_kind}) against what
-    ``fetch`` finds."""
+    ``fetch`` finds. A combination of tasks is checked member by member
+    (_resolve_combination)."""
+    if len(decision.get("outcomes") or []) > 1:
+        return _resolve_combination(decision, fetch)
     out = _resolve_decision(decision, fetch)
     kind = evidence_kind((decision.get("evidence") or {}).get("type"))
     return out | {"evidence_kind": kind} if kind else out
 
 
-_LINKED_LABEL = {"report": "Report", "working": "Working"}
+# A combination's members in words ("the fixed-interval task").
+_MEMBER_WORD = {"on_condition": "on-condition", "fixed_interval": "fixed-interval",
+                "failure_finding": "failure-finding", "redesign": "redesign"}
+# The strategy analysis each scheduled outcome expects (its kind).
+_ANALYSIS_KIND = {"fixed_interval": "optimal_replacement", "failure_finding": "failure_finding"}
+
+
+def _tasks_words(outcomes: list[str]) -> str:
+    """"the fixed-interval task", "the on-condition and fixed-interval tasks"."""
+    words = [_MEMBER_WORD.get(o, o) for o in outcomes]
+    if len(words) == 1:
+        return f"the {words[0]} task"
+    return f"the {', '.join(words[:-1])} and {words[-1]} tasks"
+
+
+def _fits(outcome: str, evidence: dict, fetch) -> bool:
+    """Whether the decision's evidence could be meant for this member (a
+    fallback is tried only on the members it fits): a report or a function's
+    notes fit any, a model or analysis only the outcome that expects its kind."""
+    if evidence["type"] in LINKED_TYPES:
+        return True
+    if evidence["type"] != EXPECTED_EVIDENCE.get(outcome):
+        return False
+    if evidence["type"] == "strategy_analysis":
+        artifact = fetch(evidence["type"], evidence["id"])
+        return artifact is None or getattr(artifact, "kind", None) == _ANALYSIS_KIND[outcome]
+    return True
+
+
+def _resolve_member(member: dict, decision: dict, fetch) -> dict:
+    """One member of a combination checked as a decision of its own: its own
+    evidence, else the decision's (when it fits this member). A redesign is
+    checked only with evidence of its own (a report or notes); it needs none."""
+    own = member.get("evidence")
+    shared = decision.get("evidence")
+    outcome = member["outcome"]
+    if own:
+        evidence, working, source = own, member.get("working"), "own"
+    elif shared and outcome != "redesign" and _fits(outcome, shared, fetch):
+        evidence, working, source = shared, decision.get("working"), "decision"
+    else:
+        evidence = working = source = None
+    if outcome == "redesign" and not (evidence and evidence["type"] in LINKED_TYPES):
+        return {"status": None}
+    as_one = {"outcome": outcome, "interval": member.get("interval"), "interval_unit": member.get("interval_unit"),
+              "evidence": evidence, "working": working}
+    out = _resolve_decision(as_one, fetch)
+    if evidence:
+        out |= {"evidence_kind": evidence_kind(evidence["type"]), "evidence_from": source}
+    elif shared:
+        out["reason"] = (f"No evidence for this task: the decision's {_type_label(shared['type'])} is for another "
+                         "of its tasks. Link one for this task.")
+    return out
+
+
+def _resolve_combination(decision: dict, fetch) -> dict:
+    """A combination of tasks is evidenced when every scheduled member is:
+    each checked on its own (its own evidence, else the decision's where it
+    fits), then one status for the whole. Any contradicted, stale or
+    inconclusive member makes the whole so (that member named); every member
+    supported (or linked) is supported (or linked); some evidenced and some
+    not is "partly" ("Partly evidenced: the fixed-interval task has none.");
+    none is unevidenced. ``outcomes`` comes back with each member's check."""
+    members = []
+    for member in decision["outcomes"]:
+        members.append({**member, **_resolve_member(member, decision, fetch)})
+    counted = [m for m in members if m.get("status")]
+
+    def word(m: dict) -> str:
+        return _MEMBER_WORD.get(m["outcome"], m["outcome"]).capitalize()
+
+    out: dict = {"outcomes": members}
+    for status in ("contradicted", "stale", "inconclusive"):
+        hit = next((m for m in counted if m["status"] == status), None)
+        if hit is not None:
+            out |= {"status": status, "reason": f"{word(hit)} task: {hit.get('summary') or hit.get('reason') or ''}"}
+            break
+    else:
+        missing = [m["outcome"] for m in counted if m["status"] == "unevidenced"]
+        evidenced = [m for m in counted if m["status"] in ("supported", "linked")]
+        if not counted:
+            out["status"] = None
+        elif not evidenced:
+            first = counted[0]
+            return out | {"status": "unevidenced", "reason": "No supporting analysis linked yet for any of its tasks.",
+                          "expected_evidence": first.get("expected_evidence")}
+        elif missing:
+            out |= {"status": "partly",
+                    "reason": f"Partly evidenced: {_tasks_words(missing)} {'has' if len(missing) == 1 else 'have'} "
+                              "none."}
+        else:
+            out |= {"status": "supported" if all(m["status"] == "supported" for m in evidenced) else "linked",
+                    "summary": "Evidenced for each task. " + " ".join(
+                        f"{word(m)}: {m.get('summary') or m.get('reason') or ''}" for m in evidenced)}
+    # The evidence the chip opens: the member that decided the status, else the first with any.
+    lead = next((m for m in counted if m.get("status") == out.get("status") and m.get("artifact_link_path")), None) \
+        or next((m for m in counted if m.get("artifact_name")), None)
+    if lead is not None:
+        out |= {k: lead[k] for k in ("artifact_name", "artifact_link_path", "evidence_kind") if lead.get(k)}
+    return out
+
+
+_LINKED_LABEL = {"report": "Report", "working": "Function's notes and rationale"}
 
 
 def _resolve_linked(decision: dict, evidence: dict, fetch) -> dict:
@@ -469,10 +602,10 @@ def _resolve_linked(decision: dict, evidence: dict, fetch) -> dict:
     else:
         working = decision.get("working")
         if not working:
-            return {"status": "stale", "reason": "The linked working has gone: its function was deleted or the "
-                                                 "working behind its performance standard was cleared."}
+            return {"status": "stale", "reason": "The linked working has gone: its function was deleted or its "
+                                                 "notes and rationale were cleared."}
         name, path = working.get("text") or "Function", f"/asset-register/explorer?tab=rcm&sel={working['id']}"
-    what = "report" if kind == "report" else "working"
+    what = "report" if kind == "report" else "function's notes"
     return {"status": "linked", "artifact_name": name, "artifact_link_path": path,
             "summary": f"{_LINKED_LABEL[kind]} linked: open it to read the case. Reliafy doesn't check a {what} "
                        "against the decision."}
@@ -616,7 +749,7 @@ def _type_label(etype: str) -> str:
         "strategy_analysis": "saved strategy analysis",
         "degradation_model": "degradation model",
         "report": "report",
-        "working": "standard's working",
+        "working": "function's notes and rationale",
     }.get(etype, etype)
 
 

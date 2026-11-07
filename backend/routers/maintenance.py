@@ -387,7 +387,7 @@ def _create_task(m: Maintenance, body: dict, **subject) -> JSONResponse:
                 body.get("source") or "manual", body.get("reference", ""), body.get("failure_mode_id"),
                 body.get("last_done"), body.get("trade", ""), while_stored=body.get("while_stored"),
                 include_positions=body.get("include_positions"), failure_mode_ids=body.get("failure_mode_ids"),
-                **subject)
+                trigger=body.get("trigger"), **subject)
 
 
 @router.post("/positions/{position_id}/tasks")
@@ -586,23 +586,23 @@ def position_fmea_xlsx(position_id: str, scope: str = "below", session=Depends(g
 
 @router.post("/positions/{position_id}/functions")
 def add_function(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """A function with its performance standard and, optionally, the working behind it
-    (standard_basis: Markdown text) and its notes (the rationale, plain text)."""
+    """A function with its performance standard and its notes and rationale (which hold
+    the working behind the standard; standard_basis, deprecated, is added to them)."""
     return _run(m.add_function, position_id, body.get("text"), body.get("standard", ""),
                 standard_basis=body.get("standard_basis", ""), notes=body.get("notes"))
 
 
 @router.get("/functions/{function_id}")
 def get_function(function_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    """One function in full: the working behind its performance standard and the documents on it."""
+    """One function in full: its notes and rationale (with the working behind its standard) and documents."""
     return _run(m.function, function_id)
 
 
 @router.patch("/functions/{function_id}")
 def update_function(function_id: str, body: dict = Body(...),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """text, standard, standard_basis (the working behind the standard) or notes (its
-    rationale); "" clears one."""
+    """text, standard or notes (its rationale and the working behind the standard; standard_basis,
+    deprecated, is added to them); "" clears one."""
     return _run(m.update_function, function_id, body.get("text"), body.get("standard"),
                 body.get("standard_basis"), notes=body.get("notes"))
 
@@ -723,8 +723,9 @@ def decide_failure_mode(mode_id: str, body: dict = Body(...), session=Depends(ge
                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """The mode's consequence and decision ({outcome, rtf_basis, task, interval, interval_unit, notes,
     evidence}; null clears it), checked by the RCM decision rules; the evidence must be one the writer can open.
-    A combination of tasks: decision.outcomes [{outcome, task, interval, interval_unit, task_id}, ...] in place
-    of outcome, task and interval, each scheduled member with a task of its own."""
+    A combination of tasks: decision.outcomes [{outcome, task, interval, interval_unit, task_id, evidence}, ...]
+    in place of outcome, task and interval, each scheduled member with a task of its own and checked against its
+    own evidence, else the decision's."""
     from backend.maintenance import rcm_graph
 
     def go():
@@ -954,10 +955,28 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
                                  body["outcome"] if "outcome" in body else ..., body.get("trade"),
                                  body.get("while_stored"), body.get("include_positions"),
                                  body.get("last_done_reading"))
+        if "trigger" in body:
+            # What raises it besides (or instead of) its interval; null clears it.
+            view = m.set_task_trigger(task_id, body["trigger"])
         if view is None:
             raise Invalid("Nothing to change.")
         return view
     return _run(go)
+
+
+@router.get("/tasks/{task_id}/trigger-points")
+def task_trigger_points(task_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The condition points the task's trigger can watch: on what it's on, above it and
+    inside its top position, nearest first."""
+    return _run(lambda: {"points": m.task_trigger_points(task_id)})
+
+
+@router.post("/positions/{position_id}/events")
+def log_position_event(position_id: str, body: dict = Body(...),
+                       m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Log something that happened at a position (event_type, note, when): tasks there or
+    inside it triggered by that event raise their work orders (work_orders_raised)."""
+    return _run(m.log_position_event, position_id, body.get("event_type"), body.get("note", ""), body.get("when"))
 
 
 @router.post("/tasks/{task_id}/move")
@@ -1152,7 +1171,7 @@ def add_item_point(item_id: str, body: dict = Body(...), m: Maintenance = Depend
                 item_id=item_id)
 
 
-# ---- signal channels (the Explorer's Signals tab) --------------------------------------
+# ---- signal channels (rows of the Explorer's Measurements tab; their own pages) --------------------------------------
 # The same operations as the maintenance tool's signals.* / signal_data.* actions.
 
 @router.get("/signals/channels")

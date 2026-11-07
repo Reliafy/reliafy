@@ -64,6 +64,10 @@ button.ms-name:hover:not(:disabled) { background: none; color: var(--acc); text-
 a.ms-name { color: var(--ink); text-decoration: none; }
 a.ms-name:hover, a.ms-name:focus-visible { color: var(--acc); text-decoration: underline; text-underline-offset: 2px; }
 .ms-sub { font-size: var(--fs-12); line-height: 1.35; }
+/* The name and, for a row nobody reads by hand, the "Fed" chip after it. */
+.ms-name-line { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.ms-name-line .ms-name { min-width: 0; }
+.ms-fed { flex: none; }
 
 /* Latest: the value right-aligned so numbers line up; the note mark before it. */
 .ms-latest { text-align: right; font-variant-numeric: tabular-nums; }

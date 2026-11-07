@@ -8,6 +8,7 @@ import { RowIcon } from "./TreePane.jsx";
 import OperatingContextCard from "./OperatingContextCard.jsx";
 import { byName, insideWords, statusWords } from "../assetTree.js";
 import { safeHref } from "../maintenanceFields.js";
+import { taskDueText } from "../taskTrigger.js";
 
 // The Explorer's Summary tab (#UI, the RCM details panel's patterns): one
 // column, a readable width at most. Status chips and the description first,
@@ -117,7 +118,9 @@ function Row({ lead = null, title, meta, chips, onClick, className = "" }) {
 
 const SHOWN_TASKS = 8;
 
-function Work({ r, state, today, fullPage }) {
+// "Log an event…" (the row's action, when it has one) sits at the foot of Work:
+// tasks waiting for an event are raised from here.
+function Work({ r, state, today, fullPage, logEvent = null }) {
   const { data, error } = state;
   let body;
   let count = null;
@@ -161,9 +164,10 @@ function Work({ r, state, today, fullPage }) {
                   const note = (t.limits || []).map((l) => l.note).find(Boolean);
                   return (
                     <Row key={`${t.onItem ? "i" : "p"}${t.id}`} title={t.name}
-                         meta={t.next_due ? `Next due ${fmtDate(t.next_due)}` : note || "No due date"}
-                         chips={(t.overdue || t.onItem) ? <>
+                         meta={taskDueText(t, fmtDate, note)}
+                         chips={(t.overdue || t.onItem || t.on_event) ? <>
                            {t.overdue && <Chip tone="danger">Overdue</Chip>}
+                           {t.on_event && <Chip>On event</Chip>}
                            {t.onItem && <Chip>On the item</Chip>}
                          </> : null} />
                   );
@@ -181,9 +185,16 @@ function Work({ r, state, today, fullPage }) {
   return (
     <Section title="Work" count={count || null}>
       {body}
+      {logEvent && (
+        <button type="button" className="link td-more" disabled={logEvent.disabled} title={logEvent.reason || undefined}
+                onClick={logEvent.onSelect}>
+          {logEvent.label}
+        </button>
+      )}
     </Section>
   );
 }
+
 
 // What's directly inside, as rows: the counts (overdue, open work, alarms)
 // take in everything inside each row. Sorted as the tree has them, or by
@@ -352,7 +363,8 @@ export default function TreeSummary({
   row, display, today, onSelect, position, fullPage, onContextSaved, actions = [], design = false, facts = null, children = null,
 }) {
   const add = actions.find((a) => a.id === "tree-new") || null;
-  const rest = actions.filter((a) => a.id !== "tree-new");
+  const logEvent = actions.find((a) => a.id === "event-log") || null;
+  const rest = actions.filter((a) => a.id !== "tree-new" && a.id !== "event-log");
   return (
     <div className="td-sum">
       {!design && <StatusChips r={row} />}
@@ -361,7 +373,7 @@ export default function TreeSummary({
       )}
       {facts || <Facts r={row} display={display} design={design} fittedFrom={row.type === "pos" ? position.data?.fitted : null} />}
       {children}
-      {row.type === "pos" && !design && <Work r={row} state={position} today={today} fullPage={fullPage} />}
+      {row.type === "pos" && !design && <Work r={row} state={position} today={today} fullPage={fullPage} logEvent={logEvent} />}
       {row.type === "pos" && (
         <OperatingContextCard positionId={row.key} state={position} onSaved={onContextSaved} />
       )}

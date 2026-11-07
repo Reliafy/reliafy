@@ -240,7 +240,7 @@ def test_the_evidence_check_shows_each_case(store, db):
     assert status[("Motor 2", "Bearing seizure")] == "contradicted"
     assert status[("Battery pack", "Cell capacity fade")] == "inconclusive"
     assert graph["rollup"] == {"modes": 83, "decided": 81, "supported": 11, "contradicted": 4,
-                               "inconclusive": 1, "unevidenced": 54, "stale": 0}
+                               "inconclusive": 1, "unevidenced": 54, "stale": 0, "partly": 0}
     check = rcm_graph.gaps(graph)["evidence_to_check"]
     assert sorted({(r["text"], r["status"]) for r in check}) == [
         ("Bearing seizure", "contradicted"), ("Cell capacity fade", "inconclusive")]

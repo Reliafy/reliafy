@@ -345,14 +345,20 @@ def graph_refs(graph) -> list[tuple[str, str]]:
 
 
 def refs_of_decision(decision) -> list[tuple[str, str]]:
-    """The (collection, id) one RCM decision links as evidence (none or one)."""
-    evidence = (decision or {}).get("evidence") or {}
-    if not isinstance(evidence, dict):
+    """The (collection, id) one RCM decision links as evidence: its own, and
+    each member's of a combination of tasks (``outcomes[i].evidence``)."""
+    if not isinstance(decision, dict):
         return []
-    coll = _EVIDENCE_COLLECTIONS.get(evidence.get("type"))
-    if coll and (eid := _str_id(evidence.get("id"))):
-        return [(coll, eid)]
-    return []
+    members = decision.get("outcomes")
+    refs: list[tuple[str, str]] = []
+    for holder in [decision, *(members if isinstance(members, list) else [])]:
+        evidence = holder.get("evidence") if isinstance(holder, dict) else None
+        if not isinstance(evidence, dict):
+            continue
+        coll = _EVIDENCE_COLLECTIONS.get(evidence.get("type"))
+        if coll and (eid := _str_id(evidence.get("id"))) and (coll, eid) not in refs:
+            refs.append((coll, eid))
+    return refs
 
 
 def refs_of(collection: str, doc: dict) -> list[tuple[str, str]]:

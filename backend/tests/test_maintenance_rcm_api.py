@@ -199,7 +199,7 @@ def test_move_rcm_over_mcp(env):  # noqa: F811
 
 
 def test_the_working_behind_a_standard_over_mcp(env):  # noqa: F811
-    """standard_basis on add_function / update_function ('' clears it), read in full with kind function."""
+    """The working goes in a function's notes; standard_basis, deprecated, still writes them (Nov 2026)."""
     async def go(client):
         pool = _ok(await _do(client, "maintenance", "positions.create", name="Tank"))
         fn = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=pool["id"],
@@ -207,8 +207,9 @@ def test_the_working_behind_a_standard_over_mcp(env):  # noqa: F811
         assert fn["standard_basis"] == "## Sizing\n\n2 days x 5 kL" and fn["has_basis"]
         got = _ok(await _get(client, "function", fn["id"]))
         assert got["standard_basis"] == fn["standard_basis"] and got["position"]["id"] == pool["id"]
+        assert fn["notes"] == fn["standard_basis"]
         cleared = _ok(await _do(client, "maintenance", "failure_modes.update_function", function_id=fn["id"],
-                                standard_basis=""))
+                                notes=""))
         assert cleared["standard_basis"] == "" and not cleared["has_basis"]
         too_long = await _do(client, "maintenance", "failure_modes.update_function", function_id=fn["id"],
                              standard_basis="x" * 20_001)

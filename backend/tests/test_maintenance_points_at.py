@@ -23,7 +23,40 @@ def test_points_at_reads_positions_and_items_skipping_others_and_retired():
     by_id = {p["id"]: p for p in got["points"]}
     assert by_id[ph["id"]]["reading"] == 7.4 and by_id[ph["id"]]["position"]["name"] == "Pool"
     assert by_id[hours["id"]]["item"]["name"] == "Pump #2"
-    assert m.points_at([], []) == {"points": [], "more": False}
+    assert m.points_at([], []) == {"points": [], "more": False, "channels": []}
+    assert got["channels"] == []
+
+
+def test_points_at_lists_signal_channels_with_latest_level_trend_and_band_state():
+    from datetime import datetime, timedelta, timezone
+
+    m = Maintenance(GraphStore(":memory:", PROJECTORS), "user-pc")
+    pump = m.create_position("Filter pump")["id"]
+    other = m.create_position("Heater")["id"]
+    m.add_point(pump, "Pressure", unit="kPa")
+    power = m.add_signal_channel(pump, None, "Pump power", "W", tag="plug.power")
+    m.add_signal_channel(other, None, "Heater temp", "C")
+    item = m.create_item("Motor")["id"]
+    m.add_signal_channel(None, item, "Motor vibration", "mm/s")
+    gone = m.add_signal_channel(pump, None, "Old plug", "W")
+    m.retire_signal_channel(gone["id"])
+    m.add_signal_level(power["id"], "Power level", "value", None, alarm_above=900)
+    now = datetime.now(timezone.utc)
+    for i, w in enumerate((610, 640, 950)):
+        m.add_signal_snapshot((now - timedelta(hours=3 - i)).isoformat(), power["id"], value=w)
+
+    got = m.points_at([pump], [item])
+    assert [c["name"] for c in got["channels"]] == ["Motor vibration", "Pump power"]
+    row = next(c for c in got["channels"] if c["name"] == "Pump power")
+    assert row["kind"] == "channel" and row["unit"] == "W" and row["position"]["name"] == "Filter pump"
+    assert row["stat"] == "value" and row["latest"]["value"] == 950
+    assert [r["value"] for r in row["recent"]] == [610, 640, 950]
+    assert [b["name"] for b in row["bands"]] == ["Power level"] and row["bands"][0]["status"] == "high"
+    assert row["attention"] is True and row["snapshots"]["count"] == 3
+    quiet = next(c for c in got["channels"] if c["name"] == "Motor vibration")
+    assert quiet["latest"] is None and quiet["recent"] == [] and quiet["attention"] is False
+    # The channel's band is also a measuring point on the position, as before.
+    assert sorted(p["name"] for p in got["points"]) == ["Power level", "Pressure"]
 
 
 def test_points_route_reads_comma_separated_ids(monkeypatch):
@@ -51,6 +84,9 @@ def test_points_route_reads_comma_separated_ids(monkeypatch):
             client.post(f"{api}/positions/{pid}/points", json={"name": name, "alarm_above": 8})
         got = client.get(f"{api}/points", params={"position_ids": f"{a}, {b},"}).json()
         assert sorted(p["name"] for p in got["points"]) == ["Chlorine", "pH"]
-        assert client.get(f"{api}/points").json() == {"points": [], "more": False}
+        assert client.get(f"{api}/points").json() == {"points": [], "more": False, "channels": []}
+        client.post(f"{api}/signals/channels", json={"position_id": a, "name": "Pump power", "unit": "W"})
+        got = client.get(f"{api}/points", params={"position_ids": a}).json()
+        assert [c["name"] for c in got["channels"]] == ["Pump power"]
     finally:
         app.dependency_overrides.clear()

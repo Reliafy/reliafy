@@ -311,6 +311,19 @@ def test_maintenance_move_a_measurement_point_over_rest(maint):
     assert r.status_code >= 400 and "position_id" in r.text
 
 
+def test_a_task_raised_by_a_logged_event_over_rest(maint):
+    pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Pool"}).json()
+    task = maint.post("/api/v1/maintenance/tasks.create", {
+        "position_id": pos["id"], "name": "Check stabiliser", "trigger": {"kind": "event", "event_type": "Overflow"}})
+    assert task.status_code == 200, task.text
+    assert task.json()["on_event"] and task.json()["next_due"] is None
+    r = maint.post("/api/v1/maintenance/positions.log_event", {"position_id": pos["id"], "event_type": "overflow"})
+    assert r.status_code == 200, r.text
+    assert [w["task"]["id"] for w in r.json()["work_orders_raised"]] == [task.json()["id"]]
+    r = maint.post("/api/v1/maintenance/tasks.update", {"task_id": task.json()["id"], "clear_trigger": True})
+    assert r.status_code == 200 and r.json()["trigger"] is None
+
+
 def _jpeg() -> bytes:
     img = Image.new("RGB", (320, 240), (200, 30, 30))
     exif = Image.Exif()

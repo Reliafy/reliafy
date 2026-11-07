@@ -73,15 +73,19 @@ export const STATUS_LABEL = {
   unevidenced: "Not linked",
   stale: "Stale link",
   linked: "Linked",
+  // A combination of tasks with evidence for some of its tasks, not all.
+  partly: "Partly evidenced",
 };
-// A report or a standard's working: linked, not checked (nothing is computed
-// from them), so the check names what's linked and never says it's supported.
-export const LINKED_LABEL = { report: "Report linked", working: "Working linked" };
+// A report or a function's notes and rationale (evidence type "working": they
+// hold the working behind its performance standard): linked, not checked
+// (nothing is computed from them), so the check names what's linked and never
+// says it's supported.
+export const LINKED_LABEL = { report: "Report linked", working: "Notes linked" };
 export const isLinkedOnly = (d) => d?.status === "linked";
 // The kinds of evidence a decision can link, as the decision dialog offers
 // them: models (a model or saved analysis, checked) when the decision expects
-// one, then a report and a standard's working (linked, not checked).
-export const EVIDENCE_KIND_LABEL = { model: "Models", report: "Reports", working: "Working" };
+// one, then a report and a function's notes and rationale (linked, not checked).
+export const EVIDENCE_KIND_LABEL = { model: "Models", report: "Reports", working: "Function notes" };
 export const evidenceKinds = (expectedType) => [...(expectedType ? ["model"] : []), "report", "working"];
 // The kind the dialog opens on: what's linked now, else models when expected, else reports.
 export function startKind(evidence, expectedType) {
@@ -127,7 +131,8 @@ export function modeCounts(m) {
     // Linked evidence that doesn't settle it (the wrong kind, a unit mismatch...).
     unsure: s === "inconclusive" ? 1 : 0,
     stale: s === "stale" ? 1 : 0,
-    unlinked: s === "unevidenced" ? 1 : 0,
+    // Nothing linked, or (a combination of tasks) nothing for some of its tasks.
+    unlinked: s === "unevidenced" || s === "partly" ? 1 : 0,
   };
 }
 
@@ -154,8 +159,8 @@ export function moreTasks(d) {
 }
 
 // "Weekly pH check · every 1 week": one task's line, and the tooltip listing them all.
-export const taskLine = (t) => [t.text || t.name, t.interval != null && t.unit ? `every ${intervalText({ interval: t.interval, interval_unit: t.unit })}` : null]
-  .filter(Boolean).join(" · ");
+// A task raised by an event says so: "Re-dose · on event: 120 mm on POOL-RAIN".
+export const taskLine = (t) => [t.text || t.name, everyText(t) || null].filter(Boolean).join(" · ");
 export const tasksTip = (d) => tasksOf(d).map((t) => taskLine(t) + (t.shared_with ? ` (shared with ${t.shared_with} other failure mode${t.shared_with === 1 ? "" : "s"})` : "")).join("\n");
 
 // The display: rows {key, type, ref, at, parent, kids, depth, sum} keyed by
@@ -234,6 +239,18 @@ export function memberLine(o) {
   return `${label}: ${[o.task, o.interval != null ? `every ${intervalText(o)}` : null].filter(Boolean).join(" · ")}`;
 }
 
+// A combination's member's evidence as a line (the worksheet's Evidence card):
+// "Fixed-interval: Supported · Bearing replacement (the decision's)", or
+// "Fixed-interval: none linked"; a redesign needs none.
+export function memberEvidenceLine(o) {
+  const label = OUTCOME_LABEL[o.outcome] || o.outcome;
+  if (!o.status) return `${label}: needs no evidence`;
+  if (o.status === "unevidenced") return `${label}: none linked`;
+  const check = o.status === "linked" ? LINKED_LABEL[o.evidence_kind] || STATUS_LABEL.linked : STATUS_LABEL[o.status] || o.status;
+  const what = o.artifact_name ? ` · ${o.artifact_name}` : "";
+  return `${label}: ${check}${what}${o.evidence_from === "decision" ? " (the decision's)" : ""}`;
+}
+
 // A decision as the server takes it back: the fields a decision is made of,
 // without the evidence check the server added. A combination goes back whole
 // (its members, the change applied to the first: the decision's own task), so
@@ -242,8 +259,11 @@ export function decisionBody(d, patch = {}) {
   if (!d) return null;
   if (isCombination(d)) {
     const given = (v) => v !== undefined && v !== null && v !== "";
-    const keep = (o) => Object.fromEntries(["outcome", "task", "interval", "interval_unit"]
-      .filter((k) => given(o[k])).map((k) => [k, o[k]]));
+    // Each member goes back with its own evidence, if any (only {type, id}: the read adds its check).
+    const keep = (o) => ({
+      ...Object.fromEntries(["outcome", "task", "interval", "interval_unit"].filter((k) => given(o[k])).map((k) => [k, o[k]])),
+      ...(o.evidence?.type && o.evidence?.id ? { evidence: { type: o.evidence.type, id: o.evidence.id } } : {}),
+    });
     const first = keep(d.outcomes[0]);
     for (const k of ["task", "interval", "interval_unit"]) {
       if (!(k in patch)) continue;
@@ -284,6 +304,32 @@ export function intervalText(d) {
   const u = d.interval_unit || "";
   const unit = Number(d.interval) === 1 && /[a-z]s$/i.test(u) ? u.slice(0, -1) : u;
   return `${Number(d.interval).toLocaleString("en-AU", { maximumSignificantDigits: 6 })} ${unit}`.trim();
+}
+
+// A task's trigger (the server's `trigger`, with its words in `text`): what
+// raises its work order besides, or instead of, its interval.
+// "on event: 120 mm on POOL-RAIN", "on event: Lightning strike".
+export function triggerText(trigger) {
+  return trigger?.text ? `on event: ${trigger.text}` : "";
+}
+// Raised only by its trigger: the interval is kept but doesn't run.
+export const onEventOnly = (x) => !!(x?.trigger && !x.trigger.with_interval);
+// When a task (or a decision: interval_unit for unit) is done, as the
+// worksheet's Interval column says it: "6 months", "on event: 120 mm on
+// POOL-RAIN", or both ("6 months or on event: …").
+export function whenText(x) {
+  if (!x) return "";
+  if (onEventOnly(x)) return triggerText(x.trigger);
+  const every = intervalText({ interval: x.interval, interval_unit: x.interval_unit ?? x.unit });
+  return [every, triggerText(x.trigger)].filter(Boolean).join(" or ");
+}
+// The same with "every" before an interval: a task card's chip.
+export function everyText(x) {
+  if (!x) return "";
+  if (onEventOnly(x)) return triggerText(x.trigger);
+  const every = x.interval != null && (x.interval_unit ?? x.unit)
+    ? `every ${intervalText({ interval: x.interval, interval_unit: x.interval_unit ?? x.unit })}` : "";
+  return [every, triggerText(x.trigger)].filter(Boolean).join(" or ");
 }
 
 export function decisionText(d) {
@@ -357,10 +403,9 @@ export function phoneLine(r) {
   if (r.type === "fail" && belowOf(r)) {
     return belowOf(r).own ? `${insideWords(r)} · ${belowDecisionText(r)}` : belowDecisionText(r);
   }
-  if (r.type === "fn" && r.ref.has_basis) return [insideWords(r), "has a working"].filter(Boolean).join(" · ");
   if (r.type !== "mode") return insideWords(r);
   const d = r.ref.decision;
-  return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", isCombination(d) ? "" : intervalText(d), d?.task || tasksOf(r.ref)[0]?.text, moreTasks(r.ref)]
+  return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", isCombination(d) ? "" : whenText(d), d?.task || tasksOf(r.ref)[0]?.text, moreTasks(r.ref)]
     .filter(Boolean).join(" · ");
 }
 
@@ -434,9 +479,10 @@ export const COLUMNS = [
   {
     id: "interval", label: "Interval", width: 92, min: 72, on: true, align: "num",
     title: "How often the task is done, in its unit",
-    text: (r) => (isMode(r) ? intervalText(d(r)) : ""),
-    sort: (r) => (isMode(r) && d(r)?.interval ? Number(d(r).interval) : null),
-    edit: "number", can: (r) => isMode(r) && INTERVAL_OUTCOMES.has(d(r)?.outcome), field: "interval", onDecision: true,
+    text: (r) => (isMode(r) ? whenText(d(r)) : ""),
+    sort: (r) => (isMode(r) && d(r)?.interval && !onEventOnly(d(r)) ? Number(d(r).interval) : null),
+    // A task raised by an event: its trigger is changed in the task's Edit… (Trigger).
+    edit: "number", can: (r) => isMode(r) && INTERVAL_OUTCOMES.has(d(r)?.outcome) && !onEventOnly(d(r)), field: "interval", onDecision: true,
   },
   {
     id: "check", label: "Evidence check", width: 126, min: 112, on: true,
@@ -538,13 +584,13 @@ export function chipCounts(display) {
   return out;
 }
 
-// What the filter's text is searched by: the description, the standard (and
-// the first words of the working behind it), the effects, the task and the
-// notes; and the FMEA's words on a mode (its cause, local and next effects,
+// What the filter's text is searched by: the description, the standard, the
+// effects, the task and the notes (a function's hold the working behind its
+// standards); and the FMEA's words on a mode (its cause, local and next effects,
 // detection method, action and owner).
 export function rowText(r) {
   const p = r.ref;
-  return [p.text, p.standard, p.basis_preview, p.effects, p.notes, p.decision?.task, p.decision?.notes,
+  return [p.text, p.standard, p.effects, p.notes, p.decision?.task, p.decision?.notes,
     p.cause, p.effect_local, p.effect_next, p.detection_method, p.action, p.action_owner,
     ...tasksOf(p).map((t) => t.name), ...(p.standards || []).map((st) => [st.parameter, st.when, st.source].filter(Boolean).join(" ")),
     // A standard's own row: its structured limit, condition and source too.

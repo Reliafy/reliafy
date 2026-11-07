@@ -5,7 +5,7 @@
 // imported again; importing it onto the same position adds nothing.
 
 import { toCsv } from "./csv.js";
-import { CONSEQUENCE_LABEL, OUTCOME_LABEL, checkLabel } from "./rcmWorksheet.js";
+import { CONSEQUENCE_LABEL, OUTCOME_LABEL, checkLabel, onEventOnly, triggerText } from "./rcmWorksheet.js";
 import { AP_LABEL, CLASS_LABEL, SOURCE_LABEL, STATUS_LABEL as ACTION_STATUS_LABEL, cmOf, rpnOf } from "./fmea.js";
 
 // The files the import takes: an Excel workbook or a CSV file.
@@ -27,6 +27,7 @@ export function importSummary(counts) {
     c.failures ? n(c.failures, "functional failure") : null,
     c.modes ? n(c.modes, "failure mode") : null,
     c.tasks ? n(c.tasks, "task") : null,
+    c.combinations ? n(c.combinations, "combination of tasks", "combinations of tasks") : null,
     c.links ? n(c.links, "link between functional failures", "links between functional failures") : null,
   ].filter(Boolean);
   const there = [
@@ -86,7 +87,8 @@ export function causedBy(fail) {
 // no functional failure come first in their position's rows, with those cells
 // blank. A failure mode with several tasks gets one row per task: the first
 // carries everything, the others repeat the mode with that task and its
-// interval (the import reads a repeated mode's row as another task for it).
+// interval (the import reads a repeated mode's row as another task for it,
+// or, with another outcome, as the next member of a combination of tasks).
 // A function with a list of standards gets a row per standard first (the
 // function and the standard alone), and each failure's rows carry the
 // standard it breaches, if any; a function with its one text (no list) is
@@ -112,15 +114,18 @@ export function positionRcmRows(worksheet) {
     // Explorer's tree shows it.
     const listed = (fn) => (fn?.standards || []).length > 0;
     const standardCell = (fn, fail) => (listed(fn) ? fail?.standard?.text || "" : fn?.standard || "");
+    // A function's notes hold the working behind its standards (Nov 2026), so the Standard
+    // working column stays blank: kept so older sheets and this one line up.
     const modeRow = (fn, fail, m) => {
       const first = firstRow(fn);
       const firstFail = firstRow(fail);
       const d = m?.decision || {};
       return [
-        where, fn?.text || "", (first && fn.notes) || "", standardCell(fn, fail), "", (first && fn.standard_basis) || "",
+        where, fn?.text || "", (first && fn.notes) || "", standardCell(fn, fail), "", "",
         fail?.text || "", (firstFail && fail.notes) || "", causedBy(fail), m?.text || "", m?.effects || "",
         CONSEQUENCE_LABEL[m?.consequence] || "", ...fmeaCells(m), OUTCOME_LABEL[d.outcome] || "", d.rtf_basis || "", d.task || "",
-        d.interval ?? "", d.interval ? d.interval_unit || "" : "",
+        // A task raised only by an event: the interval cell says so, in words.
+        onEventOnly(d) ? triggerText(d.trigger) : d.interval ?? "", d.interval && !onEventOnly(d) ? d.interval_unit || "" : "",
         checkLabel(d), m?.notes || "",
       ];
     };
@@ -129,17 +134,25 @@ export function positionRcmRows(worksheet) {
       const first = firstRow(fn);
       for (const [i, st] of fn.standards.entries()) {
         rows.push([where, fn.text || "", (first && i === 0 && fn.notes) || "", st.text || "", st.notes || "",
-          (first && i === 0 && fn.standard_basis) || "", "", "", "", "", "", "", ...BLANK_FMEA, "", "", "", "", "", "", ""]);
+          "", "", "", "", "", "", "", ...BLANK_FMEA, "", "", "", "", "", "", ""]);
       }
     };
     const taskRow = (fn, fail, m, t) => [
       where, fn?.text || "", "", standardCell(fn, fail), "", "", fail?.text || "", "", causedBy(fail), m.text || "", "",
       "", ...BLANK_FMEA, OUTCOME_LABEL[t.outcome] || OUTCOME_LABEL[m.decision?.outcome] || "", "", t.text || t.name || "",
-      t.interval ?? "", t.interval ? t.unit || "" : "", "", "",
+      onEventOnly(t) ? triggerText(t.trigger) : t.interval ?? "", t.interval && !onEventOnly(t) ? t.unit || "" : "", "", "",
     ];
+    // A combination of tasks: a row per further member, in its order (a redesign
+    // with no task too), so the import builds the same combination; then any
+    // task outside the decision.
     const modeRows = (fn, fail, m) => {
       rows.push(modeRow(fn, fail, m));
-      for (const t of (m?.decision?.tasks || []).slice(1)) rows.push(taskRow(fn, fail, m, t));
+      const members = m?.decision?.outcomes || [];
+      for (const o of members.slice(1)) {
+        rows.push(taskRow(fn, fail, m, { outcome: o.outcome, text: o.task || "", interval: o.interval, unit: o.interval_unit }));
+      }
+      const inMembers = new Set(members.map((o) => o.task_id).filter(Boolean));
+      for (const t of (m?.decision?.tasks || []).slice(1)) if (!inMembers.has(t.id)) rows.push(taskRow(fn, fail, m, t));
     };
     for (const m of p.unassigned || []) modeRows(null, null, m);
     for (const fn of p.functions || []) {

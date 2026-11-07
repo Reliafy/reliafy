@@ -173,8 +173,7 @@ In a row's **Details**, its title is its description: click it to
 change it. Under it, every level starts with what's inside it, then its own
 fields, then the quieter things at the foot:
 
-- a function: its **Performance standards**, its **Functional failures**,
-  then the working behind its performance standards;
+- a function: its **Performance standards**, then its **Functional failures**;
 - a performance standard: its **Functional failures**, then its checkable
   limit;
 - a functional failure: its **Failure modes** (with its state in words at
@@ -190,12 +189,12 @@ everything else: the long description beside
 its title, where you write why it's there and what it rests on (why a
 performance standard is set where it is, the history behind a failure mode).
 Press **Edit** (or the dashed **Add notes** row when there are none yet) to
-write in a box in place, with a count up to 4,000 characters, then **Save**
-or **Cancel**. Line breaks are kept. A row with notes shows a small note mark
-after its name in the table; hover over it to read the first line. On a
-phone the same section is in the Details sheet, and the FME(C)A tab's Details
-show a failure mode's notes the same way. A function's working (below) stays
-the sums behind its performance standards; notes are for the reasons.
+write in a box in place, with a count up to 4,000 characters (25,000 on a
+function, whose notes also hold the working behind its performance standards:
+see below), then **Save** or **Cancel**. Line breaks are kept. A row with notes
+shows a small note mark after its name in the table; hover over it to read the
+first line. On a phone the same section is in the Details sheet, and the
+FME(C)A tab's Details show a failure mode's notes the same way.
 
 **Edit description**
 (on a performance standard, **Edit text**) in a row's menu changes the text in the table
@@ -259,11 +258,11 @@ and press **Apply**. The decision is saved straight away.
   right kind. Reliafy checks these against the decision.
 - **Reports** lists your [reports](/reports). Link one when the case for the
   decision is written up there.
-- **Working** lists the workings behind the performance standards on this
-  position, the failure mode's own function first. Link one when the working
-  is what justifies the decision.
+- **Function notes** lists the functions on this position that have notes and
+  rationale, the failure mode's own function first. Link one when the working
+  written there is what justifies the decision.
 
-A report or a working can back any decision, a redesign or an accepted risk
+A report or a function's notes can back any decision, a redesign or an accepted risk
 too. Reliafy doesn't check them against the decision, it only links them.
 
 A decision with an interval becomes a scheduled task on the position, shown in
@@ -280,10 +279,22 @@ another task**: *On-condition*, *Fixed-interval replacement* or
 *Failure-finding*. Each one you add asks for its own task name and interval,
 and each becomes its own scheduled task on the position. A **Redesign** can
 sit beside one task, the task done until the change is made. Run-to-failure
-and accept stand alone. The evidence and notes are once for the whole
-decision, and the **Decision** column reads *On-condition + Fixed-interval*.
-For an operational or non-operational consequence, say in the notes what the
-second task earns.
+and accept stand alone. The notes are once for the whole decision, and the
+**Decision** column reads *On-condition + Fixed-interval*. For an operational
+or non-operational consequence, say in the notes what the second task earns.
+
+Each task of a combination needs its own evidence. The evidence you link in
+step 3 counts for every task it fits: a degradation model backs the
+inspection, a replacement analysis backs the fixed-interval task, and a report
+or a function's notes back any task. Where one piece can't cover them all,
+open **Evidence for this task** under the other task and link its own. Until
+every task has some, the check reads *Partly evidenced*, and the Evidence card
+names the task that has none.
+
+A worksheet import builds a combination too: a second row for the same
+failure mode with another scheduled outcome joins its decision, in row order.
+The export writes a combination the same way, one row per task, so a sheet you
+export imports back as the same decisions.
 
 ## Several tasks for one failure mode, one task for several
 
@@ -315,6 +326,23 @@ five chemistry failure modes. Both are in the failure mode's Details, under
 - **Remove…** in the task's **⋯** takes it off the failure mode: a task that serves only this
   mode is retired; one that serves others too is unlinked and stays.
 
+### Tasks raised by an event
+
+Some work isn't done on a calendar: after 120 mm of rain in 24 hours, test and
+re-dose the pool; after a lightning strike, inspect the chlorinator. In the
+task's **⋯** › **Edit…**, set **Trigger** to **When an event happens**, then
+choose what happens: **A reading passes a limit** (pick a measuring point and
+the limit, at or above 120 mm on the rain gauge) or **Someone logs an event**
+(type its name, *Lightning strike*). The decision stays as it is; the
+**Interval** column shows *on event: 120 mm on POOL-RAIN* for the task, and the
+CSV and Excel exports write the same words in that column. A reading past the
+limit raises the task's work order, dated the reading's day; a named event is
+logged on the position, or one above it, from its **⋯** › **Log an event…**
+(also at the foot of **Work** on the Summary tab). Each event raises one work
+order: another while it's open raises nothing. The task waits for the event,
+so it's never overdue; tick **Keep the interval too** if the interval should
+run as well.
+
 The **Task** column shows the decision's own task and *+1 task* when there are
 more; its Details list them all. The evidence linked on a decision applies to
 its own (first) task. Deleting a failure mode retires the tasks that served it
@@ -340,23 +368,24 @@ Each decision's **Evidence check** shows one of these:
   why: the wrong kind of analysis, mismatched units, or a fit with no
   confidence interval.
 - **Stale link** — the linked analysis or report has been deleted, or the
-  working has been cleared.
-- **Report linked** or **Working linked** — a report or a working is linked.
-  Nothing is worked out from it, so it never says supported or contradicted.
-  Click it to open the report, or the working beside the table.
+  function's notes have been cleared.
+- **Report linked** or **Notes linked** — a report or a function's notes and
+  rationale are linked. Nothing is worked out from them, so it never says
+  supported or contradicted. Click it to open the report, or the function's
+  notes beside the table.
 
 A decision with nothing linked yet shows **Not linked**, quietly: plenty of
 decisions are made from judgement, and linking evidence is optional. Its
 Details offer **Link evidence…** when you're ready. Redesign and accept-risk
 decisions need no evidence, so they show no status unless you link a report
-or a working.
+or a function's notes.
 
 The chips beside the position's name, at the top of its panel, count the linked
 statuses for that position (*3 supported, 1 contradicted*), and a function's row counts them for
 everything inside it. A position with no red and no amber is one whose every
 decision you can defend. **Show only → Evidence to look at** lists the
 decisions that are contradicted, inconclusive or stale across the whole tree.
-A linked report or working is never one of them.
+A linked report or function's notes are never one of them.
 
 The check runs again every time the tree opens. Refit a linked non-repairable
 model with new failures and the status follows the new fit. A decision that
@@ -533,25 +562,26 @@ too).
 
 Some performance standards come from sums, not a book: how much chlorine a pool needs from
 its volume, its sunlight and its swimmers, or how many tonnes an hour a belt
-must move to keep a silo filling. Open a function's Details: **Working behind the performance standard** is
-at the foot, after its functional failures. It is optional.
+must move to keep a silo filling. Write that working in the function's
+**Notes and rationale**, the first section of its Details. The box says so:
+*Why these limits: the working, the data and the sources behind the
+performance standard.* There is one place for it, not two.
 
-- **Add a working…** (or **Edit**) opens a box where you write in Markdown:
-  headings, lists, tables, bold, code and links. **Preview** shows what readers
-  will see. Images and raw HTML are not shown. The text can be up to 20,000
-  characters.
-- **Upload .md** reads a Markdown or text file into the box. If there is text
-  already, you choose **Replace it** or **Add below**.
-- **Attach PDF** keeps a PDF of the working with the function, up to five, each
-  up to 20 MB. Open one from its name; its **⋯** menu downloads, replaces or
-  removes it.
-- The working is read and edited in the function's Details. From one of its
-  performance standards, open Details and choose **open the working**.
+- Write in Markdown if you like: headings, lists, tables, bold, code and
+  links. The notes show formatted. Images and raw HTML are not shown. A
+  function's notes can be up to 25,000 characters.
+- **Attach a PDF…**, at the end of the section, keeps a PDF of the working with
+  the function, up to five, each up to 20 MB. Open one from its name; its
+  **⋯** menu downloads, replaces or removes it.
+- From one of the function's performance standards, open Details and choose
+  **open them** to go to the function's notes.
 
-When the position (or one above it) has an operating context, the working links
-to it, so the figures it uses are one click away. Over a spreadsheet, the
-working travels in a **Standard working** column: it is exported with the RCM
-as CSV and read back by **Import worksheet…**. PDFs are not part of the file.
+A working written before November 2026, when it had a section of its own, now
+shows inside the notes, under a **Working** line. Nothing is lost: the next
+time you save the notes, both are kept as one text. Over a spreadsheet, the
+function's notes travel in the **Function notes** column. A **Standard
+working** column in a sheet you import is added to a new function's notes.
+PDFs are not part of the file.
 
 ## Working top down or bottom up
 

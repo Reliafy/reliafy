@@ -103,8 +103,9 @@ export function graftRcm(display, rcm) {
         add(stdKey(st), "std", {
           ...st, id: stdKey(st), standard_id: st.legacy ? null : st.id, position_id: r.key, function_id: fn.id,
           function_text: fn.text || "", standard_ids: stdIds,
-          // The function's working, read in the standard's details.
-          function_has_basis: !!fn.has_basis, function_basis_preview: fn.basis_preview || "",
+          // Whether the function has notes and rationale (where the working behind its standards is):
+          // the standard's details point at them.
+          function_has_notes: !!String(fn.notes || "").trim(),
         }, fn.id, d + 2);
       }
       // Each functional failure under the standard it breaches; the ones
@@ -342,16 +343,17 @@ export function hasLinkedEvidence(rcm) {
   return false;
 }
 
-// The workings a failure mode's decision can link (the decision dialog's
-// Working tab): the performance standards' workings on the mode's position,
-// the function it sits under first, as {id: the function's, label, meta}.
+// The functions' notes and rationale a failure mode's decision can link
+// (evidence type "working", the decision dialog's Function notes): the
+// functions with notes on the mode's position, the one it sits under first,
+// as {id: the function's, label, meta: the notes' first words}.
 export function workingsFor(rcm, modeId) {
   const has = (list) => (list || []).some((m) => m.id === modeId);
   const holds = (fn) => has(fn.modes) || (fn.failures || []).some((ff) => has(ff.modes));
   for (const p of rcm?.positions || []) {
     const fns = p.functions || [];
     if (!fns.some(holds) && !has(p.unassigned)) continue;
-    return fns.filter((fn) => fn.has_basis)
+    return fns.filter((fn) => String(fn.notes || "").trim())
       .map((fn, i) => ({ fn, i, own: holds(fn) }))
       .sort((a, b) => (b.own - a.own) || (a.i - b.i))
       .map(({ fn }) => ({ id: fn.id, label: fn.text, meta: fn.basis_preview || "" }));
@@ -685,7 +687,7 @@ export function failureStatusWords(r) {
 // A position's functions for its panel on the RCM tab: one entry per function
 // row below it, in table order, with what the table's row would say (its
 // performance standards, functional failures and failure modes, how many of
-// those are decided, and whether it has a working).
+// those are decided).
 export function functionSummary(display, posRow) {
   const out = [];
   for (const k of posRow?.kids || []) {
@@ -701,7 +703,6 @@ export function functionSummary(display, posRow) {
       failures: (r.ref.failures || []).length,
       modes: s.modes,
       decided: Math.max(0, s.modes - s.undecided),
-      hasBasis: !!r.ref.has_basis,
     });
   }
   return out;

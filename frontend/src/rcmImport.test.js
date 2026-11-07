@@ -67,7 +67,7 @@ test("a position's RCM as rows named as the import reads them", () => {
   assert.equal(rows.length, 6);
   assert.deepEqual(cells(rows[1], ...HEAD.slice(0, 7)), ["Plant › Conveyor C-2", "", "", "", "", "", "Motor hums"]);
   // The FME(C)A's columns sit between Consequence and Decision (blank here).
-  assert.deepEqual(cells(rows[2], ...HEAD), ["Plant › Conveyor C-2", "Move grain", "40 t/h", "## Rate\n\n40 t/h = 10 t over 15 min", "Moves no grain", "Conveyor drive › No torque", "Belt torn", "Line stops",
+  assert.deepEqual(cells(rows[2], ...HEAD), ["Plant › Conveyor C-2", "Move grain", "40 t/h", "", "Moves no grain", "Conveyor drive › No torque", "Belt torn", "Line stops",
     "Operational"]);
   assert.deepEqual(cells(rows[2], ...TAIL), ["On-condition", "", "Walk the belt", 1, "weeks", "", "Severity 7"]);
   assert.deepEqual(cells(rows[2], ...FMEA_HEADER), FMEA_HEADER.map(() => ""));
@@ -110,12 +110,15 @@ test("the CSV keeps a formula-looking cell as text, and the file is named after 
   assert.equal(exportFilename(""), "Position RCM.csv");
 });
 
-test("the working is written on a function's first row only, and quoted with its line breaks", () => {
-  const rows = positionRcmRows(WS);
+test("the Standard working column stays blank: a function's notes hold the working, quoted with their line breaks", () => {
+  const ws = { ...WS, positions: WS.positions.map((p) => ({ ...p, functions: p.functions.map((f) => ({ ...f, notes: f.standard_basis || "" })) })) };
+  const rows = positionRcmRows(ws);
   const col = EXPORT_HEADER.indexOf("Standard working");
   assert.equal(col, EXPORT_HEADER.indexOf("Standard notes") + 1);
-  assert.deepEqual(rows.map((r) => r[col]), ["Standard working", "", "## Rate\n\n40 t/h = 10 t over 15 min", "", "", ""]);
-  assert.ok(positionRcmCsv(WS).includes('"## Rate\n\n40 t/h = 10 t over 15 min"'));
+  assert.deepEqual(rows.map((r) => r[col]), ["Standard working", "", "", "", "", ""]);
+  const notes = EXPORT_HEADER.indexOf("Function notes");
+  assert.deepEqual(rows.map((r) => r[notes]), ["Function notes", "", "## Rate\n\n40 t/h = 10 t over 15 min", "", "", ""]);
+  assert.ok(positionRcmCsv(ws).includes('"## Rate\n\n40 t/h = 10 t over 15 min"'));
 });
 
 
@@ -135,6 +138,34 @@ test("a failure mode with several tasks is one row per task, the first carrying 
   assert.deepEqual(cells(rows[2], ...HEAD, ...TAIL), ["Pool", "Keep the water balanced", "pH 7.2-7.8", "", "pH above 7.8", "", "Acid under-dosed", "",
     "", "Fixed-interval", "", "Replace the acid pump", 24, "months", "", ""]);
   assert.equal(rows[2].length, EXPORT_HEADER.length);
+});
+
+test("a combination of tasks is one row per member in its order, a redesign too, then tasks outside the decision", () => {
+  const t = (id, name, interval, unit, outcome) => ({ id, name, text: name, interval, unit, outcome, shared_with: 0 });
+  const rows = positionRcmRows({ positions: [{ id: "p", name: "Pump", depth: 0, unassigned: [], functions: [
+    { id: "f", text: "Pump water", failures: [{ id: "x", text: "No flow", modes: [
+      { id: "m", text: "Bearing worn", consequence: "safety", notes: "",
+        decision: { outcome: "on_condition", task: "Vibration check", interval: 1, interval_unit: "months", task_id: "t1", status: "partly",
+          // The read lists tasks own first, then others in no member order: the export follows the members.
+          tasks: [t("t1", "Vibration check", 1, "months", "on_condition"), t("t3", "Oil sample", 3, "months", "on_condition"),
+            t("t2", "Replace the bearing", 24, "months", "fixed_interval")],
+          outcomes: [
+            { outcome: "on_condition", task: "Vibration check", interval: 1, interval_unit: "months", task_id: "t1" },
+            { outcome: "fixed_interval", task: "Replace the bearing", interval: 24, interval_unit: "months", task_id: "t2" },
+            { outcome: "redesign", task_id: null },
+          ] } },
+    ] }] },
+  ] }] });
+  // These rows are what backend/tests/test_maintenance_rcm_combination.py imports back.
+  assert.deepEqual(rows.slice(1).map((r) => cells(r, "Failure mode", "Consequence", "Decision", "Task", "Interval", "Interval unit")), [
+    ["Bearing worn", "Safety", "On-condition", "Vibration check", 1, "months"],
+    ["Bearing worn", "", "Fixed-interval", "Replace the bearing", 24, "months"],
+    ["Bearing worn", "", "Redesign", "", "", ""],
+    ["Bearing worn", "", "On-condition", "Oil sample", 3, "months"],
+  ]);
+  assert.deepEqual(cells(rows[1], "Evidence check"), ["Partly evidenced"]);
+  assert.deepEqual(importSummary({ modes: 1, tasks: 3, combinations: 1 }).adds,
+    ["1 failure mode", "3 tasks", "1 combination of tasks"]);
 });
 
 test("the FME(C)A's columns: scores, effects, the action, the criticality figures; a mode directly under a function has no functional failure", () => {
