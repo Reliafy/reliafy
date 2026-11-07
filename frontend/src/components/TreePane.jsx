@@ -4,7 +4,7 @@ import TreeControlsMenu from "./TreeControlsMenu.jsx";
 import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
 import { BasisInfo, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
-import { ARRANGEMENTS, CHIPS, CHIP_MARK, PANE, clampWidth, markersOf, nextGutter, statusParts } from "../assetTree.js";
+import { ARRANGEMENTS, CHIPS, CHIP_MARK, PANE, TREE_ROW_MARKERS, clampWidth, markersOf, nextGutter, statusParts } from "../assetTree.js";
 import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensItem } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
@@ -108,6 +108,7 @@ export function RowIcon({ r }) {
 }
 
 function Markers({ r, rcm, onGoto }) {
+  if (!TREE_ROW_MARKERS) return null;
   const list = markersOf(r, { rcm });
   if (!list.length) return null;
   return (
@@ -247,7 +248,7 @@ function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, onGoto, info =
         <Highlight text={label(r)} query={query} />
       </span>
       {r.type === "cause" && <span className="tp-on" title={causeTip(r)}>on {r.ref.on}</span>}
-      {has && !open && inner > 0 && <span className="tp-cnt" title={`${inner} directly inside`}>{inner.toLocaleString("en-AU")}</span>}
+      {TREE_ROW_MARKERS && has && !open && inner > 0 && <span className="tp-cnt" title={`${inner} directly inside`}>{inner.toLocaleString("en-AU")}</span>}
       {info}
       <Markers r={r} rcm={rcm} onGoto={onGoto} />
     </>
@@ -669,7 +670,7 @@ export default function TreePane({
         levels={{ value: level, onLevel, onCloseAll }}
         // Each Show only filter with the marker it matches in the tree: the
         // markers' key (the "not analysed" one only where it shows).
-        chips={chipList.map((c) => ({ ...c, on: chips.includes(c.id), mark: c.id !== "unanalysed" || rcmMarks ? CHIP_MARK[c.id] : null }))}
+        chips={chipList.map((c) => ({ ...c, on: chips.includes(c.id), mark: TREE_ROW_MARKERS && (c.id !== "unanalysed" || rcmMarks) ? CHIP_MARK[c.id] : null }))}
         markNote="A row's markers count what's on it; dashed ones count everything inside it too."
         onChip={(id) => onChips(chips.includes(id) ? chips.filter((x) => x !== id) : [...chips, id])}
         changed={changed} onReset={onReset} actions={menuActions} />

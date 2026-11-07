@@ -521,9 +521,8 @@ test("one search, and Show only in the tree's ⋯ menu: the RCM's text, Needs a 
   await menu.getByRole("menuitem", { name: "Done" }).click();
   await expect(menu).toHaveCount(0);
   // The plant (no function), the pump (modes with no decision) and the motor
-  // (no function): counted in the plant's quiet marker.
-  await expect(await reveal(page, trow(page, `^Rcm plant ${tag}`))).toHaveAccessibleName(/3 positions not analysed yet here and inside/);
-  await expect(trow(page, `^Rcm plant ${tag}`).locator(".tp-mini.rcm")).toBeVisible();
+  // (no function): the plant's row would count them, but row markers are hidden (TREE_ROW_MARKERS).
+  await expect(trow(page, `^Rcm plant ${tag}`).locator(".tp-mini")).toHaveCount(0);
   // The RCM's own filters are for its tab only.
   await page.getByRole("tab", { name: "Summary" }).click();
   await openTreeMenu(page);

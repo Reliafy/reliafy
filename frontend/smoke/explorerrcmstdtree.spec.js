@@ -111,9 +111,9 @@ test("standards are a level of the tree: a list's rows, the 'No standard' row, t
   expect(at(`pH above 7.8 ${tag}`)).toBeLessThan(at(`Total alkalinity 80-120 ppm ${tag}`));
   expect(at(`Calcium hardness 200-400 ppm ${tag}`)).toBeLessThan(at("No performance standard"));
   expect(at("No performance standard")).toBeLessThan(at(`Water scale-forming ${tag}`));
-  // The quiet marker on a standard with no functional failure, and nothing on one with.
-  await expect(ta.getByText("no failure yet")).toBeVisible();
-  await expect(ca.getByText("no failure yet")).toBeVisible();
+  // No quiet marker on any standard (row markers are hidden: TREE_ROW_MARKERS).
+  await expect(ta.getByText("no failure yet")).toHaveCount(0);
+  await expect(ca.getByText("no failure yet")).toHaveCount(0);
   await expect(ph.getByText("no failure yet")).toHaveCount(0);
   // The one text: one standard row with its failure under it, and no "No standard" row for it.
   const legacy = trow(page, `^Performance standard: FC 1-3 ppm; CC under 0.5 ppm ${tag}`);
@@ -194,7 +194,7 @@ test("row menus: add a standard, a failure under it, change a failure's standard
   await expect(flow).toBeVisible();
   expect(await level(flow)).toBe((await level(circulate)) + 2); // now under "No standard"
   await expect(trow(page, `^No performance standard`)).toHaveCount(2);
-  await expect(fifty.getByText("no failure yet")).toBeVisible();
+  await expect(fifty.getByText("no failure yet")).toHaveCount(0);
 
   // A standard's menu: Add a functional failure… (it breaches this standard).
   menu = await menuOf(page, fifty);
