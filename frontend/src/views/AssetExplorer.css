@@ -83,6 +83,30 @@
   color: var(--ink);
 }
 
+/* The fold and show-the-tree buttons draw the "sidebar" glyph (the left pane
+   filled), the same shape as the menu rail's toggle (components/icons.jsx,
+   SidebarIcon). The markup still holds « and »; they're hidden here and the
+   glyph is a mask, so it takes the button's colour (muted, ink on hover). */
+.tp button.tp-fold,
+.tp button.tp-icon-btn[aria-label="Show the tree"] {
+  width: 30px;
+  padding: 0;
+  font-size: 0;
+  line-height: 0;
+  gap: 0;
+}
+.tp button.tp-fold::before,
+.tp button.tp-icon-btn[aria-label="Show the tree"]::before {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  -webkit-mask: var(--sidebar-glyph) center / contain no-repeat;
+  mask: var(--sidebar-glyph) center / contain no-repeat;
+  --sidebar-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1.7' y='2.7' width='12.6' height='10.6' rx='2.3' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3Cpath d='M3.4 3.4H6v9.2H3.4a1.7 1.7 0 0 1-1.7-1.7V5.1a1.7 1.7 0 0 1 1.7-1.7z'/%3E%3C/svg%3E");
+}
+
 /* Positions or Locations (ArrangeSwitch): a two-way switch in the heading,
    the one on filled. Greyed where the tab is by position (it says why). */
 .tp-arrange {

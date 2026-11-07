@@ -7,6 +7,7 @@ import { publicUrl } from "../firebase.js";
 import { useRoles } from "../RolesProvider.jsx";
 import { activeTrail, childActive } from "../navigation.js";
 import ExtensionNavItems from "./ExtensionNavItems.jsx";
+import { SidebarIcon } from "./icons.jsx";
 
 const SignOutIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -241,10 +242,10 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
           <button
             className="sidebar-toggle"
             onClick={onToggle}
-            title={collapsed ? "Expand menu" : "Collapse menu"}
-            aria-label={collapsed ? "Expand menu" : "Collapse menu"}
+            title={collapsed ? "Show the menu" : "Hide the menu"}
+            aria-label={collapsed ? "Show the menu" : "Hide the menu"}
           >
-            {collapsed ? "»" : "«"}
+            <SidebarIcon />
           </button>
         )}
       </div>
