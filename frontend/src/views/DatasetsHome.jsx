@@ -10,6 +10,7 @@ import { datasetPath } from "../navigation.js";
 import { fitOptions } from "../datasetFit.js";
 import useMenuDismiss from "../components/useMenuDismiss.js";
 import "../components/Datasets.css";
+import { StorageCapNotice } from "../components/StorageCap.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 
@@ -127,6 +128,7 @@ export default function DatasetsHome() {
       />
 
       {error && <div className="card error">{error}</div>}
+      <StorageCapNotice kind="datasets" one="saved dataset" many="saved datasets" refreshKey={datasets} />
 
       <SectionList
         rows={datasets}

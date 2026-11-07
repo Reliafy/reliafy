@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ErrorNotice } from "./StorageCap.jsx";
 import {
   getColumns,
   getDataset,
@@ -158,7 +159,7 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
       });
       onSaved(saved);
     } catch (err) {
-      setError(err.message);
+      setError(err);
       setLoading(false);
     }
   };
@@ -351,7 +352,7 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
         </>
       )}
 
-      {error && <div className="error">{error}</div>}
+      <ErrorNotice error={error} />
     </Modal>
   );
 }

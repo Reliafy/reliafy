@@ -12,6 +12,8 @@ import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { RBDS_TITLE } from "../navigation.js";
+import { ErrorNotice, StorageCapNotice } from "../components/StorageCap.jsx";
+import { isCapRefusal } from "../plan.js";
 
 const HELP = { walkthrough: "rbd", guide: "build-an-rbd" };
 
@@ -107,7 +109,7 @@ export default function RbdHome() {
       await duplicateRbd(r.id, `${itemName(r)} (copy)`);
       refresh();
     } catch (err) {
-      setError(err.message);
+      setError(err); // past the Free limit: the upgrade card
     } finally {
       setDuplicating(null);
     }
@@ -153,7 +155,12 @@ export default function RbdHome() {
 
       <SafetyStarterCard />
 
-      {error && <div className="card error">{error}</div>}
+      <ErrorNotice error={error} className="card error" />
+      {/* At the Free limit: what it is and the upgrade link (the refusal card
+          above says the same after a refused copy, so one card at a time). */}
+      {!isCapRefusal(error) && (
+        <StorageCapNotice kind="rbds" one="saved RBD" many="saved RBDs" refreshKey={rbds} />
+      )}
 
       {excelMapping && (
         <RbdExcelImportModal

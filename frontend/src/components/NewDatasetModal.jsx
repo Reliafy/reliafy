@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
+import { ErrorNotice } from "./StorageCap.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import { SPREADSHEET_ACCEPT, isSpreadsheetFile, pasteDataset, uploadDataset } from "../api.js";
@@ -133,7 +134,7 @@ export default function NewDatasetModal({ onClose, onCreated, withMeasurements =
     try {
       const { file, excel } = picked;
       await addMeasurements(await uploadDataset(file, name.trim() || undefined, excel ? false : noHeader, excel || null), name.trim());
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+    } catch (e) { setError(e); } finally { setBusy(false); }
   };
 
   // --- paste ---
@@ -141,7 +142,7 @@ export default function NewDatasetModal({ onClose, onCreated, withMeasurements =
   const onPaste = async () => {
     setBusy(true); setError(null);
     try { await addMeasurements(await pasteDataset(name.trim(), text, noHeader), name.trim()); }
-    catch (e) { setError(e.message); } finally { setBusy(false); }
+    catch (e) { setError(e); } finally { setBusy(false); }
   };
 
   // --- form ---
@@ -190,7 +191,7 @@ export default function NewDatasetModal({ onClose, onCreated, withMeasurements =
       const csv = [header, ...rows].join("\n");
       const file = new File([csv], `${name.trim() || "dataset"}.csv`, { type: "text/csv" });
       await addMeasurements(await uploadDataset(file, name.trim() || undefined), name.trim());
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+    } catch (e) { setError(e); } finally { setBusy(false); }
   };
 
   // ---- footer: Back on the left (entering data), the one primary on the right ----
@@ -294,7 +295,7 @@ export default function NewDatasetModal({ onClose, onCreated, withMeasurements =
           )}
           <input ref={fileRef} type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} hidden
                  onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />
-          {error && <div className="error">{error}</div>}
+          <ErrorNotice error={error} />
           {sheetModal}
         </div>
       )}
@@ -367,7 +368,7 @@ export default function NewDatasetModal({ onClose, onCreated, withMeasurements =
               {measurementsBox}
             </div>
           )}
-          {error && <div className="error">{error}</div>}
+          <ErrorNotice error={error} />
         </div>
       )}
     </Modal>

@@ -7,6 +7,7 @@ import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import { ENTERPRISE_CONTACT, PRO_PRICE } from "../pricing.js";
 import { HERO } from "../siteCopy.js";
+import { freeStorageLines } from "../plan.js";
 
 const CheckIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -110,9 +111,10 @@ const FEATURES = [
   },
 ];
 
-// Pricing copy. Keep the numbers in sync with backend/config.py
-// (FREE_MAX_*, FREE_GRANT_CENTS, CREDIT_PACKS, PRO_MONTHLY_CREDIT_CENTS) and
-// the live Stripe prices. ``mcpOn`` is the MCP connector's switch: while
+// Pricing copy. The Free storage limits come from FREE_CAPS (plan.js, checked
+// against backend/config.py FREE_MAX_* by plan.test.js); keep the other numbers
+// in sync with backend/config.py (FREE_GRANT_CENTS, CREDIT_PACKS,
+// PRO_MONTHLY_CREDIT_CENTS) and the live Stripe prices. ``mcpOn`` is the MCP connector's switch: while
 // it's off, the MCP lines say it's on request.
 const TIERS = (primaryHref, mcpOn = true) => [
   {
@@ -134,10 +136,8 @@ const TIERS = (primaryHref, mcpOn = true) => [
     per: "forever",
     blurb: "The hosted app, ready in seconds. Everything you need to start.",
     features: [
-      "3 saved datasets, 3 models, 1 RBD",
-      "Degradation tracking: 1 model, 3 tracked assets",
+      ...freeStorageLines(),
       "RCM on your asset tree, every decision checked against its evidence",
-      "1 fleet failure forecast",
       "Join team workspaces free (view-only)",
       "Sample data and worked examples included",
       "25 AI credits to try the assistant",
@@ -155,7 +155,7 @@ const TIERS = (primaryHref, mcpOn = true) => [
     blurb: "For working reliability engineers who live in their data.",
     featured: true,
     features: [
-      "Unlimited datasets, models, and RBDs",
+      "Unlimited saves: datasets, models, RBDs, fault trees, predictions and more",
       "1,000 AI credits included every month",
       "Unlimited fleet monitoring (degradation & RUL)",
       "Unlimited evidence-linked RCM across your asset tree",
