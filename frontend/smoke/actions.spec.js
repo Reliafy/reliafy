@@ -20,7 +20,9 @@ test("fit and save a Weibull model from a sample dataset", async ({ page, proble
 // #31: a class with a fitted model and a spare with a lead time shows how many to
 // hold, and the chance a typed stock runs out (smoke/seed.js makes the class).
 test("a class's spares stock levels and the what-if", async ({ page, problems }) => {
+  // A class's old address opens the Explorer's Classes tab on that class.
   await open(page, `/asset-register/classes/${encodeURIComponent("Smoke test pump")}`);
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=classes&scope=all&class=Smoke(%20|\+)test(%20|\+)pump/);
   const stocking = page.getByTestId("spares-stocking");
   await expect(stocking.getByRole("heading", { name: "Stock to hold" })).toBeVisible({ timeout: 30_000 });
   const row = stocking.getByRole("row", { name: /SMOKE-PUMP/ });

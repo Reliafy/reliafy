@@ -6,23 +6,20 @@ export const PRODUCTS_PATH = "/products";
 export const ITEMS_PATH = "/items";
 export const PRODUCTS_GUIDE = "products-and-items";
 
-// The product page's tabs (?tab=; Functional structure when none).
-export const PRODUCT_TABS = [
-  { id: "structure", label: "Functional structure" },
-  { id: "parts", label: "Parts list" },
-  { id: "items", label: "Items" },
-  { id: "reports", label: "Failure reports" },
-  { id: "analysis", label: "Analysis" },
-];
-const TAB_IDS = new Set(PRODUCT_TABS.map((t) => t.id));
-
+// A product's page is the Explorer on its design (?view= names the tree's tab,
+// as ?tab= does on the Explorer's own page). Its earlier page tabs (?tab=) are
+// in that page now: the parts list is the tree's Parts tab; the items built,
+// their failure reports and the analyses are on the product's Summary.
+// Where an earlier product tab (?tab=) lands on the page now: the tree tab to
+// open (null: Summary).
 export function productTab(param) {
-  return TAB_IDS.has(param) ? param : "structure";
+  return param === "parts" ? "parts" : null;
 }
 
-export function productPath(id, tab = "structure") {
+export function productPath(id, tab = null) {
   const base = `${PRODUCTS_PATH}/${encodeURIComponent(id)}`;
-  return tab && tab !== "structure" ? `${base}?tab=${tab}` : base;
+  const view = productTab(tab);
+  return view ? `${base}?view=${view}` : base;
 }
 
 // A product's design on its FME(C)A tab, the top position picked (the
@@ -63,8 +60,10 @@ export function productTreeIds(positions = []) {
 }
 
 // The tree read as the Explorer shows it. With a root: only that tree (a
-// product's design, or an item's tree). Without: everything but the products'
-// designs and the items' trees (they're under Products and Items).
+// product's design, or an item's tree); a design's positions are each marked
+// `in_design` (the tree read marks only its top `design`), so the panel knows
+// they're a design's, with no maintenance. Without: everything but the
+// products' designs and the items' trees (they're under Products and Items).
 export function scopeTree(data, root = null) {
   if (!data?.positions) return data;
   let keep;
@@ -87,7 +86,9 @@ export function scopeTree(data, root = null) {
     if (!drop.size) return data;
     keep = new Set(data.positions.filter((p) => !drop.has(p.id)).map((p) => p.id));
   }
-  return { ...data, positions: data.positions.filter((p) => keep.has(p.id)) };
+  const design = !!(root && data.positions.find((p) => p.id === root)?.design);
+  const positions = data.positions.filter((p) => keep.has(p.id));
+  return { ...data, positions: design ? positions.map((p) => (p.design ? p : { ...p, in_design: true })) : positions };
 }
 
 // Is the tree scoped to a product's design (not an item's tree)?

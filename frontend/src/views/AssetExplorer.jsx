@@ -163,8 +163,9 @@ const FMEA_ROLLUP_COLS = new Set(["failure", "cause", "effect_local", "effect_ne
 // Scoped to one tree (`root`, or ?root=: a product's design from its page, an
 // item's tree from Items) it shows that tree alone, by position; unscoped, it
 // leaves the products' designs and items' trees out (products.js). `tabKey`:
-// the address's name for its tabs (the product page keeps ?tab= for its own).
-export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", title: titleProp = null }) {
+// the address's name for its tabs (?view= on a product's page). `heading`: the
+// picked row's heading level (1 where the tree is the page, as a product's is).
+export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", title: titleProp = null, heading: headingProp = null }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
@@ -184,7 +185,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const notPlaced = (mode === "positions" || mode === "flat") && params.get("place") === "none";
   const title = titleProp || EXPLORER_LABEL;
   // Inside a product's page (its own h1), the picked row's name is an h2.
-  const heading = rootProp ? 2 : 1;
+  const heading = headingProp ?? (rootProp ? 2 : 1);
   const treeLabel = ARRANGEMENTS.find((a) => a.value === mode).tree;
 
   // The address always says the arrangement, so it can be shared as it is.

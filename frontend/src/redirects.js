@@ -81,9 +81,9 @@ export const MOVED = [
   { path: "/maintenance/items/:id", to: "/asset-register/items/:id" },
   { path: "/maintenance/locations", to: "/asset-register/explorer?arrange=locations" },
   { path: "/maintenance/locations/:id", to: "/asset-register/locations/:id" },
-  { path: "/maintenance/classes", to: "/asset-register/classes" },
-  { path: "/maintenance/classes/:name", to: "/asset-register/classes/:name" },
-  { path: "/maintenance/parts", to: "/asset-register/parts" },
+  { path: "/maintenance/classes", to: "/asset-register/explorer?tab=classes&scope=all" },
+  { path: "/maintenance/classes/:name", to: "/asset-register/explorer?tab=classes&scope=all&class=:name" },
+  { path: "/maintenance/parts", to: "/asset-register/explorer?tab=parts&scope=all" },
   { path: "/maintenance/parts/:id", to: "/asset-register/parts/:id" },
   // Design › Systems opens on its RBDs, the list of diagrams, at their own address.
   { path: "/systems", to: "/systems/rbds" },
@@ -96,6 +96,16 @@ export const MOVED = [
   // The menu's preview-only placeholder for FMECA: the working version is the
   // Explorer's FME(C)A tab. (Fault trees have their own page now.)
   { path: "/systems/fmeca", to: "/asset-register/explorer?tab=fmea" },
+  // Assets › Parts and stock and Classes → tabs of the asset tree (the
+  // Explorer's Parts and stock and Classes tabs), on everything (?scope=all:
+  // "Show all parts" / "Show all classes" ticked) as the pages were. A class's
+  // own address opens its panel (?class=); the parts catalogue as structures
+  // (Product structure) is the Parts and stock tab's Structure view. Each
+  // part's own page (/asset-register/parts/:id) stays.
+  { path: "/asset-register/parts", to: "/asset-register/explorer?tab=parts&scope=all" },
+  { path: "/asset-register/classes", to: "/asset-register/explorer?tab=classes&scope=all" },
+  { path: "/asset-register/classes/:name", to: "/asset-register/explorer?tab=classes&scope=all&class=:name" },
+  { path: "/systems/structure", to: "/asset-register/explorer?tab=parts&scope=all&show=structure" },
 ];
 
 // Where an old address goes: `pathname` (no query or hash) matched against

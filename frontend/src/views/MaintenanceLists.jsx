@@ -23,7 +23,6 @@ import {
   updateMaintenanceLocation,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
-import { SectionHeader } from "../components/SectionPage.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
 import {
@@ -56,6 +55,7 @@ import { PageTitle } from "../components/usePageTitle.js";
 import LoadFailed from "../components/LoadFailed.jsx";
 import { isNotFound } from "../components/loadFailed.js";
 import { explorerPath } from "../assetTree.js";
+import { partsInBranch } from "../explorerTabs.js";
 import { EXPLORER_LABEL } from "../navigation.js";
 
 const crumbs = [{ label: "Assets", to: "/asset-register" }];
@@ -291,11 +291,14 @@ function RenameLocation({ loc, onClose, onDone }) {
 
 // ---- position classes ----------------------------------------------------------------------
 
-export function MaintenanceClasses() {
-  const navigate = useNavigate();
-  // A class's own page (/asset-register/classes/Pool%20pump) opens its panel.
-  const { name: open = null } = useParams();
-  const classPath = (name) => `/asset-register/classes/${encodeURIComponent(name)}`;
+// The Explorer's Classes tab: the position classes used at the row picked and
+// inside it (how many of its positions have each), or with "Show all classes"
+// every class in the register, with the item classes and conditions (the
+// taxonomy). A class picked (?class=) opens its panel: its model, costs,
+// forecast and pooled life data, as the Classes page had them.
+// `here`: [{position_class, here}] for the branch (explorerTabs.js
+// classesInBranch); `scopeName`: the row's name.
+export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, open = null, onOpen }) {
   const [classes, setClasses] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -309,56 +312,76 @@ export function MaintenanceClasses() {
     setData(null);
     getClassLifeData(open).then(setData).catch((e) => setClassError(e.message));
   }, [open]);
-  // A class that isn't there (renamed, or a mistyped link): say so, with the
-  // way back to the list, rather than the list under a red banner.
-  if (open && isNotFound(classError)) {
-    return (
-      <div className="app">
-        <PageTitle name={open} />
-        <LoadFailed header error={classError} notFound="Class not found." to="/asset-register/classes" label="See all classes" />
-      </div>
-    );
-  }
-  const shownError = error || classError;
+  const byName = new Map((classes || []).map((c) => [c.position_class, c]));
+  const rows = all ? (classes || []).map((c) => ({ ...c, here: here.find((h) => h.position_class === c.position_class)?.here || 0 }))
+    : here.map((h) => ({ positions: 0, fitments: 0, failures: 0, ...byName.get(h.position_class), ...h }));
+  const missing = open && isNotFound(classError);
   return (
-    <div className="app">
-      <PageTitle name={open} />
-      <SectionHeader section="assets" title="Classes"
-                  purpose="Position classes group like positions by their duty, so their items' lives can be compared and pooled into one model. Item classes (optional) say what kind of thing each item is; conditions (optional), what things are exposed to." />
-      {shownError && <div className="card error">{shownError}</div>}
-      <h2 className="maint-section">Position classes</h2>
-      {classes === null ? <div className="card empty">Loading…</div> : classes.length === 0 ? (
-        <div className="card empty"><p>No classes yet. Give positions a class (e.g. “Pool pump”) when you create or edit them.</p></div>
+    <div className="td-tab-page">
+      <div className="tablebar section-tablebar">
+        <span className="count">{all ? "Every class in the register" : `Classes used at ${scopeName || "this row"} and inside it`}</span>
+        <span className="grow" />
+        <label className="maint-row lib-date td-tab-check" style={{ marginTop: 0, gap: "0.4rem" }}>
+          <input type="checkbox" checked={all} onChange={(e) => onAll?.(e.target.checked)} /> Show all classes
+        </label>
+      </div>
+      <p className="lib-date">Position classes group like positions by their duty, so their items' lives can be compared and pooled
+        into one model. Item classes (optional) say what kind of thing each item is; conditions (optional), what things are exposed to.</p>
+      {error && <div className="card error">{error}</div>}
+      <h3 className="maint-section">Position classes</h3>
+      {classes === null ? <div className="card empty">Loading…</div> : rows.length === 0 ? (
+        <div className="card empty"><p>{all || !classes.length
+          ? "No classes yet. Give positions a class (e.g. “Pool pump”) when you create or edit them."
+          : `No position inside ${scopeName || "this row"} has a class yet. Give positions a class when you create or edit them, or show all classes.`}</p></div>
       ) : (
-        <div className="lib">
+        <div className="lib maint-scroll">
           <table className="lib-table">
-            <thead><tr><th>Class</th><th>Positions</th><th>Fitments</th><th>Failures</th></tr></thead>
+            <thead><tr><th>Class</th><th className="num">Here</th><th className="num">Positions</th><th className="num">Fitments</th><th className="num">Failures</th></tr></thead>
             <tbody>
-              {classes.map((c) => (
-                <tr key={c.position_class} className="lib-row" onClick={rowOpen(navigate, classPath(c.position_class))}
+              {rows.map((c) => (
+                <tr key={c.position_class} className="lib-row" onClick={() => onOpen?.(c.position_class)}
                     aria-current={c.position_class === open ? "true" : undefined}>
-                  <td><RowLink to={classPath(c.position_class)}>{c.position_class}</RowLink></td><td>{c.positions}</td><td>{c.fitments}</td><td>{c.failures}</td>
+                  <td><button type="button" className="link lib-name" onClick={(e) => { e.stopPropagation(); onOpen?.(c.position_class); }}>
+                    {c.position_class}</button></td>
+                  <td className="num" data-label="Here">{c.here}</td>
+                  <td className="num" data-label="Positions">{c.positions}</td>
+                  <td className="num" data-label="Fitments">{c.fitments}</td>
+                  <td className="num" data-label="Failures">{c.failures}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      {open && <ClassPanel name={open} onChanged={() => getPositionClasses().then((d) => setClasses(d.classes))} />}
-      {open && (
-        <section className="card">
-          <div className="maint-head">
-            <h2>{open}: pooled life data</h2>
-            {data && <span className="lib-date">{data.failures} failures · {data.suspensions} suspensions
-              {data.uncertain ? ` · ${data.uncertain} with dates known only roughly (fitted as ranges)` : ""}</span>}
-          </div>
-          {data === null ? <p className="lib-date">Loading…</p> : <LifeTable rows={data.rows} showPosition />}
-        </section>
+      {missing && (
+        <div className="card error">Class not found: {open}. <button type="button" className="link" onClick={() => onOpen?.(null)}>Close it</button></div>
       )}
-      <h2 className="maint-section">What kind of thing</h2>
-      <ItemClassesSection />
-      <h2 className="maint-section">What things are exposed to</h2>
-      <ConditionsSection />
+      {classError && !missing && <div className="card error">{classError}</div>}
+      {open && !missing && (
+        <>
+          <div className="maint-row"><button type="button" className="secondary sm" onClick={() => onOpen?.(null)}>Close {open}</button></div>
+          <ClassPanel name={open} onChanged={() => getPositionClasses().then((d) => setClasses(d.classes))} />
+          <section className="card">
+            <div className="maint-head">
+              <h2>{open}: pooled life data</h2>
+              {data && <span className="lib-date">{data.failures} failures · {data.suspensions} suspensions
+                {data.uncertain ? ` · ${data.uncertain} with dates known only roughly (fitted as ranges)` : ""}</span>}
+            </div>
+            {data === null ? <p className="lib-date">Loading…</p> : <div className="maint-scroll"><LifeTable rows={data.rows} showPosition /></div>}
+          </section>
+        </>
+      )}
+      {all ? (
+        <>
+          <h3 className="maint-section">What kind of thing</h3>
+          <ItemClassesSection />
+          <h3 className="maint-section">What things are exposed to</h3>
+          <ConditionsSection />
+        </>
+      ) : (
+        <p className="lib-date">Item classes and conditions are the whole register's:{" "}
+          <button type="button" className="link" onClick={() => onAll?.(true)}>show all classes</button> to manage them.</p>
+      )}
     </div>
   );
 }
@@ -680,18 +703,20 @@ function ForecastCard({ name }) {
 
 // ---- parts and stock -------------------------------------------------------------------
 
-// `view`: "structure" is the same catalogue as structures, what each part is
-// made of (Product structure, out of the menu); "list" is Assets › Parts
-// and stock.
-export function MaintenanceParts({ view: initialView = "list" }) {
-  const structurePage = initialView === "structure";
+// The Explorer's Parts and stock tab: the parts kept in stock at the row
+// picked and inside it (a location's stores) and those on the parts lists of
+// its positions; with "Show all parts", the whole catalogue and the spares
+// cover. List or Structure (what each part is made of). On a product's design
+// (`design`) it's the tab "Parts": the parts lists, with no stock.
+// `branch`: explorerTabs.js branchOf for the row; `scopeName`: its name.
+export function PartsPanel({ branch, scopeName = "", all = false, onAll, design = false, show = "list", onShow }) {
   const [parts, setParts] = useState(null);
   const [locations, setLocations] = useState([]);
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState({ itemClassId: null, manufacturerId: null });
   const [kinds] = useKinds();
   const [error, setError] = useState(null);
-  const [view, setView] = useState(initialView);
+  const view = show === "structure" ? "structure" : "list";
   const filtered = !!(filter.itemClassId || filter.manufacturerId);
   const usesKinds = !!(kinds.classes?.length || kinds.makers?.length);
   const load = useCallback(() => {
@@ -699,39 +724,43 @@ export function MaintenanceParts({ view: initialView = "list" }) {
   }, [filter]);
   useEffect(() => {
     load();
-    listMaintenanceLocations().then((d) => setLocations(d.locations)).catch(() => {});
-  }, [load]);
+    if (!design) listMaintenanceLocations().then((d) => setLocations(d.locations)).catch(() => {});
+  }, [load, design]);
+  const shown = parts === null ? null : all || !branch ? parts : partsInBranch(parts, branch, { design });
+  const where = all ? "in the catalogue" : `at ${scopeName || "this row"} and inside it`;
   return (
-    <div className="app">
-      <SectionHeader section="assets"
-                  title={structurePage ? "Product structure" : "Parts and stock"}
-                  purpose={structurePage
-                    ? "What each part is made of, from the parts catalogue, as a tree."
-                    : "The parts catalogue, what parts are made of, and what's in stock where."}
-                  actions={<>
-                    <button className="secondary" onClick={() => setModal("bom")}>Import a BOM</button>
-                    <button className="secondary" onClick={() => setModal("levels")}>Indenture levels</button>
-                  </>}
-                  primary={<button onClick={() => setModal("new")}><PlusIcon /> New part</button>} />
+    <div className="td-tab-page">
+      <div className="tablebar section-tablebar">
+        <span className="count">{shown === null ? (design ? "Parts" : "Parts and stock")
+          : `${shown.length} part${shown.length === 1 ? "" : "s"} ${where}`}</span>
+        <SegmentedControl size="sm" label="Show" value={view} onChange={(v) => onShow?.(v)} style={{ flex: "none" }}
+                          options={[{ value: "list", label: "List" }, { value: "structure", label: "Structure" }]} />
+        <span className="grow" />
+        <label className="maint-row lib-date td-tab-check" style={{ marginTop: 0, gap: "0.4rem" }}>
+          <input type="checkbox" checked={all} onChange={(e) => onAll?.(e.target.checked)} /> Show all parts
+        </label>
+      </div>
+      <div className="maint-row td-tab-actions">
+        <button className="secondary sm" onClick={() => setModal("bom")}>Import a BOM</button>
+        <button className="secondary sm" onClick={() => setModal("levels")}>Indenture levels</button>
+        {usesKinds && <KindFilters classes={kinds.classes} makers={kinds.makers} value={filter} onChange={setFilter} />}
+        <span className="grow" />
+        <button className="sm" onClick={() => setModal("new")}><PlusIcon /> New part</button>
+      </div>
       {error && <div className="card error">{error}</div>}
-      {parts?.length > 0 && !filtered && <SparesCoverCard parts={parts} />}
-      {parts?.length > 0 && (
-        <div className="tablebar section-tablebar">
-          <span className="count">{`${parts.length} part${parts.length === 1 ? "" : "s"}`}</span>
-          <SegmentedControl size="sm" label="Show" value={view} onChange={setView} style={{ flex: "none" }}
-                            options={[{ value: "list", label: "List" }, { value: "structure", label: "Structure" }]} />
-          <span className="grow" />
-          {usesKinds && <KindFilters classes={kinds.classes} makers={kinds.makers} value={filter} onChange={setFilter} />}
-        </div>
-      )}
-      {parts === null ? <div className="card empty">Loading…</div> : parts.length === 0 ? (
-        <div className="card empty"><p>{filtered ? "No parts match." : "No parts yet. Add the spares you keep: anodes, filters, bearings; or import a BOM."}</p></div>
-      ) : view === "structure" ? <PartsStructure parts={parts} /> : (
+      {!design && all && parts?.length > 0 && !filtered && <SparesCoverCard parts={parts} />}
+      {shown === null ? <div className="card empty">Loading…</div> : shown.length === 0 ? (
+        <div className="card empty"><p>{filtered ? "No parts match."
+          : parts.length === 0 ? "No parts yet. Add the spares you keep: anodes, filters, bearings; or import a BOM."
+          : design ? `No part is on a parts list inside ${scopeName || "this row"} yet. Add parts to a position's parts list on its page, or show all parts.`
+          : `No parts are kept or used at ${scopeName || "this row"} or inside it. Show all parts to see the catalogue.`}</p></div>
+      ) : view === "structure" ? <PartsStructure parts={shown} /> : (
         <div className="lib maint-scroll">
           <table className="lib-table">
-            <thead><tr><th>Part number</th><th>Part</th><th>On hand</th><th>Where</th><th>Used at</th><th>Used (12 mo)</th><th>Cover</th><th /></tr></thead>
+            <thead><tr><th>Part number</th><th>Part</th>{!design && <><th>On hand</th><th>Where</th></>}<th>Used at</th>
+              {!design && <><th>Used (12 mo)</th><th>Cover</th></>}<th /></tr></thead>
             <tbody>
-              {parts.map((pt) => (
+              {shown.map((pt) => (
                 <tr key={pt.id}>
                   <td><Link to={`/asset-register/parts/${pt.id}`}>{pt.part_number}</Link>
                     {pt.superseded_by && <div className="lib-date">superseded by {pt.superseded_by.part_number}</div>}</td>
@@ -739,18 +768,26 @@ export function MaintenanceParts({ view: initialView = "list" }) {
                     <div className="lib-date">{[pt.manufacturer_entry?.name || pt.manufacturer,
                     pt.components?.length > 0 && `${pt.components.length} part${pt.components.length === 1 ? "" : "s"} inside`,
                     pt.item_class?.name, pt.unit_cost != null && `${pt.unit_cost} each`].filter(Boolean).join(" · ")}</div></td>
-                  <td>{pt.on_hand} {pt.unit}{pt.low && <span className="maint-overdue"> low</span>}
-                    {pt.critical_short && <div className="maint-overdue">critical spare short (keep {pt.critical_min})</div>}</td>
-                  <td className="lib-date">{pt.stock.map((st) => `${st.location.name}: ${st.quantity}${st.reorder_point != null ? ` (reorder at ${st.reorder_point})` : ""}`).join("; ") || "—"}</td>
+                  {!design && (
+                    <>
+                      <td>{pt.on_hand} {pt.unit}{pt.low && <span className="maint-overdue"> low</span>}
+                        {pt.critical_short && <div className="maint-overdue">critical spare short (keep {pt.critical_min})</div>}</td>
+                      <td className="lib-date">{pt.stock.map((st) => `${st.location.name}: ${st.quantity}${st.reorder_point != null ? ` (reorder at ${st.reorder_point})` : ""}`).join("; ") || "—"}</td>
+                    </>
+                  )}
                   <td className="lib-date">{(pt.used_at || []).length === 0 ? "—" : pt.used_at.map((u, i) => (
                     <span key={u.listing_id}>{i > 0 && "; "}
                       <Link to={`/asset-register/positions/${u.position.id}`}>{u.position.name}</Link>
                       {` (${roleLabel(u.role).toLowerCase()}${u.critical ? ", critical" : ""})`}</span>
                   ))}</td>
-                  <td>{pt.used_last_year}</td>
-                  <td className="lib-date">{pt.months_of_cover != null ? `${pt.months_of_cover} months` : "—"}</td>
-                  <td><button className="secondary" onClick={() => setModal({ stock: pt })}>Stock</button>
-                    {usesKinds && <> <button className="secondary" onClick={() => setModal({ kind: pt })}>What it is</button></>}</td>
+                  {!design && (
+                    <>
+                      <td>{pt.used_last_year}</td>
+                      <td className="lib-date">{pt.months_of_cover != null ? `${pt.months_of_cover} months` : "—"}</td>
+                    </>
+                  )}
+                  <td>{!design && <button className="secondary sm" onClick={() => setModal({ stock: pt })}>Stock</button>}
+                    {usesKinds && <> <button className="secondary sm" onClick={() => setModal({ kind: pt })}>What it is</button></>}</td>
                 </tr>
               ))}
             </tbody>
@@ -762,7 +799,7 @@ export function MaintenanceParts({ view: initialView = "list" }) {
                                      onDone={() => { setModal(null); load(); }} />}
       {modal?.stock && <StockModal part={modal.stock} locations={locations} onClose={() => setModal(null)}
                                    onDone={() => { setModal(null); load(); }} />}
-      {modal === "bom" && <ImportBomModal onClose={() => setModal(null)} onDone={() => { setModal(null); setView("structure"); load(); }} />}
+      {modal === "bom" && <ImportBomModal onClose={() => setModal(null)} onDone={() => { setModal(null); onShow?.("structure"); load(); }} />}
       {modal === "levels" && <LevelsModal onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
     </div>
   );

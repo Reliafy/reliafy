@@ -42,12 +42,13 @@ export const MODELS_LABEL = "Models";
 
 // The Explorer, Assets' tree pane over the register: its name on the page and
 // in breadcrumbs (change it here, in this one place) and its address. It isn't
-// in the menu: Assets is one flat entry, current on every /asset-register page,
-// and its landing page links to the Explorer, Parts and stock and Classes.
+// in the menu: Assets is one flat entry, current on every /asset-register page;
+// an asset on its landing page opens the Explorer on it. Parts and stock and
+// Classes are tabs of the tree (the Explorer's panel), not pages.
 export const EXPLORER_LABEL = "Explorer";
 export const EXPLORER_PATH = "/asset-register/explorer";
-// The parts catalogue as structures (out of the menu; the Parts and stock
-// page's Structure view). Its pages light Assets.
+// The parts catalogue as structures: an earlier address, now the Parts and
+// stock tab's Structure view (redirects.js). It lights Assets.
 export const STRUCTURE_PATH = "/systems/structure";
 
 // `needs` names what an entry or child needs: "maintenance" (Reliafy
@@ -77,8 +78,9 @@ export const ENTRIES = [
   { id: "products", label: "Products", to: "/products", needs: "maintenance" },
 
   // Assets: the places you look after (its landing page), the Explorer (one
-  // tree pane over the whole register), Parts and stock, Classes, and every
-  // position's, location's and item's own page. One entry, no children.
+  // tree pane over the whole register, with Parts and stock and Classes as
+  // tabs), and every position's, location's, item's and part's own page. One
+  // entry, no children.
   {
     id: "assets", label: "Assets", to: "/asset-register", needs: "maintenance",
     match: ["/asset-register", STRUCTURE_PATH],

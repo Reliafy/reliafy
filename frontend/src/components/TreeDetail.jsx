@@ -1,15 +1,21 @@
-import { forwardRef, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Suspense, forwardRef, lazy, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { getMaintenancePosition } from "../api.js";
 import Tabs from "./ui/Tabs.jsx";
 import FailureReportsPanel from "./FailureReportsPanel.jsx";
 import SignalsPanel from "./SignalsPanel.jsx";
 import { PinIcon } from "./OutlineBits.jsx";
 import { ancestorsOf } from "../assetTree.js";
-import { shownTab, tabsFor } from "../explorerTabs.js";
+import { branchOf, classesInBranch, isDesignRow, isProductRow, shownTab, tabsFor } from "../explorerTabs.js";
 import TreeSummary from "./TreeSummary.jsx";
+import ProductSummary, { ProductPartsList } from "./ProductSummary.jsx";
 import "./TreeSummary.css";
 import { createRecent } from "../recentCache.js";
+
+// The Parts and stock and Classes tabs' bodies (the pages they were, with their
+// charts): loaded when one of the tabs is first opened.
+const PartsPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m) => ({ default: m.PartsPanel })));
+const ClassesPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m) => ({ default: m.ClassesPanel })));
 
 // The panel beside the asset tree: what the selected row is, in a glance. A
 // position: where it sits, what's fitted, its status in words, its work
@@ -22,7 +28,11 @@ import { createRecent } from "../recentCache.js";
 // RCM for a position, and Failure reports (FailureReportsPanel: what has
 // failed at the row and below it, and what was done about it; `reports` is
 // the page's: the report open, how to open one, file one, and the tree read
-// again). On a wide screen the heading and the tabs (SlimHeader and
+// again); Parts and stock and Classes (the row's branch, or everything with
+// ?scope=all; ?class= opens a class, ?show=structure the parts as structures).
+// A product's design has no maintenance: its positions' Summary leaves out
+// what's fitted, located, due and measured, and the product's own row shows
+// the product (ProductSummary). On a wide screen the heading and the tabs (SlimHeader and
 // HeaderTabs) sit in the two slim rows over the tree on both tabs, so they stay
 // put when the tab changes; the panel itself is then `headless`. On the RCM tab
 // the tree and the RCM are one table (TreePane with its columns).
@@ -94,10 +104,54 @@ function usePosition(id, version) {
 
 function Summary({ row, display, today, onSelect, version, actions }) {
   const position = usePosition(row.type === "pos" ? row.key : null, version);
+  const props = {
+    row, display, today, onSelect, position, fullPage: fullPagePath(row), actions,
+    onContextSaved: (text) => rememberChange(row.key, version, { operating_context: text }),
+  };
+  if (isProductRow(row)) return <ProductSummary {...props} version={version} />;
+  return <TreeSummary {...props} design={isDesignRow(row)} />;
+}
+
+// ?scope=all (Show all …), ?show= and ?class=: the Parts and stock and
+// Classes tabs' own, kept in the address so a link (and the old pages'
+// addresses, redirects.js) opens them as they were.
+function useTabQuery() {
+  const [params, setParams] = useSearchParams();
+  const set = (key, value) => setParams((q) => {
+    const next = new URLSearchParams(q);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    return next;
+  }, { replace: true });
+  return {
+    all: params.get("scope") === "all", setAll: (on) => set("scope", on ? "all" : null),
+    show: params.get("show") || "list", setShow: (v) => set("show", v === "list" ? null : v),
+    open: params.get("class") || null, setOpen: (name) => set("class", name),
+  };
+}
+
+const loading = <div className="card empty">Loading…</div>;
+
+function PartsTab({ row, display }) {
+  const q = useTabQuery();
+  const branch = useMemo(() => branchOf(display, row.key), [display, row.key]);
+  const design = isDesignRow(row);
   return (
-    <TreeSummary row={row} display={display} today={today} onSelect={onSelect} position={position}
-                 fullPage={fullPagePath(row)} actions={actions}
-                 onContextSaved={(text) => rememberChange(row.key, version, { operating_context: text })} />
+    <Suspense fallback={loading}>
+      {isProductRow(row) && <ProductPartsList productId={row.key} />}
+      <PartsPanel branch={branch} scopeName={row.ref.name} design={design} all={q.all} onAll={q.setAll}
+                  show={q.show} onShow={q.setShow} />
+    </Suspense>
+  );
+}
+
+function ClassesTab({ row, display }) {
+  const q = useTabQuery();
+  const here = useMemo(() => classesInBranch(display, branchOf(display, row.key)), [display, row.key]);
+  return (
+    <Suspense fallback={loading}>
+      <ClassesPanel here={here} scopeName={row.ref.name} all={q.all} onAll={q.setAll} open={q.open} onOpen={q.setOpen} />
+    </Suspense>
   );
 }
 
@@ -195,6 +249,10 @@ const TreeDetail = forwardRef(function TreeDetail({
           ? (reports?.rollup ? reports.rollup(row) : <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} />)
           : shown === "signals"
           ? <SignalsPanel row={row} />
+          : shown === "parts"
+          ? <PartsTab row={row} display={display} />
+          : shown === "classes"
+          ? <ClassesTab row={row} display={display} />
           : <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} actions={actions} />}
       </div>
     </div>

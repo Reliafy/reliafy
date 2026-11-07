@@ -65,8 +65,6 @@ const MaintenanceProducts = lazy(() => import("./views/MaintenanceProducts.jsx")
 const ProductDetail = lazy(() => import("./views/MaintenanceProducts.jsx").then((m) => ({ default: m.ProductDetail })));
 const MaintenanceItemsList = lazy(() => import("./views/MaintenanceItemsList.jsx"));
 const MaintenanceLocation = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceLocation })));
-const MaintenanceClasses = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceClasses })));
-const MaintenancePartsPage = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceParts })));
 const MaintenancePart = lazy(() => import("./views/MaintenancePart.jsx"));
 const TeamSettingsPage = lazy(() => import("./views/TeamSettingsPage.jsx"));
 const SettingsPage = lazy(() => import("./views/SettingsPage.jsx"));
@@ -221,7 +219,6 @@ function Shell() {
             <Route path="/systems/fault-trees" element={<FaultTreeHome />} />
             <Route path="/systems/fault-trees/new" element={<FaultTreeEditor />} />
             <Route path="/systems/fault-trees/:id" element={<FaultTreeEditor />} />
-            {maintenanceEnabled && <Route path="/systems/structure" element={<MaintenancePartsPage view="structure" />} />}
 
             {/* Operate: the assets as maintained (Reliafy Maintenance), and
                 their maintenance. ("/assets" is where the server keeps the
@@ -236,9 +233,6 @@ function Shell() {
             {maintenanceEnabled && <Route path="/asset-register/positions/:id/fmea" element={<FmeaPrint />} />}
             {maintenanceEnabled && <Route path="/asset-register/items/:id" element={<MaintenanceItem />} />}
             {maintenanceEnabled && <Route path="/asset-register/locations/:id" element={<MaintenanceLocation />} />}
-            {maintenanceEnabled && <Route path="/asset-register/classes" element={<MaintenanceClasses />} />}
-            {maintenanceEnabled && <Route path="/asset-register/classes/:name" element={<MaintenanceClasses />} />}
-            {maintenanceEnabled && <Route path="/asset-register/parts" element={<MaintenancePartsPage />} />}
             {maintenanceEnabled && <Route path="/asset-register/parts/:id" element={<MaintenancePart />} />}
             {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome />} />}
             {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}

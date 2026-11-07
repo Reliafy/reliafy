@@ -77,3 +77,25 @@ a.td-more { align-self: flex-start; font-size: var(--fs-13); }
   .td-foot button { min-height: 40px; }
   .td-sort .ctl.td-sort-sel { min-height: 40px; font-size: var(--fs-16); }
 }
+
+/* The Parts and stock and Classes tabs (TreeDetail): the pages they were, at
+   the panel's text size, their tables scrolling inside the panel. */
+.td-tab-page {
+  font-size: 0.875rem;
+}
+.td-tab-page .maint-section {
+  font-size: 1rem;
+  margin: 16px 0 8px;
+}
+.td-tab-page .td-tab-check {
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+.td-tab-page .td-tab-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.td-tab-page .card {
+  font-size: 0.875rem;
+}

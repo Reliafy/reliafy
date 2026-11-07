@@ -29,10 +29,7 @@ const REACHED_FROM = {
   "/systems/b": "RBDs › New diagram, Home's starts",
   "/predictions/new": "Reliability prediction › New prediction, a product's Analysis tab",
   "/systems/runs/compare": "Simulation runs › Compare",
-  "/systems/structure": "Parts and stock's Structure view",
-  "/asset-register/explorer": "Assets' landing page, and every position's, location's and item's breadcrumbs",
-  "/asset-register/parts": "Assets' landing page, the Explorer's ⋯ menu, Home's spares, Maintenance",
-  "/asset-register/classes": "Assets' landing page, the Explorer's ⋯ menu, Forecasts' classes",
+  "/asset-register/explorer": "an asset on Assets' landing page, and every position's, location's and item's breadcrumbs",
   "/strategy/test-planning/sequential": "Test planning's tabs",
   "/strategy/test-planning/life": "Test planning's tabs",
   "/strategy/test-planning/accelerated": "Test planning's tabs",
@@ -393,22 +390,32 @@ const OLD_TO_NEW = [
   ["/maintenance/items/x", "/asset-register/items/x"],
   ["/maintenance/locations", "/asset-register/explorer?arrange=locations"],
   ["/maintenance/locations/x", "/asset-register/locations/x"],
-  ["/maintenance/classes", "/asset-register/classes"],
-  ["/maintenance/classes/x", "/asset-register/classes/x"],
-  ["/maintenance/parts", "/asset-register/parts"],
+  ["/maintenance/classes", "/asset-register/explorer?tab=classes&scope=all"],
+  ["/maintenance/classes/x", "/asset-register/explorer?tab=classes&scope=all&class=x"],
+  ["/maintenance/parts", "/asset-register/explorer?tab=parts&scope=all"],
   ["/maintenance/parts/x", "/asset-register/parts/x"],
   ["/systems", "/systems/rbds"],
   ["/asset-register/positions", "/asset-register/explorer?arrange=positions"],
   ["/asset-register/items", "/asset-register/explorer?arrange=items"],
   ["/asset-register/locations", "/asset-register/explorer?arrange=locations"],
   ["/systems/fmeca", "/asset-register/explorer?tab=fmea"],
+  // Parts and stock and Classes are tabs of the asset tree, on everything.
+  ["/asset-register/parts", "/asset-register/explorer?tab=parts&scope=all"],
+  ["/asset-register/classes", "/asset-register/explorer?tab=classes&scope=all"],
+  ["/asset-register/classes/x", "/asset-register/explorer?tab=classes&scope=all&class=x"],
+  ["/systems/structure", "/asset-register/explorer?tab=parts&scope=all&show=structure"],
 ];
 
 test("every earlier address redirects to its page's new place, with its id", () => {
   for (const [from, to] of OLD_TO_NEW) assert.equal(movedTo(from), to, from);
   assert.equal(MOVED.length, OLD_TO_NEW.length, "redirects.js and this table differ");
   // Ids are carried as they come (already encoded in the address).
-  assert.equal(movedTo("/maintenance/classes/Pool%20pump"), "/asset-register/classes/Pool%20pump");
+  assert.equal(movedTo("/maintenance/classes/Pool%20pump"), "/asset-register/explorer?tab=classes&scope=all&class=Pool%20pump");
+  assert.equal(movedTo("/asset-register/classes/Pool%20pump"), "/asset-register/explorer?tab=classes&scope=all&class=Pool%20pump");
+  // A class's address with a query of its own keeps it after the tab's.
+  assert.equal(movedHref(movedTo("/asset-register/classes/Pump"), "?sel=p1"), "/asset-register/explorer?tab=classes&scope=all&class=Pump&sel=p1");
+  // Each part's own page stays.
+  assert.equal(movedTo("/asset-register/parts/pt1"), null);
   assert.equal(movedTo("/modelling/m/"), null);
   // Addresses that didn't move (a position's, item's or location's own page among them).
   for (const path of ["/home", "/strategy", "/strategy/replacement", "/maintenance", "/maintenance/work-orders/w",

@@ -96,6 +96,7 @@ export const DETAIL_IDS = {
   // A product: smoke/seed.js adds the sample UAV product.
   "/products/:id": ["/api/maintenance/products", list("products")],
   "/asset-register/locations/:id": ["/api/maintenance/locations", list("locations")],
+  // A class's old address (it opens the Explorer's Classes tab on that class).
   "/asset-register/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
   "/asset-register/parts/:id": ["/api/maintenance/parts", list("parts")],
 };
@@ -123,8 +124,6 @@ const CHART_PAGES = {
   "/models/joint/:id": true,
   "/forecasts/:id": true,
   "/risk/:fleetId": true,
-  // A class with a fitted model shows its failure forecast (#407).
-  "/asset-register/classes/:name": (cls) => Boolean(cls.model),
   // A failure-finding analysis is one interval: no chart.
   "/strategy/analyses/:id": (analysis) => analysis.kind !== "failure_finding",
   // A prediction's Pareto, once a line has a part type.
