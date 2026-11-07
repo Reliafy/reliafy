@@ -1,11 +1,11 @@
 // Several tasks for one failure mode, and one task for several, on the
 // Explorer's RCM tab (Assets › Explorer › RCM): a failure mode's decision card
-// (step 3, "Proactive task or default action") lists its tasks, one line per member task, and its one
-// ⋯ holds Add another task… (a small dialog: its kind, then a new task or Use an
-// existing task…) and each task's Edit… and Remove…; the row menu's Add a task… opens that dialog (Decide… when there's
-// no decision yet); the Task cell says "+1 task" without the row changing
-// height; the decision dialog shows a shared task's interval read-only; at
-// 400 px it all fits. Each test makes its own small plant through the API.
+// (step 3, "Proactive task or default action", edited in place) lists its tasks as cards, one per member
+// task, each with plain Edit and Remove links; a dashed "+ Add another task" row asks its kind, then a
+// new task or Use an existing task…, in place; the row menu's Add a task… opens that row (the decision
+// dialog when there's no decision yet); a tap on "Which task is worth doing?" adopts a task linked before
+// the decision; the Task cell says "+1 task" without the row changing height; the decision dialog
+// (the row menu's Change the decision…) shows a shared task's interval read-only; at 400 px it all fits. Each test makes its own small plant through the API.
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots of the details with
 // several tasks and of the table rows, at 1280 and 400 px (for the pull request).
@@ -40,15 +40,14 @@ const panel = (page) => page.getByRole("complementary", { name: "Details" });
 const tasksOf = (page) => panel(page).getByRole("region", { name: "Proactive task or default action" });
 const chipsOf = (page) => panel(page).locator(".rw-chips-row");
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
-// The decision card's ⋯ (Actions for the decision, or for the linked tasks before one), then one of its items.
-const cardMenu = async (page, tasks, item) => {
-  const more = tasks.getByRole("button", { name: /^Actions for the (decision|linked tasks)$/ });
-  const name = await more.getAttribute("aria-label");
-  await more.click();
-  await page.getByRole("menu", { name }).getByRole("menuitem", { name: item, exact: true }).click();
-};
-// A task's own item in it: "Edit “‹task›”…", "Remove “‹task›”…", "Remove “‹task›” from this failure mode…".
-const taskMenu = (page, tasks, name, verb, tail = "") => cardMenu(page, tasks, `${verb} “${name}”${tail}…`);
+// Step 3's dashed add row, and the form it opens in place.
+const addRow = (tasks) => tasks.getByRole("button", { name: "+ Add another task" });
+const addForm = (tasks) => tasks.getByRole("group", { name: "Add another task" });
+// A task card's own link: "Edit “‹task›”", "Remove “‹task›”", "Remove “‹task›” from this failure mode".
+const taskLink = (tasks, name, verb, tail = "") => tasks.getByRole("button", { name: `${verb} “${name}”${tail}`, exact: true });
+// The task cards (not the evidence lines under them).
+const cards = (tasks) => tasks.locator(".rim-cards > li");
+const names = (tasks) => tasks.locator(".rim-cards .rim-tname");
 const settled = async (page) => {
   await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => {});
   await page.waitForTimeout(250);
@@ -71,14 +70,18 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await expect(dlg).toBeVisible();
   let tasks = tasksOf(page);
   await expect(chipsOf(page)).toContainText("On condition");
-  await expect(tasks.getByRole("listitem")).toHaveCount(1);
-  await expect(tasks.getByRole("listitem").first()).toHaveText(`On condition · Weekly pH check ${tag} · every 1 week`);
+  await expect(cards(tasks)).toHaveCount(1);
+  await expect(names(tasks)).toHaveText([`On condition · Weekly pH check ${tag} · every 1 week`]);
   await expect(tasks.getByRole("region", { name: "Tasks" })).toHaveCount(0);
+  // No ⋯ and no Change…: the choice is the chip row, the task's own links are on its card.
+  await expect(tasks.getByRole("button", { name: /^Actions for/ })).toHaveCount(0);
+  await expect(tasks.getByRole("radiogroup", { name: "Which task is worth doing?" }).getByRole("radio", { name: /On condition/ }))
+    .toHaveAttribute("aria-checked", "true");
 
-  // Add another task: one small dialog, its kind first (on condition is taken), then its name
+  // Add another task: in place, its kind first (on condition is taken), then its name
   // and how often (no "what does it catch" hint: a safety consequence may combine tasks). No interval yet: it says so.
-  await cardMenu(page, tasks, "Add another task…");
-  let add = dialog(page, "Add another task");
+  await addRow(tasks).click();
+  let add = addForm(tasks);
   await expect(add).toBeVisible();
   const kinds = add.getByRole("radiogroup", { name: "Kind of task" });
   await expect(kinds.getByRole("radio")).toHaveText([/Fixed interval/, /Failure finding/, /Redesign/]);
@@ -96,20 +99,21 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await add.getByRole("spinbutton", { name: "Interval" }).press("Enter");
   await expect(add).toHaveCount(0);
   expect(writes).toBe(1);
-  await expect(tasks.getByRole("listitem")).toHaveCount(2);
+  await expect(dialog(page, "Add another task")).toHaveCount(0); // never a dialog
+  await expect(cards(tasks)).toHaveCount(2);
   await expect(chipsOf(page)).toContainText("On condition + Fixed interval");
-  const item = (name) => tasks.getByRole("listitem").filter({ hasText: name });
+  const item = (name) => cards(tasks).filter({ hasText: name });
   await expect(item(`Replace the acid pump ${tag}`)).toContainText(`Fixed interval · Replace the acid pump ${tag}`);
   await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 24 months");
-  // Its instructions: the row's ⋯ Edit…, as for any other task.
-  await taskMenu(page, tasks, `Replace the acid pump ${tag}`, "Edit");
+  // Its instructions: its card's Edit, as for any other task.
+  await taskLink(tasks, `Replace the acid pump ${tag}`, "Edit").click();
   await tasks.getByRole("textbox", { name: "Instructions" }).fill("Swap the pump head.");
   await tasks.getByRole("button", { name: "Save task" }).click();
   await expect(item(`Replace the acid pump ${tag}`)).toContainText("Swap the pump head.");
 
   // Use an existing task on the position: the one kind left (failure finding), then the picker.
-  await cardMenu(page, tasks, "Add another task…");
-  add = dialog(page, "Add another task");
+  await addRow(tasks).click();
+  add = addForm(tasks);
   await expect(add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio")).toHaveText([/Failure finding/]);
   await add.getByRole("button", { name: "Use an existing task…" }).click();
   const pick = add.getByRole("combobox", { name: "Existing task" });
@@ -118,27 +122,25 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await pick.selectOption({ label: await pick.locator("option").nth(1).textContent() });
   await add.getByRole("button", { name: "Link task" }).click();
   await expect(add).toHaveCount(0);
-  await expect(tasks.getByRole("listitem")).toHaveCount(3);
+  await expect(cards(tasks)).toHaveCount(3);
   await expect(item(`Backwash the filter ${tag}`)).toContainText("Failure finding · ");
-  // No kind left to add: no Add another task… in the ⋯.
-  await tasks.getByRole("button", { name: "Actions for the decision" }).click();
-  await expect(page.getByRole("menu", { name: "Actions for the decision" }).getByRole("menuitem", { name: /^Add another task/ })).toHaveCount(0);
-  await page.keyboard.press("Escape");
+  // No kind left to add: no add row.
+  await expect(addRow(tasks)).toHaveCount(0);
 
   // Edit the second task: a plain change, kept.
-  await taskMenu(page, tasks, `Replace the acid pump ${tag}`, "Edit");
+  await taskLink(tasks, `Replace the acid pump ${tag}`, "Edit").click();
   await tasks.getByRole("spinbutton", { name: "Interval" }).fill("36");
   await tasks.getByRole("button", { name: "Save task" }).click();
   await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 36 months");
 
   // Remove the linked task: it serves only this mode, so it is retired (after asking); its member stays, with no task now.
-  await taskMenu(page, tasks, `Backwash the filter ${tag}`, "Remove");
+  await taskLink(tasks, `Backwash the filter ${tag}`, "Remove").click();
   const ask = page.getByRole("alertdialog", { name: "Remove this task?" });
   await expect(ask).toContainText("serves only this failure mode, so it is retired");
   await ask.getByRole("button", { name: "Retire the task" }).click();
   await expect(item(`Backwash the filter ${tag}`)).toHaveCount(0);
-  await expect(tasks.getByRole("listitem").filter({ hasText: "Failure finding · no task now" })).toHaveCount(1);
-  await expect(tasks.getByRole("listitem")).toHaveCount(3);
+  await expect(cards(tasks).filter({ hasText: "Failure finding · no task now" })).toHaveCount(1);
+  await expect(cards(tasks)).toHaveCount(3);
   await panel(page).getByRole("button", { name: "Back to table" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
@@ -156,7 +158,7 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await expectHealthy(page, problems, { label: "rcm tasks dialog" });
 });
 
-test("one task for several modes: shared, read-only in the decision dialog, unlinked (not retired) on Remove", async ({ page, request, problems }) => {
+test("one task for several modes: adopted by a tap, read-only in the decision dialog, unlinked (not retired) on Remove", async ({ page, request, problems }) => {
   const tag = `s${Date.now()}`;
   const p = await plant(request, tag);
   // The pool's weekly check also covers the chlorinator cell's salinity (a position inside the pool).
@@ -173,47 +175,57 @@ test("one task for several modes: shared, read-only in the decision dialog, unli
   await expect(decide).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(decide).toHaveCount(0);
-  // Its details: no decision yet (one Decide…), the task linked before it as a line under its own heading, no add row.
+  // Its details: no decision yet (nothing chosen, the chips waiting for step 2, and why; no Decide…), the
+  // task linked before it as a card under its own heading, no add row.
   await saltRow.locator(".tp-nm").dblclick();
   const dlg = panel(page);
   await expect(dlg).toBeVisible();
   const tasks = tasksOf(page);
-  await expect(tasks).toContainText("No decision yet");
-  await expect(tasks.getByRole("button", { name: "Decide…" })).toHaveCount(1);
+  const which = tasks.getByRole("radiogroup", { name: "Which task is worth doing?" });
+  await expect(which.getByRole("radio", { checked: true })).toHaveCount(0);
+  await expect(which.getByRole("radio", { name: /On condition/ })).toBeDisabled();
+  await expect(tasks).toContainText("Answer step 2 first: what's worth doing depends on the consequence.");
+  await expect(tasks.getByRole("button", { name: "Decide…" })).toHaveCount(0);
   await expect(tasks.getByRole("heading", { name: "Tasks linked before the decision" })).toBeVisible();
-  await expect(tasks.getByRole("listitem")).toHaveCount(1);
-  await expect(tasks.getByRole("listitem").first()).toContainText(/shared with 1 other failure mode/i);
-  await expect(tasks.getByRole("button", { name: /^Add (another|a) task/ })).toHaveCount(0);
-  // Decide… with that task: the decision dialog shows its interval read-only and says why.
-  await dlg.getByRole("button", { name: "Decide…" }).click();
-  await decide.getByRole("button", { name: "Hidden" }).click();
-  await decide.getByRole("button", { name: /^Failure finding/ }).click();
-  await decide.getByRole("button", { name: "Apply" }).click();
-  await expect(decide).toHaveCount(0);
+  await expect(cards(tasks)).toHaveCount(1);
+  await expect(cards(tasks).first()).toContainText(/shared with 1 other failure mode/i);
+  await expect(tasks.getByRole("button", { name: /^\+ Add another task/ })).toHaveCount(0);
+  // Step 2 answered (hidden, operational): failure finding is offered; one tap decides, adopting that task.
+  await dlg.getByRole("radiogroup", { name: "Hidden failure?" }).getByRole("radio", { name: "Hidden" }).click();
+  await dlg.getByRole("radiogroup", { name: "Consequence category" }).getByRole("radio", { name: "Operational", exact: true }).click();
+  await expect(which.getByRole("radio", { name: /Failure finding/ })).toBeEnabled();
+  await which.getByRole("radio", { name: /Failure finding/ }).click();
+  await expect(which.getByRole("radio", { name: /Failure finding/ })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(chipsOf(page)).toContainText("Failure finding");
-  await expect(tasks.getByRole("listitem")).toHaveCount(1);
-  await expect(tasks.getByRole("listitem").first()).toContainText(`Weekly pH check ${tag} · every 1 week`);
+  await expect(cards(tasks)).toHaveCount(1);
+  await expect(cards(tasks).first()).toContainText(`Weekly pH check ${tag} · every 1 week`);
   await expect(tasks.getByRole("heading", { name: "Tasks linked before the decision" })).toHaveCount(0);
-  await cardMenu(page, tasks, "Change…");
+  // The row menu's Change the decision… (the panel never opens the dialog): the shared interval read-only, and why.
+  await saltRow.locator(".tp-nm").click();
+  await page.keyboard.press("Shift+F10");
+  await page.getByRole("menu").getByRole("menuitem", { name: "Change the decision…" }).click();
   await expect(decide.getByRole("spinbutton", { name: /^Interval/ })).toHaveAttribute("readonly", "");
   await expect(decide.getByText(/also serves 1 other failure mode, so its name and interval are changed on the task/)).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(decide).toHaveCount(0);
   // Remove: unlinked, not retired; the pool's mode keeps it.
-  await taskMenu(page, tasks, `Weekly pH check ${tag}`, "Remove", " from this failure mode");
+  await taskLink(tasks, `Weekly pH check ${tag}`, "Remove", " from this failure mode").click();
   const ask = page.getByRole("alertdialog", { name: "Remove this task?" });
   await expect(ask).toContainText("also serves 1 other failure mode, so it stays with them");
   await ask.getByRole("button", { name: "Remove from this failure mode" }).click();
-  // The decision alone now, its task and interval asked for in the card.
-  await expect(tasks.getByRole("listitem")).toHaveText(["Failure finding"]);
+  // The decision alone now: the task form in its place, its name and interval asked for.
+  await expect(cards(tasks)).toHaveCount(0);
   await expect(tasks).toContainText("The decision schedules work, but no task does it yet");
+  await expect(tasks.getByRole("textbox", { name: "Task" })).toBeVisible();
+  await expect(tasks.getByRole("spinbutton", { name: "Interval" })).toBeVisible();
   const rcm = await (await request.get(`${M}/rcm`)).json();
   const acid = rcm.positions.find((x) => x.id === p.pool.id).functions[0].failures[0].modes.find((x) => x.id === p.acid.id);
   expect(acid.decision.tasks.map((t) => t.id)).toEqual([p.own]);
   await expectHealthy(page, problems, { label: "rcm shared task" });
 });
 
-test("at 400 px the decision's tasks and the Add another task dialog fit", async ({ page, request, problems }) => {
+test("at 400 px the decision's tasks and the Add another task form fit", async ({ page, request, problems }) => {
   const tag = `p${Date.now()}`;
   const p = await plant(request, tag);
   await postOk(request, `${M}/failure-modes/${p.acid.id}/tasks`, { name: `Replace the acid pump ${tag}`, interval: 24, unit: "months" });
@@ -226,8 +238,8 @@ test("at 400 px the decision's tasks and the Add another task dialog fit", async
   const dlg = panel(page);
   await expect(dlg).toBeVisible();
   const tasks = tasksOf(page);
-  await expect(tasks.getByRole("listitem")).toHaveCount(2);
-  const add = dialog(page, "Add another task");
+  await expect(cards(tasks)).toHaveCount(2);
+  const add = addForm(tasks);
   await expect(add.getByRole("textbox", { name: "Task" })).toBeVisible();
   await expect(add.getByRole("spinbutton", { name: "Interval" })).toBeVisible();
   expect(await overflow(page)).toBe(0);
@@ -235,10 +247,13 @@ test("at 400 px the decision's tasks and the Add another task dialog fit", async
   expect(box.x + box.width).toBeLessThanOrEqual(400.5);
   const iv = await add.getByRole("combobox", { name: "Interval unit" }).boundingBox();
   expect(iv.x + iv.width).toBeLessThanOrEqual(400.5);
-  await page.keyboard.press("Escape");
+  // The chip rows wrap inside the sheet.
+  const chipBox = await tasks.getByRole("radiogroup", { name: "Which task is worth doing?" }).boundingBox();
+  expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(400.5);
+  await page.keyboard.press("Escape"); // the form closes, the sheet stays
   await expect(add).toHaveCount(0);
-  await expect(tasks.getByRole("listitem")).toHaveCount(2);
-  await page.keyboard.press("Escape");
+  await expect(dlg).toBeVisible();
+  await expect(cards(tasks)).toHaveCount(2);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(await overflow(page)).toBe(0);
   await expectHealthy(page, problems, { label: "rcm tasks phone" });

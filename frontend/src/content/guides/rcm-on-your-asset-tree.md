@@ -182,12 +182,18 @@ fields, then the quieter things at the foot:
 - a failure mode: three numbered steps. **1. Failure effects** is what
   happens when it occurs. **2. Failure consequences** is whether it's hidden
   and its consequence category (one tap on a choice each). **3. Proactive task
-  or default action** is one card with
-  the decision and its tasks, such as *On condition · Weekly water level check
-  · every 1 week*. Its **⋯** holds **Change…**, **Link evidence…**, **Add
-  another task…** and each task's **Edit…** and **Remove…**. **Why**, folded
-  in the card, shows the evidence and the decision notes. With no decision
-  yet, the card says so and offers **Decide…**.
+  or default action** is edited the same way. **Which task is worth doing?**
+  offers only the tasks the decision diagram allows for your step 2 answers,
+  then **No task is worth doing**; one tap saves the decision, and a second tap
+  on the chosen one clears it. With **No task is worth doing**, a second row
+  offers what's done instead (**Run to failure**, **Accept**, **Redesign**, as
+  allowed), and run to failure asks why. Until step 2 is answered the choices
+  wait, greyed out. Below them are the tasks as cards, such as *On condition ·
+  Weekly water level check · every 1 week*, each with **Edit** and **Remove**
+  at its right. A task kind with no task yet shows a small form: the task's name
+  and how often, or **Use an existing task…**. **Evidence and rationale**, open
+  at the foot, shows the evidence (**Link evidence…** opens the evidence picker)
+  and the decision notes, saved as you leave the box.
 
 Every row, whatever its level, opens its details with **Notes and rationale**,
 a section of its own directly below its title and status line and above
@@ -223,9 +229,10 @@ workspace sees.
 
 ## Make a decision for each failure mode
 
-Click **To decide** in a failure mode's **Decision** column, choose **Decide…**
-in its row menu, or press **Decide…** in its Details. The dialog walks the RCM
-decision diagram one step at a time.
+Answer steps 2 and 3 in a failure mode's Details, one tap at a time (see
+above). Or click **To decide** in its **Decision** column, or choose **Decide…**
+(**Change the decision…** once it has one) in its row menu, for a dialog that
+walks the RCM decision diagram one step at a time, with every hint written out.
 
 ![The decision dialog: the two questions, the tasks in order, the task and its interval, and the linked evidence](/guides/img/rcm-02-decision.png)
 
@@ -253,8 +260,8 @@ Reliafy follows the decision diagram of SAE JA1011 and RCM II (Moubray).
   compulsory. Hidden and operational or non-operational: failure finding if it
   pays, else no scheduled maintenance.
 
-The dialog greys out what the diagram doesn't allow and says why, and names
-the default action at the end. A decision saved before these rules (or
+The Details and the dialog offer only what the diagram allows, and the dialog
+names the default action. A decision saved before these rules (or
 imported) that they'd refuse is kept, with a note asking you to look again.
 
 **1. Would the crew notice the failure on its own?** Choose **Evident** or
@@ -341,23 +348,23 @@ five chemistry failure modes. Both are in the failure mode's Details, in its
 decision card (**3. Proactive task or default action**): one line per task, each with its kind,
 name and how often, and how many other failure modes share it.
 
-- **Add another task…**, in the card's **⋯**, adds a task to the
-  decision, making it a combination of tasks. A small dialog asks its kind
+- **+ Add another task**, the dashed row under the task cards, adds a task to
+  the decision, making it a combination of tasks. It asks its kind in place
   first (*On condition*, *Fixed interval* or *Failure finding*, or a
   *Redesign* beside one task), then its name and how often, then Enter. Its
-  instructions are the card's **⋯** › **Edit “its name”…**, as for any other task. It offers
-  only what the decision diagram allows: a second scheduled task on a safety
-  or environmental consequence, failure finding on a hidden failure.
-  (**Add a task…** in the row's menu opens the same dialog, or the
-  decision dialog when there's no decision yet.)
-- **Use an existing task…** in the same dialog picks a task that is already
+  instructions are its card's **Edit**, as for any other task. The row shows
+  only when the decision diagram allows another task: a second scheduled task
+  on a safety or environmental consequence, failure finding on a hidden
+  failure, or a redesign beside one task. (**Add a task…** in the row's menu
+  opens the same row, or the decision dialog when there's no decision yet.)
+- **Use an existing task…** in the same form picks a task that is already
   on the position, or on a position above it, so one task serves several
   failure modes. A task on a position can serve the failure modes on it and on
   the positions inside it, never the other way round.
 - Tasks linked before a failure mode had a decision show under **Tasks linked
   before the decision** until you decide.
 - Each task shows how many other failure modes share it. A shared task keeps
-  one interval for all of them: change it on the task (**Edit…** in the card's **⋯**),
+  one interval for all of them: change it on the task (its card's **Edit**),
   not in the decision dialog, which shows it read-only.
 - A task by use (hours, cycles, km) shows its **Measurement** when you edit it:
   what it counts, the latest reading and the reading when it was last done.
@@ -365,14 +372,16 @@ name and how often, and how many other failure modes share it.
   above or below it, or on the item fitted there, and asks for the last-done
   reading on the new one (or works it out from the date, marked as an
   estimate).
-- **Remove…** in the task's **⋯** takes it off the failure mode: a task that serves only this
-  mode is retired; one that serves others too is unlinked and stays.
+- **Remove** on the task's card takes it off the failure mode: a task that serves only this
+  mode is retired; one that serves others too is unlinked and stays. Choosing a
+  decision that schedules nothing (or clearing it) asks first, naming the
+  tasks that would come off.
 
 ### Tasks raised by an event
 
 Some work isn't done on a calendar: after 120 mm of rain in 24 hours, test and
 re-dose the pool; after a lightning strike, inspect the chlorinator. In the
-task's **⋯** › **Edit…**, set **Trigger** to **When an event happens**, then
+task's **Edit**, set **Trigger** to **When an event happens**, then
 choose what happens: **A reading passes a limit** (pick a measuring point and
 the limit, at or above 120 mm on the rain gauge) or **Someone logs an event**
 (type its name, *Lightning strike*). The decision stays as it is; the
@@ -392,7 +401,7 @@ alone and unlinks the shared ones. In a worksheet, a second row for the same
 failure mode with another task adds that task, and a task named on several
 rows is one task linked to each; **Export CSV** writes one row per task.
 
-If the evidence you need doesn't exist yet, the dialog says what to make, for
+If the evidence you need doesn't exist yet, the evidence picker says what to make, for
 example *No saved failure-finding analyses (run the Strategy tool and save it)*.
 Make it, then come back. A saved analysis comes from the Strategy tools: run
 [optimal replacement](/guides/optimal-replacement-interval) or a
@@ -418,8 +427,8 @@ Each decision's **Evidence check** shows one of these:
 
 A decision with nothing linked yet shows **Not linked**, quietly: plenty of
 decisions are made from judgement, and linking evidence is optional. Its
-Details offer **Link evidence…** (in the decision card's **⋯**, or under its
-**Why**) when you're ready. Redesign and accept-risk
+Details offer **Link evidence…** (under **Evidence and rationale** in step 3)
+when you're ready. Redesign and accept-risk
 decisions need no evidence, so they show no status unless you link a report
 or a function's notes.
 

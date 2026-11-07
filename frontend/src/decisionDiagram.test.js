@@ -70,3 +70,12 @@ test("the worksheet writes both answers and counts hidden ones", () => {
   assert.deepEqual(itemWrites(mode, { hidden: "hidden", consequence: "safety" }),
     [{ api: "decide", body: { hidden: true, consequence: "safety" } }]);
 });
+
+test("question 3 offers what the diagram allows, in order, and keeps a refused choice that's saved", async () => {
+  const { allowedChoices, TASK_ORDER, DEFAULT_OUTCOMES } = await import("./decisionCheck.js");
+  assert.deepEqual(allowedChoices(TASK_ORDER, false, "operational"), ["on_condition", "fixed_interval"]);
+  assert.deepEqual(allowedChoices(TASK_ORDER, true, "operational"), TASK_ORDER);
+  assert.deepEqual(allowedChoices(DEFAULT_OUTCOMES, false, "safety"), ["redesign"]);
+  assert.deepEqual(allowedChoices(DEFAULT_OUTCOMES, false, "safety", "rtf"), ["rtf", "redesign"]);
+  assert.deepEqual(allowedChoices(TASK_ORDER, null, null), TASK_ORDER); // not answered yet
+});

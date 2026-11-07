@@ -127,6 +127,13 @@ export function doctrineRefusal(hidden, consequence, outcomes) {
   return null;
 }
 
+// The choices a row of question 3 offers (TaskChoice.jsx): those the diagram
+// allows for these answers, in order, and the chosen one even if it's refused
+// (a decision saved before the rules, or imported), so it can be seen and changed.
+export function allowedChoices(ids, hidden, consequence, chosen = null) {
+  return ids.filter((o) => o === chosen || !doctrineRefusal(hidden, consequence, [o]));
+}
+
 // The test a task must pass for these answers, in a few words.
 export function worthTest(hidden, consequence) {
   if (SERIOUS.includes(consequence)) return `it makes the risk${hidden ? " of the multiple failure" : ""} tolerable (cost isn't the test)`;

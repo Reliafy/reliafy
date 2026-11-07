@@ -1,4 +1,4 @@
-// What a task by use counts, on the Explorer's RCM tab: the task's Edit…
+// What a task by use counts, on the Explorer's RCM tab: the task's Edit
 // form (in the failure mode's details) shows its Measurement (what it counts,
 // the latest reading, the last-done reading) and can change it; moving RCM
 // whose task counts a measurement that isn't on the new position (Truck 12's
@@ -55,16 +55,15 @@ async function openFleet(page, p, width = 1280) {
   await settled(page);
 }
 
-test("a task's Edit… shows what it counts and can change it", async ({ page, request, problems }) => {
+test("a task's Edit shows what it counts and can change it", async ({ page, request, problems }) => {
   const tag = `m${Date.now()}`;
   const p = await fleet(request, tag);
   await openFleet(page, p);
   await trow(page, `^Failure mode: Engine wears ${tag}`).locator(".tp-nm").dblclick();
   const dlg = page.getByRole("complementary", { name: "Details" });
   const tasks = dlg.getByRole("region", { name: "Proactive task or default action" });
-  // No decision yet: the card's ⋯ holds the linked task's Edit….
-  await tasks.getByRole("button", { name: "Actions for the linked tasks" }).click();
-  await page.getByRole("menu", { name: "Actions for the linked tasks" }).getByRole("menuitem", { name: `Edit “Service ${tag}”…` }).click();
+  // No decision yet: the linked task's card has its own Edit link.
+  await tasks.getByRole("button", { name: `Edit “Service ${tag}”`, exact: true }).click();
   const field = tasks.getByRole("group", { name: "Measurement" });
   await expect(field).toContainText(`Engine hours on Truck 12 ${tag}`);
   await expect(field).toContainText("Reads 1,900 hours");

@@ -494,10 +494,18 @@ test("at 400 px the dialogs a sheet opens come up on top of it", async ({ page, 
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
   };
-  // A mode with no decision: Decide… (the dialog Link evidence… opens too), then its Delete confirm.
+  // A mode with no decision: decided in the sheet by taps (step 2, then step 3's rows: no task, run to
+  // failure, its reason), then Link evidence… (the evidence picker alone), then its Delete confirm.
   await pickRow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`);
   await expect(sheet).toBeVisible();
-  await check("Decide…", "decide");
+  await sheet.getByRole("radiogroup", { name: "Consequence category" }).getByRole("radio", { name: "Operational", exact: true }).click();
+  const which = sheet.getByRole("radiogroup", { name: "Which task is worth doing?" });
+  await which.getByRole("radio", { name: "No task is worth doing" }).click();
+  await sheet.getByRole("radiogroup", { name: "What's done instead" }).getByRole("radio", { name: "Run to failure" }).click();
+  await sheet.getByRole("radiogroup", { name: "Why run to failure?" }).getByRole("radio", { name: "Failures are random" }).click();
+  await expect(sheet.locator(".rw-chips-row")).toContainText("Run to failure");
+  expect((await overflow(page)).side).toBe(0);
+  await check("Link evidence…", "link-evidence");
   await check(/^Delete this failure mode/, "delete");
   // A functional failure: Link to a cause… (the link picker, a sheet itself on a phone).
   await closeSheet();
@@ -561,9 +569,8 @@ test("full screen: F, a dialog on top, Esc, the row and tab kept", async ({ page
     const r = document.querySelector(".tx.is-full").getBoundingClientRect();
     return [r.top, r.left, Math.round(r.width), Math.round(r.height)];
   })).toEqual([0, 0, ...(await page.evaluate(() => [innerWidth, innerHeight]))]);
-  // A dialog opens on top, inside full screen.
-  await pickRow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`);
-  await page.getByRole("button", { name: "Decide…" }).click();
+  // A dialog opens on top, inside full screen (the row menu's Decide…).
+  await fromMenu(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`, "Failure mode: Bearing seizes", "Decide…");
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   expect(await page.evaluate(() => document.querySelector(".tx.is-full").contains(document.querySelector("[role=dialog]")))).toBe(true);
@@ -773,13 +780,12 @@ test("adding, deleting and deciding go once: a double-click, three clicks at onc
   // Deciding: a double-click on Apply saves once.
   await slow(page, `**${M}/failure-modes/*/decision`, "PUT");
   const puts = sent(page, "PUT", "/decision");
-  await pickRow(page, `^Failure mode: Burns out ${tag}`);
-  await page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: "Decide…" }).dblclick();
+  await fromMenu(page, `^Failure mode: Burns out ${tag}`, `Failure mode: Burns out ${tag}`, "Decide…");
   const decide = page.getByRole("dialog", { name: /^Decision/ });
   // The default actions show once "No task is worth doing" is picked.
-  await decide.getByRole("button", { name: /^No task is worth doing/ }).click();
-  await decide.getByRole("button", { name: /^Run to failure/ }).click();
-  await decide.getByRole("button", { name: "Failures are random" }).click();
+  await decide.getByRole("radio", { name: /No task is worth doing/ }).click();
+  await decide.getByRole("radio", { name: /Run to failure/ }).click();
+  await decide.getByRole("radio", { name: "Failures are random" }).click();
   await decide.getByRole("button", { name: "Apply" }).dblclick();
   await expect(decide.getByRole("button", { name: "Saving…" })).toBeDisabled();
   await expect(decide).toHaveCount(0);
@@ -809,22 +815,21 @@ test("the decision dialog says what's missing: the interval a schedule needs, wh
   const tag = `w${Date.now()}`;
   const p = await smallPlant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
-  await pickRow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`);
-  await page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: "Decide…" }).click();
+  await fromMenu(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`, "Failure mode: Bearing seizes", "Decide…");
   const dialog = page.getByRole("dialog", { name: /^Decision/ });
   const apply = dialog.getByRole("button", { name: "Apply" });
   const why = dialog.locator(".decision-why");
   await expect(apply).toBeDisabled();
   await expect(why).toHaveText("Choose a maintenance decision.");
   // Run to failure (behind "No task is worth doing"): Apply waits for the reason, and says so.
-  await expect(dialog.getByRole("button", { name: /^Run to failure/ })).toHaveCount(0);
-  await dialog.getByRole("button", { name: /^No task is worth doing/ }).click();
-  await dialog.getByRole("button", { name: /^Run to failure/ }).click();
+  await expect(dialog.getByRole("radio", { name: /Run to failure/ })).toHaveCount(0);
+  await dialog.getByRole("radio", { name: /No task is worth doing/ }).click();
+  await dialog.getByRole("radio", { name: /Run to failure/ }).click();
   await expect(apply).toBeDisabled();
   await expect(why).toHaveText("Choose why it can run to failure.");
   await expect(apply).toHaveAccessibleDescription("Choose why it can run to failure.");
   await shot(page, "decide-rtf-hint");
-  await dialog.getByRole("button", { name: "Failures are random" }).click();
+  await dialog.getByRole("radio", { name: "Failures are random" }).click();
   await expect(apply).toBeEnabled();
   await expect(why).toHaveCount(0);
   // Fixed interval and failure finding: the interval is needed, marked and said.
@@ -832,11 +837,11 @@ test("the decision dialog says what's missing: the interval a schedule needs, wh
   // offered on a hidden failure (and while the question is still open, as here); Evident
   // takes it off the list, Hidden brings it back.
   await dialog.getByRole("button", { name: "Evident" }).click();
-  await expect(dialog.getByRole("button", { name: /^Failure finding/ })).toHaveCount(0);
+  await expect(dialog.getByRole("radio", { name: /Failure finding/ })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Hidden" }).click();
-  await expect(dialog.getByRole("button", { name: /^Failure finding/ })).toHaveCount(1);
-  for (const [tile, words] of [[/^Fixed interval/, "how often it's replaced or restored"], [/^Failure finding/, "how often the hidden function is checked"]]) {
-    await dialog.getByRole("button", { name: tile }).click();
+  await expect(dialog.getByRole("radio", { name: /Failure finding/ })).toHaveCount(1);
+  for (const [tile, words] of [[/Fixed interval/, "how often it's replaced or restored"], [/Failure finding/, "how often the hidden function is checked"]]) {
+    await dialog.getByRole("radio", { name: tile }).click();
     const interval = dialog.getByRole("spinbutton", { name: "Interval (needed)" });
     await expect(interval).toHaveAttribute("aria-invalid", "true");
     await expect(interval).toHaveAttribute("aria-required", "true");
@@ -844,7 +849,7 @@ test("the decision dialog says what's missing: the interval a schedule needs, wh
     await expect(apply).toBeDisabled();
     await expect(why).toHaveText("Give the task's interval.");
   }
-  await dialog.getByRole("button", { name: /^Fixed interval/ }).click();
+  await dialog.getByRole("radio", { name: /Fixed interval/ }).click();
   await shot(page, "decide-missing-interval");
   await dialog.getByRole("spinbutton", { name: "Interval (needed)" }).fill("0");
   await expect(dialog.getByText("The interval must be more than 0.")).toBeVisible();
@@ -853,7 +858,7 @@ test("the decision dialog says what's missing: the interval a schedule needs, wh
   await expect(apply).toBeEnabled();
   // On condition with no interval: Apply stays on, with a quiet notice.
   await dialog.getByRole("spinbutton", { name: "Interval (needed)" }).fill("");
-  await dialog.getByRole("button", { name: /^On condition/ }).click();
+  await dialog.getByRole("radio", { name: /On condition/ }).click();
   await expect(dialog.getByRole("spinbutton", { name: "Interval", exact: true })).not.toHaveAttribute("aria-invalid", "true");
   await expect(dialog.getByText("No task will be created: this decision will show as having no task. Say in the notes what covers it.")).toBeVisible();
   await expect(apply).toBeEnabled();

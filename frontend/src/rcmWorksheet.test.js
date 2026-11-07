@@ -317,3 +317,35 @@ test("a decision with one more member goes back with each member by its task", (
     [{ outcome: "redesign" }, { outcome: "on_condition", task: "Watch", interval: 1, interval_unit: "weeks" }]);
   assert.equal(memberEvidenceText({ outcome: "fixed_interval", status: "unevidenced" }), "none linked");
 });
+
+test("step 3 in place: one tap sends the whole decision, keeping its task, notes and fitting evidence", async () => {
+  const { decisionWithOutcome, tasksDropped, keptTask, decisionWithFirstTask } = await import("./rcmWorksheet.js");
+  const t1 = { id: "t1", name: "Weekly check" };
+  const t2 = { id: "t2", name: "Replace", shared_with: 1 };
+  const plain = { outcome: "on_condition", task_id: "t1", notes: "Why", evidence: { type: "degradation_model", id: "m1", extra: 1 } };
+  // Another kind of task: the task it has, by id; a model linked for the old outcome goes.
+  assert.deepEqual(decisionWithOutcome(plain, [t1], "fixed_interval"), { outcomes: [{ outcome: "fixed_interval", task_id: "t1" }], notes: "Why" });
+  assert.deepEqual(tasksDropped(plain, [t1], "fixed_interval"), []);
+  // The same outcome again keeps its model; a report goes with any outcome.
+  assert.deepEqual(decisionWithOutcome(plain, [t1], "on_condition").evidence, { type: "degradation_model", id: "m1" });
+  assert.deepEqual(decisionWithOutcome({ ...plain, evidence: { type: "report", id: "r1" } }, [t1], "redesign"),
+    { outcome: "redesign", notes: "Why", evidence: { type: "report", id: "r1" } });
+  // Nothing scheduled: every task comes off; run to failure takes its reason and keeps what's done on failure.
+  assert.deepEqual(tasksDropped(plain, [t1], "rtf"), [t1]);
+  assert.deepEqual(tasksDropped(plain, [t1], null), [t1]);
+  assert.deepEqual(decisionWithOutcome({ outcome: "rtf", rtf_basis: "random", task: "Swap it" }, [], "rtf", "uneconomic"),
+    { outcome: "rtf", rtf_basis: "uneconomic", task: "Swap it" });
+  // No decision, a task linked before: a scheduled outcome adopts it.
+  assert.equal(keptTask(null, [t2], "on_condition"), "t2");
+  assert.deepEqual(decisionWithOutcome(null, [t2], "on_condition"), { outcomes: [{ outcome: "on_condition", task_id: "t2" }] });
+  assert.deepEqual(decisionWithOutcome(null, [], "on_condition"), { outcome: "on_condition" });
+  // A combination to one kind: the member of that kind keeps its task, the others come off.
+  const combo = { outcome: "on_condition", task_id: "t1", outcomes: [{ outcome: "on_condition", task_id: "t1" }, { outcome: "fixed_interval", task_id: "t2" }] };
+  assert.equal(keptTask(combo, [t1, t2], "fixed_interval"), "t2");
+  assert.deepEqual(tasksDropped(combo, [t1, t2], "fixed_interval"), [t1]);
+  // The first task for a scheduled decision with none: new, or an existing one by id.
+  assert.deepEqual(decisionWithFirstTask({ outcome: "failure_finding", notes: "N" }, { task: "Test the trip", interval: 6, interval_unit: "months" }),
+    { outcome: "failure_finding", task: "Test the trip", interval: 6, interval_unit: "months", notes: "N" });
+  assert.deepEqual(decisionWithFirstTask({ outcome: "failure_finding" }, { outcome: "failure_finding", task_id: "t9" }),
+    { outcomes: [{ outcome: "failure_finding", task_id: "t9" }] });
+});
