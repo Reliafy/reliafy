@@ -8,7 +8,7 @@
 // by, the levels, Show only, Reset); full screen.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { details } from "./explorer.js";
+import { details, reveal } from "./explorer.js";
 
 const M = "/api/maintenance";
 // With SMOKE_SHOTS_DIR set, the decision dialog's states are saved there too (for the pull request).
@@ -264,7 +264,7 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   await page.locator(".tp-scroll").evaluate((el) => { el.scrollTop += 60; });
   await expect(menu).toHaveCount(0);
   // Near the window's right edge it stays on screen.
-  await page.locator(".tp-scroll").evaluate((el) => { el.scrollTop = 0; });
+  await reveal(page, fn); // the scroll closed the menu; the row back in view (other specs' plants may sit above it)
   const box = await fn.boundingBox();
   await page.mouse.click(Math.min(1276, box.x + box.width - 2), box.y + box.height / 2, { button: "right" });
   const mbox = await menu.boundingBox();
@@ -494,21 +494,26 @@ test("one search, and Show only in the tree's ⋯ menu: the RCM's text, Needs a 
   const p = await plant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
   await page.getByRole("searchbox", { name: "Filter the tree and its RCM" }).fill(`Seal leaks Low flow Contain`);
-  await expect(trow(page, `Failure mode: Seal leaks Low flow Contain the water ${tag}`)).toBeVisible();
+  // Every RCM spec's plant matches too: this one's row may be further down.
+  await expect(await reveal(page, trow(page, `Failure mode: Seal leaks Low flow Contain the water ${tag}`))).toBeVisible();
   await expect(trow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`)).toHaveCount(0);
   await page.getByRole("searchbox", { name: "Filter the tree and its RCM" }).fill("");
   const menu = await openTreeMenu(page);
   await menu.getByRole("menuitemcheckbox", { name: "Needs a decision" }).click();
-  await expect(trow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`)).toBeVisible();
-  await expect(trow(page, `Coupling fails ${tag}`)).toHaveCount(0); // decided
   // It stays open for the next change.
+  await expect(menu.getByRole("menuitemcheckbox", { name: "Needs a decision" })).toHaveAttribute("aria-checked", "true");
+  await expect(menu).toBeVisible();
+  // (Bringing the row into view may scroll the tree, which closes the menu: open it again after.)
+  await expect(await reveal(page, trow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`))).toBeVisible();
+  await expect(trow(page, `Coupling fails ${tag}`)).toHaveCount(0); // decided
+  await openTreeMenu(page);
   await menu.getByRole("menuitemcheckbox", { name: "Needs a decision" }).click();
   await menu.getByRole("menuitemcheckbox", { name: "Not analysed" }).click();
   await menu.getByRole("menuitem", { name: "Done" }).click();
   await expect(menu).toHaveCount(0);
   // The plant (no function), the pump (modes with no decision) and the motor
   // (no function): counted in the plant's quiet marker.
-  await expect(trow(page, `^Rcm plant ${tag}`)).toHaveAccessibleName(/3 positions not analysed yet here and inside/);
+  await expect(await reveal(page, trow(page, `^Rcm plant ${tag}`))).toHaveAccessibleName(/3 positions not analysed yet here and inside/);
   await expect(trow(page, `^Rcm plant ${tag}`).locator(".tp-mini.rcm")).toBeVisible();
   // The RCM's own filters are for its tab only.
   await page.getByRole("tab", { name: "Summary" }).click();
@@ -606,7 +611,7 @@ test("the tree's ⋯ menu: the levels, a filter with its count on the button, Re
   await menu.getByRole("menuitemradio", { name: "Close everything" }).click();
   await expect(treeitem(page, `Rcm pump ${tag}`)).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await treeitem(page, `Rcm plant ${tag}`).locator(".tp-chev").click();
+  await (await reveal(page, treeitem(page, `Rcm plant ${tag}`))).locator(".tp-chev").click();
   await expect(treeitem(page, `Rcm pump ${tag}`)).toBeVisible();
   await expect(menuButton(page)).toHaveAccessibleName("Tree options");
   await openTreeMenu(page);

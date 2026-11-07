@@ -11,7 +11,7 @@
 // "Tree"), which share the server and expect their rows near the top.
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
-import { details } from "./explorer.js";
+import { details, reveal } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -155,7 +155,7 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   await expect(bar(page)).toBeVisible();
   await fromTreeMenu(page, "menuitem", "Reset to the usual view");
   await expect(bar(page)).toHaveCount(0);
-  await row(page, `Works plant ${tag}`).locator(".tp-nm").click({ button: "right" });
+  await (await reveal(page, row(page, `Works plant ${tag}`))).locator(".tp-nm").click({ button: "right" });
   await rowMenu(page, `Works plant ${tag}`).getByRole("menuitem", { name: "Pin this branch" }).click();
   await expect(row(page, `Works other ${tag}`)).toHaveCount(0);
   await bar(page).getByRole("button", { name: "Show everything" }).click();
