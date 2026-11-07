@@ -315,25 +315,25 @@ test("one order at every level: what's inside it first, then its own, the quiete
     };
     await show(`^Function: Pump water ${tag}`);
     await expect(panel(page).getByRole("heading", { level: 2, name: `Pump water ${tag}` })).toBeVisible();
-    expect(await blocks(page)).toEqual(["Performance standards", "Functional failures", "Working behind the performance standard"]);
+    expect(await blocks(page)).toEqual(["Performance standards", "Functional failures", "Working behind the performance standard", "Notes and rationale"]);
     await show(`^Performance standard: At 3 bar ${tag}`);
     await expect(panel(page).getByRole("heading", { level: 2, name: `At 3 bar ${tag}` })).toBeVisible();
-    expect(await blocks(page)).toEqual(["Functional failures", "foot"]);
+    expect(await blocks(page)).toEqual(["Functional failures", "Notes and rationale", "foot"]);
     await show(`^Functional failure: No flow ${tag}`);
     await expect(panel(page).getByRole("heading", { level: 2, name: `No flow ${tag}` })).toBeVisible();
-    expect(await blocks(page)).toEqual(["Failure modes", "Caused by, on positions below", "Causes, on positions above"]);
+    expect(await blocks(page)).toEqual(["Failure modes", "Caused by, on positions below", "Causes, on positions above", "Notes and rationale"]);
     // Its state in words heads its failure modes, said once.
     await expect(panel(page).getByRole("region", { name: "Failure modes" })).toContainText("1 of its 2 failure modes still needs a decision.");
     await show(`^Failure mode: Seal leaks ${tag}`);
     await expect(panel(page).getByRole("heading", { level: 2, name: `Seal leaks ${tag}` })).toBeVisible();
-    // The FME(C)A's two groups (scores, criticality) come after the decision on this tab.
-    expect(await blocks(page)).toEqual(["Tasks", "own", "Decision", "FME(C)A", "Criticality", "foot"]);
-    // The worksheet's order inside: effects, consequence, then the decision; where it sits and notes last.
+    // The FME(C)A's two groups (scores, criticality) come after the decision on this tab; its
+    // notes and rationale (the same section at every level) after where it sits.
+    expect(await blocks(page)).toEqual(["Tasks", "own", "Decision", "FME(C)A", "Criticality", "foot", "Notes and rationale"]);
+    // The worksheet's order inside: effects, consequence, then the decision; where it sits last.
     const labels = await panel(page).locator(".rw-pbody .field-label").allInnerTexts();
     const at = (t) => labels.findIndex((x) => x.startsWith(t));
     expect(at("Failure effects")).toBeLessThan(at("Consequence"));
     expect(at("Consequence")).toBeLessThan(at("Under"));
-    expect(at("Under")).toBeLessThan(at("Notes"));
     expect(await overflow(page)).toBe(0);
   }
   await expectHealthy(page, problems, { label: "rcm panel order" });

@@ -425,7 +425,7 @@ test("screenshots: the sample UAV product, and a function with three standards (
   for (const [w, h] of [[1280, 800], [400, 860]]) {
     await page.setViewportSize({ width: w, height: h });
     await open(page, `/products/${sampleId}?view=rcm&sel=${sampleId}`);
-    await expect(trow(page, "^Function: Fly a planned survey").first()).toBeVisible();
+    await expect(trow(page, "^Function: Fly the planned inspection sortie").first()).toBeVisible();
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${SHOTS}/rcm-standards-tree-sample-product-${w}.png` });
     await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&pin=${p.pool.id}&tab=rcm`);
