@@ -1,6 +1,6 @@
 // Several tasks for one failure mode, and one task for several, on the
 // Explorer's RCM tab (Assets › Explorer › RCM): a failure mode's decision card
-// (step 3, "What we do") lists its tasks, one line per member task, and its one
+// (step 3, "Proactive task or default action") lists its tasks, one line per member task, and its one
 // ⋯ holds Add another task… (a small dialog: its kind, then a new task or Use an
 // existing task…) and each task's Edit… and Remove…; the row menu's Add a task… opens that dialog (Decide… when there's
 // no decision yet); the Task cell says "+1 task" without the row changing
@@ -37,7 +37,7 @@ const table = (page) => page.getByRole("treegrid", { name: /and their RCM/ });
 const trow = (page, name) => table(page).getByRole("row", { name: new RegExp(name) });
 const dialog = (page, name) => page.getByRole("dialog", { name, exact: true });
 const panel = (page) => page.getByRole("complementary", { name: "Details" });
-const tasksOf = (page) => panel(page).getByRole("region", { name: "What we do" });
+const tasksOf = (page) => panel(page).getByRole("region", { name: "Proactive task or default action" });
 const chipsOf = (page) => panel(page).locator(".rw-chips-row");
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 // The decision card's ⋯ (Actions for the decision, or for the linked tasks before one), then one of its items.

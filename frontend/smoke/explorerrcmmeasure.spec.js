@@ -61,7 +61,7 @@ test("a task's Edit… shows what it counts and can change it", async ({ page, r
   await openFleet(page, p);
   await trow(page, `^Failure mode: Engine wears ${tag}`).locator(".tp-nm").dblclick();
   const dlg = page.getByRole("complementary", { name: "Details" });
-  const tasks = dlg.getByRole("region", { name: "What we do" });
+  const tasks = dlg.getByRole("region", { name: "Proactive task or default action" });
   // No decision yet: the card's ⋯ holds the linked task's Edit….
   await tasks.getByRole("button", { name: "Actions for the linked tasks" }).click();
   await page.getByRole("menu", { name: "Actions for the linked tasks" }).getByRole("menuitem", { name: `Edit “Service ${tag}”…` }).click();
