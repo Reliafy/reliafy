@@ -5,7 +5,7 @@
   all: unset; box-sizing: border-box; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
   padding: 6px 8px; border-radius: var(--r-sm); cursor: pointer; min-height: 44px;
 }
-.rp-fn:hover { background: var(--surf-3, var(--surf)); }
+.rp-fn:hover { background: var(--acc-hover); }
 .rp-fn:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
 .rp-fn-text { font-size: var(--fs-14); color: var(--acc); overflow-wrap: anywhere; }
 .rp-fn-meta, .rp-fn-std { font-size: var(--fs-13); color: var(--muted); overflow-wrap: anywhere; }
