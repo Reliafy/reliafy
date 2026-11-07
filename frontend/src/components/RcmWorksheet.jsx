@@ -522,6 +522,10 @@ export function Details({
     <aside className={"rw-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label="Details"
            onKeyDown={(e) => {
              if (e.key !== "Escape" || e.defaultPrevented) return;
+             // A dialog opened from the panel (Add another task, Decide…) is
+             // portalled out of it, but React still bubbles its keys here:
+             // its Escape closes the dialog, not the panel.
+             if (!e.currentTarget.contains(e.target)) return;
              e.stopPropagation();
              if (expanded && canExpand) onCollapse();
              else onClose();

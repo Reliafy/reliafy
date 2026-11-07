@@ -93,7 +93,7 @@ test("import a worksheet onto a position from the RCM tab, then again: nothing m
     + `Consequence,${fmea},Decision,Run-to-failure basis,Task,Interval,Interval unit,Evidence check,Failure mode notes`);
   // The sheet's Severity column is read as the score now (7), not kept as a note.
   expect(text).toContain(`${name},Move grain from the pit to the silo,,At least 40 t/h,,,Moves no grain,,,Belt torn,Line stops,`
-    + `Operational,,,,,7${",".repeat(17)}On-condition,,Walk the belt and look for damage,1,weeks,,`);
+    + `Operational,,,,,7${",".repeat(17)}On condition,,Walk the belt and look for damage,1,weeks,,`);
 
   await expectHealthy(page, problems, { label: "rcm worksheet import", root: ".tx" });
 });

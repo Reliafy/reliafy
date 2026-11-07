@@ -116,8 +116,8 @@ test("a click shows the details beside the table; a double-click on the name spr
   // A functional failure: its status in words, its links, its failure modes; one shown from the list.
   await ffRow.locator(".tp-nm").click();
   await expect(panel(page).getByText("1 of its 2 failure modes still needs a decision.")).toBeVisible();
-  await expect(panel(page).getByRole("region", { name: "Caused by, on positions below" })).toBeVisible();
-  await expect(panel(page).getByRole("region", { name: "Causes, on positions above" })).toBeVisible();
+  await expect(panel(page).getByRole("region", { name: "Caused by" })).toBeVisible();
+  await expect(panel(page).getByRole("region", { name: "Causes" })).toBeVisible();
   await panel(page).getByRole("region", { name: "Failure modes" }).getByRole("button", { name: `Bearing seizes ${tag}` }).click();
   await expect(panel(page).getByRole("heading", { name: `Bearing seizes ${tag}` })).toBeVisible();
   expect(await isExpanded(page)).toBe(true);
@@ -339,7 +339,7 @@ test("one order at every level: its notes under the title and chips, what's insi
     expect(await notesFirst(page)).toBe(true);
     await show(`^Functional failure: No flow ${tag}`);
     await expect(panel(page).getByRole("heading", { level: 2, name: `No flow ${tag}` })).toBeVisible();
-    expect(await blocks(page)).toEqual(["Failure modes", "Caused by, on positions below", "Causes, on positions above"]);
+    expect(await blocks(page)).toEqual(["Failure modes", "Caused by", "Causes"]);
     expect(await notesFirst(page)).toBe(true);
     // Its state in words heads its failure modes, said once.
     await expect(panel(page).getByRole("region", { name: "Failure modes" })).toContainText("1 of its 2 failure modes still needs a decision.");
