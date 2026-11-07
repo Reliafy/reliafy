@@ -775,5 +775,8 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 }
 .tt-tree .rw-note-mark { margin-left: 6px; }
 .rw-info + .rw-note-mark { margin-left: 3px; }
-/* The section in the details (RcmNotes.jsx), set off like the working above it. */
-.rw-notes { border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
+/* The section in the details (RcmNotes.jsx): the first thing under the title, so no rule above it;
+   empty, just one quiet line. */
+.rw-notes { min-width: 0; }
+.rw-notes-empty .td-quiet { line-height: 1.4; }
+.rw-notes-empty .link { font: inherit; }
