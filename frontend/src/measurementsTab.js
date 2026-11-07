@@ -83,16 +83,34 @@ export function recentValues(point, n = 12) {
   return ordered.slice(-n).map((r) => ({ at: r.at, value: Number(r.value) }));
 }
 
+// How long a hand-read point can go between readings before one is due:
+// half as long again as its usual spacing (at least a day), in days. null
+// when it isn't read by hand or has too few readings to know its round.
+function allowedGap(point) {
+  if (!point || point.source !== "manual" || point.derived) return null;
+  const rs = recentValues(point, 7);
+  if (rs.length < 3) return null;
+  const gaps = rs.slice(1).map((r, i) => daysBetween(rs[i].at, r.at)).filter((g) => g > 0).sort((a, b) => a - b);
+  if (!gaps.length) return null;
+  const usual = gaps[Math.floor(gaps.length / 2)];
+  return { last: rs[rs.length - 1].at, days: Math.max(1, usual * 1.5) };
+}
+
 // Is a hand-read point due a reading?
 export function readingDue(point, today = new Date().toISOString().slice(0, 10)) {
   if (!point || point.source !== "manual" || point.derived) return false;
   if (point.reading == null) return true;
-  const rs = recentValues(point, 7);
-  if (rs.length < 3) return false;
-  const gaps = rs.slice(1).map((r, i) => daysBetween(rs[i].at, r.at)).filter((g) => g > 0).sort((a, b) => a - b);
-  if (!gaps.length) return false;
-  const usual = gaps[Math.floor(gaps.length / 2)];
-  return daysBetween(rs[rs.length - 1].at, today) > Math.max(1, usual * 1.5);
+  const gap = allowedGap(point);
+  return gap ? daysBetween(gap.last, today) > gap.days : false;
+}
+
+// The day a hand-read point's next reading falls due (YYYY-MM-DD), by its
+// usual round; null when it has no round yet (or isn't read by hand).
+export function nextReadingOn(point) {
+  const gap = allowedGap(point);
+  if (!gap) return null;
+  const t = dayMs(gap.last.slice(0, 10)) + Math.ceil(gap.days) * DAY;
+  return Number.isNaN(t) ? null : new Date(t).toISOString().slice(0, 10);
 }
 
 // Needs a look: past its alarm, near a limit, or due a reading.
@@ -148,6 +166,9 @@ export function pointSubline(point, { branch = false, fittedAt = new Map() } = {
     .filter(Boolean).join(" · ");
 }
 
+// The measuring point's own page.
+export const pointPagePath = (id) => `/asset-register/points/${encodeURIComponent(id)}`;
+
 // The page a point lives on: its position's, or its item's.
 export function pointHref(point) {
   if (point.position?.id) return `/asset-register/positions/${point.position.id}`;
@@ -164,18 +185,19 @@ export function rowAction(point) {
   return pointHref(point) ? "open" : null;
 }
 
-// The row's ⋯ menu (RowMenu items). Recording stays in the menu for a feed's
+// The row's ⋯ menu (RowMenu items): "Open" (the point's own page) first. Recording stays in the menu for a feed's
 // point, greyed with the reason, so it can be found and the reason read.
 export function pointMenu(point) {
   const manual = point.source === "manual" && !point.derived;
   const items = [
+    { id: "page", label: "Open" },
     manual ? { id: "record", label: "Record a reading…" }
       : { id: "record", label: "Record a reading…", disabled: true,
         reason: point.derived ? "Worked out from a signal channel" : `Read by a feed${point.tag ? ` (${point.tag})` : ""}` },
   ];
   if (manual && point.readings?.length) items.push({ id: "history", label: "Readings…" });
   if (point.kind !== "counter") items.push({ id: "limits", label: "Edit limits…" });
-  if (pointHref(point)) items.push({ id: "open", label: "Open the point" });
+  if (pointHref(point)) items.push({ id: "open", label: point.position?.id ? "Open its position" : "Open its item" });
   if (point.alarm_work_order) items.push({ id: "work-order", label: `Open work order #${point.alarm_work_order.number}` });
   return items;
 }

@@ -66,6 +66,7 @@ const ProductDetail = lazy(() => import("./views/MaintenanceProducts.jsx").then(
 const MaintenanceItemsList = lazy(() => import("./views/MaintenanceItemsList.jsx"));
 const MaintenanceLocation = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceLocation })));
 const MaintenancePart = lazy(() => import("./views/MaintenancePart.jsx"));
+const MeasuringPoint = lazy(() => import("./views/MeasuringPoint.jsx"));
 const TeamSettingsPage = lazy(() => import("./views/TeamSettingsPage.jsx"));
 const SettingsPage = lazy(() => import("./views/SettingsPage.jsx"));
 const ApiDocsPage = lazy(() => import("./views/ApiDocsPage.jsx"));
@@ -234,6 +235,7 @@ function Shell() {
             {maintenanceEnabled && <Route path="/asset-register/items/:id" element={<MaintenanceItem />} />}
             {maintenanceEnabled && <Route path="/asset-register/locations/:id" element={<MaintenanceLocation />} />}
             {maintenanceEnabled && <Route path="/asset-register/parts/:id" element={<MaintenancePart />} />}
+            {maintenanceEnabled && <Route path="/asset-register/points/:id" element={<MeasuringPoint />} />}
             {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome />} />}
             {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
             <Route path="/data-model" element={<DataModelPage />} />

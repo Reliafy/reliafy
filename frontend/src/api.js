@@ -2972,6 +2972,11 @@ export function updateMeasurementPoint(pointId, body) {
   return patchJson(`/api/maintenance/points/${pointId}`, body);
 }
 // ``at`` (optional) is when it was read, e.g. "2026-10-19T10:14" (#264).
+// One measurement point (its own page): latest reading, limits, status, rate or
+// trend, and its recent readings with the struck-out ones marked.
+export function getMeasurementPoint(pointId) {
+  return request(`/api/maintenance/points/${encodeURIComponent(pointId)}`);
+}
 export function recordMeasurementReading(pointId, value, on, at) {
   return postJson(`/api/maintenance/points/${pointId}/readings`, at ? { value, at } : { value, on });
 }

@@ -61,6 +61,8 @@ button.ms-name {
   cursor: pointer;
 }
 button.ms-name:hover:not(:disabled) { background: none; color: var(--acc); text-decoration: underline; text-underline-offset: 2px; }
+a.ms-name { color: var(--ink); text-decoration: none; }
+a.ms-name:hover, a.ms-name:focus-visible { color: var(--acc); text-decoration: underline; text-underline-offset: 2px; }
 .ms-sub { font-size: var(--fs-12); line-height: 1.35; }
 
 /* Latest: the value right-aligned so numbers line up; the note mark before it. */

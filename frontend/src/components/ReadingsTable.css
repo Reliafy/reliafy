@@ -1,0 +1,91 @@
+/* A measuring point's readings (ReadingsTable.jsx): date and value at fixed
+   widths so they line up down the list, the note taking the rest of the room
+   (it wraps there, in its own column), the ⋯ menu at the right. */
+.rt-list { container: rtlist / inline-size; }
+.rt-table { table-layout: fixed; width: 100%; }
+.rt-table .rt-c-date { width: 170px; }
+.rt-table .rt-c-value { width: 120px; }
+.rt-table .rt-c-menu { width: 44px; }
+.rt-table thead th { padding: 0 10px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt-table th.rt-num { text-align: right; }
+.rt-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line2);
+  vertical-align: top;
+}
+.rt-date { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt-value { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt-note { overflow-wrap: anywhere; line-height: 1.45; }
+.rt-note-text { white-space: pre-line; }
+.rt-chip { margin-right: 6px; vertical-align: 1px; }
+.rt-detail { display: block; font-size: var(--fs-12); margin-top: 2px; }
+.rt-unit { display: none; }
+.rt-struck .rt-date, .rt-struck .rt-value-text, .rt-struck .rt-unit, .rt-struck .rt-note-text {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.rt-row.rt-picked td { background: var(--acc-t); }
+.rt-edit-row td { padding: 0 0 8px; border-bottom: 1px solid var(--line2); }
+.rt-edit { margin: 8px 0 0; }
+.rt-edit-title { margin: 0 0 8px; font-weight: 600; }
+.rt-edit-hint { margin: 4px 0 0; }
+
+.rt-menu-cell { text-align: right; padding: 4px 4px 0 0 !important; }
+button.rt-more {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+}
+button.rt-more:hover:not(:disabled), button.rt-more.open { background: var(--acc-t); color: var(--acc); }
+
+/* Narrow (a phone, a narrow dialog): each reading is a block, nothing wider
+   than the screen. Date, value and ⋯ on top; the note under them. */
+@container rtlist (max-width: 520px) {
+  .rt-table, .rt-table tbody { display: block; width: 100%; }
+  .rt-table colgroup, .rt-table thead { display: none; }
+  .rt-table tr.rt-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "date value menu"
+      "note note note";
+    align-items: center;
+    column-gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line2);
+  }
+  .rt-table.rt-no-menu tr.rt-row { grid-template-areas: "date value value" "note note note"; }
+  .rt-table td { display: block; padding: 0; border: 0; min-width: 0; }
+  .rt-row.rt-picked td { background: none; }
+  .rt-row.rt-picked { background: var(--acc-t); }
+  .rt-date { grid-area: date; }
+  .rt-value { grid-area: value; font-weight: 600; }
+  .rt-unit { display: inline; font-weight: 400; color: var(--muted); }
+  .rt-note { grid-area: note; padding-top: 2px !important; }
+  .rt-note .rt-none { display: none; }
+  .rt-menu-cell { grid-area: menu; padding: 0 !important; }
+  button.rt-more { width: 44px; height: 44px; }
+  .rt-table tr.rt-edit-row { display: block; }
+  .rt-table tr.rt-edit-row td { display: block; }
+}
+
+/* The Explorer's Readings dialog: the plain-words line, and the link to the
+   point's own page at the top right. */
+.modal.readings-modal { max-width: 760px; }
+.rt-modal-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0 0 10px;
+}
+.rt-modal-head p { margin: 0; flex: 1 1 260px; min-width: 0; }
+.rt-open-page { white-space: nowrap; font-weight: 600; }

@@ -101,6 +101,10 @@ export const DETAIL_IDS = {
   "/asset-register/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
   "/maintenance/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
   "/asset-register/parts/:id": ["/api/maintenance/parts", list("parts")],
+  // A measuring point: every one added (the sample product's items' hour meters, and the
+  // smoke test position's condition point that smoke/seed.js adds), from the event log.
+  "/asset-register/points/:id": ["/api/maintenance/events?type=point.added&limit=500",
+    (body) => (body.events || []).map((e) => ({ id: e.payload?.id })).filter((x) => x.id)],
 };
 
 // An earlier address with an id takes its records from the page it moved to;
