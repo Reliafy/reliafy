@@ -95,3 +95,24 @@ test("a product's RBDs: made from its structure, or named after it", () => {
   assert.deepEqual(productRbds({ name: "Quad" }, rbds).map((r) => r.id), ["1", "2", "4"]);
   assert.deepEqual(productRbds(null, rbds), []);
 });
+
+test("a product's layout (design locations) and a built item's copies stay off the whole Explorer and show on their own tree", () => {
+  const locations = [
+    { id: "site", name: "Site", parent_id: null },
+    { id: "arm", name: "Forward left arm", parent_id: null, design_of: "d" },
+    { id: "bay", name: "Battery bay", parent_id: "arm", design_of: "d" },
+    { id: "barm", name: "Forward left arm", parent_id: null, carried_by: "b" },
+  ];
+  const all = { positions, locations };
+  assert.deepEqual(scopeTree(all).locations.map((l) => l.id), ["site"]);
+  const design = scopeTree(all, "d");
+  assert.deepEqual(design.locations.map((l) => l.id), ["arm", "bay"]);
+  assert.ok(design.locations.every((l) => l.in_design));
+  assert.deepEqual(design.scope, { kind: "design", id: "d", name: "Quad" });
+  const built = scopeTree(all, "b");
+  assert.deepEqual(built.locations.map((l) => l.id), ["barm"]);
+  assert.ok(!built.locations.some((l) => l.in_design));
+  assert.equal(built.scope.kind, "unit");
+  assert.deepEqual(scopeTree(all, "gone").locations, []);
+  assert.equal(scopeTree(all).scope, undefined);
+});

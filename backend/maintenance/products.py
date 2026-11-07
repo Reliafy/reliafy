@@ -27,6 +27,23 @@ Events (new types only; older logs replay unchanged):
 * ``position.implements {position_id, design_position_id, design_rev}``: a
   built position and the design position it came from; the built tree's top
   also carries ``item_id`` and ``serial`` (the item built into it).
+* ``location.design_declared {id, product_id}``: a location is one of a
+  product's design locations (its physical layout: Forward left arm ›
+  Battery bay), emitted straight after its ``location.created``;
+* ``location.carried {id, position_id, design_location_id?}``: a location is
+  one a built unit carries (copied from its product's design locations when it
+  was built, or made inside one later), named by the unit's top position.
+
+Design locations are the product's physical layout: the design's positions can
+be placed at them (``location_id``, inherited down the tree as everywhere), and
+nothing else can. They are never assets: the Assets page, the asset Explorer's
+Locations and the location lists leave them out; they show on their product's
+page. A design location has no items, stock or work.
+
+A built unit carries a copy of them (``carried_by``): its copied positions are
+placed at the copies mirroring the design. A carried location has no parent of
+its own at the top: it is wherever its unit is (its path starts with where the
+unit's top position is), so it moves with the unit without any event.
 """
 
 from __future__ import annotations
@@ -63,10 +80,21 @@ def _position_implements(s: GraphStore, org: str, p: dict) -> None:
     s.put_edge(org, "IMPLEMENTS", pid, p["design_position_id"])
 
 
+def _location_design_declared(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"design_of": p["product_id"]})
+
+
+def _location_carried(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"carried_by": p["position_id"]}
+                 | ({"design_location_id": p["design_location_id"]} if p.get("design_location_id") else {}))
+
+
 PROJECTORS = {
     "design.declared": _design_declared,
     "design.cleared": _design_cleared,
     "position.implements": _position_implements,
+    "location.design_declared": _location_design_declared,
+    "location.carried": _location_carried,
 }
 
 
@@ -138,6 +166,95 @@ class ProductOps:
         if node.get("retired"):
             raise _sv().Invalid(f"{node['name']} has been retired: restore it first.")
         return node
+
+    # -- design locations (a product's physical layout) and the copies a built unit carries
+
+    @staticmethod
+    def _location_realm(loc: dict | None) -> tuple[str, str] | None:
+        """Whose a location is: ("design", product id) for a design location, ("unit",
+        top position id) for one a built unit carries, None for a place you look after."""
+        if not loc:
+            return None
+        if loc.get("design_of"):
+            return ("design", loc["design_of"])
+        if loc.get("carried_by"):
+            return ("unit", loc["carried_by"])
+        return None
+
+    def _position_realm(self, position_id: str | None) -> tuple[str, str] | None:
+        """Whose locations a position may be placed at: its product's design locations
+        ("design"), its built unit's ("unit": and the places you look after too), or
+        the places alone (None)."""
+        if not position_id:
+            return None
+        node = self.s.node(self.org, position_id)
+        if node is None or node["label"] != "Position":
+            return None
+        top = self._top_of(position_id)
+        if top.get("design"):
+            return ("design", top["id"])
+        if top.get("design_position_id") and self._parent(top["id"]) is None:
+            return ("unit", top["id"])
+        return None
+
+    def _place_ok(self, realm: tuple[str, str] | None, loc: dict) -> bool:
+        """Whether a position in realm may be placed at loc: at its own product's or
+        unit's locations, or (not a design's) at a place you look after."""
+        own = self._location_realm(loc)
+        return own == realm or (own is None and (realm or ("",))[0] != "design")
+
+    def _check_place(self, realm: tuple[str, str] | None, loc: dict) -> None:
+        """Refuse placing a position (in realm) at a location of another product or unit,
+        a design's position at a place you look after, or an asset at a design location."""
+        sv = _sv()
+        if self._place_ok(realm, loc):
+            return
+        own = self._location_realm(loc)
+        if own is None:
+            raise sv.Invalid(f"{loc['name']} is a place you look after; a product's design is placed at its own "
+                             "design locations (its physical layout). Pick one of the product's locations.")
+        owner = self.s.node(self.org, own[1]) or {}
+        what = "the product" if own[0] == "design" else "the item built as"
+        raise sv.Invalid(f"{loc['name']} is one of {what} {owner.get('name') or 'another tree'}'s locations: only "
+                         "its own positions can be placed there.")
+
+    def _guard_design_location(self, loc: dict, what: str) -> None:
+        """A design location holds no items, stock or work (a design is a template)."""
+        if loc.get("design_of"):
+            raise _sv().Invalid(f"{loc['name']} is a product's design location: it has no {what}. Use a place "
+                                "you look after, or the location an item built from the product carries.")
+
+    def _realm_of(self, owner_id) -> tuple[str, str]:
+        """A product (its design's top) or a built unit's top position, as a realm."""
+        node = self._get(str(owner_id or ""), "Position")
+        realm = self._position_realm(node["id"])
+        if realm is None or realm[1] != node["id"]:
+            raise _sv().Invalid(f"{node['name']} isn't a product or an item built from one: give the product's id "
+                                "(its design's top position) or a built item's top position.")
+        return realm
+
+    def _realm_locations(self, realm: tuple[str, str], retired: bool = False) -> list[dict]:
+        """The locations of a product's design or of a built unit, parents first."""
+        mine = [loc for loc in self.s.nodes(self.org, "Location")
+                if self._location_realm(loc) == realm and (retired or not loc.get("retired"))]
+        ids = {loc["id"] for loc in mine}
+        depth = {loc["id"]: sum(1 for a in self._ancestor_ids(loc["id"]) if a in ids) for loc in mine}
+        return sorted(mine, key=lambda loc: (depth[loc["id"]], loc["name"].lower()))
+
+    def _copy_design_locations(self, product_id: str, top_id: str) -> dict[str, str]:
+        """Copy a product's design locations as the ones a new built unit carries
+        (top_id: the unit's top position). Returns design location id -> its copy."""
+        sv = _sv()
+        mapping: dict[str, str] = {}
+        for loc in self._realm_locations(("design", product_id)):
+            parent = self._parent(loc["id"])
+            new = sv.new_id()
+            self._emit("location.created", {"id": new, "name": loc["name"],
+                                            "parent_id": mapping.get(parent["id"]) if parent else None,
+                                            "description": loc.get("description", "")})
+            self._emit("location.carried", {"id": new, "position_id": top_id, "design_location_id": loc["id"]})
+            mapping[loc["id"]] = new
+        return mapping
 
     # -- declaring a design
 
@@ -349,7 +466,8 @@ class ProductOps:
             rows.append({"path": " › ".join(names[pid]), "design_position_id": src["id"],
                          "retired": bool(src.get("retired"))})
         counts = {"positions": len(plan), "failure_modes": sum(len(x[4]) for x in plan),
-                  "tasks": sum(len(x[5]) for x in plan), "parts_list": sum(len(x[6]) for x in plan)}
+                  "tasks": sum(len(x[5]) for x in plan), "parts_list": sum(len(x[6]) for x in plan),
+                  "locations": len(self._realm_locations(("design", design["id"])))}
         out = {"dry_run": dry_run, "product": {"id": design["id"], "name": design["name"]}, "serial": serial,
                "rev": rev_text, "name": top_name,
                "item": {"name": top_name, "serial": serial, "part": self._part_view(part and part["id"])},
@@ -359,7 +477,10 @@ class ProductOps:
         self._quota("Item", sv.MAX_ITEMS)
         self._quota("Position", sv.MAX_POSITIONS, adding=len(plan))
         mapping = {src["id"]: pid for src, pid, *_ in plan}
-        self._copy_write(plan, new, None, self.today())
+        # The design's physical layout comes with it: the unit carries a copy of its
+        # locations, and each copied position is placed at the copy of its design's.
+        places = self._copy_design_locations(design["id"], new)
+        self._copy_write(plan, new, None, self.today(), place_map=places)
         item = self.create_item(top_name, serial=serial, part_id=part["id"] if part else None)
         self.fit(new, item_id=item["id"])
         for src_id, pid in mapping.items():

@@ -478,6 +478,15 @@ SAMPLE_PRODUCT_TREE: list[tuple[str, str, list[tuple[str, str]]]] = [
     ("Comms", "", []),
     ("Payload gimbal", "", []),
 ]
+# The design's physical layout (its design locations): (name, inside, the positions placed
+# there). Every item built from it carries a copy, its positions placed the same way.
+_ARM_NAMES = ["Forward left arm", "Forward right arm", "Rear left arm", "Rear right arm"]
+SAMPLE_PRODUCT_LAYOUT: list[tuple[str, str | None, list[str]]] = [
+    *[(arm, None, [f"Motor {i}", f"ESC {i}", f"Propeller {i}"]) for i, arm in enumerate(_ARM_NAMES, 1)],
+    ("Centre body", None, ["Flight controller", "IMU 1", "IMU 2", "GPS"]),
+    ("Battery bay", "Centre body", ["Battery pack", "BMS"]),
+    ("Payload bay", None, ["Payload gimbal"]),
+]
 # Where each of SAMPLE_UAV_MODES's positions sits in the product's design.
 SAMPLE_PRODUCT_MODES_AT = {
     "Airframe": ["Airframe"], "Motor": [f"Motor {i}" for i in range(1, ARMS + 1)],
@@ -570,7 +579,8 @@ def _save_sample_rbd(m, db, name: str) -> dict:
 
 def add_sample_product(m, db, again: bool = False) -> dict:
     """Add the sample product to ``m``'s workspace: a quadcopter's design tree with the
-    sample failure modes scored on it, its part with a small bill of materials,
+    sample failure modes scored on it, its physical layout (design locations, the
+    positions placed on them), its part with a small bill of materials,
     three items built from it (each with a flight-hours counter), a replaced motor on one,
     two failure reports, and a flight-critical RBD in the RBDs (placeholder failure rates,
     said so in its name). Once only, unless ``again``."""
@@ -600,12 +610,22 @@ def add_sample_product(m, db, again: bool = False) -> dict:
 
     at: dict[str, str] = {}
     counts = {"positions": 1, "functions": 0, "functional_failures": 0, "failure_modes": 0, "scored": 0,
-              "standards": 0, "decisions": 0, "causes_linked": 0}
+              "standards": 0, "decisions": 0, "causes_linked": 0, "locations": 0}
+    # Its physical layout first, so each position is made where it sits.
+    places: dict[str, str] = {}
+    placed_at: dict[str, str] = {}
+    for place, inside, positions in SAMPLE_PRODUCT_LAYOUT:
+        places[place] = m.create_location(place, parent_id=places.get(inside) if inside else None,
+                                          design_of=None if inside else pid)["id"]
+        counts["locations"] += 1
+        placed_at |= {name: places[place] for name in positions}
     for group, cls, children in SAMPLE_PRODUCT_TREE:
-        at[group] = m.create_position(group, parent_id=pid, position_class=cls)["id"]
+        at[group] = m.create_position(group, parent_id=pid, position_class=cls,
+                                      location_id=placed_at.get(group))["id"]
         counts["positions"] += 1
         for child, child_cls in children:
-            at[child] = m.create_position(child, parent_id=at[group], position_class=child_cls)["id"]
+            at[child] = m.create_position(child, parent_id=at[group], position_class=child_cls,
+                                          location_id=placed_at.get(child))["id"]
             counts["positions"] += 1
     at_of = {k: [at[n] for n in names] for k, names in SAMPLE_PRODUCT_MODES_AT.items()}
     ffs = _add_uav_modes(m, at_of, counts)
@@ -659,7 +679,9 @@ def add_sample_product(m, db, again: bool = False) -> dict:
         **counts,
         "message": (f"Added “{name}”: a design of {_n(counts['positions'], 'position')} with an RCM and "
                     f"{_n(counts['failure_modes'], 'failure mode')} scored as an FME(C)A (one decision shows as "
-                    "contradicted on purpose: the motor bearings' own model shows wear-out), its part with a bill of "
+                    "contradicted on purpose: the motor bearings' own model shows wear-out), its physical layout "
+                    f"({_n(counts['locations'], 'design location')}: four arms, the centre body with its battery "
+                    "bay, and the payload bay), its part with a bill of "
                     f"materials, {_n(len(items), 'item')} built from it (serials "
                     f"{', '.join(it['serial'] for it in items)}), a replaced motor and two failure reports. "
                     f"The RBD “{rbd['name']}” is in your RBDs: its failure rates are placeholders, not data. "

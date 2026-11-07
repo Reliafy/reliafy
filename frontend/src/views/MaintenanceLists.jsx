@@ -58,6 +58,7 @@ import { explorerPath } from "../assetTree.js";
 import { DeleteTreeModal } from "../components/DeleteTree.jsx";
 import { partsInBranch } from "../explorerTabs.js";
 import { EXPLORER_LABEL } from "../navigation.js";
+import { itemTreePath, productPath } from "../products.js";
 
 const crumbs = [{ label: "Assets", to: "/asset-register" }];
 
@@ -99,25 +100,35 @@ export function NewItemModal({ locations, locationId = null, onClose, onDone }) 
 // ---- locations -------------------------------------------------------------------------
 
 // A new location. `asset`: a new asset, a top-level place (no "Inside" to pick).
-export function NewLocationModal({ locations, parentId = null, asset = false, onClose, onDone }) {
+// designOf: a product's id (its page's Locations): a location in its physical
+// layout (one at the top of it is design_of the product; one inside another
+// of its locations is the product's too).
+export function NewLocationModal({ locations, parentId = null, asset = false, designOf = null, layoutName = "", onClose, onDone }) {
   const [name, setName] = useState("");
   const [parent, setParent] = useState(parentId || "");
+  const top = (!asset && parent) || null;
   return (
     <FormModal title={asset ? "New asset" : "New location"} submitLabel="Create" pendingLabel="Adding…"
                canSubmit={!!name.trim() && !tooLong(name)} onClose={onClose}
-               onSubmit={async () => onDone(await createMaintenanceLocation({ name, parent_id: (!asset && parent) || null }))}>
+               onSubmit={async () => onDone(await createMaintenanceLocation({
+                 name, parent_id: top, ...(designOf && !top ? { design_of: designOf } : {}),
+               }))}>
+      {designOf && (
+        <p className="lib-date">A part of the product's physical layout (an arm, a bay). Place its positions there;
+          items built from it carry a copy.</p>
+      )}
       {asset && (
         <p className="lib-date">An asset is a place you look after: a house, a site, a plant. Add the rooms or
           areas inside it from its page, then say where each position is.</p>
       )}
       <Field label="Name" text={name}>
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
-               placeholder={asset ? "e.g. 12 Smith Street, North mine site" : "e.g. Laundry, Garage, Store A"} />
+               placeholder={asset ? "e.g. 12 Smith Street, North mine site" : designOf ? "e.g. Forward left arm, Battery bay" : "e.g. Laundry, Garage, Store A"} />
       </Field>
       {!asset && (
         <Field label="Inside">
           <select value={parent} onChange={(e) => setParent(e.target.value)}>
-            <option value="">None (top level: an asset)</option>
+            <option value="">{designOf ? `None (the top of ${layoutName || "the product"}'s layout)` : "None (top level: an asset)"}</option>
             {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
           </select>
         </Field>
@@ -137,9 +148,12 @@ export function MaintenanceLocation() {
     getMaintenanceLocation(id).then(setLoc).catch((e) => setError(e.message));
   }, [id]);
   useEffect(() => refresh(), [refresh]);
+  // A product's design location (or one a built item carries): its own layout's locations.
+  const owner = loc?.design_of?.id || loc?.carried_by?.id || null;
   useEffect(() => {
-    listMaintenanceLocations().then((d) => setAll(d.locations)).catch(() => {});
-  }, []);
+    if (loc === null) return;
+    listMaintenanceLocations(owner).then((d) => setAll(d.locations)).catch(() => {});
+  }, [owner, loc === null]); // eslint-disable-line react-hooks/exhaustive-deps
   if (error && !loc) return <div className="app"><LoadFailed header error={error} notFound="Location not found." to={explorerPath("locations")} label={`Open the ${EXPLORER_LABEL}`} /></div>;
   if (!loc) return <div className="app"><div className="card empty">Loading…</div></div>;
   // The header leaves out the open work: it's its own card below, the whole area's
@@ -156,6 +170,19 @@ export function MaintenanceLocation() {
         primary={<button onClick={() => setModal("rename")}>Rename</button>}
         menu={<button className="ovm-item danger" onClick={() => setModal("delete")}>Delete…</button>}
       />
+      {loc.design_of && (
+        <p className="card lib-date">
+          Part of the physical layout of the product{" "}
+          <Link to={`${productPath(loc.design_of.id)}?arrange=locations&sel=${encodeURIComponent(loc.id)}`}>{loc.design_of.name}</Link>:
+          where its positions sit. It's a design, so nothing is stored or worked on here; items built from it carry a copy.
+        </p>
+      )}
+      {loc.carried_by && (
+        <p className="card lib-date">
+          Carried by <Link to={itemTreePath(loc.carried_by.id)}>{loc.carried_by.name}</Link> (a copy of its product's
+          layout): it is wherever the item is kept, and moves with it.
+        </p>
+      )}
       {loc.children.length > 0 && (
         <section className="card">
           <div className="maint-head"><h2>Inside it</h2></div>
@@ -168,9 +195,9 @@ export function MaintenanceLocation() {
           ))}</ul>
         </section>
       )}
-      <OpenWorkHere loc={loc} />
+      {!loc.design_of && <OpenWorkHere loc={loc} />}
       <LocationPositions loc={loc} />
-      <section className="card">
+      {!loc.design_of && <section className="card">
         <div className="maint-head"><h2>Items placed here</h2></div>
         {loc.items.length === 0 ? (
           <p className="lib-date">No spares or items away from their positions here. (Fitted items are where their
@@ -185,10 +212,10 @@ export function MaintenanceLocation() {
             ))}
           </ul>
         )}
-      </section>
-      <TasksCard subject={{ kind: "location", id: loc.id, name: loc.name }} tasks={loc.tasks || []} onChanged={refresh}
+      </section>}
+      {!loc.design_of && <TasksCard subject={{ kind: "location", id: loc.id, name: loc.name }} tasks={loc.tasks || []} onChanged={refresh}
                  emptyText={"No tasks on this place. Add a round or walkdown, an Ex (hazardous-area) inspection, or a "
-                   + "building or area check: it raises one work order here, and can list every position here to check."} />
+                   + "building or area check: it raises one work order here, and can list every position here to check."} />}
       {(loc.work_orders || []).length > 0 && <WorkOrdersCard workOrders={loc.work_orders} />}
       <ConditionsCard target={{ id: loc.id, name: loc.name, kind: "Location" }} view={loc} onChanged={refresh} />
       <MaintenancePhotos targetId={loc.id} targetKind="Location" targetName={loc.name} photos={loc.photos} onChanged={refresh} />

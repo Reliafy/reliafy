@@ -101,3 +101,20 @@ test("a branch's parts and classes: what's kept or used there and inside it", ()
   assert.deepEqual(partsInBranch(parts, site, { design: true }).map((p) => p.id), ["b"]);
   assert.deepEqual(classesInBranch(display, site), [{ position_class: "Motor", here: 1 }, { position_class: "Pump", here: 1 }]);
 });
+
+test("a product's design locations have the design's tabs: no Failure reports, Signals, or Parts and stock", () => {
+  const designLoc = { type: "loc", ref: { name: "Forward left arm", design_of: "d", in_design: true } };
+  assert.ok(isDesignRow(designLoc));
+  assert.deepEqual(tabsFor(designLoc).map((t) => t.id), ["summary", "rcm", "fmea", "classes"]);
+  assert.equal(rowKind(designLoc), "Design location");
+  assert.equal(shownTab("reports", designLoc), "summary");
+  assert.equal(shownTab("parts", designLoc), "summary");
+  // A location a built item carries is a real place on a real thing: the usual location tabs.
+  const carried = { type: "loc", ref: { name: "Forward left arm", carried_by: "b" } };
+  assert.ok(!isDesignRow(carried));
+  assert.deepEqual(tabsFor(carried).map((t) => t.id), ["summary", "rcm", "fmea", "reports", "parts", "classes"]);
+  assert.equal(rowKind(carried), "Location");
+  // A design's positions keep their Parts (the parts list).
+  const designPos = { type: "pos", ref: { name: "Motor 1", in_design: true } };
+  assert.deepEqual(tabsFor(designPos).map((t) => t.id), ["summary", "rcm", "fmea", "parts", "classes"]);
+});

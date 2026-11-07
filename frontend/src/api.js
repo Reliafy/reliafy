@@ -2325,8 +2325,10 @@ export function createMaintenanceItem(body) {
   return postJson("/api/maintenance/items", body);
 }
 
-export function listMaintenanceLocations() {
-  return request("/api/maintenance/locations");
+// of: a product's id (its design locations) or a built item's top position
+// (the locations it carries) instead of the places you look after.
+export function listMaintenanceLocations(of = null) {
+  return request(`/api/maintenance/locations${of ? `?of=${encodeURIComponent(of)}` : ""}`);
 }
 
 // The assets: the top-level places with what each holds, and the positions at none.
