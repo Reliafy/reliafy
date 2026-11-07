@@ -128,6 +128,25 @@ curl -X POST https://reliafy.com/api/v1/maintenance/apply \
       ], "dry_run": false}'
 ```
 
+A decision can combine tasks (RCM II's "combination of tasks": a regular
+inspection plus a fixed-time replacement). Send `decision.outcomes` in place of
+`outcome`, `task` and `interval`, one entry per task, and each one that
+schedules work gets a task of its own on the position:
+
+```json
+{"do": "failure_modes.decide", "args": {"failure_mode_id": "@m", "consequence": "safety",
+   "decision": {"outcomes": [
+     {"outcome": "on_condition", "task": "Vibration check", "interval": 1, "interval_unit": "months"},
+     {"outcome": "fixed_interval", "task": "Replace the bearing", "interval": 24, "interval_unit": "months"}]}}}
+```
+
+The entries are two or more of `on_condition`, `fixed_interval` and
+`failure_finding`, or `redesign` beside one of them as the interim measure;
+`rtf` and `accept` stand alone. Reads add `decision.outcomes` (each with its
+task, interval and `task_id`) beside the first entry's `outcome` and `task`.
+The app's own route takes the same body (`PUT
+/api/maintenance/failure-modes/{id}/decision`).
+
 `dry_run` true checks and reports without writing; it's the default when a
 batch deletes or has over 25 operations. `on_error` (`stop`, the default, or
 `continue`) says what to do if an operation fails during the real run (rare:

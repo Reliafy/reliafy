@@ -18,7 +18,7 @@ import { ancestorsOf } from "../outlineTree.js";
 import {
   COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
   belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, failuresOn, checkCounts, decisionText, insideWords,
-  intervalText, moreTasks, nameOf, shownStatus, taskLine, tasksOf, tasksTip, checkValue,
+  intervalText, isCombination, memberLine, moreTasks, nameOf, shownStatus, taskLine, tasksOf, tasksTip, checkValue,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import RcmBasis from "./RcmBasis.jsx";
@@ -485,7 +485,7 @@ export function Details({
   const chips = r.type === "mode"
     ? [
       r.ref.consequence ? { text: CONSEQUENCE_LABEL[r.ref.consequence], tone: "neutral" } : null,
-      d ? { text: [decisionText(d), d.interval ? `every ${intervalText(d)}` : null].filter(Boolean).join(" · "), tone: "accent" }
+      d ? { text: [decisionText(d), d.interval && !isCombination(d) ? `every ${intervalText(d)}` : null].filter(Boolean).join(" · "), tone: "accent" }
         : { text: "No decision yet", tone: "warning" },
     ].filter(Boolean)
     : (insideWords(r) || "").split(" · ").filter(Boolean).map((t) => ({ text: t, tone: toneOf(t) }));
@@ -617,7 +617,12 @@ export function Details({
               <>
                 <dl className="rw-card rw-dcard">
                   <div><dt>Decision</dt><dd><b>{decisionText(d)}</b></dd></div>
-                  {d.interval ? <div><dt>Interval</dt><dd>every {intervalText(d)}</dd></div> : null}
+                  {isCombination(d) ? (
+                    <div>
+                      <dt title="A combination of tasks: each one scheduled on its own">Combination</dt>
+                      <dd><ul className="rw-members" style={{ margin: 0, paddingLeft: "1.1em" }}>{d.outcomes.map((o) => <li key={o.outcome}>{memberLine(o)}</li>)}</ul></dd>
+                    </div>
+                  ) : d.interval ? <div><dt>Interval</dt><dd>every {intervalText(d)}</dd></div> : null}
                   <div>
                     <dt>Evidence</dt>
                     <dd className="rw-evidence">
@@ -641,8 +646,8 @@ export function Details({
                   </div>
                   {d.status !== "unevidenced" && (d.summary || d.reason) ? <p className="rw-dwhy">{d.summary || d.reason}</p> : null}
                 </dl>
-                {ownFields && COLUMN.task.can(r) && field("Task", "task", { area: true, locked: sharedOwn > 0 && d.outcome !== "rtf" })}
-                {ownFields && COLUMN.interval.can(r) && field("Interval", "interval", { locked: sharedOwn > 0 })}
+                {ownFields && !isCombination(d) && COLUMN.task.can(r) && field("Task", "task", { area: true, locked: sharedOwn > 0 && d.outcome !== "rtf" })}
+                {ownFields && !isCombination(d) && COLUMN.interval.can(r) && field("Interval", "interval", { locked: sharedOwn > 0 })}
                 {ownFields && sharedOwn > 0 && (
                   <p className="rw-fhelp">
                     Shared with {sharedOwn} other failure mode{sharedOwn === 1 ? "" : "s"}: its name and interval are changed on the task, for all of them.

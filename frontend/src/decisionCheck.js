@@ -23,11 +23,63 @@ const INTERVAL_NEEDED = {
   failure_finding: "Give the interval: how often the hidden function is checked.",
 };
 
-// {blockers, intervalError, notice}: `blockers` are what stops Apply, in
-// plain words (shown next to the button while it's disabled); `intervalError`
-// is the message under the interval field; `notice` is a quiet note that
-// doesn't stop Apply.
-export function checkDecision({ outcome, rtfBasis, task = "", interval = "", intervalUnit = "hours", notes = "", fields = [] }, { limits = false } = {}) {
+// ---- a combination of tasks -----------------------------------------------------
+// RCM II's "combination of tasks": where no one task is good enough on its own
+// (usually safety or environmental consequences), a decision holds two or more
+// outcomes, a regular inspection plus a fixed-time replacement, each with a
+// task of its own. The rules, as the server checks them
+// (backend/maintenance/rcm_decisions.py): two or more of the scheduled
+// outcomes, no outcome twice, or a redesign beside one scheduled task as the
+// interim measure; run-to-failure and accept stand alone.
+
+export const SCHEDULED = ["on_condition", "fixed_interval", "failure_finding"];
+const COMBINES = [...SCHEDULED, "redesign"];
+
+// Whether a list of outcomes may be one decision (one outcome always may).
+export function combinationOk(outcomes) {
+  if (outcomes.length < 2) return true;
+  if (new Set(outcomes).size !== outcomes.length || outcomes.some((o) => !COMBINES.includes(o))) return false;
+  const scheduled = outcomes.filter((o) => SCHEDULED.includes(o)).length;
+  return outcomes.includes("redesign") ? scheduled === 1 : scheduled >= 2;
+}
+
+// The outcomes the dialog offers to join `primary` ([{id, allowed}]), given
+// the ones `chosen` already: none for an outcome that stands alone.
+export function combineChoices(primary, chosen = []) {
+  if (!COMBINES.includes(primary)) return [];
+  return COMBINES.filter((o) => o !== primary).map((o) => ({
+    id: o, allowed: chosen.includes(o) || combinationOk([primary, ...chosen, o]),
+  }));
+}
+
+// The extra members still allowed once the primary outcome changes (in order,
+// each kept while the whole stays a combination the rules allow).
+export function pruneExtras(primary, extras) {
+  const kept = [];
+  for (const x of extras) {
+    if (COMBINES.includes(primary) && combinationOk([primary, ...kept.map((k) => k.outcome), x.outcome])) kept.push(x);
+  }
+  return kept;
+}
+
+// What's wrong with an interval as typed (null when nothing is).
+function intervalProblem(raw, unit, limits) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return "The interval must be a number.";
+  if (n <= 0) return "The interval must be more than 0.";
+  if (limits && DAYS_PER[unit] && n * DAYS_PER[unit] > MAX_DAYS) return "The interval is at most 100 years.";
+  if (limits && !DAYS_PER[unit] && n > MAX_USE) return `The interval is at most ${MAX_USE.toLocaleString("en-AU")} ${unit}.`;
+  return null;
+}
+
+// {blockers, intervalError, notice, extraErrors}: `blockers` are what stops
+// Apply, in plain words (shown next to the button while it's disabled);
+// `intervalError` is the message under the interval field; `notice` is a
+// quiet note that doesn't stop Apply; `extraErrors[i]` the message under the
+// interval of a combination's i-th further task (`extras`: [{outcome,
+// interval, intervalUnit}]). In a combination every scheduled task needs its
+// interval, the first one too.
+export function checkDecision({ outcome, rtfBasis, task = "", interval = "", intervalUnit = "hours", notes = "", fields = [], extras = [] }, { limits = false } = {}) {
   const blockers = [];
   let intervalError = null;
   let notice = null;
@@ -37,25 +89,31 @@ export function checkDecision({ outcome, rtfBasis, task = "", interval = "", int
   if (outcome === "rtf" && !rtfBasis) blockers.push("Choose why it can run to failure.");
   const asksInterval = fields.includes("interval");
   const raw = String(interval ?? "").trim();
+  const combined = extras.length > 0;
   if (asksInterval && raw !== "") {
-    const n = Number(raw);
-    if (!Number.isFinite(n)) intervalError = "The interval must be a number.";
-    else if (n <= 0) intervalError = "The interval must be more than 0.";
-    else if (limits && DAYS_PER[intervalUnit] && n * DAYS_PER[intervalUnit] > MAX_DAYS) intervalError = "The interval is at most 100 years.";
-    else if (limits && !DAYS_PER[intervalUnit] && n > MAX_USE) intervalError = `The interval is at most ${MAX_USE.toLocaleString("en-AU")} ${intervalUnit}.`;
-  } else if (asksInterval && NEEDS_INTERVAL.has(outcome)) {
-    intervalError = INTERVAL_NEEDED[outcome];
+    intervalError = intervalProblem(raw, intervalUnit, limits);
+  } else if (asksInterval && (NEEDS_INTERVAL.has(outcome) || combined)) {
+    intervalError = INTERVAL_NEEDED[outcome] || "Give the interval: in a combination every task needs one.";
   }
   if (intervalError) blockers.push(raw === "" ? "Give the task's interval." : "Fix the interval.");
+  const extraErrors = extras.map((x) => {
+    if (!SCHEDULED.includes(x.outcome)) return null;
+    const r = String(x.interval ?? "").trim();
+    return r === "" ? "Give this task's interval." : intervalProblem(r, x.intervalUnit || "hours", limits);
+  });
+  if (combined && !combinationOk([outcome, ...extras.map((x) => x.outcome)])) {
+    blockers.push("These outcomes can't be combined.");
+  }
+  if (extraErrors.some(Boolean)) blockers.push("Give each task of the combination a valid interval.");
   if (limits && String(notes || "").trim().length > MAX_NOTES) {
     blockers.push(`Shorten the notes to ${MAX_NOTES.toLocaleString("en-AU")} characters or fewer.`);
   }
-  if (outcome === "on_condition" && asksInterval && raw === "") {
+  if (outcome === "on_condition" && asksInterval && raw === "" && !combined) {
     notice = String(task || "").trim()
       ? "No task will be created without an interval: give one to schedule it, or say in the notes what covers it."
       : "No task will be created: this decision will show as having no task. Say in the notes what covers it.";
   }
-  return { blockers, intervalError, notice };
+  return { blockers, intervalError, notice, extraErrors };
 }
 
 // ---- the interval's unit, remembered on this device ---------------------------

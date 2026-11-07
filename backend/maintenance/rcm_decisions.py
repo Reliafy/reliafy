@@ -43,6 +43,17 @@ class RcmValidationError(ValueError):
 CONSEQUENCES = ("safety", "environmental", "operational", "non_operational", "hidden")
 OUTCOMES = ("on_condition", "fixed_interval", "rtf", "failure_finding", "redesign", "accept")
 RTF_BASES = ("random", "uneconomic")
+# A combination of tasks (RCM II's words): where no one task is good enough on
+# its own (classically for safety or environmental consequences), a decision
+# holds two or more outcomes, a regular inspection plus a fixed-time
+# replacement. Each member that schedules work gets a task of its own. A
+# redesign may sit beside one scheduled task, the interim measure until the
+# change is made; run-to-failure and accept stand alone.
+SCHEDULED = ("on_condition", "fixed_interval", "failure_finding")
+COMBINES = (
+    "A combination is two or more of on_condition, fixed_interval and failure_finding (no outcome twice), or "
+    "redesign beside one of them as the interim measure; rtf and accept stand alone."
+)
 # Evidence that's checked against the decision (a model or a saved analysis),
 # then evidence that's only linked: a report, or a standard's working (its id is
 # the function's whose performance standard the working sits behind).
@@ -116,16 +127,26 @@ RTF_BASIS_OPTIONS = [
 ]
 
 
-def advice(consequence, outcome) -> str | None:
+def advice(consequence, outcome, outcomes=None) -> str | None:
     """A word when a decision's outcome isn't one the classic RCM logic
     suggests for its consequence (a hidden failure run to failure, a safety
-    one accepted): never a refusal, the analyst may have reasons."""
+    one accepted): never a refusal, the analyst may have reasons.
+    ``outcomes``: every outcome of a combination of tasks (its members'), each
+    checked; a combination on an operational or non-operational consequence
+    gets a word too, since there the second task has to pay for itself."""
     option = next((c for c in CONSEQUENCE_OPTIONS if c["id"] == consequence), None)
-    if option is None or not outcome or outcome in option["suggested_outcomes"]:
+    members = [o for o in (outcomes or [outcome]) if o]
+    if option is None or not members:
         return None
-    usual = ", ".join(option["suggested_outcomes"])
-    return (f"{option['label']} consequences usually take {usual}. {option['hint']} If this decision stands, say why "
-            "in its notes.")
+    if any(o not in option["suggested_outcomes"] for o in members):
+        usual = ", ".join(option["suggested_outcomes"])
+        return (f"{option['label']} consequences usually take {usual}. {option['hint']} If this decision stands, "
+                "say why in its notes.")
+    if len(members) > 1 and consequence in ("operational", "non_operational"):
+        return (f"A combination of tasks is what RCM expects where a failure could hurt someone or harm the "
+                f"environment. On {option['label'].lower()} consequences each task has to cost less than the losses "
+                "it prevents: say in the notes what the second task earns.")
+    return None
 
 
 def options() -> dict:
@@ -183,9 +204,80 @@ EXPECTED_EVIDENCE = {
 }
 
 
+def _clean_interval(given: dict, cleaned: dict) -> None:
+    """A task's interval (a positive number) and its unit, into ``cleaned``."""
+    interval = given.get("interval")
+    if interval is not None and interval != "":
+        try:
+            interval = float(interval)
+        except (TypeError, ValueError):
+            raise RcmValidationError("The task interval must be a number.")
+        if interval <= 0:
+            raise RcmValidationError("The task interval must be positive.")
+        cleaned["interval"] = interval
+        unit = str(given.get("interval_unit") or "").strip()
+        if unit:
+            cleaned["interval_unit"] = unit
+
+
+def _clean_members(raw) -> list[dict]:
+    """A combination's members ({outcome, task, interval, interval_unit,
+    task_id}), checked against the combination rules, the scheduled ones first
+    in the order given and a redesign last. One member is a plain decision."""
+    if not isinstance(raw, list) or not all(isinstance(x, dict) for x in raw):
+        raise RcmValidationError("outcomes is a list of {outcome, task, interval, interval_unit, task_id}, one per "
+                                 "task of the combination.")
+    members = []
+    for given in raw:
+        outcome = given.get("outcome")
+        if outcome not in OUTCOMES:
+            raise RcmValidationError(f"Each of outcomes needs its outcome, one of {', '.join(OUTCOMES)}"
+                                     f"{f' (not {outcome!r})' if outcome else ''}.")
+        member = {"outcome": outcome}
+        if outcome in SCHEDULED:
+            _clean_interval(given, member)
+            task = str(given.get("task") or "").strip()
+            if task:
+                member["task"] = task
+            tid = given.get("task_id")
+            if tid not in (None, ""):
+                if not isinstance(tid, str):
+                    raise RcmValidationError("A member's task_id is an existing task's id.")
+                member["task_id"] = tid.strip()
+        elif any(given.get(k) not in (None, "") for k in ("task", "interval", "task_id")):
+            raise RcmValidationError(f"Only a task that schedules work takes a task and an interval ({outcome} "
+                                     "doesn't): say what's meant in the decision's notes.")
+        members.append(member)
+    if len(members) < 2:
+        return members
+    said = [m["outcome"] for m in members]
+    scheduled = [o for o in said if o in SCHEDULED]
+    if len(set(said)) != len(said) or any(o in ("rtf", "accept") for o in said) or (
+            "redesign" in said and len(scheduled) != 1):
+        raise RcmValidationError(f"{' + '.join(said)} can't be combined. {COMBINES}")
+    for m in members:
+        if m["outcome"] in SCHEDULED and not m.get("interval") and not m.get("task_id"):
+            raise RcmValidationError(f"Each task of a combination needs its interval (or the task_id of an existing "
+                                     f"task): {m['outcome']} has neither.")
+    return sorted(members, key=lambda m: m["outcome"] == "redesign")
+
+
 def _clean_decision(decision) -> dict | None:
     if decision is None:
         return None
+    members = single_task = None
+    if decision.get("outcomes") not in (None, []):
+        members = _clean_members(decision["outcomes"])
+        said = decision.get("outcome")
+        if said and said not in [m["outcome"] for m in members]:
+            raise RcmValidationError(f"outcome is the first of outcomes (or left out): {said} isn't one of them.")
+        first = members[0]
+        # The first member is the decision's own: its fields are the decision's.
+        decision = {k: v for k, v in decision.items() if k not in ("outcomes", "task", "interval", "interval_unit")}
+        decision |= {k: first[k] for k in ("outcome", "task", "interval", "interval_unit") if k in first}
+        if len(members) == 1:
+            # One member is a plain decision; its task_id (if any) is the decision's.
+            members, single_task = None, first.get("task_id")
     outcome = decision.get("outcome")
     if not outcome:
         # A decision is replaced whole, so a change to one field still sends the rest.
@@ -205,23 +297,16 @@ def _clean_decision(decision) -> dict | None:
             )
         cleaned["rtf_basis"] = basis
 
-    interval = decision.get("interval")
-    if interval is not None and interval != "":
-        try:
-            interval = float(interval)
-        except (TypeError, ValueError):
-            raise RcmValidationError("The task interval must be a number.")
-        if interval <= 0:
-            raise RcmValidationError("The task interval must be positive.")
-        cleaned["interval"] = interval
-        unit = str(decision.get("interval_unit") or "").strip()
-        if unit:
-            cleaned["interval_unit"] = unit
+    _clean_interval(decision, cleaned)
 
     for key in ("task", "notes"):
         value = str(decision.get(key) or "").strip()
         if value:
             cleaned[key] = value
+    if members is not None:
+        cleaned["outcomes"] = members
+    elif single_task:
+        cleaned["task_id"] = single_task  # the decide call's task_id, when it gives none of its own
 
     evidence = decision.get("evidence")
     if evidence:

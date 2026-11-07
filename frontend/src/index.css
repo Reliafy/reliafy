@@ -7677,6 +7677,11 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .interval-input { width: 110px; }
 .interval-input[aria-invalid="true"] { border-color: var(--danger); }
 .decision-interval-error { font-size: var(--fs-12); color: var(--danger); line-height: 1.5; margin: 6px 0 0; }
+/* A combination of tasks: each further task's name and interval under the choice. */
+.option-tile:disabled { cursor: not-allowed; opacity: 0.5; }
+.decision-extra { margin-top: 12px; }
+.decision-extra .field-row { flex-wrap: wrap; }
+.decision-extra .field-row input[type="text"] { min-width: 12rem; }
 /* Apply, and beside it what's missing while it can't be pressed. */
 .decision-apply { display: flex; align-items: center; gap: 10px; margin-left: auto; min-width: 0; }
 .decision-why { margin: 0; font-size: var(--fs-13); color: var(--muted); text-align: right; line-height: 1.4; }
