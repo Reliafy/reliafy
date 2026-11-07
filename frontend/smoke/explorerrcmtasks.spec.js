@@ -71,7 +71,14 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   let tasks = tasksOf(page);
   await expect(chipsOf(page)).toContainText("On condition");
   await expect(cards(tasks)).toHaveCount(1);
-  await expect(names(tasks)).toHaveText([`On condition · Weekly pH check ${tag} · every 1 week`]);
+  // Each card leads with what it's for (Derryn, 9 Nov 2026): a check, then what's done when it finds it.
+  await expect(names(tasks)).toHaveText([`Check: Weekly pH check ${tag} · every 1 week`]);
+  const found = tasks.getByRole("textbox", { name: "Then, if found:" });
+  await expect(found).toHaveAttribute("placeholder", "Say what's done when the check finds it");
+  await found.fill(`Dose acid by hand ${tag}`);
+  await found.press("Enter");
+  await expect(cards(tasks).first().getByRole("status")).toHaveText("✓ Saved");
+  await expect(tasks.getByRole("textbox", { name: "Then, if found:" })).toHaveValue(`Dose acid by hand ${tag}`);
   await expect(tasks.getByRole("region", { name: "Tasks" })).toHaveCount(0);
   // No ⋯ and no Change…: the choice is the chip row, the task's own links are on its card.
   await expect(tasks.getByRole("button", { name: /^Actions for/ })).toHaveCount(0);
@@ -103,7 +110,9 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await expect(cards(tasks)).toHaveCount(2);
   await expect(chipsOf(page)).toContainText("On condition + Fixed interval");
   const item = (name) => cards(tasks).filter({ hasText: name });
-  await expect(item(`Replace the acid pump ${tag}`)).toContainText(`Fixed interval · Replace the acid pump ${tag}`);
+  await expect(item(`Replace the acid pump ${tag}`)).toContainText(`Do: Replace the acid pump ${tag}`);
+  // The check keeps what's done when it finds it.
+  await expect(tasks.getByRole("textbox", { name: "Then, if found:" })).toHaveValue(`Dose acid by hand ${tag}`);
   await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 24 months");
   // Its instructions: its card's Edit, as for any other task.
   await taskLink(tasks, `Replace the acid pump ${tag}`, "Edit").click();
@@ -123,7 +132,8 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await add.getByRole("button", { name: "Link task" }).click();
   await expect(add).toHaveCount(0);
   await expect(cards(tasks)).toHaveCount(3);
-  await expect(item(`Backwash the filter ${tag}`)).toContainText("Failure finding · ");
+  await expect(item(`Backwash the filter ${tag}`)).toContainText("Check it still works: ");
+  await expect(item(`Backwash the filter ${tag}`).getByRole("textbox", { name: "Then, if failed:" })).toBeVisible();
   // No kind left to add: no add row.
   await expect(addRow(tasks)).toHaveCount(0);
 
@@ -139,7 +149,7 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await expect(ask).toContainText("serves only this failure mode, so it is retired");
   await ask.getByRole("button", { name: "Retire the task" }).click();
   await expect(item(`Backwash the filter ${tag}`)).toHaveCount(0);
-  await expect(cards(tasks).filter({ hasText: "Failure finding · no task now" })).toHaveCount(1);
+  await expect(cards(tasks).filter({ hasText: "Check it still works: no task now" })).toHaveCount(1);
   await expect(cards(tasks)).toHaveCount(3);
   await panel(page).getByRole("button", { name: "Back to table" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);

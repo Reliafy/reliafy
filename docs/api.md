@@ -147,6 +147,16 @@ task, interval and `task_id`) beside the first entry's `outcome` and `task`.
 The app's own route takes the same body (`PUT
 /api/maintenance/failure-modes/{id}/decision`).
 
+An `on_condition` or `failure_finding` task says what's done when the check
+finds something: `decision.on_found` ("Replace the bearing within 2 weeks"), or
+a member's `on_found` in `decision.outcomes`. Left out of a `decide`, it is
+kept while the kind of task stays; `""` clears it; it's refused on any other
+kind of task. Reads return it in the same places. A failure mode's rationale
+has one place, its notes (`failure_modes.update notes`, or `PATCH
+/api/maintenance/failure-modes/{id}`): `decision.notes` on a `decide` is
+deprecated and is added to those notes, and reads give `decision.notes` as the
+mode's notes for older callers.
+
 `decide` follows the RCM decision diagram (SAE JA1011, RCM II). `hidden`
 (true or false) says whether the failure would go unnoticed in normal
 operation; `consequence` is one of `safety`, `environmental`, `operational` or

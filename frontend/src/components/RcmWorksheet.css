@@ -845,3 +845,12 @@ button.rim-addrow:hover:not(:disabled) { border-color: var(--acc); background: t
   .rim-cards .rim-tacts .link { min-height: 36px; }
   .rim-line .rim-tevery { white-space: normal; }
 }
+/* A task card's role (Derryn, 9 Nov 2026): "Check:", "Do:", "When it fails:" lead the
+   card, and a check's "Then, if found:" line says what's done when it finds it. */
+.rim-trole { font-weight: 600; }
+.rim-tname .rim-trole { margin-right: 0; }
+.rim-empty { color: var(--muted); font-weight: 400; font-style: italic; }
+.rim-found { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; padding-left: 20px; font-size: var(--fs-14); min-width: 0; overflow-wrap: anywhere; }
+.rim-found > .ctl { flex: 1 1 12rem; min-width: 0; }
+.rim-found > .field-error { flex-basis: 100%; margin: 0; }
+.rim-card .rim-own { padding-left: 20px; }

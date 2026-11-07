@@ -450,6 +450,7 @@ def _member(decision, planned: dict, live_tasks: dict, sheet_tasks: dict, row: i
         return None
     if outcome == "redesign":
         return {"outcome": outcome, "task": None, "shared": False}
+    found = {"on_found": decision["on_found"]} if decision.get("on_found") else {}
     if not decision.get("interval"):
         return None
     unit = _norm_unit(decision.get("interval_unit")) or "days"
@@ -463,7 +464,7 @@ def _member(decision, planned: dict, live_tasks: dict, sheet_tasks: dict, row: i
         return None  # one task can't be two members of a combination
     shared = _shared_task(decision, live_tasks, sheet_tasks, row, errors)
     return {"outcome": outcome, "task": shortened(name, SHORT_TEXT)[0] if name else "", "interval": interval,
-            "unit": unit, "shared": shared}
+            "unit": unit, "shared": shared} | found
 
 
 def _extra_task(decision, planned: dict, live_tasks: dict, sheet_tasks: dict, row: int,
@@ -508,15 +509,17 @@ def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
             shared = task_named(decision.get("task")) if mode.get("shared") and decision else None
             if decision and mode.get("members"):
                 # A combination of tasks: the first row's decision, then each repeated row's outcome.
-                first = {k: decision[k] for k in ("outcome", "task", "interval", "interval_unit") if decision.get(k)}
+                first = {k: decision[k] for k in ("outcome", "task", "interval", "interval_unit", "on_found")
+                         if decision.get(k)}
                 if shared:
                     first["task_id"] = shared
                 decision = {k: v for k, v in decision.items() if k not in ("outcome", "task", "interval",
-                                                                         "interval_unit", "rtf_basis")}
+                                                                         "interval_unit", "rtf_basis", "on_found")}
                 decision["outcomes"] = [first] + [
                     {"outcome": x["outcome"]} if x["outcome"] == "redesign" else
                     {"outcome": x["outcome"], "interval": x["interval"], "interval_unit": x["unit"]}
                     | ({"task": x["task"]} if x["task"] else {})
+                    | ({"on_found": x["on_found"]} if x.get("on_found") else {})
                     | ({"task_id": task_named(x["task"])} if x["shared"] and task_named(x["task"]) else {})
                     for x in mode["members"]]
                 shared = None

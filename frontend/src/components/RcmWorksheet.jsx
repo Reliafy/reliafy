@@ -524,11 +524,12 @@ export function Details({
       </Field>
     </>
   );
-  // Link evidence… (step 3's Evidence and rationale): the evidence picker alone, in a small dialog.
+  // Link evidence… (step 3's Evidence): the evidence picker alone, in a small dialog.
   const [linkingEvidence, setLinkingEvidence] = useState(false);
   useEffect(() => setLinkingEvidence(false), [r.key]);
-  // Step 3's open "Evidence and rationale": the evidence (Link evidence… when none), what it
-  // says, a combination's members' own evidence, and the decision notes.
+  // Step 3's open "Evidence": the evidence (Link evidence… when none), what it says and a
+  // combination's members' own evidence. The rationale is the failure mode's notes and
+  // rationale under its title: one place (Derryn, 9 Nov 2026).
   const decisionWhy = r.type === "mode" && d && (
     <>
       <div className="rw-evidence">
@@ -558,7 +559,6 @@ export function Details({
       {isCombination(d) && d.outcomes.some((o) => o.status) && (
         <ul className="rw-members">{d.outcomes.filter((o) => o.status).map((o, i) => <li key={`${o.outcome}:${i}`}>{memberEvidenceLine(o)}</li>)}</ul>
       )}
-      {field("Decision notes", "dnotes", { area: true, optional: true })}
     </>
   );
   // Run to failure's action on failure, kept as you go in step 3 (a scheduled decision's task

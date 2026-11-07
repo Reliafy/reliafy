@@ -297,8 +297,20 @@ failure is caused by some of the position's failure modes:
 A failure mode's analysis and decision are properties on the mode
 (`effects`, `notes`, `consequence`, `outcome`, `rtf_basis`, `decision_notes`,
 `task_note` for a decision with no scheduled task, `task_id`: the decision's
-own task, and `evidence`: the saved model or analysis behind it, `{type,
+own task, `on_found`: what's done when an on-condition or failure-finding
+check finds it, and `evidence`: the saved model or analysis behind it, `{type,
 id}`). The interval and unit of a scheduled decision are its task's. A
+combination's members (`failure_mode.outcomes_set`) may each carry their own
+`on_found`; both are optional keys added in Nov 2026, so older events replay
+unchanged.
+
+Since Nov 2026 the mode's `notes` are the one place for its rationale. Old
+`decision_notes` are read merged into them (the notes, a "Decision" line, then
+the decision notes); the first save of the notes, or `python -m
+backend.scripts.merge_decision_notes [--org ORG] [--apply]`, records
+`failure_mode.decision_notes_merged {id, notes}`, whose projector sets `notes`
+and clears `decision_notes`. A `decide` never writes `decision_notes` now: its
+`decision.notes` is a deprecated alias that adds to the mode's notes. A
 failure mode under no functional failure still belongs to its position (the
 app lists it as unassigned).
 

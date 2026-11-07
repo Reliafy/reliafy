@@ -109,6 +109,8 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       // The FME(C)A's fields (scores, effects, action, criticality) and the
       // mode's notes: one PATCH each, null clearing the field.
       if (col === "notes" || FMEA_FIELDS.has(col)) return after(updateFailureMode(id, { [col]: value }));
+      // The table's Decision notes column: the failure mode's notes (one place since Nov 2026).
+      if (col === "dnotes") return after(updateFailureMode(id, { notes: value }));
       if (col === "consequence") return after(decideFailureMode(id, { consequence: value || null }));
       if (col === "hidden") return after(decideFailureMode(id, { hidden: value ?? null }));
       return after(decideFailureMode(id, { decision: decisionBody(r.ref.decision, { [COLUMN[col].field]: value }) }));

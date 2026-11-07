@@ -32,7 +32,7 @@ test("on condition with no interval: Apply stays on, with a quiet notice that no
   const c = check({ outcome: "on_condition" });
   assert.deepEqual(c.blockers, []);
   assert.equal(c.intervalError, null);
-  assert.equal(c.notice, "No task will be created: this decision will show as having no task. Say in the notes what covers it.");
+  assert.equal(c.notice, "No task will be created: this decision will show as having no task. Say what covers it in Notes and rationale.");
   // Covered by another task, said in the notes: still allowed, still noted.
   assert.deepEqual(check({ outcome: "on_condition", notes: "Covered by the weekly walk-round" }).blockers, []);
   assert.match(check({ outcome: "on_condition", task: "Listen for noise" }).notice, /^No task will be created without an interval/);

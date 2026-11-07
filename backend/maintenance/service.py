@@ -149,6 +149,7 @@ BASIS_TEXT = 5 * LONG_TEXT  # the working behind a function's performance standa
 # standard too (they replaced the separate working, Nov 2026): room for both.
 FUNCTION_NOTES = 25_000
 WORKING_LINE = "Working"  # the line between a function's notes and the working read with them
+DECISION_LINE = "Decision"  # the line between a failure mode's notes and its old decision notes read with them
 BASIS_PREVIEW = 240  # characters of that working in the bulk RCM read
 NOTE_HISTORY = 20  # earlier versions of a note kept on the node (the log keeps every one)
 _LONG_FIELDS = {"description", "operating context", "notes", "note", "instructions", "reason"}
@@ -264,6 +265,20 @@ def merged_notes(notes, working) -> str:
     if working.startswith(notes):  # none, or a reader sending back the merged text it read
         return working
     return f"{notes}\n\n{WORKING_LINE}\n\n{working}"
+
+
+def mode_notes(notes, decision_notes) -> str:
+    """A failure mode's notes and rationale as read: its notes, then the notes
+    its decision kept apart before Nov 2026 (``decision_notes``) under a short
+    "Decision" line; the decision notes alone when there are no notes. The log
+    keeps both as written: this is the read, and the text saved once the mode's
+    notes are next set (failure_mode.decision_notes_merged)."""
+    notes, extra = str(notes or "").strip(), str(decision_notes or "").strip()
+    if not extra or notes == extra or notes.endswith(f"\n\n{DECISION_LINE}\n\n{extra}"):
+        return notes  # merged already
+    if extra.startswith(notes):  # none, or a reader sending back the merged text it read
+        return extra
+    return f"{notes}\n\n{DECISION_LINE}\n\n{extra}"
 
 
 def _joined(ch: str) -> bool:
@@ -981,6 +996,14 @@ def _function_working_merged(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["id"], {"notes": p["notes"], "standard_basis": "", "working_merged": True})
 
 
+def _failure_mode_decision_notes_merged(s: GraphStore, org: str, p: dict) -> None:
+    """failure_mode.decision_notes_merged (Nov 2026): the mode's notes and
+    rationale replaced whole by ``notes`` (the text saved, which took in the
+    decision's notes), and the decision's separate notes (``decision_notes``)
+    absorbed into them: cleared on the node, never rewritten in the log."""
+    s.patch_node(org, p["id"], {"notes": p["notes"], "decision_notes": ""})
+
+
 # A function's performance standards as a list: each one parameter and one
 # limit ("pH 7.2-7.8"), optionally structured (parameter, comparator, value,
 # unit), with when it applies and where it comes from. The function is HELD_TO
@@ -1333,7 +1356,8 @@ def _functional_failure_moved(s: GraphStore, org: str, p: dict) -> None:
 
 
 # A failure mode's RCM analysis, beyond what failure_mode.added carries.
-_ANALYSIS = ("effects", "notes", "rtf_basis", "evidence", "decision_notes", "task_note", "hidden")
+# on_found (Nov 2026, optional): what's done when an on-condition or failure-finding check finds it.
+_ANALYSIS = ("effects", "notes", "rtf_basis", "evidence", "decision_notes", "task_note", "hidden", "on_found")
 
 
 # Task fields that only tasks added by hand (or edited since) carry: projected
@@ -1379,9 +1403,11 @@ def _task_updated(s: GraphStore, org: str, p: dict) -> None:
 # The edge id comes from its ends, so linking twice or replaying is the same edge.
 
 def _failure_mode_outcomes_set(s: GraphStore, org: str, p: dict) -> None:
-    # A member's own evidence ({type, id}, optional: added Nov 2026) rides along when given.
+    # A member's own evidence ({type, id}, optional: added Nov 2026) rides along when given,
+    # and what's done when its check finds it (on_found, optional: added Nov 2026).
     s.patch_node(org, p["id"], {"outcomes": [{"outcome": o["outcome"], "task_id": o.get("task_id")}
                                              | ({"evidence": o["evidence"]} if o.get("evidence") else {})
+                                             | ({"on_found": o["on_found"]} if o.get("on_found") else {})
                                              for o in p.get("outcomes") or []] or None})
 
 
@@ -2626,6 +2652,7 @@ PROJECTORS = {
     "standard.moved": _standard_moved,
     "failure_mode.assigned": _failure_mode_assigned,
     "failure_mode.analysed": _patch,
+    "failure_mode.decision_notes_merged": _failure_mode_decision_notes_merged,
     # A combination of tasks: every outcome of the decision, each with its task
     # ([{outcome, task_id}], the first the decision's own; [] when it's one again).
     "failure_mode.outcomes_set": _failure_mode_outcomes_set,
@@ -3046,7 +3073,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 if fm.get("outcomes"):
                     self._emit("failure_mode.outcomes_set", {"id": copied_modes[fm["id"]], "outcomes": [
                         {"outcome": o["outcome"], "task_id": task_copies.get(o.get("task_id"))}
-                        | ({"evidence": o["evidence"]} if o.get("evidence") else {}) for o in fm["outcomes"]]})
+                        | ({"evidence": o["evidence"]} if o.get("evidence") else {})
+                        | ({"on_found": o["on_found"]} if o.get("on_found") else {}) for o in fm["outcomes"]]})
         skipped = self._copy_links(ff_ids, parent_id or None)
         return self.position(new) | ({"links_skipped": skipped} if skipped else {})
 
@@ -3558,6 +3586,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             analysed["effects"] = _text(effects, "effects", max_len=LONG_TEXT)
         if notes is not None:
             analysed["notes"] = _notes_text(notes)
+        if "notes" in analysed and str(fm.get("decision_notes") or "").strip():
+            # Its decision's notes are still apart: they read with the mode's notes
+            # (mode_notes), and the text saved takes both in.
+            value = analysed.pop("notes")
+            if value != mode_notes(fm.get("notes"), fm["decision_notes"]):
+                self._emit("failure_mode.decision_notes_merged", {"id": mode_id, "notes": value})
         analysed = {k: v for k, v in analysed.items() if (fm.get(k) or "") != v}
         if analysed:
             self._emit("failure_mode.analysed", {"id": mode_id, "changes": analysed})
@@ -3710,6 +3744,27 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             for row in merged:
                 self._emit("function.working_merged", {"id": row["id"], "notes": row["_notes"]})
         return {"dry_run": dry_run, "functions": len(merged),
+                "merged": [{k: v for k, v in row.items() if k != "_notes"} for row in merged]}
+
+    def merge_decision_notes(self, dry_run: bool = True) -> dict:
+        """One-off (Nov 2026): each failure mode's decision notes, kept apart
+        before, put into the mode's notes and rationale. Each such live mode
+        gets failure_mode.decision_notes_merged with the text it reads as now
+        (mode_notes), so nothing a user sees changes. dry_run (the default)
+        only lists them; a second run finds none. Returns {dry_run, modes,
+        merged: [{id, text, notes_chars, decision_notes_chars, merged_chars}]}."""
+        merged = []
+        for fm in sorted(self.s.nodes(self.org, "FailureMode"), key=lambda n: n["id"]):
+            extra = str(fm.get("decision_notes") or "").strip()
+            if fm.get("merged_into") or fm.get("retired") or not extra:
+                continue
+            text = mode_notes(fm.get("notes"), extra)
+            merged.append({"id": fm["id"], "text": fm.get("text") or "", "notes_chars": len(fm.get("notes") or ""),
+                           "decision_notes_chars": len(extra), "merged_chars": len(text), "_notes": text})
+        if not dry_run:
+            for row in merged:
+                self._emit("failure_mode.decision_notes_merged", {"id": row["id"], "notes": row["_notes"]})
+        return {"dry_run": dry_run, "modes": len(merged),
                 "merged": [{k: v for k, v in row.items() if k != "_notes"} for row in merged]}
 
     def set_rcm_notes(self, kind: str, row_id: str, notes) -> dict:
@@ -4474,6 +4529,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             cleaned = cleaned or {}
             task_id = task_id or cleaned.pop("task_id", None)
             members = cleaned.pop("outcomes", None)
+            # decision.notes: a deprecated alias (Nov 2026), added to the mode's notes and rationale.
+            notes_now = self._notes_alias(fm, cleaned.pop("notes", None))
             if strict and cleaned:
                 why = rcm_decisions.refusal(now_hidden, now_category,
                                             [mm["outcome"] for mm in members or []] or [cleaned.get("outcome")])
@@ -4495,7 +4552,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             if members or fm.get("outcomes"):
                 # A combination of tasks, or a decision replacing one. A plain decision on a
                 # mode that never had one goes on below, emitting what it always has.
-                return self._decide_combination(fm, position, tasks, changes, cleaned, members, task_id)
+                self._decide_combination(fm, position, tasks, changes, cleaned, members, task_id)
+                self._write_mode_notes(fm, notes_now)
+                return self.rcm_mode(mode_id)
             said = str(cleaned.get("task") or "").strip()
             outcome = cleaned.get("outcome")
             if task_id:
@@ -4511,9 +4570,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             scheduled = outcome in SCHEDULED_OUTCOMES and cleaned.get("interval")
             changes |= {
                 "outcome": outcome, "rtf_basis": cleaned.get("rtf_basis"), "evidence": cleaned.get("evidence"),
-                "decision_notes": _text(cleaned.get("notes"), "notes"),
                 # What's done when no task is scheduled for it (run-to-failure's action on failure).
                 "task_note": "" if scheduled else shortened(said, LONG_TEXT)[0],
+                "on_found": self._on_found(fm, outcome, cleaned),
             }
         changes = {k: v for k, v in changes.items() if fm.get(k) != v and not (fm.get(k) is None and v == "")}
         if changes:
@@ -4554,7 +4613,41 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                         self._emit("failure_mode.analysed", {"id": mode_id, "changes": {"task_id": task["id"]}})
             else:
                 self._drop_mode_tasks(mode_id, tasks, "The failure mode's decision schedules no task now.")
+            self._write_mode_notes(fm, notes_now)
         return self.rcm_mode(mode_id)
+
+    @staticmethod
+    def _on_found(fm: dict, outcome, given: dict) -> str:
+        """What's done when the check finds it, for a decision (or a combination's
+        member) of ``outcome``: the one given ("" clears it); left out, the one the
+        mode had for that kind of task; "" for a task that checks nothing."""
+        if outcome not in rcm_decisions.FINDS:
+            return ""
+        if "on_found" in given:
+            return given["on_found"]
+        if fm.get("outcomes"):
+            return next((o.get("on_found") or "" for o in fm["outcomes"] if o["outcome"] == outcome), "")
+        return (fm.get("on_found") or "") if fm.get("outcome") == outcome else ""
+
+    def _notes_alias(self, fm: dict, said) -> str | None:
+        """The mode's notes and rationale with a decision's notes added (decision.notes,
+        the deprecated alias), checked; None when they add nothing: none, or text the
+        notes hold already (a reader sending back the decision it read)."""
+        said = str(said or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        now = mode_notes(fm.get("notes"), fm.get("decision_notes"))
+        if not said or said in now:
+            return None
+        return _notes_text(said if said.startswith(now) else f"{now}\n\n{said}" if now else said)
+
+    def _write_mode_notes(self, fm: dict, value: str | None) -> None:
+        """Set a mode's notes and rationale whole (None: leave them); decision notes
+        still apart are absorbed (failure_mode.decision_notes_merged)."""
+        if value is None:
+            return
+        if str(fm.get("decision_notes") or "").strip():
+            self._emit("failure_mode.decision_notes_merged", {"id": fm["id"], "notes": value})
+        elif value != (fm.get("notes") or ""):
+            self._emit("failure_mode.analysed", {"id": fm["id"], "changes": {"notes": value}})
 
     def _decide_combination(self, fm: dict, position: dict, tasks: list[dict], changes: dict, cleaned: dict,
                             members: list[dict] | None, task_id) -> dict:
@@ -4640,8 +4733,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         said = str(cleaned.get("task") or "").strip()
         changes |= {
             "outcome": outcome, "rtf_basis": cleaned.get("rtf_basis"), "evidence": cleaned.get("evidence"),
-            "decision_notes": _text(cleaned.get("notes"), "notes"),
             "task_note": "" if sched else shortened(said, LONG_TEXT)[0],
+            # A combination's on_found is each member's (outcomes); a single task's is the mode's.
+            "on_found": "" if combined else self._on_found(fm, outcome, cleaned),
         }
         changes = {k: v for k, v in changes.items() if fm.get(k) != v and not (fm.get(k) is None and v == "")}
         if changes:
@@ -4663,7 +4757,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             self._emit("failure_mode.analysed", {"id": mode_id, "changes": {"task_id": task_of[sched[0]["outcome"]]}})
         # Each member with its task, and its own evidence where it has some (checked for it alone).
         now = [{"outcome": mm["outcome"], "task_id": task_of.get(mm["outcome"])}
-               | ({"evidence": mm["evidence"]} if mm.get("evidence") else {}) for mm in members] if combined else []
+               | ({"evidence": mm["evidence"]} if mm.get("evidence") else {})
+               | ({"on_found": found} if (found := self._on_found(fm, mm["outcome"], mm)) else {})
+               for mm in members] if combined else []
         if now != (fm.get("outcomes") or []):
             self._emit("failure_mode.outcomes_set", {"id": mode_id, "outcomes": now})
         # The old decision's tasks no member kept; every task, when the decision schedules none.
@@ -5459,8 +5555,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             d["tasks"] = Maintenance._tasks_brief(tasks, shares)
         elif fm.get("task_note"):
             d["task"] = fm["task_note"]
-        if fm.get("decision_notes"):
-            d["notes"] = fm["decision_notes"]
+        if fm.get("on_found") and not fm.get("outcomes"):
+            d["on_found"] = fm["on_found"]  # what's done when the check finds it
+        # The decision's notes are the mode's notes and rationale (one place since Nov 2026):
+        # kept here, as read, for readers of the decision before then.
+        notes = mode_notes(fm.get("notes"), fm.get("decision_notes"))
+        if notes:
+            d["notes"] = notes
         d["evidence"] = fm.get("evidence") or None
         if fm.get("outcomes"):
             d["outcomes"] = Maintenance._members_of(fm, tasks)
@@ -5471,7 +5572,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         """A combination's members as reads show them: each outcome with its task
         (task, interval, interval_unit, task_id), task_id null when its task has
         gone (retired or unlinked) or it schedules none (a redesign); evidence:
-        its own, when it has some (else the decision's stands for it)."""
+        its own, when it has some (else the decision's stands for it); on_found: what's
+        done when its check finds it, when said."""
         live = {t["id"]: t for t in tasks}
         out = []
         for o in fm.get("outcomes") or []:
@@ -5479,7 +5581,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             out.append({"outcome": o["outcome"], "task_id": t["id"] if t else None}
                        | ({"task": Maintenance._task_text(t), "interval": t.get("interval"),
                            "interval_unit": t.get("unit")} if t else {})
-                       | ({"evidence": dict(o["evidence"])} if o.get("evidence") else {}))
+                       | ({"evidence": dict(o["evidence"])} if o.get("evidence") else {})
+                       | ({"on_found": o["on_found"]} if o.get("on_found") else {}))
         return out
 
     @staticmethod
@@ -5533,7 +5636,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         said = rcm_decisions.advice(consequence, (decision or {}).get("outcome"),
                                     [o["outcome"] for o in (decision or {}).get("outcomes") or []], hidden=hidden)
         return {
-            "id": fm["id"], "text": fm["text"], "effects": fm.get("effects") or "", "notes": fm.get("notes") or "",
+            "id": fm["id"], "text": fm["text"], "effects": fm.get("effects") or "",
+            "notes": mode_notes(fm.get("notes"), fm.get("decision_notes")),
             "hidden": hidden, "consequence": consequence, "decision": decision,
             **({"advice": said} if said else {}),
             # Its tasks whether or not it's decided yet (a task linked before the decision).

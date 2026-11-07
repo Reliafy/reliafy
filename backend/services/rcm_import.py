@@ -157,6 +157,10 @@ FIELDS = [
     {"id": "interval_unit", "label": "Interval unit",
      "help": "Hours, days, months, cycles…",
      "synonyms": ["interval unit", "unit", "units", "frequency unit", "interval units"]},
+    {"id": "on_found", "label": "On found",
+     "help": "What's done when an on-condition or failure-finding check finds it (“Then, if found”).",
+     "synonyms": ["on found", "then if found", "if found", "then if failed", "action if found", "when found",
+                  "action on finding"]},
     {"id": "notes", "label": "Notes",
      "help": "The failure mode's notes and rationale (comments or remarks), kept on the failure mode.",
      "synonyms": ["notes", "note", "comments", "comment", "remarks", "remark", "rationale", "justification",
@@ -581,6 +585,11 @@ def build_tree(header: list[str], rows: list[list], options: dict,
                     decision["interval_unit"] = clip(unit)
             elif _text(raw_interval):
                 notes.append(f"Interval: {_text(raw_interval)}")
+            found = cell(r, "on_found")
+            if found and decision["outcome"] in rcm.FINDS:
+                decision["on_found"] = clip(found)
+            elif found:  # only a check finds something: kept in the notes
+                notes.append(f"On found: {found}")
             mode["decision"] = decision
             n_decisions += 1
         else:

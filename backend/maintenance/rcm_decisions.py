@@ -198,6 +198,11 @@ RTF_BASIS_OPTIONS = [
 # default action follows from the two answers (default_action).
 
 TASK_ORDER = ("on_condition", "fixed_interval", "failure_finding")
+# The tasks that check something (a condition, a hidden function): each can say
+# what's done when the check finds it (on_found, Nov 2026: "Then, if found").
+FINDS = ("on_condition", "failure_finding")
+ON_FOUND_MAX = 500
+
 
 
 def _category_word(consequence) -> str:
@@ -372,6 +377,19 @@ def _clean_evidence(evidence) -> dict | None:
     return {"type": etype, "id": eid.strip()}
 
 
+def _clean_on_found(value, outcome) -> str:
+    """What's done when a check finds it ("" clears it): only an on-condition or
+    failure-finding task checks something."""
+    text = " ".join(str(value or "").split())
+    if text and outcome not in FINDS:
+        raise RcmValidationError(f"on_found (what's done when the check finds it) goes with an on_condition or "
+                                 f"failure_finding task, not {outcome}.")
+    if len(text) > ON_FOUND_MAX:
+        raise RcmValidationError(f"on_found is {len(text):,} characters; keep it to {ON_FOUND_MAX} (the task's "
+                                 "instructions hold the detail).")
+    return text
+
+
 def _clean_members(raw) -> list[dict]:
     """A combination's members ({outcome, task, interval, interval_unit,
     task_id, evidence}), checked against the combination rules, the scheduled
@@ -404,6 +422,8 @@ def _clean_members(raw) -> list[dict]:
         evidence = _clean_evidence(given.get("evidence"))
         if evidence:
             member["evidence"] = evidence
+        if "on_found" in given:  # left out: kept as it was while the member's kind stays
+            member["on_found"] = _clean_on_found(given["on_found"], outcome)
         members.append(member)
     if len(members) < 2:
         return members
@@ -434,10 +454,17 @@ def _clean_decision(decision) -> dict | None:
         decision |= {k: first[k] for k in ("outcome", "task", "interval", "interval_unit") if k in first}
         if len(members) == 1:
             # One member is a plain decision; its task_id (if any) is the decision's, and
-            # its evidence too when the decision gives none.
+            # its evidence (and on_found) too when the decision gives none.
             members, single_task = None, first.get("task_id")
             if first.get("evidence") and not decision.get("evidence"):
                 decision["evidence"] = first["evidence"]
+            if "on_found" in first and "on_found" not in decision:
+                decision["on_found"] = first["on_found"]
+        elif "on_found" in decision:
+            # A combination's on_found is each member's: one given for the decision is its first's.
+            given = decision.pop("on_found")
+            if "on_found" not in first:
+                first["on_found"] = _clean_on_found(given, first["outcome"])
     outcome = decision.get("outcome")
     if not outcome:
         # A decision is replaced whole, so a change to one field still sends the rest.
@@ -463,6 +490,8 @@ def _clean_decision(decision) -> dict | None:
         value = str(decision.get(key) or "").strip()
         if value:
             cleaned[key] = value
+    if members is None and "on_found" in decision:  # left out: kept while the kind of task stays
+        cleaned["on_found"] = _clean_on_found(decision["on_found"], outcome)
     if members is not None:
         cleaned["outcomes"] = members
     elif single_task:

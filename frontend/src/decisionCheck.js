@@ -221,8 +221,8 @@ export function checkDecision({ outcome, rtfBasis, task = "", interval = "", int
   }
   if (outcome === "on_condition" && asksInterval && raw === "" && !combined) {
     notice = String(task || "").trim()
-      ? "No task will be created without an interval: give one to schedule it, or say in the notes what covers it."
-      : "No task will be created: this decision will show as having no task. Say in the notes what covers it.";
+      ? "No task will be created without an interval: give one to schedule it, or say what covers it in Notes and rationale."
+      : "No task will be created: this decision will show as having no task. Say what covers it in Notes and rationale.";
   }
   return { blockers, intervalError, notice, extraErrors };
 }
