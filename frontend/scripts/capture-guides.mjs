@@ -731,6 +731,8 @@ async function main() {
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); } },
     { file: "sif-02-results.png", url: "/systems/rbds", settle: 1500,
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); await calculate(page); } },
+    // --- Maintainability prediction: the sample quadcopter's saved prediction ---
+    { file: "mp-01-result.png", url: "/maintainability/sample-maintainability-quadcopter", settle: 1500 },
     // --- Failure-finding interval: a trip failing once a year (λ = 1/8,760 h), 99% ---
     { file: "ff-01-result.png", url: "/strategy/failure-finding", settle: 1200,
       async act(page) {
