@@ -106,9 +106,14 @@ test("a function dragged onto another position moves there with everything under
   // Before a sibling: the order.
   await dragTo(page, trow(page, `^Function: Contain the water ${tag}`), trow(page, `^Function: Pump water ${tag}`), { frac: 0.1 });
   await expect.poll(async () => (await rcmOf(request, p.a.id)).functions.map((f) => f.text)).toEqual([`Contain the water ${tag}`, `Pump water ${tag}`]);
-  // Ctrl+Z undoes too.
+  // Ctrl+Z undoes too, but only once this drop's own toast (with its Undo) is on screen: the
+  // server has the new order a moment before the page has the answer, and a key pressed in
+  // that gap has nothing to undo. Wait for the toast, not for the clock.
+  await expect(toast(page)).toContainText(`Moved “Contain the water ${tag}”`);
+  await expect(toast(page).getByRole("button", { name: "Undo" })).toBeEnabled();
   await page.keyboard.press("Control+z");
-  await expect.poll(async () => (await rcmOf(request, p.a.id)).functions.map((f) => f.text)).toEqual([`Pump water ${tag}`, `Contain the water ${tag}`]);
+  await expect(toast(page)).toContainText("Undone");
+  await expect.poll(async () => (await rcmOf(request, p.a.id)).functions.map((f) => f.text), { timeout: 30_000 }).toEqual([`Pump water ${tag}`, `Contain the water ${tag}`]);
 });
 
 test("a functional failure onto another function's standard, and before a sibling (taking its standard)", async ({ page, request }) => {
@@ -404,7 +409,8 @@ test("Move to… moves every kind from its ⋯ menu, and the moved row is picked
   await expect(trow(page, `^Functional failure: No flow ${tag}`)).toHaveAttribute("aria-selected", "true");
   // Undo puts it back under its standard.
   await toast(page).getByRole("button", { name: "Undo" }).click();
-  await expect.poll(async () => (await rcmOf(request, p.a.id)).functions[0].failures.find((f) => f.text === `No flow ${tag}`).standard?.text)
+  await expect(toast(page)).toContainText("Undone");
+  await expect.poll(async () => (await rcmOf(request, p.a.id)).functions[0].failures.find((f) => f.text === `No flow ${tag}`).standard?.text, { timeout: 30_000 })
     .toBe(`At least 50 L/s ${tag}`);
 });
 
