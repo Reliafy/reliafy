@@ -298,6 +298,40 @@ export function decisionRows(d, tasks) {
   }));
 }
 
+// The decision card's lines (a failure mode's details, "What we do"): the
+// decision in words with its task, one line per task: [{key, kind, name,
+// every, task, member}]. "On condition", "Weekly level check", "every 1 week".
+// A combination: one line per member (its task, or "no task now"; a redesign
+// "until the change is made"), then any other task linked to the mode. Run to
+// failure, redesign and accept: the decision and its action on failure, then
+// any task linked to the mode. A decision whose tasks have no ids (outside the
+// Explorer) is read from the decision itself.
+export function decisionCardLines(d, tasks) {
+  if (!d) return [];
+  const rows = decisionRows(d, tasks);
+  const own = (o) => {
+    const t = String(o.task || "").trim();
+    return { name: t || null, every: INTERVAL_OUTCOMES.has(o.outcome) && o.interval != null && o.interval !== "" ? everyText(o) || null : null };
+  };
+  const line = (row) => {
+    const kind = row.outcome ? OUTCOME_LABEL[row.outcome] || row.outcome : null;
+    if (row.task) return { key: row.key, kind, name: row.task.text || row.task.name || null, every: everyText(row.task) || null, task: row.task, member: row.member };
+    if (row.outcome === "redesign") return { key: row.key, kind, name: "until the change is made", every: null, task: null, member: row.member };
+    const m = row.member && !row.member.task_id && (row.member.task || row.member.interval != null) ? own(row.member) : { name: "no task now", every: null };
+    return { key: row.key, kind, ...m, task: null, member: row.member };
+  };
+  if (isCombination(d)) {
+    if (rows.length) return rows.map(line);
+    return d.outcomes.map((o, i) => line({ key: `member:${o.outcome}:${i}`, outcome: o.outcome, task: null, member: o }));
+  }
+  const head = { key: "decision", kind: decisionText(d) || null, ...own(d), task: null, member: null };
+  if (!INTERVAL_OUTCOMES.has(d.outcome)) return [head, ...rows.map(line)];
+  return rows.length ? rows.map(line) : [head];
+}
+
+// One card line in words: "On condition · Weekly level check · every 1 week".
+export const cardLineText = (l) => [l.kind, l.name, l.every].filter(Boolean).join(" · ");
+
 // The outcomes another task can add to a decision, as a combination of tasks
 // (RCM II): two or more scheduled tasks, or a redesign beside one; none for a
 // decision that stands alone (run to failure, accept) or while a scheduled

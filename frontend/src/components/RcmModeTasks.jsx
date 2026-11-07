@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { LevelIcon } from "./RcmWorksheet.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { saveErrorText } from "../confirm.js";
 import { INTERVAL_UNITS, startUnit } from "../decisionCheck.js";
-import { OUTCOME_LABEL, addableOutcomes, decisionRows, decisionWithMember, everyText, isCombination, memberEvidenceText, tasksOf } from "../rcmWorksheet.js";
+import { OUTCOME_LABEL, addableOutcomes, decisionCardLines, decisionRows, decisionWithMember, everyText, tasksOf } from "../rcmWorksheet.js";
 import { getTaskTriggerPoints } from "../api.js";
 import { asksInterval, pointLabel, triggerBody, triggerState, triggerWhy } from "../taskTrigger.js";
 import { secondTaskHint } from "../explorerRcm.js";
@@ -16,26 +15,32 @@ import Field from "./ui/Field.jsx";
 import InputGroup from "./ui/InputGroup.jsx";
 import Modal from "./Modal.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
-import { AddRow } from "./ui/Section.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 
-// A failure mode's decision's tasks, inside its Decision section (the Explorer's
-// RCM tab; Derryn, 8 Nov 2026: in RCM the decision is the choice of task, so
-// they're one section). One row per member task: "<outcome> · <task name>",
-// how often, whether other failure modes share it, its instructions, its own
-// evidence (a combination's member), and its ⋯ (Edit…, which changes it in
-// place: a shared task changes for every mode it serves; Remove…: a shared
-// task is unlinked and stays, one serving this mode alone is retired). The
-// dashed "Add another task" row at the end adds a member to the decision (a
-// combination of tasks): one small dialog asks its kind first, then a new
-// task's name and how often, or an existing task on the position or above it.
-// With no decision, the tasks linked before it are rows under their own
-// heading, and nothing is added here (Decide… first). Each write goes at once
-// through `ops` (useTreeRcm) and the row is read again, so the list follows.
+// A failure mode's decision as one card, step 3 "What we do" of its details
+// (the Explorer's RCM tab; Derryn, 8-9 Nov 2026: in RCM the decision is the
+// choice of task, said once). Its lines are the decision in words with its
+// task: "On condition · Weekly level check · every 1 week", one per member
+// task for a combination; run to failure, redesign and accept say the decision
+// and the action on failure. A task's instructions fold to two lines (Show
+// all); a shared task and its work package are small chips. The card's one ⋯
+// holds Change…, Link evidence…, Add another task… (a member for a
+// combination: one small dialog asks its kind first, then a new task's name
+// and how often, or an existing task on the position or above it), and each
+// task's Edit… (in place: a shared task changes for every mode it serves) and
+// Remove… (a shared task is unlinked and stays, one serving this mode alone is
+// retired). Folded behind "Why": the evidence and the decision notes (`why`).
+// No decision: "No decision yet" and Decide…, the tasks linked before it
+// listed under their own heading. Each write goes at once through `ops`
+// (useTreeRcm) and the row is read again, so the card follows.
 //
 //   r         the failure mode's row (read afresh after each save)
-//   ops       modeTasks, editTask, removeTask, decide; none: rows only
-//   readOnly  rows without their ⋯ and no add row
+//   ops       modeTasks, editTask, removeTask, decide; none: lines only (Change… still opens onDecision)
+//   readOnly  lines without the ⋯, no Decide…
+//   onDecision (r) opens the decision dialog (Decide…, Change…, Link evidence…)
+//   why       the folded "Why": the evidence line and the decision notes
+//   own       the decision's own task and interval fields (no task does the work): ⋯ Edit…
+//   ownNeeded true: those fields shown at once (a schedule with no task yet)
 //   addStart  a value that, when it changes, opens the add dialog (the row menu's Add a task…)
 //   onSaid    (text) a few words in the page's status line once something's done
 
@@ -45,17 +50,25 @@ const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n =
 const every = (t) => everyText(t);
 const KIND_LABEL = { ...OUTCOME_LABEL, redesign: "Redesign (until the change is made)" };
 
-export default function RcmModeTasks({ r, ops = null, readOnly = false, addStart = null, onSaid }) {
+export default function RcmModeTasks({
+  r, ops = null, readOnly = false, addStart = null, onSaid, onDecision = null, why = null, own = null, ownNeeded = false,
+}) {
   const confirm = useConfirm();
   const d = r.ref.decision || null;
-  const rows = decisionRows(d, tasksOf(r.ref));
+  const tasks = tasksOf(r.ref);
+  const lines = d ? decisionCardLines(d, tasks) : decisionRows(null, tasks).map((row) => ({
+    key: row.key, kind: null, name: row.task.text || row.task.name, every: everyText(row.task) || null, task: row.task, member: null,
+  }));
   const [editing, setEditing] = useState(null); // the task being changed in place
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const [adding, setAdding] = useState(false);
+  const [whyOpen, setWhyOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  useEffect(() => { setWhyOpen(false); setOwnOpen(false); setEditing(null); }, [r.key]);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
-  const can = !readOnly && !!ops;
+  const can = !readOnly && !!ops?.decide;
   const addable = can && d ? addableOutcomes(d, r.ref) : [];
   // The row menu's Add a task…: the dialog, opened (when another task can join the decision).
   const opened = useRef(null);
@@ -91,73 +104,89 @@ export default function RcmModeTasks({ r, ops = null, readOnly = false, addStart
     if (ok) onSaid?.(t.shared_with ? "Removed the task from this failure mode." : "Retired the task.");
   };
 
-  const combo = isCombination(d);
-  if (!rows.length && !addable.length) return null;
+  // The card's ⋯: the decision's own items, then each task's.
+  const taskItems = can ? lines.filter((l) => l.task?.id).flatMap(({ task: t }) => [
+    { id: `edit:${t.id}`, label: `Edit “${t.name}”…`, onSelect: () => { setFailed(null); setEditing(t.id); } },
+    { id: `remove:${t.id}`, label: t.shared_with ? `Remove “${t.name}” from this failure mode…` : `Remove “${t.name}”…`, danger: true, onSelect: () => remove(t) },
+  ]) : [];
+  const items = readOnly ? [] : [
+    ...(d && onDecision ? [{ id: "change", label: "Change…", onSelect: () => onDecision(r) }] : []),
+    ...(d?.status === "unevidenced" && onDecision ? [{ id: "evidence", label: "Link evidence…", onSelect: () => onDecision(r) }] : []),
+    ...(addable.length ? [{ id: "add", label: lines.some((l) => l.task) ? "Add another task…" : "Add a task…", onSelect: () => setAdding(true) }] : []),
+    ...(d && own && !ownNeeded ? [{ id: "own", label: d.outcome === "rtf" ? "Edit what's done on failure…" : "Edit the task…", onSelect: () => setOwnOpen(true) }] : []),
+    ...taskItems,
+  ];
+
+  const line = (l) => {
+    const t = l.task;
+    if (t && editing === t.id && can) {
+      return (
+        <li key={l.key} className="rim-line editing">
+          <TaskForm key={t.id} r={r} task={t} busy={busy} failed={failed}
+                    onCancel={() => { setEditing(null); setFailed(null); }} onSubmit={submitEdit(t)} />
+        </li>
+      );
+    }
+    return (
+      <li key={l.key} className="rim-line">
+        <span className="rim-tname">
+          {l.kind && <span className="rim-tkind">{l.kind}</span>}
+          {l.kind && (l.name || l.every) ? " · " : null}
+          {l.name}
+          {l.name && l.every ? " · " : null}
+          {l.every && <span className="rim-tevery">{l.every}</span>}
+        </span>
+        {t && (t.shared_with || t.package) ? (
+          <span className="rim-chips">
+            {t.shared_with ? <Chip>Shared with {plural(t.shared_with, "other failure mode")}</Chip> : null}
+            {t.package && (
+              <Link className="chip chip-neutral chip-btn" title="Done on this work package's visits: open it on the Packages tab"
+                    to={explorerPath(t.package.subject?.kind === "location" ? "locations" : "positions",
+                                     { sel: t.package.subject?.id, tab: "packages", package: t.package.id })}>
+                In: {t.package.name}
+              </Link>
+            )}
+          </span>
+        ) : null}
+        {t?.instructions && <Instructions text={t.instructions} />}
+      </li>
+    );
+  };
+
   return (
-    <div className="rim-tasks">
-      {!d && rows.length > 0 && <h4 className="rim-before">Tasks linked before the decision</h4>}
-      {rows.length > 0 && (
-        <ul className="rim-tlist" aria-label={d ? "The decision's tasks" : "Tasks linked before the decision"}>
-          {rows.map((row) => {
-            const t = row.task;
-            const word = row.outcome ? OUTCOME_LABEL[row.outcome] || row.outcome : null;
-            if (!t) {
-              // A member with no task now: a redesign (the interim tasks are the others), or a task that has gone.
-              return (
-                <li key={row.key} className="rim-card">
-                  <div className="rim-chead">
-                    <LevelIcon type="task" className="rw-ic rw-ic-task" />
-                    <span className="rim-tname">{row.outcome === "redesign" ? KIND_LABEL.redesign : `${word} · no task now`}</span>
-                  </div>
-                  {combo && row.member?.status && <p className="rim-tev">Evidence: {memberEvidenceText(row.member)}</p>}
-                </li>
-              );
-            }
-            if (editing === t.id && can) {
-              return (
-                <li key={row.key} className="rim-card editing">
-                  <TaskForm key={t.id} r={r} task={t} busy={busy} failed={failed}
-                            onCancel={() => { setEditing(null); setFailed(null); }} onSubmit={submitEdit(t)} />
-                </li>
-              );
-            }
-            const name = t.text || t.name;
-            return (
-              <li key={row.key} className="rim-card">
-                <div className="rim-chead">
-                  <LevelIcon type="task" className="rw-ic rw-ic-task" />
-                  <span className="rim-tname">{word ? <><span className="rim-tkind">{word}</span> · </> : null}{name}</span>
-                  {can && (
-                    <MoreMenu label={`Actions for ${t.name}`} disabled={busy} items={[
-                      { id: "edit", label: "Edit…", onSelect: () => { setFailed(null); setEditing(t.id); } },
-                      { id: "remove", label: t.shared_with ? "Remove from this failure mode…" : "Remove…", danger: true, onSelect: () => remove(t) },
-                    ]} />
-                  )}
-                </div>
-                {(every(t) || t.shared_with || t.package) ? (
-                  <div className="rim-chips">
-                    {every(t) && <Chip tone="accent">{every(t)}</Chip>}
-                    {t.shared_with ? <Chip>Shared with {plural(t.shared_with, "other failure mode")}</Chip> : null}
-                    {t.package && (
-                      <Link className="chip chip-neutral chip-btn" title="Done on this work package's visits: open it on the Packages tab"
-                            to={explorerPath(t.package.subject?.kind === "location" ? "locations" : "positions",
-                                             { sel: t.package.subject?.id, tab: "packages", package: t.package.id })}>
-                        In: {t.package.name}
-                      </Link>
-                    )}
-                  </div>
-                ) : null}
-                {t.instructions && <Instructions text={t.instructions} />}
-                {combo && row.member?.status && <p className="rim-tev">Evidence: {memberEvidenceText(row.member)}</p>}
-              </li>
-            );
-          })}
-        </ul>
+    <div className={"rim-card rim-dcard" + (editing ? " has-edit" : "")}>
+      <div className="rim-dhead">
+        {d ? (
+          <ul className="rim-lines" aria-label="The decision and its tasks">{lines.map(line)}</ul>
+        ) : (
+          <p className="rim-none">No decision yet</p>
+        )}
+        {!d && !readOnly && onDecision && (
+          <button type="button" className="sm" onClick={(e) => { if (e.detail < 2) onDecision(r); }}>Decide…</button>
+        )}
+        {items.length > 0 && <MoreMenu label={d ? "Actions for the decision" : "Actions for the linked tasks"} disabled={busy} items={items} />}
+      </div>
+      {!d && lines.length > 0 && (
+        <>
+          <h4 className="rim-before">Tasks linked before the decision</h4>
+          <ul className="rim-lines" aria-label="Tasks linked before the decision">{lines.map(line)}</ul>
+        </>
       )}
-      {addable.length > 0 && !editing && (
-        <AddRow disabled={busy} onClick={() => setAdding(true)}>{rows.length ? "Add another task" : "Add a task"}</AddRow>
+      {d && own && (ownNeeded || ownOpen) && (
+        <div className="rim-own">
+          {own}
+          {ownOpen && !ownNeeded && <button type="button" className="link rim-done" onClick={() => setOwnOpen(false)}>Done</button>}
+        </div>
       )}
       {failed && !editing && <p className="field-error" role="alert">{failed}</p>}
+      {d && why && (
+        <>
+          <button type="button" className="link rim-whybtn" aria-expanded={whyOpen} onClick={() => setWhyOpen((o) => !o)}>
+            <ChevronIcon open={whyOpen} /> Why<span className="sr-only">: the evidence and the decision notes</span>
+          </button>
+          {whyOpen && <div className="rim-whybody">{why}</div>}
+        </>
+      )}
       {adding && (
         <AddTaskDialog r={r} d={d} ops={ops} kinds={addable} onClose={() => setAdding(false)}
                        onDone={(said) => { setAdding(false); onSaid?.(said); }} />
@@ -165,6 +194,12 @@ export default function RcmModeTasks({ r, ops = null, readOnly = false, addStart
     </div>
   );
 }
+
+const ChevronIcon = ({ open }) => (
+  <svg className={"rim-chev" + (open ? " open" : "")} width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+    <path d="M3 2l3.5 3L3 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 
 // Another task for the decision (a combination of tasks), in one small dialog:
 // its kind first, then a new task's name and how often (Enter adds it), or

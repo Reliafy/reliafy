@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import Section, { AddRow } from "./ui/Section.jsx";
+import Section from "./ui/Section.jsx";
 import Field from "./ui/Field.jsx";
 import { TextArea } from "./ui/Controls.jsx";
 import ClampLines from "./ui/ClampLines.jsx";
@@ -13,8 +13,8 @@ import "./OperatingContextCard.css";
 // the reason for it is written. The text keeps its line breaks and is clamped
 // to about six lines ("Show all"); Edit (or the add row when there are none)
 // opens a box in place with a character count and Save / Cancel, as the
-// operating context does. Empty, it is the same titled section with its prompt and a dashed
-// "Add notes" row, like the "Add a failure mode" row of the other sections. `onSave(value)` is the details' commit: true, or a
+// operating context does. Empty, it is only its heading with a quiet "+ Add notes" at the
+// right (Derryn, 9 Nov 2026: no prompt, no dashed row; the prompt is the box's placeholder). `onSave(value)` is the details' commit: true, or a
 // promise of true, once saved; a string is the refusal, shown on the box with
 // the text kept.
 //
@@ -136,13 +136,9 @@ export default function RcmNotes({ r, readOnly = false, onSave, openToken = null
       </div>
     );
   } else if (!text) {
-    // Empty: the prompt, and the dashed add row the other sections end with.
-    body = (
-      <>
-        <p className="td-quiet rw-notes-prompt">{notesPrompt(r)}{fn && <> {FUNCTION_NOTES_HINT}</>}</p>
-        {!readOnly && <AddRow ref={startBtn} onClick={start}>Add notes</AddRow>}
-      </>
-    );
+    // Empty: only the quiet "+ Add notes" at the heading's right (its prompt is
+    // its tooltip and the box's placeholder); read-only, a quiet "None".
+    body = readOnly ? <p className="td-quiet rw-notes-none">None</p> : null;
   } else {
     body = fn ? <MarkdownClamp text={text} openToken={openToken} />
       : <ClampLines text={text} lines={6} what="the notes" textClassName="td-ctx-text" />;
@@ -151,7 +147,8 @@ export default function RcmNotes({ r, readOnly = false, onSave, openToken = null
   return (
     <Section title="Notes and rationale" className="td-ctx rw-notes"
              aside={note && <span className="field-saved td-ctx-note" role="status">{note}</span>}
-             action={text && !editing && !readOnly ? { label: "Edit", ariaLabel: "Edit the notes and rationale", onClick: start, ref: startBtn } : null}>
+             action={editing || readOnly ? null : text ? { label: "Edit", ariaLabel: "Edit the notes and rationale", onClick: start, ref: startBtn }
+               : { label: "Add notes", plus: true, onClick: start, ref: startBtn, title: fn ? `${notesPrompt(r)} ${FUNCTION_NOTES_HINT}` : notesPrompt(r) }}>
       {body}
       {children}
     </Section>

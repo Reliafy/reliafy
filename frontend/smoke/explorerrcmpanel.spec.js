@@ -90,7 +90,9 @@ test("a click shows the details beside the table; a double-click on the name spr
   const list = fnPanel.getByRole("region", { name: "Performance standards" });
   await expect(list).toContainText(`At least 10 L/s ${tag}`);
   await expect(list).toContainText(`At 3 bar ${tag}`);
-  await expect(fnPanel.getByRole("region", { name: "Notes and rationale" })).toContainText("Why these limits: the working");
+  // No notes yet: the hint is the quiet Add notes' tooltip (and shows in the box).
+  await expect(fnPanel.getByRole("region", { name: "Notes and rationale" }).getByRole("button", { name: "Add notes" }))
+    .toHaveAttribute("title", /Why these limits: the working/);
   await expect(fnPanel.getByRole("region", { name: "Functional failures" }).getByRole("button", { name: `No flow ${tag}` })).toBeVisible();
 
   // Another row picked in the tree: the panel shows it, still across the table.
@@ -147,9 +149,13 @@ test("a click shows the details beside the table; a double-click on the name spr
     const m = (await rcmOf(request, p)).functions[0].failures[0].modes.find((x) => x.id === p.mode.id);
     return [m.text, m.effects, m.hidden, m.consequence];
   }).toEqual([`Bearing seizes early ${tag}`, "Pump stops; no flow to the tank", true, "operational"]);
-  await expect(panel(page).getByRole("region", { name: "Decision" })).toContainText("No decision yet.");
-  // No decision: no task rows and no add row (Decide… first).
-  await expect(panel(page).getByRole("button", { name: /^Add (another|a) task$/ })).toHaveCount(0);
+  // Step 3, no decision: the card says so, with one Decide…; no task lines, no add row, no ⋯ (Decide… first).
+  const todo = panel(page).getByRole("region", { name: "What we do" });
+  await expect(todo).toContainText("No decision yet");
+  await expect(todo.getByRole("button", { name: "Decide…" })).toBeVisible();
+  await expect(todo.getByRole("listitem")).toHaveCount(0);
+  await expect(todo.getByRole("button", { name: /^Actions for/ })).toHaveCount(0);
+  await expect(panel(page).getByRole("button", { name: /^Add (another|a) task/ })).toHaveCount(0);
   await expect(panel(page).getByRole("button", { name: "Save" })).toHaveCount(0); // no Save or Cancel: kept as you go
 
   // Esc: back to the table, the focus on the row; Expand and Back to table do the same by button.
@@ -219,7 +225,7 @@ test("Open… and Add a task… in the row menu expand the details; Enter shows 
   // Add a task…: across the table, the Add another task dialog open on its kind; the two tasks listed.
   await sealRow.locator(".tp-nm").click({ button: "right" });
   await page.getByRole("menuitem", { name: "Add a task…" }).click();
-  const tasks = panel(page).getByRole("region", { name: "Decision" });
+  const tasks = panel(page).getByRole("region", { name: "What we do" });
   const add = page.getByRole("dialog", { name: "Add another task" });
   await expect(add).toBeVisible();
   await expect(add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio").first()).toBeFocused();
@@ -317,6 +323,18 @@ const notesFirst = (page) => panel(page).evaluate((el) => {
     && !body.querySelector('section[aria-label="Notes and rationale"]'));
 });
 
+// Notes and rationale with none written: only its heading and one quiet "+ Add notes" at its
+// right (no prompt sentence, no dashed add row).
+const notesQuiet = async (page) => {
+  const notes = panel(page).getByRole("region", { name: "Notes and rationale" });
+  await expect(notes.locator(".psec-head").getByRole("button", { name: "Add notes" })).toBeVisible();
+  await expect(notes.locator(".add-row")).toHaveCount(0);
+  await expect(notes.locator(".rw-notes-prompt, .td-quiet")).toHaveCount(0);
+  await expect(notes).not.toContainText(/Why th(is|ese)/);
+  // Nothing else in it but a function's PDFs (its own row, "Attach a PDF…").
+  await expect(notes).toHaveText(/^\s*Notes and rationale\s*Add notes\s*(Attach a PDF…)?\s*$/);
+};
+
 test("one order at every level: its notes under the title and chips, what's inside it, then its own, the quieter things last", async ({ page, request, problems }) => {
   const tag = `b${Date.now()}`;
   const p = await plant(request, tag);
@@ -336,27 +354,45 @@ test("one order at every level: its notes under the title and chips, what's insi
     await expect(panel(page).getByRole("heading", { level: 2, name: `Pump water ${tag}` })).toBeVisible();
     expect(await blocks(page)).toEqual(["Performance standards", "Functional failures"]); // the working is in the notes
     expect(await notesFirst(page)).toBe(true);
+    await notesQuiet(page);
     await show(`^Performance standard: At 3 bar ${tag}`);
     await expect(panel(page).getByRole("heading", { level: 2, name: `At 3 bar ${tag}` })).toBeVisible();
     expect(await blocks(page)).toEqual(["Functional failures", "foot"]);
     expect(await notesFirst(page)).toBe(true);
+    await notesQuiet(page);
     await show(`^Functional failure: No flow ${tag}`);
     await expect(panel(page).getByRole("heading", { level: 2, name: `No flow ${tag}` })).toBeVisible();
     expect(await blocks(page)).toEqual(["Failure modes", "Caused by", "Causes"]);
     expect(await notesFirst(page)).toBe(true);
+    await notesQuiet(page);
     // Its state in words heads its failure modes, said once.
     await expect(panel(page).getByRole("region", { name: "Failure modes" })).toContainText("1 of its 2 failure modes still needs a decision.");
     await show(`^Failure mode: Seal leaks ${tag}`);
     await expect(panel(page).getByRole("heading", { level: 2, name: `Seal leaks ${tag}` })).toBeVisible();
     // The FME(C)A's groups (scores, criticality) are on its own tab, not this one; the mode's
     // notes and rationale (the same section at every level) are above all of it, below the chips.
-    // Its tasks are rows of its decision (one section).
-    expect(await blocks(page)).toEqual(["own", "Decision"]);
+    // Then its three numbered steps: what happens, how bad, what we do (its tasks are lines of its decision card).
+    expect(await blocks(page)).toEqual(["What happens", "How bad", "What we do"]);
     expect(await notesFirst(page)).toBe(true);
-    // The worksheet's order inside: effects, consequence, then the decision; where it sits last.
+    await notesQuiet(page);
+    await expect(panel(page).locator(".rw-step > .psec-head .psec-title")).toHaveText(["1. What happens", "2. How bad", "3. What we do"]);
+    // Step 1 is the effects box alone: the step's title is its label (the box's name, not shown again).
+    await expect(panel(page).getByRole("region", { name: "What happens" }).getByRole("textbox", { name: /^Failure effects/ })).toBeVisible();
+    await expect(panel(page).getByRole("region", { name: "What happens" }).locator(".field-head")).toHaveClass(/sr-only/);
+    // Step 2: the two chip rows, no help sentences (those are in the Decide dialog).
+    const howBad = panel(page).getByRole("region", { name: "How bad" });
+    await expect(howBad.getByRole("radiogroup")).toHaveCount(2);
+    await expect(howBad.locator(".field-help")).toHaveCount(0);
+    // Step 3: one card; the decision said in it once (no heading line, Change… button, Evidence line or notes field outside it).
+    const todo = panel(page).getByRole("region", { name: "What we do" });
+    await expect(todo.locator(".rim-dcard")).toHaveCount(1);
+    await expect(todo.getByRole("listitem").first()).toContainText(`On condition · Check the seal ${tag} · every 1 month`);
+    await expect(todo.getByRole("button", { name: /^Change/ })).toHaveCount(0);
+    await expect(todo.getByRole("button", { name: /^Add another task/ })).toHaveCount(0);
+    await expect(todo.getByRole("textbox", { name: /^Decision notes/ })).toHaveCount(0);
+    await expect(todo).not.toContainText("None linked");
     const labels = await panel(page).locator(".rw-pbody .field-label").allInnerTexts();
     const at = (t) => labels.findIndex((x) => x.startsWith(t));
-    expect(at("Failure effects")).toBeLessThan(at("Consequence"));
     // No "Under" field: where a mode sits is the breadcrumb, moved by drag or the row menu.
     expect(at("Under")).toBe(-1);
     expect(await overflow(page)).toBe(0);
@@ -380,7 +416,8 @@ test("fields, chips, ⋯ and refusals: kept where you typed, the reason beside i
   const effectsField = panel(page).locator(".field").filter({ has: page.getByRole("textbox", { name: /^Failure effects/ }) });
   await effects.fill("Water on the floor");
   await effects.blur();
-  await expect(effectsField.getByRole("status")).toHaveText("✓ Saved");
+  // "✓ Saved" by the step's title (the field's own label is the step's).
+  await expect(panel(page).getByRole("region", { name: "What happens" }).getByRole("status")).toHaveText("✓ Saved");
 
   // Refused by the server: the text stays, the reason under it, the box marked and described by it.
   await page.route(/\/api\/maintenance\/failure-modes\/[^/]+$/, (route) => (route.request().method() === "PATCH"
@@ -416,12 +453,15 @@ test("fields, chips, ⋯ and refusals: kept where you typed, the reason beside i
   await expect.poll(async () => (await rcmOf(request, p)).functions[0].failures[0].modes.find((m) => m.id === p.seal.id).consequence)
     .toBe("non_operational");
 
-  // A task's ⋯ by keyboard: Enter opens it on its first item, Escape closes it back to the button.
-  const more = panel(page).getByRole("region", { name: "Decision" }).getByRole("button", { name: `Actions for Replace the seal ${tag}` });
+  // The decision card's one ⋯ by keyboard: Enter opens it on its first item (Change…), with each
+  // task's Edit… and Remove… after the decision's own; Escape closes it back to the button.
+  const more = panel(page).getByRole("region", { name: "What we do" }).getByRole("button", { name: "Actions for the decision" });
   await more.focus();
   await page.keyboard.press("Enter");
-  const menu = page.getByRole("menu", { name: `Actions for Replace the seal ${tag}` });
-  await expect(menu.getByRole("menuitem", { name: "Edit…" })).toBeFocused();
+  const menu = page.getByRole("menu", { name: "Actions for the decision" });
+  await expect(menu.getByRole("menuitem", { name: "Change…" })).toBeFocused();
+  await expect(menu.getByRole("menuitem", { name: `Edit “Replace the seal ${tag}”…` })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: `Remove “Replace the seal ${tag}”…` })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
   await expect(more).toBeFocused();

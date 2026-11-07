@@ -787,3 +787,40 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 /* A function's notes (Markdown, as they hold the working): about six lines folded, Show all for the rest. */
 .rw-notes-md:not(.open) { max-height: 9em; overflow: hidden; }
 .rw-notes-hint { margin: 0 0 6px; }
+
+/* A failure mode's three steps (Derryn, 9 Nov 2026): "1. What happens", "2. How bad",
+   "3. What we do", each compact, each opening on a hairline. The decision is one card:
+   its lines, one ⋯, and the evidence and notes folded behind "Why". */
+.rw-step { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); min-width: 0; }
+.rw-stepn { color: var(--acc); font-variant-numeric: tabular-nums; }
+.rw-step .psec-head { min-height: 24px; }
+.rw-step .field-saved { margin-left: auto; }
+.rw-howbad { gap: 8px; }
+.rw-howbad .rw-eyebrow { gap: 4px; }
+.rw-howbad .rw-eyebrow .field-label { font-size: var(--fs-12); }
+.rim-dcard { display: flex; flex-direction: column; gap: 6px; }
+.rim-dhead { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.rim-dhead > .rim-lines, .rim-dhead > .rim-none { flex: 1 1 auto; min-width: 0; }
+.rim-dhead > button.sm { flex: none; }
+.rim-dhead .more-btn { margin: -5px -6px -5px 0; flex: none; }
+.rim-none { margin: 0; font-size: var(--fs-14); font-weight: 600; align-self: center; }
+.rim-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rim-line { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rim-line .rim-tname { font-weight: 400; }
+.rim-line .rim-tevery { white-space: nowrap; }
+.rim-dcard .rim-chips { padding-left: 0; }
+.rim-dcard .rim-tinst { padding-left: 0; }
+.rim-dcard .rim-tmore { margin-left: 0; }
+.rim-dcard h4.rim-before { margin: 2px 0 0; font-size: var(--fs-13); font-weight: 600; color: var(--muted); }
+.rim-own { display: flex; flex-direction: column; gap: 8px; }
+.rim-done { align-self: flex-start; font-size: var(--fs-13); }
+.rim-whybtn { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-13); }
+.rim-chev { flex: none; transition: transform 0.15s; }
+.rim-chev.open { transform: rotate(90deg); }
+.rim-whybody { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line2); padding-top: 8px; min-width: 0; }
+.rim-whybody .rw-dwhy { margin: 0; }
+@media (prefers-reduced-motion: reduce) { .rim-chev { transition: none; } }
+@media (max-width: 600px) {
+  .rim-whybtn, .rim-done { min-height: 36px; }
+  .rim-line .rim-tevery { white-space: normal; }
+}

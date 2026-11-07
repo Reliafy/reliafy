@@ -61,9 +61,10 @@ test("a task's Edit… shows what it counts and can change it", async ({ page, r
   await openFleet(page, p);
   await trow(page, `^Failure mode: Engine wears ${tag}`).locator(".tp-nm").dblclick();
   const dlg = page.getByRole("complementary", { name: "Details" });
-  const tasks = dlg.getByRole("region", { name: "Decision" });
-  await tasks.getByRole("button", { name: `Actions for Service ${tag}` }).click();
-  await page.getByRole("menu", { name: `Actions for Service ${tag}` }).getByRole("menuitem", { name: "Edit…" }).click();
+  const tasks = dlg.getByRole("region", { name: "What we do" });
+  // No decision yet: the card's ⋯ holds the linked task's Edit….
+  await tasks.getByRole("button", { name: "Actions for the linked tasks" }).click();
+  await page.getByRole("menu", { name: "Actions for the linked tasks" }).getByRole("menuitem", { name: `Edit “Service ${tag}”…` }).click();
   const field = tasks.getByRole("group", { name: "Measurement" });
   await expect(field).toContainText(`Engine hours on Truck 12 ${tag}`);
   await expect(field).toContainText("Reads 1,900 hours");

@@ -858,7 +858,8 @@ async function main() {
         const table = page.getByRole("treegrid", { name: /and their RCM/ });
         await table.waitFor({ timeout: 20000 });
         await table.getByRole("row", { name: /^Failure mode: Blade fatigue crack at the hub/ }).first().click(); await wait(600);
-        await page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: "Change the decision…" }).click();
+        await page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: "Actions for the decision" }).click();
+        await page.getByRole("menu", { name: "Actions for the decision" }).getByRole("menuitem", { name: "Change…" }).click();
         await page.getByRole("dialog", { name: /^Decision/ }).waitFor({ timeout: 20000 }); await wait(800);
       } },
     // --- FME(C)A: the FME(C)A tab of the sample UAV product's functional
