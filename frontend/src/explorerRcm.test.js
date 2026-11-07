@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
 import {
-  NARROW_TABLE, TASK_WITH_INTERVAL, basisMarked, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardKeys, tableCols,
+  NARROW_TABLE, TASK_WITH_INTERVAL, functionSummary, basisMarked, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardKeys, tableCols,
   taskWithInterval, usualCols, withTableCols,
 } from "./explorerRcm.js";
 import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, checkValue, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
@@ -650,4 +650,22 @@ test("a failure mode's details save the FME(C)A's fields in the same write as it
     { api: "decide", body: { consequence: "safety" } },
   ]);
   assert.deepEqual(itemWrites(r, { mode_ratio: 0.5, severity_class: "I" }), [{ api: "mode", body: { mode_ratio: 0.5, severity_class: "I" } }]);
+});
+
+test("functionSummary: a position's functions with standards, failures and decided modes", () => {
+  const rcm = {
+    positions: [{
+      id: "pump",
+      functions: [
+        { id: "f1", text: "Move water", has_basis: true, standards: [{ id: "s1", text: "50 L/s" }, { id: "s2", text: "" }], failures: [{ id: "ff1", modes: [mode("m1", "Seal", { action: "run" }), mode("m2", "Bearing")] }] },
+        { id: "f2", text: "", standard: "Hold 2 bar" },
+      ],
+    }],
+  };
+  const display = graftRcm(buildDisplay(DATA, "positions"), rcm);
+  const s = functionSummary(display, display.rows.get("pump"));
+  assert.equal(s.length, 2);
+  assert.deepEqual([s[0].standards, s[0].standardTexts, s[0].failures, s[0].modes, s[0].decided, s[0].hasBasis], [2, ["50 L/s"], 1, 2, 1, true]);
+  assert.deepEqual([s[1].text, s[1].standards, s[1].modes, s[1].hasBasis], ["(no text yet)", 1, 0, false]);
+  assert.deepEqual(functionSummary(display, null), []);
 });

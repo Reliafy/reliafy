@@ -1,0 +1,11 @@
+/* A position's panel on the RCM tab (RcmPositionPanel.jsx): its functions as rows. */
+.rp-fns { list-style: none; margin: 0 0 var(--sp-3, 12px); padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rp-fns li { display: flex; align-items: flex-start; gap: 8px; }
+.rp-fn {
+  all: unset; box-sizing: border-box; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+  padding: 6px 8px; border-radius: var(--r-sm); cursor: pointer; min-height: 44px;
+}
+.rp-fn:hover { background: var(--surf-3, var(--surf)); }
+.rp-fn:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+.rp-fn-text { font-size: var(--fs-14); color: var(--acc); overflow-wrap: anywhere; }
+.rp-fn-meta, .rp-fn-std { font-size: var(--fs-13); color: var(--muted); overflow-wrap: anywhere; }
