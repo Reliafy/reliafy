@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   addChild, addRepeat, emptyTree, eventSummary, gateSummary, indentRow, moveRow, newId, outdentRow, outlineRows,
-  removeRow, rename, setEventData, setGate, treeIssues,
+  plainUnit, removeRow, rename, setEventData, setGate, treeIssues,
 } from "./faultTree.js";
 
 const build = () => {
@@ -37,7 +37,7 @@ test("an unfinished tree says what it still needs", () => {
   assert.deepEqual(treeIssues(done), []);
   assert.equal(done.nodes.find((n) => n.id === c).placeholder, true);
   const empty = addChild(done, "top", "gate").tree;
-  assert.match(treeIssues(empty)[0].text, /add its inputs/);
+  assert.match(treeIssues(empty)[0].text, /add a gate or basic event under it/);
 });
 
 test("a vote gate keeps k and flags k above its inputs", () => {
@@ -81,9 +81,12 @@ test("move up, down, into the gate above and back out", () => {
 test("rename and the one-line summaries", () => {
   const { t, a } = build();
   assert.equal(rename(t, a, "Pump A fails").nodes.find((n) => n.id === a).label, "Pump A fails");
-  assert.equal(eventSummary({ probability: 0.01 }), "q = 0.01");
+  assert.equal(eventSummary({ probability: 0.01 }), "Fixed probability 0.01");
   assert.equal(eventSummary({ model: { distribution_id: "exponential", params: [{ name: "failure_rate", value: 2e-5 }] } }, "Hours"),
-    "λ = 2e-5 /hour");
+    "Failure rate 2e-5 per hour");
+  assert.equal(plainUnit("Hours"), "hours");
+  assert.equal(plainUnit("km"), "km");
+  assert.equal(plainUnit("Flight hours"), "Flight hours");
   assert.equal(eventSummary({ model: { source: "saved", modelId: "m1", name: "Pump fit" } }), "Saved model: Pump fit");
   assert.equal(eventSummary({}), "No failure data");
 });

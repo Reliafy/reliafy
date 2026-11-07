@@ -48,7 +48,8 @@ rate per assembly too.
    column is the assembly it's in); **Add a line** adds one at a time.
 4. Give each line a **handbook part type**: type a word or two (`capacitor
    ceramic`, `resistor film`, `connector rectangular`) and pick the match. Set
-   **πQ** on a line when its grade isn't the handbook's default.
+   the **quality factor** (πQ) on a line when its grade isn't the handbook's
+   default.
 5. Press **Calculate**, read the result, then **Save prediction**.
 
 A part the handbook has no type for, such as a motor, a propeller or a

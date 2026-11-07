@@ -85,7 +85,10 @@ export default function ReliabilityPredictionNew() {
           setProduct(doc.inputs?.product || null);
           setLines(linesFromSaved(doc));
           setResults(doc.results || null);
-          setComputedFor(keyOf(doc.inputs?.lines || [], doc.inputs?.environment, doc.inputs?.mission_time, linesFromSaved(doc)));
+          // The key of what the builder will send for these lines unchanged,
+          // so a saved prediction opens with its results current, not stale.
+          const edit = linesFromSaved(doc);
+          setComputedFor(keyOf(linesForServer(edit), doc.inputs?.environment, doc.inputs?.mission_time, edit));
         })
         .catch((e) => live && setLoadError(e.message))
         .finally(() => live && setLoading(false));
@@ -256,7 +259,7 @@ export default function ReliabilityPredictionNew() {
                   <th>Assembly</th>
                   <th className="num">Qty</th>
                   <th>Handbook part type</th>
-                  <th className="num">πQ</th>
+                  <th className="num" title="πQ: the handbook's factor for the part's quality grade. 1 unless you set it; each part type's range shows on the box.">Quality factor</th>
                   <th><span className="sr-only">Remove</span></th>
                 </tr>
               </thead>
@@ -275,7 +278,7 @@ export default function ReliabilityPredictionNew() {
                     </td>
                     <td className="num">
                       <input type="number" inputMode="decimal" min="0" step="any" value={l.quality_factor} placeholder="1" aria-label={`Quality factor of part ${i + 1}`}
-                             title={l.record?.quality_factor_range ? `The handbook's range for this part: ${l.record.quality_factor_range[0]}–${l.record.quality_factor_range[1]}` : "πQ: 1 unless you set it"}
+                             title={l.record?.quality_factor_range ? `Quality factor πQ, the handbook's range for this part: ${l.record.quality_factor_range[0]}–${l.record.quality_factor_range[1]}` : "Quality factor πQ: 1 unless you set it"}
                              disabled={!l.record_id} onChange={(e) => setLine(i, { quality_factor: e.target.value })} />
                     </td>
                     <td className="lib-actions">

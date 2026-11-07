@@ -1744,6 +1744,10 @@ h6 {
   border-bottom: 1px solid var(--line);
 }
 
+/* A column's unit on its own line under the heading ("Failure rate" / "per
+   million hours"), so a long unit never looks like a clipped heading. */
+.th-unit { display: block; font-weight: 400; white-space: nowrap; }
+
 .lib-row {
   cursor: pointer;
   transition: background 0.12s;

@@ -83,7 +83,7 @@ export default function MaintainabilityResult({ result, actions }) {
         <h3>What takes the time: the lines, largest share first</h3>
         <p className="muted-line">
           A line's share is its failure rate × quantity × repair time, out of the total. Shorten the repair of the
-          lines at the top, or make them fail less often, and Mct comes down most.
+          lines at the top, or make them fail less often, and the mean repair time comes down most.
         </p>
         <div className="maint-scroll">
           <table className="lib-table mp-table">
