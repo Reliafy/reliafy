@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
 import {
-  NARROW_TABLE, TASK_WITH_INTERVAL, functionSummary, basisMarked, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardKeys, tableCols,
+  NARROW_TABLE, TASK_WITH_INTERVAL, functionSummary, basisMarked, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, opensPanel, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardKeys, tableCols,
   taskWithInterval, usualCols, withTableCols,
 } from "./explorerRcm.js";
 import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, checkValue, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
@@ -410,6 +410,9 @@ test("a row opened: which rows open their details, and what a field kept sends",
   const row = (k) => d.rows.get(k);
   assert.deepEqual(["pump", "f1", "x1", "m1", "U:pump", "m4"].map((k) => opensItem(row(k))), [false, true, true, true, false, true]);
   assert.equal(opensItem(null), false);
+  // A double-click also opens a position's panel, wide; its menu still has no Open….
+  assert.deepEqual(["pump", "f1", "m1", "U:pump"].map((k) => opensPanel(row(k))), [true, true, true, false]);
+  assert.equal(opensPanel(null), false);
   const m1 = row("m1");
   // Checked as the table checks it, then sent: a failure mode's words in one write, its consequence in another.
   assert.deepEqual(checkValue("name", m1, "  "), { error: "Every failure mode needs a description." });
