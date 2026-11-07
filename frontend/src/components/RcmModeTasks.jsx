@@ -417,7 +417,8 @@ function TaskForm({ r, task, busy, failed, onCancel, onSubmit }) {
   const [name, setName] = useState(task?.name || "");
   const [interval, setInterval_] = useState(task?.interval != null ? String(task.interval) : "");
   const [unit, setUnit] = useState(task?.unit || startUnit(d || {}));
-  const [outcome, setOutcome] = useState(task?.outcome || (d && SCHEDULED.includes(d.outcome) ? d.outcome : ""));
+  // The kind of task is the decision's (the chip in step 3), never asked again here.
+  const outcome = task?.outcome || (d && SCHEDULED.includes(d.outcome) ? d.outcome : "");
   const [instructions, setInstructions] = useState(task?.instructions || "");
   const [meas, setMeas] = useState({ body: null, error: null });
   const [trig, setTrig] = useState(() => triggerState(task));
@@ -459,15 +460,14 @@ function TaskForm({ r, task, busy, failed, onCancel, onSubmit }) {
         <TextInput ref={nameBox} value={name} readOnly={busy} placeholder="What to do, e.g. Replace the acid pump"
                    onChange={(e) => setName(e.target.value)} />
       </Field>
-      <Field label="Trigger">
-        <Select value={trig.mode} disabled={busy} onChange={setT("mode")}>
-          <option value="interval">Every interval</option>
-          <option value="event">When an event happens</option>
-        </Select>
-      </Field>
+      {/* What raises the task is the interval unless asked otherwise: a quiet link swaps
+          to an event (a reading past a limit, or a logged event) and back, so a task
+          chosen as fixed interval isn't asked "every interval or on condition" again
+          (Derryn, 9 Nov 2026). */}
       {trig.mode === "event" && (
         <fieldset className="rim-trigger">
-          <legend className="sr-only">The event</legend>
+          <legend>Raised by an event · <button type="button" className="link" disabled={busy}
+                  onClick={() => setTrig((x) => ({ ...x, mode: "interval" }))}>Back to every interval</button></legend>
           <Field label="What happens">
             <Select value={trig.by} disabled={busy} onChange={setT("by")}>
               <option value="reading">A reading passes a limit</option>
@@ -515,13 +515,15 @@ function TaskForm({ r, task, busy, failed, onCancel, onSubmit }) {
             </Select>
           </InputGroup>
         </Field>}
-        <Field label="Kind of task">
-          <Select value={outcome} disabled={busy} onChange={(e) => setOutcome(e.target.value)}>
-            <option value="">Routine work</option>
-            {SCHEDULED.map((o) => <option key={o} value={o}>{OUTCOME_LABEL[o]}</option>)}
-          </Select>
-        </Field>
       </div>
+      {trig.mode !== "event" && (
+        <p className="rw-fhelp rim-trigger-swap">
+          <button type="button" className="link" disabled={busy} onClick={() => setTrig((x) => ({ ...x, mode: "event" }))}>
+            Raise it on an event instead…
+          </button>
+          {" "}(a reading past a limit, or an event someone logs)
+        </p>
+      )}
       {task?.id && timed && (
         <TaskMeasurementField taskId={task.id} unit={unit} disabled={busy} onChange={(body, error) => setMeas({ body, error })} />
       )}
