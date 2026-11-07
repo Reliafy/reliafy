@@ -61,7 +61,7 @@ const ICONS = {
 
 export function LevelIcon({ type, className = "rw-ic" }) {
   return (
-    <svg className={className} viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
+    <svg className={type === "std" ? `${className} rw-ic-std` : className} viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
       {ICONS[type]}
     </svg>
   );

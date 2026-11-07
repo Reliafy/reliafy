@@ -240,6 +240,10 @@
 .rw-fn .rw-ic { color: var(--acc-d); }
 .rw-fail .rw-ic { color: var(--warn); }
 .rw-ic-task { margin: 0 2px 0 0; }
+/* The performance standard's glyph is teal wherever it is drawn (tree rows,
+   the details header, a function's list); a missing standard row keeps its
+   muted colour (.tt-nostd, which is more specific). */
+.rw-ic.rw-ic-std, .rw-klist li > .rw-ic.rw-ic-std, .tp-ic.rw-ic-std { color: var(--std); }
 .rw-nm, .rw-txt {
   min-width: 0;
   overflow: hidden;

@@ -71,3 +71,15 @@ test("the text tokens are defined once, so every definition is checked", () => {
     assert.equal(n, 1, `--${name} is defined ${n} times in index.css: add the new theme's surfaces to this test`);
   }
 });
+
+// The performance-standard icon colour (RCM tree, details, lists): a graphical
+// object needs 3:1 on every surface it sits on, selected row included.
+test("--std icon colour passes 3:1 on every surface and the selected row", () => {
+  const fg = rgb(token("std"));
+  const acc = rgb("#2f6df6"); // --acc-t is this accent at 9%
+  const on = { ...surfaces(), selected: tint(acc, surfaces().card), "selected on page": tint(acc, surfaces().page) };
+  for (const [where, bg] of Object.entries(on)) {
+    const r = ratio(fg, bg);
+    assert.ok(r >= 3, `--std on ${where}: ${r.toFixed(2)}:1`);
+  }
+});

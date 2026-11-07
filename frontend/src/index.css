@@ -50,6 +50,11 @@
   --cat-violet-line: #c4b5fd;
   --cat-grey: #6c727c;
 
+  /* RCM performance standard icon (a measure): teal, apart from the blue
+     function icon. 3:1+ for an icon on every surface and the selected row
+     (checked in tokenContrast.test.js). */
+  --std: #0d8680;
+
   /* Chart axes (plotTheme AXIS) and the dimmed page behind a modal or drawer. */
   --axis: #cfd3d8;
   --scrim: rgba(20, 23, 28, 0.3);
