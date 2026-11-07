@@ -173,6 +173,7 @@ def test_admin_stats_gated(client, monkeypatch):
     assert set(data["artifacts"]) == {
         "datasets", "models", "rbds", "degradation_models",
         "tracked_items", "tracked_fleets", "strategy_analyses", "fleets",
+        "maintainability_predictions",
     }
 
 
