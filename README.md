@@ -63,6 +63,7 @@ to explore.
 | `MONGODB_DB` | `reliafy` | Database name. |
 | `SEED_SAMPLES` | `true` | Seed shared sample datasets/models/RBDs on startup (idempotent). |
 | `PORT` | `8000` | Port the server listens on. |
+| `MAINTENANCE_WRITES_PER_MINUTE` | `600` | Changes one Maintenance workspace may start per minute; more are refused with "Too many changes in the last minute". |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | _(unset)_ | Optional: set your own provider key to enable the built-in **AI assistant** on your instance (with `AI_PROVIDER` = `anthropic` (default) or `openai`, and optional `AI_MODEL`). Without a key the assistant is hidden. |
 
 The frontend build has one flag: `VITE_AUTH_DISABLED=true` (a Docker build arg

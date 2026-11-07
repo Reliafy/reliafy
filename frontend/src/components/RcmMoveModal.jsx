@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { dragSource, moveOpenAtStart, moveTree, planMoveTo, sourceWords, visibleNodes } from "../rcmDrag.js";
+import { dragSource, keptMoveTarget, moveOpenAtStart, moveSourceKey, moveTree, planMoveTo, sourceWords, visibleNodes } from "../rcmDrag.js";
 import { tasksOf } from "../rcmWorksheet.js";
 import { Field, FormModal } from "./MaintenanceParts.jsx";
 import { Chevron, Highlight } from "./OutlineBits.jsx";
@@ -39,7 +39,21 @@ export default function RcmMoveModal({ whole, src: given = null, taskFrom = null
   const [to, setTo] = useState("");
   const [active, setActive] = useState(null); // the row with the keyboard focus (roving)
   const [note, setNote] = useState(null); // why a greyed row can't be picked (tapped or reached)
-  useEffect(() => { setOpen(moveOpenAtStart(tree)); setTo(""); setNote(null); }, [tree]);
+  // Another thing to move (another task picked): start afresh. The same thing
+  // with the tree read again (a reload after the dialog opened): keep what's
+  // open and the place picked while it's still there.
+  const srcKey = moveSourceKey(src);
+  const started = useRef(srcKey);
+  useEffect(() => {
+    if (started.current !== srcKey) {
+      started.current = srcKey;
+      setOpen(moveOpenAtStart(tree));
+      setTo("");
+      setNote(null);
+    } else {
+      setTo((t) => keptMoveTarget(tree, t));
+    }
+  }, [tree, srcKey]);
   const list = useMemo(() => visibleNodes(tree, { query, open }), [tree, query, open]);
   const at = list.find((n) => n.key === active) ? active : (list.find((n) => n.key === to) || list.find((n) => n.ok) || list[0])?.key;
   const plan = to && src ? planMoveTo(whole, src, to) : null;
@@ -59,7 +73,7 @@ export default function RcmMoveModal({ whole, src: given = null, taskFrom = null
   useEffect(() => {
     const el = tree.here && box.current?.querySelector(`[data-key="${CSS.escape(tree.here)}"]`);
     if (el) box.current.scrollTop = Math.max(0, el.offsetTop - box.current.clientHeight / 3);
-  }, [tree]);
+  }, [srcKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const focusRow = (key) => {
     setActive(key);
     requestAnimationFrame(() => box.current?.querySelector(`[data-key="${CSS.escape(key)}"]`)?.focus());

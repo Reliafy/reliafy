@@ -565,6 +565,18 @@ export function moveOpenAtStart(tree) {
   return open;
 }
 
+// The place picked in Move to…, kept when the tree is read again (the
+// Explorer rebuilds it on every reload) while it's still there and can still
+// be picked; else nothing picked.
+export function keptMoveTarget(tree, to) {
+  const n = to ? tree.nodes.get(to) : null;
+  return n && n.ok ? to : "";
+}
+
+// What a move carries, as a string: the same thing moving gives the same
+// string however often the tree is rebuilt.
+export const moveSourceKey = (src) => (src ? `${src.kind}:${src.keys.join(",")}:${src.task?.id || ""}` : "");
+
 // Move up / Move down in a row's menu (functions, functional failures,
 // failure modes): the drop before the sibling above, or after the one below.
 // null when there's none that way.
