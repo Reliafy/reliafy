@@ -103,6 +103,7 @@ from backend.routers import tvc as tvc_router
 from backend.routers import workspace_changes as workspace_changes_router
 from backend.services import content_gate
 from backend.services import datasets as datasets_service
+from backend.errors import client_message
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -371,7 +372,7 @@ def columns_endpoint(
             out["hint"] = HEADER_PREVIEW_HINT
         return JSONResponse(content=out)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @app.get("/api/distributions")
@@ -533,7 +534,7 @@ def fit_endpoint(
             "Fit refused: distribution=%s covariates=%s mapping=%s — %s",
             distribution, list(z or []), {k: v for k, v in mapping.items() if v}, exc,
         )
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except HTTPException:
         raise
     except Exception:  # pragma: no cover - defensive
@@ -579,7 +580,7 @@ def evaluate_endpoint(
             content={"detail": "Model not found — re-fit to use the calculator."},
         )
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @app.post("/api/confidence/{model_id}")
@@ -606,7 +607,7 @@ def confidence_endpoint(
             content={"detail": "Model not found — re-fit to compute confidence bounds."},
         )
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except (ValueError, TypeError):
         return JSONResponse(status_code=422, content={"detail": "Invalid confidence settings."})
 
@@ -632,7 +633,7 @@ def life_endpoint(
             content={"detail": "Model not found — re-fit to compute B-lives."},
         )
     except (ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc) or "Invalid life request."})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid life request.")})
 
 
 # ---------------------------------------------------------------------------

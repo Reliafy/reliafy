@@ -91,6 +91,7 @@ from backend.formula_check import FormulaRejected, check_formula
 from backend.model_validation import validate_regression
 from backend import regression_bands, regression_diagnostics
 from backend.services.method_labels import hides_solver_names, note_fit
+from backend.errors import client_message
 
 # Plain distributions (no covariates), keyed by the id used in the API/URL.
 # ``offsetable``: supports the 3-parameter offset (failure-free period) —
@@ -2037,7 +2038,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
             support_msg = support_msg or refused
             failed.append({"id": dist_id, "name": entry["name"],
                            "reason": refused or _short_reason(
-                               str(exc).strip().splitlines() or [type(exc).__name__])})
+                               client_message(exc).splitlines() or [type(exc).__name__])})
             continue
         no_max = no_maximum_notice(model, caught)
         if no_max:
@@ -2065,7 +2066,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
                 raw = _fit_raw_mixture(entry["dist"], BEST_MIXTURE_COMPONENTS, dict(base_kwargs))
         except Exception as exc:  # noqa: BLE001 - skipped, and listed
             failed.append({"id": cid, "name": label, "reason": _short_reason(
-                str(exc).strip().splitlines() or [type(exc).__name__])})
+                client_message(exc).splitlines() or [type(exc).__name__])})
             continue
         if getattr(raw, "maximum", "verified") != "verified":
             # As SurPyval's fit_best sets it aside: a likelihood with no

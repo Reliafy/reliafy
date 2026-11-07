@@ -387,6 +387,8 @@ def set_plan(
     subscription_id: str | None = None,
 ) -> str:
     """Set the user's plan; returns the plan that was active before."""
+    if not isinstance(uid, str) or not uid:
+        raise ValueError("A user id is a non-empty string.")
     fields = {"plan": plan, "plan_until": until}
     if customer_id:
         fields["stripe_customer_id"] = customer_id

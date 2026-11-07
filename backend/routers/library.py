@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from backend.library import service
 from backend.ratelimit import SlidingWindowLimiter
 from backend.request_ip import client_ip
+from backend.errors import client_message
 
 router = APIRouter(prefix="/api/library")
 
@@ -56,7 +57,7 @@ def library_search(
         out = service.search(q, source=source, equipment_type=equipment_type, kind=kind, page=page,
                              page_size=page_size)
     except ValueError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=out, headers=_CACHE)
 
 
@@ -74,6 +75,6 @@ def library_record(
     try:
         return JSONResponse(content=service.detail(record_id, environment=environment), headers=_CACHE)
     except service.LibraryNotFound as exc:
-        return JSONResponse(status_code=404, content={"detail": str(exc)})
+        return JSONResponse(status_code=404, content={"detail": client_message(exc)})
     except ValueError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})

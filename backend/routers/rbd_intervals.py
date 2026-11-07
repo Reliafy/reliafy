@@ -30,6 +30,7 @@ from backend.services import rbd_jobs as rbd_jobs_service
 from backend.services import rbds as rbds_service
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError, require_blocks
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -107,7 +108,7 @@ def rbd_intervals_endpoint(
             max_cost_rate=max_cost_rate, max_pfd=max_pfd, target_sil=target_sil, allowed=allowed,
             stagger=stagger, assume_unlimited_crews=assume_unlimited_crews)
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Interval optimisation failed")
         return JSONResponse(status_code=500, content={

@@ -39,6 +39,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from backend import config
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1")
@@ -239,7 +240,7 @@ async def call(request: Request, user: dict, tool: str, args: dict) -> JSONRespo
         logger.exception("REST tool call %s raised an unexpected exception", tool)
         return JSONResponse(status_code=500, content={"detail": f"Error executing tool {tool}."})
     except ToolError as exc:
-        detail = _PREFIX.sub("", str(exc), count=1)
+        detail = _PREFIX.sub("", client_message(exc, also=(ToolError,)), count=1)
         detail = _MCP_POINTER.sub("", detail)  # over REST the arguments are the body, its schema the spec
         invalid = exc.__cause__ if isinstance(exc.__cause__, ValidationError) else None
         if invalid is not None:  # the arguments against the tool's schema, said plainly
@@ -347,7 +348,7 @@ async def add_photo(request: Request, target_id: str = "", caption: str = "") ->
             raw = await maintenance_router._read_body(request)
     except photos_mod.BadPhoto as err:
         status = 413 if "over" in str(err) else 422
-        return JSONResponse(status_code=status, content={"detail": str(err)})
+        return JSONResponse(status_code=status, content={"detail": client_message(err)})
     if not raw:
         return JSONResponse(status_code=422, content={"detail": "The request had no image."})
 

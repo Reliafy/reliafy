@@ -11,6 +11,7 @@ from backend.schema import DegradationModelDoc
 from backend.services import access as access_service
 from backend.services import degradation as degradation_service
 from backend.services.access import AccessCtx, get_access
+from backend.errors import client_message
 
 router = APIRouter(prefix="/api")
 
@@ -35,5 +36,5 @@ def induced_life(
     try:
         out = degradation_induced.induced_life(live, body.get("times"), body.get("reliability"))
     except ValueError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=out)

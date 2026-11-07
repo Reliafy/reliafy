@@ -21,6 +21,7 @@ from backend.services import rbd_jobs as rbd_jobs_service
 from backend.services import test_planning as tp_service
 from backend.services.access import AccessCtx, get_access
 from backend.services.strategy import StrategyError
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/test-planning")
@@ -59,9 +60,9 @@ def _answer(name: str, body: dict) -> JSONResponse:
     try:
         return JSONResponse(content=_RUN[name](**body))
     except StrategyError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except (TypeError, ValueError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc) or "Invalid inputs."})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid inputs.")})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Test planning (%s) failed", name)
         return JSONResponse(status_code=500, content={"detail": "Calculation failed. The error has been logged."})
@@ -112,12 +113,12 @@ def simulate(
     try:
         request = tp_service.simulation_request(kind, inputs, n_sim=n_sim)
     except StrategyError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     if not compute_queue.configured():
         try:
             return JSONResponse(content=tp_service.simulate_precision(request))
         except StrategyError as exc:
-            return JSONResponse(status_code=422, content={"detail": str(exc)})
+            return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     key = "test_precision|" + hashlib.sha256(json.dumps(request, sort_keys=True, default=float).encode()).hexdigest()
     kind_ = rbd_jobs_service.KIND_TEST_PRECISION
     existing = rbd_jobs_service.find_reusable(session, ctx.uid, key, False, include_done=True)
@@ -131,7 +132,7 @@ def simulate(
         try:
             compute_queue.enqueue(job["_id"], kind_, request)
         except compute_queue.QueueError as exc:
-            rbd_jobs_service.finish(session, job["_id"], "failed", error=str(exc) or rbd_jobs_service.QUEUE_UNAVAILABLE)
+            rbd_jobs_service.finish(session, job["_id"], "failed", error=client_message(exc, rbd_jobs_service.QUEUE_UNAVAILABLE))
             return JSONResponse(status_code=503, content={"detail": rbd_jobs_service.QUEUE_UNAVAILABLE,
                                                           "code": "compute_unavailable"})
     return JSONResponse(status_code=202, content={

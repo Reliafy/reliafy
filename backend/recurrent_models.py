@@ -43,6 +43,7 @@ from surpyval.recurrent import (
     NonParametricCounting,
     ProportionalIntensityNHPP,
 )
+from backend.errors import client_message
 
 # The models this module fits, by family. ``regression``: a Poisson process
 # whose intensity is scaled by covariates; ``renewal``: imperfect repair.
@@ -490,7 +491,7 @@ def by_cause(inputs: dict, causes: np.ndarray, unit: str = "") -> dict | None:
             mcf = CauseSpecificMCF.fit(x, i=i, c=c, e=e, **kw)
             para = CauseSpecificNHPP.fit(x, i=i, c=c, e=e, dist=CrowAMSAA, **kw)
     except Exception as exc:  # noqa: BLE001 - surface SurPyval's reason, keep the rest of the fit
-        return {"causes": [], "reason": f"Couldn't fit by cause: {exc}"}
+        return {"causes": [], "reason": f"Couldn't fit by cause: {client_message(exc)}"}
     total = int(counts.sum())
     rows = []
     for label in sorted(counts.index, key=lambda k: (-int(counts[k]), str(k)))[:_MAX_CAUSES]:

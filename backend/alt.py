@@ -45,6 +45,7 @@ from backend.services.method_labels import hides_solver_names, note_fit
 from backend.units import canonical_unit
 from surpyval import AcceleratedLife
 from surpyval.univariate.regression import accelerated_life as _al
+from backend.errors import client_message
 
 _LM = _al.LIFE_MODELS
 
@@ -969,7 +970,7 @@ def evaluate(
                 mission_time=mission_time, t_max=hi_disp)
         except FitError as exc:
             out["bounds"] = None
-            out["bounds_note"] = str(exc)
+            out["bounds_note"] = client_message(exc)
     return _json_safe(out)
 
 

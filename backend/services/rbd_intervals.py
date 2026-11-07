@@ -61,6 +61,7 @@ from backend.services import rbd_maintenance as rm
 from backend.services import rbd_policies as rp
 from backend.services.rbd_analysis import AnalysisError
 from backend.units import normalize_unit, unit_in_text
+from backend.errors import client_message
 
 SCHEDULES = ("replacement", "proof_test")
 #: The most age-replaced blocks chosen at once (a gradient search: quick).
@@ -527,7 +528,7 @@ def optimise(graph: dict, resolve_model=None, **raw) -> dict:
     except NotImplementedError as exc:
         if not (with_ccf and str(exc).startswith(("Common-cause", "Node(s)"))):
             raise
-        common_cause = left_out(ra._component_message(str(exc), labels))
+        common_cause = left_out(ra._component_message(client_message(exc), labels))
         result = _choose(drawn, resolve_model, False, schedule, ids, allowed, stagger, min_av, max_cost, opts,
                          safety, unit, partial)
     if groups and common_cause is None:

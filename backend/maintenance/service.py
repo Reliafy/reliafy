@@ -2203,20 +2203,29 @@ DEFAULT_PART_LEVELS = ("System", "Subsystem", "Assembly", "LRU", "SRU", "Compone
 
 
 def part_levels_id(org: str) -> str:
-    """The node holding an organisation's indenture level list."""
+    """The id a new node holding an organisation's indenture level list gets."""
     import hashlib
 
-    return "part-levels-" + hashlib.sha1(org.encode()).hexdigest()[:16]
+    return "part-levels-" + hashlib.sha256(org.encode()).hexdigest()[:16]
+
+
+def part_levels_node(s: GraphStore, org: str) -> dict | None:
+    """The node holding the organisation's indenture level list, if any: by its
+    id, or the one PartLevels node a graph projected before the id changed has."""
+    node = s.node(org, part_levels_id(org), "PartLevels")
+    if node is None:
+        node = next(iter(sorted(s.nodes(org, "PartLevels"), key=lambda n: n["id"])), None)
+    return node
 
 
 def _part_levels_set(s: GraphStore, org: str, p: dict) -> None:
     """The indenture level list, replaced; a level renamed on the way renames it on
     the parts at it."""
-    lid = part_levels_id(org)
-    if s.node(org, lid) is None:
-        s.put_node(org, lid, "PartLevels", {"levels": p["levels"]})
+    node = part_levels_node(s, org)
+    if node is None:
+        s.put_node(org, part_levels_id(org), "PartLevels", {"levels": p["levels"]})
     else:
-        s.patch_node(org, lid, {"levels": p["levels"]})
+        s.patch_node(org, node["id"], {"levels": p["levels"]})
     renamed = p.get("renamed") or {}
     if renamed:
         for pt in s.nodes(org, "Part"):
@@ -5794,7 +5803,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
     def part_levels(self) -> list[str]:
         """The workspace's indenture levels, top first."""
-        node = self.s.node(self.org, part_levels_id(self.org))
+        node = part_levels_node(self.s, self.org)
         return list(node["levels"]) if node else list(DEFAULT_PART_LEVELS)
 
     def _level_name(self, level, levels: list[str] | None = None) -> str:

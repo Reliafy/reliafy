@@ -51,6 +51,7 @@ from backend.services import rbd_analysis as ra
 from backend.services.method_labels import route_reason
 from backend.services.rbd_analysis import AnalysisError
 from backend.units import unit_in_text
+from backend.errors import client_message
 
 MEASURES = ("over_time", "shares", "joint", "rate", "uncertainty")
 #: The plain question each measure answers (its tab's title).
@@ -290,11 +291,11 @@ def analyze_measure(graph: dict, resolve_model=None, *, measure: str, window: Op
             else:
                 out = _uncertainty(head, opts, resolve_model, fits, fixed, **ctx)
         except NotImplementedError as exc:
-            out = _refused(head, measure, ra._component_message(str(exc), labels), labels)
+            out = _refused(head, measure, ra._component_message(client_message(exc), labels), labels)
         except AnalysisError:
             raise
         except ValueError as exc:
-            raise AnalysisError(ra._component_message(str(exc), labels)) from exc
+            raise AnalysisError(ra._component_message(client_message(exc), labels)) from exc
     out["notes"] = notes + out.get("notes", [])
     out["compute_seconds"] = time.perf_counter() - started
     return out

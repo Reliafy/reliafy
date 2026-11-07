@@ -30,6 +30,7 @@ from backend.services import rbds as rbds_service
 from backend.services import usage as usage_service
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError, require_blocks
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -115,7 +116,7 @@ def rbd_measures_endpoint(
         status, payload = measures_payload(session, ctx, graph, rbd, owners, measure=measure, window=window,
                                            group_by=group_by, method=method, times=times, level=level)
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("What to improve (%s) failed", measure)
         return JSONResponse(status_code=500, content={

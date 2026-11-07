@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from backend.auth import get_current_user
 from backend.services import rbd_block_inputs
+from backend.errors import client_message
 
 router = APIRouter(prefix="/api")
 
@@ -38,5 +39,5 @@ def block_model(
         else:
             out = rbd_block_inputs.summary(distribution_id, params or [])
     except rbd_block_inputs.BlockInputError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=out)

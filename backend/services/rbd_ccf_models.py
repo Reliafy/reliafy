@@ -27,6 +27,7 @@ import math
 from typing import Optional
 
 from backend.services.rbd_analysis import AnalysisError
+from backend.errors import client_message
 
 GREEK = ("β", "γ", "δ", "ε", "ζ", "η", "θ")
 NAMES = ("beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta")
@@ -83,7 +84,7 @@ def errors(graph: dict, labels: dict) -> list[str]:
         try:
             values = letters(g, where)
         except (AnalysisError, TypeError, ValueError) as exc:
-            out.append(str(exc))
+            out.append(client_message(exc))
             continue
         if len(members) >= 2 and len(values) != len(members) - 1:
             out.append(f"{where}: a multiple Greek letter group of {len(members)} members needs "

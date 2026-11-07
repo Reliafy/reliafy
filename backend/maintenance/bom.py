@@ -54,6 +54,7 @@ from backend.maintenance.service import (
     _text, new_id, structure_heights, structure_path,
 )
 from backend.services import excel
+from backend.errors import client_message
 
 MAX_ROWS = importer.MAX_ROWS
 SHOWN = 200  # entries of each kind listed in a result (the counts cover all)
@@ -408,7 +409,7 @@ def _parse(m: Maintenance, rows: list[dict], cols: dict, fmt: dict,
                      ref=_text(get("ref"), "reference"))
         except Invalid as err:
             e["bad"] = True
-            errors.append({"row": r["row"], "error": str(err)})
+            errors.append({"row": r["row"], "error": client_message(err)})
     if indented:
         errors += _tree(fmt["id"], entries, level_names)
     out = []
@@ -425,7 +426,7 @@ def _parse(m: Maintenance, rows: list[dict], cols: dict, fmt: dict,
             if not parent and qty:
                 _number(qty, "quantity", 0, MAX_AMOUNT)  # checked, though a part on its own has no line
         except Invalid as err:
-            errors.append({"row": e["row"], "error": str(err)})
+            errors.append({"row": e["row"], "error": client_message(err)})
     errors.sort(key=lambda x: x["row"] or 0)
     return out, errors
 

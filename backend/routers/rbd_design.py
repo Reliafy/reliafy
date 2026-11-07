@@ -19,6 +19,7 @@ from backend.services import models as models_service
 from backend.services import rbd_design
 from backend.services import rbds as rbds_service
 from backend.services.access import AccessCtx, get_access
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -57,7 +58,7 @@ def design_rbd(
             resolve_model=resolve_model, resolve_subsystem=resolve_subsystem,
         )
     except rbd_design.DesignError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Redundancy design failed")
         return JSONResponse(
@@ -85,7 +86,7 @@ def apply_rbd_design(
             if t is not None else None
         )
     except rbd_design.DesignError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Applying a redundancy design failed")
         return JSONResponse(

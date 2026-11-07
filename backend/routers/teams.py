@@ -13,6 +13,7 @@ from backend.services import billing as billing_service
 from backend.services import currency
 from backend.services import teams as teams_service
 from backend.services import time_zones
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/teams")
@@ -50,7 +51,7 @@ def create_team(
     try:
         team = teams_service.create_team(session, name, user)
     except teams_service.TeamError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     return JSONResponse(content=teams_service.summary(session, team, user, billing_service))
 
 
@@ -81,7 +82,7 @@ def accept_invite(
     try:
         team = teams_service.accept_invite(session, team_id, user)
     except teams_service.TeamError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     return JSONResponse(content=teams_service.summary(session, team, user, billing_service))
 
 
@@ -93,7 +94,7 @@ def decline_invite(
     try:
         teams_service.decline_invite(session, team_id, user)
     except teams_service.TeamError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     return JSONResponse(content={"ok": True})
 
 
@@ -122,7 +123,7 @@ def rename_team(
     try:
         team = teams_service.rename_team(session, team, name)
     except teams_service.TeamError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     return JSONResponse(content=teams_service.summary(session, team, user, billing_service))
 
 
@@ -143,7 +144,7 @@ def set_time_zone(
     try:
         name = time_zones.set_team(session, team["_id"], time_zone)
     except time_zones.BadTimeZone as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=teams_service.summary(session, {**team, "time_zone": name}, user, billing_service))
 
 
@@ -164,7 +165,7 @@ def set_currency(
     try:
         sym = currency.set_team(session, team["_id"], currency_symbol)
     except currency.BadCurrency as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=teams_service.summary(session, {**team, "currency_symbol": sym}, user, billing_service))
 
 
@@ -198,7 +199,7 @@ def add_member(
     try:
         result = teams_service.add_member_or_invite(session, team, email, inviter=user)
     except teams_service.TeamError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     return JSONResponse(content=result)
 
 
@@ -217,7 +218,7 @@ def remove_member(
     try:
         teams_service.remove_member(session, team, member_uid)
     except teams_service.TeamError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     return JSONResponse(content={"ok": True})
 
 
@@ -247,5 +248,5 @@ def leave_team(
     try:
         teams_service.leave_team(session, team, user["uid"])
     except teams_service.TeamError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     return JSONResponse(content={"ok": True})

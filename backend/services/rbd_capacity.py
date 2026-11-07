@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import math
 from typing import Any, Callable, Optional
+from backend.errors import client_message
 
 #: Block types that take a capacity: a single component, and a standby group
 #: (one unit runs at a time, so its capacity is the running unit's).
@@ -175,7 +176,7 @@ def _summary(dist, demand: Optional[float]) -> dict:
 def _message(exc: Exception, labels: dict) -> str:
     from backend.services.rbd_analysis import _with_labels
 
-    return _with_labels(str(exc), labels)
+    return _with_labels(client_message(exc), labels)
 
 
 def production(
