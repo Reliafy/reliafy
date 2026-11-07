@@ -3148,3 +3148,39 @@ export function getBandDegradationSeries(pointId, { since, unitName } = {}) {
   if (unitName) q.set("unit_name", unitName);
   return request(`/api/maintenance/signals/bands/${pointId}/degradation-series?${q}`);
 }
+
+// ---- Maintainability prediction ------------------------------------------------
+// Modelling › Maintainability prediction: the calculator (saves nothing), the
+// saved predictions, and a product's parts list as lines to fill in.
+
+const json = (body) => ({ headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+export function analyseMaintainability(inputs) {
+  return request("/api/maintainability/analyse", { method: "POST", ...json(inputs) });
+}
+
+export function listMaintainabilityPredictions() {
+  return request("/api/maintainability/predictions");
+}
+
+export function getMaintainabilityPrediction(id) {
+  return request(`/api/maintainability/predictions/${encodeURIComponent(id)}`);
+}
+
+export function saveMaintainabilityPrediction(name, inputs) {
+  return request("/api/maintainability/predictions", { method: "POST", ...json({ name, inputs }) });
+}
+
+export function renameMaintainabilityPrediction(id, name) {
+  return request(`/api/maintainability/predictions/${encodeURIComponent(id)}`, { method: "PATCH", ...json({ name }) });
+}
+
+export function deleteMaintainabilityPrediction(id) {
+  return request(`/api/maintainability/predictions/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+// A product's lowest-level parts as lines (Reliafy Maintenance), with the
+// failure rates of a saved reliability prediction for it when there is one.
+export function getProductMaintainabilityLines(productId) {
+  return request(`/api/maintainability/products/${encodeURIComponent(productId)}/lines`);
+}

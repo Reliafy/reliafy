@@ -251,6 +251,8 @@ rf.push_usage(fleet_id, [{"name": "Truck 01", "current_use": 5230}])
 reliafy login                                    # saves the token in your config folder
 reliafy tools                                    # every tool and action you may call
 reliafy analyse fit --help            # one action's arguments
+reliafy analyse maintainability --unit minutes \
+    --lines '[{"name": "Motor", "quantity": 4, "failure_rate": 180, "elements": {"isolation": 10, "replace": 15}}]'
 reliafy analyse optimal_replacement --distribution-id weibull \
     --params '[{"name":"alpha","value":1200},{"name":"beta","value":2.5}]' \
     --planned-cost 200 --unplanned-cost 1500

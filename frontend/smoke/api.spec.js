@@ -9,6 +9,10 @@
 import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
+  // Maintainability prediction: the calculator, the saved predictions, a product's lines.
+  ["POST", "/api/maintainability/analyse"],
+  ["GET", "/api/maintainability/predictions"],
+  ["GET", "/api/maintainability/products/smoke/lines"],
   // The Explorer's "Add the sample truck" (once: smoke/seed.js added it, so this adds nothing).
   ["POST", "/api/maintenance/sample-truck"],
   // "Add the sample UAV" (the FME(C)A tab's scored sample quadcopter).

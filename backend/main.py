@@ -46,6 +46,7 @@ from backend.fitting import (
 from backend.auth import get_current_user
 from backend.routers import auth as auth_router
 from backend.routers import maintenance as maintenance_router
+from backend.routers import maintainability as maintainability_router
 from backend.routers import models as models_router
 from backend.routers import rbds as rbds_router
 from backend.routers import rbd_jobs as rbd_jobs_router
@@ -237,6 +238,8 @@ app.include_router(rbd_measures_router.router)
 app.include_router(rbd_missions_router.router)
 app.include_router(rbd_tvc_router.router)
 app.include_router(strategy_router.router)
+# Maintainability prediction: the calculator, saved predictions, a product's lines.
+app.include_router(maintainability_router.router)
 app.include_router(test_planning_router.router)
 app.include_router(compare_groups_router.router)
 app.include_router(regression_diagnostics_router.router)
@@ -653,6 +656,7 @@ SPA_ROOTS = frozenset({
     # The signed-in app.
     "home", "products", "items", "systems", "asset-register", "maintenance", "data", "models", "strategy",
     "forecasts", "reports",
+    "maintainability",
     "agent", "team", "settings", "tokens", "admin", "billing", "changes", "data-model",
     # Placeholder pages (frontend/src/plannedPages.js).
     "requirements", "failures", "risk",

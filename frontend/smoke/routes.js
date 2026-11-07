@@ -82,6 +82,8 @@ export const DETAIL_IDS = {
   "/systems/fault-trees/:id": ["/api/fault-trees", list("fault_trees")],
   "/data/:id": ["/api/datasets", list("datasets")],
   "/strategy/analyses/:id": ["/api/strategy/analyses", list("analyses")],
+  // A maintainability prediction: the sample quadcopter's.
+  "/maintainability/:id": ["/api/maintainability/predictions", list("predictions")],
   "/risk/:fleetId": ["/api/fleet/tracked", list("fleets")],
   "/forecasts/:id": ["/api/fleet/fleets", list("fleets")],
   "/asset-register/positions/:id": ["/api/maintenance/overview", list("tree")],

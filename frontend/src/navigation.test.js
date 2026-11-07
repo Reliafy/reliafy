@@ -25,6 +25,7 @@ const REACHED_FROM = {
   "/models/recurrent/new": "Models › Repairable › New model",
   "/models/alt/new": "Models › Accelerated life › New model",
   "/models/joint/new": "Models › Condition and life › New model",
+  "/maintainability/new": "Maintainability prediction › New prediction",
   "/systems/b": "RBDs › New diagram, Home's starts",
   "/systems/runs/compare": "Simulation runs › Compare",
   "/systems/structure": "Parts and stock's Structure view",
@@ -75,11 +76,12 @@ test("the menu is one flat list: Home, Products, Assets, Items, Maintenance, Mod
 test("Modelling and Decisions are groups: their entries, each with its children", () => {
   const live = liveEntries(ALL);
   const group = (id) => live.find((e) => e.id === id).entries.map((e) => e.label);
-  assert.deepEqual(group("modelling"), ["Data", "Models", "System models"]);
+  assert.deepEqual(group("modelling"), ["Data", "Models", "Maintainability prediction", "System models"]);
   assert.deepEqual(group("decisions"), ["Strategy", "Forecasts", "Risk"]);
   assert.deepEqual(kids(live, "data"), []);
   assert.deepEqual(kids(live, "models"), ["Non-repairable", "Repairable", "Accelerated life", "Degradation",
     "Condition and life"]);
+  assert.deepEqual(kids(live, "maintainability"), []);
   assert.deepEqual(kids(live, "systems"), ["RBDs", "Fault trees", "Simulation runs"]);
   assert.deepEqual(kids(live, "strategy"), ["Optimal replacement", "Compare two models", "Failure finding",
     "Test planning"]);
@@ -116,6 +118,7 @@ test("a menu word is the title of the page it opens", () => {
   const TITLES = {
     home: "Home", products: "Products", assets: "Assets", items: "Items", maintenance: "Maintenance", data: "Data", models: "Models",
     strategy: "Strategy", forecasts: "Forecasts", reports: "Reports", agent: "Reliability Agent",
+    maintainability: "Maintainability prediction",
   };
   for (const e of MENU_ENTRIES) {
     if (e.opensOnFirstChild) continue;

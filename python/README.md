@@ -66,6 +66,9 @@ rf.call("life_data_analysis", "fit", data=[120, 340, 510, 700], censored=[0, 0, 
 rf.call("strategy", "optimal_replacement", distribution_id="weibull",
         params=[{"name": "alpha", "value": 1200}, {"name": "beta", "value": 2.5}],
         planned_cost=200, unplanned_cost=1500)
+rf.call("analyse", "maintainability", unit="minutes", lines=[   # Mct, M_max, availability from a parts list
+    {"name": "Motor", "quantity": 4, "failure_rate": 180, "elements": {"isolation": 10, "replace": 15}, "maximum": 60},
+    {"name": "Flight controller", "failure_rate": 90, "mttr": 80}])
 rf.call("guide", topic="life_data")             # a tool without actions
 rf.call("rbd_analysis", "analyze", rbd_id="…", wait=True)   # waits for a long job
 

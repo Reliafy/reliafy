@@ -61,7 +61,7 @@ import {
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL } from "../navigation.js";
 import { isolateItems, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
-import { canIsolate, depthWords, isolateOpen } from "../treeIsolate.js";
+import { canIsolate, depthWords, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen } from "../treeIsolate.js";
 import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals.jsx";
 import NewFailureReportModal from "../components/NewFailureReportModal.jsx";
 import usePhone from "../usePhone.js";
@@ -682,6 +682,27 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const isolateItem = (r) => isolateItems(display.rows.get(r.key) || r, { can: canIsolate(display.rows.get(r.key) || r, mode, canPin) });
   // Isolate: the rest of the tree closed, this row opened `depth` levels
   // below it, picked and brought into view; said to screen readers.
+  // Isolate incomplete rows: the way to what's still to finish under this row
+  // (functions with no functional failure, failures with no failure mode,
+  // modes with no decision) opened, the rest closed; the first one picked.
+  const isolateIncomplete = (r) => {
+    const row = display.rows.get(r.key);
+    if (!row) return;
+    const { open: next, rows: found } = isolateIncompleteOpen(display, open, r.key);
+    const name = row.ref.name || row.ref.text || "this row";
+    if (!found.length) {
+      announce(`Nothing incomplete under ${name}.`);
+      say(`Nothing incomplete under ${name}: every function has a functional failure and every failure mode a decision.`);
+      return;
+    }
+    setLevelBy((l) => ({ ...l, [mode]: null }));
+    setOpenSet(next);
+    const first = found[0];
+    setRcmFocus(first.key);
+    setSelected((x) => ({ ...x, [mode]: positionOf(first) }));
+    setScrollTo({ key: first.key, at: Date.now() });
+    announce(`Collapsed the rest of the tree: ${found.length} incomplete row${found.length === 1 ? "" : "s"} under ${name}.`);
+  };
   const isolateAt = (r, depth) => {
     const row = display.rows.get(r.key);
     if (!row) return;
@@ -846,7 +867,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       const moves = phone || keyboard;
       // Move to… always (the picker: no dragging needed, and a long way); Move up / down only where there's no dragging.
       const own = withPin(rowActions(r, { canRename: !phone, moves }), moveItems(whole, whole.rows.get(r.key) || r, { picked, steps: moves }));
-      return [...withPin(own, isolateItem(r)), ...pinItem(r)];
+      return [...withPin(own, [...isolateItem(r), ...isolateIncompleteItem(display.rows.get(r.key) || r, { can: canIsolate(display.rows.get(r.key) || r, mode, canPin) })]), ...pinItem(r)];
     },
     onAction: (r, id) => {
       if (id === "tree-new") {
@@ -856,6 +877,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       else if (id === "report-new") setReportFor({ id: r.key, name: r.ref.name, select: r.key });
       else if (id === "pin") pinTo(r.key, { select: true });
       else if (id.startsWith("isolate:")) isolateAt(r, id === "isolate:all" ? "all" : Number(id.slice(8)));
+      else if (id === "isolate-incomplete") isolateIncomplete(r);
       else if (id === "unpin") unpin();
       else if (id === "add-fn") runAdd({ ref: { add: "fn", position_id: r.key } });
       // Adding inside a row: its details open on that list's add row (a new row typed in place).

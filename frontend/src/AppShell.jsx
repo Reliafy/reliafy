@@ -46,6 +46,10 @@ const FleetForecasts = lazy(() => import("./views/FleetForecasts.jsx"));
 const FleetTrackingHome = lazy(() => import("./views/FleetTrackingHome.jsx"));
 const FleetForecastPage = lazy(() => import("./views/FleetForecastPage.jsx"));
 const StrategyAnalysisPage = lazy(() => import("./views/StrategyAnalysisPage.jsx"));
+// Maintainability prediction: the list, the calculator and a saved prediction.
+const MaintainabilityHome = lazy(() => import("./views/MaintainabilityHome.jsx"));
+const MaintainabilityNewPage = lazy(() => import("./views/MaintainabilityNewPage.jsx"));
+const MaintainabilityPage = lazy(() => import("./views/MaintainabilityPage.jsx"));
 const MaintenanceHome = lazy(() => import("./views/MaintenanceHome.jsx"));
 const MaintenanceAssets = lazy(() => import("./views/MaintenanceAssets.jsx"));
 const MaintenancePosition = lazy(() => import("./views/MaintenancePosition.jsx"));
@@ -248,6 +252,10 @@ export default function AppShell() {
             <Route path="/models/joint" element={<JointHome />} />
             <Route path="/models/joint/new" element={<JointNewPage />} />
             <Route path="/models/joint/:id" element={<JointModelPage />} />
+            {/* Maintainability prediction: Mct, M_max and availability from a parts list. */}
+            <Route path="/maintainability" element={<MaintainabilityHome />} />
+            <Route path="/maintainability/new" element={<MaintainabilityNewPage />} />
+            <Route path="/maintainability/:id" element={<MaintainabilityPage />} />
             <Route path="/strategy" element={<StrategyAnalyses />} />
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
