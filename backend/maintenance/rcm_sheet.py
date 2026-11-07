@@ -47,7 +47,7 @@ import re
 from backend.maintenance import fmea
 from backend.maintenance.service import (
     BASIS_TEXT, LONG_TEXT, MAX_CAUSES, MAX_EVENTS, MAX_TASKS, SCHEDULED_OUTCOMES, SHORT_TEXT, Invalid, LimitReached,
-    Maintenance, _basis_text, _interval, _norm_unit, _same_text, shortened,
+    Maintenance, _basis_text, _interval, _norm_unit, _same_text, merged_notes, shortened,
 )
 from backend.services import excel, rcm_import
 
@@ -293,7 +293,9 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
             except Invalid as err:
                 errors.append(f"“{fn['text'][:60]}”: {err}")
                 basis = ""
-        if match and basis and not _same_text(match.get("standard_basis"), basis):
+        # The working goes into a new function's notes and rationale (add_function); a function
+        # already there keeps its notes as they are, unless they hold it already.
+        if match and basis and basis not in merged_notes(match.get("notes"), match.get("standard_basis")):
             workings_kept.append(match["text"])
         # Each standard's notes (by its text): new standards take them; one already
         # there only when it has none (the function's old single text has none).
@@ -378,7 +380,8 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
     for what in notes_kept[:5]:
         warnings.append(f"{what} is on {name} already with notes of its own; they were left as they are.")
     for text in workings_kept[:5]:
-        warnings.append(f"“{text[:80]}” is on {name} already with another working behind its performance standard; it was left as it is.")
+        warnings.append(f"“{text[:80]}” is on {name} already with notes and rationale of its own; the sheet's working "
+                        "wasn't added to them (add it there by hand if it belongs).")
 
     if m.limited:
         events = counts["functions"] + counts["failures"] + 4 * counts["modes"] + counts["tasks"] + counts["links"] \

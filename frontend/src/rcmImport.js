@@ -112,12 +112,14 @@ export function positionRcmRows(worksheet) {
     // Explorer's tree shows it.
     const listed = (fn) => (fn?.standards || []).length > 0;
     const standardCell = (fn, fail) => (listed(fn) ? fail?.standard?.text || "" : fn?.standard || "");
+    // A function's notes hold the working behind its standards (Nov 2026), so the Standard
+    // working column stays blank: kept so older sheets and this one line up.
     const modeRow = (fn, fail, m) => {
       const first = firstRow(fn);
       const firstFail = firstRow(fail);
       const d = m?.decision || {};
       return [
-        where, fn?.text || "", (first && fn.notes) || "", standardCell(fn, fail), "", (first && fn.standard_basis) || "",
+        where, fn?.text || "", (first && fn.notes) || "", standardCell(fn, fail), "", "",
         fail?.text || "", (firstFail && fail.notes) || "", causedBy(fail), m?.text || "", m?.effects || "",
         CONSEQUENCE_LABEL[m?.consequence] || "", ...fmeaCells(m), OUTCOME_LABEL[d.outcome] || "", d.rtf_basis || "", d.task || "",
         d.interval ?? "", d.interval ? d.interval_unit || "" : "",
@@ -129,7 +131,7 @@ export function positionRcmRows(worksheet) {
       const first = firstRow(fn);
       for (const [i, st] of fn.standards.entries()) {
         rows.push([where, fn.text || "", (first && i === 0 && fn.notes) || "", st.text || "", st.notes || "",
-          (first && i === 0 && fn.standard_basis) || "", "", "", "", "", "", "", ...BLANK_FMEA, "", "", "", "", "", "", ""]);
+          "", "", "", "", "", "", "", ...BLANK_FMEA, "", "", "", "", "", "", ""]);
       }
     };
     const taskRow = (fn, fail, m, t) => [

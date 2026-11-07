@@ -543,27 +543,12 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 }
 .rw-scrim { position: fixed; inset: 0; z-index: 89; background: var(--scrim); }
 
-/* ---- the working behind a performance standard ------------------------------------- */
+/* ---- a function's PDFs, at the end of its notes and rationale (RcmFunctionPdfs.jsx) ---- */
 
-.rw-basis { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); min-width: 0; }
-.rw-basis-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.rw-basis-head h3 { margin: 0; font-size: var(--fs-14); }
-.rw-basis p { margin: 0; }
-.rw-basis-meta { overflow-wrap: anywhere; }
-.rw-basis-preview {
-  font-size: var(--fs-13); overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
-}
-.rw-basis-more { align-self: flex-start; }
+.rw-fpdfs { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; min-width: 0; }
+.rw-fpdfs p { margin: 0; }
 .rw-basis-links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-13); }
-.rw-basis-edit { display: flex; flex-direction: column; gap: 6px; }
-.rw-basis-area { min-height: 220px; field-sizing: fixed; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--fs-13); resize: vertical; }
-.rw-basis-count { font-size: var(--fs-12); text-align: right; }
 .rw-basis-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.rw-basis-spacer { flex: 1 1 auto; }
-.rw-basis-keys { font-size: var(--fs-12); }
-.rw-basis-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-13); padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf-2); }
-.rw-basis-ask > span { flex: 1 1 100%; overflow-wrap: anywhere; }
 .rw-basis-attach { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf-2); }
 .rw-basis-file { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .rw-basis-filename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -786,3 +771,6 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
    with the shared heading; empty, its prompt and the dashed add row. */
 .rw-notes { min-width: 0; margin-top: var(--sp-2); }
 .rw-notes-prompt { margin: 0; line-height: 1.4; }
+/* A function's notes (Markdown, as they hold the working): about six lines folded, Show all for the rest. */
+.rw-notes-md:not(.open) { max-height: 9em; overflow: hidden; }
+.rw-notes-hint { margin: 0 0 6px; }

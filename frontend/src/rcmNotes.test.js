@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { NOTES_LIMIT, checkNotes, hasNotes, hasNotesField, notesChanged, notesCount, notesPrompt, notesTip } from "./rcmNotes.js";
+import { FUNCTION_NOTES_HINT, FUNCTION_NOTES_LIMIT, NOTES_LIMIT, checkNotes, hasNotes, hasNotesField, notesChanged, notesCount, notesLimit, notesPrompt, notesTip } from "./rcmNotes.js";
 
 const row = (type, ref = {}) => ({ type, key: "k", ref });
 
@@ -43,4 +43,13 @@ test("notes are checked as the server checks them: trimmed, line breaks kept, at
   assert.equal(notesCount("abc").text, "3 / 4,000");
   assert.equal(notesCount("x".repeat(3700)).tone, "near");
   assert.equal(notesCount("x".repeat(4001)).over, true);
+});
+
+test("a function's notes hold the working behind its standards: 25,000 characters, with a hint", () => {
+  assert.equal(notesLimit(row("fn")), FUNCTION_NOTES_LIMIT);
+  for (const t of ["std", "fail", "mode"]) assert.equal(notesLimit(row(t)), NOTES_LIMIT, t);
+  assert.deepEqual(checkNotes("x".repeat(NOTES_LIMIT + 1), FUNCTION_NOTES_LIMIT), { value: "x".repeat(NOTES_LIMIT + 1) });
+  assert.match(checkNotes("x".repeat(FUNCTION_NOTES_LIMIT + 1), FUNCTION_NOTES_LIMIT).error, /at most 25,000 characters; these are 25,001/);
+  assert.equal(notesCount("abc", FUNCTION_NOTES_LIMIT).text, "3 / 25,000");
+  assert.match(FUNCTION_NOTES_HINT, /^Why these limits: the working/);
 });

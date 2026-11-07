@@ -5,10 +5,10 @@
 // across the table, the tree column kept on the left: another row picked there
 // shows in the panel. Back to table and Esc return; the focus goes into the
 // heading and back to the row. Everything the old dialog had is here, kept as
-// you go: a function's performance standards and working, a standard's limit
+// you go: a function's performance standards (its working in its notes), a standard's limit
 // fields, a failure's status, links and failure modes, a failure mode's
 // decision and its several tasks. At every level what's inside it comes first,
-// then its own fields, then the quieter things (the working, the checkable
+// then its own fields, then the quieter things (the checkable
 // limit, where it sits, notes). At 400 px it is the sheet and nothing
 // scrolls sideways. Each test makes its own small plant through the API and
 // pins it (?pin=), so its rows start at the top of the tree.
@@ -90,7 +90,7 @@ test("a click shows the details beside the table; a double-click on the name spr
   const list = fnPanel.getByRole("region", { name: "Performance standards" });
   await expect(list).toContainText(`At least 10 L/s ${tag}`);
   await expect(list).toContainText(`At 3 bar ${tag}`);
-  await expect(fnPanel.getByRole("button", { name: "Add a working…" })).toBeVisible();
+  await expect(fnPanel.getByRole("region", { name: "Notes and rationale" })).toContainText("Why these limits: the working");
   await expect(fnPanel.getByRole("region", { name: "Functional failures" }).getByRole("button", { name: `No flow ${tag}` })).toBeVisible();
 
   // Another row picked in the tree: the panel shows it, still across the table.
@@ -327,7 +327,7 @@ test("one order at every level: its notes under the title and chips, what's insi
     };
     await show(`^Function: Pump water ${tag}`);
     await expect(panel(page).getByRole("heading", { level: 2, name: `Pump water ${tag}` })).toBeVisible();
-    expect(await blocks(page)).toEqual(["Performance standards", "Functional failures", "Working behind the performance standard"]);
+    expect(await blocks(page)).toEqual(["Performance standards", "Functional failures"]); // the working is in the notes
     expect(await notesFirst(page)).toBe(true);
     await show(`^Performance standard: At 3 bar ${tag}`);
     await expect(panel(page).getByRole("heading", { level: 2, name: `At 3 bar ${tag}` })).toBeVisible();

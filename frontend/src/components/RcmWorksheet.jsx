@@ -21,11 +21,11 @@ import {
   intervalText, isCombination, memberLine, moreTasks, nameOf, shownStatus, taskLine, tasksOf, tasksTip, checkValue,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
-import RcmBasis from "./RcmBasis.jsx";
 import RcmFunctionStandards from "./RcmFunctionStandards.jsx";
 import { COMPARATORS, COMPARATOR_LABEL, limitReads, limitWords } from "../rcmStandards.js";
 import RcmModeTasks from "./RcmModeTasks.jsx";
 import RcmNotes from "./RcmNotes.jsx";
+import RcmFunctionPdfs from "./RcmFunctionPdfs.jsx";
 import { hasNotes, hasNotesField, notesTip } from "../rcmNotes.js";
 import { saveErrorText } from "../confirm.js";
 import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
@@ -100,8 +100,8 @@ export function NotesMark({ r }) {
 }
 
 // One cell's content (desktop).
-// onWorking(functionId): open a linked working in place (the Explorer); without
-// it the link goes to the working's address.
+// onWorking(functionId): open a decision's linked function notes (evidence
+// type "working") in place (the Explorer); without it the link goes to their address.
 export function Cell({ col, r, query, onDecision, readOnly, linkChecks, onWorking = null }) {
   const d = r.ref.decision;
   const mode = r.type === "mode";
@@ -135,7 +135,7 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks, onWorkin
       }
     case "check":
       // linkChecks (the Explorer): the chip opens the model, analysis or report
-      // behind it; a working opens in the details beside the table.
+      // behind it; a function's linked notes open in the details beside the table.
       if (mode && linkChecks && d?.status && d.artifact_link_path) {
         const tip = `${d.artifact_name || "The evidence"}: ${d.summary || d.reason || ""}`.trim();
         if (onWorking && d.evidence_kind === "working" && d.working) {
@@ -389,7 +389,7 @@ const toneOf = (text) => (/to decide|not analysed|no functional failure|no failu
 
 //   r          the row (cellRow: sum is its own counts)
 //   display    the tree as shown (the way up); whole: the whole tree (what's inside)
-//   ops        the Explorer's ops (useTreeRcm, with basis, basisView, standards, tasks, saveItem)
+//   ops        the Explorer's ops (useTreeRcm, with functionPdfs, notesView, standards, tasks, saveItem)
 //   links      { onLink, onUnlink } (a functional failure's links)
 //   expanded   filling the table's room; onExpand / onCollapse switch it (none on a phone)
 //   addStart   {key, list, at}: open one of this row's lists on its add row (a row menu's Add …):
@@ -573,13 +573,17 @@ export function Details({
         {/* Notes and rationale come first among the sections, directly below the chips, the
             same section at every level: a failure mode's are its notes. */}
         {hasNotesField(r) && (
-          <RcmNotes key={`${r.key}:notes`} r={r} readOnly={readOnly} onSave={(value) => keep("notes", onCommit(r, "notes", value))} />
+          <RcmNotes key={`${r.key}:notes`} r={r} readOnly={readOnly} onSave={(value) => keep("notes", onCommit(r, "notes", value))}
+                    openToken={r.type === "fn" ? ops?.notesView?.token(r) ?? null : null}>
+            {/* A function's notes hold the working behind its standards: its PDFs close the section. */}
+            {r.type === "fn" && ops?.functionPdfs && <RcmFunctionPdfs r={r} files={ops.functionPdfs} readOnly={readOnly} />}
+          </RcmNotes>
         )}
       </div>
 
       {/* One order at every level: the notes and rationale directly below the chips (above), then
           what's inside it (the next level down, as in the tree), then what belongs to this level,
-          then the quieter things (the working, the checkable limit, where it sits) last. */}
+          then the quieter things (the checkable limit, where it sits) last. */}
       <div className="rw-pbody">
         {/* The FME(C)A tab: a failure mode's two groups first (the end effect and the
             consequence are in the first), its decision and tasks after. */}
@@ -589,7 +593,7 @@ export function Details({
             failures. A functional failure (and "Not under a functional failure"): its failure
             modes. A failure mode has no list here: its tasks come after its decision. */}
         {/* On the FME(C)A tab a function's details are about its failure modes: the
-            performance standards and the working stay on the RCM tab. */}
+            performance standards stay on the RCM tab. */}
         {r.type === "fn" && ops?.standards && !fmea?.on && (
           <RcmFunctionStandards key={`${r.key}:std`} r={r} ops={ops} readOnly={readOnly} addStart={startOf("std")} onSaid={said} />
         )}
@@ -629,14 +633,14 @@ export function Details({
                       {d.status === "unevidenced" ? (
                         <>
                           None linked{!readOnly && <> · <button type="button" className="link" onClick={() => onDecision(r)}
-                                                               title="Link the model, analysis, report or working behind this decision (optional)">Link evidence…</button></>}
+                                                               title="Link the model, analysis, report or function notes behind this decision (optional)">Link evidence…</button></>}
                         </>
                       ) : (
                         <>
                           {d.status && <RcmStatusBadge status={d.status} kind={d.evidence_kind} />}
                           {d.artifact_name && (d.evidence_kind === "working" && d.working && onSelect
-                            ? <button type="button" className="link" onClick={() => onSelect(d.working.id, { basis: true })}
-                                      title="Open the working behind this performance standard">{d.artifact_name}</button>
+                            ? <button type="button" className="link" onClick={() => onSelect(d.working.id, { notes: true })}
+                                      title="Open the function's notes and rationale">{d.artifact_name}</button>
                             : d.artifact_link_path
                               ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
                           {!d.status && !d.artifact_name && "—"}
@@ -676,10 +680,6 @@ export function Details({
           </Section>
         )}
         {/* 3. The quieter things, last. */}
-        {r.type === "fn" && ops?.basis && !fmea?.on && (
-          <RcmBasis r={r} basis={ops.basis} readOnly={readOnly} context={ops.basisView?.context(r)}
-                    openToken={ops.basisView?.token(r)} />
-        )}
         {r.type === "mode" && (
           <div className="rw-fields rw-foot">
             {ops && (
@@ -719,7 +719,7 @@ export function Details({
             <p className="rw-fhelp rw-foot-note">Under the performance standard “{r.ref.standard.text}”.</p>
           </div>
         )}
-        {r.type === "std" && (r.ref.legacy || checkable || (r.ref.function_has_basis && ops?.basis)) && (
+        {r.type === "std" && (r.ref.legacy || checkable || (r.ref.function_has_notes && ops)) && (
           <div className="rw-foot">
             {r.ref.legacy && (
               <p className="rw-fhelp rw-foot-note">
@@ -762,10 +762,10 @@ export function Details({
                 )}
               </p>
             )}
-            {r.ref.function_has_basis && ops?.basis && (
+            {r.ref.function_has_notes && ops && (
               <p className="rw-fhelp rw-foot-note">
-                The working behind it is the function's:{" "}
-                <button type="button" className="link" onClick={() => onSelect(r.ref.function_id, { basis: true })}>open the working</button>.
+                The working behind it is in the function's notes and rationale:{" "}
+                <button type="button" className="link" onClick={() => onSelect(r.ref.function_id, { notes: true })}>open them</button>.
               </p>
             )}
           </div>

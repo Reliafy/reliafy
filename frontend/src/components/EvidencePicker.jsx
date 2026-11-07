@@ -13,7 +13,7 @@ const VERDICT_LABEL = {
 const KIND_HINT = {
   model: "Checked: the evidence check says whether it supports the decision.",
   report: "Linked, not checked: the evidence check shows “Report linked” with a link to open it.",
-  working: "Linked, not checked: the evidence check shows “Working linked” with a link to open it.",
+  working: "The notes and rationale of a function on this tree, where the working behind its performance standard is written. Linked, not checked: the evidence check shows “Notes linked” with a link to open them.",
 };
 
 async function loadOptions(kind, expectedType, analysisKind) {
@@ -51,8 +51,8 @@ async function loadOptions(kind, expectedType, analysisKind) {
 // Picker for the evidence behind an RCM decision ({type, id} or null), in
 // three kinds: Models (the model or analysis the outcome expects, checked;
 // offered only when the decision expects one), Reports (the user's reports)
-// and Working (the performance standards' workings on this position:
-// `workings`, [{id: the function's, label, meta}]). A report or a working is
+// and Function notes (the notes and rationale of the functions on this
+// position: `workings`, [{id: the function's, label, meta}]). A report or notes are
 // linked, not checked. Non-repairable models surface their randomness
 // verdicts so users can pick a defensible one for RTF decisions.
 export default function EvidencePicker({ expectedType, analysisKind, value, onChange, workings = [] }) {
@@ -75,7 +75,7 @@ export default function EvidencePicker({ expectedType, analysisKind, value, onCh
     if (shown !== "working") return options;
     // The working linked now stays offered even when it's on another position.
     const linked = value?.type === "working" && !workings.some((w) => w.id === value.id)
-      ? [{ id: value.id, label: "The working linked now", meta: "" }] : [];
+      ? [{ id: value.id, label: "The function's notes linked now", meta: "" }] : [];
     return [...linked, ...workings];
   }, [shown, options, workings, value]);
 
@@ -90,7 +90,7 @@ export default function EvidencePicker({ expectedType, analysisKind, value, onCh
       degradation_model: "degradation models (create one under Model → Degradation)",
     }[expectedType],
     report: "reports yet (make one under Reports)",
-    working: "workings on this position yet (write one under a function's performance standard)",
+    working: "function notes on this position yet (write a function's notes and rationale first)",
   }[shown];
 
   return (

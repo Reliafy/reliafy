@@ -67,7 +67,7 @@ test("a position's RCM as rows named as the import reads them", () => {
   assert.equal(rows.length, 6);
   assert.deepEqual(cells(rows[1], ...HEAD.slice(0, 7)), ["Plant › Conveyor C-2", "", "", "", "", "", "Motor hums"]);
   // The FME(C)A's columns sit between Consequence and Decision (blank here).
-  assert.deepEqual(cells(rows[2], ...HEAD), ["Plant › Conveyor C-2", "Move grain", "40 t/h", "## Rate\n\n40 t/h = 10 t over 15 min", "Moves no grain", "Conveyor drive › No torque", "Belt torn", "Line stops",
+  assert.deepEqual(cells(rows[2], ...HEAD), ["Plant › Conveyor C-2", "Move grain", "40 t/h", "", "Moves no grain", "Conveyor drive › No torque", "Belt torn", "Line stops",
     "Operational"]);
   assert.deepEqual(cells(rows[2], ...TAIL), ["On-condition", "", "Walk the belt", 1, "weeks", "", "Severity 7"]);
   assert.deepEqual(cells(rows[2], ...FMEA_HEADER), FMEA_HEADER.map(() => ""));
@@ -110,12 +110,15 @@ test("the CSV keeps a formula-looking cell as text, and the file is named after 
   assert.equal(exportFilename(""), "Position RCM.csv");
 });
 
-test("the working is written on a function's first row only, and quoted with its line breaks", () => {
-  const rows = positionRcmRows(WS);
+test("the Standard working column stays blank: a function's notes hold the working, quoted with their line breaks", () => {
+  const ws = { ...WS, positions: WS.positions.map((p) => ({ ...p, functions: p.functions.map((f) => ({ ...f, notes: f.standard_basis || "" })) })) };
+  const rows = positionRcmRows(ws);
   const col = EXPORT_HEADER.indexOf("Standard working");
   assert.equal(col, EXPORT_HEADER.indexOf("Standard notes") + 1);
-  assert.deepEqual(rows.map((r) => r[col]), ["Standard working", "", "## Rate\n\n40 t/h = 10 t over 15 min", "", "", ""]);
-  assert.ok(positionRcmCsv(WS).includes('"## Rate\n\n40 t/h = 10 t over 15 min"'));
+  assert.deepEqual(rows.map((r) => r[col]), ["Standard working", "", "", "", "", ""]);
+  const notes = EXPORT_HEADER.indexOf("Function notes");
+  assert.deepEqual(rows.map((r) => r[notes]), ["Function notes", "", "## Rate\n\n40 t/h = 10 t over 15 min", "", "", ""]);
+  assert.ok(positionRcmCsv(ws).includes('"## Rate\n\n40 t/h = 10 t over 15 min"'));
 });
 
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addFailureMode, addFailureModeTask, applyRcm, addFunctionStandard, addFunctionalFailure, addPositionFunction, assignFailureMode,
-  decideFailureMode, getFailureModeTasks, getPositionFunction, getWorkspaceRcm, linkFunctionalFailureCause,
+  decideFailureMode, getFailureModeTasks, getWorkspaceRcm, linkFunctionalFailureCause,
   linkTaskFailureMode, removeFunctionStandard, removeFunctionalFailure, removeMaintenanceDocument, removePositionFunction,
   reorderFunctionStandards, retireFailureMode, retireMaintenanceTask, splitFunctionStandard, unlinkFunctionalFailureCause,
   unlinkTaskFailureMode, updateFailureMode, updateFunctionStandard, updateFunctionalFailure, updateMaintenanceTask,
@@ -212,13 +212,10 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       if (r.type === "fail") return after(removeFunctionalFailure(id));
       return after(retireFailureMode(id));
     },
-    // The working behind a function's performance standard (the panel's
-    // section): the whole function read once when opened (the bulk read has
-    // only a preview), the text saved, and PDFs attached or removed. A
-    // refusal goes to the caller, who shows it under the field.
-    basis: {
-      read: (functionId) => getPositionFunction(functionId),
-      save: (functionId, text) => after(updatePositionFunction(functionId, { standard_basis: text })),
+    // PDFs on a function (the working behind its standard, as files; its
+    // notes and rationale hold the text): attached or removed. A refusal goes
+    // to the caller, who shows it under the list.
+    functionPdfs: {
       attach: (functionId, file, title = "") => after(uploadMaintenanceDocument({ target_id: functionId }, file, { title, kind: "other" })),
       detach: (documentId) => after(removeMaintenanceDocument(documentId)),
     },

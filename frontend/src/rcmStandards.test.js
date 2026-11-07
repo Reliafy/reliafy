@@ -53,7 +53,7 @@ test("the CSV writes a function's standards as rows, and each failure's breach",
     ["Keep the water balanced", "", "Water unusable", ""],
     ["Contain the water", "No leak", "Leaks", ""],
   ]);
-  assert.equal(at(rows[1], "Standard working"), "## Sums"); // the working on the function's first row only
+  assert.equal(at(rows[1], "Standard working"), ""); // a function's notes hold the working now
   assert.equal(at(rows[3], "Standard working"), "");
 });
 
