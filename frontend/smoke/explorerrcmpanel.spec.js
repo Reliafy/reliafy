@@ -390,19 +390,20 @@ test("one order at every level: its notes under the title and chips, what's insi
     await expect(howBad.getByRole("radiogroup")).toHaveCount(2);
     await expect(howBad.locator(".field-help")).toHaveCount(0);
     // Step 3, in place, top to bottom: the chip row (the decision, chosen), the task cards with their
-    // Edit and Remove links, the dashed add row (a redesign may sit beside one task), then the evidence and
-    // the decision notes, open. No ⋯, no Change….
+    // Edit and Remove links, the dashed add row (a redesign may sit beside one task), then the evidence,
+    // open. No decision notes box: the mode's notes and rationale are the one place. No ⋯, no Change….
     const todo = panel(page).getByRole("region", { name: "Proactive task or default action" });
     await expect(todo.locator(".rim-step")).toHaveCount(1);
     await expect(todo.getByRole("radiogroup", { name: "Which task is worth doing?" }).getByRole("radio", { name: /On condition/ }))
       .toHaveAttribute("aria-checked", "true");
-    await expect(todo.locator(".rim-cards .rim-tname").first()).toHaveText(`On condition · Check the seal ${tag} · every 1 month`);
+    await expect(todo.locator(".rim-cards .rim-tname").first()).toHaveText(`Check: Check the seal ${tag} · every 1 month`);
+    await expect(todo.getByRole("textbox", { name: "Then, if found:" })).toBeVisible();
     await expect(todo.getByRole("button", { name: `Edit “Check the seal ${tag}”` })).toBeVisible();
     await expect(todo.getByRole("button", { name: `Remove “Check the seal ${tag}”` })).toBeVisible();
     await expect(todo.getByRole("button", { name: /^Change…$|^Actions for/ })).toHaveCount(0);
     await expect(todo.getByRole("button", { name: "+ Add another task" })).toBeVisible();
-    await expect(todo.getByRole("textbox", { name: /^Decision notes/ })).toBeVisible();
-    await expect(todo.getByRole("group", { name: "Evidence and rationale" })).toContainText("None linked");
+    await expect(todo.getByRole("textbox", { name: /^Decision notes/ })).toHaveCount(0);
+    await expect(todo.getByRole("group", { name: "Evidence" })).toContainText("None linked");
     expect(await todo.evaluate((el) => {
       const at = (sel) => [...el.querySelectorAll("*")].indexOf(el.querySelector(sel));
       return [at(".task-choice"), at(".rim-cards"), at(".rim-addrow"), at(".rim-whyopen")].every((v, i, a) => v >= 0 && (i === 0 || v > a[i - 1]));

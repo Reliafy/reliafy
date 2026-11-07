@@ -313,21 +313,64 @@ export function decisionCardLines(d, tasks) {
     const t = String(o.task || "").trim();
     return { name: t || null, every: INTERVAL_OUTCOMES.has(o.outcome) && o.interval != null && o.interval !== "" ? everyText(o) || null : null };
   };
-  const line = (row) => {
-    const kind = row.outcome ? OUTCOME_LABEL[row.outcome] || row.outcome : null;
-    if (row.task) return { key: row.key, kind, name: row.task.text || row.task.name || null, every: everyText(row.task) || null, task: row.task, member: row.member };
-    if (row.outcome === "redesign") return { key: row.key, kind, name: "until the change is made", every: null, task: null, member: row.member };
+  // `at`: which part of the decision the line is (a combination's member index; 0 the
+  // decision's own task; null a task linked outside the decision), for its on_found.
+  const at = (row, i) => (isCombination(d) ? (row.member ? d.outcomes.indexOf(row.member) : null) : i === 0 ? 0 : null);
+  const found = (row, i) => {
+    const where = at(row, i);
+    if (where == null || !FINDS.has(row.outcome)) return null;
+    return { at: where, text: (isCombination(d) ? row.member?.on_found : d.on_found) || "" };
+  };
+  const line = (row, i) => {
+    const base = { key: row.key, outcome: row.outcome || null, kind: row.outcome ? OUTCOME_LABEL[row.outcome] || row.outcome : null, found: found(row, i) };
+    if (row.task) return { ...base, name: row.task.text || row.task.name || null, every: everyText(row.task) || null, task: row.task, member: row.member };
+    if (row.outcome === "redesign") return { ...base, name: "until the change is made", every: null, task: null, member: row.member };
     const m = row.member && !row.member.task_id && (row.member.task || row.member.interval != null) ? own(row.member) : { name: "no task now", every: null };
-    return { key: row.key, kind, ...m, task: null, member: row.member };
+    return { ...base, ...m, task: null, member: row.member };
   };
   if (isCombination(d)) {
     if (rows.length) return rows.map(line);
-    return d.outcomes.map((o, i) => line({ key: `member:${o.outcome}:${i}`, outcome: o.outcome, task: null, member: o }));
+    return d.outcomes.map((o, i) => line({ key: `member:${o.outcome}:${i}`, outcome: o.outcome, task: null, member: o }, i));
   }
-  const head = { key: "decision", kind: decisionText(d) || null, ...own(d), task: null, member: null };
-  if (!INTERVAL_OUTCOMES.has(d.outcome)) return [head, ...rows.map(line)];
+  const head = { key: "decision", outcome: d.outcome || null, kind: decisionText(d) || null, ...own(d), task: null, member: null,
+    found: FINDS.has(d.outcome) ? { at: 0, text: d.on_found || "" } : null };
+  if (!INTERVAL_OUTCOMES.has(d.outcome)) return [head, ...rows.map((row) => line(row, null))];
   return rows.length ? rows.map(line) : [head];
 }
+
+// ---- what each task card is for (Derryn, 9 Nov 2026) ----------------------------------
+// "You have an on-condition task, but then you might have an inspection for that, and that
+// needs to be much more clear": each card leads with its role by its kind, then the task.
+// An on-condition check and a failure-finding check say, on a second line, what's done when
+// the check finds it (the decision's or the member's on_found).
+const FINDS = new Set(["on_condition", "failure_finding"]);
+export const FOUND_EMPTY = "Say what's done when the check finds it";
+export const ROLE = {
+  on_condition: { lead: "Check:", then: "Then, if found:" },
+  failure_finding: { lead: "Check it still works:", then: "Then, if failed:" },
+  fixed_interval: { lead: "Do:" },
+  rtf: { lead: "When it fails:" },
+  accept: { lead: "Accepted:" },
+  redesign: { lead: "Change:" },
+};
+// Whether a kind of task checks something (and so says what's done when it finds it).
+export const findsSomething = (outcome) => FINDS.has(outcome);
+// The first line of a text (an accept's or a redesign's card shows the notes' first line).
+export const firstLine = (text) => String(text || "").split("\n").map((l) => l.trim()).find(Boolean) || "";
+// A card's role line in words: "Check: Weekly level check · every 1 week"; "When it fails: Replace the pump".
+// A redesign or accept reads the failure mode's notes (`notes`), where its rationale is written.
+export function roleLine(l, notes = "") {
+  const role = ROLE[l.outcome];
+  if (!role) return { lead: l.kind ? `${l.kind}:` : null, name: l.name || null, every: l.every || null };
+  if (l.outcome === "accept" || (l.outcome === "redesign" && !l.task)) {
+    return { lead: role.lead, name: firstLine(notes) || null, every: l.outcome === "redesign" && l.member ? "until the change is made" : null };
+  }
+  return { lead: role.lead, name: l.name || null, every: l.every || null };
+}
+export const roleLineText = (l, notes = "") => {
+  const x = roleLine(l, notes);
+  return [[x.lead, x.name].filter(Boolean).join(" "), x.every].filter(Boolean).join(" · ");
+};
 
 // One card line in words: "On condition · Weekly level check · every 1 week".
 export const cardLineText = (l) => [l.kind, l.name, l.every].filter(Boolean).join(" · ");
@@ -358,7 +401,8 @@ export function addableOutcomes(d, mode = null) {
 
 // The decision as the server takes it back with one more member: each member
 // it has by its task (task_id, so a task's name and interval are left as they
-// are), its own evidence kept; the decision's notes and evidence kept.
+// are), its own evidence and on_found kept; the decision's evidence kept (its notes
+// are the failure mode's, saved on their own).
 // `member`: {outcome} (a redesign), {outcome, task, interval, interval_unit}
 // (a new task) or {outcome, task_id} (an existing one).
 export function decisionWithMember(d, member) {
@@ -367,10 +411,10 @@ export function decisionWithMember(d, member) {
     outcome: o.outcome,
     ...(o.task_id ? { task_id: o.task_id } : {}),
     ...(ref(o.evidence) ? { evidence: ref(o.evidence) } : {}),
+    ...(o.on_found ? { on_found: o.on_found } : {}),
   });
-  const members = isCombination(d) ? d.outcomes.map(keep) : [keep({ outcome: d.outcome, task_id: d.task_id })];
+  const members = isCombination(d) ? d.outcomes.map(keep) : [keep({ outcome: d.outcome, task_id: d.task_id, on_found: d.on_found })];
   const out = { outcomes: [...members, member] };
-  if (String(d.notes || "").trim()) out.notes = d.notes;
   if (ref(d.evidence)) out.evidence = ref(d.evidence);
   return out;
 }
@@ -378,9 +422,11 @@ export function decisionWithMember(d, member) {
 // ---- step 3 edited in place (a failure mode's details) ------------------------
 // The failure mode's details choose the decision with one tap (RcmModeTasks:
 // "Which task is worth doing?"), so each tap sends the whole decision, built
-// here from the one it replaces. The notes go with it; the evidence too when
-// it fits any decision (a report or function notes) or the outcome hasn't
-// changed (a model fits the outcome it was linked for).
+// here from the one it replaces. The evidence goes with it when it fits any
+// decision (a report or function notes) or the outcome hasn't changed (a model
+// fits the outcome it was linked for). The notes are the failure mode's (one
+// place since Nov 2026), never sent with a decision; on_found, left out, is kept
+// by the server while the kind of task stays.
 
 const LINKED_EVIDENCE = new Set(["report", "working"]);
 const evidenceRef = (e) => (e?.type && e?.id ? { type: e.type, id: e.id } : null);
@@ -410,7 +456,6 @@ export function decisionWithOutcome(d, tasks, outcome, rtfBasis = null) {
     out.rtf_basis = rtfBasis;
     if (d?.outcome === "rtf" && String(d.task || "").trim()) out.task = d.task;
   }
-  if (String(d?.notes || "").trim()) out.notes = d.notes;
   if (ev && (LINKED_EVIDENCE.has(ev.type) || same)) out.evidence = ev;
   return out;
 }
@@ -431,10 +476,31 @@ export function tasksDropped(d, tasks, outcome) {
 // interval, interval_unit}) or an existing one ({task_id}).
 export function decisionWithFirstTask(d, member) {
   const ev = evidenceRef(d?.evidence);
+  const found = member.on_found ? { on_found: member.on_found } : {};
   const out = member.task_id
-    ? { outcomes: [{ outcome: d.outcome, task_id: member.task_id }] }
-    : { outcome: d.outcome, task: member.task, interval: member.interval, interval_unit: member.interval_unit };
-  if (String(d?.notes || "").trim()) out.notes = d.notes;
+    ? { outcomes: [{ outcome: d.outcome, task_id: member.task_id, ...found }] }
+    : { outcome: d.outcome, task: member.task, interval: member.interval, interval_unit: member.interval_unit, ...found };
+  if (ev) out.evidence = ev;
+  return out;
+}
+
+// The decision as the server takes it back with what's done when one of its checks
+// finds it (`at`: the combination's member index, 0 the decision's own task) set to
+// `text` ("" clears it): every member by its task (task_id) where it has one, so
+// nothing else changes.
+export function decisionWithOnFound(d, at, text) {
+  const ev = evidenceRef(d?.evidence);
+  // A member's own evidence goes back with it (a single decision's is the decision's, below).
+  const member = (o, own, ownEvidence = true) => ({
+    outcome: o.outcome,
+    ...(o.task_id ? { task_id: o.task_id }
+      : Object.fromEntries(["task", "interval", "interval_unit"].filter((k) => o[k] != null && o[k] !== "").map((k) => [k, o[k]]))),
+    ...(ownEvidence && evidenceRef(o.evidence) ? { evidence: evidenceRef(o.evidence) } : {}),
+    ...(own ? { on_found: text } : {}),
+  });
+  const out = isCombination(d)
+    ? { outcomes: d.outcomes.map((o, i) => member(o, i === at)) }
+    : d.task_id ? { outcomes: [member(d, true, false)] } : member(d, true, false);
   if (ev) out.evidence = ev;
   return out;
 }
@@ -449,7 +515,7 @@ export function decisionBody(d, patch = {}) {
     const given = (v) => v !== undefined && v !== null && v !== "";
     // Each member goes back with its own evidence, if any (only {type, id}: the read adds its check).
     const keep = (o) => ({
-      ...Object.fromEntries(["outcome", "task", "interval", "interval_unit"].filter((k) => given(o[k])).map((k) => [k, o[k]])),
+      ...Object.fromEntries(["outcome", "task", "interval", "interval_unit", "on_found"].filter((k) => given(o[k])).map((k) => [k, o[k]])),
       ...(o.evidence?.type && o.evidence?.id ? { evidence: { type: o.evidence.type, id: o.evidence.id } } : {}),
     });
     const first = keep(d.outcomes[0]);
@@ -461,14 +527,13 @@ export function decisionBody(d, patch = {}) {
     if (first.interval != null && !first.interval_unit) first.interval_unit = "hours";
     if (first.interval == null) delete first.interval_unit;
     const out = { outcomes: [first, ...d.outcomes.slice(1).map(keep)] };
-    for (const k of ["notes", "evidence"]) {
-      const v = k in patch ? patch[k] : d[k];
-      if (given(v)) out[k] = v;
-    }
+    const v = "evidence" in patch ? patch.evidence : d.evidence;
+    if (given(v)) out.evidence = v;
     return out;
   }
   const out = {};
-  for (const k of ["outcome", "rtf_basis", "task", "interval", "interval_unit", "notes", "evidence"]) {
+  // The notes are the failure mode's (one place since Nov 2026): never sent with a decision.
+  for (const k of ["outcome", "rtf_basis", "task", "interval", "interval_unit", "on_found", "evidence"]) {
     if (d[k] !== undefined && d[k] !== null && d[k] !== "") out[k] = d[k];
   }
   for (const [k, v] of Object.entries(patch)) {
@@ -694,10 +759,13 @@ export const COLUMNS = [
     sort: (r) => (isMode(r) ? d(r)?.summary || d(r)?.reason || null : null),
   },
   {
+    // The decision's notes are the failure mode's notes and rationale since Nov 2026 (one
+    // place): the column reads them, merged with any decision notes kept from before.
     id: "dnotes", label: "Decision notes", width: 220, min: 110, on: false,
-    text: (r) => (isMode(r) ? d(r)?.notes || "" : ""),
-    sort: (r) => (isMode(r) ? d(r)?.notes || null : null),
-    edit: "text", can: (r) => isMode(r) && !!d(r), field: "notes", onDecision: true,
+    title: "The failure mode's notes and rationale, where the decision's rationale is written",
+    text: (r) => (isMode(r) && d(r) ? r.ref.notes || "" : ""),
+    sort: (r) => (isMode(r) && d(r) ? r.ref.notes || null : null),
+    edit: "text", can: (r) => isMode(r) && !!d(r), field: "notes",
   },
   {
     id: "notes", label: "Mode notes", width: 200, min: 96, on: false,
@@ -781,7 +849,7 @@ export function chipCounts(display) {
 // detection method, action and owner).
 export function rowText(r) {
   const p = r.ref;
-  return [p.text, p.standard, p.effects, p.notes, p.decision?.task, p.decision?.notes,
+  return [p.text, p.standard, p.effects, p.notes, p.decision?.task, p.decision?.on_found,
     p.cause, p.effect_local, p.effect_next, p.detection_method, p.action, p.action_owner,
     ...tasksOf(p).map((t) => t.name), ...(p.standards || []).map((st) => [st.parameter, st.when, st.source].filter(Boolean).join(" ")),
     // A standard's own row: its structured limit, condition and source too.

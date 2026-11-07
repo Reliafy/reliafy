@@ -2,6 +2,15 @@
 
 ## Unreleased (0.5.1)
 
+- **What a check leads to, and one place for the rationale**: `maintenance
+  failure_modes.decide` takes `decision.on_found` (and `on_found` on each of
+  `decision.outcomes`) for an on-condition or failure-finding task: what's
+  done when the check finds it. Left out, it's kept; `""` clears it. Reads
+  return it. `decision.notes` is deprecated: it's added to the failure mode's
+  notes and rationale (`failure_modes.update notes`), and reads give it as
+  those notes. The FMECA and RCM exports gain an "On found" column, which the
+  worksheet import reads. No client code changed.
+
 - **Packages proposed as visits on a weekday**: `maintenance packages.propose`
   takes `weekday` (`monday` … `sunday`). The drafts then visit on that day,
   with the longer cadences as layers on the shortest in each area and trade;

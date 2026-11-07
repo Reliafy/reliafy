@@ -860,15 +860,16 @@ test("the decision dialog says what's missing: the interval a schedule needs, wh
   await dialog.getByRole("spinbutton", { name: "Interval (needed)" }).fill("");
   await dialog.getByRole("radio", { name: /On condition/ }).click();
   await expect(dialog.getByRole("spinbutton", { name: "Interval", exact: true })).not.toHaveAttribute("aria-invalid", "true");
-  await expect(dialog.getByText("No task will be created: this decision will show as having no task. Say in the notes what covers it.")).toBeVisible();
+  await expect(dialog.getByText("No task will be created: this decision will show as having no task. Say what covers it in Notes and rationale.")).toBeVisible();
   await expect(apply).toBeEnabled();
-  await dialog.locator("textarea").fill("Covered by the weekly walk-round");
+  // No notes box here: the rationale is the failure mode's notes and rationale (one place).
+  await expect(dialog.locator("textarea")).toHaveCount(0);
   await shot(page, "decide-on-condition-notice");
   await apply.click();
   await expect(dialog).toHaveCount(0);
   const sheet = await (await request.get(`${M}/positions/${p.pump.id}/rcm?scope=this`)).json();
   const mode = sheet.positions[0].functions[0].failures[0].modes.find((m) => m.text.startsWith("Bearing seizes"));
-  expect(mode.decision).toMatchObject({ outcome: "on_condition", notes: "Covered by the weekly walk-round" });
+  expect(mode.decision).toMatchObject({ outcome: "on_condition" });
   expect(mode.decision.interval ?? null).toBe(null);
   await expectHealthy(page, problems, { label: "decision dialog", root: ".tx" });
 });

@@ -120,7 +120,7 @@ To find your way around a big tree:
   in Items. The dialog counts what will go before you confirm. Its history
   stays, and **Undo** in the message that follows (or Ctrl+Z, Cmd+Z on a Mac)
   brings it all back.
-- **Columns…**, in the **⋯** menu at the top right of the panel, shows or hides columns, such as **Evidence**, **What the evidence shows** and **Decision notes**. Drag a
+- **Columns…**, in the **⋯** menu at the top right of the panel, shows or hides columns, such as **Evidence**, **What the evidence shows** and **Decision notes** (the failure mode's notes and rationale). Drag a
   column's edge to resize it. The Explorer remembers these choices on this
   device.
 
@@ -188,12 +188,20 @@ fields, then the quieter things at the foot:
   on the chosen one clears it. With **No task is worth doing**, a second row
   offers what's done instead (**Run to failure**, **Accept**, **Redesign**, as
   allowed), and run to failure asks why. Until step 2 is answered the choices
-  wait, greyed out. Below them are the tasks as cards, such as *On condition ·
-  Weekly water level check · every 1 week*, each with **Edit** and **Remove**
-  at its right. A task kind with no task yet shows a small form: the task's name
-  and how often, or **Use an existing task…**. **Evidence and rationale**, open
-  at the foot, shows the evidence (**Link evidence…** opens the evidence picker)
-  and the decision notes, saved as you leave the box.
+  wait, greyed out. Below them are the tasks as cards, each leading with what
+  it's for: an on-condition task reads *Check: Weekly water level check ·
+  every 1 week*, then **Then, if found:** what's done when the check finds it
+  (type it in the card; it's kept when you leave the box or press Enter). A
+  failure-finding task reads **Check it still works:** with **Then, if
+  failed:**; a fixed-interval task **Do:**; run to failure **When it fails:**
+  with what's done on failure; accept **Accepted:** and redesign **Change:**,
+  each with the first line of the notes and rationale. Each task card has
+  **Edit** and **Remove** at its right. A task kind with no task yet shows a
+  small form: the task's name and how often (and, for a check, what's done when
+  it finds it), or **Use an existing task…**. **Evidence**, open at the foot,
+  shows the evidence (**Link evidence…** opens the evidence picker). Why you
+  decided goes in the failure mode's **Notes and rationale**, under its title:
+  there's one place for it.
 
 Every row, whatever its level, opens its details with **Notes and rationale**,
 a section of its own directly below its title and status line and above
@@ -345,8 +353,8 @@ Sometimes one task isn't enough: an inspection catches the slow failures, and
 a replacement at a hard life catches the ones it can't see. And sometimes one
 act of work answers several failure modes: one monthly water sample covers
 five chemistry failure modes. Both are in the failure mode's Details, in its
-decision card (**3. Proactive task or default action**): one line per task, each with its kind,
-name and how often, and how many other failure modes share it.
+decision card (**3. Proactive task or default action**): one card per task, each with what
+it's for (**Check:**, **Do:**, …), its name and how often, and how many other failure modes share it.
 
 - **+ Add another task**, the dashed row under the task cards, adds a task to
   the decision, making it a combination of tasks. It asks its kind in place
@@ -427,7 +435,7 @@ Each decision's **Evidence check** shows one of these:
 
 A decision with nothing linked yet shows **Not linked**, quietly: plenty of
 decisions are made from judgement, and linking evidence is optional. Its
-Details offer **Link evidence…** (under **Evidence and rationale** in step 3)
+Details offer **Link evidence…** (under **Evidence** in step 3)
 when you're ready. Redesign and accept-risk
 decisions need no evidence, so they show no status unless you link a report
 or a function's notes.

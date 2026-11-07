@@ -192,12 +192,15 @@ test("a combination goes back whole, a cell's change on its first task", () => {
       { outcome: "on_condition", task: "Vibration check", interval: 1, interval_unit: "months" },
       { outcome: "fixed_interval", task: "Replace the bearing", interval: 24, interval_unit: "months" },
     ],
-    notes: "Neither alone is enough",
   });
+  // The notes are the failure mode's (one place since Nov 2026): never sent with a decision.
+  assert.equal(decisionBody({ outcome: "accept", notes: "Why" }).notes, undefined);
   const changed = decisionBody(COMBO, { interval: 2 });
   assert.equal(changed.outcomes[0].interval, 2);
   assert.equal(changed.outcomes[1].interval, 24);
-  assert.equal(decisionBody(COMBO, { notes: null }).notes, undefined);
+  // What's done when a check finds it goes back with its member, or the decision.
+  assert.equal(decisionBody({ ...COMBO, outcomes: [{ ...COMBO.outcomes[0], on_found: "Replace it" }, COMBO.outcomes[1]] }).outcomes[0].on_found, "Replace it");
+  assert.equal(decisionBody({ outcome: "on_condition", interval: 1, interval_unit: "weeks", on_found: "Replace it" }).on_found, "Replace it");
   assert.equal(decisionBody(COMBO, { task: "Ultrasound check" }).outcomes[0].task, "Ultrasound check");
 });
 
@@ -305,31 +308,32 @@ test("a decision with one more member goes back with each member by its task", (
   const plain = { outcome: "on_condition", task: "Check", interval: 1, interval_unit: "weeks", task_id: "t1", notes: "Why", evidence: { type: "report", id: "r1", name: "x" } };
   assert.deepEqual(decisionWithMember(plain, { outcome: "fixed_interval", task: "Replace", interval: 24, interval_unit: "months" }), {
     outcomes: [{ outcome: "on_condition", task_id: "t1" }, { outcome: "fixed_interval", task: "Replace", interval: 24, interval_unit: "months" }],
-    notes: "Why", evidence: { type: "report", id: "r1" },
+    evidence: { type: "report", id: "r1" },
   });
+  assert.deepEqual(decisionWithMember({ ...plain, on_found: "Replace it" }, { outcome: "fixed_interval", task_id: "t2" }).outcomes[0],
+    { outcome: "on_condition", task_id: "t1", on_found: "Replace it" });
   const combo = { ...COMBO, outcomes: [{ ...COMBO.outcomes[0], evidence: { type: "model", id: "m1" } }, COMBO.outcomes[1]] };
   assert.deepEqual(decisionWithMember(combo, { outcome: "failure_finding", task_id: "t9" }), {
     outcomes: [{ outcome: "on_condition", task_id: "t1", evidence: { type: "model", id: "m1" } }, { outcome: "fixed_interval", task_id: "t2" },
       { outcome: "failure_finding", task_id: "t9" }],
-    notes: "Neither alone is enough",
   });
   assert.deepEqual(decisionWithMember({ outcome: "redesign" }, { outcome: "on_condition", task: "Watch", interval: 1, interval_unit: "weeks" }).outcomes,
     [{ outcome: "redesign" }, { outcome: "on_condition", task: "Watch", interval: 1, interval_unit: "weeks" }]);
   assert.equal(memberEvidenceText({ outcome: "fixed_interval", status: "unevidenced" }), "none linked");
 });
 
-test("step 3 in place: one tap sends the whole decision, keeping its task, notes and fitting evidence", async () => {
+test("step 3 in place: one tap sends the whole decision, keeping its task and fitting evidence (never the notes)", async () => {
   const { decisionWithOutcome, tasksDropped, keptTask, decisionWithFirstTask } = await import("./rcmWorksheet.js");
   const t1 = { id: "t1", name: "Weekly check" };
   const t2 = { id: "t2", name: "Replace", shared_with: 1 };
   const plain = { outcome: "on_condition", task_id: "t1", notes: "Why", evidence: { type: "degradation_model", id: "m1", extra: 1 } };
   // Another kind of task: the task it has, by id; a model linked for the old outcome goes.
-  assert.deepEqual(decisionWithOutcome(plain, [t1], "fixed_interval"), { outcomes: [{ outcome: "fixed_interval", task_id: "t1" }], notes: "Why" });
+  assert.deepEqual(decisionWithOutcome(plain, [t1], "fixed_interval"), { outcomes: [{ outcome: "fixed_interval", task_id: "t1" }] });
   assert.deepEqual(tasksDropped(plain, [t1], "fixed_interval"), []);
   // The same outcome again keeps its model; a report goes with any outcome.
   assert.deepEqual(decisionWithOutcome(plain, [t1], "on_condition").evidence, { type: "degradation_model", id: "m1" });
   assert.deepEqual(decisionWithOutcome({ ...plain, evidence: { type: "report", id: "r1" } }, [t1], "redesign"),
-    { outcome: "redesign", notes: "Why", evidence: { type: "report", id: "r1" } });
+    { outcome: "redesign", evidence: { type: "report", id: "r1" } });
   // Nothing scheduled: every task comes off; run to failure takes its reason and keeps what's done on failure.
   assert.deepEqual(tasksDropped(plain, [t1], "rtf"), [t1]);
   assert.deepEqual(tasksDropped(plain, [t1], null), [t1]);
@@ -345,7 +349,56 @@ test("step 3 in place: one tap sends the whole decision, keeping its task, notes
   assert.deepEqual(tasksDropped(combo, [t1, t2], "fixed_interval"), [t1]);
   // The first task for a scheduled decision with none: new, or an existing one by id.
   assert.deepEqual(decisionWithFirstTask({ outcome: "failure_finding", notes: "N" }, { task: "Test the trip", interval: 6, interval_unit: "months" }),
-    { outcome: "failure_finding", task: "Test the trip", interval: 6, interval_unit: "months", notes: "N" });
+    { outcome: "failure_finding", task: "Test the trip", interval: 6, interval_unit: "months" });
   assert.deepEqual(decisionWithFirstTask({ outcome: "failure_finding" }, { outcome: "failure_finding", task_id: "t9" }),
     { outcomes: [{ outcome: "failure_finding", task_id: "t9" }] });
+  assert.deepEqual(decisionWithFirstTask({ outcome: "on_condition" }, { task: "Look", interval: 1, interval_unit: "weeks", on_found: "Fix it" }),
+    { outcome: "on_condition", task: "Look", interval: 1, interval_unit: "weeks", on_found: "Fix it" });
+});
+
+test("each task card leads with what it's for, and a check says what's done when it finds it", async () => {
+  const { decisionCardLines, roleLine, roleLineText, decisionWithOnFound, firstLine, findsSomething, ROLE } = await import("./rcmWorksheet.js");
+  const t1 = { id: "t1", name: "Vibration check", text: "Vibration check", interval: 1, unit: "months", outcome: "on_condition" };
+  const t2 = { id: "t2", name: "Replace the bearing", text: "Replace the bearing", interval: 24, unit: "months", outcome: "fixed_interval" };
+  const t3 = { id: "t3", name: "Trip test", text: "Trip test", interval: 6, unit: "months", outcome: "failure_finding" };
+  // On condition: "Check:" the task, and its on_found as "Then, if found:".
+  const single = { outcome: "on_condition", task_id: "t1", on_found: "Replace within 2 weeks", evidence: { type: "report", id: "r1", name: "x" } };
+  const [one] = decisionCardLines(single, [t1]);
+  assert.equal(roleLineText(one), "Check: Vibration check · every 1 month");
+  assert.deepEqual(one.found, { at: 0, text: "Replace within 2 weeks" });
+  assert.equal(ROLE.on_condition.then, "Then, if found:");
+  assert.equal(ROLE.failure_finding.then, "Then, if failed:");
+  // Empty: the line is still there (greyed in the card), with "" as its text.
+  assert.deepEqual(decisionCardLines({ outcome: "on_condition", task_id: "t1" }, [t1])[0].found, { at: 0, text: "" });
+  // Failure finding and fixed interval.
+  assert.equal(roleLineText(decisionCardLines({ outcome: "failure_finding", task_id: "t3" }, [t3])[0]), "Check it still works: Trip test · every 6 months");
+  const fixed = decisionCardLines({ outcome: "fixed_interval", task_id: "t2" }, [t2])[0];
+  assert.equal(roleLineText(fixed), "Do: Replace the bearing · every 24 months");
+  assert.equal(fixed.found, null);
+  // A combination: each member's own on_found; a task outside the decision has none.
+  const combo = { outcome: "on_condition", task_id: "t1", outcomes: [
+    { outcome: "on_condition", task_id: "t1", on_found: "Plan the change" }, { outcome: "fixed_interval", task_id: "t2" }] };
+  const lines = decisionCardLines(combo, [t1, t2, { ...t3, outcome: "failure_finding" }]);
+  assert.deepEqual(lines.map((l) => l.found), [{ at: 0, text: "Plan the change" }, null, null]);
+  // Run to failure: its action; accept and redesign: the first line of the mode's notes.
+  const rtf = decisionCardLines({ outcome: "rtf", rtf_basis: "random", task: "Replace it" }, [])[0];
+  assert.equal(roleLineText(rtf), "When it fails: Replace it");
+  const accept = decisionCardLines({ outcome: "accept" }, [])[0];
+  assert.equal(roleLineText(accept, "\n  Rare and cheap to fix.\nMore."), "Accepted: Rare and cheap to fix.");
+  assert.deepEqual(roleLine(accept, ""), { lead: "Accepted:", name: null, every: null });
+  assert.equal(roleLineText(decisionCardLines({ outcome: "redesign" }, [])[0], "Fit a guard"), "Change: Fit a guard");
+  const withRedesign = { outcome: "on_condition", task_id: "t1", outcomes: [{ outcome: "on_condition", task_id: "t1" }, { outcome: "redesign", task_id: null }] };
+  assert.equal(roleLineText(decisionCardLines(withRedesign, [t1])[1], "Fit a guard"), "Change: Fit a guard · until the change is made");
+  // An event-triggered task says "on event: …" where the interval would be.
+  const event = { ...t1, trigger: { kind: "event", text: "Lightning strike", with_interval: false } };
+  assert.equal(roleLineText(decisionCardLines({ outcome: "on_condition", task_id: "t1" }, [event])[0]), "Check: Vibration check · on event: Lightning strike");
+  assert.equal(firstLine(""), "");
+  assert.ok(findsSomething("failure_finding") && !findsSomething("fixed_interval"));
+  // Saving one: every member by its task, the one asked for with its new on_found.
+  assert.deepEqual(decisionWithOnFound(single, 0, "Replace now"),
+    { outcomes: [{ outcome: "on_condition", task_id: "t1", on_found: "Replace now" }], evidence: { type: "report", id: "r1" } });
+  assert.deepEqual(decisionWithOnFound(combo, 0, ""), { outcomes: [
+    { outcome: "on_condition", task_id: "t1", on_found: "" }, { outcome: "fixed_interval", task_id: "t2" }] });
+  assert.deepEqual(decisionWithOnFound({ outcome: "on_condition", task: "Look", interval: 1, interval_unit: "weeks" }, 0, "Fix"),
+    { outcome: "on_condition", task: "Look", interval: 1, interval_unit: "weeks", on_found: "Fix" });
 });

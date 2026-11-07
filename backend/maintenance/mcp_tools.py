@@ -331,12 +331,14 @@ FAILURE_MODES: Table = {
         I-IV: cm = βαλt). clear: fields to unset. Guide topic plan."""),
     "decide": ("failure_mode_id", "hidden consequence decision task_id", """hidden (evident or not), consequence
         and the whole decision
-        {outcome, rtf_basis, task, interval, interval_unit, notes, evidence: {type, id}: a model or analysis,
+        {outcome, rtf_basis, task, interval, interval_unit, on_found, evidence: {type, id}: a model or analysis,
         checked; or report / working (a function's id: its notes and rationale): linked, not checked} ({} clears it; values:
         guide topic plan); adds, changes or retires its task (task_id: an existing one is the decision's).
         A combination of tasks (an inspection plus a fixed-time replacement): decision.outcomes [{outcome, task,
-        interval, interval_unit, task_id?, evidence?}, ...], each scheduled one with a task of its own and checked
-        against its own evidence, else the decision's. A decision the RCM decision diagram forbids for the mode is
+        interval, interval_unit, task_id?, evidence?, on_found?}, ...], each scheduled one with a task of its own and
+        checked against its own evidence, else the decision's. on_found: what's done when an on_condition or
+        failure_finding check finds it (left out: kept). notes: deprecated, added to the mode's notes (update
+        notes). A decision the RCM decision diagram forbids for the mode is
         refused (guide topic plan). Returns it with the evidence check and any advice to relay."""),
     "add_task": ("failure_mode_id name interval", "unit outcome instructions", """Another task for the mode
         (an inspection plus a hard-time replacement); its decision's stays first."""),
@@ -1425,10 +1427,13 @@ def register() -> None:
                                   standard_basis: Annotated[str | None, Field(description=(
                                       "Deprecated: write the working in notes; this is added to them."))] = None,
                                   decision: Annotated[dict[str, Any] | None, Field(description=(
-                                      "decide: {outcome, rtf_basis, task, interval, interval_unit, notes, "
+                                      "decide: {outcome, rtf_basis, task, interval, interval_unit, on_found, "
                                       "evidence}; a combination of tasks: outcomes [{outcome, task, interval, "
-                                      "interval_unit, task_id?, evidence?}, ...] instead of outcome, task and "
-                                      "interval (a member's evidence, else the decision's, is checked for it)."))] = None,
+                                      "interval_unit, task_id?, evidence?, on_found?}, ...] instead of outcome, "
+                                      "task and interval (a member's evidence, else the decision's, is checked "
+                                      "for it). on_found: what's done when an on_condition or failure_finding "
+                                      "check finds it ('Replace the bearing'; left out: kept). notes: deprecated, "
+                                      "added to the mode's notes and rationale (one place: update notes)."))] = None,
                                   cause_id: str | None = None, task_id: str | None = None,
                                   name: str | None = None, interval: float | None = None,
                                   unit: str | None = None, outcome: str | None = None,

@@ -723,11 +723,14 @@ def decide_failure_mode(mode_id: str, body: dict = Body(...), session=Depends(ge
                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """The mode's two answers (hidden: true when the failure can't be seen in normal operation; consequence:
     safety, environmental, operational or non_operational, "hidden" a deprecated alias for hidden true) and its
-    decision ({outcome, rtf_basis, task, interval, interval_unit, notes, evidence}; null clears it), checked by
+    decision ({outcome, rtf_basis, task, interval, interval_unit, on_found, evidence}; null clears it), checked by
     the RCM decision rules and diagram; the evidence must be one the writer can open.
-    A combination of tasks: decision.outcomes [{outcome, task, interval, interval_unit, task_id, evidence}, ...]
-    in place of outcome, task and interval, each scheduled member with a task of its own and checked against its
-    own evidence, else the decision's."""
+    A combination of tasks: decision.outcomes [{outcome, task, interval, interval_unit, task_id, evidence,
+    on_found}, ...] in place of outcome, task and interval, each scheduled member with a task of its own and
+    checked against its own evidence, else the decision's.
+    on_found: what's done when an on-condition or failure-finding check finds it ("" clears it; left out, it is
+    kept while the kind of task stays). decision.notes is deprecated: it is added to the failure mode's notes
+    and rationale (PATCH the failure mode's notes instead); reads return the mode's notes there."""
     from backend.maintenance import rcm_graph
 
     def go():

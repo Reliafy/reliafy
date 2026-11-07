@@ -11,7 +11,9 @@ failure cell; a mode under none has blank function cells too.
 Notes and rationale: a function's (Function notes) and a functional
 failure's (Functional failure notes) on its first row; a performance
 standard's (Standard notes) on its own row; a failure mode's (Failure mode
-notes) on its row. The import reads each back. A function's notes hold the
+notes) on its row, which also hold its decision's rationale (one place since
+Nov 2026). The import reads each back. On found: what's done when an
+on-condition or failure-finding check finds it. A function's notes hold the
 working behind its standard, so the Standard working column stays blank (it
 is kept so older files and this one line up).
 """
@@ -31,7 +33,8 @@ HEADER = [
     "Action priority", "Recommended action", "Action owner", "Action due", "Action status", "Failure rate",
     "Time unit", "Rate source", "Mode ratio", "Loss probability", "Operating time", "Mode criticality",
     "Severity class",
-    "Decision", "Run-to-failure basis", "Task", "Interval", "Interval unit", "Evidence check", "Failure mode notes",
+    "Decision", "Run-to-failure basis", "Task", "Interval", "Interval unit", "On found", "Evidence check",
+    "Failure mode notes",
 ]
 SHEET = "FMECA"
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -109,6 +112,7 @@ def rows(worksheet: dict) -> list[list]:
                 *(_scores(m) if m else blank_scores),
                 _OUTCOME.get(d.get("outcome") or "", ""), d.get("rtf_basis") or "", d.get("task") or "",
                 *_interval_cells(d, d.get("interval_unit")),
+                ((d.get("outcomes") or [{}])[0].get("on_found") if d.get("outcomes") else d.get("on_found")) or "",
                 (_LINKED.get(d.get("evidence_kind"), "Linked") if status == "linked" else _STATUS.get(status, status))
                 if status and status != "unevidenced" else "",
                 (m or {}).get("notes") or "",
@@ -119,7 +123,8 @@ def rows(worksheet: dict) -> list[list]:
                 where, (fn or {}).get("text") or "", "", _standard_cell(fn or {}, fail), "", "",
                 (fail or {}).get("text") or "", "", _caused_by(fail or {}), m.get("text") or "", "", "", *blank_scores,
                 _OUTCOME.get(t.get("outcome") or (m.get("decision") or {}).get("outcome") or "", ""), "",
-                t.get("text") or t.get("name") or "", *_interval_cells(t, t.get("unit")), "", "",
+                t.get("text") or t.get("name") or "", *_interval_cells(t, t.get("unit")), t.get("on_found") or "",
+                "", "",
             ]
 
         def mode_rows(fn, fail, m) -> None:
@@ -131,7 +136,8 @@ def rows(worksheet: dict) -> list[list]:
             # task outside the decision.
             for o in members[1:]:
                 out.append(task_row(fn, fail, m, {"outcome": o["outcome"], "text": o.get("task") or "",
-                                                  "interval": o.get("interval"), "unit": o.get("interval_unit")}))
+                                                  "interval": o.get("interval"), "unit": o.get("interval_unit"),
+                                                  "on_found": o.get("on_found")}))
             in_members = {o.get("task_id") for o in members}
             for t in (d.get("tasks") or [])[1:]:
                 if t.get("id") not in in_members:
@@ -146,7 +152,7 @@ def rows(worksheet: dict) -> list[list]:
                     out.append([where, fn.get("text") or "", (first and i == 0 and fn.get("notes")) or "",
                                 st.get("text") or "", st.get("notes") or "",
                                 "", "", "", "", "", "", "",
-                                *blank_scores, "", "", "", "", "", "", ""])
+                                *blank_scores, "", "", "", "", "", "", "", ""])
             for m in fn.get("modes") or []:  # directly under the function: no functional failure yet
                 mode_rows(fn, None, m)
             if not fn.get("failures") and not fn.get("modes") and not fn.get("standards"):

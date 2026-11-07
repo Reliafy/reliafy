@@ -117,11 +117,11 @@ test("no evidence linked: no warnings, no Evidence check column; the column come
   await modeRow.press("Enter");
   const panel = page.locator("aside.rw-panel");
   await expect(panel).toBeVisible();
-  // Said once, in step 3's open Evidence and rationale ("None linked"), not again as a chip by the title.
+  // Said once, in step 3's open Evidence ("None linked"), not again as a chip by the title.
   const decision = panel.getByRole("region", { name: "Proactive task or default action" });
-  const why = decision.getByRole("group", { name: "Evidence and rationale" });
+  const why = decision.getByRole("group", { name: "Evidence" });
   await expect(why).toContainText("None linked");
-  await expect(decision.getByRole("button", { name: /^Evidence and rationale/ })).toHaveCount(0); // open, not folded
+  await expect(decision.getByRole("button", { name: /^Evidence/ })).toHaveCount(0); // open, not folded
   await expect(panel.locator(".rw-chips-row")).not.toContainText("No evidence linked");
   // Quiet: never a warning.
   await expect(panel.locator(".chip-warning, .chip-danger")).toHaveCount(0);

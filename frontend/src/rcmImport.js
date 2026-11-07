@@ -55,7 +55,7 @@ export const EXPORT_HEADER = [
   "Position", "Function", "Function notes", "Performance standard", "Standard notes", "Standard working",
   "Functional failure", "Functional failure notes", "Caused by (below)", "Failure mode", "Effects", "Consequence",
   ...FMEA_HEADER,
-  "Decision", "Run-to-failure basis", "Task", "Interval", "Interval unit", "Evidence check", "Failure mode notes",
+  "Decision", "Run-to-failure basis", "Task", "Interval", "Interval unit", "On found", "Evidence check", "Failure mode notes",
 ];
 const BLANK_FMEA = FMEA_HEADER.map(() => "");
 
@@ -126,6 +126,8 @@ export function positionRcmRows(worksheet) {
         (m ? consequenceText(m) : ""), ...fmeaCells(m), OUTCOME_LABEL[d.outcome] || "", d.rtf_basis || "", d.task || "",
         // A task raised only by an event: the interval cell says so, in words.
         onEventOnly(d) ? triggerText(d.trigger) : d.interval ?? "", d.interval && !onEventOnly(d) ? d.interval_unit || "" : "",
+        // What's done when the check finds it: a combination's is its first member's (this row's task).
+        (Array.isArray(d.outcomes) && d.outcomes.length ? d.outcomes[0].on_found : d.on_found) || "",
         checkLabel(d), m?.notes || "",
       ];
     };
@@ -134,13 +136,14 @@ export function positionRcmRows(worksheet) {
       const first = firstRow(fn);
       for (const [i, st] of fn.standards.entries()) {
         rows.push([where, fn.text || "", (first && i === 0 && fn.notes) || "", st.text || "", st.notes || "",
-          "", "", "", "", "", "", "", ...BLANK_FMEA, "", "", "", "", "", "", ""]);
+          "", "", "", "", "", "", "", ...BLANK_FMEA, "", "", "", "", "", "", "", ""]);
       }
     };
     const taskRow = (fn, fail, m, t) => [
       where, fn?.text || "", "", standardCell(fn, fail), "", "", fail?.text || "", "", causedBy(fail), m.text || "", "",
       "", ...BLANK_FMEA, OUTCOME_LABEL[t.outcome] || OUTCOME_LABEL[m.decision?.outcome] || "", "", t.text || t.name || "",
-      onEventOnly(t) ? triggerText(t.trigger) : t.interval ?? "", t.interval && !onEventOnly(t) ? t.unit || "" : "", "", "",
+      onEventOnly(t) ? triggerText(t.trigger) : t.interval ?? "", t.interval && !onEventOnly(t) ? t.unit || "" : "",
+      t.on_found || "", "", "",
     ];
     // A combination of tasks: a row per further member, in its order (a redesign
     // with no task too), so the import builds the same combination; then any
@@ -149,7 +152,7 @@ export function positionRcmRows(worksheet) {
       rows.push(modeRow(fn, fail, m));
       const members = m?.decision?.outcomes || [];
       for (const o of members.slice(1)) {
-        rows.push(taskRow(fn, fail, m, { outcome: o.outcome, text: o.task || "", interval: o.interval, unit: o.interval_unit }));
+        rows.push(taskRow(fn, fail, m, { outcome: o.outcome, text: o.task || "", interval: o.interval, unit: o.interval_unit, on_found: o.on_found }));
       }
       const inMembers = new Set(members.map((o) => o.task_id).filter(Boolean));
       for (const t of (m?.decision?.tasks || []).slice(1)) if (!inMembers.has(t.id)) rows.push(taskRow(fn, fail, m, t));

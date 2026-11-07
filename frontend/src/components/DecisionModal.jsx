@@ -2,9 +2,7 @@ import { useId, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
 import Select from "./Select.jsx";
-import Field from "./ui/Field.jsx";
 import TaskChoice from "./TaskChoice.jsx";
-import { TextArea } from "./ui/Controls.jsx";
 
 // Evidence that's linked, not checked: it goes with any decision.
 const LINKED_ONLY = new Set(["report", "working"]);
@@ -32,8 +30,8 @@ const EVIDENT_HIDDEN = [
 // with why; the default action named at the end) → task details → linked
 // evidence. A scheduled outcome (or a redesign) may take further tasks,
 // a combination of tasks (RCM II: a regular inspection plus a fixed-time
-// replacement), each with its own name and interval; the notes are once per
-// decision, and the decision's evidence counts for every task it fits, while a
+// replacement), each with its own name and interval; the rationale is the
+// failure mode's notes (one place), and the decision's evidence counts for every task it fits, while a
 // further task may link its own (one piece can't cover a degradation model's
 // task and a replacement analysis's). Saves back {hidden, consequence, decision} straight to the
 // server (the Explorer): onSave returns a promise, and the dialog stays
@@ -67,7 +65,6 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
   const [interval, setInterval_] = useState(existing.interval ?? own?.interval ?? "");
   // The decision's own unit, else its task's, else the one chosen last on this device, else hours.
   const [intervalUnit, setIntervalUnit] = useState(() => startUnit(existing.interval_unit ? existing : { interval_unit: own?.unit }));
-  const [notes, setNotes] = useState(existing.notes || "");
   const [evidence, setEvidence] = useState(existing.evidence || null);
   // A combination's further tasks ([{outcome, task, interval, intervalUnit}]), the first being the decision's own.
   const [extras, setExtras] = useState(() => (Array.isArray(existing.outcomes) && existing.outcomes.length > 1
@@ -120,7 +117,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
   };
 
   const fields = outcomeOpt?.fields || [];
-  const check = checkDecision({ outcome, rtfBasis, task, interval, intervalUnit, notes, fields, extras, hidden, consequence }, { limits });
+  const check = checkDecision({ outcome, rtfBasis, task, interval, intervalUnit, fields, extras, hidden, consequence }, { limits });
   const canSave = check.blockers.length === 0;
   const needsInterval = NEEDS_INTERVAL.has(outcome) && fields.includes("interval");
   // One save at a time: a second click (or Enter) while one is on its way does nothing.
@@ -138,7 +135,6 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
       decision.interval_unit = intervalUnit;
       rememberUnit(intervalUnit); // the next decision starts at it
     }
-    if (notes.trim()) decision.notes = notes.trim();
     if (extras.length) {
       // A combination: every task as one of outcomes, the decision's own first.
       const first = { outcome };
@@ -374,13 +370,9 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
         </div>
       )}
 
-      <div className="decision-step">
-        <Field label="Notes" optional={!(outcome === "redesign" || outcome === "accept")}>
-          <TextArea value={notes} rows={2}
-                    placeholder={outcome === "redesign" || outcome === "accept" ? "Document the rationale" : "Why this decision"}
-                    onChange={(e) => setNotes(e.target.value)} />
-        </Field>
-      </div>
+      {/* The rationale is the failure mode's notes and rationale, under its title in the
+          details: one place (Derryn, 9 Nov 2026), so no notes box here. */}
+      <p className="option-hint">Write why in the failure mode's Notes and rationale, under its title.</p>
     </Modal>
   );
 }

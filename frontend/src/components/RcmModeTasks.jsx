@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { saveErrorText } from "../confirm.js";
 import { DEFAULT_OUTCOMES, INTERVAL_UNITS, TASK_ORDER, modeAnswers, startUnit } from "../decisionCheck.js";
 import {
-  OUTCOME_LABEL, addableOutcomes, decisionCardLines, decisionRows, decisionWithFirstTask, decisionWithMember, decisionWithOutcome,
-  everyText, isCombination, tasksDropped, tasksOf,
+  FOUND_EMPTY, OUTCOME_LABEL, ROLE, addableOutcomes, decisionCardLines, decisionRows, decisionWithFirstTask, decisionWithMember,
+  decisionWithOnFound, decisionWithOutcome, everyText, findsSomething, isCombination, roleLine, tasksDropped, tasksOf,
 } from "../rcmWorksheet.js";
 import { getTaskTriggerPoints } from "../api.js";
 import { asksInterval, pointLabel, triggerBody, triggerState, triggerWhy } from "../taskTrigger.js";
@@ -15,7 +15,7 @@ import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 import TaskChoice from "./TaskChoice.jsx";
 import Chip from "./ui/Chip.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
-import Field from "./ui/Field.jsx";
+import Field, { SavedMark } from "./ui/Field.jsx";
 import InputGroup from "./ui/InputGroup.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 
@@ -32,7 +32,15 @@ import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 //    second tap on the chosen chip clears it. A change that takes tasks off
 //    the mode asks first, naming them. Until step 2 is answered the chips are
 //    shown but disabled, with why.
-// 2. The tasks, as cards: each with its kind, name and how often, its chips
+// 2. The tasks, as cards: each leads with what it's for, by its kind (Derryn,
+//    9 Nov 2026: "you have an on-condition task, but then you might have an
+//    inspection for that, and that needs to be much more clear"): "Check:" the
+//    task · every N, then "Then, if found:" what's done when the check finds it
+//    (on_found, edited in place: saved on leaving the field or Enter); a
+//    failure-finding task "Check it still works:" … "Then, if failed:"; a
+//    fixed-interval task "Do:"; run to failure "When it fails:" with what's done
+//    on failure (`own`); accept "Accepted:" and redesign "Change:" with the first
+//    line of the failure mode's notes and rationale. Then its chips
 //    (shared, its work package) and instructions, and plain Edit and Remove
 //    links at its right (Edit changes it in place: a shared task changes for
 //    every mode it serves; Remove unlinks a shared task, retires one serving
@@ -41,8 +49,9 @@ import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 //    existing task…": one on this position or above it). Run to failure shows
 //    what's done on failure (`own`). "+ Add another task" (dashed) only when
 //    the rules allow a combination and a task exists: its kind, then the form.
-// 3. "Evidence and rationale", open: the evidence line and the decision notes
-//    (`why`, built by Details: Link evidence… opens the evidence picker alone).
+// 3. "Evidence", open: the evidence line (`why`, built by Details: Link
+//    evidence… opens the evidence picker alone). The rationale is the failure
+//    mode's notes and rationale, under its title: one place (Derryn, 9 Nov 2026).
 //
 // No decision and tasks linked before: those tasks under their own heading.
 // Each write goes at once through `ops` (useTreeRcm) and the row is read
@@ -52,7 +61,7 @@ import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 //   ops       modeTasks, editTask, removeTask, decide; none: the chips disabled
 //   readOnly  no edits at all
 //   options   the server's RCM options (labels, hints, run-to-failure reasons)
-//   why       the evidence line and the decision notes (shown with a decision)
+//   why       the evidence line (shown with a decision)
 //   own       run to failure's "What's done on failure" field
 //   addStart  a value that, when it changes, opens "Add another task" (the row menu's Add a task…)
 //   onSaid    (text) a few words in the page's status line once something's done
@@ -82,8 +91,9 @@ export default function RcmModeTasks({
   const answers = modeAnswers(r.ref);
   const answered = !!answers.consequence;
   const can = !readOnly && !!ops?.decide;
+  // A decision that schedules nothing (run to failure, accept, redesign) is one card too.
   const cards = d
-    ? decisionCardLines(d, tasks).filter((l) => l.task || l.member)
+    ? decisionCardLines(d, tasks).filter((l) => l.task || l.member || (l.key === "decision" && !SCHEDULED.includes(d.outcome)))
     : decisionRows(null, tasks).map((row) => ({
       key: row.key, kind: null, name: row.task.text || row.task.name, every: everyText(row.task) || null, task: row.task, member: null,
     }));
@@ -158,12 +168,16 @@ export default function RcmModeTasks({
     onSaid?.(said);
   };
 
-  const submitEdit = (task) => async (body) => {
+  // What's done when a check finds it (a card's "Then, if found"), saved with the decision.
+  const saveFound = (l, text) => decide(decisionWithOnFound(d, l.found.at, text));
+
+  const submitEdit = (task, l) => async (body, found) => {
     if (busy) return false;
     setBusy(true);
     setFailed(null);
     try {
       await ops.editTask(task.id, body);
+      if (l.found && found !== undefined && found !== (l.found.text || "")) await saveFound(l, found);
       if (alive.current) { setBusy(false); setEditing(null); }
       onSaid?.("Saved the task.");
       return true;
@@ -187,19 +201,27 @@ export default function RcmModeTasks({
       return (
         <li key={l.key} className="rim-line rim-card editing">
           <TaskForm key={t.id} r={r} task={t} busy={busy} failed={failed}
-                    onCancel={() => { setEditing(null); setFailed(null); }} onSubmit={submitEdit(t)} />
+                    found={l.found ? { label: ROLE[l.outcome].then.replace(/:$/, ""), text: l.found.text } : null}
+                    onCancel={() => { setEditing(null); setFailed(null); }} onSubmit={submitEdit(t, l)} />
         </li>
       );
     }
+    const role = roleLine(l, r.ref.notes);
+    // Run to failure's action on failure is edited in its card (`own`); accept and redesign read the notes.
+    const ownHere = l.key === "decision" && d?.outcome === "rtf" && own;
+    const empty = l.task || ownHere ? null : l.outcome === "accept" ? "Say why in Notes and rationale above"
+      : l.outcome === "redesign" ? "Say what's to change in Notes and rationale above"
+        : l.outcome === "rtf" ? "Say what's done when it fails" : null;
+    const name = ownHere ? null : role.name;
     return (
       <li key={l.key} className="rim-line rim-card">
         <div className="rim-chead">
           <span className="rim-tname">
-            {l.kind && <span className="rim-tkind">{l.kind}</span>}
-            {l.kind && (l.name || l.every) ? " · " : null}
-            {l.name}
-            {l.name && l.every ? " · " : null}
-            {l.every && <span className="rim-tevery">{l.every}</span>}
+            {role.lead && <span className="rim-trole">{role.lead}</span>}
+            {role.lead && (name || role.every || (!name && empty)) ? " " : null}
+            {name || (empty && <span className="rim-empty">{empty}</span>)}
+            {(name || empty) && role.every ? " · " : null}
+            {role.every && <span className="rim-tevery">{role.every}</span>}
           </span>
           {t?.id && can && (
             <span className="rim-tacts">
@@ -224,6 +246,11 @@ export default function RcmModeTasks({
           </span>
         ) : null}
         {t?.instructions && <Instructions text={t.instructions} />}
+        {ownHere && <div className="rim-own">{own}</div>}
+        {l.found && t && (
+          <FoundLine key={`${r.key}:${l.key}:found`} label={ROLE[l.outcome].then} value={l.found.text}
+                     can={can} onSave={(text) => saveFound(l, text).then(() => onSaid?.("Saved what's done when it's found."))} />
+        )}
       </li>
     );
   };
@@ -233,7 +260,6 @@ export default function RcmModeTasks({
       <TaskChoice options={options} hidden={answers.hidden} consequence={answers.consequence} value={pick} onChange={choose}
                   disabled={!can || !answered || busy} locked={answered ? null : LOCKED} moveOnly saved={saved} />
       {failed && !editing && <p className="field-error" role="alert">{failed}</p>}
-      {d?.outcome === "rtf" && own && <div className="rim-own">{own}</div>}
       {needsFirst && (
         <NewTaskForm key={`${r.key}:${d.outcome}`} r={r} d={d} ops={ops} kind={d.outcome}
                      intro="The decision schedules work, but no task does it yet: give it a task and an interval."
@@ -263,7 +289,7 @@ export default function RcmModeTasks({
       ))}
       {d && why && (
         <div className="rim-whyopen" role="group" aria-labelledby={`rim-why-${r.key}`}>
-          <h4 className="rim-before" id={`rim-why-${r.key}`}>Evidence and rationale</h4>
+          <h4 className="rim-before" id={`rim-why-${r.key}`}>Evidence</h4>
           {why}
         </div>
       )}
@@ -287,6 +313,7 @@ function NewTaskForm({ r, d, ops, kind: fixed = null, kinds = null, title = null
   const [unit, setUnit] = useState(() => startUnit(d || {}));
   const [choices, setChoices] = useState(null);
   const [picked, setPicked] = useState("");
+  const [found, setFound] = useState("");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const [tried, setTried] = useState(false);
@@ -311,9 +338,10 @@ function NewTaskForm({ r, d, ops, kind: fixed = null, kinds = null, title = null
     e?.preventDefault();
     setTried(true);
     if (busy || why) return;
+    const said = findsSomething(kind) && found.trim() ? { on_found: found.trim() } : {};
     const member = !scheduled ? { outcome: kind }
-      : use === "existing" ? { outcome: kind, task_id: picked }
-        : { outcome: kind, task: name.trim(), interval: n, interval_unit: unit };
+      : use === "existing" ? { outcome: kind, task_id: picked, ...said }
+        : { outcome: kind, task: name.trim(), interval: n, interval_unit: unit, ...said };
     setBusy(true);
     setFailed(null);
     try {
@@ -344,7 +372,7 @@ function NewTaskForm({ r, d, ops, kind: fixed = null, kinds = null, title = null
         </Field>
       )}
       {!scheduled ? (
-        <p className="rw-fhelp">A redesign needs no task here: the other task stands in until the change is made. Say what's to change in the decision notes.</p>
+        <p className="rw-fhelp">A redesign needs no task here: the other task stands in until the change is made. Say what's to change in Notes and rationale, under the title.</p>
       ) : use === "new" ? (
         <>
           <Field label="Task" help={hint}>
@@ -387,6 +415,11 @@ function NewTaskForm({ r, d, ops, kind: fixed = null, kinds = null, title = null
           </button>
         </>
       )}
+      {scheduled && findsSomething(kind) && (
+        <Field label={ROLE[kind].then.replace(/:$/, "")} optional>
+          <TextInput value={found} readOnly={busy} placeholder={FOUND_EMPTY} maxLength={500} onChange={(e) => setFound(e.target.value)} />
+        </Field>
+      )}
       {failed && <p className="field-error" role="alert">{failed}</p>}
       <div className="rim-tform-acts">
         {tried && why && !busy && <p className="rim-why">{why}</p>}
@@ -412,8 +445,9 @@ function intervalWhy(raw) {
 // task it is, its instructions; a task by use being changed, its measurement
 // (what it counts, with the last-done reading on a new one). Saved once (the button says so until the
 // server answers); a refusal shows here with everything as typed.
-function TaskForm({ r, task, busy, failed, onCancel, onSubmit }) {
+function TaskForm({ r, task, busy, failed, found = null, onCancel, onSubmit }) {
   const d = r.ref.decision;
+  const [foundText, setFoundText] = useState(found?.text || "");
   const [name, setName] = useState(task?.name || "");
   const [interval, setInterval_] = useState(task?.interval != null ? String(task.interval) : "");
   const [unit, setUnit] = useState(task?.unit || startUnit(d || {}));
@@ -450,7 +484,8 @@ function TaskForm({ r, task, busy, failed, onCancel, onSubmit }) {
       e.preventDefault();
       if (!can) return;
       onSubmit({ name: name.trim(), ...(timed ? { interval: n, unit } : {}), outcome: outcome || null,
-        instructions: instructions.trim(), ...(timed ? meas.body || {} : {}), trigger: triggerBody(trig) });
+        instructions: instructions.trim(), ...(timed ? meas.body || {} : {}), trigger: triggerBody(trig) },
+      found ? foundText.trim() : undefined);
     }}>
       <h4>Change the task</h4>
       {task?.shared_with ? (
@@ -531,6 +566,11 @@ function TaskForm({ r, task, busy, failed, onCancel, onSubmit }) {
       <Field label="Instructions" optional>
         <TextArea value={instructions} readOnly={busy} onChange={(e) => setInstructions(e.target.value)} />
       </Field>
+      {found && (
+        <Field label={found.label} optional>
+          <TextInput value={foundText} readOnly={busy} placeholder={FOUND_EMPTY} maxLength={500} onChange={(e) => setFoundText(e.target.value)} />
+        </Field>
+      )}
       {failed && <p className="field-error" role="alert">{failed}</p>}
       <div className="rim-tform-acts">
         {why && <p className="rim-why">{why}</p>}
@@ -538,6 +578,54 @@ function TaskForm({ r, task, busy, failed, onCancel, onSubmit }) {
         <button type="submit" className="sm" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save task"}</button>
       </div>
     </form>
+  );
+}
+
+// A check's "Then, if found:" (or "Then, if failed:") line on its card: what's done
+// when the check finds it, one line, kept when you leave it or press Enter, "✓ Saved"
+// once it is; greyed "Say what's done when the check finds it" while empty. Read-only:
+// the words, or that greyed line.
+function FoundLine({ label, value, can, onSave }) {
+  const [draft, setDraft] = useState(value || "");
+  const [saved, setSaved] = useState(0);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const sent = useRef(null);
+  useEffect(() => { setDraft(value || ""); setError(null); sent.current = null; }, [value]);
+  const id = `rim-found${useId()}`;
+  if (!can && !busy) {
+    return (
+      <p className="rim-found">
+        <span className="rim-trole">{label}</span> {value || <span className="rim-empty">{FOUND_EMPTY}</span>}
+      </p>
+    );
+  }
+  const commit = async () => {
+    const text = draft.trim();
+    if (busy || text === (value || "") || text === sent.current) return;
+    sent.current = text;
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave(text);
+      setSaved((n) => n + 1);
+    } catch (e) {
+      sent.current = null;
+      setError(saveErrorText(e, { offline: navigator.onLine === false }));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="rim-found">
+      <label className="rim-trole" htmlFor={id}>{label}</label>
+      <TextInput id={id} value={draft} readOnly={busy} placeholder={FOUND_EMPTY} maxLength={500}
+                 aria-invalid={error ? "true" : undefined}
+                 onChange={(e) => { setDraft(e.target.value); sent.current = null; }} onBlur={commit}
+                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }} />
+      <SavedMark saved={saved} />
+      {error && <p className="field-error" role="alert">{error}</p>}
+    </div>
   );
 }
 
