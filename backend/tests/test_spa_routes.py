@@ -49,7 +49,7 @@ def test_llms_txt_is_served_as_text(site):
     # Earlier addresses: the app redirects them, so the server must still serve it.
     "/modelling", "/modelling/m/abc", "/modelling/data", "/modelling/data/d1", "/rbds/b/123", "/datasets/list",
     "/datasets/d/d1", "/fleet/tracking/f1", "/models/tracking/f1", "/rcm/studies/s1", "/maintenance/items/i1",
-    "/settings", "/team", "/admin", "/billing", "/tokens", "/changes",
+    "/settings", "/team", "/billing", "/tokens", "/changes",
     "/login", "/oauth/consent", "/p/sometoken", "/unsubscribe", "/api-docs", "/api-docs/tools", "/api-docs/mcp", "/terms", "/privacy",
     "/blog", "/blog/a-post-not-prerendered-yet", "/learn/weibull", "/guides/x", "/reference/weibull",
     "/whats-new/october-2026", "/rcm-software", "/weibull-analysis-software",
@@ -67,7 +67,7 @@ def test_prerendered_pages_win_over_the_shell(site):
 
 
 @pytest.mark.parametrize("path", [
-    "/nope", "/llms-full.txt", "/wp-login.php", "/modeling", "/static", "/static/whatever",
+    "/nope", "/llms-full.txt", "/wp-login.php", "/admin", "/admin/anything", "/modeling", "/static", "/static/whatever",
     "/.env", "/favicon-old.ico", "/sitemap_index.xml",
 ])
 def test_unknown_paths_are_real_404_pages(site, path):

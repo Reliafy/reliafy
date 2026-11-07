@@ -52,7 +52,6 @@ const PAGES = [
   ["/settings", "Settings"],
   ["/team", "Team"],
   ["/billing", "Billing"],
-  ["/admin", "Admin"],
   ["/changes", "What changed"],
   ...API_DOCS_PAGES.map((p) => [p.slug ? `/api-docs/${p.slug}` : "/api-docs", p.slug ? [p.label, "API docs"] : "API docs"]),
 ];

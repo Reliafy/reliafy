@@ -11,9 +11,7 @@ log-normal on the actual-over-predicted ratios, its median the new factor.
     # Store the refits (the quotes use them at once).
     python -m backend.scripts.refit_runtime_factor --apply
 
-The same is ``GET /api/admin/runtime-quote`` and ``POST
-/api/admin/runtime-quote/refit`` for operators. It uses the MONGODB_URI
-environment of wherever it runs.
+It uses the MONGODB_URI environment of wherever it runs.
 """
 
 from __future__ import annotations

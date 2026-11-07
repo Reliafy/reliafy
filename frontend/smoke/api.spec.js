@@ -9,6 +9,7 @@
 import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
+  ["GET", "/api/extensions"], // optional extensions' pages (an empty list without any)
   // Reliability prediction: the parts count, the saved predictions, a product's parts list.
   ["POST", "/api/predictions/compute"],
   ["POST", "/api/predictions"],
@@ -143,4 +144,18 @@ test("an unknown API route is a 404", async ({ request }) => {
   const res = await request.get("/api/no-such-route-smoke");
   expect(res.status()).toBe(404);
   expect(await noRoute(res)).toBe(true);
+});
+
+// Without extensions the app has no operator page: an old /admin link is the
+// server's ordinary 404 page. (Signed in, single-user runs only: a deployed
+// site answers /api/extensions with 401 here.)
+test("without extensions, /admin is a not-found page", async ({ request }) => {
+  const res = await request.get("/api/extensions");
+  test.skip(res.status() !== 200, "needs a signed-in (single-user) run");
+  const { mounts } = await res.json();
+  test.skip(mounts.length > 0, "an extension is installed");
+  const page = await request.get("/admin");
+  expect(page.status()).toBe(404);
+  expect(await page.text()).toContain("Page not found");
+  expect((await request.get("/api/admin/stats")).status()).toBe(404);
 });

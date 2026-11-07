@@ -17,8 +17,8 @@ skip test domains (`example.com`, `reliafy.test`, `local`), and go to each
 user at most once. The send log is the `lifecycle_emails` collection, with
 `_id` = `<kind>:<uid>`. A failed send is retried, up to 3 attempts in all.
 Links carry `utm_source=email&utm_medium=lifecycle&utm_campaign=welcome|day3`.
-The operator dashboard's "Email campaigns" card shows what each email brought
-in. The copy is in `backend/services/lifecycle_emails.py`.
+The tags let the first-party analytics tell what each email brought in. The
+copy is in `backend/services/lifecycle_emails.py`.
 
 **Status:** none of the resources below exist yet. Nothing here has been run.
 

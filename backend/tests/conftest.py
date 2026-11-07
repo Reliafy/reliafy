@@ -1,6 +1,13 @@
 """Suite-wide test settings."""
 
+import os
+
 import pytest
+
+# The suite tests the app as published: optional extensions installed in this
+# environment aren't loaded (test_extensions.py registers its own). A suite
+# that wants them sets EXTENSIONS_DISABLED=false before this runs.
+os.environ.setdefault("EXTENSIONS_DISABLED", "true")
 
 # The tools with actions take {action (or kind), args: {the action's arguments}} (backend/mcp_server.py,
 # "The tools"). Tests write a call's arguments flat beside its action, which reads better; the MCP

@@ -6,8 +6,6 @@
   ``/diagrams`` the diagrams they have runs of, ``/compare?ids=`` several
   finished runs side by side, ``/{id}`` one run in full, ``/{id}/export``
   as CSV or JSON, and ``POST /{id}/rerun`` the same inputs again.
-* ``GET /api/admin/runtime-quote`` and ``POST …/refit`` — the quote's
-  machine factors and their refit from logged runs (operators only).
 """
 
 from __future__ import annotations
@@ -19,7 +17,6 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Body, Depends
 from fastapi.responses import JSONResponse, Response
 
-from backend.auth import get_current_user
 from backend.db import get_session
 from backend.schema import Rbd
 from backend.services import access as access_service
@@ -187,43 +184,3 @@ def rerun(run_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(ge
     return JSONResponse(content={"run_id": new["_id"], "status": new.get("status")})
 
 
-# ---- Operators: the quote's calibration --------------------------------------------------
-
-def _plain(doc):
-    if isinstance(doc, dict):
-        return {k: _plain(v) for k, v in doc.items()}
-    if isinstance(doc, datetime):
-        return doc.isoformat()
-    return doc
-
-
-def _machines(session) -> list[str]:
-    known = set((runtime_quote.coefficients().get("machine_factors") or {}).keys())
-    try:
-        known |= set(session.rbd_runtime_log.distinct("machine"))
-    except Exception:  # noqa: BLE001
-        pass
-    return sorted(m for m in known if m)
-
-
-@router.get("/admin/runtime-quote")
-def runtime_quote_status(session=Depends(get_session), user: dict = Depends(get_current_user)) -> JSONResponse:
-    """Each machine's factor, its logged runs and how often a run finished
-    within its quoted ceiling."""
-    if not billing_service.is_admin_user(user):
-        return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
-    coeffs = runtime_quote.coefficients()
-    return JSONResponse(content={
-        "model": {k: coeffs.get(k) for k in ("model", "intercept", "sigma", "coefficients", "fitted_on")},
-        "machines": [_plain(runtime_quote.calibration(session, m)) for m in _machines(session)],
-        "min_runs": runtime_quote.MIN_REFIT_RUNS,
-    })
-
-
-@router.post("/admin/runtime-quote/refit")
-def runtime_quote_refit(machine: str = Body(..., embed=True), apply: bool = Body(default=False),
-                        session=Depends(get_session), user: dict = Depends(get_current_user)) -> JSONResponse:
-    """Refit a machine's factor from its logged runs; ``apply`` stores it."""
-    if not billing_service.is_admin_user(user):
-        return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
-    return JSONResponse(content=_plain(runtime_quote.refit_factor(session, machine, apply=apply)))

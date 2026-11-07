@@ -44,7 +44,6 @@ const REACHED_FROM = {
   "/billing": "the menu's Account group",
   "/api-docs": "the menu's Account group",
   "/team": "the top bar's team settings",
-  "/admin": "operators only, by address",
   "/data-model": "graph-access users: the menu's Account group where the preview is on, or by address",
   "/changes": "Home's What changed panel",
   "/systems/fault-trees/new": "Fault trees' New fault tree",
