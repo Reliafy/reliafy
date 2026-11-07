@@ -2,7 +2,7 @@
 title: "Build RCM on your asset tree, every decision backed by evidence"
 task: "How do I record a position's functions, functional failures and failure modes, choose a maintenance task for each, and show the analysis behind it?"
 category: "Maintenance strategy"
-prerequisites: "A position in your asset tree, or the sample truck. Fitted models or saved strategy analyses to cite help, but you can start without them."
+prerequisites: "A position in your asset tree, or the sample UAV product. Fitted models or saved strategy analyses to cite help, but you can start without them."
 order: 25
 ---
 
@@ -19,44 +19,51 @@ that justifies it: a non-repairable model, a degradation model or a saved
 strategy analysis. Reliafy checks the link every time you open the tree, and
 marks each decision **Supported**, **Contradicted** or **Inconclusive**.
 
-## Start from the sample truck
+## Start from the sample UAV product
 
 Open **Assets → Explorer** and pick the **RCM** tab. The tree of
 positions is the first column, and under each position sit its functions,
 their performance standards, functional failures and failure modes, with the
 RCM's columns beside every row.
 
-If your tree is empty, press **Add the sample truck**. (With positions already
-there, it's in the tree's **⋯** menu, under *Tree options*.) A position called
-*Delivery truck (sample)* is added to your tree, with two functions, two
-functional failures and five failure modes, each with its decision and the
-evidence behind it, and the RCM tab opens on it.
+The sample is a product: *Survey quadcopter (sample)*, a small fictional
+quadcopter's design. If your tree is empty, press **Open the sample UAV
+product**. (With positions already there, it's in the **⋯** beside the tree's
+search box; on **Products**, **Add the sample UAV product** adds it too.) It
+is added to your workspace the first time, and its **Functional structure**
+opens on the **RCM** tab: the same Explorer, scoped to the design. Its 25
+positions (airframe, four motors, speed controllers and propellers, power,
+flight control, comms and a payload gimbal) carry 25 functions, 34 functional
+failures and 41 failure modes, each with its consequence and, all but two, its
+decision. The higher positions' failures are explained by those below them
+(see *Working top down or bottom up*, below), and some decisions link the
+evidence behind them.
 
-![The Explorer's RCM tab on the sample truck: its functions, failures and modes, each decision with its evidence check](/guides/img/rcm-01-explorer.png)
+![The RCM tab on the sample UAV product: its functions, failures and modes, each decision with its evidence check](/guides/img/rcm-01-explorer.png)
 
 The levels under a position are the ones classic RCM uses:
 
-- **Function** — what the position must do: *Stop the vehicle within the
-  rated distance*.
+- **Function** — what the position must do: *Give the aircraft's position*
+  (the GPS).
 - **Performance standard** — how well it must do it, one parameter and one
-  limit each: *within 30 m from 60 km/h*. A function may have several; each
-  is a row under the function. A function with none (the sample truck's)
-  has its functional failures right under it.
+  limit each: *Horizontal position within 2 m*. A function may have several;
+  each is a row under the function. A function with none (most of the
+  sample's) has its functional failures right under it.
 - **Functional failure** — how it fails to do it, nested under the performance standard
-  it is the loss of: *Insufficient braking force*. A total loss, or a failure
+  it is the loss of: *Position error over 2 m, or no fix*. A total loss, or a failure
   not tied to one performance standard yet, sits under a grey **No performance standard** row.
-- **Failure mode** — what causes that failure: *Brake pad wear beyond the 8 mm
-  limit*.
+- **Failure mode** — what causes that failure: *Antenna connector works
+  loose*.
 
 The columns beside the tree are the worksheet: **Failure effects**,
 **Consequence**, **Decision**, **Task** and, once any decision has evidence
 linked, **Evidence check**. On a narrower screen the interval folds into the
-Task cell (*every 580 hours*). A position, function or functional failure row
+Task cell (*every 130 hours*). A position, function or functional failure row
 counts what's inside it, for example *1 to decide*, so you can close it and
 still see what needs doing. Click a row to open its **Details** beside the
 table: for a failure mode, that's its effects, consequence, notes, the decision,
 its tasks and the link to the evidence with one line saying what it shows, for
-example *Optimal interval ≈ 580 hours (50% saving vs run-to-failure)*. Move up
+example *Optimal interval ≈ 132 hours (73% saving vs run-to-failure)*. Move up
 and down the tree with the arrow keys and the Details follow.
 
 Double-click a row's name (or choose **Open…**, first in its row menu, or
@@ -91,14 +98,23 @@ To find your way around a big tree:
   column's edge to resize it. The Explorer remembers these choices on this
   device.
 
-One decision in the sample is red on purpose. The old maintenance plan ran the
-wheel bearings to failure, on the grounds that bearing failures are random. The
-linked bearing model says otherwise: *β = 2.50 [1.88, 3.32] — the CI excludes 1:
-this is wear-out.* That's the point of linking evidence. The worksheet says
-what was decided; the check says whether the data still agree.
+One decision in the sample is red on purpose, on each of the four motors. The
+first build's plan ran the motor bearings to failure, on the grounds that
+bearing failures are random. The linked bearing model says otherwise: *β = 2.50
+[1.88, 3.32] — the CI excludes 1: this is wear-out.* That's the point of linking
+evidence. The worksheet says what was decided; the check says whether the data
+still agree.
 
-The sample truck is yours to edit, so try things on it. Your own equipment goes
-the same way: on any position.
+The rest of the sample shows the other cases. The BMS cut-off test and the
+propeller replacement are **Supported** by the analyses they link. The battery
+pack's retirement is **Inconclusive**: its task counts charge cycles, but the
+analysis behind it is in flight hours, so the check can't compare them until
+the units agree. Two failure modes are still undecided on purpose (**Show only
+→ Needs a decision**), and three are hidden failures, each with its
+failure-finding task (**Show only → Hidden failures**).
+
+The sample product is yours to edit, so try things on it. Your own equipment
+goes the same way: on any position.
 
 ## Build the RCM on a position
 

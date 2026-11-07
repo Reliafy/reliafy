@@ -431,49 +431,48 @@ async function scrollTo(locator, offset = 80) {
   await wait(600);
 }
 
-// RCM guide: the sample truck copied into the tree (Explorer › "Add the sample
-// truck"), with its RCM and evidence; null when Reliafy Maintenance is off on
-// this server (then the RCM shots are skipped, out loud, and keep their
-// images). Teams guide: a team with one pending invitation (single-user mode
-// can create one: no billing).
-async function seedSampleTruck(config) {
-  if (!config.maintenance) return null;
-  const made = await api("/maintenance/sample-truck", {});
-  return made.position.id;
-}
-// FME(C)A guide: the sample UAV product (the one quadcopter example), its
-// design with every failure mode scored and its criticality filled in. When
-// this run added it, the cleanup retires its design and items and deletes its
-// RBD; one already there is left alone. null without Maintenance, like the truck.
+// RCM and FME(C)A guides: the sample UAV product (the one sample for both tabs), its
+// design with its RCM (some decisions linked to sample evidence) and every failure
+// mode scored. When this run added it, the cleanup retires its design and items and
+// deletes its RBD; one already there is left alone. null when Reliafy Maintenance is
+// off on this server (then those shots are skipped, out loud, and keep their images).
+// Teams guide: a team with one pending invitation (single-user mode can create one:
+// no billing).
 async function seedSampleProduct(config) {
   if (!config.maintenance) return null;
   const made = await api("/maintenance/sample-product", {});
   const id = made.product?.id || made.position.id;
-  return { id, added: !!made.added, tops: (made.items || []).map((it) => it.top_position_id), rbdId: made.rbd?.id };
+  const items = made.items || (await api(`/maintenance/products/${id}/items`)).items;
+  // The design's positions by name (Motor 1, Propeller 1, ...), for the shots that pick one.
+  const sheet = await api(`/maintenance/positions/${id}/rcm?scope=below`);
+  const at = Object.fromEntries(sheet.positions.map((p) => [p.name, p.id]));
+  return { id, added: !!made.added, tops: items.map((it) => it.top_position_id), rbdId: made.rbd?.id, at };
 }
-// Failure reports guide: a report filed on the sample truck's top position and
-// taken part way round the loop (investigated, one corrective action), so the
-// list and the report have something to show. Reports are never deleted
-// (rejected at most); retiring the truck in the cleanup takes it out of the
-// tree. null without a truck.
-async function seedTruckReport(truckId) {
-  if (!truckId) return null;
+// Failure reports guide: a report filed on the first quadcopter built from the sample
+// product (serial 0007, which has the sample's own report on its Motor 1) and taken
+// part way round the loop (investigated, one corrective action), so the list and the
+// report have something to show. Reports are never deleted (rejected at most); when
+// this run added the product, retiring its items in the cleanup takes it out of the
+// tree. null without the product.
+async function seedUavReport(uav) {
+  if (!uav?.tops?.length) return null;
+  const top = uav.tops[0];
   const report = await api("/maintenance/failure-reports", {
-    position_id: truckId, title: "Brake pedal went soft on the delivery run",
-    description: "Pedal travel increased over the morning; the driver pulled over at the depot. No fluid on the ground.",
-    found_by: "Sam (driver)", consequence: "safety", failure_mode_text: "Brake fluid leak at the rear caliper",
+    position_id: top, title: "Drifted and landed hard in a gust",
+    description: "The aircraft yawed and dropped about a metre in a gust on the return leg, then landed hard on its failsafe. One landing leg cracked.",
+    found_by: "Sam (pilot)", consequence: "operational", failure_mode_text: "Loses sync with the motor on a rapid throttle change",
   });
   await api(`/maintenance/failure-reports/${report.id}/status`, { status: "investigating" });
   await api(`/maintenance/failure-reports/${report.id}/investigation`, {
-    notes: "Rear nearside caliper weeping at the bleed nipple; nipple seat scored.",
-    root_cause_category: "maintenance", root_cause: "Bleed nipple over-torqued at the last brake service",
-    whys: ["The pedal went soft", "Fluid was lost at the rear caliper", "The bleed nipple seat was scored", "It was over-torqued at the last service"],
+    notes: "Flight log shows an RPM dropout on ESC 3 at the moment of the yaw; the motor batch was changed last month.",
+    root_cause_category: "design", root_cause: "Controller timing not retuned for the new motor batch",
+    whys: ["The aircraft dropped in a gust", "Motor 3 lost thrust for a moment", "ESC 3 lost sync on a rapid throttle change", "Its timing wasn't retuned for the new motor batch"],
   }, "PUT");
   await api(`/maintenance/failure-reports/${report.id}/actions`, {
-    what: "Replace the rear nearside caliper and bleed the system", owner: "Workshop", work_order_ref: "WO-2041",
+    what: "Retune the controller timing for each motor batch and add RPM dropouts to the log review", owner: "Flight test", work_order_ref: "WO-2041",
   });
   await api(`/maintenance/failure-reports/${report.id}/status`, { status: "corrective_action" });
-  return { id: report.id };
+  return { id: report.id, top };
 }
 // Signals guide: a pump with a vibration channel, six snapshots over 40 days with
 // a 50 Hz tone growing (null when Reliafy Maintenance is off on this server).
@@ -833,29 +832,30 @@ async function main() {
 
   // Shots needing purpose-built fixtures (created below, deleted afterwards).
   const fixtureShots = (fx) => [
-    // --- RCM on the asset tree: the Explorer's RCM tab on the sample truck, with
-    // its evidence checks; then the decision dialog on one of its modes (the
-    // wheel-bearing fixed interval, 580 hours, linked to the sample replacement
-    // analysis). The Explorer is a Maintenance page: without MAINTENANCE_ENABLED
-    // on the server there is no truck (fx.truckId null) and both are skipped.
-    { file: "rcm-01-explorer.png", url: `/asset-register/explorer?arrange=positions&tab=rcm&sel=${fx.truckId}`, settle: 2500,
-      skip: () => (fx.truckId ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=rcm on a server that has it."),
+    // --- RCM on the asset tree: the RCM tab of the sample UAV product's functional
+    // structure (the same Explorer, on the design), its top picked: its function top
+    // down, failures explained below, with the evidence checks; then the decision
+    // dialog on one of its modes (Propeller 1's blade fatigue: a fixed interval, 130
+    // hours, linked to the sample replacement analysis). Without MAINTENANCE_ENABLED on
+    // the server there is no product (fx.uav null) and both are skipped.
+    { file: "rcm-01-explorer.png", url: `/products/${fx.uav?.id}?view=rcm&sel=${fx.uav?.id}`, settle: 2500,
+      skip: () => (fx.uav ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=rcm on a server that has it."),
       async act(page) {
         await page.getByRole("treegrid", { name: /and their RCM/ }).waitFor({ timeout: 20000 });
-        await page.getByText("Wheel-bearing fatigue").first().waitFor({ timeout: 20000 });
-        // At this width the Evidence check column is off by default: show it.
+        await page.getByText("Aircraft lost or crashes").first().waitFor({ timeout: 20000 });
+        // At this width the Evidence check column may be off by default: show it.
         await page.getByRole("button", { name: "Columns" }).click(); await wait(300);
         const check = page.getByRole("group", { name: "Columns to show" }).getByRole("checkbox", { name: "Evidence check" });
         if (!(await check.isChecked())) await check.check();
         await page.keyboard.press("Escape"); await wait(300);
-        await page.getByText("Contradicted").first().waitFor({ timeout: 20000 }); await wait(600);
+        await page.getByText(/inconclusive/i).first().waitFor({ timeout: 20000 }); await wait(600);
       } },
-    { file: "rcm-02-decision.png", url: `/asset-register/explorer?arrange=positions&tab=rcm&sel=${fx.truckId}`, settle: 2500,
-      skip: () => (fx.truckId ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=rcm on a server that has it."),
+    { file: "rcm-02-decision.png", url: `/products/${fx.uav?.id}?view=rcm&sel=${fx.uav?.at?.["Propeller 1"]}`, settle: 2500,
+      skip: () => (fx.uav ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=rcm on a server that has it."),
       async act(page) {
         const table = page.getByRole("treegrid", { name: /and their RCM/ });
         await table.waitFor({ timeout: 20000 });
-        await table.getByRole("row", { name: /Wheel-bearing fatigue/ }).first().click(); await wait(600);
+        await table.getByRole("row", { name: /^Failure mode: Blade fatigue crack at the hub/ }).first().click(); await wait(600);
         await page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: "Change the decision…" }).click();
         await page.getByRole("dialog", { name: /^Decision/ }).waitFor({ timeout: 20000 }); await wait(800);
       } },
@@ -877,20 +877,21 @@ async function main() {
         await page.getByRole("treegrid").waitFor({ timeout: 20000 });
         await page.getByRole("complementary", { name: "Details" }).getByText(/matrix/i).first().waitFor({ timeout: 20000 }); await wait(600);
       } },
-    // --- Failure reports on the asset tree: the Explorer's Failure reports tab
-    // on the sample truck (a report filed on it in the fixture step, part way
-    // round the loop), then the report itself: its stage, facts, investigation
-    // and corrective action. Skipped, like the RCM shots, without Maintenance.
-    { file: "reports-01-list.png", url: `/asset-register/explorer?arrange=positions&tab=reports&sel=${fx.truckId}`, settle: 2500,
-      skip: () => (fx.truckId ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=reports on a server that has it."),
+    // --- Failure reports on the asset tree: the Explorer's Failure reports tab on
+    // a quadcopter built from the sample product (its tree, serial 0007, with a
+    // report filed on it in the fixture step, part way round the loop), then the
+    // report itself: its stage, facts, investigation and corrective action.
+    // Skipped, like the RCM shots, without Maintenance.
+    { file: "reports-01-list.png", url: `/asset-register/explorer?arrange=positions&root=${fx.report?.top}&tab=reports&sel=${fx.report?.top}`, settle: 2500,
+      skip: () => (fx.report ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=reports on a server that has it."),
       async act(page) {
-        await page.getByRole("list", { name: "Failure reports" }).getByRole("button", { name: /Brake pedal went soft/ }).waitFor({ timeout: 20000 });
+        await page.getByRole("list", { name: "Failure reports" }).getByRole("button", { name: /Drifted and landed hard/ }).waitFor({ timeout: 20000 });
         await wait(600);
       } },
-    { file: "reports-02-report.png", url: `/asset-register/explorer?arrange=positions&tab=reports&sel=${fx.truckId}&report=${fx.report?.id}`, settle: 2500,
-      skip: () => (fx.truckId ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=reports on a server that has it."),
+    { file: "reports-02-report.png", url: `/asset-register/explorer?arrange=positions&root=${fx.report?.top}&tab=reports&sel=${fx.report?.top}&report=${fx.report?.id}`, settle: 2500,
+      skip: () => (fx.report ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=reports on a server that has it."),
       async act(page) {
-        await page.getByRole("heading", { name: /Brake pedal went soft/ }).waitFor({ timeout: 20000 });
+        await page.getByRole("heading", { name: /Drifted and landed hard/ }).waitFor({ timeout: 20000 });
         // The investigation beside the open corrective action: both cards open.
         const fold = page.getByRole("button", { name: /^Investigation$/ });
         if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
@@ -1169,12 +1170,11 @@ async function main() {
       outageId: await seedOutageRbd(),
       networkId: await seedNetworkRbd(),
       design: await seedDesignRbds(),
-      truckId: await seedSampleTruck(config),
       uav: await seedSampleProduct(config),
       signals: await seedSignals(config),
       teamId: await seedTeam(),
     };
-    fx.report = await seedTruckReport(fx.truckId);
+    fx.report = await seedUavReport(fx.uav);
     try {
       await shoot(pick(fixtureShots(fx)));
     } finally {
@@ -1188,11 +1188,6 @@ async function main() {
         await fetch(`${BASE}/api/models/${id}`, { method: "DELETE" }).catch(() => {});
       }
       await fetch(`${BASE}/api/joint/models/${fx.joint.modelId}`, { method: "DELETE" }).catch(() => {});
-      if (fx.truckId) {
-        await fetch(`${BASE}/api/maintenance/positions/${fx.truckId}/retire`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "guide capture" }),
-        }).catch(() => {});
-      }
       if (fx.uav?.added) {
         for (const id of [...fx.uav.tops, fx.uav.id]) {
           await fetch(`${BASE}/api/maintenance/positions/${id}/retire`, {

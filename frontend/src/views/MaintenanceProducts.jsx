@@ -20,7 +20,7 @@ import { PageTitle } from "../components/usePageTitle.js";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { BuildItemModal, DesignReports, NewProductModal } from "../components/ProductPanels.jsx";
 import AssetExplorer from "./AssetExplorer.jsx";
-import { SAMPLES, addSample } from "../sampleTruck.js";
+import { SAMPLES, addSample } from "../sampleProduct.js";
 import { newPredictionPath } from "../predictions.js";
 import {
   PRODUCTS_GUIDE, PRODUCTS_PATH, PRODUCT_TABS, hoursText, itemPagePath, itemTreePath, itemsText, productPath,

@@ -292,13 +292,17 @@ def test_the_guide_walks_an_agent_through_the_rcm(env, topic):
 def test_rcm_gaps_say_why_evidence_needs_a_look(env):
     from backend.services import samples
 
-    samples.seed_samples(env["db"])  # the sample truck's decisions link sample models
+    samples.seed_samples(env["db"])  # the sample product's decisions link sample models and analyses
 
     async def flow(client):
-        _ok(await _do(client, "maintenance", "positions.add_sample_truck"))
-        return _ok(await _list(client, "rcm_gaps"))
+        made = _ok(await _do(client, "maintenance", "products.add_sample"))
+        return _ok(await _list(client, "rcm_gaps", target_id=made["product"]["id"]))
 
     gaps = _session(env["token"], flow)
-    (row,) = gaps["evidence_to_check"]
-    assert row["status"] == "contradicted" and "wear-out" in row["reason"]
-    assert row["position"]["name"] == "Delivery truck (sample)" and row["functional_failure"]["text"]
+    rows = gaps["evidence_to_check"]
+    contradicted = [r for r in rows if r["status"] == "contradicted"]
+    assert len(contradicted) == 4 and all("wear-out" in r["reason"] for r in contradicted)
+    assert {r["position"]["name"] for r in contradicted} == {"Motor 1", "Motor 2", "Motor 3", "Motor 4"}
+    assert all(r["functional_failure"]["text"] for r in rows)
+    [unclear] = [r for r in rows if r["status"] == "inconclusive"]
+    assert unclear["text"] == "Cell capacity fade" and "Unit mismatch" in unclear["reason"]

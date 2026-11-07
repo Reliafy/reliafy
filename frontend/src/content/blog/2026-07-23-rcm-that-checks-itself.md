@@ -7,8 +7,8 @@ summary: Every mature RCM programme has the same artifact — a thorough, expens
 
 *Editor's note, added October 2026: RCM in Reliafy now lives on your asset
 tree, on the Explorer's RCM tab, rather than as separate studies; the sample
-is the sample truck, which you add to your own tree. The post below is as
-published.*
+is now the sample UAV product, a quadcopter's design with its RCM (the
+delivery truck below is no longer offered). The post below is as published.*
 
 Somewhere near you is an RCM binder. It was produced by a serious team over
 several months, it was reviewed and signed, and it directs the maintenance of

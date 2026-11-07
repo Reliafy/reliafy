@@ -1,24 +1,24 @@
-"""Templates: ready-made positions a workspace can copy into its own tree.
+"""Templates: ready-made samples a workspace can copy in.
 
-The sample delivery truck: one position with an RCM built on it (two
-functions, their functional failures, five failure modes, each with its
-consequence and decision, and evidence linked to the sample model and
-analyses every account can read). One decision, the legacy run-to-failure
-plan on the wheel bearings, is linked to a model that contradicts it (the
-bearing Weibull shows wear-out), so the evidence check shows red on purpose.
-Each mode is scored as an FME(C)A too (severity, occurrence, detection, the
-cause and effects, the recommended action and the criticality figures).
-
-The sample product, "Survey quadcopter (sample)": the one quadcopter example,
-on Products (a design, not an operated asset in the tree). Its design tree
-(airframe, propulsion, power, flight control, comms, payload) carries the
-sample failure modes, all scored as a design FME(C)A reads; three positions
-carry their modes directly under a function with no functional failure yet,
-on purpose, to show how an FMEA row reads back on the RCM tab. It comes with
-a part and bill of materials, three items built from it, failure reports and
-a flight-critical RBD. Entirely invented: no real product. (An earlier
-asset-tree copy, "Quadcopter UAV (sample)", is no longer offered; copies
-already in a workspace stay as they are.)
+The sample product, "Survey quadcopter (sample)": the one sample for the RCM
+and FME(C)A tabs, on Products (a design, not an operated asset in the tree).
+Its design tree (airframe, propulsion, power, flight control, comms, payload)
+carries an RCM on every position: functions (with performance standards where
+the function has a measurable limit), their functional failures, the failure
+modes, each with its consequence and decision, and each mode scored as a design
+FME(C)A reads. The product's and its groups' functional failures are explained
+by those on the positions inside them (linked causes). Some decisions link to the evidence behind them, saved analyses
+and a model every account can read, so the evidence check shows each case: the
+BMS failure-finding test and the propeller replacement are supported; the
+legacy run-to-failure plan on the motor bearings is contradicted on purpose
+(the bearing life model shows wear-out); the battery retirement can't be
+checked yet (its task counts charge cycles, its analysis flight hours). Two
+modes still need a decision, on purpose, and three are hidden failures. It
+comes with a part and bill of materials, three items built from it, failure
+reports and a flight-critical RBD. Entirely invented: no real product.
+(Earlier samples, "Delivery truck (sample)" and the asset-tree "Quadcopter UAV
+(sample)", are no longer offered; copies already in a workspace stay as they
+are.)
 
 A copy is made through the ordinary service methods, so it is events like
 any change a person makes, in the caller's own workspace only. Nothing is
@@ -33,157 +33,15 @@ from datetime import date, timedelta
 
 from backend.maintenance import fmea
 
-SAMPLE_TRUCK_NAME = "Delivery truck (sample)"
-SAMPLE_TRUCK_DESCRIPTION = (
-    "A sample: the brakes and drivetrain of a delivery truck, with every RCM decision linked to its evidence. "
-    "One decision is contradicted on purpose: the legacy run-to-failure plan on the wheel bearings, whose own "
-    "model shows wear-out."
-)
-
-# Functions › functional failures › failure modes, each mode with its decision.
-# The ids are the template's own (a copy onto the tree gets new ones).
-SAMPLE_TRUCK_FUNCTIONS = [
-    {
-        "id": "sample-rcm-f1",
-        "text": "Stop the vehicle within the rated distance",
-        "failures": [
-            {
-                "id": "sample-rcm-f1-ff1",
-                "text": "Insufficient braking force",
-                "modes": [
-                    {
-                        "id": "sample-rcm-m1",
-                        "text": "Brake pad wear beyond the 8 mm limit",
-                        "effects": "Extended stopping distance; risk of collision.",
-                        "consequence": "safety",
-                        "decision": {
-                            "outcome": "on_condition",
-                            "task": "Measure pad wear at each service; replace before the 8 mm threshold.",
-                            "evidence": {"type": "degradation_model", "id": "sample-deg-brake-wear"},
-                        },
-                        "cause": "Normal friction wear, faster with heavy loads",
-                        "effect_local": "Pad thickness below 8 mm", "effect_next": "Longer stopping distance",
-                        "detection_method": "Pad gauge at each service",
-                        "severity": 8, "occurrence": 6, "detection": 2,  # RPN 96, AP M
-                        "action": "Fit wear-indicator pads", "action_owner": "Fleet engineer",
-                        "action_due": "2026-12-01", "action_status": "open",
-                        "failure_rate": 2e-4, "mode_ratio": 0.7, "loss_probability": 0.2, "severity_class": "II",
-                    },
-                    {
-                        "id": "sample-rcm-m2",
-                        "text": "Secondary hydraulic circuit failed (hidden until demanded)",
-                        "effects": "No redundancy on primary circuit failure.",
-                        "consequence": "hidden",
-                        "decision": {
-                            "outcome": "failure_finding",
-                            "task": "Function-test the secondary circuit.",
-                            "evidence": {"type": "strategy_analysis", "id": "sample-strategy-ffi-brake-circuit"},
-                        },
-                        "cause": "Seal perishes in the slave cylinder",
-                        "effect_local": "Secondary circuit holds no pressure",
-                        "effect_next": "No redundancy if the primary circuit fails",
-                        "detection_method": "None in normal driving (hidden); function test",
-                        "severity": 9, "occurrence": 2, "detection": 9,  # RPN 162, AP M
-                        "action": "Monthly function test of the secondary circuit", "action_owner": "Workshop",
-                        "action_due": "2026-11-30", "action_status": "in_progress",
-                        "failure_rate": 5e-5, "mode_ratio": 0.3, "loss_probability": 0.5, "severity_class": "I",
-                    },
-                ],
-            },
-        ],
-    },
-    {
-        "id": "sample-rcm-f2",
-        "text": "Transmit drive to the wheels",
-        "failures": [
-            {
-                "id": "sample-rcm-f2-ff1",
-                "text": "Wheel does not rotate freely",
-                "modes": [
-                    {
-                        "id": "sample-rcm-m3",
-                        "text": "Wheel-bearing fatigue",
-                        "effects": "Vehicle immobilised; tow required.",
-                        "consequence": "operational",
-                        "decision": {
-                            "outcome": "fixed_interval",
-                            "task": "Replace wheel bearings preventively.",
-                            "interval": 580,
-                            "interval_unit": "hours",
-                            "evidence": {"type": "strategy_analysis", "id": "sample-strategy-bearing-replacement"},
-                        },
-                        "cause": "Rolling-contact fatigue",
-                        "effect_local": "Bearing noise and heat", "effect_next": "Wheel seizes",
-                        "detection_method": "Temperature check on the hub at each service",
-                        "severity": 7, "occurrence": 5, "detection": 4,  # RPN 140, AP M
-                        "action": "Replace at 580 hours as the model shows", "action_owner": "Fleet engineer",
-                        "action_due": "2026-11-20", "action_status": "done",
-                        "failure_rate": 1.5e-4, "mode_ratio": 0.6, "loss_probability": 0.6, "severity_class": "II",
-                    },
-                    {
-                        "id": "sample-rcm-m4",
-                        "text": "Wheel-bearing failure — legacy run-to-failure plan",
-                        "effects": "As above; inherited from the old maintenance plan.",
-                        "consequence": "operational",
-                        "decision": {
-                            "outcome": "rtf",
-                            "rtf_basis": "random",
-                            "notes": "Legacy decision — kept to demonstrate live evidence validation.",
-                            "evidence": {"type": "model", "id": "sample-model-bearings-weibull"},
-                        },
-                        "cause": "As above", "effect_local": "As above", "effect_next": "As above",
-                        "detection_method": "None (run to failure)",
-                        "severity": 7, "occurrence": 5, "detection": 10,  # RPN 350, AP H
-                        "action": "Retire the legacy plan; follow the fixed-interval decision",
-                        "action_owner": "Fleet engineer", "action_due": "2026-11-14", "action_status": "open",
-                        "failure_rate": 1.5e-4, "mode_ratio": 0.4, "loss_probability": 0.6, "severity_class": "II",
-                    },
-                    {
-                        "id": "sample-rcm-m5",
-                        "text": "Chassis cracking at the spring hanger",
-                        "effects": "Structural risk under load.",
-                        "consequence": "safety",
-                        "decision": {
-                            "outcome": "redesign",
-                            "notes": "No task can manage the risk — reinforcement redesign raised with engineering.",
-                        },
-                        "cause": "Fatigue at the spring hanger weld",
-                        "effect_local": "Crack at the weld toe", "effect_next": "Hanger separates under load",
-                        "detection_method": "Visual check of the hanger welds",
-                        "severity": 10, "occurrence": 2, "detection": 5,  # RPN 100, AP M
-                        "action": "Reinforce the hanger; dye-penetrant check of the fleet",
-                        "action_owner": "Engineering", "action_due": "2026-12-15", "action_status": "open",
-                        "failure_rate": 1e-5, "mode_ratio": 1.0, "loss_probability": 1.0, "severity_class": "I",
-                    },
-                ],
-            },
-        ],
-    },
-]
-# The truck's criticality figures are all over the same 1000 operating hours.
-SAMPLE_TRUCK_BASIS = {"operating_time": 1000.0, "time_unit": "hours", "rate_source": "entered"}
-
-_COPY_NAME = re.compile(r"^Delivery truck \(sample(?: (\d+))?\)$")
-
 
 def _n(count: int, one: str) -> str:
     return f"{count} {one}" if count == 1 else f"{count} {one}s"
-
-
-def sample_truck_functions() -> list[dict]:
-    """The sample truck's RCM, a fresh copy each time (callers may change it)."""
-    return copy.deepcopy(SAMPLE_TRUCK_FUNCTIONS)
 
 
 def _copies(m, pattern: re.Pattern) -> list[dict]:
     """Copies of a sample in this workspace (live positions with its name)."""
     return sorted((p for p in m.s.nodes(m.org, "Position") if not p.get("retired") and pattern.match(p["name"])),
                   key=lambda p: p["name"])
-
-
-def sample_trucks(m) -> list[dict]:
-    """Copies of the sample truck in this workspace (live positions with its name)."""
-    return _copies(m, _COPY_NAME)
 
 
 def _copy_name(existing: list[dict], pattern: re.Pattern, base: str) -> str:
@@ -202,63 +60,29 @@ def _scores(mode: dict, basis: dict) -> dict:
     return {**basis, **{k: mode[k] for k in fmea.FIELDS if k in mode}}
 
 
-def add_sample_truck(m, again: bool = False) -> dict:
-    """Copy the sample truck into ``m``'s workspace as a new top-level position
-    with its RCM. When a copy is already there, nothing is added unless
-    ``again`` (then it's another copy, numbered)."""
-    existing = sample_trucks(m)
-    if existing and not again:
-        have = existing[0]
-        return {
-            "added": False,
-            "position": {"id": have["id"], "name": have["name"]},
-            "message": f"The sample truck is already in your tree as “{have['name']}”. "
-                       "Ask again to add another copy.",
-        }
-    position = m.create_position(_copy_name(existing, _COPY_NAME, SAMPLE_TRUCK_NAME),
-                                 description=SAMPLE_TRUCK_DESCRIPTION)
-    pid = position["id"]
-    counts = {"functions": 0, "functional_failures": 0, "failure_modes": 0, "decisions": 0, "scored": 0}
-    for fn in sample_truck_functions():
-        function = m.add_function(pid, fn["text"], fn.get("standard", ""))
-        counts["functions"] += 1
-        for failure in fn["failures"]:
-            ff = m.add_functional_failure(function["id"], failure["text"])
-            counts["functional_failures"] += 1
-            for mode in failure["modes"]:
-                fm = m.add_failure_mode(pid, mode["text"], functional_failure_id=ff["id"])
-                counts["failure_modes"] += 1
-                if mode.get("effects") or mode.get("notes"):
-                    m.update_failure_mode(fm["id"], effects=mode.get("effects"), notes=mode.get("notes"))
-                m.decide_failure_mode(fm["id"], consequence=mode.get("consequence"), decision=mode.get("decision"))
-                counts["decisions"] += bool(mode.get("decision"))
-                scores = _scores(mode, SAMPLE_TRUCK_BASIS)
-                if scores:
-                    m.score_failure_mode(fm["id"], scores)
-                    counts["scored"] += 1
-    counts["tasks"] = len(m._tasks_on(pid))
-    return {
-        "added": True,
-        "position": {"id": pid, "name": position["name"]},
-        **counts,
-        "message": (f"Added “{position['name']}” to your tree: {_n(counts['functions'], 'function')}, "
-                    f"{_n(counts['failure_modes'], 'failure mode')}, each with its decision and FME(C)A scores, and "
-                    f"{_n(counts['tasks'], 'scheduled task')}. One decision shows as contradicted on purpose: "
-                    "its own model shows wear-out."),
-    }
-
-
-# ---- the sample quadcopter's failure modes -------------------------------------
+# ---- the sample quadcopter's RCM and FME(C)A --------------------------------------
 # Entirely invented: no real product, company or partner. The sample product
-# ("Survey quadcopter (sample)", below) puts these on its design: the one
-# quadcopter example, on Products, not in the asset tree. Modes with "ff": None
-# sit directly under their function, with no functional failure yet.
+# ("Survey quadcopter (sample)", below) puts these on its design: the one sample
+# for the RCM and FME(C)A tabs, on Products, not in the asset tree.
 
 # The criticality figures are all over the same 100 flight hours.
 SAMPLE_UAV_BASIS = {"operating_time": 100.0, "time_unit": "hours", "rate_source": "entered"}
 
-# Position › function › modes. Each mode: text, ff (None = directly under the
-# function), the FME(C)A fields, consequence (RCM) and decision (RCM, or None).
+# The evidence some decisions link: shared samples every account can read
+# (backend/services/samples.py). The bearing life model shows wear-out, so the
+# motors' legacy run-to-failure decision is contradicted on purpose; the battery's
+# retirement analysis is in flight hours while its task counts charge cycles, so
+# that check is inconclusive until the units agree.
+UAV_BEARING_MODEL = "sample-model-bearings-weibull"
+UAV_PROPELLER_ANALYSIS = "sample-strategy-quad-propeller-replacement"
+UAV_BATTERY_ANALYSIS = "sample-strategy-quad-battery-retirement"
+UAV_BMS_ANALYSIS = "sample-strategy-quad-bms-failure-finding"
+
+# Position › function (with its performance standards, if any) › modes. Each mode:
+# text, ff (its functional failure), the FME(C)A fields, consequence and decision
+# (RCM; None = still to decide, on purpose, with notes saying why). "breaches" maps a
+# functional failure to the standard (by its text) it breaches; any other breaches
+# the whole function, as a total loss does.
 SAMPLE_UAV_MODES = [
     {"position": "Airframe", "function": "Carry the propulsion, power, control and payload modules through flight loads",
      "modes": [
@@ -282,7 +106,8 @@ SAMPLE_UAV_MODES = [
           "action": "Add a crushable foot to the leg", "action_owner": "Airframe lead", "action_due": "2027-01-20",
           "action_status": "open",
           "failure_rate": 5e-5, "mode_ratio": 0.4, "loss_probability": 0.3, "severity_class": "III",  # Cm 6e-4
-          "consequence": "operational", "decision": None},
+          "consequence": "operational", "decision": None,
+          "notes": "Still to decide, on purpose: the decision waits on the crushable-foot trial."},
      ]},
     {"position": "Motor", "function": "Turn the propeller at the commanded speed",
      "modes": [
@@ -292,12 +117,14 @@ SAMPLE_UAV_MODES = [
           "effects": "A quadcopter cannot fly on three motors: uncontrolled descent.",
           "detection_method": "Motor current trend in the flight log; spin check before flight",
           "severity": 9, "occurrence": 4, "detection": 6,  # RPN 216, AP H
-          "action": "Fit sealed bearings; spin check every 25 flight hours", "action_owner": "Propulsion lead",
-          "action_due": "2026-11-30", "action_status": "open",
+          "action": "Retire the legacy run-to-failure plan: spin check every 25 flight hours; fit sealed bearings",
+          "action_owner": "Propulsion lead", "action_due": "2026-11-30", "action_status": "open",
           "failure_rate": 8e-5, "mode_ratio": 0.5, "loss_probability": 1.0, "severity_class": "I",  # Cm 4e-3
           "consequence": "safety",
-          "decision": {"outcome": "on_condition", "task": "Spin each motor by hand and listen for roughness",
-                       "interval": 25, "interval_unit": "hours"}},
+          "decision": {"outcome": "rtf", "rtf_basis": "random",
+                       "notes": "Legacy decision from the first build's plan, kept to show the evidence check: the "
+                                "bearing life model shows wear-out, so running to failure isn't justified.",
+                       "evidence": {"type": "model", "id": UAV_BEARING_MODEL}}},
          {"text": "Winding insulation breaks down from overheating", "ff": "The motor stops or loses torque",
           "cause": "Sustained overload in hot weather", "effect_local": "A phase shorts",
           "effect_next": "Speed controller fault; thrust lost on one arm", "effects": "Uncontrolled descent.",
@@ -306,7 +133,9 @@ SAMPLE_UAV_MODES = [
           "action": "Derate hover power above 35 °C; add the temperature limit to the pre-flight check",
           "action_owner": "Propulsion lead", "action_due": "2026-12-01", "action_status": "in_progress",
           "failure_rate": 8e-5, "mode_ratio": 0.3, "loss_probability": 1.0, "severity_class": "I",  # Cm 2.4e-3
-          "consequence": "safety", "decision": None},
+          "consequence": "safety",
+          "decision": {"outcome": "on_condition", "task": "Review the motor temperature trend in the flight log",
+                       "interval": 10, "interval_unit": "hours"}},
      ]},
     {"position": "Speed controller (ESC)", "function": "Convert battery power into the three-phase drive the motor needs",
      "modes": [
@@ -329,7 +158,9 @@ SAMPLE_UAV_MODES = [
           "action": "Tune the controller timing per motor batch; flag RPM dropouts in the log review",
           "action_owner": "Flight test", "action_due": "2026-11-20", "action_status": "done",
           "failure_rate": 1e-4, "mode_ratio": 0.4, "loss_probability": 0.2, "severity_class": "II",  # Cm 8e-4
-          "consequence": "operational", "decision": None},
+          "consequence": "operational",
+          "decision": {"outcome": "on_condition", "task": "Review the flight log for RPM dropouts", "interval": 10,
+                       "interval_unit": "hours"}},
      ]},
     {"position": "Propeller", "function": "Produce thrust at the commanded speed",
      "modes": [
@@ -340,11 +171,11 @@ SAMPLE_UAV_MODES = [
           "severity": 4, "occurrence": 6, "detection": 2,  # RPN 48, AP M
           "action": "Issue a blade go/no-go gauge; replace on any chip", "action_owner": "Operations",
           "action_due": "2026-11-15", "action_status": "done",
-          "failure_rate": 2e-4, "mode_ratio": 0.7, "loss_probability": 0.1, "severity_class": "III",  # Cm 1.4e-3
+          "failure_rate": 2e-4, "mode_ratio": 0.6, "loss_probability": 0.1, "severity_class": "III",  # Cm 1.2e-3
           "consequence": "operational",
           "decision": {"outcome": "on_condition", "task": "Check each blade against the go/no-go gauge",
                        "interval": 1, "interval_unit": "days"}},
-         {"text": "Propeller nut loosens", "ff": "Thrust lower than commanded",
+         {"text": "Propeller nut loosens", "ff": "Thrust lost on one arm",
           "cause": "No thread locker after a blade change", "effect_local": "The propeller spins free",
           "effect_next": "Thrust lost on one arm", "effects": "Uncontrolled descent.",
           "detection_method": "Torque-stripe check before flight",
@@ -352,23 +183,44 @@ SAMPLE_UAV_MODES = [
           "action": "Captive nut with a locking feature; torque stripe on every nut", "action_owner": "Propulsion lead",
           "action_due": "2026-12-05", "action_status": "open",
           "failure_rate": 2e-4, "mode_ratio": 0.1, "loss_probability": 1.0, "severity_class": "I",  # Cm 2e-3
-          "consequence": "safety", "decision": None},
+          "consequence": "safety",
+          "decision": {"outcome": "on_condition", "task": "Check the torque stripe on every propeller nut",
+                       "interval": 1, "interval_unit": "days"}},
+         {"text": "Blade fatigue crack at the hub", "ff": "Thrust lost on one arm",
+          "cause": "Cyclic bending in flight", "effect_local": "A crack grows from the hub",
+          "effect_next": "The blade separates; thrust lost on one arm", "effects": "Uncontrolled descent.",
+          "detection_method": "None reliable before the crack shows",
+          "severity": 10, "occurrence": 3, "detection": 7,  # RPN 210, AP H
+          "action": "Replace the propellers every 130 flight hours, as the replacement analysis shows",
+          "action_owner": "Propulsion lead", "action_due": "2026-11-28", "action_status": "done",
+          "failure_rate": 2e-4, "mode_ratio": 0.3, "loss_probability": 1.0, "severity_class": "I",  # Cm 6e-3
+          "consequence": "safety",
+          "decision": {"outcome": "fixed_interval", "task": "Replace the propeller", "interval": 130,
+                       "interval_unit": "hours", "evidence": {"type": "strategy_analysis", "id": UAV_PROPELLER_ANALYSIS}}},
      ]},
-    {"position": "Battery pack", "function": "Supply 22.2 V at up to 60 A for the planned flight time",
+    {"position": "Battery pack", "function": "Supply power for the planned flight",
+     "standards": [
+         {"text": "At least 25 minutes' flight on a full charge", "parameter": "Flight time", "comparator": ">=",
+          "value": 25, "unit": "min"},
+     ],
+     "breaches": {"Flight time on a full charge under 25 minutes": "At least 25 minutes' flight on a full charge"},
      "modes": [
-         {"text": "Cell capacity fade", "ff": "Voltage drops below the flight-critical limit",
+         {"text": "Cell capacity fade", "ff": "Flight time on a full charge under 25 minutes",
           "cause": "Ageing and deep discharge cycles", "effect_local": "The pack runs down early",
           "effect_next": "Low-voltage warning; return-to-home triggered",
           "effects": "Mission cut short; a controlled landing.",
-          "detection_method": "Capacity logged on every charge; retire at 80 %",
+          "detection_method": "Capacity logged on every charge",
           "severity": 4, "occurrence": 7, "detection": 2,  # RPN 56, AP M
-          "action": "Retire packs at 80 % of rated capacity", "action_owner": "Operations",
-          "action_due": "2026-11-10", "action_status": "done",
+          "action": "Retire packs at 300 charge cycles; redo the retirement analysis in cycles",
+          "action_owner": "Operations", "action_due": "2026-11-10", "action_status": "open",
           "failure_rate": 3e-4, "mode_ratio": 0.6, "loss_probability": 0.05, "severity_class": "III",  # Cm 9e-4
           "consequence": "operational",
-          "decision": {"outcome": "on_condition", "task": "Log the charged capacity and retire the pack at 80 %",
-                       "interval": 1, "interval_unit": "days"}},
-         {"text": "Internal cell short (thermal runaway)", "ff": "Voltage drops below the flight-critical limit",
+          "decision": {"outcome": "fixed_interval", "task": "Retire the battery pack", "interval": 300,
+                       "interval_unit": "cycles",
+                       "notes": "The task counts charge cycles but the analysis behind it is in flight hours, so the "
+                                "evidence check can't compare them until the units agree.",
+                       "evidence": {"type": "strategy_analysis", "id": UAV_BATTERY_ANALYSIS}}},
+         {"text": "Internal cell short (thermal runaway)", "ff": "Power lost in flight",
           "cause": "Puncture or over-discharge", "effect_local": "The pack overheats",
           "effect_next": "Power lost; fire risk", "effects": "Uncontrolled descent and a fire on the ground.",
           "detection_method": "Cell-temperature alarm from the BMS (only once it is hot)",
@@ -376,22 +228,30 @@ SAMPLE_UAV_MODES = [
           "action": "Puncture-resistant case; store at 50 % charge; charge in a fire-resistant bag",
           "action_owner": "Safety lead", "action_due": "2026-11-25", "action_status": "in_progress",
           "failure_rate": 3e-4, "mode_ratio": 0.1, "loss_probability": 1.0, "severity_class": "I",  # Cm 3e-3
-          "consequence": "safety", "decision": None},
+          "consequence": "safety", "decision": None,
+          "notes": "Still to decide, on purpose: the decision waits on the case redesign and the charging trial."},
      ]},
     {"position": "Battery management (BMS)", "function": "Balance the cells and cut off outside the safe window",
+     "standards": [
+         {"text": "Cut off when any cell is below 3.0 V or above 4.25 V", "parameter": "Cell voltage",
+          "comparator": "between", "value": "3.0-4.25", "unit": "V"},
+     ],
+     "breaches": {"Does not cut off when a cell is outside its limits":
+                  "Cut off when any cell is below 3.0 V or above 4.25 V"},
      "modes": [
          {"text": "Cut-off relay welded closed", "ff": "Does not cut off when a cell is outside its limits",
           "cause": "Inrush current when the pack is connected", "effect_local": "No protection",
           "effect_next": "A cell can be over-discharged unnoticed",
           "effects": "Pack damage, and a possible fire while charging.",
-          "detection_method": "None in normal use (hidden); a monthly cut-off function test",
+          "detection_method": "None in normal use (hidden); a cut-off function test",
           "severity": 8, "occurrence": 2, "detection": 9,  # RPN 144, AP M
-          "action": "Monthly BMS function test; pre-charge resistor on the connector",
+          "action": "Function test of the BMS cut-off every 160 flight hours; pre-charge resistor on the connector",
           "action_owner": "Electronics lead", "action_due": "2026-12-20", "action_status": "open",
-          "failure_rate": 1e-5, "mode_ratio": 0.5, "loss_probability": 0.5, "severity_class": "II",  # Cm 2.5e-4
+          "failure_rate": 5e-5, "mode_ratio": 0.5, "loss_probability": 0.5, "severity_class": "II",  # Cm 1.25e-3
           "consequence": "hidden",
           "decision": {"outcome": "failure_finding", "task": "Test the BMS cut-off with a bench supply",
-                       "interval": 1, "interval_unit": "months"}},
+                       "interval": 160, "interval_unit": "hours",
+                       "evidence": {"type": "strategy_analysis", "id": UAV_BMS_ANALYSIS}}},
      ]},
     {"position": "Flight controller", "function": "Hold the commanded attitude and position",
      "modes": [
@@ -416,14 +276,30 @@ SAMPLE_UAV_MODES = [
           "action": "Temperature calibration in the production test", "action_owner": "Production",
           "action_due": "2026-12-12", "action_status": "open",
           "failure_rate": 4e-5, "mode_ratio": 0.6, "loss_probability": 0.3, "severity_class": "II",  # Cm 7.2e-4
-          "consequence": "operational", "decision": None},
+          "consequence": "operational",
+          "decision": {"outcome": "on_condition", "task": "Check the gyro calibration", "interval": 1,
+                       "interval_unit": "days"}},
+         {"text": "Fails silently while the other IMU carries on", "ff": "No usable reading",
+          "cause": "A solder joint cracks from vibration", "effect_local": "This IMU's readings stop",
+          "effect_next": "The flight controller uses the other IMU; nothing tells the pilot",
+          "effects": "No backup left: the next IMU failure loses attitude control.",
+          "detection_method": "None in flight (hidden); the arming self-test compares both IMUs",
+          "severity": 8, "occurrence": 3, "detection": 8,  # RPN 192, AP M
+          "action": "Show an IMU disagreement in the arming checks", "action_owner": "Software lead",
+          "action_due": "2026-12-12", "action_status": "open",
+          "failure_rate": 4e-5, "mode_ratio": 0.4, "loss_probability": 0.5, "severity_class": "II",  # Cm 8e-4
+          "consequence": "hidden",
+          "decision": {"outcome": "failure_finding", "task": "Compare both IMUs in the arming self-test log",
+                       "interval": 10, "interval_unit": "hours"}},
      ]},
-    # Three positions with modes DIRECTLY under the function (no functional failure
-    # yet): the way an FMEA worksheet reads, and what the RCM tab shows as "No
-    # functional failure yet".
-    {"position": "GPS receiver", "function": "Give position to within 2 m",
+    {"position": "GPS receiver", "function": "Give the aircraft's position",
+     "standards": [
+         {"text": "Horizontal position within 2 m", "parameter": "Horizontal error", "comparator": "<=", "value": 2,
+          "unit": "m"},
+     ],
+     "breaches": {"Position error over 2 m, or no fix": "Horizontal position within 2 m"},
      "modes": [
-         {"text": "Antenna connector works loose", "ff": None,
+         {"text": "Antenna connector works loose", "ff": "Position error over 2 m, or no fix",
           "cause": "Vibration", "effect_local": "The position fix is lost",
           "effect_next": "Position hold fails; the aircraft drifts in wind", "effects": "Fly-away risk; a geofence breach.",
           "detection_method": "Satellite count in the pre-flight check",
@@ -431,12 +307,19 @@ SAMPLE_UAV_MODES = [
           "action": "Locking connector; satellite count on the pre-flight checklist", "action_owner": "Production",
           "action_due": "2026-11-12", "action_status": "done",
           "failure_rate": 5e-5, "mode_ratio": 0.5, "loss_probability": 0.4, "severity_class": "II",  # Cm 1e-3
-          "consequence": "operational", "decision": None},
+          "consequence": "operational",
+          "decision": {"outcome": "on_condition", "task": "Check the satellite count before flight", "interval": 1,
+                       "interval_unit": "days"}},
      ]},
-    {"position": "Comms link", "function": "Carry control and telemetry to 2 km",
+    {"position": "Comms link", "function": "Carry control and telemetry between the aircraft and the ground station",
+     "standards": [
+         {"text": "Range of at least 2 km in line of sight", "parameter": "Range", "comparator": ">=", "value": 2,
+          "unit": "km"},
+     ],
+     "breaches": {"Link lost inside 2 km": "Range of at least 2 km in line of sight"},
      "modes": [
-         {"text": "Link lost beyond range or behind terrain", "ff": None,
-          "cause": "Flying beyond line of sight", "effect_local": "No control input",
+         {"text": "Link lost behind terrain or to interference", "ff": "Link lost inside 2 km",
+          "cause": "Flying out of line of sight", "effect_local": "No control input",
           "effect_next": "Failsafe return-to-home",
           "effects": "Mission aborted; a safe landing if return-to-home works.",
           "detection_method": "Signal strength shown on the ground station",
@@ -444,11 +327,14 @@ SAMPLE_UAV_MODES = [
           "action": "Geofence on signal strength; pilot training", "action_owner": "Operations",
           "action_due": "2026-11-08", "action_status": "done",
           "failure_rate": 2e-4, "mode_ratio": 0.8, "loss_probability": 0.1, "severity_class": "III",  # Cm 1.6e-3
-          "consequence": "operational", "decision": None},
+          "consequence": "operational",
+          "decision": {"outcome": "redesign",
+                       "notes": "A geofence on signal strength in the firmware, and pilots trained to keep line of "
+                                "sight: no maintenance task helps."}},
      ]},
     {"position": "Payload gimbal", "function": "Hold the camera steady on the target",
      "modes": [
-         {"text": "Gimbal motor stalls on a snagged cable", "ff": None,
+         {"text": "Gimbal motor stalls on a snagged cable", "ff": "Camera not held on the target",
           "cause": "Cable routing without a service loop", "effect_local": "The gimbal locks",
           "effect_next": "Footage unusable", "effects": "The mission is flown again.",
           "detection_method": "Gimbal sweep before flight",
@@ -456,41 +342,109 @@ SAMPLE_UAV_MODES = [
           "action": "Re-route the cable with a service loop", "action_owner": "Payload",
           "action_due": "2026-11-05", "action_status": "done",
           "failure_rate": 1e-4, "mode_ratio": 0.7, "loss_probability": 0.02, "severity_class": "IV",  # Cm 1.4e-4
-          "consequence": "non_operational", "decision": None},
+          "consequence": "non_operational",
+          "decision": {"outcome": "rtf", "rtf_basis": "uneconomic",
+                       "notes": "A stall costs a repeat flight, less than any task would; the cable now has a "
+                                "service loop."}},
      ]},
 ]
 
+
 def sample_uav_modes() -> list[dict]:
-    """The sample quadcopter's modes, a fresh copy each time (callers may change it)."""
+    """The sample quadcopter's RCM, a fresh copy each time (callers may change it)."""
     return copy.deepcopy(SAMPLE_UAV_MODES)
 
 
-def _add_uav_modes(m, at_of: dict[str, list[str]], counts: dict) -> None:
-    """The sample quadcopter's failure modes, each scored, with its RCM consequence and
-    decision, on every position the template's position name maps to (at_of: name ->
-    position ids; the sample product has four motors where the template names one)."""
+# The design's higher positions (the product itself and its groups): what each does,
+# as a function with functional failures explained by those on the positions inside
+# it (linked causes, no failure modes of their own), so the RCM reads top down.
+# A cause names a position (SAMPLE_UAV_MODES's name, or a group's) and one of its
+# functional failures; it means every position that name maps to. Inner groups
+# first: a cause must be written before it is linked.
+SAMPLE_UAV_GROUPS = [
+    {"position": "Propulsion", "function": "Lift the aircraft and steer it by the thrust on each arm",
+     "failures": [
+         {"text": "Thrust lost or reduced on an arm",
+          "caused_by": [("Motor", "The motor stops or loses torque"), ("Speed controller (ESC)", "No drive to the motor"),
+                        ("Propeller", "Thrust lost on one arm"), ("Propeller", "Thrust lower than commanded")]},
+     ]},
+    {"position": "Flight control", "function": "Keep the aircraft stable and on its planned path",
+     "failures": [
+         {"text": "Loses control of attitude or position",
+          "caused_by": [("Flight controller", "Loses attitude control"), ("IMU", "Readings drift or freeze"),
+                        ("GPS receiver", "Position error over 2 m, or no fix")]},
+     ]},
+    {"position": "Power", "function": "Power every system for the planned flight",
+     "failures": [
+         {"text": "Power lost in flight", "caused_by": [("Battery pack", "Power lost in flight")]},
+         {"text": "Flight shorter than planned",
+          "caused_by": [("Battery pack", "Flight time on a full charge under 25 minutes")]},
+     ]},
+    {"position": "", "function": "Fly a planned survey and land safely",
+     "failures": [
+         {"text": "Aircraft lost or crashes",
+          "caused_by": [("Airframe", "A structural member cracks or separates in flight"),
+                        ("Propulsion", "Thrust lost or reduced on an arm"),
+                        ("Flight control", "Loses control of attitude or position"), ("Power", "Power lost in flight")]},
+         {"text": "Survey not completed",
+          "caused_by": [("Comms link", "Link lost inside 2 km"), ("Payload gimbal", "Camera not held on the target"),
+                        ("Power", "Flight shorter than planned")]},
+     ]},
+]
+
+
+def _add_uav_groups(m, at_of: dict[str, list[str]], ffs: dict[tuple[str, str], str], counts: dict) -> None:
+    """The higher positions' functions and functional failures, each linked to its
+    causes below (ffs: (position id, functional failure text) -> id, filled as they're
+    written)."""
+    for entry in copy.deepcopy(SAMPLE_UAV_GROUPS):
+        for at in at_of[entry["position"]]:
+            function = m.add_function(at, entry["function"])
+            counts["functions"] += 1
+            for failure in entry["failures"]:
+                ff = m.add_functional_failure(function["id"], failure["text"])
+                ffs[(at, failure["text"])] = ff["id"]
+                counts["functional_failures"] += 1
+                for below, text in failure["caused_by"]:
+                    for cause_at in at_of[below]:
+                        m.link_cause(ff["id"], ffs[(cause_at, text)])
+                        counts["causes_linked"] += 1
+
+
+def _add_uav_modes(m, at_of: dict[str, list[str]], counts: dict) -> dict[tuple[str, str], str]:
+    """The sample quadcopter's RCM on every position the template's position name maps
+    to (at_of: name -> position ids; the sample product has four motors where the
+    template names one): each function with its performance standards, its functional
+    failures (breaching a standard where the template says so), and each failure mode
+    scored, with its consequence, decision and notes. Returns the functional failures
+    written: (position id, text) -> id."""
+    written: dict[tuple[str, str], str] = {}
     for entry in sample_uav_modes():
         for at in at_of[entry["position"]]:
             function = m.add_function(at, entry["function"])
             counts["functions"] += 1
+            standards = {}
+            for st in entry.get("standards") or []:
+                standards[st["text"]] = m.add_standard(function["id"], **st)["id"]
+                counts["standards"] += 1
             ffs: dict[str, str] = {}
             for mode in entry["modes"]:
-                if mode["ff"]:
-                    if mode["ff"] not in ffs:
-                        ffs[mode["ff"]] = m.add_functional_failure(function["id"], mode["ff"])["id"]
-                        counts["functional_failures"] += 1
-                    fm = m.add_failure_mode(at, mode["text"], functional_failure_id=ffs[mode["ff"]])
-                else:
-                    fm = m.add_failure_mode(at, mode["text"], function_id=function["id"])
-                    counts["direct"] += 1
+                if mode["ff"] not in ffs:
+                    breach = (entry.get("breaches") or {}).get(mode["ff"])
+                    ffs[mode["ff"]] = m.add_functional_failure(
+                        function["id"], mode["ff"], standard_id=standards[breach] if breach else None)["id"]
+                    written[(at, mode["ff"])] = ffs[mode["ff"]]
+                    counts["functional_failures"] += 1
+                fm = m.add_failure_mode(at, mode["text"], functional_failure_id=ffs[mode["ff"]])
                 counts["failure_modes"] += 1
-                if mode.get("effects"):
-                    m.update_failure_mode(fm["id"], effects=mode["effects"])
+                if mode.get("effects") or mode.get("notes"):
+                    m.update_failure_mode(fm["id"], effects=mode.get("effects"), notes=mode.get("notes"))
                 m.score_failure_mode(fm["id"], _scores(mode, SAMPLE_UAV_BASIS))
                 counts["scored"] += 1
                 m.decide_failure_mode(fm["id"], consequence=mode.get("consequence"),
                                       decision=mode["decision"] if mode.get("decision") else ...)
                 counts["decisions"] += bool(mode.get("decision"))
+    return written
 
 
 # ---- the sample product: a quadcopter design and three items built from it ---------
@@ -502,9 +456,12 @@ SAMPLE_PRODUCT_NAME = "Survey quadcopter (sample)"
 SAMPLE_PRODUCT_PART = "SQ-4"
 SAMPLE_PRODUCT_REV = "C"
 SAMPLE_PRODUCT_DESCRIPTION = (
-    "A sample product: a small survey quadcopter's design (its functional structure, with every failure mode "
-    "scored as an FME(C)A), its part with a small bill of materials, three items built from it, a replaced motor "
-    "and two failure reports. Entirely invented."
+    "A sample product: a small survey quadcopter's design, with an RCM on its functional structure (functions, "
+    "performance standards, functional failures, failure modes and a decision for each) and every failure mode "
+    "scored as an FME(C)A. Some decisions link the analysis or model behind them: one is contradicted on purpose "
+    "(the legacy run-to-failure plan on the motor bearings, whose life model shows wear-out), one can't be checked "
+    "until its units agree, and two failure modes still need a decision. With its part and a small bill of "
+    "materials, three items built from it, a replaced motor and two failure reports. Entirely invented."
 )
 _PRODUCT_COPY_NAME = re.compile(r"^Survey quadcopter \(sample(?: (\d+))?\)$")
 
@@ -643,14 +600,16 @@ def add_sample_product(m, db, again: bool = False) -> dict:
 
     at: dict[str, str] = {}
     counts = {"positions": 1, "functions": 0, "functional_failures": 0, "failure_modes": 0, "scored": 0,
-              "direct": 0, "decisions": 0}
+              "standards": 0, "decisions": 0, "causes_linked": 0}
     for group, cls, children in SAMPLE_PRODUCT_TREE:
         at[group] = m.create_position(group, parent_id=pid, position_class=cls)["id"]
         counts["positions"] += 1
         for child, child_cls in children:
             at[child] = m.create_position(child, parent_id=at[group], position_class=child_cls)["id"]
             counts["positions"] += 1
-    _add_uav_modes(m, {k: [at[n] for n in names] for k, names in SAMPLE_PRODUCT_MODES_AT.items()}, counts)
+    at_of = {k: [at[n] for n in names] for k, names in SAMPLE_PRODUCT_MODES_AT.items()}
+    ffs = _add_uav_modes(m, at_of, counts)
+    _add_uav_groups(m, at_of | {group: [at[group]] for group, _, _ in SAMPLE_PRODUCT_TREE} | {"": [pid]}, ffs, counts)
 
     today = date.fromisoformat(m.today())
 
@@ -698,8 +657,9 @@ def add_sample_product(m, db, again: bool = False) -> dict:
         "reports": [{"id": r["id"], "label": r.get("label") or r["title"]} for r in reports],
         "rbd": rbd,
         **counts,
-        "message": (f"Added “{name}”: a design of {_n(counts['positions'], 'position')} with "
-                    f"{_n(counts['failure_modes'], 'failure mode')} scored as an FME(C)A, its part with a bill of "
+        "message": (f"Added “{name}”: a design of {_n(counts['positions'], 'position')} with an RCM and "
+                    f"{_n(counts['failure_modes'], 'failure mode')} scored as an FME(C)A (one decision shows as "
+                    "contradicted on purpose: the motor bearings' own model shows wear-out), its part with a bill of "
                     f"materials, {_n(len(items), 'item')} built from it (serials "
                     f"{', '.join(it['serial'] for it in items)}), a replaced motor and two failure reports. "
                     f"The RBD “{rbd['name']}” is in your RBDs: its failure rates are placeholders, not data. "

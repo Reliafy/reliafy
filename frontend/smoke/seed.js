@@ -1,7 +1,7 @@
 // Global setup for the local run: the samples cover most pages, but nothing
 // seeds Maintenance or an RBD simulation run, so make one of each here (the
-// sample truck with its RCM, as "Add the sample truck" makes it, a location, an item fitted to the
-// position, a work order, a part and an assembly of it, the starter item classes, a position
+// sample product, as "Add the sample UAV product" makes it: the one sample for the RCM
+// and FME(C)A tabs; a position with a location, an item fitted to it, a work order, a part and an assembly of it, the starter item classes, a position
 // class with a fitted non-repairable model and a spare with a lead time, one availability run,
 // and a model of each kind the samples don't cover)
 // through the API. Skipped against a deployed site.
@@ -59,10 +59,12 @@ export default async function seed(config) {
   const patch = send("PATCH");
   try {
     const m = "/api/maintenance";
-    const { position: { id: position_id } } = await post(`${m}/sample-truck`, {});
-    // A product with three items built from it, their reports and its RBD (Products, Items).
-    // About a thousand events (three items' trees copied): give it time on a busy machine.
+    // The sample product: a design with its RCM (evidence linked) and FME(C)A, three items
+    // built from it, their reports and its RBD (Products, Items). About a thousand events
+    // (three items' trees copied): give it time on a busy machine.
     await post(`${m}/sample-product`, {}, 180000);
+    // A plain position in the depot, with an item fitted and a work order.
+    const { id: position_id } = await post(`${m}/positions`, { name: "Depot conveyor (smoke test)" });
     const location = await post(`${m}/locations`, { name: "Smoke test depot" });
     const item = await post(`${m}/items`, { name: "Smoke test brake set", serial: "SMOKE-1" });
     await patch(`${m}/positions/${position_id}`, { location_id: location.id });

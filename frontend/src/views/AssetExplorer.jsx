@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  addSampleProduct, addSampleTruck as postSampleTruck, getFmeaExcelBlob, getMaintenanceTree, getPositionRcm, getRcmOptions,
+  addSampleProduct, getFmeaExcelBlob, getMaintenanceTree, getPositionRcm, getRcmOptions,
   hasFmeaExcel,
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
@@ -65,10 +65,8 @@ import { canIsolate, depthWords, isolateIncompleteItem, isolateIncompleteOpen, i
 import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals.jsx";
 import NewFailureReportModal from "../components/NewFailureReportModal.jsx";
 import usePhone from "../usePhone.js";
-import {
-  OPEN_SAMPLE_PRODUCT_LABEL, SAMPLES, SAMPLE_TRUCK_LABEL, addSample as addSampleOf, sampleProductId,
-} from "../sampleTruck.js";
-import { designActions, isDesignScope, productFmeaPath, scopeTree } from "../products.js";
+import { OPEN_SAMPLE_PRODUCT_LABEL, sampleProductId, sampleProductView } from "../sampleProduct.js";
+import { designActions, isDesignScope, productViewPath, scopeTree } from "../products.js";
 import { DesignReports } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
@@ -1114,38 +1112,22 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setModal(null);
     setNewParent(null);
   };
-  // "Add the sample truck" (shown picked on the RCM tab): copied into this
-  // workspace's tree. With a copy there already, the person is asked whether
-  // to add another; keeping theirs picks it instead. "Open the sample UAV
-  // product": the quadcopter is a design, so it lives on Products; it opens
-  // there on its FME(C)A tab, added first when there's none.
-  const [addingSample, setAddingSample] = useState(null); // "truck" | "product" while one is being added
+  // "Open the sample UAV product", the one sample for the RCM and FME(C)A tabs:
+  // the quadcopter is a design, so it lives on Products; it opens there on its
+  // structure's FME(C)A tab when that's the tab in view, its RCM tab otherwise,
+  // added first when there's none (never a second copy from here).
+  const [addingSample, setAddingSample] = useState(false);
   // The FME(C)A print view; its "Back" returns here (a product's structure
   // tab included: a design isn't in the Explorer's own tree).
   const openPrint = (id) => navigate(`/asset-register/positions/${id}/fmea`,
     { state: { back: `${location.pathname}${location.search}` } });
-  const addSample = (kind = "truck") => {
+  const openSample = () => {
     if (addingSample) return;
-    setAddingSample(kind);
-    if (kind === "product") {
-      addSampleProduct(false) // never a second copy from here: nothing to ask
-        .then((r) => navigate(productFmeaPath(sampleProductId(r))),
-          (e) => say(`The sample product didn't open: ${e.message}`, "error"))
-        .finally(() => setAddingSample(null));
-      return;
-    }
-    const s = SAMPLES[kind];
-    addSampleOf(postSampleTruck, confirm, kind)
-      .then((r) => {
-        created(r.position.id);
-        if (r.added) {
-          loadRcm();
-          setTab(s.tab);
-          // Short: it shows in the heading's slim row (the server's message is longer).
-          say(s.added);
-        }
-      }, (e) => say(`The ${s.what} wasn't added: ${e.message}`, "error"))
-      .finally(() => setAddingSample(null));
+    setAddingSample(true);
+    addSampleProduct(false) // never a second copy from here: nothing to ask
+      .then((r) => navigate(productViewPath(sampleProductId(r), sampleProductView(tab))),
+        (e) => say(`The sample product didn't open: ${e.message}`, "error"))
+      .finally(() => setAddingSample(false));
   };
   // After a rename, move or retire from the row menu: the tree read again,
   // the row kept picked (moved: shown in its new place; retired: the row it
@@ -1197,7 +1179,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     <div className="card empty section-empty">
       <h2>{EMPTY[mode]?.[0] || "No positions yet"}</h2>
       <p>{EMPTY[mode]?.[1]
-        || "Add the first position, add the sample truck, or import a worksheet."}</p>
+        || "Add the first position, or import a worksheet."}</p>
       <div className="section-empty-action">
         {mode === "locations" ? (
           <button type="button" onClick={() => setModal("location")}><PlusIcon /> New location</button>
@@ -1210,13 +1192,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       </div>
       {mode !== "locations" && (
         <div className="ae-sample">
-          <p><strong>New here?</strong> Add the sample truck to see an RCM built on the tree, or open the sample UAV product for an FME(C)A on a design.</p>
+          <p><strong>New here?</strong> Open the sample UAV product to see an RCM and an FME(C)A built on a design, with decisions checked against their evidence.</p>
           <div className="ae-sample-btns">
-            <button type="button" className="secondary" onClick={() => addSample("truck")} disabled={!!addingSample}>
-              {addingSample === "truck" ? "Adding…" : SAMPLE_TRUCK_LABEL}
-            </button>
-            <button type="button" className="secondary" onClick={() => addSample("product")} disabled={!!addingSample}>
-              {addingSample === "product" ? "Opening…" : OPEN_SAMPLE_PRODUCT_LABEL}
+            <button type="button" className="secondary" onClick={openSample} disabled={addingSample}>
+              {addingSample ? "Opening…" : OPEN_SAMPLE_PRODUCT_LABEL}
             </button>
           </div>
         </div>
@@ -1566,9 +1545,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         onReset={resetView}
         menuActions={[...(data && !root && mode !== "locations" ? [
           { id: "import", label: "Import from a spreadsheet", onSelect: () => setModal("import") },
-          { id: "sample", label: SAMPLE_TRUCK_LABEL, onSelect: () => addSample("truck") },
-          { id: "sample-product", label: OPEN_SAMPLE_PRODUCT_LABEL, onSelect: () => addSample("product") },
-        ] : [])]}
+          { id: "sample-product", label: OPEN_SAMPLE_PRODUCT_LABEL, onSelect: openSample },
+        ] : []), ]}
         notice={notice}
         statusText={statusText}
         statusTitle={rcmOn && !filter && rcm && !rcmError ? `${statusText} · ${what} is by position` : undefined}

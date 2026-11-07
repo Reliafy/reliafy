@@ -300,17 +300,20 @@ def test_cli_moves_rcm_between_positions(server, capsys):
     assert rf.call("maintenance", "get.rcm", id=a, scope="this")["positions"][0]["unassigned"][0]["id"] == mode["id"]
 
 
-def test_cli_adds_the_sample_truck(server, capsys):
-    """maintenance_positions add_sample_truck from the command line: once, then --again for another copy."""
-    code, out, _ = run(capsys, "maintenance", "positions.add_sample_truck", "--json")
+def test_cli_adds_the_sample_product_and_the_truck_action_is_gone(server, capsys):
+    """maintenance products.add_sample from the command line: once, then --again for another copy. The sample
+    truck's action is gone (no alias)."""
+    code, out, _ = run(capsys, "maintenance", "products.add_sample", "--json")
     made = json.loads(out)
-    assert code == 0 and made["added"] and made["failure_modes"] == 5 and made["decisions"] == 5
-    code, out, _ = run(capsys, "maintenance", "positions.add_sample_truck", "--json")
+    assert code == 0 and made["added"] and made["failure_modes"] == 41 and made["decisions"] == 39
+    code, out, _ = run(capsys, "maintenance", "products.add_sample", "--json")
     assert code == 0 and json.loads(out)["added"] is False
-    code, out, _ = run(capsys, "maintenance", "positions.add_sample_truck", "--again", "--json")
-    assert code == 0 and json.loads(out)["position"]["name"] == "Delivery truck (sample 2)"
-    sheet = Client().call("maintenance", "get.rcm", id=made["position"]["id"], scope="this")
-    assert sheet["rollup"]["modes"] == 5
+    code, out, _ = run(capsys, "maintenance", "products.add_sample", "--again", "--json")
+    assert code == 0 and json.loads(out)["product"]["name"] == "Survey quadcopter (sample 2)"
+    sheet = Client().call("maintenance", "get.rcm", id=made["product"]["id"], scope="below")
+    assert sheet["rollup"]["modes"] == 41
+    code, _, err = run(capsys, "maintenance", "positions.add_sample_truck", "--json")
+    assert code != 0
 
 
 def test_cli_adds_the_sample_product(server, capsys):

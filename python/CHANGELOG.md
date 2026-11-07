@@ -7,6 +7,14 @@
   products.add_sample`): its design carries the same scored FME(C)A. Copies
   the old action made stay in a workspace as they are.
 
+- **One sample for RCM and FME(C)A**: `maintenance positions.add_sample_truck`
+  (and the app's `POST /api/maintenance/sample-truck`) is gone, with no alias.
+  The sample product (`maintenance products.add_sample`) is now the one sample
+  for both: its quadcopter design carries a full RCM, some decisions linked to
+  sample evidence (supported, one contradicted on purpose, one inconclusive)
+  and two failure modes left undecided on purpose. Copies of the sample truck
+  already in a workspace stay as they are.
+
 - **Maintainability prediction**: `analyse maintainability` gives the mean
   corrective maintenance time (Mct), M_max at a percentile, inherent
   availability, where the repair time goes by element, the Pareto of the lines
