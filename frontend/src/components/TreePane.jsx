@@ -519,15 +519,19 @@ export default function TreePane({
   // where it was on screen. At the top (or the end) of the tree there may be
   // no room to keep it there; then the place it had is kept until the tree is
   // scrolled or another row picked, so switching back puts everything back
-  // exactly where it was.
-  const anchor = useRef({ key: null, offset: 0, layout: layoutKey, held: null });
+  // exactly where it was. The same when a read brings rows that come or go
+  // above it (someone else's change, or a newer answer replacing an earlier
+  // one) with nothing opened or closed: the row picked stays where it is.
+  const anchor = useRef({ key: null, offset: 0, layout: layoutKey, held: null, at: null, open: null });
   useLayoutEffect(() => {
     const el = scroller.current;
     const a = anchor.current;
-    if (el && a.layout !== layoutKey && a.key != null && index.has(a.key)) {
+    const shifted = a.layout === layoutKey && a.open === open && a.at != null && index.get(a.key) !== a.at;
+    if (el && (a.layout !== layoutKey || shifted) && a.key != null && index.has(a.key)) {
       const want = index.get(a.key) * H - a.offset;
       el.scrollTop = Math.max(0, want);
       a.held = Math.abs(el.scrollTop - want) >= 1 ? { key: a.key, top: el.scrollTop } : null;
+      a.at = index.get(a.key);
       syncScroll();
     }
     a.layout = layoutKey;
@@ -537,7 +541,7 @@ export default function TreePane({
     const a = anchor.current;
     if (!el || anchorKey == null || !index.has(anchorKey)) return;
     if (a.held && a.held.key === anchorKey && Math.abs(el.scrollTop - a.held.top) < 1) return;
-    anchor.current = { ...a, key: anchorKey, offset: index.get(anchorKey) * H - el.scrollTop, held: null };
+    anchor.current = { ...a, key: anchorKey, offset: index.get(anchorKey) * H - el.scrollTop, held: null, at: index.get(anchorKey), open };
   };
   useEffect(record);
 
