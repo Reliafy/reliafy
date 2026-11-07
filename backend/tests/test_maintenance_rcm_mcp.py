@@ -95,10 +95,10 @@ async def _pump_rcm(client) -> dict:
 def test_an_agent_builds_reads_and_questions_a_pumps_rcm(env):
     async def flow(client):
         ids = await _pump_rcm(client)
-        wrong_way = await _do(client, "maintenance", "failure_modes.link_cause", functional_failure_id=ids["motor_stops"],
-                              cause_id=ids["no_flow"])
         linked = _ok(await _do(client, "maintenance", "failure_modes.link_cause", functional_failure_id=ids["no_flow"],
                                cause_id=ids["motor_stops"]))
+        wrong_way = await _do(client, "maintenance", "failure_modes.link_cause", functional_failure_id=ids["motor_stops"],
+                              cause_id=ids["no_flow"])
         up = _ok(await _do(client, "maintenance", "failure_modes.link_cause", functional_failure_id=ids["no_water"], cause_id=ids["no_flow"]))
         rcm = _ok(await _get(client, "rcm", ids["a"], scope="this"))
         mode = _ok(await _get(client, "failure_mode", ids["bearing"]))
@@ -109,8 +109,8 @@ def test_an_agent_builds_reads_and_questions_a_pumps_rcm(env):
         return ids, wrong_way, linked, up, rcm, mode, impeller, measured, gaps, branch
 
     ids, wrong_way, linked, up, rcm, mode, impeller, measured, gaps, branch = _session(env["token"], flow)
-    # A link sent the wrong way round says to swap the ends.
-    assert "Swap them" in _err(wrong_way) and "functional_failure_id is the higher one" in _err(wrong_way)
+    # The reverse of a link already there would close a loop: refused, saying what to do.
+    assert "go round in a circle" in _err(wrong_way) and "swap them" in _err(wrong_way)
     assert linked["changed"] and [c["id"] for c in linked["causes"]] == [ids["motor_stops"]]
     assert up["explained_below"] and up["covered"]
 

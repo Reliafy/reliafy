@@ -171,3 +171,35 @@ export function pointMeta(point) {
   return [point.kind === "counter" ? "Counter" : "Condition", source, point.unit, point.retired && "retired"]
     .filter(Boolean).join(" · ");
 }
+
+// ---- Move… : a point to another position ----------------------------------
+// The positions a point can move to, from the tree pane's flat rows
+// (GET /api/maintenance/tree: id, name, parent_id, tag): in tree order, each
+// with its depth and the path above it, the one it's on now marked `here`
+// (it can't be picked). A query keeps the positions whose name, tag or path
+// match, shown with their path; at most `limit` rows.
+export function pointMoveChoices(positions, query = "", hereId = null, limit = 300) {
+  const rows = positions || [];
+  const byId = new Map(rows.map((p) => [p.id, p]));
+  const kids = new Map();
+  for (const p of rows) {
+    const parent = p.parent_id && byId.has(p.parent_id) ? p.parent_id : null;
+    if (!kids.has(parent)) kids.set(parent, []);
+    kids.get(parent).push(p);
+  }
+  const byName = (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "en", { sensitivity: "base" });
+  const out = [];
+  const seen = new Set();
+  const walk = (parent, depth, path) => {
+    for (const p of (kids.get(parent) || []).slice().sort(byName)) {
+      if (seen.has(p.id)) continue;
+      seen.add(p.id);
+      out.push({ id: p.id, name: p.name || "(no name)", tag: p.tag || "", depth, path, here: p.id === hereId });
+      walk(p.id, depth + 1, [...path, p.name || "(no name)"]);
+    }
+  };
+  walk(null, 0, []);
+  const q = String(query || "").trim().toLowerCase();
+  const shown = q ? out.filter((r) => [r.name, r.tag, ...r.path].some((t) => String(t).toLowerCase().includes(q))) : out;
+  return { rows: shown.slice(0, limit), more: shown.length > limit };
+}

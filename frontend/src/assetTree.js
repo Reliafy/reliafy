@@ -290,7 +290,7 @@ export function rowText(r) {
 // all agree.
 export const ANALYSED_RULE = "Not analysed: positions whose RCM isn't finished. A position is analysed when it has at least "
   + "one function, every function has a functional failure, every functional failure has failure modes or is "
-  + "caused by failures on positions inside it that are answered in turn, and every failure mode has a decision. "
+  + "caused by other failures on its tree that are answered in turn, and every failure mode has a decision. "
   + "A position with no functions of its own is not analysed.";
 
 // The status filters, as chips.
@@ -353,7 +353,7 @@ export function markersOf(r, { rcm = false } = {}) {
     // (no colour of its own); its text names them, and clicking it goes up.
     const up = (r.ref.effects || []).filter((e) => e.inside !== false);
     if (!up.length) return [];
-    const names = up.map((e) => `${e.text} (on ${e.position?.name || "a position above"})`).join("; ");
+    const names = up.map((e) => `${e.text} (on ${e.position?.name || "another position"})`).join("; ");
     return [{ kind: "up", text: `↑ ${up.length}`, label: `Causes: ${names}`, effect: up[0].id }];
   }
   if (isRcmRow(r)) return [];

@@ -144,6 +144,11 @@ that range from every snapshot, old and new, and draws it in **Level over time**
   recent reading. **Add reading…** and **Edit limits…** are at the top; each
   reading's **⋯** menu corrects or voids it. A voided reading stays listed,
   struck out, and is left out of rates, due dates and alarms.
+- **Move…** (in a point's **⋯** menu in the Measurements tab, or in the **⋯**
+  menu on its page) moves a hand-read or fed point to another position, for when it
+  was added to the wrong one. Its readings and any open alarm work order go
+  with it, and tasks that counted it keep counting it. A band or level stays
+  with its channel.
 - **Stop watching** ends a band. What it recorded stays.
 
 ### Change a band, and set levels

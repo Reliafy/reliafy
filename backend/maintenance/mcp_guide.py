@@ -120,7 +120,9 @@ list; critical spares with min_on_hand).
 create_group for positions that back each other up (duty and standby, 'either one is enough': k = 1). \
 generate_rbd and impact rely on it.
 7. Meters and condition: maintenance measurements.add_point (counter: run hours, cycles; condition: vibration, \
-temperature, with alarm limits), then record readings.
+temperature, with alarm limits), then record readings. One on the wrong position: measurements.move_point \
+(point_id, position_id): its readings and any open alarm work order go with it; tasks that counted it as their \
+position's counter keep counting it; an item's use while fitted follows where the counter now is.
 8. Conditions (optional): what places and equipment are exposed to (Outdoor, Seawater, Zone 1). Apply them as high \
 up as they're true (a site, a system): what's inside inherits them. See the conditions topic."""),
     "plan": ("RCM or tasks directly; tasks on a position, an item or a location; work packages.", """\
@@ -216,7 +218,7 @@ in the function's notes (Markdown is fine; a function's notes take up to 25,000 
 --notes @working.md). A PDF of it: add_document with target_id = the function (at most 5). standard_basis is \
 the old argument for it, still accepted: it's added to the notes under a "Working" line. Reads keep \
 standard_basis / has_basis as the notes, for older callers.
-- A higher functional failure caused by lower ones: maintenance failure_modes.link_cause (functional_failure_id: the higher one, the effect; cause_id: a functional failure on a position inside it, at any depth; the same link whichever end you start from), unlink_cause to take it off (both undo in a maintenance apply batch). A failure explained only below needs no failure modes of its own: it's covered once every linked failure is (their modes decided, or explained further down), and its position counts as analysed then. get kind rcm gives each functional failure causes, effects, covered and explained_below. Deleting or retiring the lower end, or moving it out from under the higher one, drops the link and says so.
+- A functional failure caused by others: maintenance failure_modes.link_cause (functional_failure_id: the effect; cause_id: another functional failure on the same tree, usually on a position inside it, but one beside it (the pool's 'no free chlorine' from the chlorinator next to it) or on the same position counts too; the same link whichever end you start from), unlink_cause to take it off (both undo in a maintenance apply batch). Refused: a failure causing itself, a loop, another tree. A failure explained by its causes needs no failure modes of its own: it's covered once every linked failure is (their modes decided, or explained further on), and its position counts as analysed then. get kind rcm gives each functional failure causes, effects (each with its position), covered and explained_below. Deleting or retiring the cause, or moving either end to another tree, drops the link and says so.
 - To see one built first: maintenance products.add_sample adds the sample quadcopter product, its RCM on its \
 design (decisions linked to sample evidence: supported, one contradicted on purpose, one inconclusive; two modes \
 undecided on purpose). Once only: a second call says it's there; again true adds another copy. It's the user's \
@@ -234,8 +236,10 @@ function, on the same position or another, with its modes and their tasks; the s
 the old function, standard_id names one of the new function's), assign (a mode under another of its position's \
 functional failures, or none) or move (one mode to another position with its decision and tasks; \
 functional_failure_id: one there), and maintenance tasks.move (a position's task). Ids, decisions and dates \
-stay. Anything with history stays put (failures or findings recorded against a mode, work done on a task): \
-the refusal says what to do instead. A task by use keeps counting the same measurement (and its last-done \
+stay. A moved task's open work orders go with it (each records the move; a package visit's stays). Anything \
+with history stays put (failures or findings recorded against a mode, work done on a task): the refusal says \
+what to do instead. A task shared with a failure mode that stays behind is refused: move the mode, or \
+unlink it. A task by use keeps counting the same measurement (and its last-done \
 reading) when that is on the new position, a position above or below it, or the item fitted to one of those. \
 When it isn't (Truck 12's engine hours, moving to Truck 14), the move answers needs a choice, listing each \
 task with what it counts and the measurements there (maintenance get.task_measurement with position_id \

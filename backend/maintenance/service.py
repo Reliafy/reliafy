@@ -1039,10 +1039,11 @@ def _failure_mode_placed(s: GraphStore, org: str, p: dict) -> None:
         s.patch_node(org, p["id"], {"order": p.get("order", 0)})
 
 
-# A functional failure results from functional failures on positions inside its
-# own (RESULTS_FROM, effect -> cause, the same direction as CAUSED_BY): the
-# failure-mode questions for it are answered on those lower positions. The edge
-# id comes from its ends, so linking twice or replaying gives the same edge.
+# A functional failure results from other functional failures on the same tree
+# (RESULTS_FROM, effect -> cause, the same direction as CAUSED_BY): usually on
+# positions inside its own, but also beside it (the pool's chlorine from the
+# chlorinator next to it) or on the same position. The edge id comes from its
+# ends, so linking twice or replaying gives the same edge.
 
 def _functional_failure_linked(s: GraphStore, org: str, p: dict) -> None:
     s.put_edge(org, "RESULTS_FROM", p["id"], p["cause_id"])
@@ -1054,8 +1055,7 @@ def _functional_failure_unlinked(s: GraphStore, org: str, p: dict) -> None:
 
 def _links_note(n: int) -> str:
     return (f"{n} link{'s' if n != 1 else ''} between functional failures {'were' if n != 1 else 'was'} removed: "
-            f"{'their causes are' if n != 1 else 'its cause is'} no longer on a position inside "
-            f"{'their effects' if n != 1 else 'its effect'}' position.")
+            f"{'their ends are' if n != 1 else 'its two ends are'} no longer on the same tree.")
 
 
 def _tasks_unlinked_note(pairs: list) -> str:
@@ -1073,25 +1073,27 @@ def _tasks_unlinked_note(pairs: list) -> str:
 # A functional failure is *covered* when everything under it is answered: its own
 # failure modes (each with a decision) and the lower functional failures it
 # results from (each covered in turn), and there's at least one of either. A link
-# counts only while its cause is live, on a live position strictly inside the
-# effect's position. The walk keeps the failures already on it, so a loop (only
-# possible from two links written at the same moment) never hangs a read; each
-# read memoises what it worked out, so a cause shared by many effects costs once.
+# counts only while its cause is live, on a live position on the same tree as the
+# effect's (inside it, beside it or the same one). The walk keeps the failures
+# already on it, so a loop (refused when linking; only possible from two links
+# written at the same moment) never hangs a read; each read memoises what it
+# worked out, so a cause shared by many effects costs once.
 
-def _rcm_above(index: dict, pid: str) -> set:
-    """The positions a position sits inside (its parent, theirs, ...)."""
-    memo = index["memo"].setdefault("above", {})
+def _rcm_root(index: dict, pid: str) -> str:
+    """The top of a position's tree (itself when it has no parent)."""
+    memo = index["memo"].setdefault("root", {})
     if pid not in memo:
-        memo[pid] = set(_rcm_ancestry(index, pid))
+        up = _rcm_ancestry(index, pid)
+        memo[pid] = up[-1] if up else pid
     return memo[pid]
 
 
 def _rcm_counts(index: dict, effect_id: str, cause_id: str) -> bool:
-    """Whether a link counts: the cause live, on a live position inside the effect's."""
+    """Whether a link counts: the cause live, on a live position on the effect's tree."""
     ep, cp = index["ff_pos"].get(effect_id), index["ff_pos"].get(cause_id)
     if not ep or not cp or cp not in index["positions"] or index["positions"][cp].get("retired"):
         return False
-    return ep in _rcm_above(index, cp)
+    return _rcm_root(index, ep) == _rcm_root(index, cp)
 
 
 def _rcm_below(index: dict, ff_id: str) -> list[str]:
@@ -1272,6 +1274,31 @@ def _failure_mode_moved(s: GraphStore, org: str, p: dict) -> None:
 
 def _task_moved(s: GraphStore, org: str, p: dict) -> None:
     _task_on(s, org, p["id"], p["position_id"])
+    _task_changes(s, org, p)
+
+
+def _work_order_moved(s: GraphStore, org: str, p: dict) -> None:
+    """An open work order moved to another position with its task (since Nov 2026):
+    it's on the new position from now, and its own record keeps where it was."""
+    for dst in s.out(org, p["id"], "ON"):
+        if dst["id"] != p["position_id"]:
+            s.delete_edge(org, "ON", p["id"], dst["id"])
+    s.put_edge(org, "ON", p["id"], p["position_id"])
+    wo = s.node(org, p["id"]) or {}
+    s.patch_node(org, p["id"], {"moves": list(wo.get("moves") or []) + [
+        {"from_position_id": p.get("from_position_id"), "position_id": p["position_id"],
+         "task_id": p.get("task_id"), "on": p["on"]}]})
+
+
+def _point_moved(s: GraphStore, org: str, p: dict) -> None:
+    """A measurement point moved to another position (since Nov 2026), its readings
+    with it (they hang off the point). task_changes: tasks by use that counted it
+    without naming it (their position's counter), pinned to it so they count the
+    same readings as before."""
+    for dst in s.out(org, p["id"], "ON"):
+        if dst["id"] != p["position_id"]:
+            s.delete_edge(org, "ON", p["id"], dst["id"])
+    s.put_edge(org, "ON", p["id"], p["position_id"])
     _task_changes(s, org, p)
 
 
@@ -2606,13 +2633,15 @@ PROJECTORS = {
     # A mode directly under a function, no functional failure between (or under none).
     "failure_mode.placed": _failure_mode_placed,
     "failure_mode.retired": _flag("retired"),
-    # A functional failure caused by one on a position inside its own (or no longer).
+    # A functional failure caused by another on the same tree (or no longer).
     "functional_failure.linked": _functional_failure_linked,
     "functional_failure.unlinked": _functional_failure_unlinked,
     # Moved to another position (with what goes with each).
     "function.moved": _function_moved,
     "failure_mode.moved": _failure_mode_moved,
     "task.moved": _task_moved,
+    "work_order.moved": _work_order_moved,
+    "point.moved": _point_moved,
     # A functional failure under another function (same position or another).
     "functional_failure.moved": _functional_failure_moved,
     # Taking the rest of the tree out of use (history kept), and bringing anything
@@ -4109,12 +4138,33 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                                "order": self._next_order(self._fn_direct_modes(fn["id"]))})
         return self._mode_view(self._get(mode_id, "FailureMode")) | was
 
-    # ---- a functional failure caused by lower ones -------------------------------------
-    # A higher functional failure results from functional failures on positions
-    # inside its position (any depth): its failure-mode questions are answered
-    # there. Links are analysis, not history: deleting or retiring the lower end,
-    # or a move that takes a cause out from under its effect, drops the link and
-    # says so; nothing is refused for having links.
+    # ---- a functional failure caused by others -----------------------------------------
+    # A functional failure results from other functional failures on the same tree:
+    # usually on positions inside its own (its failure-mode questions are answered
+    # there), but also beside it or on the same position. Only a failure causing
+    # itself, directly or round a loop, is refused. Links are analysis, not history:
+    # deleting or retiring the cause, or a move that takes one end to another tree,
+    # drops the link and says so; nothing is refused for having links.
+
+    def _tree_root_id(self, position_id: str) -> str:
+        """The top of a position's tree (itself when it has no parent)."""
+        up = self._ancestor_ids(position_id)
+        return up[-1] if up else position_id
+
+    def _links_off_tree(self, moving: set, target_root: str) -> list[tuple[str, str]]:
+        """The links of functional failures moving to a tree whose top is
+        ``target_root`` whose other end (not moving with them) is on another tree."""
+        out = []
+        for ff_id in sorted(moving):
+            for c in self.s.out(self.org, ff_id, "RESULTS_FROM"):
+                cp = self._ff_position_id(c["id"])
+                if c["id"] not in moving and (not cp or self._tree_root_id(cp) != target_root):
+                    out.append((ff_id, c["id"]))
+            for e in self.s.inn(self.org, ff_id, "RESULTS_FROM"):
+                ep = self._ff_position_id(e["id"])
+                if e["id"] not in moving and (not ep or self._tree_root_id(ep) != target_root):
+                    out.append((e["id"], ff_id))
+        return out
 
     def _ff_position_id(self, ff_id: str) -> str | None:
         """The position whose function fails as this functional failure."""
@@ -4137,9 +4187,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return len(pairs)
 
     def link_cause(self, ff_id: str, cause_id) -> dict:
-        """Say that functional failure ``ff_id`` results from ``cause_id``, a
-        functional failure on a position inside ff_id's position (any depth).
-        Linking what's already linked changes nothing."""
+        """Say that functional failure ``ff_id`` results from ``cause_id``, another
+        functional failure on the same tree: on a position inside ff_id's (the
+        usual case), beside it or on the same position. Refused: a failure causing
+        itself, and a link that would close a loop. Linking what's already linked
+        changes nothing."""
         if not cause_id:
             raise Invalid("Say which functional failure causes it (cause_id).")
         effect, _, here = self._live_ff(ff_id)
@@ -4149,17 +4201,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 raise Invalid(f"{pos['name']} has been retired: pick a position that's still in use.")
         if cause["id"] == effect["id"]:
             raise Invalid("A functional failure can't cause itself.")
-        if there["id"] == here["id"]:
-            raise Invalid(f"Both are on {here['name']}: link a functional failure on a position inside it, "
-                          "or add the cause here as a failure mode.")
-        if here["id"] not in self._ancestor_ids(there["id"]):
-            if there["id"] in self._ancestor_ids(here["id"]):
-                # The other way round: the higher one is the effect.
-                raise Invalid(f"{there['name']} is above {here['name']}, so the link goes the other way: "
-                              "functional_failure_id is the higher one (the effect), cause_id the lower one. "
-                              "Swap them.")
-            raise Invalid(f"Pick a functional failure on a position inside {here['name']}: "
-                          f"{there['name']} isn't inside it.")
+        if self._tree_root_id(there["id"]) != self._tree_root_id(here["id"]):
+            raise Invalid(f"{there['name']} is on another tree: pick a functional failure on the same tree as "
+                          f"{here['name']} (inside it, beside it or on it).")
         linked = {c["id"] for c in self.s.out(self.org, effect["id"], "RESULTS_FROM")}
         if cause["id"] in linked:
             return self.functional_failure(effect["id"]) | {"changed": False}
@@ -4168,18 +4212,18 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             at = stack.pop()
             if at == effect["id"]:
                 raise Invalid(f"That would go round in a circle: {shortened(cause['text'])[0]} already results "
-                              f"from {shortened(effect['text'])[0]}.")
+                              f"from {shortened(effect['text'])[0]}. Unlink that first, or swap them.")
             if at not in seen:
                 seen.add(at)
                 stack.extend(c["id"] for c in self.s.out(self.org, at, "RESULTS_FROM"))
         if len(linked) >= MAX_CAUSES:
-            raise Invalid(f"A functional failure can have at most {MAX_CAUSES} causes below it: unlink one first.")
+            raise Invalid(f"A functional failure can have at most {MAX_CAUSES} causes: unlink one first.")
         self._link_event("functional_failure.linked", effect["id"], cause["id"])
         return self.functional_failure(effect["id"]) | {"changed": True}
 
     def unlink_cause(self, ff_id: str, cause_id) -> dict:
         """Take a cause off a functional failure. Unlinking what isn't linked
-        changes nothing; a link whose cause is no longer inside can be unlinked."""
+        changes nothing; a link that no longer counts can be unlinked."""
         if not cause_id:
             raise Invalid("Say which cause to unlink (cause_id).")
         effect = self._get(ff_id, "FunctionalFailure")
@@ -4205,9 +4249,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 **_rcm_links(index, ff["id"])}
 
     def _links_leaving(self, position_id: str, new_parent: str | None) -> list[tuple[str, str]]:
-        """The links a re-parented position would take out from under their
-        effect: a cause on it or inside it, with its effect above it and not above
-        the new parent."""
+        """The links a re-parented position would take to another tree: one end on
+        it or inside it, the other outside it and not on the new parent's tree."""
         links = self.s.pairs(self.org, "RESULTS_FROM")
         if not links:
             return []
@@ -4222,9 +4265,23 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 stack.extend(kids.get(at, []))
         fn_pos = {fn: pos for pos, fn in self.s.pairs(self.org, "PERFORMS")}
         ff_pos = {ff: fn_pos.get(fn) for fn, ff in self.s.pairs(self.org, "FAILS_AS")}
-        above = {new_parent, *self._ancestor_ids(new_parent)} if new_parent else set()
-        return [(e, c) for e, c in links
-                if ff_pos.get(c) in inside and ff_pos.get(e) not in inside and ff_pos.get(e) not in above]
+        new_root = self._tree_root_id(new_parent) if new_parent else position_id
+        roots: dict[str, str] = {}
+
+        def root(pid):
+            if pid not in roots:
+                roots[pid] = self._tree_root_id(pid)
+            return roots[pid]
+
+        out = []
+        for e, c in links:
+            ein, cin = ff_pos.get(e) in inside, ff_pos.get(c) in inside
+            if ein == cin:
+                continue
+            other = ff_pos.get(c) if ein else ff_pos.get(e)
+            if not other or root(other) != new_root:
+                out.append((e, c))
+        return out
 
     # ---- a failure mode's tasks ------------------------------------------------------
     # A failure mode may have several live tasks (a combination: an inspection that
@@ -4666,14 +4723,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
     def _check_task_move(self, task: dict, source: dict, target: dict, modes_moving: set) -> None:
         """Refuse moving a position's task when that would split its history or leave
-        it pointing back at the old position."""
+        it pointing back at the old position. Open work orders don't stop it: they
+        move with it (see _move_open_work_orders)."""
         name, here, there = task["name"], source["name"], target["name"]
         for wo in self.s.inn(self.org, task["id"], "FOR"):
-            if wo["label"] != "WorkOrder" or wo.get("status") == "cancelled":
+            if wo["label"] != "WorkOrder" or wo.get("status") == "cancelled" or wo.get("status") in OPEN_STATUSES:
                 continue
-            if wo.get("status") in OPEN_STATUSES:
-                raise Invalid(f"{name} has an open work order (#{wo.get('number')}): close or cancel it first, "
-                              "then move it.")
             raise Invalid(f"Work has been done on {name} at {here} (work order #{wo.get('number')}): moving it "
                           f"would split its history. Retire it and add a new task on {there} instead.")
         for fm in self.s.out(self.org, task["id"], "MITIGATES"):
@@ -4685,6 +4740,39 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 raise Invalid(f"{name} prevents the failure mode {fm['text']}, which stays on {here}: move the "
                               "failure mode instead (its tasks go with it), or unlink the task from it first.")
         # What a task by use counts is settled by _measurement_moves, not refused here.
+
+    def _move_open_work_orders(self, tasks: list[dict], target: dict) -> list[dict]:
+        """Move the open work orders of tasks moving to ``target`` with them: each
+        one raised for the task alone on the task's old position (a work package's
+        visit stays where it is: its line still names the task). One
+        work_order.moved event each, so the work order's own record says it moved.
+        Emit before the task's move event (each task's old position is read here)."""
+        moved = []
+        for task in tasks:
+            source = _subject(self.s, self.org, task)
+            if source is None:
+                continue
+            for wo in self.s.inn(self.org, task["id"], "FOR"):
+                if wo["label"] != "WorkOrder" or wo.get("status") not in OPEN_STATUSES:
+                    continue
+                if self.s.out(self.org, wo["id"], "RAISED_FROM") or \
+                        (_subject(self.s, self.org, wo) or {}).get("id") != source["id"]:
+                    continue
+                self._emit("work_order.moved", {"id": wo["id"], "position_id": target["id"],
+                                                "from_position_id": source["id"], "task_id": task["id"],
+                                                "on": self.today()})
+                moved.append({"id": wo["id"], "number": wo.get("number"), "title": wo.get("title", "")})
+        return moved
+
+    @staticmethod
+    def _with_work_orders(out: dict, moved: list[dict], target: dict) -> dict:
+        """A move's answer with the open work orders that went with it (named in the note)."""
+        if not moved:
+            return out
+        nums = ", ".join(f"#{w['number']}" for w in moved[:5]) + (" …" if len(moved) > 5 else "")
+        note = (f"{'Open work orders' if len(moved) != 1 else 'Open work order'} {nums} moved with "
+                f"{'them' if out.get('tasks_moved', 1) != 1 else 'it'} to {target['name']}.")
+        return {**out, "work_orders_moved": moved, "note": f"{out['note']} {note}" if out.get("note") else note}
 
     # ---- what a task by use counts: kept through a move, or changed ------------------
     # A measurement point belongs to the position (or item) it describes: the pool's
@@ -5050,17 +5138,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             raise Invalid(f"That function has more than {MAX_COPY_NODES} failure modes and tasks to move at "
                           "once: move some of its failure modes first.")
         counts, undo_counts = self._measurement_moves(list(tasks.values()), target, measurement)
-        # Links that would no longer run from a position down into one inside it go.
-        above = set(self._ancestor_ids(target["id"]))
-        leaving = []
-        for ff in self._failures_of(function_id):
-            for c in self.s.out(self.org, ff["id"], "RESULTS_FROM"):
-                cp = self._ff_position_id(c["id"])
-                if not cp or target["id"] not in self._ancestor_ids(cp):
-                    leaving.append((ff["id"], c["id"]))
-            for e in self.s.inn(self.org, ff["id"], "RESULTS_FROM"):
-                if self._ff_position_id(e["id"]) not in above:
-                    leaving.append((e["id"], ff["id"]))
+        # Links whose other end would be on another tree go.
+        leaving = self._links_off_tree({ff["id"] for ff in self._failures_of(function_id)},
+                                       self._tree_root_id(target["id"]))
         for effect_id, cause_id in leaving:
             self._link_event("functional_failure.unlinked", effect_id, cause_id)
         unlinked = self._links_after_move(modes, set(tasks), target)
@@ -5072,6 +5152,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         for stale in self.s.out(self.org, function_id, "FAILS_DIRECTLY_AS"):
             if stale["id"] not in moving:
                 self._emit("failure_mode.placed", {"id": stale["id"], "function_id": None})
+        wos = self._move_open_work_orders(list(tasks.values()), target)
         self._emit("function.moved", {
             "id": function_id, "position_id": target["id"], "from_position_id": source["id"],
             "order": self._next_order(self.s.out(self.org, target["id"], "PERFORMS")),
@@ -5080,12 +5161,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         notes = [_links_note(len(leaving))] if leaving else []
         if unlinked:
             notes.append(_tasks_unlinked_note(unlinked))
-        return {"moved": function_id, "position_id": target["id"], "from_position_id": source["id"],
-                "function": self._function_view(self._get(function_id, "Function")),
-                "failure_modes_moved": len(moving), "tasks_moved": len(tasks), "links_removed": len(leaving),
-                "tasks_unlinked": sorted({t["id"] for t, _ in unlinked}),
-                **self._measurement_result(counts, undo_counts),
-                **({"note": " ".join(notes)} if notes else {})}
+        return self._with_work_orders({
+            "moved": function_id, "position_id": target["id"], "from_position_id": source["id"],
+            "function": self._function_view(self._get(function_id, "Function")),
+            "failure_modes_moved": len(moving), "tasks_moved": len(tasks), "links_removed": len(leaving),
+            "tasks_unlinked": sorted({t["id"] for t, _ in unlinked}),
+            **self._measurement_result(counts, undo_counts),
+            **({"note": " ".join(notes)} if notes else {})}, wos, target)
 
     def move_failure_mode(self, mode_id: str, position_id, functional_failure_id=None, function_id=None,
                           measurement=None) -> dict:
@@ -5117,6 +5199,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         was_fn = self._direct_under(mode_id)
         for task, _ in unlinked:
             self._emit("task.unlinked", {"id": task["id"], "failure_mode_id": mode_id, "on": self.today()})
+        wos = self._move_open_work_orders(tasks, target)
         self._emit("failure_mode.moved", {
             "id": mode_id, "position_id": target["id"], "from_position_id": source["id"],
             "functional_failure_id": ff and ff["id"], "task_ids": sorted(t["id"] for t in tasks), "on": self.today(),
@@ -5129,17 +5212,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                                "order": self._next_order(self._fn_direct_modes(fn["id"]))})
         elif was_fn:
             self._emit("failure_mode.placed", {"id": mode_id, "function_id": None})
-        return {**self.rcm_mode(mode_id), "position_id": target["id"], "from_position_id": source["id"],
-                # The functional failure or function it was under (None: none), so a batch can undo the move.
-                "from_functional_failure_id": was[0] if was else None, "from_function_id": was_fn,
-                "tasks_moved": len(tasks), "tasks_unlinked": [t["id"] for t, _ in unlinked],
-                **self._measurement_result(counts, undo_counts),
-                **({"note": _tasks_unlinked_note(unlinked)} if unlinked else {})}
+        return self._with_work_orders({
+            **self.rcm_mode(mode_id), "position_id": target["id"], "from_position_id": source["id"],
+            # The functional failure or function it was under (None: none), so a batch can undo the move.
+            "from_functional_failure_id": was[0] if was else None, "from_function_id": was_fn,
+            "tasks_moved": len(tasks), "tasks_unlinked": [t["id"] for t, _ in unlinked],
+            **self._measurement_result(counts, undo_counts),
+            **({"note": _tasks_unlinked_note(unlinked)} if unlinked else {})}, wos, target)
 
     def move_task(self, task_id: str, position_id, measurement=None) -> dict:
-        """Move a position's task to another position. Its link to a failure mode is
-        kept only when that mode is on the new position; otherwise the move is
-        refused (move the mode, which takes its tasks, or unlink the task first).
+        """Move a position's task to another position, with its open work orders.
+        Its link to a failure mode is kept only when that mode is on the new
+        position (or one inside it); otherwise the move is refused (move the mode,
+        which takes its tasks, or unlink the task first).
         By use, it keeps counting what it counted while that fits the new position;
         otherwise measurement says what it counts there (see _measurement_moves)."""
         task = self._get(task_id, "Task")
@@ -5152,11 +5237,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         target = self._move_target(position_id, source["id"])
         self._check_task_move(task, source, target, set())
         counts, undo_counts = self._measurement_moves([task], target, measurement)
+        wos = self._move_open_work_orders([task], target)
         self._emit("task.moved", {"id": task_id, "position_id": target["id"], "from_position_id": source["id"],
                                   "on": self.today()} | ({"task_changes": counts} if counts else {}))
         # Where it came from, so a batch can undo the move.
-        return {**self._task_view(self._get(task_id, "Task")), "from_position_id": source["id"],
-                **self._measurement_result(counts, undo_counts)}
+        return self._with_work_orders({**self._task_view(self._get(task_id, "Task")), "from_position_id": source["id"],
+                                       **self._measurement_result(counts, undo_counts)}, wos, target)
 
     def move_functional_failure(self, ff_id: str, function_id, standard_id=None, measurement=None) -> dict:
         """Move a functional failure under another function, on the same position
@@ -5183,6 +5269,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         tasks: dict[str, dict] = {}
         leaving: list[tuple[str, str]] = []
         unlinked: list[tuple[dict, dict]] = []
+        wos: list[dict] = []
         counts: dict = {}
         undo_counts: dict = {}
         if target["id"] == source["id"]:
@@ -5197,19 +5284,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 raise Invalid(f"That functional failure has more than {MAX_COPY_NODES} failure modes and tasks to "
                               "move at once: move some of its failure modes first.")
             counts, undo_counts = self._measurement_moves(list(tasks.values()), target, measurement)
-            above = set(self._ancestor_ids(target["id"]))
-            for c in self.s.out(self.org, ff_id, "RESULTS_FROM"):
-                cp = self._ff_position_id(c["id"])
-                if not cp or target["id"] not in self._ancestor_ids(cp):
-                    leaving.append((ff_id, c["id"]))
-            for e in self.s.inn(self.org, ff_id, "RESULTS_FROM"):
-                if self._ff_position_id(e["id"]) not in above:
-                    leaving.append((e["id"], ff_id))
+            leaving = self._links_off_tree({ff_id}, self._tree_root_id(target["id"]))
             for effect_id, cause_id in leaving:
                 self._link_event("functional_failure.unlinked", effect_id, cause_id)
             unlinked = self._links_after_move(modes, set(tasks), target)
             for task, fm in unlinked:
                 self._emit("task.unlinked", {"id": task["id"], "failure_mode_id": fm["id"], "on": self.today()})
+            wos = self._move_open_work_orders(list(tasks.values()), target)
             named = sorted(moving)
         was = [st["id"] for st in self.s.out(self.org, ff_id, "BREACHES") if not st.get("removed")]
         self._emit("functional_failure.moved", {
@@ -5221,15 +5302,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         notes = [_links_note(len(leaving))] if leaving else []
         if unlinked:
             notes.append(_tasks_unlinked_note(unlinked))
-        return {"moved": ff_id, "function_id": fn_to["id"], "from_function_id": fn_from["id"],
-                "position_id": target["id"], "from_position_id": source["id"],
-                # The standard it breached before (None: the whole function), so a batch can undo the move.
-                "from_standard_id": was[0] if was else None,
-                "failure": self._ff_view(self._get(ff_id, "FunctionalFailure")),
-                "failure_modes_moved": len(moving), "tasks_moved": len(tasks), "links_removed": len(leaving),
-                "tasks_unlinked": sorted({t["id"] for t, _ in unlinked}),
-                **self._measurement_result(counts, undo_counts),
-                **({"note": " ".join(notes)} if notes else {})}
+        return self._with_work_orders({
+            "moved": ff_id, "function_id": fn_to["id"], "from_function_id": fn_from["id"],
+            "position_id": target["id"], "from_position_id": source["id"],
+            # The standard it breached before (None: the whole function), so a batch can undo the move.
+            "from_standard_id": was[0] if was else None,
+            "failure": self._ff_view(self._get(ff_id, "FunctionalFailure")),
+            "failure_modes_moved": len(moving), "tasks_moved": len(tasks), "links_removed": len(leaving),
+            "tasks_unlinked": sorted({t["id"] for t, _ in unlinked}),
+            **self._measurement_result(counts, undo_counts),
+            **({"note": " ".join(notes)} if notes else {})}, wos, target)
 
     def reorder_rcm(self, parent_id, ids) -> dict:
         """Siblings in the RCM tree in the order given: a position's functions, a
@@ -6700,6 +6782,59 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if changes:
             self._emit("point.updated", {"id": point_id, "changes": changes})
         return self.point(point_id)
+
+    def move_point(self, point_id: str, position_id) -> dict:
+        """Move a position's measurement point to another position (it was put on the
+        wrong one, or the meter was moved): its readings go with it, and so does an
+        open alarm work order it raised. A task by use that counted it without
+        naming it (its position's counter) is pinned to it, so it counts the same
+        readings; one that now counts a point away from its own branch is named in
+        the note (it keeps counting it until changed)."""
+        point = self._live_point(point_id)
+        if point.get("derived"):
+            raise Invalid(f"{point['name']} is worked out from a signal channel's snapshots: it stays with its "
+                          "channel.")
+        source = _subject(self.s, self.org, point)
+        if source is None or source["label"] != "Position":
+            raise Invalid("Only a position's measurement point moves to another position. An item's point travels "
+                          "with the item.")
+        target = self._move_target(position_id, source["id"])
+        pins: dict[str, dict] = {}
+        if point.get("kind") == "counter":
+            for t in self.s.inn(self.org, source["id"], "ON"):
+                if t["label"] != "Task" or t.get("retired") or t.get("point_id") or t.get("meter_id"):
+                    continue
+                if (_task_point(self.s, self.org, t) or {}).get("id") == point["id"]:
+                    pins[t["id"]] = {"point_id": point["id"]}
+        counting = [t for t in self.s.nodes(self.org, "Task") if not t.get("retired")
+                    and (t["id"] in pins or (t.get("point_id") or t.get("meter_id")) == point["id"])]
+        away = []
+        for t in counting:
+            on = _subject(self.s, self.org, t)
+            if on is not None and on["label"] == "Position" and target["id"] not in self._measurement_zone(on["id"]):
+                away.append(t["name"])
+        moved = []
+        for wo in self.s.inn(self.org, point["id"], "ALARM_FOR"):
+            if wo["label"] == "WorkOrder" and wo.get("status") in OPEN_STATUSES and \
+                    (_subject(self.s, self.org, wo) or {}).get("id") == source["id"]:
+                self._emit("work_order.moved", {"id": wo["id"], "position_id": target["id"],
+                                                "from_position_id": source["id"], "point_id": point["id"],
+                                                "on": self.today()})
+                moved.append({"id": wo["id"], "number": wo.get("number"), "title": wo.get("title", "")})
+        self._emit("point.moved", {"id": point["id"], "position_id": target["id"], "from_position_id": source["id"],
+                                   "on": self.today()} | ({"task_changes": pins} if pins else {}))
+        notes = []
+        if away:
+            names = ", ".join(sorted(away)[:3]) + (" …" if len(away) > 3 else "")
+            notes.append(f"{names} {'count' if len(away) != 1 else 'counts'} it from a position that isn't above "
+                         f"or below {target['name']}: {'they keep' if len(away) != 1 else 'it keeps'} counting it "
+                         "until you pick another measurement.")
+        if moved:
+            notes.append(f"Its open alarm work order{'s' if len(moved) != 1 else ''} "
+                         f"{', '.join('#' + str(w['number']) for w in moved)} moved with it.")
+        # Where it came from, so a batch can undo the move.
+        return {**self.point(point["id"]), "from_position_id": source["id"], "tasks_pinned": sorted(pins),
+                **({"work_orders_moved": moved} if moved else {}), **({"note": " ".join(notes)} if notes else {})}
 
     def retire_point(self, point_id: str, reason="") -> dict:
         """Stop measuring at a point (its readings stay in the history, its tag is

@@ -158,6 +158,8 @@ MOVES = {
         "ids": r.get("unlinked_functional_failure_ids") or []}},
     "tasks.move": lambda a, r: {"do": "tasks.move", "args": _without_none(
         task_id=a.get("task_id"), position_id=r.get("from_position_id"), measurement=r.get("undo_measurement"))},
+    "measurements.move_point": lambda a, r: {"do": "measurements.move_point", "args": {
+        "point_id": a.get("point_id"), "position_id": r.get("from_position_id")}},
     # A work package's members and pausing: each put back by its reverse.
     "packages.add_task": lambda a, r: {"do": "packages.remove_task", "args": {
         "package_id": a.get("package_id"), "task_id": a.get("task_id")}},

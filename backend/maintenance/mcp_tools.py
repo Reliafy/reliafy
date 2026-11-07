@@ -371,7 +371,7 @@ FAILURE_MODES: Table = {
     "undo_delete": ("deleted_id", "", """Undo the latest cascade delete of that function, standard, functional
         failure or mode: everything it took comes back (what changed since is listed in skipped)."""),
     "link_cause": ("functional_failure_id cause_id", "", "functional_failure_id (the effect) results from "
-                   "cause_id, a functional failure on a position inside its own."),
+                   "cause_id, another functional failure on the same tree."),
     "unlink_cause": ("functional_failure_id cause_id", "", "Take that cause off it."),
     "move": ("failure_mode_id position_id", "functional_failure_id function_id measurement", "To another position, "
              "with its decision and tasks; functional_failure_id (or function_id): one there (or none)."),
@@ -524,6 +524,7 @@ MEASUREMENTS: Table = {
         a point, set or clear its alarm limits, or change an automated point's tag."""),
     "retire_point": ("point_id", "reason", """Stop measuring there (readings kept, its tag freed). Not while a
         task goes by it or an alarm work order is open."""),
+    "move_point": ("point_id position_id", "", "To another position, with its readings."),
     "restore_point": ("point_id", "", "Bring a retired point back."),
     "record": ("point_id value", "at on note precision", """A manual reading (the hour meter says 12,340).
         Counters only go up. at is when it was read, to the minute or finer (or on, a day); a time of day orders
@@ -1899,6 +1900,8 @@ def register() -> None:
             if tag is not None:
                 kwargs["tag"] = tag
             return run(m.update_point, point_id, **kwargs)
+        if action == "move_point":
+            return run(m.move_point, point_id, position_id)
         if action == "retire_point":
             return run(m.retire_point, point_id, reason or "")
         if action == "restore_point":

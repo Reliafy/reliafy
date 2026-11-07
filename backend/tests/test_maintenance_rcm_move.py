@@ -1,7 +1,8 @@
 """Moving RCM between positions: a function (with its functional failures, their
 failure modes and those modes' tasks), one failure mode, or one task. The events
 re-point PERFORMS, CAN_FAIL_AS and ON, replay to the same graph, and a move that
-would split history (failures, findings, work done) is refused, saying what to do."""
+would split history (failures, findings, work done) is refused, saying what to do.
+Open work orders aren't history yet: they move with their task (work_order.moved)."""
 
 import pytest
 
@@ -296,30 +297,58 @@ def test_the_functional_failure_must_be_on_the_target(m):
         m.move_failure_mode(loose["id"], other["id"], ff["id"])
 
 
-def test_a_task_with_work_stays(m):
+def _wo_on(m, wo_id):
+    return m.s.out(ORG, wo_id, "ON")[0]["id"]
+
+
+def test_a_task_moves_with_its_open_work_orders_but_not_with_work_done(m):
     pump = m.create_position("Pump A")
     other = m.create_position("Pump B")
     task = m.create_task(pump["id"], "Grease", 3, "months")
     wo = m.open_work_order(pump["id"], "Grease it", "preventive", task_id=task["id"])
-    with pytest.raises(Invalid, match=r"Grease has an open work order \(#\d+\): close or cancel it first"):
-        m.move_task(task["id"], other["id"])
+    m.set_work_status(wo["id"], "in_progress")
+    out = m.move_task(task["id"], other["id"])
+    assert out["from_position_id"] == pump["id"]
+    assert [w["id"] for w in out["work_orders_moved"]] == [wo["id"]]
+    assert f"#{wo['number']} moved with it to Pump B" in out["note"]
+    assert _wo_on(m, wo["id"]) == other["id"]
+    [event] = _events(m, "work_order.moved")
+    assert event["payload"] == {"id": wo["id"], "position_id": other["id"], "from_position_id": pump["id"],
+                                "task_id": task["id"], "on": m.today()}
+    # The work order's own record keeps where it was.
+    assert m.s.node(ORG, wo["id"])["moves"] == [{"from_position_id": pump["id"], "position_id": other["id"],
+                                                 "task_id": task["id"], "on": m.today()}]
+    assert m.work_order(wo["id"])["status"] == "in_progress"
+    _rebuilds_the_same(m)
+    # And back (a batch's undo): it follows again.
+    m.move_task(task["id"], pump["id"])
+    assert _wo_on(m, wo["id"]) == pump["id"]
     m.cancel_work_order(wo["id"], "Not needed")
-    m.move_task(task["id"], other["id"])  # a cancelled work order is no history
+    m.move_task(task["id"], other["id"])  # a cancelled work order is no history, and doesn't move
+    assert _wo_on(m, wo["id"]) == pump["id"] and len(_events(m, "work_order.moved")) == 2
     done = m.open_work_order(other["id"], "Grease it", "preventive", task_id=task["id"])
     m.close_work_order(done["id"], [])
     with pytest.raises(Invalid, match="Work has been done on Grease at Pump B .*Retire it and add a new task on "
                                       "Pump A instead"):
         m.move_task(task["id"], pump["id"])
+    _rebuilds_the_same(m)
 
 
-def test_a_mode_whose_task_has_work_stays(m):
+def test_a_mode_function_or_failure_takes_its_tasks_open_work_orders(m):
     pump, fn, ff, mode, loose, task = _pump(m)
     other = m.create_position("Pump B")
-    m.open_work_order(pump["id"], "Replace bearings", "preventive", task_id=task["id"])
-    with pytest.raises(Invalid, match="open work order"):
-        m.move_failure_mode(mode["id"], other["id"])
-    with pytest.raises(Invalid, match="open work order"):
-        m.move_function(fn["id"], other["id"])
+    wo = m.open_work_order(pump["id"], "Replace bearings", "preventive", task_id=task["id"])
+    out = m.move_failure_mode(mode["id"], other["id"])
+    assert [w["id"] for w in out["work_orders_moved"]] == [wo["id"]] and _wo_on(m, wo["id"]) == other["id"]
+    m.move_failure_mode(mode["id"], pump["id"], ff["id"])
+    out = m.move_function(fn["id"], other["id"])
+    assert out["tasks_moved"] == 1 and [w["id"] for w in out["work_orders_moved"]] == [wo["id"]]
+    assert _wo_on(m, wo["id"]) == other["id"]
+    fn_a = m.add_function(pump["id"], "Pump 40 L/s")
+    out = m.move_functional_failure(ff["id"], fn_a["id"])
+    assert [w["id"] for w in out["work_orders_moved"]] == [wo["id"]] and _wo_on(m, wo["id"]) == pump["id"]
+    assert len(_events(m, "work_order.moved")) == 4
+    _rebuilds_the_same(m)
 
 
 # What a task by use counts through a move: test_maintenance_task_measurement.py.
@@ -344,3 +373,15 @@ def test_only_a_positions_task_moves(m):
     on_item = m.create_task(None, "Certify", 12, "months", item_id=item["id"])
     with pytest.raises(Invalid, match="Only a position's task moves"):
         m.move_task(on_item["id"], other["id"])
+
+
+def test_a_work_package_visit_stays_when_its_task_moves(m):
+    pump = m.create_position("Pump A")
+    other = m.create_position("Pump B")
+    task = m.create_task(pump["id"], "Look and listen", 1, "weeks")
+    m.create_package("Pump weekly", position_id=pump["id"], every=1, unit="weeks", anchor=m.today(),
+                     tasks=[task["id"]])
+    [wo] = [w for w in m.generate(14)["work_orders"] if w.get("package")]
+    out = m.move_task(task["id"], other["id"])
+    assert "work_orders_moved" not in out and _wo_on(m, wo["id"]) == pump["id"]
+    assert _events(m, "work_order.moved") == []

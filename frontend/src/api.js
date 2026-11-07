@@ -2985,6 +2985,11 @@ export async function listMeasurementPoints({ positionIds = [], itemIds = [] } =
 export function updateMeasurementPoint(pointId, body) {
   return patchJson(`/api/maintenance/points/${pointId}`, body);
 }
+// A position's measuring point to another position, with its readings (and any
+// open alarm work order). Returns the point, with from_position_id and a note.
+export function moveMeasurementPoint(pointId, positionId) {
+  return postJson(`/api/maintenance/points/${encodeURIComponent(pointId)}/move`, { position_id: positionId });
+}
 // ``at`` (optional) is when it was read, e.g. "2026-10-19T10:14" (#264).
 // One measurement point (its own page): latest reading, limits, status, rate or
 // trend, and its recent readings with the struck-out ones marked.

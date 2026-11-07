@@ -278,7 +278,7 @@ export function rowActions(r, { canRename = true, moves = true, viewOnly = null 
       ...open,
       { id: "add-mode", label: "Add failure mode" },
       { id: "link-cause", label: "Link to a cause…" },
-      ...(r.ref.has_above ? [{ id: "link-effect", label: "Link to an effect…" }] : []),
+      { id: "link-effect", label: "Link to an effect…" },
       ...rename,
       { id: "delete", label: "Delete functional failure…", danger: true },
     ];
@@ -510,34 +510,56 @@ export const standardKeys = (display) => new Set([...display.rows.values()].filt
 
 // ---- linking functional failures ----------------------------------------------------
 // The picker's lists, from the grafted display (`whole`, not a pinned branch of
-// it): for a functional failure's causes, the functional failures on the
-// positions inside its own (in tree order, any depth); for its effects, those
-// on the positions above it (nearest first). Grouped by position, each with
-// its functions (for "New functional failure on a position…"), and each
-// failure with a quiet summary and whether it's linked already.
+// it). A cause or an effect may be anywhere on the failure's tree, so every
+// position of the tree is listed, the likely ones first: the failure's own
+// position, then for its causes the positions inside it (in tree order, any
+// depth) or for its effects those above it (nearest first), then the rest of
+// the tree in tree order, branch by branch. Each group says which of those it
+// is (`section`: here, inside, above or rest), with its functions (for "New
+// functional failure…"), and each failure with a quiet summary and whether
+// it's linked already. The failure itself is never listed (it can't cause
+// itself); a loop is refused by the server, which says so.
 export function linkChoices(whole, ffKey, direction) {
   const rows = whole.rows;
   const ff = rows.get(ffKey);
   if (!ff || ff.type !== "fail") return [];
   const here = ff.ref.position_id;
+  if (!rows.get(here)) return [];
   const linked = new Set(((direction === "cause" ? ff.ref.causes : ff.ref.effects) || []).map((x) => x.id));
+  const isPos = (k) => rows.get(k)?.type === "pos";
+  const up = [];
+  const seen = new Set([here]);
+  for (let at = rows.get(here).ref.parent_id; at && isPos(at) && !seen.has(at); at = rows.get(at).ref.parent_id) {
+    seen.add(at);
+    up.push(at);
+  }
+  const top = up.length ? up[up.length - 1] : here;
   const order = [];
+  const placed = new Set();
+  const add = (key, depth, section) => {
+    if (placed.has(key)) return;
+    placed.add(key);
+    order.push({ p: rows.get(key), depth, section });
+  };
+  add(here, 0, "here");
   if (direction === "cause") {
     const walk = (key, depth) => {
-      const p = rows.get(key);
-      if (!p || p.type !== "pos") return;
-      if (key !== here) order.push({ p, depth });
-      for (const k of p.kids) if (rows.get(k)?.type === "pos") walk(k, depth + 1);
+      for (const k of rows.get(key).kids) {
+        if (!isPos(k)) continue;
+        add(k, depth, "inside");
+        walk(k, depth + 1);
+      }
     };
-    walk(here, -1);
+    walk(here, 1);
   } else {
-    const seen = new Set();
-    for (let at = rows.get(here)?.ref.parent_id; at && rows.has(at) && !seen.has(at); at = rows.get(at).ref.parent_id) {
-      seen.add(at);
-      order.push({ p: rows.get(at), depth: 0 });
-    }
+    for (const at of up) add(at, 0, "above");
   }
-  return order.map(({ p, depth }) => {
+  const rest = (key, depth, trail) => {
+    add(key, depth, "rest");
+    for (const k of rows.get(key).kids) if (isPos(k) && !trail.has(k)) rest(k, depth + 1, new Set([...trail, k]));
+  };
+  rest(top, 0, new Set([top]));
+  return order.map(({ p, depth, section }) => {
     const functions = [];
     const items = [];
     for (const fk of p.kids) {
@@ -545,14 +567,25 @@ export function linkChoices(whole, ffKey, direction) {
       if (fn?.type !== "fn") continue;
       functions.push({ id: fn.key, text: fn.ref.text || "" });
       for (const x of failureRows(whole, fn)) {
+        if (x.key === ffKey) continue;
         items.push({
           id: x.key, text: x.ref.text || "", function: fn.ref.text || "", linked: linked.has(x.key),
           summary: failureSummary(x),
         });
       }
     }
-    return { id: p.key, name: p.ref.name || "(no name)", depth: Math.max(0, depth), functions, items };
+    return { id: p.key, name: p.ref.name || "(no name)", depth: Math.max(0, depth), section, functions, items };
   });
+}
+
+// The heading over a group of the picker where its section starts: the
+// failure's own position, those inside (or above) it, then the rest of the tree.
+export function linkSectionTitle(g, before, where) {
+  if (before && before.section === g.section) return null;
+  if (g.section === "here") return "This position";
+  if (g.section === "inside") return `Inside ${where}`;
+  if (g.section === "above") return `Above ${where}`;
+  return "Elsewhere on the tree";
 }
 
 // "3 failure modes · all decided", "explained below", "no failure modes yet".

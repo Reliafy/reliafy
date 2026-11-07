@@ -24,7 +24,7 @@
 //   position (the task moves there).
 //
 // The rules the tree knows (what can go inside what, "it's there already")
-// are checked here at once. The rest (open work orders, recorded failures,
+// are checked here at once. The rest (work done on a task, recorded failures,
 // a same-named mode on the other position, a task that can't reach) only the
 // server knows: the page asks it with a dry run while the pointer rests on a
 // row, and the server checks every drop again.

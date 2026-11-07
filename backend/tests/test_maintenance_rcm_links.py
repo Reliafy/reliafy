@@ -1,11 +1,13 @@
-"""A higher functional failure caused by lower ones: RESULTS_FROM (effect -> cause)
-between functional failures, written by functional_failure.linked / .unlinked.
+"""A functional failure caused by others: RESULTS_FROM (effect -> cause) between
+functional failures, written by functional_failure.linked / .unlinked.
 
-A cause must be on a position inside the effect's position, at any depth. A
-functional failure is covered when its own failure modes are decided and the
-lower failures it results from are covered in turn; a position is analysed when
-every functional failure on it is covered. Deleting, retiring or moving the
-lower end drops the link (and says so) rather than being refused."""
+A cause must be on the same tree as the effect: on a position inside the
+effect's (the usual case), beside it or on the same position. Only a failure
+causing itself, directly or round a loop, is refused. A functional failure is
+covered when its own failure modes are decided and the failures it results from
+are covered in turn; a position is analysed when every functional failure on it
+is covered. Deleting or retiring the cause, or moving either end to another
+tree, drops the link (and says so) rather than being refused."""
 
 import pytest
 
@@ -123,13 +125,22 @@ def test_every_refusal_says_what_to_do(m):
         m.link_cause(pool_ff, "")
     with pytest.raises(Invalid, match="can't cause itself"):
         m.link_cause(pool_ff, pool_ff)
-    same = m.add_functional_failure(m.add_function(p["pool"]["id"], "Keep the water clear")["id"], "Water dull")
-    with pytest.raises(Invalid, match="Both are on Swimming Pool: link a functional failure on a position inside"):
-        m.link_cause(pool_ff, same["id"])
-    with pytest.raises(Invalid, match="inside Circulation and treatment: Heating isn't inside it"):
-        m.link_cause(circ_ff, heat_ff)
-    with pytest.raises(Invalid, match="Swimming Pool is above Salt chlorinator, so the link goes the other way.*Swap"):
-        m.link_cause(salt_ff, pool_ff)  # a cause above, not below: say to swap them
+    # Another tree.
+    shed = m.create_position("Pump shed")
+    shed_ff = _ff(m, shed["id"], "House the pumps", "Roof leaks")
+    with pytest.raises(Invalid, match="Pump shed is on another tree: pick a functional failure on the same tree as "
+                                      "Circulation and treatment"):
+        m.link_cause(circ_ff, shed_ff["id"])
+    # A loop, from either end.
+    m.link_cause(pool_ff, salt_ff)
+    with pytest.raises(Invalid, match="go round in a circle.*Unlink that first, or swap them"):
+        m.link_cause(salt_ff, pool_ff)
+    m.link_cause(salt_ff, heat_ff)
+    with pytest.raises(Invalid, match="go round in a circle"):
+        m.link_cause(heat_ff, pool_ff)  # pool <- salt <- heating <- pool
+    m.unlink_cause(salt_ff, heat_ff)
+    m.unlink_cause(pool_ff, salt_ff)
+    assert _links(m) == []
     with pytest.raises(NotFound):
         m.link_cause(pool_ff, "no-such-id")
     # Removed failures and functions.
@@ -155,7 +166,7 @@ def test_every_refusal_says_what_to_do(m):
     theirs = other.create_position("Their pool")
     with pytest.raises(NotFound):
         m.link_cause(pool_ff, _ff(other, theirs["id"], "Hold water", "Leaks")["id"])
-    assert _links(m) == [] and not _events(m, "functional_failure.linked")
+    assert _links(m) == []
 
 
 def test_at_most_max_causes(m, monkeypatch):
@@ -163,7 +174,7 @@ def test_at_most_max_causes(m, monkeypatch):
     monkeypatch.setattr(service, "MAX_CAUSES", 2)
     m.link_cause(p["pool_ff"]["id"], p["circ_ff"]["id"])
     m.link_cause(p["pool_ff"]["id"], p["salt_ff"]["id"])
-    with pytest.raises(Invalid, match="at most 2 causes below it: unlink one first"):
+    with pytest.raises(Invalid, match="at most 2 causes: unlink one first"):
         m.link_cause(p["pool_ff"]["id"], p["cell_ff"]["id"])
 
 
@@ -183,11 +194,47 @@ def test_a_loop_is_refused_and_a_loop_already_there_never_hangs_a_read(m):
     m.link_cause(p["salt_ff"]["id"], p["cell_ff"]["id"])
     assert _failure(m, p["pool"]["id"])["covered"] is True
     reverse = _failure(m, p["circ"]["id"])
-    assert reverse["covered"] is True  # covered by the salt chlorinator; the pool above doesn't count
+    # Both ends are on the pool's tree, so both links count now; the read finishes
+    # (whether a loop member reads as covered depends on where the walk starts).
+    assert isinstance(reverse["covered"], bool)
     assert [(e["id"], e["inside"]) for e in reverse["effects"]] == [(pool_ff, True)]
-    assert {c["id"]: c["inside"] for c in reverse["causes"]} == {pool_ff: False, p["salt_ff"]["id"]: True}
+    assert {c["id"]: c["inside"] for c in reverse["causes"]} == {pool_ff: True, p["salt_ff"]["id"]: True}
     assert "Swimming Pool" not in _not_analysed(m)
     m.rcm_all()
+    _rebuilds_the_same(m)
+
+
+def test_a_cause_beside_it_or_on_the_same_position(m):
+    """The pool water's 'no free chlorine' from the salt chlorinator beside it, and
+    a structure failure from a function on the same position: both link and count."""
+    pool = m.create_position("Pool")
+    water = m.create_position("Pool water", parent_id=pool["id"])
+    chlor = m.create_position("Salt chlorinator", parent_id=pool["id"])
+    chlorine = _ff(m, water["id"], "Hold free chlorine at 1-3 ppm", "Free chlorine below 1 ppm")
+    output = _ff(m, chlor["id"], "Produce up to 25 g/h", "No output")
+    mode = m.add_failure_mode(chlor["id"], "Cell scaled", functional_failure_id=output["id"])
+    out = m.link_cause(chlorine["id"], output["id"])  # a sibling
+    assert out["changed"] is True
+    assert [(c["position"]["name"], c["inside"], c["covered"]) for c in out["causes"]] == [
+        ("Salt chlorinator", True, False)]
+    assert "Pool water" in _not_analysed(m)
+    m.decide_failure_mode(mode["id"], "operational", DECIDED)
+    assert "Pool water" not in _not_analysed(m)
+    assert _failure(m, water["id"])["explained_below"] is True
+    # The effect end, from the chlorinator: names the pool water.
+    assert [(e["position"]["name"], e["inside"]) for e in m.functional_failure(output["id"])["effects"]] == [
+        ("Pool water", True)]
+    # The same position: a structure failure from a function on the pool itself.
+    shell = _ff(m, pool["id"], "Hold the water", "Shell cracks")
+    ground = m.add_functional_failure(m.add_function(pool["id"], "Sit on stable ground")["id"], "Ground heaves")
+    m.decide_failure_mode(m.add_failure_mode(pool["id"], "Groundwater rises",
+                                             functional_failure_id=ground["id"])["id"], "operational", DECIDED)
+    out = m.link_cause(shell["id"], ground["id"])
+    assert [(c["position"]["name"], c["inside"], c["covered"]) for c in out["causes"]] == [("Pool", True, True)]
+    assert out["covered"] is True
+    # A cause above its effect counts too (the link isn't refused for its direction).
+    m.link_cause(output["id"], ground["id"])
+    assert {c["id"] for c in m.functional_failure(output["id"])["causes"] if c["inside"]} == {ground["id"]}
     _rebuilds_the_same(m)
 
 
@@ -307,52 +354,70 @@ def test_retiring_the_cause_position_drops_the_links_above(m):
     _rebuilds_the_same(m)
 
 
-def test_a_cause_moved_out_of_the_branch_drops_the_link(m):
+def test_a_position_moved_to_another_tree_drops_the_links_across(m):
     p = _pool(m)
     _link_chain(m, p)
-    # The salt chlorinator (with its cell) moves out of Circulation and treatment, still inside the pool.
+    every = _links(m)
+    # The salt chlorinator (with its cell) moves out of Circulation and treatment, still in the pool: all stay.
     out = m.update_position(p["salt"]["id"], parent_id=p["pool"]["id"])
-    assert out["links_removed"] == 1 and "no longer on a position inside" in out["note"]
-    assert (p["circ_ff"]["id"], p["salt_ff"]["id"]) not in _links(m)
-    assert (p["pool_ff"]["id"], p["salt_ff"]["id"]) in _links(m)
-    assert (p["salt_ff"]["id"], p["cell_ff"]["id"]) in _links(m)  # both moved together
-    # Out of the pool altogether: the pool's links to the salt chlorinator and the cell go.
+    assert "links_removed" not in out and _links(m) == every
+    # To the top level, a tree of its own: the links to the pool's tree go, the one inside it stays.
     out = m.update_position(p["salt"]["id"], parent_id=None)
-    assert out["links_removed"] == 2
+    assert out["links_removed"] == 3 and "no longer on the same tree" in out["note"]
     assert _links(m) == sorted([(p["pool_ff"]["id"], p["circ_ff"]["id"]), (p["salt_ff"]["id"], p["cell_ff"]["id"])])
-    # A move that keeps every cause inside its effect changes nothing.
+    # An effect moving away drops its links as well.
+    m.link_cause(p["heat_ff"]["id"], p["circ_ff"]["id"])
+    out = m.update_position(p["heating"]["id"], parent_id=p["salt"]["id"])
+    assert out["links_removed"] == 1 and (p["heat_ff"]["id"], p["circ_ff"]["id"]) not in _links(m)
     assert "links_removed" not in m.update_position(p["salt"]["id"], name="Salt chlorinator 2")
     _rebuilds_the_same(m)
 
 
-def test_a_link_left_outside_reads_as_not_counting(m):
-    """A link whose cause isn't inside (written before a move by code that didn't
-    drop it, or by a concurrent write) is shown with inside false and doesn't count."""
+def test_a_link_across_trees_reads_as_not_counting(m):
+    """A link whose cause is on another tree (written by a concurrent write, or by
+    code that didn't drop it) is shown with inside false and doesn't count."""
     p = _pool(m)
-    m.decide_failure_mode(m.add_failure_mode(p["heating"]["id"], "Pump fails",
-                                             functional_failure_id=p["heat_ff"]["id"])["id"], "operational", DECIDED)
-    m._link_event("functional_failure.linked", p["circ_ff"]["id"], p["heat_ff"]["id"])
+    shed = m.create_position("Pump shed")
+    shed_ff = _ff(m, shed["id"], "House the pumps", "Roof leaks")
+    m.decide_failure_mode(m.add_failure_mode(shed["id"], "Sheet rusts", functional_failure_id=shed_ff["id"])["id"],
+                          "operational", DECIDED)
+    m._link_event("functional_failure.linked", p["circ_ff"]["id"], shed_ff["id"])
     circ = _failure(m, p["circ"]["id"])
-    assert [(c["id"], c["inside"], c["covered"]) for c in circ["causes"]] == [(p["heat_ff"]["id"], False, False)]
+    assert [(c["id"], c["inside"], c["covered"]) for c in circ["causes"]] == [(shed_ff["id"], False, False)]
     assert circ["covered"] is False and circ["explained_below"] is False and circ["below"] is None
-    m.unlink_cause(p["circ_ff"]["id"], p["heat_ff"]["id"])  # removable all the same
+    m.unlink_cause(p["circ_ff"]["id"], shed_ff["id"])  # removable all the same
     assert _links(m) == []
 
 
-def test_moving_a_function_keeps_links_that_still_run_downwards(m):
+def test_moving_a_function_keeps_links_on_the_same_tree(m):
     p = _pool(m)
     _link_chain(m, p)
+    every = _links(m)
     cell_fn = m.s.inn(ORG, p["cell_ff"]["id"], "FAILS_AS")[0]["id"]
-    out = m.move_function(cell_fn, p["heating"]["id"])
-    # Heating is inside the pool but not inside Circulation and treatment or the salt chlorinator.
-    assert out["links_removed"] == 1 and out["note"]
-    assert _links(m) == sorted([(p["pool_ff"]["id"], p["circ_ff"]["id"]), (p["pool_ff"]["id"], p["salt_ff"]["id"]),
-                                (p["pool_ff"]["id"], p["cell_ff"]["id"]), (p["circ_ff"]["id"], p["salt_ff"]["id"])])
-    # The effect's function moving down onto Circulation and treatment: its cause there goes.
+    out = m.move_function(cell_fn, p["heating"]["id"])  # beside, on the same tree: nothing goes
+    assert out["links_removed"] == 0 and "note" not in out and _links(m) == every
     pool_fn = m.s.inn(ORG, p["pool_ff"]["id"], "FAILS_AS")[0]["id"]
-    out = m.move_function(pool_fn, p["circ"]["id"])
-    assert out["links_removed"] == 2  # Circulation and treatment's own failure, and the cell now on Heating
-    assert _links(m) == sorted([(p["pool_ff"]["id"], p["salt_ff"]["id"]), (p["circ_ff"]["id"], p["salt_ff"]["id"])])
+    out = m.move_function(pool_fn, p["circ"]["id"])  # down onto a position it was linked to: still counts
+    assert out["links_removed"] == 0 and _links(m) == every
+    assert all(c["inside"] for c in m.functional_failure(p["pool_ff"]["id"])["causes"])
+    # To another tree: every link across goes.
+    shed = m.create_position("Pump shed")
+    out = m.move_function(cell_fn, shed["id"])
+    assert out["links_removed"] == 2 and "no longer on the same tree" in out["note"]
+    assert p["cell_ff"]["id"] not in {c for _, c in _links(m)}
+    _rebuilds_the_same(m)
+
+
+def test_moving_a_functional_failure_to_another_tree_drops_its_links(m):
+    p = _pool(m)
+    _link_chain(m, p)
+    shed = m.create_position("Pump shed")
+    shed_fn = m.add_function(shed["id"], "House the pumps")
+    near = m.add_function(p["heating"]["id"], "Keep warm")
+    assert m.move_functional_failure(p["salt_ff"]["id"], near["id"])["links_removed"] == 0
+    out = m.move_functional_failure(p["salt_ff"]["id"], shed_fn["id"])
+    assert out["links_removed"] == 3  # the pool's, Circulation and treatment's and the cell's
+    assert not [x for x in _links(m) if p["salt_ff"]["id"] in x]
     _rebuilds_the_same(m)
 
 

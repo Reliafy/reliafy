@@ -167,7 +167,7 @@ def test_links_go_when_the_cause_leaves_its_effects_position_and_stay_otherwise(
     elsewhere = m.create_position("Spare pump")
     fn_e = m.add_function(elsewhere["id"], "Pump water")
     out = m.move_functional_failure(cause["id"], fn_e["id"])
-    assert out["links_removed"] == 1 and "no longer on a position inside" in out["note"]
+    assert out["links_removed"] == 1 and "no longer on the same tree" in out["note"]
     assert m.s.out(ORG, effect["id"], "RESULTS_FROM") == []
     assert len(_events(m, "functional_failure.unlinked")) == 1
     _rebuilds_the_same(m)
@@ -183,11 +183,6 @@ def test_refusals_across_positions(m):
         m.move_functional_failure(ff["id"], fn_b["id"])
     c = m.create_position("Pump C")
     fn_c = m.add_function(c["id"], "Pump")
-    # An open work order on the mode's task.
-    wo = m.open_work_order(pump["id"], "Bearings", "preventive", task_id=task["id"])
-    with pytest.raises(Invalid, match="open work order"):
-        m.move_functional_failure(ff["id"], fn_c["id"])
-    m.cancel_work_order(wo["id"], "not needed")
     # A failure recorded against the mode.
     m.fit(pump["id"], new_item={"name": "P-1"})
     m.remove(pump["id"], m.today(), "failure", mode["id"])
@@ -707,15 +702,6 @@ def test_a_standard_carried_to_another_function_on_its_own_position(m):
 
 def test_one_refusal_under_the_standard_refuses_the_whole_drag(m):
     x = _two_under_a_standard(m)
-    n = m.s.event_count(ORG)
-    before = _rcm(m, x["pump"]["id"])
-    # An open work order on a task under the standard: nothing moves, the standard neither.
-    wo = m.open_work_order(x["pump"]["id"], "Bearings", "preventive", task_id=x["task"]["id"])
-    n = m.s.event_count(ORG)
-    out = _batch(m, _carry(x["st"]["id"], x["fn_b"]["id"], [x["ff"]["id"], x["low"]["id"]]))
-    assert out["ok"] is False and out["failed"]["index"] == 1 and "open work order" in out["failed"]["error"]
-    assert m.s.event_count(ORG) == n and _rcm(m, x["pump"]["id"]) == before
-    m.cancel_work_order(wo["id"], "not needed")
     # Failures recorded against a mode under it: it can't leave its position.
     m.fit(x["pump"]["id"], new_item={"name": "P-1"})
     m.remove(x["pump"]["id"], m.today(), "failure", x["worn"]["id"])
@@ -745,7 +731,7 @@ def test_a_carried_failures_links_that_would_no_longer_run_downwards_go_and_say_
     out = _batch(m, _carry(st["id"], fn_e["id"], [cause["id"]]))
     assert out["ok"]
     moved = out["results"][1]["result"]
-    assert moved["links_removed"] == 1 and "no longer on a position inside" in moved["note"]
+    assert moved["links_removed"] == 1 and "no longer on the same tree" in moved["note"]
     assert m.s.out(ORG, effect["id"], "RESULTS_FROM") == []
     assert [x["id"] for x in m.s.out(ORG, cause["id"], "BREACHES")] == [st["id"]]
     _rebuilds_the_same(m)

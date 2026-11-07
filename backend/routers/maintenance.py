@@ -981,7 +981,8 @@ def log_position_event(position_id: str, body: dict = Body(...),
 
 @router.post("/tasks/{task_id}/move")
 def move_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """To another position (position_id): a position's task, with no work done on it yet. By use,
+    """To another position (position_id): a position's task with no work done on it yet (its open
+    work orders go with it). By use,
     it keeps counting what it counted while that fits there; otherwise measurement says what it
     counts there (keep, switch or calendar), and without it the answer is 409 with needs_choice."""
     return _run(m.move_task, task_id, body.get("position_id"), body.get("measurement"))
@@ -1280,6 +1281,12 @@ def get_point(point_id: str, m: Maintenance = Depends(maintenance)) -> JSONRespo
 def update_point(point_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.update_point, point_id, **{k: body[k] for k in ("name", "alarm_above", "alarm_below", "tag")
                                              if k in body})
+
+
+@router.post("/points/{point_id}/move")
+def move_point(point_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """To another position (position_id): a position's measurement point, with its readings."""
+    return _run(m.move_point, point_id, body.get("position_id"))
 
 
 @router.post("/points/{point_id}/readings")
