@@ -109,7 +109,7 @@ def test_every_model_kind_counts_toward_the_one_models_cap(db):
 def test_rbd_refused_at_cap_on_free_but_pro_allowed(db):
     _fill(db, FREE, "rbds", config.FREE_MAX_RBDS)
     res = _run(db, FREE, "create_rbd", RBD)
-    assert res["error"].startswith(_msg(config.FREE_MAX_RBDS, "saved RBDs"))
+    assert res["error"].startswith(_msg(config.FREE_MAX_RBDS, "saved RBD"))
     _fill(db, PRO, "rbds", config.FREE_MAX_RBDS + 3)
     assert _run(db, PRO, "create_rbd", RBD).get("ok")
 
