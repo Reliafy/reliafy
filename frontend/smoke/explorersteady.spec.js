@@ -45,9 +45,16 @@ const settled = async (page) => {
 // One switch: the frame before and after, the frames in between, the focus.
 async function check(page, label, go, { wantTab, focusTab = true, rows = true, scrolls = {} } = {}) {
   const before = await frameOf(page);
+  // Opening the RCM tab reads the RCM again; its rows (and so the tree's
+  // scroll, which keeps the row picked in place) are only final once that read
+  // is in. On a loaded machine with a big workspace it can take over a second.
+  const rcmRead = wantTab === "RCM"
+    ? page.waitForResponse((r) => r.request().method() === "GET" && new URL(r.url()).pathname === `${M}/rcm`, { timeout: 15_000 })
+    : null;
   const stop = await watchFrames(page);
   await go();
   await expect(tab(page, wantTab)).toHaveAttribute("aria-selected", "true");
+  if (rcmRead) await (await rcmRead).finished();
   const frames = await stop();
   await settled(page);
   const after = await frameOf(page);
