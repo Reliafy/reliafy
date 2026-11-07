@@ -147,6 +147,16 @@ task, interval and `task_id`) beside the first entry's `outcome` and `task`.
 The app's own route takes the same body (`PUT
 /api/maintenance/failure-modes/{id}/decision`).
 
+`decide` follows the RCM decision diagram (SAE JA1011, RCM II). `hidden`
+(true or false) says whether the failure would go unnoticed in normal
+operation; `consequence` is one of `safety`, `environmental`, `operational` or
+`non_operational` (for a hidden failure, what the multiple failure would do).
+`consequence: "hidden"` is still accepted as a deprecated alias for `hidden:
+true`. A decision the diagram forbids is refused: `rtf` or `accept` on a safety
+or environmental consequence, `failure_finding` on an evident failure, a
+combination on an operational or non-operational one. Decisions saved before
+are kept; their reads carry `advice`.
+
 The evidence check covers every task of a combination. The decision's
 `evidence` counts for each entry it fits (a degradation model for
 `on_condition`, a replacement analysis for `fixed_interval`, a failure-finding

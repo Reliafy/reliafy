@@ -70,7 +70,8 @@ def _status(session, owner, decision):
     m = Maintenance(GraphStore(":memory:", PROJECTORS), owner, "tester")
     pid = m.create_position("Thing")["id"]
     mode = m.add_failure_mode(pid, "Mode", consequence="operational")
-    m.decide_failure_mode(mode["id"], decision=decision)
+    # Hidden and operational: the RCM decision diagram allows every single outcome there.
+    m.decide_failure_mode(mode["id"], decision=decision, hidden=True)
     return rcm_graph.mode_status(session, m.rcm_mode(mode["id"]), owner)["decision"]
 
 

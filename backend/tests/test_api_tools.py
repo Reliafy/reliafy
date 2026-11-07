@@ -472,3 +472,21 @@ def test_report_a_problem_and_check_it(env):
     # Only operators triage or update.
     assert env.post("/api/v1/report_problem/update", {"report_id": rid, "status": "fixed"}).status_code in (400, 403, 422)
     assert env.post("/api/v1/report_problem/triage").status_code in (400, 403, 422)
+
+
+def test_maintenance_decide_with_hidden_over_rest(maint):
+    """failure_modes.decide's hidden argument over REST, as over MCP (the action table makes both), and the
+    RCM decision diagram's refusal."""
+    pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Trip"}).json()
+    mode = maint.post("/api/v1/maintenance/failure_modes.add", {"position_id": pos["id"], "text": "Trip dead"}).json()
+    r = maint.post("/api/v1/maintenance/failure_modes.decide", {
+        "failure_mode_id": mode["id"], "hidden": True, "consequence": "safety",
+        "decision": {"outcome": "failure_finding", "task": "Test the trip", "interval": 6, "interval_unit": "months"}})
+    assert r.status_code == 200, r.text
+    assert r.json()["hidden"] is True and r.json()["consequence"] == "safety"
+    r = maint.post("/api/v1/maintenance/failure_modes.decide", {
+        "failure_mode_id": mode["id"], "hidden": False, "decision": {"outcome": "rtf", "rtf_basis": "random"}})
+    assert r.status_code >= 400 and "can't be run to failure" in r.text
+    spec = maint.client.get("/api/v1/openapi.json", headers=_auth(maint.token[A])).json()
+    body = spec["paths"]["/api/v1/maintenance/failure_modes.decide"]["post"]["requestBody"]["content"]
+    assert "hidden" in str(body) or "hidden" in str(spec["components"])

@@ -137,13 +137,23 @@ comparator (<, <=, =, >=, >, between, not), value (a number, or text such as '5.
 loss, the whole function).
   4. add (position_id, functional_failure_id, text: the failure mode), then update (effects: what happens when \
 it occurs; notes).
-  5. decide (consequence and decision, below), add_task for a second task, maintenance tasks.link to share one.
+  5. decide (hidden, consequence and decision, below), add_task for a second task, maintenance tasks.link to share one.
   6. Check: maintenance list.rcm_gaps (target_id: the position) lists what's still missing; \
 maintenance get.rcm reads it all back (kind failure_mode: one mode in full, with the tasks it could share).
-- The decision vocabulary. consequence: safety, environmental (a proactive task that makes the risk tolerable, \
-else redesign), operational (a task that costs less than the losses it prevents, else run to failure), \
-non_operational (repair cost only: usually run to failure), hidden (a protective function nobody sees fail: \
-failure_finding, or redesign to make it evident). outcome: on_condition (monitor a signal and act before it \
+- How the decision is made (SAE JA1011 and RCM II). Two questions, in order. hidden: would the loss of \
+function on its own become evident to the crew in normal operation (false) or not (true)? consequence, the \
+first that applies of safety, environmental, operational, non_operational; for a hidden failure, what the \
+multiple failure would do (the hidden failure plus the one it protects against). 'hidden' as a consequence is a \
+deprecated alias for hidden: true. Then the tasks, in order: on_condition, then fixed_interval (scheduled \
+restoration or discard), then for a hidden failure failure_finding. A task is worth doing on safety or \
+environmental if it makes the risk tolerable (cost isn't the test); on operational or non_operational if it costs \
+less over time than the failures it prevents. If none is: evident safety or environmental, redesign is \
+compulsory; evident operational or non_operational, no scheduled maintenance (rtf or accept), a redesign may pay; \
+hidden safety or environmental, failure_finding, else redesign compulsory; hidden operational or \
+non_operational, failure_finding if it pays, else no scheduled maintenance. decide refuses rtf and accept on \
+safety or environmental, failure_finding on an evident failure, and a combination of tasks except on safety or \
+environmental.
+- The decision vocabulary. outcome: on_condition (monitor a signal and act before it \
 fails), fixed_interval (replace or restore on a schedule), failure_finding (check a hidden function), rtf \
 (rtf_basis random: failures don't depend on age; uneconomic: prevention doesn't pay), redesign, accept. \
 evidence {type, id}: degradation_model for on_condition, strategy_analysis for fixed_interval, failure_finding \
@@ -152,8 +162,8 @@ the decision (supported, contradicted, inconclusive, unevidenced, stale; partly 
 a report (type report: a saved report's id) or a function's notes and rationale, where the working behind its \
 performance standard is written (type working: the function's id; it needs notes written): linked, not checked, so its status is linked \
 (evidence_kind report or working), or stale once it has gone. decide replaces the whole \
-decision: to add evidence, send the current one with it. A decision unusual for its consequence (a hidden \
-failure run to failure) is kept, with advice to relay. A decision that schedules a task (fixed_interval, \
+decision: to add evidence, send the current one with it. A decision saved before the rules (or imported) that \
+they'd refuse is kept, and its read carries advice to relay, as does a hidden mode with no category yet. A decision that schedules a task (fixed_interval, \
 failure_finding, on_condition with an interval) gets a task on the position; one that doesn't (rtf, redesign, \
 accept) gets none. A decision's task text over 200 characters gives the task a shortened name, with the full \
 text in its instructions. An interval_unit of use (hours, cycles, km) makes a task by use, counting a counter in that unit (maintenance get.task_measurement says which).
@@ -261,9 +271,8 @@ interval_unit: 'months'}], notes: '...'}. Members are two or more of on_conditio
 failure_finding (no outcome twice), or redesign beside one of them as the interim measure; rtf and accept stand \
 alone. Each scheduled member gets a task of its own (task_id adopts an existing one); the first is the decision's \
 own (outcome, task_id), and reads list them all in decision.outcomes. Sending one outcome again, or {}, ends the \
-combination and retires the tasks it no longer has. The classic sources expect a combination for safety, \
-environmental and hidden consequences, and ask what a second task earns on operational and non-operational ones: \
-say so in the decision's notes. maintenance failure_modes.add_task adds a task outside the decision. One act of work for several modes (one monthly water sample for five chemistry modes): \
+combination and retires the tasks it no longer has. A combination is only for a safety or environmental \
+consequence where no single task makes the risk tolerable (decide refuses one on operational or non_operational). maintenance failure_modes.add_task adds a task outside the decision. One act of work for several modes (one monthly water sample for five chemistry modes): \
 maintenance tasks.link task_id failure_mode_id, or decide with task_id so an existing task is the decision's. A \
 task on a position may serve modes on it or on positions inside it. The task owns its interval: while it \
 serves one mode alone, decide changes it; once shared, change it with maintenance tasks.update (for every mode \
@@ -479,7 +488,7 @@ automatic reverse: updates, voids, corrections, closes, cancels, merges, stock, 
   {ref: 'ff', do: 'failure_modes.add_functional_failure', args: {function_id: '@f', text: 'No flow'}},
   {ref: 'm1', do: 'failure_modes.add', args: {position_id: '@p', functional_failure_id: '@ff', text: 'Bearing worn'}},
   {do: 'failure_modes.update', args: {failure_mode_id: '@m1', effects: 'Pump trips; no feed to the boiler.'}},
-  {do: 'failure_modes.decide', args: {failure_mode_id: '@m1', consequence: 'operational', decision: {outcome: \
+  {do: 'failure_modes.decide', args: {failure_mode_id: '@m1', hidden: false, consequence: 'operational', decision: {outcome: \
 'on_condition', task: 'Vibration check', interval: 3, interval_unit: 'months'}}},
   {ref: 'm2', do: 'failure_modes.add', args: {position_id: '@p', functional_failure_id: '@ff', text: 'Seal leaks'}},
   {do: 'failure_modes.decide', args: {failure_mode_id: '@m2', consequence: 'operational', decision: {outcome: \

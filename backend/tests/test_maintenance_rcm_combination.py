@@ -198,8 +198,8 @@ def test_copying_a_position_copies_its_combination(m):
 def test_advice_reads_every_member():
     assert rcm_decisions.advice("safety", "on_condition", ["on_condition", "fixed_interval"]) is None
     assert "combination" in rcm_decisions.advice("operational", "on_condition", ["on_condition", "fixed_interval"])
-    assert "Hidden consequences usually take" in rcm_decisions.advice("hidden", "on_condition",
-                                                                       ["on_condition", "fixed_interval"])
+    assert "multiple failure would do" in rcm_decisions.advice("hidden", "on_condition",
+                                                                ["on_condition", "fixed_interval"])
     assert rcm_decisions.advice("safety", "on_condition") is None
 
 
@@ -297,15 +297,15 @@ def test_a_combination_exported_and_imported_gives_the_same_decisions(m):
     col = {h: i for i, h in enumerate(rows[0])}
     # One row per member, in its order (the redesign too), then the task outside the decision.
     assert [(r[col["Failure mode"]], r[col["Decision"]], r[col["Task"]]) for r in rows[1:]] == [
-        ("Bearing worn", "On-condition (monitor)", "Vibration check"),
-        ("Bearing worn", "Fixed-interval replacement", "Replace the bearing"),
-        ("Bearing worn", "On-condition (monitor)", "Oil sample"),
-        ("Seal leaks", "On-condition (monitor)", "Daily walk-round"),
+        ("Bearing worn", "On condition", "Vibration check"),
+        ("Bearing worn", "Fixed interval", "Replace the bearing"),
+        ("Bearing worn", "On condition", "Oil sample"),
+        ("Seal leaks", "On condition", "Daily walk-round"),
         ("Seal leaks", "Redesign", ""),
-        ("Leak alarm dead", "Failure-finding task", "Test the alarm"),
-        ("Leak alarm dead", "On-condition (monitor)", "Check the sensor"),
-        ("Leak alarm dead", "Fixed-interval replacement", "Replace the sensor"),
-        ("Impeller wear", "Fixed-interval replacement", "Swap impeller"),
+        ("Leak alarm dead", "Failure finding", "Test the alarm"),
+        ("Leak alarm dead", "On condition", "Check the sensor"),
+        ("Leak alarm dead", "Fixed interval", "Replace the sensor"),
+        ("Impeller wear", "Fixed interval", "Swap impeller"),
     ]
     table = excel.read_csv(_sheet_csv(rows), "Pump FMECA.csv")
     fresh = m.create_position("Pump 2")["id"]

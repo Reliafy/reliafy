@@ -177,7 +177,9 @@ EXTRA_SYNONYMS = [
 COMPUTED_COLUMNS = {"rpn", "risk priority number", "action priority", "ap", "mode criticality", "cm",
                     "item criticality", "cr"}
 
-CONSEQUENCE_CHOICES = list(rcm.CONSEQUENCES)
+# The four categories, and "hidden" (the old fifth value, now the separate
+# evident-or-hidden answer): a cell or a mapping saying only "hidden" sets that.
+CONSEQUENCE_CHOICES = list(rcm.CONSEQUENCES) + [rcm.HIDDEN_ALIAS]
 # Decision choices a value can map to: run-to-failure carries its basis.
 OUTCOME_CHOICES = [
     "on_condition", "fixed_interval", "rtf:random", "rtf:uneconomic",
@@ -212,6 +214,8 @@ def guess_consequence(raw: Any) -> Optional[str]:
         return None
     if t in _CONSEQUENCE_LETTERS:
         return _CONSEQUENCE_LETTERS[t]
+    if "h" in t.split() and all(x in _CONSEQUENCE_LETTERS for x in t.split()):
+        return "hidden"  # "H S": hidden, and its category (category_beside_hidden)
     if t.replace(" ", "_") in rcm.CONSEQUENCES:
         return t.replace(" ", "_")
     found = set()
@@ -222,6 +226,20 @@ def guess_consequence(raw: Any) -> Optional[str]:
         found.discard("operational")  # "non-operational" contains "operational"
     if "hidden" in found:
         return "hidden"
+    return found.pop() if len(found) == 1 else None
+
+
+def category_beside_hidden(raw: Any) -> Optional[str]:
+    """The one category a "hidden" cell names as well ("Hidden · Safety", the
+    export's words, or "H S"), else None: RCM II asks both questions, so a
+    sheet may answer both in one cell."""
+    t = norm(raw)
+    letters = t.split()
+    if len(letters) == 2 and "h" in letters and all(x in _CONSEQUENCE_LETTERS for x in letters):
+        return next(_CONSEQUENCE_LETTERS[x] for x in letters if x != "h")
+    found = {cat for cat, words in _CONSEQUENCE_WORDS.items() if cat != "hidden" and any(_has(t, w) for w in words)}
+    if "non_operational" in found:
+        found.discard("operational")
     return found.pop() if len(found) == 1 else None
 
 
@@ -515,6 +533,8 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             mode["effects"] = clip(effects)
         if col["consequence"] is not None:
             mode["consequence"] = _choice(r[col["consequence"]], consequence_map, guess_consequence)
+            if mode["consequence"] == rcm.HIDDEN_ALIAS:
+                mode["hidden"], mode["consequence"] = True, category_beside_hidden(r[col["consequence"]])
         # Its FME(C)A columns, each checked as the service checks it: a value out
         # of range is a row error. The sheet's RPN is only compared.
         for f in SCORE_FIELDS:

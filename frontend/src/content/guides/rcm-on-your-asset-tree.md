@@ -179,8 +179,8 @@ fields, then the quieter things at the foot:
 - a functional failure: its **Failure modes** (with its state in words at
   the top), then what it is **Caused by** and what it **Causes**, each with
   the position it is on;
-- a failure mode: its **Failure effects** and **Consequence** (one tap on a
-  choice), then its **Decision**, which lists the tasks it holds, then where
+- a failure mode: its **Failure effects**, whether it's **Evident or hidden**
+  and its **Consequence** (one tap on a choice each), then its **Decision**, which lists the tasks it holds, then where
   it sits (**Under**).
 
 Every row, whatever its level, opens its details with **Notes and rationale**,
@@ -218,29 +218,59 @@ workspace sees.
 ## Make a decision for each failure mode
 
 Click **To decide** in a failure mode's **Decision** column, choose **Decide…**
-in its row menu, or press **Decide…** in its Details. The dialog walks through
-the classic RCM decision logic in three steps.
+in its row menu, or press **Decide…** in its Details. The dialog walks the RCM
+decision diagram one step at a time.
 
-![The decision dialog: the consequence, the suggested decisions, the task and its interval, and the linked evidence](/guides/img/rcm-02-decision.png)
+![The decision dialog: the two questions, the tasks in order, the task and its interval, and the linked evidence](/guides/img/rcm-02-decision.png)
 
-**1. Consequence of failure.** Choose **Safety**, **Environmental**,
-**Operational**, **Non-operational** or **Hidden**. A hidden failure is one you
-can't see in normal operation, like a trip that won't trip until it's needed.
-Each choice shows the rule it implies. For *Operational*: a proactive task must
-cost less than the consequences it prevents, or the answer is run-to-failure.
+### How the decision is made
 
-**2. Maintenance decision.** The decisions that suit that consequence are
-tagged **Suggested** and listed first:
+Reliafy follows the decision diagram of SAE JA1011 and RCM II (Moubray).
+
+- **Two questions, in order.** First: would the crew notice the failure on
+  its own, in normal operation? If not, it's **Hidden**, like a trip that
+  won't trip until it's needed. Then the consequence, the first that applies:
+  **Safety**, **Environmental**, **Operational**, **Non-operational**. For a
+  hidden failure, it's what the *multiple failure* would do: the hidden
+  failure plus the one it was there to protect against.
+- **Tasks, in order.** An on condition task first, then a fixed interval task
+  (scheduled restoration or discard), then, for a hidden failure only, a
+  failure finding task. For safety or environmental, a task is worth doing
+  only if it makes the risk tolerable; cost isn't the test. For operational or
+  non-operational, it must cost less over time than the failures it prevents.
+  Two tasks together (a combination) only for safety or environmental, when no
+  single task is good enough.
+- **If no task is worth doing.** Evident and safety or environmental: redesign
+  is compulsory, never run to failure. Evident and operational or
+  non-operational: no scheduled maintenance (run to failure); a redesign may
+  pay. Hidden and safety or environmental: failure finding, else redesign is
+  compulsory. Hidden and operational or non-operational: failure finding if it
+  pays, else no scheduled maintenance.
+
+The dialog greys out what the diagram doesn't allow and says why, and names
+the default action at the end. A decision saved before these rules (or
+imported) that they'd refuse is kept, with a note asking you to look again.
+
+**1. Would the crew notice the failure on its own?** Choose **Evident** or
+**Hidden**.
+
+**2. Consequence.** Choose **Safety**, **Environmental**, **Operational** or
+**Non-operational**. For a hidden failure the question reads "What would the
+multiple failure do?". Each choice says what makes a task worth doing.
+
+**3. Which task is worth doing?** The tasks are listed in the diagram's order,
+each with one line on what makes it worth doing here, then what's done if
+none is:
 
 | Decision | Evidence it expects |
 |---|---|
-| **On-condition (monitor)** | A degradation model that shows the failure develops measurably |
-| **Fixed-interval replacement** | A saved optimal-replacement analysis with a worthwhile interval |
-| **Run-to-failure** — *failures are random* | A Weibull fit whose β interval contains 1, or an exponential fit |
-| **Run-to-failure** — *prevention isn't economic* | A saved optimal-replacement analysis that finds no worthwhile interval |
-| **Failure-finding task** | A saved failure-finding analysis |
+| **On condition** | A degradation model that shows the failure develops measurably |
+| **Fixed interval** | A saved optimal-replacement analysis with a worthwhile interval |
+| **Failure finding** (hidden failures only) | A saved failure-finding analysis |
+| **Run to failure**, *failures are random* | A Weibull fit whose β interval contains 1, or an exponential fit |
+| **Run to failure**, *prevention isn't economic* | A saved optimal-replacement analysis that finds no worthwhile interval |
+| **Accept** (no scheduled maintenance) | None. Write the reason in **Notes** |
 | **Redesign** | None. Write the reason in **Notes** |
-| **Accept risk / no scheduled maintenance** | None. Write the reason in **Notes** |
 
 For a scheduled task, describe it under **Task** and give the interval and its
 unit. Use the same unit as the analysis you link. If the units disagree, the
@@ -250,7 +280,7 @@ decision can go without one, when another task already covers it: no task is
 made, so say in **Notes** what covers it. While **Apply** can't be pressed, the
 dialog says beside it what's missing.
 
-**3. Link the evidence (optional).** Pick the kind of evidence, then one item,
+**4. Link the evidence (optional).** Pick the kind of evidence, then one item,
 and press **Apply**. The decision is saved straight away.
 
 - **Models** lists only what the decision expects: your non-repairable models
@@ -273,18 +303,18 @@ no schedule (run-to-failure, redesign, accept) retires it.
 
 Sometimes no single task is good enough on its own. RCM II calls the answer a
 *combination of tasks*: a regular inspection plus a fixed-time replacement,
-say, usually where a failure could hurt someone or harm the environment. In the
+say. It's only for a failure that could hurt someone or harm the environment. In the
 decision dialog, choose the first outcome, then pick another under **Add
 another task**: *On condition*, *Fixed interval replacement* or
 *Failure finding*. Each one you add asks for its own task name and interval,
 and each becomes its own scheduled task on the position. A **Redesign** can
 sit beside one task, the task done until the change is made. Run-to-failure
 and accept stand alone. The notes are once for the whole decision, and the
-**Decision** column reads *On condition + Fixed interval*. For an operational
-or non-operational consequence, say in the notes what the second task earns.
+**Decision** column reads *On condition + Fixed interval*. On an operational
+or non-operational consequence only a redesign can sit beside the task.
 
 Each task of a combination needs its own evidence. The evidence you link in
-step 3 counts for every task it fits: a degradation model backs the
+step 4 counts for every task it fits: a degradation model backs the
 inspection, a replacement analysis backs the fixed-interval task, and a report
 or a function's notes back any task. Where one piece can't cover them all,
 open **Evidence for this task** under the other task and link its own. Until
@@ -309,10 +339,10 @@ its kind, name, how often and how many other failure modes share it.
   decision, making it a combination of tasks. A small dialog asks its kind
   first (*On condition*, *Fixed interval* or *Failure finding*, or a
   *Redesign* beside one task), then its name and how often, then Enter. Its
-  instructions are its **⋯** › **Edit…**, as for any other task. For an
-  operational or non-operational consequence the dialog asks what the second
-  task catches that the first doesn't: put the answer in the decision's
-  notes. (**Add a task…** in the row's menu opens the same dialog, or the
+  instructions are its **⋯** › **Edit…**, as for any other task. It offers
+  only what the decision diagram allows: a second scheduled task on a safety
+  or environmental consequence, failure finding on a hidden failure.
+  (**Add a task…** in the row's menu opens the same dialog, or the
   decision dialog when there's no decision yet.)
 - **Use an existing task…** in the same dialog picks a task that is already
   on the position, or on a position above it, so one task serves several

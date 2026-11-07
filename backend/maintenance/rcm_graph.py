@@ -84,7 +84,7 @@ def gaps(sheet: dict, limit: int = GAPS_LIMIT) -> dict:
         d = mode.get("decision") or {}
         row = {"id": mode["id"], "text": mode["text"], "position": pos,
                "functional_failure": {"id": ff["id"], "text": ff["text"]} if ff else None,
-               "consequence": mode.get("consequence"), "outcome": d.get("outcome")}
+               "hidden": mode.get("hidden"), "consequence": mode.get("consequence"), "outcome": d.get("outcome")}
         if fn is not None:
             lists["no_functional_failure"].append(row | {"function": fn})
         if not d:
@@ -92,7 +92,7 @@ def gaps(sheet: dict, limit: int = GAPS_LIMIT) -> dict:
         tasks = mode.get("tasks") or []
         if not tasks:
             lists["no_task"].append(row)
-        if mode.get("consequence") == "hidden" and not any(t.get("outcome") == "failure_finding" for t in tasks):
+        if rcm_decisions.mode_consequence(mode)[0] and not any(t.get("outcome") == "failure_finding" for t in tasks):
             lists["hidden_without_failure_finding"].append(
                 row | {"tasks": [{"id": t["id"], "name": t["name"], "outcome": t.get("outcome")} for t in tasks]})
         if d.get("status") in _CHECK:

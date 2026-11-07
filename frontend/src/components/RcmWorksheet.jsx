@@ -16,11 +16,12 @@ import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { Highlight } from "./OutlineBits.jsx";
 import { ancestorsOf } from "../outlineTree.js";
 import {
-  COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
+  CATEGORY_LABEL, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, EVIDENT_LABEL, consequenceText, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
   belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, checkCounts, decisionText, insideWords,
   INTERVAL_OUTCOMES, intervalText, isCombination, memberEvidenceText, memberLine, moreTasks, nameOf, shownStatus, tasksOf, tasksTip, checkValue,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
+import { modeAnswers } from "../decisionCheck.js";
 import RcmFunctionStandards from "./RcmFunctionStandards.jsx";
 import { COMPARATORS, COMPARATOR_LABEL, limitReads, limitWords } from "../rcmStandards.js";
 import RcmModeTasks from "./RcmModeTasks.jsx";
@@ -483,7 +484,7 @@ export function Details({
   // The status chips under the title.
   const chips = r.type === "mode"
     ? [
-      r.ref.consequence ? { text: CONSEQUENCE_LABEL[r.ref.consequence], tone: "neutral" } : null,
+      consequenceText(r.ref) ? { text: consequenceText(r.ref), tone: "neutral" } : null,
       d ? { text: [decisionText(d), d.interval && !isCombination(d) ? `every ${intervalText(d)}` : null].filter(Boolean).join(" · "), tone: "accent" }
         : { text: "No decision yet", tone: "warning" },
     ].filter(Boolean)
@@ -498,14 +499,29 @@ export function Details({
     <InsideList key={`${r.key}:inside`} r={r} kids={kids} ops={ops} readOnly={readOnly} addLabel={addLabel} addStart={startOf("inside")}
                 status={r.type === "fail" ? failureStatusWords(r) : null} onSelect={onSelect} onSaid={said} />
   );
+  // The RCM's two questions, in order (SAE JA1011, RCM II): evident or hidden,
+  // then the category; for a hidden failure, what the multiple failure would do.
+  const answers = r.type === "mode" ? modeAnswers(r.ref) : null;
+  const hiddenValue = answers?.hidden === true ? "hidden" : answers?.hidden === false ? "evident" : "";
   const consequenceField = r.type === "mode" && (
-    <Field label="Consequence" saved={saved.consequence}>
-      {readOnly ? <span className="rw-fval">{CONSEQUENCE_LABEL[r.ref.consequence] || "Not set"}</span> : (
-        <ChoiceChips label="Consequence" clearable value={r.ref.consequence || ""}
-                     options={Object.entries(CONSEQUENCE_LABEL).map(([value, label]) => ({ value, label }))}
-                     onChange={(v) => keep("consequence", onCommit(r, "consequence", v))} />
-      )}
-    </Field>
+    <>
+      <Field label="Evident or hidden" saved={saved.hidden}
+             help="Hidden: the crew wouldn't notice the loss of function in normal operation, until something else fails too.">
+        {readOnly ? <span className="rw-fval">{EVIDENT_LABEL[hiddenValue] || "Not set"}</span> : (
+          <ChoiceChips label="Evident or hidden" clearable value={hiddenValue}
+                       options={Object.entries(EVIDENT_LABEL).map(([value, label]) => ({ value, label }))}
+                       onChange={(v) => keep("hidden", onCommit(r, "hidden", v))} />
+        )}
+      </Field>
+      <Field label="Consequence" saved={saved.consequence}
+             help={answers?.hidden ? "The consequence of the multiple failure: the hidden failure plus the one it protects against." : "The first that applies: safety, environmental, operational, non-operational."}>
+        {readOnly ? <span className="rw-fval">{CATEGORY_LABEL[answers.consequence] || "Not set"}</span> : (
+          <ChoiceChips label="Consequence" clearable value={answers.consequence || ""}
+                       options={Object.entries(CATEGORY_LABEL).map(([value, label]) => ({ value, label }))}
+                       onChange={(v) => keep("consequence", onCommit(r, "consequence", v))} />
+        )}
+      </Field>
+    </>
   );
   // The FME(C)A's two groups on a failure mode (FmeaPanels.jsx): each field
   // kept as you go, as the others are; the RPN and action priority previewed
@@ -522,6 +538,10 @@ export function Details({
     <aside className={"rw-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label="Details"
            onKeyDown={(e) => {
              if (e.key !== "Escape" || e.defaultPrevented) return;
+             // A dialog opened from the panel (Add another task, Decide…) is
+             // portalled out of it, but React still bubbles its keys here:
+             // its Escape closes the dialog, not the panel.
+             if (!e.currentTarget.contains(e.target)) return;
              e.stopPropagation();
              if (expanded && canExpand) onCollapse();
              else onClose();

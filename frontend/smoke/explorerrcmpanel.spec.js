@@ -116,8 +116,8 @@ test("a click shows the details beside the table; a double-click on the name spr
   // A functional failure: its status in words, its links, its failure modes; one shown from the list.
   await ffRow.locator(".tp-nm").click();
   await expect(panel(page).getByText("1 of its 2 failure modes still needs a decision.")).toBeVisible();
-  await expect(panel(page).getByRole("region", { name: "Caused by, on positions below" })).toBeVisible();
-  await expect(panel(page).getByRole("region", { name: "Causes, on positions above" })).toBeVisible();
+  await expect(panel(page).getByRole("region", { name: "Caused by" })).toBeVisible();
+  await expect(panel(page).getByRole("region", { name: "Causes" })).toBeVisible();
   await panel(page).getByRole("region", { name: "Failure modes" }).getByRole("button", { name: `Bearing seizes ${tag}` }).click();
   await expect(panel(page).getByRole("heading", { name: `Bearing seizes ${tag}` })).toBeVisible();
   expect(await isExpanded(page)).toBe(true);
@@ -135,15 +135,18 @@ test("a click shows the details beside the table; a double-click on the name spr
   await desc.blur();
   await panel(page).getByRole("textbox", { name: /^Failure effects/ }).fill("Pump stops; no flow to the tank");
   await panel(page).getByRole("textbox", { name: /^Failure effects/ }).blur();
-  // Consequence: one tap on a chip, the chosen one ticked; "✓ Saved" by its label.
-  const consequence = panel(page).getByRole("radiogroup", { name: "Consequence" });
-  await consequence.getByRole("radio", { name: "Hidden" }).click();
-  await expect(consequence.getByRole("radio", { name: "Hidden" })).toHaveAttribute("aria-checked", "true");
+  // The two RCM questions: one tap on a chip each, the chosen one ticked; "✓ Saved" by its label.
+  const evident = panel(page).getByRole("radiogroup", { name: "Evident or hidden" });
+  await evident.getByRole("radio", { name: "Hidden" }).click();
+  await expect(evident.getByRole("radio", { name: "Hidden" })).toHaveAttribute("aria-checked", "true");
   await expect(panel(page).getByRole("status").filter({ hasText: "✓ Saved" }).first()).toBeVisible();
+  const consequence = panel(page).getByRole("radiogroup", { name: "Consequence" });
+  await consequence.getByRole("radio", { name: "Operational" }).click();
+  await expect(consequence.getByRole("radio", { name: "Operational" })).toHaveAttribute("aria-checked", "true");
   await expect.poll(async () => {
     const m = (await rcmOf(request, p)).functions[0].failures[0].modes.find((x) => x.id === p.mode.id);
-    return [m.text, m.effects, m.consequence];
-  }).toEqual([`Bearing seizes early ${tag}`, "Pump stops; no flow to the tank", "hidden"]);
+    return [m.text, m.effects, m.hidden, m.consequence];
+  }).toEqual([`Bearing seizes early ${tag}`, "Pump stops; no flow to the tank", true, "operational"]);
   await expect(panel(page).getByRole("region", { name: "Decision" })).toContainText("No decision yet.");
   // No decision: no task rows and no add row (Decide… first).
   await expect(panel(page).getByRole("button", { name: /^Add (another|a) task$/ })).toHaveCount(0);
@@ -339,7 +342,7 @@ test("one order at every level: its notes under the title and chips, what's insi
     expect(await notesFirst(page)).toBe(true);
     await show(`^Functional failure: No flow ${tag}`);
     await expect(panel(page).getByRole("heading", { level: 2, name: `No flow ${tag}` })).toBeVisible();
-    expect(await blocks(page)).toEqual(["Failure modes", "Caused by, on positions below", "Causes, on positions above"]);
+    expect(await blocks(page)).toEqual(["Failure modes", "Caused by", "Causes"]);
     expect(await notesFirst(page)).toBe(true);
     // Its state in words heads its failure modes, said once.
     await expect(panel(page).getByRole("region", { name: "Failure modes" })).toContainText("1 of its 2 failure modes still needs a decision.");

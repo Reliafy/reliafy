@@ -24,7 +24,8 @@ async function plant(request, tag) {
   const cya = await post(`${M}/positions/${pool.id}/failure-modes`, { text: `Stabiliser low ${tag}`, functional_failure_id: ff.id });
   const salt = await post(`${M}/positions/${cell.id}/failure-modes`, { text: `Salinity low ${tag}` });
   const res = await request.put(`${M}/failure-modes/${acid.id}/decision`, {
-    data: { consequence: "operational", decision: { outcome: "on_condition", task: `Weekly pH check ${tag}`, interval: 1, interval_unit: "weeks" } },
+    // Hidden and safety: the RCM decision diagram allows every kind of second task there.
+    data: { hidden: true, consequence: "safety", decision: { outcome: "on_condition", task: `Weekly pH check ${tag}`, interval: 1, interval_unit: "weeks" } },
   });
   expect(res.ok()).toBeTruthy();
   const own = (await res.json()).decision.task_id;
@@ -71,14 +72,14 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await expect(tasks.getByRole("region", { name: "Tasks" })).toHaveCount(0);
 
   // Add another task: one small dialog, its kind first (on condition is taken), then its name
-  // and how often; the hint asks what it catches (an operational consequence). No interval yet: it says so.
+  // and how often (no "what does it catch" hint: a safety consequence may combine tasks). No interval yet: it says so.
   await tasks.getByRole("button", { name: "Add another task" }).click();
   let add = dialog(page, "Add another task");
   await expect(add).toBeVisible();
   const kinds = add.getByRole("radiogroup", { name: "Kind of task" });
   await expect(kinds.getByRole("radio")).toHaveText([/Fixed interval/, /Failure finding/, /Redesign/]);
   await expect(kinds.getByRole("radio", { name: /Fixed interval/ })).toHaveAttribute("aria-checked", "true");
-  await expect(add.getByText(/What does this catch that/)).toBeVisible();
+  await expect(add.getByText(/What does this catch that/)).toHaveCount(0);
   let writes = 0;
   page.on("request", (r) => { if (r.method() === "PUT" && r.url().includes(`/failure-modes/${p.acid.id}/decision`)) writes += 1; });
   const name = add.getByRole("textbox", { name: "Task" });
@@ -178,7 +179,7 @@ test("one task for several modes: shared, read-only in the decision dialog, unli
   // Decide… with that task: the decision dialog shows its interval read-only and says why.
   await dlg.getByRole("button", { name: "Decide…" }).click();
   await decide.getByRole("button", { name: "Hidden" }).click();
-  await decide.getByRole("button", { name: /Failure-finding/ }).click();
+  await decide.getByRole("button", { name: /^Failure finding/ }).click();
   await decide.getByRole("button", { name: "Apply" }).click();
   await expect(decide).toHaveCount(0);
   await expect(tasks.locator(".rw-dwords")).toHaveText("Failure finding");
