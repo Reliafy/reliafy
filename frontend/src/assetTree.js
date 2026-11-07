@@ -68,11 +68,18 @@ export function carryOver(row, to, positions = null) {
   return null;
 }
 
-// The first position at a place whose parent isn't at the same place (A–Z).
+// The main top position at a place: one whose parent isn't at the same place,
+// with the most positions of the place beneath it (a sample placed there too
+// shouldn't win), A–Z between equals.
 export function topPositionAt(locationId, positions) {
   const here = (positions || []).filter((p) => p.location_id === locationId);
   const ids = new Set(here.map((p) => p.id));
-  const tops = here.filter((p) => !p.parent_id || !ids.has(p.parent_id)).sort(byName);
+  const parent = new Map(here.map((p) => [p.id, p.parent_id]));
+  const tops = here.filter((p) => !p.parent_id || !ids.has(p.parent_id));
+  const topOf = (id) => { let k = id; while (ids.has(parent.get(k))) k = parent.get(k); return k; };
+  const below = new Map();
+  for (const p of here) below.set(topOf(p.id), (below.get(topOf(p.id)) || 0) + 1);
+  tops.sort((a, b) => (below.get(b.id) || 0) - (below.get(a.id) || 0) || byName(a, b));
   return tops[0]?.id ?? null;
 }
 
