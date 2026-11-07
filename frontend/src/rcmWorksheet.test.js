@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { flatten, levelSet } from "./outlineTree.js";
 import {
+  addableOutcomes, decisionRows, decisionWithMember, memberEvidenceText,
   COLUMN, COLUMNS, DEFAULT_COLUMNS, FUNCTION_MAX, NAME_COLUMN, functionCount, buildRcmDisplay, checkValue, chipCounts, computeFilter,
   insideWords, intervalText, loadPrefs, savePrefs, siblingOrder, decisionBody, decisionText, hasTask, isCombination, memberEvidenceLine, memberLine, modeCounts, moreTasks, rowText, tasksOf,
   tasksTip } from "./rcmWorksheet.js";
@@ -56,7 +57,7 @@ test("a repeated id still gets a row of its own", () => {
 test("the cells, as text: decisions, intervals, roll-ups", () => {
   const d = buildRcmDisplay(RCM);
   const m = (k) => d.rows.get(k);
-  assert.equal(COLUMN.decision.text(m("m2")), "Run-to-failure (random)");
+  assert.equal(COLUMN.decision.text(m("m2")), "Run to failure (random)");
   assert.equal(COLUMN.decision.text(m("m3")), "To decide");
   assert.equal(COLUMN.decision.text(m("f1")), "1 to decide");
   assert.equal(COLUMN.interval.text(m("m1")), "3 years");
@@ -174,15 +175,15 @@ const COMBO = {
 };
 
 test("a combination reads as its outcomes joined, one outcome as before", () => {
-  assert.equal(decisionText(COMBO), "On-condition + Fixed-interval");
-  assert.equal(decisionText({ outcome: "fixed_interval" }), "Fixed-interval");
-  assert.equal(decisionText({ outcome: "rtf", rtf_basis: "random" }), "Run-to-failure (random)");
-  assert.equal(decisionText({ outcome: "on_condition", outcomes: [{ outcome: "on_condition" }] }), "On-condition");
+  assert.equal(decisionText(COMBO), "On condition + Fixed interval");
+  assert.equal(decisionText({ outcome: "fixed_interval" }), "Fixed interval");
+  assert.equal(decisionText({ outcome: "rtf", rtf_basis: "random" }), "Run to failure (random)");
+  assert.equal(decisionText({ outcome: "on_condition", outcomes: [{ outcome: "on_condition" }] }), "On condition");
   assert.equal(isCombination(COMBO), true);
   assert.equal(isCombination({ outcome: "on_condition" }), false);
-  assert.equal(memberLine(COMBO.outcomes[1]), "Fixed-interval: Replace the bearing · every 24 months");
+  assert.equal(memberLine(COMBO.outcomes[1]), "Fixed interval: Replace the bearing · every 24 months");
   assert.equal(memberLine({ outcome: "redesign", task_id: null }), "Redesign (until the change is made)");
-  assert.equal(memberLine({ outcome: "fixed_interval", task_id: null }), "Fixed-interval: no task now");
+  assert.equal(memberLine({ outcome: "fixed_interval", task_id: null }), "Fixed interval: no task now");
 });
 
 test("a combination goes back whole, a cell's change on its first task", () => {
@@ -242,11 +243,54 @@ test("a combination's evidence: each member's own goes back with it, and each re
   assert.deepEqual(decisionBody(withOwn).outcomes[1].evidence, { type: "strategy_analysis", id: "sa1" });
   assert.equal(decisionBody(withOwn).outcomes[0].evidence, undefined);
   assert.equal(memberEvidenceLine({ outcome: "fixed_interval", status: "supported", artifact_name: "Bearing replacement", evidence_from: "own" }),
-    "Fixed-interval: Supported · Bearing replacement");
+    "Fixed interval: Supported · Bearing replacement");
   assert.equal(memberEvidenceLine({ outcome: "on_condition", status: "linked", evidence_kind: "working", artifact_name: "Pump water", evidence_from: "decision" }),
-    "On-condition: Notes linked · Pump water (the decision's)");
-  assert.equal(memberEvidenceLine({ outcome: "fixed_interval", status: "unevidenced" }), "Fixed-interval: none linked");
+    "On condition: Notes linked · Pump water (the decision's)");
+  assert.equal(memberEvidenceLine({ outcome: "fixed_interval", status: "unevidenced" }), "Fixed interval: none linked");
   assert.equal(memberEvidenceLine({ outcome: "redesign", status: null }), "Redesign: needs no evidence");
   // Partly evidenced counts with the decisions that still want evidence.
   assert.equal(modeCounts({ decision: { ...COMBO, status: "partly" } }).unlinked, 1);
+});
+
+test("a decision's rows: one per member task, then any other linked task; tasks before a decision", () => {
+  const tasks = [{ id: "t1", name: "Vibration check" }, { id: "t2", name: "Replace the bearing" }, { id: "t3", name: "Grease" }];
+  const rows = decisionRows(COMBO, tasks);
+  assert.deepEqual(rows.map((r) => [r.key, r.outcome, r.task?.name ?? null]),
+    [["t1", "on_condition", "Vibration check"], ["t2", "fixed_interval", "Replace the bearing"], ["t3", null, "Grease"]]);
+  // A member whose task has gone, and a redesign: rows with no task.
+  const gone = { ...COMBO, outcomes: [COMBO.outcomes[0], { outcome: "redesign", task_id: null }] };
+  assert.deepEqual(decisionRows(gone, tasks.slice(0, 1)).map((r) => [r.outcome, r.task?.id ?? null]), [["on_condition", "t1"], ["redesign", null]]);
+  // A plain decision: its tasks, the first with the decision's outcome when the task has none.
+  const plain = { outcome: "on_condition", task_id: "t1" };
+  assert.deepEqual(decisionRows(plain, [tasks[0], { ...tasks[1], outcome: "fixed_interval" }]).map((r) => r.outcome), ["on_condition", "fixed_interval"]);
+  assert.deepEqual(decisionRows(null, tasks.slice(0, 1)).map((r) => r.outcome), [null]);
+  // Tasks without an id (the worksheet outside the Explorer) aren't rows.
+  assert.deepEqual(decisionRows(plain, [{ id: null, name: "x" }]), []);
+});
+
+test("the tasks that can join a decision follow the combination rules", () => {
+  assert.deepEqual(addableOutcomes({ outcome: "on_condition", task_id: "t1" }), ["fixed_interval", "failure_finding", "redesign"]);
+  assert.deepEqual(addableOutcomes(COMBO), ["failure_finding"]);
+  assert.deepEqual(addableOutcomes({ outcome: "redesign" }), ["on_condition", "fixed_interval", "failure_finding"]);
+  assert.deepEqual(addableOutcomes({ outcome: "rtf" }), []);
+  assert.deepEqual(addableOutcomes({ outcome: "accept" }), []);
+  assert.deepEqual(addableOutcomes({ outcome: "on_condition" }), []); // no task yet: decide it first
+  assert.deepEqual(addableOutcomes(null), []);
+});
+
+test("a decision with one more member goes back with each member by its task", () => {
+  const plain = { outcome: "on_condition", task: "Check", interval: 1, interval_unit: "weeks", task_id: "t1", notes: "Why", evidence: { type: "report", id: "r1", name: "x" } };
+  assert.deepEqual(decisionWithMember(plain, { outcome: "fixed_interval", task: "Replace", interval: 24, interval_unit: "months" }), {
+    outcomes: [{ outcome: "on_condition", task_id: "t1" }, { outcome: "fixed_interval", task: "Replace", interval: 24, interval_unit: "months" }],
+    notes: "Why", evidence: { type: "report", id: "r1" },
+  });
+  const combo = { ...COMBO, outcomes: [{ ...COMBO.outcomes[0], evidence: { type: "model", id: "m1" } }, COMBO.outcomes[1]] };
+  assert.deepEqual(decisionWithMember(combo, { outcome: "failure_finding", task_id: "t9" }), {
+    outcomes: [{ outcome: "on_condition", task_id: "t1", evidence: { type: "model", id: "m1" } }, { outcome: "fixed_interval", task_id: "t2" },
+      { outcome: "failure_finding", task_id: "t9" }],
+    notes: "Neither alone is enough",
+  });
+  assert.deepEqual(decisionWithMember({ outcome: "redesign" }, { outcome: "on_condition", task: "Watch", interval: 1, interval_unit: "weeks" }).outcomes,
+    [{ outcome: "redesign" }, { outcome: "on_condition", task: "Watch", interval: 1, interval_unit: "weeks" }]);
+  assert.equal(memberEvidenceText({ outcome: "fixed_interval", status: "unevidenced" }), "none linked");
 });

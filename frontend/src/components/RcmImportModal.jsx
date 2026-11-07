@@ -14,11 +14,11 @@ const CONSEQUENCES = [
   ["hidden", "Hidden"],
 ];
 const OUTCOMES = [
-  ["on_condition", "On-condition (monitor)"],
-  ["fixed_interval", "Fixed-interval replacement"],
-  ["rtf:random", "Run-to-failure — failures are random"],
-  ["rtf:uneconomic", "Run-to-failure — prevention isn't economic"],
-  ["failure_finding", "Failure-finding task"],
+  ["on_condition", "On condition (monitor)"],
+  ["fixed_interval", "Fixed interval replacement"],
+  ["rtf:random", "Run to failure — failures are random"],
+  ["rtf:uneconomic", "Run to failure — prevention isn't economic"],
+  ["failure_finding", "Failure finding task"],
   ["redesign", "Redesign"],
   ["accept", "Accept risk / no scheduled maintenance"],
 ];

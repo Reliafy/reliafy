@@ -99,7 +99,7 @@ test("the Task cell says how many more tasks a mode has; a second task on a cost
   assert.equal(taskWithInterval(row(one)), "Weekly pH check · every 1 week");
   const old = { ...two, decision: { outcome: "on_condition", task: "Weekly pH check", interval: 1, interval_unit: "weeks" } };
   assert.equal(taskWithInterval(row(old)), "Weekly pH check · every 1 week");
-  assert.equal(phoneLine(row(two)), "Operational · On-condition · 1 week · Weekly pH check · +1 task");
+  assert.equal(phoneLine(row(two)), "Operational · On condition · 1 week · Weekly pH check · +1 task");
 });
 
 test("levels count functions and failures; the one search and the chips reach the RCM rows", () => {

@@ -941,7 +941,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       } else if (id === "rename") { setRcmFocus(r.key); setEditing({ key: r.key, col: "name" }); }
       else if (id === "decide") setDeciding(r);
       else if (id === "open") openItem(r.key);
-      else if (id === "add-task") openItem(r.key, { add: "task" });
+      // No decision yet: the task is its decision (Decide…); else another task joins it.
+      else if (id === "add-task") { if (r.ref.decision) openItem(r.key, { add: "task" }); else setDeciding(r); }
       else if (id === "link-cause") openLink(r, "cause");
       else if (id === "link-effect") openLink(r, "effect");
       else if (id === "go") reveal(r.ref.cause_id);

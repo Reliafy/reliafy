@@ -61,7 +61,7 @@ test("a task's Edit… shows what it counts and can change it", async ({ page, r
   await openFleet(page, p);
   await trow(page, `^Failure mode: Engine wears ${tag}`).locator(".tp-nm").dblclick();
   const dlg = page.getByRole("complementary", { name: "Details" });
-  const tasks = dlg.getByRole("region", { name: "Tasks" });
+  const tasks = dlg.getByRole("region", { name: "Decision" });
   await tasks.getByRole("button", { name: `Actions for Service ${tag}` }).click();
   await page.getByRole("menu", { name: `Actions for Service ${tag}` }).getByRole("menuitem", { name: "Edit…" }).click();
   const field = tasks.getByRole("group", { name: "Measurement" });

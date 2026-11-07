@@ -328,9 +328,9 @@ export function DueChip({ task }) {
 }
 
 export const OUTCOME_LABELS = {
-  fixed_interval: "Fixed-interval replacement",
-  failure_finding: "Failure-finding",
-  on_condition: "On-condition",
+  fixed_interval: "Fixed interval replacement",
+  failure_finding: "Failure finding",
+  on_condition: "On condition",
   rtf: "Run to failure",
   redesign: "Redesign",
   accept: "Accept",

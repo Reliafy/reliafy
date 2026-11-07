@@ -52,10 +52,10 @@ export const NOFAIL_HINT = "Add a performance standard and a functional failure 
 LEVEL_OF.cause = { type: "cause", label: "Caused by", plural: "Causes below", child: null, depth: 0 };
 
 export const OUTCOME_LABEL = {
-  on_condition: "On-condition",
-  fixed_interval: "Fixed-interval",
-  rtf: "Run-to-failure",
-  failure_finding: "Failure-finding",
+  on_condition: "On condition",
+  fixed_interval: "Fixed interval",
+  rtf: "Run to failure",
+  failure_finding: "Failure finding",
   redesign: "Redesign",
   accept: "Accept risk",
 };
@@ -231,7 +231,7 @@ export function failuresOn(display, positionId) {
 // interval_unit, task_id}], the first the decision's own), only on a combination.
 export const isCombination = (d) => Array.isArray(d?.outcomes) && d.outcomes.length > 1;
 
-// A combination's member as a line: "Fixed-interval: Replace the bearing · every 24 months".
+// A combination's member as a line: "Fixed interval: Replace the bearing · every 24 months".
 export function memberLine(o) {
   const label = OUTCOME_LABEL[o.outcome] || o.outcome;
   if (o.outcome === "redesign") return `${label} (until the change is made)`;
@@ -240,15 +240,84 @@ export function memberLine(o) {
 }
 
 // A combination's member's evidence as a line (the worksheet's Evidence card):
-// "Fixed-interval: Supported · Bearing replacement (the decision's)", or
-// "Fixed-interval: none linked"; a redesign needs none.
+// "Fixed interval: Supported · Bearing replacement (the decision's)", or
+// "Fixed interval: none linked"; a redesign needs none.
 export function memberEvidenceLine(o) {
-  const label = OUTCOME_LABEL[o.outcome] || o.outcome;
-  if (!o.status) return `${label}: needs no evidence`;
-  if (o.status === "unevidenced") return `${label}: none linked`;
+  return `${OUTCOME_LABEL[o.outcome] || o.outcome}: ${memberEvidenceText(o)}`;
+}
+
+// The same without the outcome (on the member's own task row): "Supported ·
+// Bearing replacement (the decision's)", "none linked", "needs no evidence".
+export function memberEvidenceText(o) {
+  if (!o.status) return "needs no evidence";
+  if (o.status === "unevidenced") return "none linked";
   const check = o.status === "linked" ? LINKED_LABEL[o.evidence_kind] || STATUS_LABEL.linked : STATUS_LABEL[o.status] || o.status;
   const what = o.artifact_name ? ` · ${o.artifact_name}` : "";
-  return `${label}: ${check}${what}${o.evidence_from === "decision" ? " (the decision's)" : ""}`;
+  return `${check}${what}${o.evidence_from === "decision" ? " (the decision's)" : ""}`;
+}
+
+// ---- a failure mode's decision and its tasks, as one section (the details) -----------
+// In RCM the decision is the choice of task: the details show the decision in
+// words, then one row per member task (RcmModeTasks.jsx).
+
+// The rows under a decision: [{key, outcome, task, member}]. A combination: one
+// per member (task null when it schedules none now: a redesign, or a task that
+// has gone), then any other task linked to the mode. Otherwise the mode's tasks,
+// the first the decision's own (its outcome the decision's when the task has none).
+// Only tasks with an id (the Explorer's) are rows; `d` null: the tasks linked
+// before any decision.
+export function decisionRows(d, tasks) {
+  const live = (tasks || []).filter((t) => t?.id);
+  if (isCombination(d)) {
+    const used = new Set();
+    const rows = d.outcomes.map((o, i) => {
+      const task = live.find((t) => t.id === o.task_id) || null;
+      if (task) used.add(task.id);
+      return { key: task ? task.id : `member:${o.outcome}:${i}`, outcome: o.outcome, task, member: o };
+    });
+    return [...rows, ...live.filter((t) => !used.has(t.id)).map((t) => ({ key: t.id, outcome: t.outcome || null, task: t, member: null }))];
+  }
+  return live.map((t, i) => ({
+    key: t.id, outcome: t.outcome || (d && i === 0 && SCHEDULED_OUTCOMES.has(d.outcome) ? d.outcome : null), task: t, member: null,
+  }));
+}
+
+// The outcomes another task can add to a decision, as a combination of tasks
+// (RCM II): two or more scheduled tasks, or a redesign beside one; none for a
+// decision that stands alone (run to failure, accept) or while a scheduled
+// member has no task (its interval is missing: decide it first).
+const COMBINES = ["on_condition", "fixed_interval", "failure_finding", "redesign"];
+const SCHEDULED_OUTCOMES = new Set(COMBINES.slice(0, 3));
+function combines(list) {
+  if (new Set(list).size !== list.length || list.some((o) => !COMBINES.includes(o))) return false;
+  const scheduled = list.filter((o) => SCHEDULED_OUTCOMES.has(o)).length;
+  return list.includes("redesign") ? scheduled === 1 : scheduled >= 2;
+}
+export function addableOutcomes(d) {
+  if (!d) return [];
+  const members = isCombination(d) ? d.outcomes : [{ outcome: d.outcome, task_id: d.task_id }];
+  if (members.some((o) => SCHEDULED_OUTCOMES.has(o.outcome) && !o.task_id)) return [];
+  const have = members.map((o) => o.outcome);
+  return COMBINES.filter((o) => !have.includes(o) && combines([...have, o]));
+}
+
+// The decision as the server takes it back with one more member: each member
+// it has by its task (task_id, so a task's name and interval are left as they
+// are), its own evidence kept; the decision's notes and evidence kept.
+// `member`: {outcome} (a redesign), {outcome, task, interval, interval_unit}
+// (a new task) or {outcome, task_id} (an existing one).
+export function decisionWithMember(d, member) {
+  const ref = (e) => (e?.type && e?.id ? { type: e.type, id: e.id } : null);
+  const keep = (o) => ({
+    outcome: o.outcome,
+    ...(o.task_id ? { task_id: o.task_id } : {}),
+    ...(ref(o.evidence) ? { evidence: ref(o.evidence) } : {}),
+  });
+  const members = isCombination(d) ? d.outcomes.map(keep) : [keep({ outcome: d.outcome, task_id: d.task_id })];
+  const out = { outcomes: [...members, member] };
+  if (String(d.notes || "").trim()) out.notes = d.notes;
+  if (ref(d.evidence)) out.evidence = ref(d.evidence);
+  return out;
 }
 
 // A decision as the server takes it back: the fields a decision is made of,
