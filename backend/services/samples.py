@@ -1184,6 +1184,9 @@ def seed_samples(db) -> None:
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample RBD %r: %s", spec["id"], exc)
     _seed_availability_results(db)
+    from backend.services import fault_trees  # local: it imports the RBD analysis
+
+    fault_trees.seed_samples(db, SAMPLE_OWNER)
 
     for spec in SAMPLE_DEGRADATION_MODELS:
         try:
@@ -1423,7 +1426,7 @@ def hide_sample(db, uid: str, sample_id: str) -> None:
 # Every collection that can hold a shared-sample artifact.
 _SAMPLE_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models", "tracked_items",
-    "tracked_fleets", "strategy_analyses", "fleets",
+    "tracked_fleets", "strategy_analyses", "fleets", "fault_trees",
 )
 
 

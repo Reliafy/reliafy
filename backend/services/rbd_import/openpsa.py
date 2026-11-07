@@ -715,6 +715,7 @@ def _convert(model: _Model, top: str) -> ImportedDiagram:
             f"{len(names)} basic event(s) have no data ({_names(names)}), so there's nothing to "
             "build their blocks from.")
     fixed = sorted(set(conv.fixed_prob) & used)
+    tree_notes = conv.all_warnings()  # the file's own notes, before the RBD-only ones
     if fixed:
         shown = [f"“{conv.fixed_prob[n][0]}” (p = {conv.fixed_prob[n][1]:.3g})" for n in fixed]
         more = f" and {len(shown) - 10} more" if len(shown) > 10 else ""
@@ -749,7 +750,12 @@ def _convert(model: _Model, top: str) -> ImportedDiagram:
     ft_name = model.gate_ft.get(top)
     if ft_name and ft_name != top:
         name = f"{ft_name} — {top}"
-    return ImportedDiagram(name=name, graph=graph, warnings=conv.all_warnings() + more)
+    fixed_p = {n: conv.fixed_prob[n][1] for n in fixed}
+    if ccf:
+        tree_notes.append("The file's common-cause groups were left out: a fault tree here has no common-cause "
+                          "groups yet. Import it as an RBD to keep them.")
+    return ImportedDiagram(name=name, graph=graph, warnings=conv.all_warnings() + more,
+                           fault_tree=(tree, fixed_p, tree_notes))
 
 
 def _used_leaves(tree: ft.FaultTree) -> set[str]:

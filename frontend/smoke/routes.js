@@ -78,6 +78,8 @@ export const DETAIL_IDS = {
   "/models/joint/:id": ["/api/joint/models", list("models")],
   "/systems/b/:id": ["/api/rbds", list("rbds")],
   "/systems/runs/:runId": ["/api/rbd-runs", list("runs", "run_id")],
+  // A fault tree: the sample quadcopter tree is seeded.
+  "/systems/fault-trees/:id": ["/api/fault-trees", list("fault_trees")],
   "/data/:id": ["/api/datasets", list("datasets")],
   "/strategy/analyses/:id": ["/api/strategy/analyses", list("analyses")],
   "/risk/:fleetId": ["/api/fleet/tracked", list("fleets")],

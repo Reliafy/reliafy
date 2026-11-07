@@ -58,6 +58,12 @@ LEGACY: dict = {
     "upgrade_link": ("", {"": ("get", "upgrade_link")}),
 }
 
+# Actions added since the rename (not an earlier tool's): fault trees built by hand.
+ADDED = {("get", "fault_tree"), ("list", "fault_trees"), ("analyse", "fault_tree"), ("change", "fault_tree_save"),
+         ("change", "fault_tree_delete")}
+ADDED_HEAVY = {"analyse.fault_tree"}
+ADDED_TEXT = {"list.fault_trees", "get.fault_tree", "analyse.fault_tree"}
+
 # The earlier tools' sets (to 1 Nov 2026), by their old keys: the new sets must be these, renamed.
 OLD_PRO_ONLY = {"life_data_analysis.fit", "models.fit", "models.fit_alt", "models.fit_recurrent", "list.fleets",
                 "strategy.fleet_forecast", "list.fleet_alerts", "fleet.create_alert",
@@ -122,8 +128,8 @@ def test_every_earlier_tool_and_action_has_its_new_home():
             assert new_action in mcp_server.TABLES[tool][1], (old, action)
             targets.add((tool, new_action))
     every_new = {(t, a) for t, (_, table) in mcp_server.TABLES.items() for a in table}
-    assert targets == every_new
-    assert sum(len(t) for t in OLD_TOOLS.values()) == len(every_new) == 81  # 80 actions + upgrade_link
+    assert targets | ADDED == every_new and not targets & ADDED
+    assert sum(len(t) for t in OLD_TOOLS.values()) == len(every_new) - len(ADDED) == 81  # 80 actions + upgrade_link
 
 
 def test_gating_and_slots_are_the_earlier_ones_renamed():
@@ -132,10 +138,10 @@ def test_gating_and_slots_are_the_earlier_ones_renamed():
     from backend import mcp_server
 
     assert {_new_key(k) for k in OLD_PRO_ONLY} == mcp_server.PRO_ONLY_TOOLS
-    assert {_new_key(k) for k in OLD_HEAVY} == mcp_server.HEAVY_TOOLS
+    assert {_new_key(k) for k in OLD_HEAVY} | ADDED_HEAVY == mcp_server.HEAVY_TOOLS
     assert {_new_key(k) for k in OLD_UNGATED} == mcp_server.UNGATED_TOOLS
     assert {_new_key(k) for k in OLD_UNCOUNTED} == mcp_server.UNCOUNTED_TOOLS
-    assert {_new_key(k) for k in OLD_TEXT} == mcp_server.TEXT_RESULT_TOOLS
+    assert {_new_key(k) for k in OLD_TEXT} | ADDED_TEXT == mcp_server.TEXT_RESULT_TOOLS
     assert mcp_server._FIT_TOOLS == {_new_key(k) for k in OLD_PRO_ONLY if "fleet" not in k}
 
 
@@ -161,7 +167,7 @@ def test_six_tools_reads_apart_from_writes(env):
     assert set(mcp_server.TABLES) == set(tools) - {"guide"}
     assert {mcp_server.TABLES[n][0] for n in ("get", "list")} == {"kind"}
     assert {mcp_server.TABLES[n][0] for n in set(mcp_server.TABLES) - {"get", "list"}} == {"action"}
-    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 81
+    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 81 + len(ADDED)
 
 
 def test_every_action_is_in_its_tool_description_and_schema(env):

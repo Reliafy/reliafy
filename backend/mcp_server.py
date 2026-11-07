@@ -389,6 +389,7 @@ _USER_ERRORS = (
 # notes, labels, column headers, data cells — the shared samples' and imported
 # files' included), by tool.action: their results start with :data:`DATA_NOTICE`.
 TEXT_RESULT_TOOLS = {"list.models", "get.model", "list.datasets", "get.dataset", "list.rbds", "get.rbd",
+                     "list.fault_trees", "get.fault_tree", "analyse.fault_tree",
                      "get.upload", "list.workspace_changes", "list.fleets", "list.share_links",
                      "list.library", "get.library_record"}
 DATA_NOTICE = ("Names, notes, descriptions, labels, column headers and values in this result were written by "
@@ -535,7 +536,7 @@ HEAVY_TOOLS = {
     "analyse.rbd_system_history", "analyse.fit", "analyse.alt_use_level", "analyse.compare_groups",
     "change.model_fit", "change.model_fit_alt", "change.model_fit_recurrent", "analyse.fleet_forecast",
     "change.import_rbd", "change.import_excel", "get.upload", "change.dataset_upload",
-    "change.rbd_upload_outage_log", "analyse.fit_joint", "change.model_fit_joint",
+    "change.rbd_upload_outage_log", "analyse.fit_joint", "change.model_fit_joint", "analyse.fault_tree",
 }
 
 USER_BUSY_MESSAGE = (
@@ -847,8 +848,7 @@ ONE_OF = {
     ("analyse", "calendar_replacement"): "model_id or distribution_id + params, shuts, failure_cost",
     ("analyse", "next_replacement"): "model_id or distribution_id + params, age, shuts, failure_cost",
 }
-ARGS_HELP = ("The action's arguments, e.g. {\"model_id\": \"…\", \"times\": [1000]}. "
-             "guide(action='<tool>.<action>') gives each one.")
+ARGS_HELP = "The action's arguments, e.g. {\"model_id\": \"m1\"}; guide(action='<tool>.<action>') lists them."
 
 
 def _pointer(tool: str, value: str) -> str:
@@ -893,7 +893,8 @@ def _listed_description(name: str, selector: str, intro: str, table: Table, hide
             needs.append(f"{value}({need})")
     text = " ".join(intro.split())
     if needs:
-        text += (f" Required (guide(action='{name}.<{selector}>') for all): " + "; ".join(needs) + ".")
+        # (The args object's own description points at guide(action=...) for the rest.)
+        text += " Required: " + "; ".join(needs) + "."
     return text
 
 
@@ -5155,6 +5156,255 @@ def rbd_fault_tree(
     return out
 
 
+# ---------------------------------------------------------------------------
+# Fault trees built by hand (backend/services/fault_trees.py)
+# ---------------------------------------------------------------------------
+
+
+def _ft_brief(doc) -> dict:
+    from backend.services import fault_trees as ft_service
+
+    tree = doc.tree or {}
+    return {"id": doc.id, "name": doc.name, **ft_service.counts(tree), "unit": tree.get("unit") or "",
+            "is_sample": samples_service.is_sample(doc.owner_id), "updated_at": doc.updated_at.isoformat(),
+            **({"rbd_id": doc.rbd_id} if doc.rbd_id else {}), "url": _url(f"/systems/fault-trees/{doc.id}")}
+
+
+def _get_ft(db, uid: str, tree_id: str):
+    from backend.services import fault_trees as ft_service
+
+    doc = ft_service.get_tree(db, tree_id, _owners(uid))
+    if doc is None:
+        raise ToolError("Fault tree not found (list kind fault_trees).")
+    return doc
+
+
+def _ft_call(fn, *args, **kwargs):
+    from backend.services import fault_trees as ft_service
+
+    try:
+        return fn(*args, **kwargs)
+    except ft_service.FaultTreeError as exc:
+        raise ToolError(str(exc)) from None
+
+
+def list_fault_trees(ctx: Context) -> dict[str, Any]:
+    """Saved fault trees: id, name, gate and basic-event counts, unit."""
+    from backend.services import fault_trees as ft_service
+
+    user, db = _caller(ctx), _db()
+    return {"fault_trees": [_ft_brief(d) for d in ft_service.list_trees(db, _owners(user["uid"]))]}
+
+
+def get_fault_tree(
+    ctx: Context,
+    fault_tree_id: Annotated[str, Field(description="A fault tree id from list kind fault_trees.")],
+) -> dict[str, Any]:
+    """A fault tree in the form change fault_tree_save takes (top, nodes, unit), with the basic events on
+    placeholder (guessed) data and those with no data yet."""
+    from backend.services import fault_trees as ft_service
+
+    user, db = _caller(ctx), _db()
+    doc = _get_ft(db, user["uid"], fault_tree_id)
+    return {**_ft_brief(doc), "tree": doc.tree, "placeholders": ft_service.placeholder_labels(doc.tree),
+            "no_data": ft_service.missing_data_labels(doc.tree)}
+
+
+def analyse_fault_tree(
+    ctx: Context,
+    fault_tree_id: Annotated[str, Field(description="A fault tree id from list kind fault_trees.")],
+    t: Annotated[Optional[float], Field(gt=0, description=(
+        "The time (the tree's unit) the tree is evaluated at; default where the top event probability is about "
+        "10%. Ignored when every basic event is a fixed probability."))] = None,
+    max_cut_sets: Annotated[int, Field(ge=1, le=100, description="Cut sets returned, most likely first.")] = 20,
+    max_events: Annotated[int, Field(ge=1, le=100, description=(
+        "Basic events returned with their importance, most critical first."))] = 15,
+    include_gates: Annotated[bool, Field(description="Also return each gate's probability.")] = False,
+    export_openpsa: Annotated[bool, Field(description=(
+        "Also return the tree as Open-PSA MEF XML (openpsa_xml). Exponential and Weibull events keep their "
+        "models; other models are written as their probability at t."))] = False,
+) -> dict[str, Any]:
+    """A saved fault tree's top event probability (at t), minimal cut sets ranked by probability with
+    share_alone (they overlap: the shares don't add up to 1), basic events by criticality with Birnbaum,
+    Fussell-Vesely, RAW and RRW. The RBD fault-tree engine; exact and free."""
+    from backend.services import fault_trees as ft_service
+
+    user, db = _caller(ctx), _db()
+    doc = _get_ft(db, user["uid"], fault_tree_id)
+    owners = [*_owners(user["uid"]), doc.owner_id]
+    try:
+        res = _ft_call(ft_service.analyse_for_owner, db, doc.tree, owners, t=t)
+    except rbd_analysis.AnalysisError as exc:
+        raise ToolError(str(exc)) from None
+    events = {e["id"]: e for e in res["events"]}
+
+    def name(eid: str) -> str:
+        return str((events.get(eid) or {}).get("label") or eid)
+
+    cuts = res["cut_sets"]
+    ranked = sorted(res["events"], key=lambda e: -((e.get("importance") or {}).get("criticality") or 0.0))
+    out: dict[str, Any] = {
+        "fault_tree_id": doc.id, "name": doc.name, "url": _url(f"/systems/fault-trees/{doc.id}"),
+        "kind": res["kind"], "unit": res.get("unit") or None, "t": res["t"], "t_default": res["t_default"],
+        "top_event_probability": res["top_event_probability"],
+        "n_gates": res["n_gates"], "n_events": res["n_events"],
+        "cut_sets": {
+            "count": cuts["count"], "complete": cuts["complete"], "basis": cuts["basis"],
+            **({"max_order": cuts["max_order"]} if cuts.get("max_order") else {}),
+            "probability_sum": cuts["probability_sum"],
+            "listed": [{"events": [name(e) for e in c["events"]], "order": c["order"],
+                        "probability": c["probability"], "share_alone": c["share"]}
+                       for c in cuts["listed"][:max_cut_sets]],
+            "note": _CUT_SET_NOTE,
+        },
+        "events": [
+            {"name": e["label"], "probability": e["probability"], "data": e.get("source"),
+             **({"placeholder": True} if e.get("placeholder") else {}),
+             "importance": {k: v for k, v in (e.get("importance") or {}).items() if v is not None}}
+            for e in ranked[:max_events]
+        ],
+        "notes": res.get("notes") or [],
+    }
+    if res.get("placeholders"):
+        out["placeholders"] = res["placeholders"]
+        out["warning"] = "Some basic events use placeholder (guessed) data — results are illustrative until replaced."
+    if include_gates:
+        out["gates"] = [{"name": g.get("label") or g["id"], "kind": g["kind"], "k": g["k"],
+                         "probability": g["probability"]} for g in res["gates"]]
+    if export_openpsa:
+        from backend.services import models as models_service
+
+        xml, notes = _ft_call(ft_service.to_openpsa, doc.name, doc.tree,
+                              lambda mid: models_service.get_live_model(db, mid, owners), t=res["t"])
+        out["openpsa_xml"] = xml
+        out["notes"] += notes
+    return out
+
+
+class FtNode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(description="Unique within the tree: letters, digits, _ - . :")
+    type: Literal["gate", "event"]
+    label: Optional[str] = Field(None, max_length=120, description="What it means, e.g. 'Pump A fails'.")
+    gate: Optional[str] = Field(None, description=(
+        "type gate: or (any input), and (all inputs) or vote (at least k of the inputs). NOT, XOR, INHIBIT and "
+        "dynamic gates are refused."))
+    k: Optional[int] = Field(None, ge=1, description="gate vote: how many inputs must occur.")
+    inputs: Optional[list[str]] = Field(None, description=(
+        "type gate: the ids of its inputs. A basic event may be under several gates (a repeated event, counted "
+        "once)."))
+    model: Optional[BlockModel] = Field(None, description=(
+        "type event: its time to failure, as an RBD block's model (saved_model_id, or distribution_id + params)."))
+    probability: Optional[float] = Field(None, ge=0, le=1, description=(
+        "type event, instead of model: a fixed probability (an unavailability q)."))
+    placeholder: bool = Field(False, description="True ONLY when the event's data is a guess the user must replace.")
+    note: Optional[str] = Field(None, max_length=1000)
+
+
+def save_fault_tree(
+    ctx: Context,
+    fault_tree_id: Annotated[Optional[str], Field(description=(
+        "One of the user's own fault trees to replace; omit to create one."))] = None,
+    name: Annotated[Optional[str], Field(max_length=200, description="The tree's name (needed to create one).")] = None,
+    top: Annotated[Optional[str], Field(description="The id of the top event's gate (default the first node).")] = None,
+    nodes: Annotated[Optional[list[FtNode]], Field(description=(
+        "Every gate and basic event (needed to create one; replaces them all on an update)."))] = None,
+    unit: Annotated[Optional[str], Field(max_length=40, description="The time unit of the models, e.g. 'hours'.")] = None,
+    make_rbd: Annotated[bool, Field(description=(
+        "Also save the tree as a new RBD (OR = series, AND = parallel, k of n failed = n-k+1 of n working) and "
+        "link it; fixed-probability events become blocks without a model."))] = False,
+) -> dict[str, Any]:
+    """Create or replace a fault tree: a top event, AND / OR / k-of-n vote gates and basic events, each with
+    a life model or a fixed probability (guesses marked placeholder). A tree may be saved unfinished; analyse
+    fault_tree says what it still needs. guide topic fault_trees has the rules."""
+    from backend.services import fault_trees as ft_service
+
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    existing = None
+    if fault_tree_id:
+        existing = _get_ft(db, uid, fault_tree_id)
+        if existing.owner_id != uid:
+            raise ToolError(f"“{existing.name}” is a shared sample, not yours: save a copy instead (omit fault_tree_id).")
+    if existing is None and (not name or not nodes):
+        raise ToolError("To create a fault tree give name and nodes (with top: the top event's gate id).")
+    raw = dict(existing.tree) if existing is not None else {}
+    if nodes is not None:
+        raw["nodes"] = [n.model_dump(exclude_none=True) for n in nodes]
+        raw["top"] = top or raw["nodes"][0]["id"]
+    elif top:
+        raw["top"] = top
+    if unit is not None:
+        raw["unit"] = unit
+    owners = _owners(uid)
+    try:
+        tree = _ft_call(ft_service.normalize_tree, raw, _resolver(db, owners))
+    except rbd_graph.GraphError as exc:
+        raise ToolError(str(exc)) from None
+    if existing is None:
+        _cap(db, user, "fault_trees", "fault trees")
+    access_service.check_references(db, _reader(user), [("models", n["model"]["modelId"]) for n in tree["nodes"]
+                                                        if isinstance(n.get("model"), dict)
+                                                        and n["model"].get("modelId")])
+    doc = ft_service.save_tree(db, name or existing.name, tree, uid,
+                               tree_id=existing.id if existing is not None else None)
+    out = {**_ft_brief(doc), "placeholders": ft_service.placeholder_labels(tree),
+           "no_data": ft_service.missing_data_labels(tree)}
+    if make_rbd:
+        _cap(db, user, "rbds", "RBDs")
+        graph, notes = _ft_call(ft_service.to_rbd_graph, tree, _resolver(db, owners))
+        rbd = rbds_service.save_rbd(db, f"{doc.name} (from fault tree)"[:200], graph, uid)
+        ft_service.link_rbd(db, doc.id, rbd.id, uid)
+        out["rbd"] = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/systems/b/{rbd.id}"), "notes": notes}
+    return out
+
+
+def delete_fault_tree(
+    ctx: Context,
+    fault_tree_id: Annotated[str, Field(description="One of the user's own fault tree ids (list kind fault_trees).")],
+) -> dict[str, Any]:
+    """Permanently delete one of the user's own fault trees (an RBD made from it stays). Only on the user's
+    explicit request, confirmed by name."""
+    from backend.services import fault_trees as ft_service
+
+    user, db = _caller(ctx), _db()
+    doc = _get_ft(db, user["uid"], fault_tree_id)
+    if samples_service.is_sample(doc.owner_id):
+        raise _sample_refusal("fault tree", doc.name)
+    ft_service.delete_tree(db, doc.id, user["uid"])
+    return {"deleted": True, "fault_tree_id": doc.id, "name": doc.name}
+
+
+def _save_imported_trees(db, user, diagrams, name, save, only) -> dict[str, Any]:
+    """import_rbd with as_fault_tree: each Open-PSA / Galileo top event as a fault tree."""
+    from backend.services import fault_trees as ft_service
+
+    picked = [d for d in diagrams if not only or d.name in only]
+    rows, ready = [], []
+    for d in picked:
+        if not d.fault_tree:
+            rows.append({"name": d.name, "error": "Only Open-PSA and Galileo files import as fault trees."})
+            continue
+        gate_tree, fixed, notes = d.fault_tree
+        try:
+            raw, more = ft_service.from_imported(gate_tree, fixed, str(d.graph.get("unit") or ""))
+            tree = ft_service.normalize_tree(raw)
+        except ft_service.FaultTreeError as exc:
+            rows.append({"name": d.name, "error": str(exc)})
+            continue
+        title = (f"{name} — {d.name}" if name and len(picked) > 1 else name or d.name)[:200]
+        ready.append((title, tree))
+        rows.append({"name": title, **ft_service.counts(tree), "unit": tree["unit"] or None,
+                     **({"unit_warning": "The file states no time unit: set it (change fault_tree_save unit)."}
+                        if not tree["unit"] else {}), "notes": list(notes) + more})
+    if save and ready:
+        _cap(db, user, "fault_trees", "fault trees", n=len(ready))
+        for row, (title, tree) in zip([r for r in rows if "error" not in r], ready):
+            doc = ft_service.save_tree(db, title, tree, user["uid"])
+            row.update(fault_tree_id=doc.id, url=_url(f"/systems/fault-trees/{doc.id}"))
+    return {"saved": bool(save and ready), "fault_trees": rows}
+
+
 # What a lever row carries in analyse rbd_sensitivity's answer (the app's row has more).
 _SENSITIVITY_ROW_KEYS = ("rank", "id", "block", "name", "lever", "change", "value", "shown_value", "shown_to",
                          "effect_basis", "cost_to_change", "benefit_per_cost", "per_unit_cost", "plain",
@@ -7522,6 +7772,9 @@ def import_rbd(
         "What the file's rates and times are per ('Hours', 'Cycles', …), used only when the file doesn't "
         "state a unit itself (Galileo never does). Ask the user rather than guess; parameters are never "
         "rescaled."))] = None,
+    as_fault_tree: Annotated[bool, Field(description=(
+        "Open-PSA and Galileo only: save each top event as a fault tree (list kind fault_trees) instead of an "
+        "RBD."))] = False,
 ) -> dict[str, Any]:
     """Import diagrams from a BlockSim, Open-PSA, Galileo, RePyability JSON or Reliafy Excel
     template file (upload_id), or small pasted text (content, at most 200 KB), saving each as an RBD (all or
@@ -7557,6 +7810,11 @@ def import_rbd(
         owners = _owners(user["uid"])
         rbd_import.link_references(diagrams, _resolver(db, owners),
                                    lambda rid: rbds_service.get_rbd(db, rid, owners))
+        if as_fault_tree:
+            out = _save_imported_trees(db, user, diagrams, name=name, save=save, only=only)
+            if save and upload is not None and out["saved"]:
+                uploads_service.delete(db, upload["_id"])
+            return out
         return _save_imported(db, user, diagrams, name=name, save=save, only=only, upload=upload)
 
 
@@ -8262,6 +8520,7 @@ _A = {  # new tool -> {action: the function it runs}
         "model": _act(get_model, id="model_id"),
         "dataset": _act(get_dataset, id="dataset_id"),
         "rbd": _act(get_rbd, id="rbd_id"),
+        "fault_tree": _act(get_fault_tree, id="fault_tree_id"),
         "rbd_run": _act(get_rbd_run, id="run_id"),
         "job": _act(get_job, id="job_id"),
         "upload": _act(inspect_upload, id="upload_id"),
@@ -8273,6 +8532,7 @@ _A = {  # new tool -> {action: the function it runs}
         "models": _act(list_models, model_type="kind"),
         "datasets": _act(list_datasets),
         "rbds": _act(list_rbds),
+        "fault_trees": _act(list_fault_trees),
         "rbd_runs": _act(list_rbd_runs),
         "fleets": _act(list_fleets),
         "fleet_alerts": _act(list_fleet_alerts),
@@ -8310,6 +8570,7 @@ _A = {  # new tool -> {action: the function it runs}
         "rbd_cheapest_design": _act(cheapest_design),
         "rbd_compare": _act(compare_rbds),
         "rbd_fault_tree": _act(rbd_fault_tree),
+        "fault_tree": _act(analyse_fault_tree),
         "rbd_allocate_targets": _act(allocate_targets),
         "rbd_system_history": _act(system_history),
         "rbd_export_python": _act(export_rbd_python),
@@ -8333,6 +8594,8 @@ _A = {  # new tool -> {action: the function it runs}
         "rbd_clone": _act(clone_rbd),
         "rbd_edit": _act(edit_rbd),
         "rbd_delete": _act(delete_rbd),
+        "fault_tree_save": _act(save_fault_tree),
+        "fault_tree_delete": _act(delete_fault_tree),
         "rbd_upload_outage_log": _act(upload_outage_log),
         "upload_create": _act(create_upload),
         "upload_send_part": _act(upload_file_part),
@@ -8359,7 +8622,7 @@ _action_tool("list", _READ, "List saved items", "kind",
              _A["list"])
 _action_tool("analyse", _READ, "Analyse and calculate", "action",
              "Every calculation, saving nothing: life data, test plans, repairable systems, intervals, fleet "
-             "forecasts, RBDs (a long one answers with a job_id: get kind job).", _A["analyse"], docs={
+             "forecasts, RBDs, fault trees (a long one answers with a job_id: get kind job).", _A["analyse"], docs={
     "model_id": ("A saved model id (list kind models): non-repairable for reliability_at, check_life_requirement, "
                  "optimal_replacement and failure_finding_interval; ALT for alt_use_level; joint for "
                  "predict_joint; recurrent for next_failure, growth_projection and optimal_overhaul."),
@@ -8375,8 +8638,8 @@ _action_tool("analyse", _READ, "Analyse and calculate", "action",
     "rbd_id": "The diagram's id (list kind rbds).",
 })
 _action_tool("change", _WRITE, "Save and change items", "action",
-             "Every write: models, datasets, RBDs, files in, share links, fleet alerts. Delete, share or "
-             "overwrite only when the user asks.",
+             "Every write: models, datasets, RBDs, fault trees, files in, share links, fleet alerts. Delete, "
+             "share or overwrite only when the user asks.",
              _A["change"], docs={
     "dataset_id": ("A saved dataset (list kind datasets) instead of inline data; model_save: the dataset the "
                    "parameters were fitted to, kept as a reference."),

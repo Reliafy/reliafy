@@ -31,6 +31,8 @@ const RbdBuilder = lazy(() => import("./views/RbdBuilder.jsx"));
 // Simulation run history (#112).
 const RbdRuns = lazy(() => import("./views/RbdRuns.jsx"));
 const RbdRunsDetail = lazy(() => import("./views/RbdRunsDetail.jsx"));
+const FaultTreeHome = lazy(() => import("./views/FaultTreeHome.jsx"));
+const FaultTreeEditor = lazy(() => import("./views/FaultTreeEditor.jsx"));
 const RbdRunsCompare = lazy(() => import("./views/RbdRunsCompare.jsx"));
 const DatasetsHome = lazy(() => import("./views/DatasetsHome.jsx"));
 const DatasetPage = lazy(() => import("./views/DatasetPage.jsx"));
@@ -197,6 +199,9 @@ export default function AppShell() {
             <Route path="/systems/runs" element={<RbdRuns />} />
             <Route path="/systems/runs/compare" element={<RbdRunsCompare />} />
             <Route path="/systems/runs/:runId" element={<RbdRunsDetail />} />
+            <Route path="/systems/fault-trees" element={<FaultTreeHome />} />
+            <Route path="/systems/fault-trees/new" element={<FaultTreeEditor />} />
+            <Route path="/systems/fault-trees/:id" element={<FaultTreeEditor />} />
             {maintenanceEnabled && <Route path="/systems/structure" element={<MaintenancePartsPage view="structure" />} />}
 
             {/* Operate: the assets as maintained (Reliafy Maintenance), and

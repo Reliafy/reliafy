@@ -34,6 +34,10 @@ export const RBDS_LABEL = "RBDs";
 export const RBDS_TITLE = "Reliability block diagrams (RBDs)";
 export const RBDS_PATH = "/systems/rbds";
 export const SYSTEM_MODELS_LABEL = "System models";
+// System models' fault trees built by hand: the menu's word, the list page's title and its address.
+export const FAULT_TREES_LABEL = "Fault trees";
+export const FAULT_TREES_TITLE = "Fault trees";
+export const FAULT_TREES_PATH = "/systems/fault-trees";
 export const MODELS_LABEL = "Models";
 
 // The Explorer, Assets' tree pane over the register: its name on the page and
@@ -116,6 +120,7 @@ export const ENTRIES = [
         id: "systems", label: SYSTEM_MODELS_LABEL, to: RBDS_PATH, match: ["/systems"], opensOnFirstChild: true,
         children: [
           { to: RBDS_PATH, label: RBDS_LABEL, also: ["/systems/b"] },
+          { to: FAULT_TREES_PATH, label: FAULT_TREES_LABEL },
           { to: "/systems/runs", label: "Simulation runs" },
         ],
       },

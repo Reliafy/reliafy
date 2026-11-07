@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased (0.5.1)
+
+- **Fault trees built by hand**: `get fault_tree`, `list fault_trees`, `analyse fault_tree` (top event,
+  cut sets, importance; `export_openpsa` for Open-PSA XML), `change fault_tree_save` (with `make_rbd`) and
+  `change fault_tree_delete`; `change import_rbd` takes `as_fault_tree` for Open-PSA and Galileo files.
+  Listed by `reliafy tools`, e.g. `reliafy analyse fault_tree --fault-tree-id …`.
+
 ## Unreleased (0.5.0)
 
 - **Products** (Reliafy Maintenance): a product is a design tree with its part;

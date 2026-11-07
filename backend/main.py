@@ -53,6 +53,7 @@ from backend.routers import rbd_block_check as rbd_block_check_router
 from backend.routers import rbd_compare as rbd_compare_router
 from backend.routers import rbd_runs as rbd_runs_router
 from backend.routers import rbd_fault_tree as rbd_fault_tree_router
+from backend.routers import fault_trees as fault_trees_router
 from backend.routers import rbd_design as rbd_design_router
 from backend.routers import rbd_allocation as rbd_allocation_router
 from backend.routers import rbd_capacity as rbd_capacity_router
@@ -223,6 +224,7 @@ app.include_router(rbd_compare_router.router)
 app.include_router(rbd_block_check_router.router)
 app.include_router(rbd_runs_router.router)
 app.include_router(rbd_fault_tree_router.router)
+app.include_router(fault_trees_router.router)
 app.include_router(rbd_design_router.router)
 app.include_router(rbd_allocation_router.router)
 app.include_router(rbd_capacity_router.router)

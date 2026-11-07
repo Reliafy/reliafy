@@ -149,6 +149,7 @@ reliafy fit failures.csv --dist best --criterion bic   # Best fit ranked by aic 
 reliafy push model.json                          # {distribution, params | data, name?, unit?}
 reliafy upload bearings.xlsx --name Bearings
 reliafy import rbd plant.xml
+reliafy analyse fault_tree --fault-tree-id TREE_ID  # a saved fault tree's top event, cut sets and importance
 reliafy photo add IMG_*.jpg --to POSITION_ID --caption Nameplate
 reliafy photo link PHOTO_ID --to LOCATION_ID      # show it there too
 reliafy photo move PHOTO_ID --to POSITION_ID      # only there

@@ -93,9 +93,8 @@ export const MOVED = [
   { path: "/asset-register/positions", to: "/asset-register/explorer?arrange=positions" },
   { path: "/asset-register/items", to: "/asset-register/explorer?arrange=items" },
   { path: "/asset-register/locations", to: "/asset-register/explorer?arrange=locations" },
-  // The menu's preview-only placeholders for fault trees and FMECA: the
-  // working versions are an RBD's Fault tree tab and the Explorer's FME(C)A tab.
-  { path: "/systems/fault-trees", to: "/systems/rbds" },
+  // The menu's preview-only placeholder for FMECA: the working version is the
+  // Explorer's FME(C)A tab. (Fault trees have their own page now.)
   { path: "/systems/fmeca", to: "/asset-register/explorer?tab=fmea" },
 ];
 
