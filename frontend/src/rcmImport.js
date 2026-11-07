@@ -5,7 +5,7 @@
 // imported again; importing it onto the same position adds nothing.
 
 import { toCsv } from "./csv.js";
-import { CONSEQUENCE_LABEL, OUTCOME_LABEL, STATUS_LABEL } from "./rcmWorksheet.js";
+import { CONSEQUENCE_LABEL, OUTCOME_LABEL, checkLabel } from "./rcmWorksheet.js";
 import { AP_LABEL, CLASS_LABEL, SOURCE_LABEL, STATUS_LABEL as ACTION_STATUS_LABEL, cmOf, rpnOf } from "./fmea.js";
 
 // The files the import takes: an Excel workbook or a CSV file.
@@ -115,7 +115,7 @@ export function positionRcmRows(worksheet) {
         where, fn?.text || "", standardCell(fn, fail), (first && fn.standard_basis) || "", fail?.text || "", causedBy(fail), m?.text || "", m?.effects || "",
         CONSEQUENCE_LABEL[m?.consequence] || "", ...fmeaCells(m), OUTCOME_LABEL[d.outcome] || "", d.rtf_basis || "", d.task || "",
         d.interval ?? "", d.interval ? d.interval_unit || "" : "",
-        d.status && d.status !== "unevidenced" ? STATUS_LABEL[d.status] || d.status : "", m?.notes || "",
+        checkLabel(d), m?.notes || "",
       ];
     };
     const standardRows = (fn) => {

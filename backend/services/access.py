@@ -307,6 +307,8 @@ _EVIDENCE_COLLECTIONS = {
     "model": "models",
     "strategy_analysis": "strategy_analyses",
     "degradation_model": "degradation_models",
+    "report": "reports",
+    # "working" is on the maintenance graph, not a collection: the tree checks it.
 }
 
 
@@ -478,6 +480,7 @@ _REF_LABELS = {
     "rbds": "diagram",
     "strategy_analyses": "strategy analysis",
     "degradation_models": "degradation model",
+    "reports": "report",
 }
 
 

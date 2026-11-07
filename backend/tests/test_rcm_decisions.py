@@ -45,7 +45,8 @@ def test_the_public_names_are_the_rules():
     ({"outcome": "rtf"}, "A run-to-failure decision needs its basis: 'random' or 'uneconomic'."),
     ({"outcome": "fixed_interval", "interval": "soon"}, "The task interval must be a number."),
     ({"outcome": "fixed_interval", "interval": -4}, "The task interval must be positive."),
-    ({"outcome": "fixed_interval", "evidence": {"type": "guess", "id": "x"}}, "Unknown evidence type 'guess'."),
+    ({"outcome": "fixed_interval", "evidence": {"type": "guess", "id": "x"}}, "Unknown evidence type 'guess': it's one of model, strategy_analysis, "
+     "degradation_model, report, working."),
     ({"outcome": "fixed_interval", "evidence": {"type": "model", "id": " "}},
      "Evidence needs the linked artifact's id."),
 ])

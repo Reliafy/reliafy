@@ -29,7 +29,7 @@ import useTreeRcm from "../components/useTreeRcm.js";
 import {
   NARROW_TABLE, cellRow, functionSummary, graftRcm, hasLinkedEvidence, isRcmRow, newStandardRows, openFor, opensItem, positionOf, rowActions,
   standardKeys, tableCols, unlinkEmptiesFailure, usualCols,
-  withTableCols,
+  withTableCols, workingsFor,
 } from "../explorerRcm.js";
 import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs, tasksOf } from "../rcmWorksheet.js";
 // The FME(C)A tab: the same tree-table with the worksheet's columns, its own
@@ -1779,7 +1779,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                            }} />
       )}
       {deciding && options && (
-        <DecisionModal options={options} mode={deciding.ref} onSave={saveDecision} onClose={() => setDeciding(null)} limits />
+        <DecisionModal options={options} mode={deciding.ref} onSave={saveDecision} onClose={() => setDeciding(null)} limits
+                       workings={workingsFor(rcm, deciding.ref.id)} />
       )}
     </div>
   );

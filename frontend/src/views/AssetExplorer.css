@@ -477,7 +477,13 @@ a.td-open:hover {
 a.rw-cklink {
   text-decoration: none;
 }
-a.rw-cklink:focus-visible {
+button.rw-cklink {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.rw-cklink:focus-visible {
   outline: none;
   box-shadow: var(--focus);
   border-radius: 999px;

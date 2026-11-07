@@ -31,6 +31,8 @@ _CONSEQUENCE = {c["id"]: c["label"] for c in rcm_decisions.CONSEQUENCE_OPTIONS}
 _OUTCOME = {o["id"]: o["label"] for o in rcm_decisions.OUTCOME_OPTIONS}
 _STATUS = {"supported": "Supported", "contradicted": "Contradicted", "inconclusive": "Inconclusive",
            "stale": "Stale link"}
+# Linked, not checked: what's linked says which ("Report linked", "Working linked").
+_LINKED = {"report": "Report linked", "working": "Working linked"}
 _AP = fmea.AP_LABELS
 _FILENAME_BAD = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
 
@@ -88,7 +90,8 @@ def rows(worksheet: dict) -> list[list]:
                 _OUTCOME.get(d.get("outcome") or "", ""), d.get("rtf_basis") or "", d.get("task") or "",
                 d.get("interval") if d.get("interval") is not None else "",
                 (d.get("interval_unit") or "") if d.get("interval") else "",
-                _STATUS.get(status, status) if status and status != "unevidenced" else "",
+                (_LINKED.get(d.get("evidence_kind"), "Linked") if status == "linked" else _STATUS.get(status, status))
+                if status and status != "unevidenced" else "",
                 (m or {}).get("notes") or "",
             ]
 

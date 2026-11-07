@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { listAllPublicLinks, listReportItems, listReports, listStrategyAnalyses } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import { itemPath } from "../navigation.js";
@@ -202,17 +202,19 @@ function SharedLinks({ reports }) {
 
 // Reports: what's been written up and shared, in one place: the user's
 // reports (several items on one page), their saved analyses, and every live
-// share link.
+// share link. ?open=<id> opens that report (an RCM decision's evidence links here).
 export default function ReportsPage() {
+  const [params, setParams] = useSearchParams();
   const [reports, setReports] = useState(null);
   const [error, setError] = useState(null);
-  const [composer, setComposer] = useState(null); // null | { openId }
+  const [composer, setComposer] = useState(() => (params.get("open") ? { openId: params.get("open") } : null)); // null | { openId }
   const load = useCallback(() => {
     listReports().then((d) => setReports(d.reports || [])).catch((e) => setError(e.message));
   }, []);
   useEffect(() => load(), [load]);
   const close = () => {
     setComposer(null);
+    if (params.get("open")) setParams((p) => { p.delete("open"); return p; }, { replace: true });
     load();
   };
   return (

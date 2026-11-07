@@ -4158,7 +4158,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def decide_failure_mode(self, mode_id: str, consequence=..., decision=..., task_id=None) -> dict:
         """A failure mode's RCM decision: its consequence and the decision (outcome,
         rtf_basis, task, interval and interval_unit, notes, evidence: the saved model
-        or analysis behind it), checked by the RCM decision rules (rcm_decisions).
+        or analysis behind it, or a report or a standard's working, {type, id}),
+        checked by the RCM decision rules (rcm_decisions).
         A decision that schedules a task (fixed interval, failure finding, on condition, with an
         interval) gets one on the position, or changes the one it has (task_id: an
         existing task on the position, or one above, is the decision's task instead);
@@ -4182,6 +4183,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             except rcm_decisions.RcmValidationError as err:
                 raise Invalid(str(err)) from None
             cleaned = cleaned or {}
+            linked = cleaned.get("evidence")
+            if linked and linked["type"] == "working" and linked != (fm.get("evidence") or None):
+                # A newly linked working is a function on this tree whose standard has one written.
+                fn = self.s.node(self.org, linked["id"], "Function")
+                if fn is None or fn.get("removed"):
+                    raise Invalid("Evidence of type working names a function on this tree (its id), the one whose "
+                                  "performance standard has the working; there's no such function here.")
+                if not fn.get("standard_basis"):
+                    raise Invalid(f"The function '{fn.get('text') or fn['id']}' has no working behind its performance "
+                                  "standard yet: write it first, then link it.")
             said = str(cleaned.get("task") or "").strip()
             outcome = cleaned.get("outcome")
             if task_id:
@@ -5003,10 +5014,25 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         d["evidence"] = fm.get("evidence") or None
         return d
 
+    def _working_ref(self, function_id) -> dict | None:
+        """The working a decision links as its evidence ({id: the function's,
+        text, position {id, name}}), or None once it has gone (the function
+        deleted, or the working behind its standard cleared)."""
+        fn = self.s.node(self.org, str(function_id), "Function") if function_id else None
+        if fn is None or fn.get("removed") or not fn.get("standard_basis"):
+            return None
+        at = self.s.inn(self.org, fn["id"], "PERFORMS")
+        return {"id": fn["id"], "text": fn.get("text") or "",
+                "position": {"id": at[0]["id"], "name": at[0].get("name") or ""} if at else None}
+
     def _rcm_mode_view(self, fm: dict, tasks: list[dict], shares=None) -> dict:
+        decision = self._decision_of(fm, tasks, shares)
+        if decision and (decision.get("evidence") or {}).get("type") == "working":
+            # A working is on the graph: the read hands it to the evidence check (rcm_decisions).
+            decision["working"] = self._working_ref(decision["evidence"].get("id"))
         return {
             "id": fm["id"], "text": fm["text"], "effects": fm.get("effects") or "", "notes": fm.get("notes") or "",
-            "consequence": fm.get("consequence"), "decision": self._decision_of(fm, tasks, shares),
+            "consequence": fm.get("consequence"), "decision": decision,
             # Its tasks whether or not it's decided yet (a task linked before the decision).
             "tasks": self._tasks_brief(tasks, shares),
             "ad_hoc": bool(fm.get("ad_hoc")),
