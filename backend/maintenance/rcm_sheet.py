@@ -17,7 +17,11 @@ position afterwards: one already there with the same text (case and spacing
 aside; a functional failure under the same function) is used as it is. A
 failure mode already on the position is left as it is, wherever it is (a
 position's failure modes are unique by text). Nothing on the position is
-changed or removed, so importing the same sheet again adds nothing.
+changed or removed, so importing the same sheet again adds nothing. The
+one exception is notes: a function, performance standard or functional
+failure already there with no notes takes the sheet's (Function notes,
+Standard notes, Functional failure notes); one with notes of its own keeps
+them.
 
 A function may have several performance standards: every distinct standard
 cell under it is one (a row with the function and a standard alone lists one;
@@ -194,6 +198,18 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
     shortened_rows: list[int] = []
     standards_kept: list[str] = []
     workings_kept: list[str] = []
+    notes_kept: list[str] = []  # rows already there with other notes of their own
+
+    def notes_for(node: dict | None, given: str, what: str) -> str:
+        """The notes to write: the sheet's for a new row, or for one already
+        there with none; "" when there's nothing to write."""
+        if not given:
+            return ""
+        if node is not None and (node.get("notes") or ""):
+            if not _same_text(node.get("notes"), given):
+                notes_kept.append(what)
+            return ""
+        return given
     functions: list[dict] = []
     counts = {"functions": 0, "failures": 0, "modes": 0, "decisions": 0, "scored": 0, "tasks": 0, "tasks_linked": 0,
               "standards": 0, "functions_existing": 0, "failures_existing": 0, "modes_existing": 0, "links": 0,
@@ -266,8 +282,6 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
         new_standards = [x for x in listed if not any(_same_text(x, h) for h in have)]
         if match and new_standards and have:
             standards_kept.append(match["text"])
-        # A new function with one standard keeps the one text (no list yet).
-        counts["standards"] += len(new_standards) if (match or len(listed) > 1) else 0
         basis = fn.get("standard_basis") or ""
         if len(basis) > BASIS_TEXT:
             errors.append(f"“{fn['text'][:60]}”: the working behind the performance standard is {len(basis):,} characters; at most "
@@ -281,7 +295,23 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
                 basis = ""
         if match and basis and not _same_text(match.get("standard_basis"), basis):
             workings_kept.append(match["text"])
+        # Each standard's notes (by its text): new standards take them; one already
+        # there only when it has none (the function's old single text has none).
+        std_nodes = {_norm(st["text"]): st for st in m._standards_of(match["id"])} if match else {}
+        standard_notes = {}
+        for text, given in (fn.get("standard_notes") or {}).items():
+            listed_as = next((x for x in listed if _norm(x) == _norm(text)), None)
+            if listed_as is None:
+                continue
+            value = notes_for(std_nodes.get(_norm(text)), given, f"“{shortened(listed_as, 60)[0]}”")
+            if value:
+                standard_notes[listed_as] = value
+        # A new function with one standard keeps the one text (no list yet), unless
+        # its standard has notes (a standard holds notes only in the list).
+        counts["standards"] += len(new_standards) if (match or len(listed) > 1 or standard_notes) else 0
+        fn_plan_notes = notes_for(match, fn.get("notes") or "", f"“{shortened(fn['text'], 60)[0]}”")
         fn_plan = {"text": fn["text"], "standard": fn.get("standard") or "", "standard_basis": basis,
+                   "notes": fn_plan_notes, "standard_notes": standard_notes,
                    "id": match and match["id"], "failures": [], "standards": new_standards,
                    # Every standard the sheet lists (to name the one a failure breaches).
                    "standards_listed": listed,
@@ -296,7 +326,8 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
         for ff in fn["failures"]:
             ff_match = next((f for f in existing_ffs if _same_text(f["text"], ff["text"])), None)
             ff_plan = {"text": ff["text"], "id": ff_match and ff_match["id"], "modes": [], "links": [],
-                       "breaches": ff.get("breaches") or ""}
+                       "breaches": ff.get("breaches") or "",
+                       "notes": notes_for(ff_match, ff.get("notes") or "", f"“{shortened(ff['text'], 60)[0]}”")}
             if ff.get("causes"):
                 ff_plan["links"] = _resolve_causes(m, places, ff_match, ff["causes"], errors)
                 counts["links_existing"] += sum(1 for k in ff_plan["links"] if k["existing"])
@@ -344,6 +375,8 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
     for text in standards_kept[:5]:
         warnings.append(f"“{text[:80]}” is on {name} already with a performance standard; the sheet's "
                         "went beside it, in its list of performance standards.")
+    for what in notes_kept[:5]:
+        warnings.append(f"{what} is on {name} already with notes of its own; they were left as they are.")
     for text in workings_kept[:5]:
         warnings.append(f"“{text[:80]}” is on {name} already with another working behind its performance standard; it was left as it is.")
 
@@ -433,12 +466,26 @@ def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
                 m.add_mode_task(mode_id, extra["name"], extra["interval"], extra["unit"], extra["outcome"])
 
     for fn in functions:
-        # A new function with one standard keeps the one text; with several, the list.
-        one = fn["standard"] if len(fn.get("standards_listed") or []) <= 1 else ""
-        fn_id = fn["id"] or m.add_function(position_id, fn["text"], one, standard_basis=fn["standard_basis"])["id"]
+        # A new function with one standard keeps the one text; with several (or
+        # notes on its standard, which only a standard of the list holds), the list.
+        std_notes = fn.get("standard_notes") or {}
+        as_list = len(fn.get("standards_listed") or []) > 1 or bool(std_notes)
+        one = fn["standard"] if not as_list else ""
+        if fn["id"]:
+            fn_id = fn["id"]
+            if fn.get("notes"):
+                m.update_function(fn_id, notes=fn["notes"])
+        else:
+            fn_id = m.add_function(position_id, fn["text"], one, standard_basis=fn["standard_basis"],
+                                   notes=fn.get("notes") or None)["id"]
         for text in fn.get("standards") or []:
-            if fn["id"] or len(fn.get("standards_listed") or []) > 1:
-                m.add_standard(fn_id, text)
+            if fn["id"] or as_list:
+                m.add_standard(fn_id, text, notes=std_notes.get(text) or None)
+        # Notes for standards already there (with none of their own): add_standard
+        # finds the one with that text (the old single text made the list's first).
+        for text, value in std_notes.items():
+            if text not in (fn.get("standards") or []):
+                m.add_standard(fn_id, text, notes=value)
         by_text = {_norm(st["text"]): st["id"] for st in m._standards_of(fn_id)}
         for mode in fn.get("modes") or []:  # directly under the function: no functional failure in the sheet
             write_mode(mode, m.add_failure_mode(position_id, mode["text"], function_id=fn_id)["id"])
@@ -448,8 +495,10 @@ def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
                 ff_id = ff["id"]
                 if breach and not [st for st in m.s.out(m.org, ff_id, "BREACHES") if not st.get("removed")]:
                     m.update_functional_failure(ff_id, standard_id=breach)
+                if ff.get("notes"):
+                    m.update_functional_failure(ff_id, notes=ff["notes"])
             else:
-                ff_id = m.add_functional_failure(fn_id, ff["text"], standard_id=breach)["id"]
+                ff_id = m.add_functional_failure(fn_id, ff["text"], standard_id=breach, notes=ff.get("notes") or None)["id"]
             for mode in ff["modes"]:
                 write_mode(mode, m.add_failure_mode(position_id, mode["text"], functional_failure_id=ff_id)["id"])
             for link in ff["links"]:

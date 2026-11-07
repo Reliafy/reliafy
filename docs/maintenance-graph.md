@@ -460,6 +460,24 @@ The server stores it as text and never renders it.
   document is), and is removed with the function: `remove_function` emits
   `document.removed` for each, and the app deletes a kept PDF's bytes.
 
+### Notes and rationale on every RCM row
+
+Every function, performance standard, functional failure and failure mode has
+its title (`text`) and its notes: a long description where the rationale for
+it is written (why the standard is set where it is, what a mode rests on).
+Plain text, line breaks kept as LF, trimmed, at most 4,000 characters
+(`LONG_TEXT`). A function's working (`standard_basis`) stays the numeric basis
+of its standards; notes are the general rationale.
+
+- `function.notes_set`, `standard.notes_set` and `functional_failure.notes_set`
+  (`id, notes`) replace the row's `notes` whole (`""` clears them). The add and
+  update methods take `notes` and emit the event after the row's own; a copied
+  position copies them. Older code has no projector for them, so it skips them.
+- A failure mode's notes are its `notes` from `failure_mode.analysed`, as
+  before (no new event).
+- Reads: `notes` is on every row kind in `rcm_worksheet`, `rcm_all`, one
+  function's read and the FME(C)A read built on them.
+
 ### A higher functional failure caused by lower ones
 
 A functional failure can result from functional failures on positions inside

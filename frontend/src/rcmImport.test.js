@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { EXPORT_HEADER, FMEA_HEADER, causedBy, exportFilename, importSummary, isCsvFile, positionRcmCsv, positionRcmRows } from "./rcmImport.js";
 
 const F = FMEA_HEADER.length;
+// A row's cells by column name.
+const cells = (row, ...names) => names.map((h) => row[EXPORT_HEADER.indexOf(h)]);
+const HEAD = ["Position", "Function", "Performance standard", "Standard working", "Functional failure", "Caused by (below)", "Failure mode", "Effects", "Consequence"];
+const TAIL = ["Decision", "Run-to-failure basis", "Task", "Interval", "Interval unit", "Evidence check", "Failure mode notes"];
 
 test("the preview's counts in words: what it adds, and what's there already", () => {
   assert.deepEqual(importSummary({ functions: 2, failures: 3, modes: 4, tasks: 1, functions_existing: 0 }), {
@@ -61,16 +65,17 @@ test("a position's RCM as rows named as the import reads them", () => {
   const rows = positionRcmRows(WS);
   assert.deepEqual(rows[0], EXPORT_HEADER);
   assert.equal(rows.length, 6);
-  assert.deepEqual(rows[1].slice(0, 7), ["Plant › Conveyor C-2", "", "", "", "", "", "Motor hums"]);
+  assert.deepEqual(cells(rows[1], ...HEAD.slice(0, 7)), ["Plant › Conveyor C-2", "", "", "", "", "", "Motor hums"]);
   // The FME(C)A's columns sit between Consequence and Decision (blank here).
-  assert.deepEqual(rows[2].slice(0, 9), ["Plant › Conveyor C-2", "Move grain", "40 t/h", "## Rate\n\n40 t/h = 10 t over 15 min", "Moves no grain", "Conveyor drive › No torque", "Belt torn", "Line stops",
+  assert.deepEqual(cells(rows[2], ...HEAD), ["Plant › Conveyor C-2", "Move grain", "40 t/h", "## Rate\n\n40 t/h = 10 t over 15 min", "Moves no grain", "Conveyor drive › No torque", "Belt torn", "Line stops",
     "Operational"]);
-  assert.deepEqual(rows[2].slice(9 + F), ["On-condition", "", "Walk the belt", 1, "weeks", "", "Severity 7"]);
-  assert.deepEqual(rows[2].slice(9, 9 + F), FMEA_HEADER.map(() => ""));
-  assert.deepEqual([rows[3][8], ...rows[3].slice(9 + F, 9 + F + 6)], ["Non-operational", "Run-to-failure", "random", "Replace when it fails", "", "",
+  assert.deepEqual(cells(rows[2], ...TAIL), ["On-condition", "", "Walk the belt", 1, "weeks", "", "Severity 7"]);
+  assert.deepEqual(cells(rows[2], ...FMEA_HEADER), FMEA_HEADER.map(() => ""));
+  assert.equal(EXPORT_HEADER.indexOf("Decision"), EXPORT_HEADER.indexOf("Consequence") + F + 1);
+  assert.deepEqual(cells(rows[3], "Consequence", ...TAIL.slice(0, 6)), ["Non-operational", "Run-to-failure", "random", "Replace when it fails", "", "",
     "Contradicted"]);
-  assert.deepEqual(rows[4].slice(1, 7), ["Move grain", "40 t/h", "", "Moves too little", "", ""]); // a failure with no modes
-  assert.deepEqual(rows[5].slice(1, 7), ["Stop on the lanyard", "", "", "", "", ""]); // a function with no failures
+  assert.deepEqual(cells(rows[4], ...HEAD.slice(1, 7)), ["Move grain", "40 t/h", "", "Moves too little", "", ""]); // a failure with no modes
+  assert.deepEqual(cells(rows[5], ...HEAD.slice(1, 7)), ["Stop on the lanyard", "", "", "", "", ""]); // a function with no failures
   assert.deepEqual(positionRcmRows(null), [EXPORT_HEADER]);
 });
 
@@ -86,7 +91,7 @@ test("the causes below go in one cell, on every row of the failure, and a failur
       causes: [{ text: "No output", position: { name: "Salt chlorinator" }, inside: true }] }] }] }] });
   assert.equal(rows.length, 2);
   assert.equal(rows[1][EXPORT_HEADER.indexOf("Caused by (below)")], "Salt chlorinator › No output");
-  assert.equal(EXPORT_HEADER.indexOf("Caused by (below)"), EXPORT_HEADER.indexOf("Functional failure") + 1);
+  assert.equal(EXPORT_HEADER.indexOf("Caused by (below)"), EXPORT_HEADER.indexOf("Functional failure notes") + 1);
 });
 
 test("links count in the import's words", () => {
@@ -97,7 +102,8 @@ test("links count in the import's words", () => {
 
 test("the CSV keeps a formula-looking cell as text, and the file is named after the position", () => {
   const csv = positionRcmCsv(WS);
-  assert.ok(csv.startsWith("Position,Function,Performance standard,Standard working,Functional failure,Caused by (below),Failure mode,"));
+  assert.ok(csv.startsWith("Position,Function,Function notes,Performance standard,Standard notes,Standard working,Functional failure,"
+    + "Functional failure notes,Caused by (below),Failure mode,"));
   assert.ok(csv.includes(",'=Bearing seizes,"));
   assert.equal(exportFilename("Conveyor C-2"), "Conveyor C-2 RCM.csv");
   assert.equal(exportFilename('Pump "A" / B'), "Pump A B RCM.csv");
@@ -107,7 +113,7 @@ test("the CSV keeps a formula-looking cell as text, and the file is named after 
 test("the working is written on a function's first row only, and quoted with its line breaks", () => {
   const rows = positionRcmRows(WS);
   const col = EXPORT_HEADER.indexOf("Standard working");
-  assert.equal(col, EXPORT_HEADER.indexOf("Performance standard") + 1);
+  assert.equal(col, EXPORT_HEADER.indexOf("Standard notes") + 1);
   assert.deepEqual(rows.map((r) => r[col]), ["Standard working", "", "## Rate\n\n40 t/h = 10 t over 15 min", "", "", ""]);
   assert.ok(positionRcmCsv(WS).includes('"## Rate\n\n40 t/h = 10 t over 15 min"'));
 });
@@ -125,9 +131,10 @@ test("a failure mode with several tasks is one row per task, the first carrying 
     ] },
   ] }] });
   assert.equal(rows.length, 3);
-  assert.deepEqual([...rows[1].slice(6, 9), ...rows[1].slice(9 + F, 9 + F + 5)], ["Acid under-dosed", "pH climbs", "Operational", "On-condition", "", "Weekly pH check", 1, "weeks"]);
-  assert.deepEqual([...rows[2].slice(0, 9), ...rows[2].slice(9 + F)], ["Pool", "Keep the water balanced", "pH 7.2-7.8", "", "pH above 7.8", "", "Acid under-dosed", "",
+  assert.deepEqual(cells(rows[1], ...HEAD.slice(6), ...TAIL.slice(0, 5)), ["Acid under-dosed", "pH climbs", "Operational", "On-condition", "", "Weekly pH check", 1, "weeks"]);
+  assert.deepEqual(cells(rows[2], ...HEAD, ...TAIL), ["Pool", "Keep the water balanced", "pH 7.2-7.8", "", "pH above 7.8", "", "Acid under-dosed", "",
     "", "Fixed-interval", "", "Replace the acid pump", 24, "months", "", ""]);
+  assert.equal(rows[2].length, EXPORT_HEADER.length);
 });
 
 test("the FME(C)A's columns: scores, effects, the action, the criticality figures; a mode directly under a function has no functional failure", () => {
@@ -150,4 +157,27 @@ test("the FME(C)A's columns: scores, effects, the action, the criticality figure
   // Not scored: RPN, AP and Cm blank, never 0 or NaN.
   assert.deepEqual(["Severity", "RPN", "Action priority", "Mode criticality"].map((h) => at(rows[2], h)), ["", "", "", ""]);
   assert.equal(exportFilename("UAV", { what: "FMECA", ext: "xlsx" }), "UAV FMECA.xlsx");
+});
+
+test("every row kind's notes have a column: the function's and the failure's on their first row, a standard's on its own row", () => {
+  const rows = positionRcmRows({ positions: [{ id: "p", name: "Pool", depth: 0, unassigned: [], functions: [
+    { id: "f", text: "Keep the water balanced", notes: "Bathers' comfort\nand the plaster's life", standard: "pH 7.2-7.8",
+      standards: [{ id: "s1", text: "pH 7.2-7.8", notes: "AS 3633 range" }, { id: "s2", text: "TA 80-120 ppm", notes: "" }],
+      failures: [
+        { id: "x", text: "pH above 7.8", standard: { id: "s1", text: "pH 7.2-7.8" }, notes: "Scale forms above 7.8", modes: [
+          { id: "m1", text: "Acid under-dosed", notes: "Seen twice in summer", decision: null },
+          { id: "m2", text: "Acid tank empty", notes: "", decision: null },
+        ] },
+      ] },
+  ] }] });
+  for (const row of rows) assert.equal(row.length, EXPORT_HEADER.length);
+  const notes = ["Function notes", "Performance standard", "Standard notes", "Functional failure notes", "Failure mode notes"];
+  assert.deepEqual(rows.slice(1).map((r) => cells(r, ...notes)), [
+    ["Bathers' comfort\nand the plaster's life", "pH 7.2-7.8", "AS 3633 range", "", ""],
+    ["", "TA 80-120 ppm", "", "", ""],
+    ["", "pH 7.2-7.8", "", "Scale forms above 7.8", "Seen twice in summer"],
+    ["", "pH 7.2-7.8", "", "", ""],
+  ]);
+  assert.ok(positionRcmCsv({ positions: [{ id: "p", name: "Pool", depth: 0, unassigned: [], functions: [
+    { id: "f", text: "Dose", notes: "Line one\nLine two", failures: [] }] }] }).includes('"Line one\nLine two"'));
 });

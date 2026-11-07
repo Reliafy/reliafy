@@ -45,6 +45,7 @@ from backend.services.excel import norm
 
 MAX_MODES = 5000
 MAX_TEXT = 2000
+MAX_NOTES = 4000  # a row's notes and rationale (the service's LONG_TEXT)
 MAX_LISTED_VALUES = 100
 
 IMPORTED = "Imported"
@@ -55,9 +56,15 @@ FIELDS = [
     {"id": "function", "label": "Function",
      "help": "What the asset must do. Blank cells carry down from the row above.",
      "synonyms": ["function", "function description", "primary function", "functions", "system function"]},
+    {"id": "function_notes", "label": "Function notes",
+     "help": "Optional: the function's notes and rationale. Written once per function (blank cells below it are fine).",
+     "synonyms": ["function notes", "function rationale", "function note", "notes on function"]},
     {"id": "standard", "label": "Performance standard",
      "help": "Optional: how well it must do it.",
      "synonyms": ["performance standard", "standard", "performance", "performance requirement"]},
+    {"id": "standard_notes", "label": "Standard notes",
+     "help": "Optional: the notes and rationale of the performance standard on the same row.",
+     "synonyms": ["standard notes", "performance standard notes", "standard rationale", "standard note"]},
     {"id": "standard_basis", "label": "Standard working",
      "help": "Optional: how the standard was worked out (Markdown is fine). Blank cells carry down.",
      "synonyms": ["standard working", "working", "basis", "standard basis", "performance standard basis",
@@ -65,6 +72,9 @@ FIELDS = [
     {"id": "failure", "label": "Functional failure",
      "help": "How it fails to do it. Blank cells carry down.",
      "synonyms": ["functional failure", "functional failures", "failure", "failure description", "function failure", "loss of function"]},
+    {"id": "failure_notes", "label": "Functional failure notes",
+     "help": "Optional: the functional failure's notes and rationale. Written once per functional failure.",
+     "synonyms": ["functional failure notes", "functional failure rationale", "failure notes", "functional failure note"]},
     {"id": "causes", "label": "Caused by (below)",
      "help": "Optional: functional failures on positions inside this one that cause it, as “Position › Failure”, separated by “;”.",
      "synonyms": ["caused by (below)", "caused by below", "caused by", "causes below", "lower-level causes", "results from"]},
@@ -147,8 +157,9 @@ FIELDS = [
      "help": "Hours, days, months, cycles…",
      "synonyms": ["interval unit", "unit", "units", "frequency unit", "interval units"]},
     {"id": "notes", "label": "Notes",
-     "help": "Comments or remarks, kept on the failure mode.",
-     "synonyms": ["notes", "note", "comments", "comment", "remarks", "remark", "rationale", "justification"]},
+     "help": "The failure mode's notes and rationale (comments or remarks), kept on the failure mode.",
+     "synonyms": ["notes", "note", "comments", "comment", "remarks", "remark", "rationale", "justification",
+                  "failure mode notes", "mode notes"]},
 ]
 FIELD_IDS = [f["id"] for f in FIELDS]
 # The FME(C)A columns, landing on the mode as its scores (fmea.FIELDS, all mapped).
@@ -399,12 +410,19 @@ def build_tree(header: list[str], rows: list[list], options: dict,
     n_modes = n_decisions = n_links = 0
     stashed_tasks = 0
 
-    def clip(text: str) -> str:
+    def clip(text: str, limit: int = MAX_TEXT) -> str:
         nonlocal truncated
-        if len(text) > MAX_TEXT:
+        if len(text) > limit:
             truncated += 1
-            return text[:MAX_TEXT - 1] + "…"
+            return text[:limit - 1] + "…"
         return text
+
+    # Each row's notes and rationale: the first cell given for a function, a
+    # standard (on its own row) or a functional failure; read on any row,
+    # including a standard's own row (which adds no failure mode).
+    notes_by_fn: dict[str, str] = {}
+    notes_by_std: dict[tuple[str, str], str] = {}
+    notes_by_fail: dict[tuple[str, str], str] = {}
 
     standards_by_fn: dict[str, list[str]] = {}
     breach_by_fail: dict[tuple[str, str], str] = {}
@@ -431,10 +449,18 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             cur_fail = fail_text
             if explicit_standard and cur_fn:
                 breach_by_fail.setdefault((cur_fn.lower(), fail_text.lower()), explicit_standard)
+        if cur_fn and cell(r, "function_notes"):
+            notes_by_fn.setdefault(cur_fn.lower(), clip(cell(r, "function_notes"), MAX_NOTES))
+        if cur_fn and explicit_standard and cell(r, "standard_notes"):
+            notes_by_std.setdefault((cur_fn.lower(), explicit_standard.lower()), clip(cell(r, "standard_notes"), MAX_NOTES))
+        if cur_fail and cell(r, "failure_notes"):
+            notes_by_fail.setdefault(((cur_fn or IMPORTED).lower(), cur_fail.lower()),
+                                     clip(cell(r, "failure_notes"), MAX_NOTES))
         mode_text = cell(r, "mode")
         cause_text = cell(r, "causes") if keep_rows else ""
         if not mode_text and not cause_text:
-            structural = {"function", "standard", "standard_basis", "failure", "causes"}
+            structural = {"function", "standard", "standard_basis", "failure", "causes", "function_notes",
+                          "standard_notes", "failure_notes"}
             if any(cell(r, f) for f in FIELD_IDS if f not in structural) or any(_text(r[index[c]]) for c in extra):
                 skipped.append(rnum)
             continue
@@ -557,7 +583,7 @@ def build_tree(header: list[str], rows: list[list], options: dict,
         if scores:
             notes.append(" · ".join(scores))
         if notes:
-            mode["notes"] = clip("\n".join(notes))
+            mode["notes"] = clip("\n".join(notes), MAX_NOTES)
         (failure["modes"] if failure is not None else fn.setdefault("modes", [])).append(mode)
         n_modes += 1
 
@@ -601,11 +627,20 @@ def build_tree(header: list[str], rows: list[list], options: dict,
     except rcm.RcmValidationError as exc:  # pragma: no cover - built to be valid
         raise RcmImportError(str(exc)) from None
     for fn, cfn in zip(functions, cleaned):  # clean_tree keeps the order; these ride along
+        key = fn["text"].lower()
         if fn.get("standards"):
             cfn["standards"] = fn["standards"]
+        if notes_by_fn.get(key):
+            cfn["notes"] = notes_by_fn[key]
+        # Notes on a standard, by its text as written (a single standard's too).
+        std_notes = {std: n for (f, std), n in notes_by_std.items() if f == key and n}
+        if std_notes:
+            cfn["standard_notes"] = std_notes
         for failure, cfailure in zip(fn["failures"], cfn["failures"]):
             if failure.get("breaches"):
                 cfailure["breaches"] = failure["breaches"]
+            if notes_by_fail.get((key, failure["text"].lower())):
+                cfailure["notes"] = notes_by_fail[(key, failure["text"].lower())]
     if keep_rows:  # clean_tree drops the row
         for fn, cfn in zip(functions, cleaned):
             if fn.get("standard_basis"):

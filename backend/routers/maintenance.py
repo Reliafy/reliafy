@@ -587,9 +587,9 @@ def position_fmea_xlsx(position_id: str, scope: str = "below", session=Depends(g
 @router.post("/positions/{position_id}/functions")
 def add_function(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """A function with its performance standard and, optionally, the working behind it
-    (standard_basis: Markdown text)."""
+    (standard_basis: Markdown text) and its notes (the rationale, plain text)."""
     return _run(m.add_function, position_id, body.get("text"), body.get("standard", ""),
-                standard_basis=body.get("standard_basis", ""))
+                standard_basis=body.get("standard_basis", ""), notes=body.get("notes"))
 
 
 @router.get("/functions/{function_id}")
@@ -601,9 +601,10 @@ def get_function(function_id: str, m: Maintenance = Depends(maintenance)) -> JSO
 @router.patch("/functions/{function_id}")
 def update_function(function_id: str, body: dict = Body(...),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """text, standard or standard_basis (the working behind the standard; "" clears it)."""
+    """text, standard, standard_basis (the working behind the standard) or notes (its
+    rationale); "" clears one."""
     return _run(m.update_function, function_id, body.get("text"), body.get("standard"),
-                body.get("standard_basis"))
+                body.get("standard_basis"), notes=body.get("notes"))
 
 
 @router.delete("/functions/{function_id}")
@@ -625,21 +626,23 @@ def restore_rcm(root_id: str, m: Maintenance = Depends(maintenance_write)) -> JS
 @router.post("/functions/{function_id}/failures")
 def add_functional_failure(function_id: str, body: dict = Body(...),
                            m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """standard_id: the function's standard it breaches (left out: the whole function)."""
-    return _run(m.add_functional_failure, function_id, body.get("text"), body.get("standard_id"))
+    """standard_id: the function's standard it breaches (left out: the whole function);
+    notes: its rationale."""
+    return _run(m.add_functional_failure, function_id, body.get("text"), body.get("standard_id"),
+                notes=body.get("notes"))
 
 
 @router.patch("/functional-failures/{ff_id}")
 def update_functional_failure(ff_id: str, body: dict = Body(...),
                               m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """text, and/or standard_id (null: the whole function)."""
+    """text, standard_id (null: the whole function) and/or notes ("" clears them)."""
     return _run(m.update_functional_failure, ff_id, body.get("text"),
-                body["standard_id"] if "standard_id" in body else ...)
+                body["standard_id"] if "standard_id" in body else ..., notes=body.get("notes"))
 
 
 # ---- a function's performance standards, as a list -----------------------------------------
 
-_STANDARD_KEYS = ("text", "parameter", "comparator", "value", "unit", "when", "source")
+_STANDARD_KEYS = ("text", "parameter", "comparator", "value", "unit", "when", "source", "notes")
 
 
 @router.post("/functions/{function_id}/standards")
