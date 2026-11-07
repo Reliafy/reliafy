@@ -28,6 +28,7 @@ from backend.maintenance.store import GraphStore, MongoEventLog
 from backend.services import access as access_service
 from backend.services import time_zones
 from backend.services.access import AccessCtx, get_access
+from backend.errors import client_message
 
 router = APIRouter(prefix="/api/maintenance")
 # The phone upload page and its posts: the link's token is the credential.
@@ -290,13 +291,13 @@ def _run(fn, *args, **kwargs) -> JSONResponse:
         return JSONResponse(status_code=404, content={"detail": "Not found."})
     except NeedsChoice as err:
         # Not a refusal: the move goes ahead once the caller says what its tasks count there.
-        return JSONResponse(status_code=409, content={"detail": str(err), "needs_choice": err.choice})
+        return JSONResponse(status_code=409, content={"detail": client_message(err), "needs_choice": err.choice})
     except LimitReached as err:
-        return JSONResponse(status_code=err.status, content={"detail": str(err)})
+        return JSONResponse(status_code=err.status, content={"detail": client_message(err)})
     except photos_mod.Busy as err:
-        return JSONResponse(status_code=503, content={"detail": str(err)}, headers={"Retry-After": "30"})
+        return JSONResponse(status_code=503, content={"detail": client_message(err)}, headers={"Retry-After": "30"})
     except (Invalid, photos_mod.BadPhoto) as err:
-        return JSONResponse(status_code=422, content={"detail": str(err)})
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
 
 
 # ---- overview ----------------------------------------------------------------------
@@ -570,7 +571,7 @@ def position_fmea_xlsx(position_id: str, scope: str = "below", session=Depends(g
     except NotFound:
         return JSONResponse(status_code=404, content={"detail": "Not found."})
     except Invalid as err:
-        return JSONResponse(status_code=422, content={"detail": str(err)})
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
     name = fmea_sheet.filename(sheet["position"]["name"])
     ascii_name = name.encode("ascii", "ignore").decode() or "FMECA.xlsx"
     return Response(content=fmea_sheet.workbook(sheet), media_type=fmea_sheet.XLSX, headers={
@@ -714,7 +715,7 @@ def decide_failure_mode(mode_id: str, body: dict = Body(...), session=Depends(ge
     try:
         return _rcm_read(session, ctx, go)
     except access_service.UnreadableReference as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc), "code": "unreadable_reference"})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc), "code": "unreadable_reference"})
 
 
 # ---- a failure mode's tasks: several may serve one mode, one may serve several ---------
@@ -803,7 +804,7 @@ def rcm_apply(body: dict = Body(...), m: Maintenance = Depends(maintenance_write
     try:
         ops = apply_mod.parse_arranging(body.get("operations"))
     except apply_mod.BatchRefused as err:
-        return JSONResponse(status_code=422, content={"detail": str(err)})
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
 
     def call(area, action, args):
         return apply_mod.arrange(apply_mod.ACTIVE_M.get(), f"{area}.{action}", args)
@@ -1000,7 +1001,7 @@ async def upload_document(request: Request, target_id: str | None = None, positi
     try:
         raw = await _read_document_body(request)
     except documents_mod.BadDocument as err:
-        return JSONResponse(status_code=413, content={"detail": str(err)})
+        return JSONResponse(status_code=413, content={"detail": client_message(err)})
     return await run_in_threadpool(_run, ingest_document, m, raw, filename, title, kind or "other",
                                    target_id or None, position_class or None)
 
@@ -1030,7 +1031,7 @@ def fit_class_model(body: dict = Body(...), session=Depends(get_session),
         return _run(loop.fit_class_model, m, session, str(body.get("position_class") or ""),
                     body.get("distribution") or "weibull")
     except fitting.FitError as err:
-        return JSONResponse(status_code=422, content={"detail": f"The fit didn't work: {err}"})
+        return JSONResponse(status_code=422, content={"detail": f"The fit didn't work: {client_message(err)}"})
 
 
 @router.get("/classes/economics")
@@ -1096,7 +1097,7 @@ async def import_sheet(file: UploadFile = File(...), dry_run: bool = Form(False)
     try:
         rows = await run_in_threadpool(importer.rows_from_file, data, file.filename or "")
     except Invalid as err:
-        return JSONResponse(status_code=422, content={"detail": str(err)})
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
     except Exception:  # noqa: BLE001 - an unreadable file
         return JSONResponse(status_code=422, content={"detail": "That file couldn't be read as CSV or Excel."})
     return await run_in_threadpool(_run, importer.run, m, rows, dry_run)
@@ -1328,7 +1329,7 @@ def _graph(fn, *args) -> JSONResponse:
     try:
         return JSONResponse(content=fn(*args))
     except GraphQueryError as err:
-        return JSONResponse(status_code=err.status, content={"detail": str(err)})
+        return JSONResponse(status_code=err.status, content={"detail": client_message(err)})
 
 
 def _readable(ctx: AccessCtx) -> list[str]:
@@ -1625,7 +1626,7 @@ async def import_bom(file: UploadFile = File(...), dry_run: bool = Form(True), s
         header, rows = await run_in_threadpool(bom.table_from_file, data, file.filename or "", sheet or None,
                                                header_row_param(header_row))
     except (Invalid, excel.ExcelError) as err:
-        return JSONResponse(status_code=422, content={"detail": str(err)})
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
     except Exception:  # noqa: BLE001 - an unreadable file
         return JSONResponse(status_code=422, content={"detail": "That file couldn't be read as CSV or Excel."})
     def go() -> JSONResponse:
@@ -2083,7 +2084,7 @@ async def add_photo(request: Request, target_id: str, caption: str = "",
     try:
         raw = await _read_body(request)
     except photos_mod.BadPhoto as err:
-        return JSONResponse(status_code=422, content={"detail": str(err)})
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
     # Decoding is CPU-bound: off the event loop (photos.clean limits how many at once).
     return await run_in_threadpool(_run, ingest_photo, m, target_id, raw, caption[:200], "app")
 
@@ -2380,13 +2381,13 @@ def _store_by_link(doc: dict, raw: bytes) -> JSONResponse:
         result = ingest_photo(m, doc["target_id"], raw, doc.get("caption", ""), "link")
     except photos_mod.Busy as err:
         links.release(doc["_id"])
-        return JSONResponse(status_code=503, content={"detail": str(err)}, headers={"Retry-After": "30"})
+        return JSONResponse(status_code=503, content={"detail": client_message(err)}, headers={"Retry-After": "30"})
     except LimitReached as err:
         links.release(doc["_id"])
-        return JSONResponse(status_code=err.status, content={"detail": str(err)})
+        return JSONResponse(status_code=err.status, content={"detail": client_message(err)})
     except (photos_mod.BadPhoto, Invalid) as err:
         links.release(doc["_id"])
-        return JSONResponse(status_code=422, content={"detail": str(err)})
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
     except NotFound:
         links.release(doc["_id"])
         return JSONResponse(status_code=404, content={"detail": "What this link was for no longer exists."})
@@ -2410,7 +2411,7 @@ async def upload_by_link(link_id: str, request: Request, t: str = "") -> JSONRes
         raw = await _read_body(request)
     except photos_mod.BadPhoto as err:
         await run_in_threadpool(lambda: photo_links().release(doc["_id"]))
-        return JSONResponse(status_code=422, content={"detail": str(err)})
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
     except BaseException:
         await run_in_threadpool(lambda: photo_links().release(doc["_id"]))
         raise
@@ -2432,7 +2433,7 @@ def answer_location(link_id: str, t: str = "", body: dict = Body(...)) -> JSONRe
         try:
             m.set_coordinates(doc["target_id"], offer["lat"], offer["lon"], "photo")
         except (Invalid, NotFound) as err:
-            return JSONResponse(status_code=422, content={"detail": str(err)})
+            return JSONResponse(status_code=422, content={"detail": client_message(err)})
     return JSONResponse(content={"saved": save})
 
 

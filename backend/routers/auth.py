@@ -15,6 +15,7 @@ from backend.services import samples as samples_service
 from backend.services import shares as shares_service
 from backend.services import teams as teams_service
 from backend.services import time_zones
+from backend.errors import client_message
 
 router = APIRouter(prefix="/api")
 
@@ -78,7 +79,7 @@ def put_time_zone(time_zone: str | None = Body(default=None, embed=True),
     try:
         return {"time_zone": time_zones.set_personal(session, user["uid"], time_zone)}
     except time_zones.BadTimeZone as err:
-        return JSONResponse(status_code=422, content={"detail": str(err)})
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
 
 
 @router.get("/me/roles")
@@ -106,7 +107,7 @@ def put_roles(roles: list | None = Body(default=None, embed=True),
     try:
         return roles_service.save(session, user["uid"], roles)
     except roles_service.BadRoles as err:
-        return JSONResponse(status_code=422, content={"detail": str(err)})
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})
 
 
 @router.post("/me/roles/dismiss")
@@ -130,4 +131,4 @@ def put_currency(currency_symbol: str | None = Body(default=None, embed=True),
     try:
         return {"currency_symbol": currency.set_personal(session, user["uid"], currency_symbol)}
     except currency.BadCurrency as err:
-        return JSONResponse(status_code=422, content={"detail": str(err)})
+        return JSONResponse(status_code=422, content={"detail": client_message(err)})

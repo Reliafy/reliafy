@@ -269,7 +269,7 @@ def test_run_reports_running_then_result_and_retries_a_failed_callback(monkeypat
     from backend import compute_app, config
     from backend.services import compute_core
 
-    monkeypatch.setattr(config, "COMPUTE_CALLBACK_URL", None)
+    monkeypatch.setattr(config, "COMPUTE_CALLBACK_URL", CALLBACK_URL)
     sent, answer = [], {"status": 200}
 
     def post(url, payload, timeout):

@@ -16,6 +16,7 @@ from backend.services import billing as billing_service
 from backend.services import rbd_compare
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -56,7 +57,7 @@ def compare_rbds(
             session, graph, other_graph, ctx.read_owners, owners_b, t_simulation=t_max,
         )
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to compare RBDs")
         return JSONResponse(status_code=500, content={"detail": "Failed to compare the diagrams. The error has been logged."})

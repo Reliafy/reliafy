@@ -23,6 +23,7 @@ from backend.db import get_session
 from backend.services import ai_relay
 from backend.services import billing as billing_service
 from backend.services import reliability_agent as agent_service
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -123,7 +124,7 @@ async def _read_upload(request: Request) -> tuple[bytes, str] | JSONResponse:
     except _TooLarge:
         return too_large
     except MultiPartException as exc:
-        return JSONResponse(status_code=400, content={"detail": str(exc)})
+        return JSONResponse(status_code=400, content={"detail": client_message(exc, also=(MultiPartException,))})
     try:
         upload = form.get("file")
         if not isinstance(upload, StarletteUploadFile):
@@ -154,7 +155,7 @@ async def agent_upload(
     try:
         file_id = await run_in_threadpool(agent_service.upload_csv, data, filename)
     except agent_service.AgentError as exc:
-        return JSONResponse(status_code=502, content={"detail": str(exc)})
+        return JSONResponse(status_code=502, content={"detail": client_message(exc)})
     await run_in_threadpool(agent_service.record_upload, session, user["uid"], file_id, filename)
     return JSONResponse(content={"file_id": file_id, "filename": filename})
 
@@ -257,7 +258,7 @@ def start_run(session, user: dict, message: str, file_id: str | None, session_id
                 elif not emit(ev):
                     stopped.set()
         except agent_service.AgentError as exc:
-            emit({"type": "error", "detail": str(exc)})
+            emit({"type": "error", "detail": client_message(exc)})
         except Exception:  # noqa: BLE001
             logger.exception("reliability agent stream failed")
             emit({"type": "error", "detail": agent_service.STREAM_ERROR})

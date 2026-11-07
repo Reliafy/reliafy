@@ -23,6 +23,7 @@ from backend.services import models as models_service
 from backend.services import rbd_costs
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -63,7 +64,7 @@ def cheapest_rbd_design(
             discount_rate=discount_rate, trains=trains, horizons=horizons,
         )
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Cheapest repairable design failed")
         return JSONResponse(

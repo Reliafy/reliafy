@@ -32,6 +32,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 
 from backend.services.rbd_analysis import AnalysisError
+from backend.errors import client_message
 
 #: Simulated networks when the exact decision diagram is too large, and the
 #: seed (the same figures every time for the same diagram).
@@ -320,7 +321,7 @@ def analyze_network(
                     mttf_note = ("The terminals never part in some networks (a block that never fails), so "
                                  "there's no mean time until they do.")
             except (ValueError, NotImplementedError, ArithmeticError) as exc:
-                mttf_note = f"No mean time until the terminals part: {exc}"
+                mttf_note = f"No mean time until the terminals part: {client_message(exc)}"
         importance = []
         if method == "exact":
             try:

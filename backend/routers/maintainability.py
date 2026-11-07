@@ -21,6 +21,7 @@ from backend.services import maintainability as service
 from backend.services import samples as samples_service
 from backend.services.access import AccessCtx, get_access
 from backend.services.maintainability import MaintainabilityError, PredictionNotFound
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/maintainability")
@@ -59,7 +60,7 @@ def analyse(inputs: dict = Body(default={}), session=Depends(get_session), ctx: 
     try:
         return JSONResponse(content=service.compute(inputs, _rates_for(session, ctx, inputs)))
     except MaintainabilityError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Maintainability prediction failed")
         return JSONResponse(status_code=500, content={"detail": "Calculation failed. The error has been logged."})
@@ -80,7 +81,7 @@ def product_lines(product_id: str, session=Depends(get_session), ctx: AccessCtx 
     except NotFound:
         return JSONResponse(status_code=404, content={"detail": "Product not found."})
     except Invalid as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     rates = service.prediction_rates(session, product_id, ctx.read_owners)
     found = 0
     if rates:
@@ -112,7 +113,7 @@ def save_prediction(name: str = Body(...), inputs: dict = Body(default={}), sess
         doc = service.save_prediction(session, name, inputs, ctx.write_owner, _rates_for(session, ctx, inputs))
         access_service.stamp_editor(session, COLLECTION, doc.id, ctx)
     except MaintainabilityError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=_full(doc, ctx))
 
 
@@ -149,7 +150,7 @@ def update_prediction(prediction_id: str, name: str | None = Body(default=None),
     except PredictionNotFound:
         return JSONResponse(status_code=404, content={"detail": "Prediction not found."})
     except MaintainabilityError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=_full(doc, ctx))
 
 

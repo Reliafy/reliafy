@@ -22,6 +22,7 @@ from backend.services import outage_logs as logs_service
 from backend.services import rbds as rbds_service
 from backend.services import samples as samples_service
 from backend.services.access import AccessCtx, get_access
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -86,7 +87,7 @@ def preview_log(
     try:
         df = logs_service.read_table(text)
     except logs_service.OutageLogError as exc:
-        return _err(400, str(exc))
+        return _err(400, client_message(exc))
     headers = list(df.columns)
     detected = logs_service.detect_columns(headers)
     out = {"headers": headers, "detected": detected, "n_rows": int(len(df)),
@@ -94,7 +95,7 @@ def preview_log(
     try:
         parsed = logs_service.parse_log(text, rbd.graph or {}, **_parse_args(body))
     except logs_service.OutageLogError as exc:
-        return JSONResponse(content={**out, "ok": False, "error": str(exc), "errors": exc.errors})
+        return JSONResponse(content={**out, "ok": False, "error": client_message(exc), "errors": exc.errors})
     return JSONResponse(content={
         **out,
         "ok": True,
@@ -139,12 +140,12 @@ def create_log(
         parsed = logs_service.parse_log(body.get("csv") or "", rbd.graph or {}, **_parse_args(body))
         log = logs_service.create_log(session, rbd, parsed, ctx.write_owner, body.get("name") or "")
     except logs_service.OutageLogError as exc:
-        return _err(400, str(exc), errors=exc.errors)
+        return _err(400, client_message(exc), errors=exc.errors)
     out = {**logs_service.summary(log), "assets": parsed["assets"], "unmapped": parsed["unmapped"]}
     try:
         out["history"] = logs_service.system_history(rbd.graph or {}, log)
     except logs_service.OutageLogError as exc:
-        out["history_error"] = str(exc)
+        out["history_error"] = client_message(exc)
     return JSONResponse(status_code=201, content=out)
 
 
@@ -202,7 +203,7 @@ def update_log(
             session, log, rbd.graph or {}, name=body.get("name"), asset_map=body.get("asset_map"),
             window_start=body.get("window_start"), window_end=body.get("window_end"))
     except logs_service.OutageLogError as exc:
-        return _err(400, str(exc))
+        return _err(400, client_message(exc))
     return JSONResponse(content=logs_service.summary(log))
 
 
@@ -231,7 +232,7 @@ def history(rbd_id: str, log_id: str, session=Depends(get_session),
     try:
         return JSONResponse(content=logs_service.system_history(rbd.graph or {}, log))
     except logs_service.OutageLogError as exc:
-        return _err(422, str(exc))
+        return _err(422, client_message(exc))
 
 
 @router.post("/rbds/{rbd_id}/outage-logs/{log_id}/fit")
@@ -258,4 +259,4 @@ def fit_models(
         repair = fitting.resolve_distribution_id(repair_distribution or "lognormal")
         return JSONResponse(content=logs_service.fit_models(rbd.graph or {}, log, life, repair))
     except (logs_service.OutageLogError, FitError) as exc:
-        return _err(422, str(exc))
+        return _err(422, client_message(exc))

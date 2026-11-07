@@ -41,6 +41,7 @@ import numpy as np
 from backend.maintenance import service as svc
 from backend.maintenance.service import Invalid, Maintenance, class_id
 from backend.services import spares
+from backend.errors import client_message
 
 PERIODS = ("month", "quarter", "year")
 MAX_PERIODS = 120
@@ -436,7 +437,7 @@ def _stocking(m: Maintenance, dist, units: list[dict], matrix: np.ndarray, rows:
     try:
         events = fleet._renewal_events(dist, ages, rates, horizon)
     except StrategyError as exc:
-        return {**meta, "error": str(exc)}
+        return {**meta, "error": client_message(exc)}
     meta["sims"] = events["sims"]
     for j, (row, inp) in enumerate(zip(rows, inputs)):
         weights = matrix[:, j:j + 1]

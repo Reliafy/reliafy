@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from backend.library import schema
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -234,7 +235,7 @@ def detail(record_id: str, environment: Optional[str] = None) -> dict:
         try:
             model = convert.to_block_model(rec)
         except convert.ConversionError as exc:
-            model = {"needs": str(exc)}
+            model = {"needs": client_message(exc)}
     src = _library()["sources"].get(rec["source"], {})
     out = {"record": rec, "units": units_text(rec), "block_model": model, "caveats": src.get("caveats") or []}
     values = (rec.get("environment_factors") or {}).get("values")
