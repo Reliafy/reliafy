@@ -405,7 +405,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
               ? <CellEditor col={c} r={cr} onCommit={(raw) => table.onCommit(r, c.id, raw)} onCancel={table.onCancel} />
               : (rcmRow || cr.sum.modes) ? <Cell col={c} r={r.type === "pos" ? { ...cr, type: "fn" } : cr} query={query} readOnly={table.readOnly}
                                                onDecision={table.onDecision} linkChecks
-                                               onWorking={table.onBasis ? (id) => table.onBasis({ type: "fn", key: id }) : null} /> : null}
+                                               onWorking={table.onNotes ? (id) => table.onNotes({ type: "fn", key: id }) : null} /> : null}
           </div>
         );
       })}

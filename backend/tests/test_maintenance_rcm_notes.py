@@ -15,7 +15,7 @@ matplotlib.use("Agg")
 import pytest
 
 from backend.maintenance import fmea_sheet, rcm_sheet
-from backend.maintenance.service import LONG_TEXT, PROJECTORS, Invalid, Maintenance
+from backend.maintenance.service import FUNCTION_NOTES, LONG_TEXT, PROJECTORS, Invalid, Maintenance
 from backend.maintenance.store import GraphStore, new_id
 from backend.services import excel
 from backend.tests.test_api_tools import A, B, _auth, env, maint  # noqa: F401 - fixtures
@@ -88,15 +88,17 @@ def test_each_kind_sets_reads_and_clears_its_notes_with_its_own_event(m):
 
 
 def test_the_cap_is_4000_characters_and_a_refusal_changes_nothing(m):
+    """4,000 characters on every row but a function, whose notes hold the working
+    behind its standard too (FUNCTION_NOTES, Nov 2026)."""
     pid, fn, st, ff, mode = _pool(m)
-    assert m.update_function(fn["id"], notes="x" * LONG_TEXT)["notes"] == "x" * LONG_TEXT
+    assert m.update_function(fn["id"], notes="x" * FUNCTION_NOTES)["notes"] == "x" * FUNCTION_NOTES
     count = m.s.event_count(ORG)
-    for call in (lambda: m.update_function(fn["id"], text="New words", notes="x" * (LONG_TEXT + 1)),
-                 lambda: m.update_standard(st["id"], notes="x" * (LONG_TEXT + 1)),
-                 lambda: m.update_functional_failure(ff["id"], notes="x" * (LONG_TEXT + 1)),
-                 lambda: m.add_function(pid, "Another", notes="x" * (LONG_TEXT + 1)),
-                 lambda: m.update_failure_mode(mode["id"], notes="x" * (LONG_TEXT + 1))):
-        with pytest.raises(Invalid, match="4000"):
+    for call, cap in ((lambda: m.update_function(fn["id"], text="New words", notes="x" * (FUNCTION_NOTES + 1)), "25000"),
+                      (lambda: m.update_standard(st["id"], notes="x" * (LONG_TEXT + 1)), "4000"),
+                      (lambda: m.update_functional_failure(ff["id"], notes="x" * (LONG_TEXT + 1)), "4000"),
+                      (lambda: m.add_function(pid, "Another", notes="x" * (FUNCTION_NOTES + 1)), "25000"),
+                      (lambda: m.update_failure_mode(mode["id"], notes="x" * (LONG_TEXT + 1)), "4000")):
+        with pytest.raises(Invalid, match=cap):
             call()
     assert m.s.event_count(ORG) == count  # checked before anything is written
 
@@ -239,7 +241,7 @@ def test_the_apps_routes_take_notes_on_each_kind(app):
     assert client.patch(f"{M}/functions/{fn['id']}", json={"notes": "F"}).json()["notes"] == "F"
     assert client.patch(f"{M}/standards/{st['id']}", json={"notes": "S"}).json()["notes"] == "S"
     assert client.patch(f"{M}/functional-failures/{ff['id']}", json={"notes": "X"}).json()["notes"] == "X"
-    r = client.patch(f"{M}/functions/{fn['id']}", json={"notes": "x" * (LONG_TEXT + 1)})
+    r = client.patch(f"{M}/functional-failures/{ff['id']}", json={"notes": "x" * (LONG_TEXT + 1)})
     assert r.status_code == 422 and "4000" in r.text
     sheet = client.get(f"{M}/positions/{pid}/rcm").json()["positions"][0]["functions"][0]
     assert (sheet["notes"], sheet["standards"][0]["notes"], sheet["failures"][0]["notes"]) == ("F", "S", "X")

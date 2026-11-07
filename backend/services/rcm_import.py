@@ -66,7 +66,8 @@ FIELDS = [
      "help": "Optional: the notes and rationale of the performance standard on the same row.",
      "synonyms": ["standard notes", "performance standard notes", "standard rationale", "standard note"]},
     {"id": "standard_basis", "label": "Standard working",
-     "help": "Optional: how the standard was worked out (Markdown is fine). Blank cells carry down.",
+     "help": "Optional: how the standard was worked out (Markdown is fine). It goes into the function's notes and "
+             "rationale, under a Working line. Blank cells carry down.",
      "synonyms": ["standard working", "working", "basis", "standard basis", "performance standard basis",
                   "how the standard was calculated", "standard calculation", "calculation", "derivation"]},
     {"id": "failure", "label": "Functional failure",

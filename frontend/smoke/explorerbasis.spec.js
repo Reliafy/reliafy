@@ -1,10 +1,10 @@
-// The working behind a function's performance standard (Explorer › RCM tab):
-// the section in the function's details (empty, write, preview, save, read
-// more), a hostile text staying inert, a .md file and a
-// PDF added, and nothing scrolling sideways on a phone. Makes its own plant
-// through the API. With SMOKE_SHOTS_DIR set, screenshots are saved there.
+// The working behind a function's performance standard (Explorer › RCM tab),
+// written in the function's "Notes and rationale" since Nov 2026: the hint on
+// the box, Markdown shown formatted, a hostile text staying inert, a PDF added
+// at the end of the section, a working written before (standard_basis) read
+// inside the notes, and nothing scrolling sideways on a phone. Makes its own
+// plant through the API. With SMOKE_SHOTS_DIR set, screenshots are saved there.
 import { test, expect, open, postOk } from "./health.js";
-import { openColumns } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -42,114 +42,74 @@ async function plant(request, tag) {
 const table = (page) => page.getByRole("treegrid", { name: /and their RCM/ });
 const trow = (page, name) => table(page).getByRole("row", { name: new RegExp(name) });
 const panel = (page) => page.locator("aside.rw-panel");
-const section = (page) => panel(page).getByRole("region", { name: "Working behind the performance standard" });
+const section = (page) => panel(page).getByRole("region", { name: "Notes and rationale" });
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 
-test("the working behind a standard: write, preview, save, read, no (i) in the table, a .md file and a PDF", async ({ page, request, problems }) => {
+test("the working goes in a function's notes: the hint, Markdown shown, inert HTML, a PDF, one section", async ({ page, request, problems }) => {
   const tag = `b${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.sub.id}&tab=rcm`);
   await expect(table(page)).toBeVisible();
-  await trow(page, `^Function: Keep the water safe ${tag}`).locator(".tt-tree").click();
+  const fnRow = trow(page, `^Function: Keep the water safe ${tag}`);
+  await fnRow.locator(".tt-tree").click();
   await expect(panel(page)).toBeVisible();
 
-  // Empty: a quiet prompt and two links.
-  await expect(section(page).getByText(/Optional\. Say how the performance standard was worked out/)).toBeVisible();
-  const fnRow = trow(page, `^Function: Keep the water safe ${tag}`);
-  const stdRow = trow(page, "^Performance standard: 1-3 ppm free chlorine");
-  await expect(stdRow).toBeVisible();
+  // One long-text section on a function: no separate working section, and the hint says the working goes here.
+  await expect(panel(page).getByRole("region", { name: "Working behind the performance standard" })).toHaveCount(0);
+  await expect(section(page)).toContainText("Why these limits: the working, the data and the sources behind the performance standard");
   await shot(page, "01-empty");
 
-  // Write, then Preview: tables and code render; raw HTML and scripts are inert.
-  await section(page).getByRole("button", { name: "Add a working…" }).click();
-  const box = section(page).getByRole("textbox", { name: /Markdown/ });
-  await box.fill(WORKING);
+  // Write it: tables and code render; raw HTML and scripts are inert.
+  await section(page).getByRole("button", { name: "Add notes" }).click();
+  await section(page).getByRole("textbox").fill(WORKING);
   await shot(page, "02-write");
-  await section(page).getByRole("radio", { name: "Preview" }).click();
+  await section(page).getByRole("button", { name: "Save" }).click();
+  await section(page).getByRole("button", { name: /Show all/ }).click();
   await expect(section(page).locator(".rw-md table")).toBeVisible();
   await expect(section(page).locator(".rw-md pre")).toContainText("150 g / 35,000 L");
   for (const bad of ["script", "img", "style", "iframe"]) await expect(section(page).locator(`.rw-md ${bad}`)).toHaveCount(0);
   await expect(section(page).locator(".rw-md a[href^='javascript']")).toHaveCount(0);
   await expect(section(page).locator(".rw-md a[href='https://reliafy.com']")).toHaveAttribute("rel", /noopener/);
-  await shot(page, "03-preview");
-
-  // Save: collapsed to a preview line with Read more; no (i) in the table, whichever row.
-  await section(page).getByRole("radio", { name: "Write" }).click();
-  await section(page).getByRole("button", { name: "Save" }).click();
-  await expect(section(page).getByRole("button", { name: /Read more/ })).toBeVisible();
-  await expect(section(page).locator(".rw-basis-preview")).toContainText("Chlorine demand");
-  await expect(table(page).locator(".rw-info")).toHaveCount(0);
-  await shot(page, "04-collapsed");
-
-  await section(page).getByRole("button", { name: /Read more/ }).click();
-  await expect(section(page).locator(".rw-md h2")).toHaveText("Chlorine demand");
   expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
-  await shot(page, "05-expanded");
-  await expect(section(page).getByRole("link", { name: /operating context of Basis pool/ })).toBeVisible();
+  await shot(page, "03-saved");
 
-  // No Performance standard column to move it into: the Columns menu doesn't offer one.
-  await openColumns(page);
-  await expect(page.getByRole("checkbox", { name: /Performance standard/ })).toHaveCount(0);
-  await page.keyboard.press("Escape");
-
-  // The working is reached through the details: another row has none; the function's details show it
-  // collapsed (a preview line) each time they open, and Read more opens it in full.
-  await trow(page, `^Failure mode: Dosing pump fails ${tag}`).locator(".tt-tree").click();
-  await expect(section(page)).toHaveCount(0);
-  await fnRow.locator(".tt-tree").click();
-  await expect(panel(page).getByRole("heading", { name: `Keep the water safe ${tag}` })).toBeVisible();
-  await expect(section(page).locator(".rw-basis-preview")).toContainText("Chlorine demand");
-  await section(page).getByRole("button", { name: /Read more/ }).click();
-  await expect(section(page).locator(".rw-md h2")).toBeVisible();
-
-  // A .md file: replace the text. Then a PDF.
-  await section(page).getByRole("button", { name: /Edit/ }).click();
-  await section(page).getByRole("button", { name: "Upload .md" }).waitFor();
-  await page.getByTestId("basis-md").setInputFiles({ name: "chlorine.md", mimeType: "text/markdown", buffer: Buffer.from("# From a file\r\n\r\nline  \r\n") });
-  await expect(section(page).getByText(/There is text here already/)).toBeVisible();
-  await shot(page, "06-upload-md-question");
-  await section(page).getByRole("button", { name: "Replace it" }).click();
-  await expect(section(page).getByRole("textbox", { name: /Markdown/ })).toHaveValue("# From a file\n\nline"); // line endings and trailing spaces tidied
-  await page.getByTestId("basis-md").setInputFiles({ name: "bad.md", mimeType: "text/markdown", buffer: Buffer.from([0x66, 0x00, 0x6f]) });
-  await expect(section(page).getByRole("alert")).toContainText("isn't a text file");
-  await section(page).getByRole("button", { name: "Save" }).click();
-  await expect(section(page).locator(".rw-md h1")).toHaveText("From a file"); // still open after saving
-
+  // A PDF at the end of the section.
   await section(page).getByRole("button", { name: "Attach a PDF…" }).click();
   await page.getByTestId("basis-pdf").setInputFiles("smoke/fixtures/working.pdf");
   await section(page).getByRole("button", { name: "Upload", exact: true }).click();
   await expect(section(page).locator(".rw-pdf")).toContainText("working");
-  await shot(page, "07-pdf-chip");
+  await shot(page, "04-pdf-chip");
   await section(page).locator(".rw-pdf .ovm-trigger").click();
   await section(page).getByRole("button", { name: "Remove…" }).click();
   await section(page).getByRole("button", { name: "Remove", exact: true }).click();
   await expect(section(page).locator(".rw-pdf")).toHaveCount(0);
 
-  // The link to the operating context opens the Summary tab on the position that has it.
-  await section(page).getByRole("link", { name: /operating context of Basis pool/ }).click();
-  await expect(page.getByRole("tab", { name: "Summary", exact: true })).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator("#operating-context")).toBeVisible();
-  await expect(page.locator("#operating-context")).toContainText("About 35 kL");
+  // From the performance standard: a line that opens the function's notes.
+  await trow(page, "^Performance standard: 1-3 ppm free chlorine").locator(".tt-tree").click();
+  await panel(page).getByRole("button", { name: "open them" }).click();
+  await expect(panel(page).getByRole("heading", { name: `Keep the water safe ${tag}` })).toBeVisible();
+  await expect(section(page).locator(".rw-md h2")).toHaveText("Chlorine demand");
   expect(problems).toEqual([]);
 });
 
-test("the working on a phone: a sheet that doesn't scroll the page sideways", async ({ page, request, problems }) => {
+test("a working written before reads in the notes, on a phone too, and nothing scrolls sideways", async ({ page, request, problems }) => {
   const tag = `p${Date.now()}`;
   const p = await plant(request, tag);
-  await postOk(request, `${M}/positions/${p.sub.id}/functions`, { text: `Second ${tag}`, standard_basis: `${WORKING}\n\n${"| a | b | c | d | e | f | g |\n|---|---|---|---|---|---|---|\n| 1111111111 | 2222222222 | 3333333333 | 4444444444 | 5555555555 | 6666666666 | 7777777777 |\n"}` });
+  // standard_basis is the old, deprecated name: it is written into the notes.
+  await postOk(request, `${M}/positions/${p.sub.id}/functions`, { text: `Second ${tag}`, notes: "Why these limits", standard_basis: `${WORKING}\n\n${"| a | b | c | d | e | f | g |\n|---|---|---|---|---|---|---|\n| 1111111111 | 2222222222 | 3333333333 | 4444444444 | 5555555555 | 6666666666 | 7777777777 |\n"}` });
   await page.setViewportSize({ width: 400, height: 800 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.sub.id}&tab=rcm`);
   const row = page.getByRole("row", { name: new RegExp(`^Function: Second ${tag}`) });
-  await expect(row).toContainText("has a working");
   await row.locator(".tt-l1").click();
   await expect(panel(page)).toBeVisible();
-  await section(page).getByRole("button", { name: /Read more/ }).click();
+  await section(page).getByRole("button", { name: /Show all/ }).click();
+  await expect(section(page)).toContainText("Working");
   await expect(section(page).locator(".rw-md table").first()).toBeVisible();
   expect(await overflow(page)).toBeLessThanOrEqual(0);
-  await shot(page, "08-phone-expanded");
+  await shot(page, "05-phone-expanded");
   await section(page).getByRole("button", { name: /Edit/ }).click();
   expect(await overflow(page)).toBeLessThanOrEqual(0);
-  await shot(page, "09-phone-edit");
+  await shot(page, "06-phone-edit");
   expect(problems).toEqual([]);
 });

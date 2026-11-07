@@ -1,4 +1,3 @@
-import Chip from "./ui/Chip.jsx";
 import Section from "./ui/Section.jsx";
 import OperatingContextCard from "./OperatingContextCard.jsx";
 import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
@@ -58,7 +57,6 @@ export default function RcmPositionPanel({
                     </span>
                     {f.standardTexts.length > 0 && <span className="rp-fn-std">{f.standardTexts.join("; ")}</span>}
                   </button>
-                  {f.hasBasis && <Chip tone="neutral" title="This function has a working">Working</Chip>}
                 </li>
               ))}
             </ul>

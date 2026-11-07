@@ -10,7 +10,8 @@ therefore never stored; they are recomputed from the linked artifacts each
 time the RCM is read.
 
 A decision can also link a report (the app's Reports) or the working behind a
-performance standard (a function's ``standard_basis``) as the case for it.
+performance standard (a function's notes and rationale, where the working is
+written) as the case for it.
 Nothing is computed from those: the check says only that one is linked
 ("linked", with ``evidence_kind`` report or working), or that it has gone
 ("stale"); it never says supported or contradicted.
@@ -55,7 +56,7 @@ COMBINES = (
     "redesign beside one of them as the interim measure; rtf and accept stand alone."
 )
 # Evidence that's checked against the decision (a model or a saved analysis),
-# then evidence that's only linked: a report, or a standard's working (its id is
+# then evidence that's only linked: a report, or a function's working, now its notes and rationale (its id is
 # the function's whose performance standard the working sits behind).
 CHECKED_TYPES = ("model", "strategy_analysis", "degradation_model")
 LINKED_TYPES = ("report", "working")
@@ -454,7 +455,7 @@ def resolve_decision(decision: dict, fetch) -> dict:
     return out | {"evidence_kind": kind} if kind else out
 
 
-_LINKED_LABEL = {"report": "Report", "working": "Working"}
+_LINKED_LABEL = {"report": "Report", "working": "Function's notes and rationale"}
 
 
 def _resolve_linked(decision: dict, evidence: dict, fetch) -> dict:
@@ -469,10 +470,10 @@ def _resolve_linked(decision: dict, evidence: dict, fetch) -> dict:
     else:
         working = decision.get("working")
         if not working:
-            return {"status": "stale", "reason": "The linked working has gone: its function was deleted or the "
-                                                 "working behind its performance standard was cleared."}
+            return {"status": "stale", "reason": "The linked working has gone: its function was deleted or its "
+                                                 "notes and rationale were cleared."}
         name, path = working.get("text") or "Function", f"/asset-register/explorer?tab=rcm&sel={working['id']}"
-    what = "report" if kind == "report" else "working"
+    what = "report" if kind == "report" else "function's notes"
     return {"status": "linked", "artifact_name": name, "artifact_link_path": path,
             "summary": f"{_LINKED_LABEL[kind]} linked: open it to read the case. Reliafy doesn't check a {what} "
                        "against the decision."}
@@ -616,7 +617,7 @@ def _type_label(etype: str) -> str:
         "strategy_analysis": "saved strategy analysis",
         "degradation_model": "degradation model",
         "report": "report",
-        "working": "standard's working",
+        "working": "function's notes and rationale",
     }.get(etype, etype)
 
 
