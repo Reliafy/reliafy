@@ -154,9 +154,20 @@ test("switching arrangements keeps the same thing picked where it can", () => {
   assert.equal(carryOver(items.rows.get("sp"), "locations"), "sp");
   assert.equal(carryOver(items.rows.get("bench"), "positions"), "bench"); // its row among the items fitted nowhere
   assert.equal(carryOver(items.rows.get("sp"), "flat"), null);
-  // A location only in Locations; a heading never.
+  // A location: itself in Locations; in Positions the top position at that
+  // place (so its RCM tab opens there); never in Items; a heading never.
   assert.equal(carryOver(loc.rows.get("site"), "locations"), "site");
   assert.equal(carryOver(loc.rows.get("site"), "items"), null);
+  assert.equal(carryOver(loc.rows.get("site"), "positions"), null);
+  const placed = [
+    { id: "pool", name: "Pool", parent_id: "house", location_id: "site" },
+    { id: "house", name: "House", parent_id: null, location_id: "site" },
+    { id: "shed", name: "Shed", parent_id: "yard", location_id: "site" }, // its parent is elsewhere: a top here too
+    { id: "yard", name: "Yard", parent_id: null, location_id: "other" },
+  ];
+  assert.equal(carryOver(loc.rows.get("site"), "positions", placed), "house");
+  assert.equal(carryOver(loc.rows.get("site"), "positions", placed.filter((p) => p.id !== "house")), "pool");
+  assert.equal(carryOver(loc.rows.get("site"), "positions", []), null);
   assert.equal(carryOver(items.rows.get("G:fitted"), "positions"), null);
   assert.equal(carryOver(null, "items"), null);
 });

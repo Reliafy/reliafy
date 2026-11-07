@@ -453,7 +453,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (toTable && tab !== "summary" && focusRow?.type === "pos") setPanel(false);
     let keep = null;
     if (toTable && mode !== "positions") {
-      keep = carryOver(focusRow, "positions");
+      keep = carryOver(focusRow, "positions", data?.positions);
       if (keep) setSelected((s) => ({ ...s, positions: keep }));
     }
     setQuery_((q) => {
