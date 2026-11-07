@@ -55,7 +55,7 @@ import { NewLocationModal } from "./MaintenanceLists.jsx";
 import { ImportModal, NewPositionModal } from "./MaintenanceHome.jsx";
 import { DEFAULT_LEVEL, changedFromUsual, levelShown, showingOnly } from "../treeControls.js";
 import {
-  ARRANGEMENTS, CHIPS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
+  ARRANGEMENTS, CHIPS, ancestorsOf, arrangementFor, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
@@ -178,7 +178,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const fmeaOn = tab === "fmea";
   const rcmOn = tab === "rcm" || fmeaOn;
   // RCM (and the FME(C)A) is by position: on its tab the tree is arranged by positions.
-  const mode = rcmOn || root ? "positions" : arrangementOf(params.get("arrange"), saved.mode);
+  // One tree on show (a product's design, an item's tree) opens by positions; its
+  // Locations (?arrange=locations) are its own layout, never what's remembered here.
+  const mode = arrangementFor({ param: params.get("arrange"), remembered: saved.mode, rcm: rcmOn, scoped: !!root });
   const notPlaced = mode === "positions" && params.get("place") === "none";
   const title = titleProp || EXPLORER_LABEL;
   // Inside a product's page (its own h1), the picked row's name is an h2.
@@ -1063,9 +1065,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const keep = carryOver(focus != null ? display.rows.get(focus) : null, m);
     const nextSelected = keep ? { ...selected, [m]: keep } : selected;
     setSelected(nextSelected);
+    pending.current = keep;
+    if (root) {
+      // One tree on show: its own address, the arrangement in it (a product's page
+      // says only Locations: Positions is how it opens).
+      const q = scopedArrangeQuery(params, m, { ownPage: !!rootProp });
+      navigate(`${location.pathname}?${q}${location.hash}`, { replace: true, state: location.state });
+      return;
+    }
     latest.current = { ...latest.current, mode: m, selected: nextSelected };
     saveTreeState(workspace, latest.current);
-    pending.current = keep;
     // The tab comes along.
     navigate(explorerPath(m, { tab: tab === "summary" ? null : tab }),
              { state: keep ? { treeReveal: keep } : undefined });
@@ -1536,7 +1545,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const top = pinKey || root;
     let parent = TOP;
     let label = `New ${kind}`;
-    if (top) {
+    if (!pinKey && kind === "location" && data.scope?.kind === "design") {
+      // A product's page, by Locations: a new location at the top of its layout.
+      label = `New location inside ${data.scope.name || "(no name)"}`;
+    } else if (root && !pinKey && kind === "location") {
+      return null; // an item's tree: its locations come from its product (add inside one of them)
+    } else if (top) {
       const r = whole.rows.get(top);
       if (!r || r.type !== (kind === "location" ? "loc" : "pos")) return null;
       parent = top;
@@ -1579,7 +1593,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         collapsed={collapsed}
         onCollapse={setCollapsed}
         addRow={addRow}
-        canArrange={!root}
+        canArrange={!root || !!data?.scope}
         level={level}
         changed={changed}
         onReset={resetView}
@@ -1662,6 +1676,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       )}
       {modal === "location" && (
         <NewLocationModal
+          designOf={data?.scope?.kind === "design" ? data.scope.id : null} layoutName={data?.scope?.name}
           locations={(data?.locations || []).map((l) => ({ ...l, parent: l.parent_id ? { name: data.locations.find((x) => x.id === l.parent_id)?.name } : null }))}
           parentId={newParent === TOP ? null : newParent ?? (focus && display.rows.get(focus)?.type === "loc" ? focus : null)}
           onClose={closeModal} onDone={(l) => created(l.id)} />
@@ -1673,6 +1688,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       )}
       {rowModal?.kind === "move" && (
         <MoveModal row={rowModal.row} targets={targetsFor(rowModal.row)} parentId={rowModal.row.ref.parent_id || null}
+                   topLabel={rowModal.row.type === "loc" && data?.scope ? `Top of ${data.scope.name || "its"} layout` : null}
                    onClose={() => setRowModal(null)}
                    onDone={(to) => rowChanged(rowModal.row, { text: to ? `Moved it inside “${to}”.` : "Moved it to the top level." })} />
       )}

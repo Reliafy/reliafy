@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   nextGutter,
-  ARRANGEMENTS, CHIPS, CHIP_MARK, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
+  ARRANGEMENTS, CHIPS, CHIP_MARK, ancestorsOf, arrangementFor, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, findByPrefix, flatten, insideWords, levelSet, loadTreeState, markersOf, pinnedRows, saveTreeState,
-  statusWords, windowOf,
+  scopedArrangeQuery, statusWords, windowOf,
 } from "./assetTree.js";
 
 // A house and a truck whose engine carries a turbo slot, plus an engine on the
@@ -282,4 +282,55 @@ test("the counts come apart at their dots, so they wrap between the parts", asyn
   assert.deepEqual(statusParts("4 positions · 3 not analysed"), ["4 positions", "3 not analysed"]);
   assert.deepEqual(statusParts("12 positions"), ["12 positions"]);
   assert.deepEqual(statusParts(""), []);
+});
+
+test("a product's page by Locations: its layout's rows, positions placed there, the rest not placed yet", () => {
+  const data = {
+    positions: [
+      { id: "d", name: "Quad", parent_id: null, design: { rev: "C" } },
+      { id: "prop", name: "Propulsion", parent_id: "d", in_design: true },
+      { id: "m1", name: "Motor 1", parent_id: "prop", location_id: "arm", in_design: true },
+      { id: "m2", name: "Motor 2", parent_id: "prop", location_id: "elsewhere", in_design: true },
+      { id: "bat", name: "Battery", parent_id: "d", location_id: "bay", in_design: true },
+    ],
+    locations: [
+      { id: "arm", name: "Forward left arm", parent_id: null, design_of: "d", in_design: true },
+      { id: "body", name: "Centre body", parent_id: null, design_of: "d", in_design: true },
+      { id: "bay", name: "Battery bay", parent_id: "body", design_of: "d", in_design: true },
+    ],
+    spares: [{ id: "sp", name: "Spare", location_id: "site" }],
+    unhomed: [{ id: "junk", name: "Old pump" }],
+    scope: { kind: "design", id: "d", name: "Quad" },
+  };
+  const d = buildDisplay(data, "locations");
+  assert.deepEqual(names(d, d.roots), ["Centre body", "Forward left arm", "Not placed in the layout"]);
+  assert.deepEqual(names(d, d.rows.get("arm").kids), ["Motor 1"]);
+  assert.deepEqual(names(d, d.rows.get("body").kids), ["Battery bay"]);
+  assert.deepEqual(names(d, d.rows.get("bay").kids), ["Battery"]);
+  // The product itself and what isn't placed at one of its locations (Motor 2's place isn't on show):
+  // no workspace items here.
+  assert.deepEqual(names(d, d.rows.get("G:nohome").kids), ["Quad"]);
+  assert.deepEqual(names(d, d.rows.get("prop").kids), ["Motor 2"]);
+  assert.ok(!d.rows.has("junk") && !d.rows.has("sp"));
+  assert.equal([...d.rows.values()].filter((r) => r.type === "pos").length, data.positions.length);
+  // An item built from it: the same, named for the item.
+  const unit = buildDisplay({ ...data, scope: { kind: "unit", id: "d", name: "Quad · 0007" } }, "locations");
+  assert.equal(unit.rows.get("G:nohome").ref.name, "Not placed on the item");
+  // By positions nothing changes.
+  assert.deepEqual(names(buildDisplay(data, "positions"), buildDisplay(data, "positions").roots), ["Quad"]);
+});
+
+test("one tree on show (a product's page, an item's tree) has the Positions / Locations switch: by positions unless its address says Locations", () => {
+  assert.equal(arrangementFor({ scoped: true }), "positions");
+  assert.equal(arrangementFor({ scoped: true, param: "locations" }), "locations");
+  // Never what's remembered for the whole register.
+  assert.equal(arrangementFor({ scoped: true, remembered: "locations" }), "positions");
+  assert.equal(arrangementFor({ scoped: true, param: "locations", rcm: true }), "positions");
+  assert.equal(arrangementFor({ remembered: "locations" }), "locations");
+  assert.equal(arrangementFor({ param: "positions", remembered: "locations" }), "positions");
+  // A product's page says only Locations; an item's tree (?root=) always says which; a pin goes.
+  const page = new URLSearchParams("view=rcm&pin=x");
+  assert.equal(scopedArrangeQuery(page, "locations", { ownPage: true }).toString(), "view=rcm&arrange=locations");
+  assert.equal(scopedArrangeQuery(new URLSearchParams("arrange=locations"), "positions", { ownPage: true }).toString(), "");
+  assert.equal(scopedArrangeQuery(new URLSearchParams("root=b&arrange=positions"), "locations").toString(), "root=b&arrange=locations");
 });

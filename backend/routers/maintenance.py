@@ -1481,8 +1481,10 @@ def place_item(item_id: str, body: dict = Body(...), m: Maintenance = Depends(ma
 
 
 @router.get("/locations")
-def list_locations(m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(lambda: {"locations": m.locations(), "tree": m.location_tree()})
+def list_locations(of: str | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The places you look after; of: a product's id (its design locations) or a built
+    item's top position (the locations it carries) instead."""
+    return _run(lambda: {"locations": m.locations(of), "tree": m.location_tree(of)})
 
 
 @router.get("/places")
@@ -1513,7 +1515,8 @@ def update_location(location_id: str, body: dict = Body(...), m: Maintenance = D
 
 @router.post("/locations")
 def create_location(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.create_location, body.get("name"), body.get("parent_id"), body.get("description", ""))
+    return _run(m.create_location, body.get("name"), body.get("parent_id"), body.get("description", ""),
+                body.get("design_of"))
 
 
 # ---- work orders -------------------------------------------------------------------------

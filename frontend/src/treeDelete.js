@@ -1,6 +1,7 @@
 // Delete… on a position or a location in a tree: the words of its dialog and
 // its toast, from the counts the server gives (a dry run of retire with
-// cascade). A delete takes everything below the thing and never refuses; it
+// cascade). A delete takes everything below the thing and never refuses (a
+// product's design location keeps the positions placed there, unplaced); it
 // never deletes an item (fitted ones are taken out and kept, stored ones lose
 // their place); its history stays in the log, and Undo (restore with cascade)
 // brings the whole branch back. Pure functions, tested in treeDelete.test.js.
@@ -39,6 +40,8 @@ export function deleteLines(c) {
     out.push([c.functions && n(c.functions, "function"), c.failure_modes && n(c.failure_modes, "failure mode")]
       .filter(Boolean).join(" and ") + " (its RCM)");
   }
+  // A product's layout (its design locations): what's placed there stays, with no place.
+  if (c.positions_unplaced) out.push(`${n(c.positions_unplaced, "position")} placed there kept, with no place in the layout`);
   if (c.items_placed) out.push(`${n(c.items_placed, "item")} stored there kept, with no place now: ${c.items_placed === 1 ? "it stays" : "they stay"} in Items`);
   if (c.stock_lines) out.push(`Stock recorded there: kept`);
   return out;

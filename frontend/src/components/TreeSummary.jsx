@@ -19,7 +19,9 @@ import { safeHref } from "../maintenanceFields.js";
 //
 // A product's design (`design`) has no maintenance done to it: no status
 // chips, nothing fitted or located, no work, measurements or due dates, only
-// its class, operating context, what's inside and its documents. A product's
+// its class, where it's placed in the product's layout, operating context,
+// what's inside and its documents; a design location (the layout's rows) says
+// what it is and what's placed there. A product's
 // own row passes its facts (`facts`) and its sections (`children`: the items
 // built, their failure reports, its analyses) in their place.
 
@@ -41,7 +43,16 @@ function StatusChips({ r }) {
 function Facts({ r, display, fittedFrom, design = false }) {
   const p = r.ref;
   const rows = [];
-  if (r.type === "pos" && design) rows.push(["Class", p.position_class || quiet("None")]);
+  if (r.type === "pos" && design) {
+    rows.push(["Class", p.position_class || quiet("None")]);
+    // Where it sits in the product's layout (its design locations), set here or from what it's inside.
+    rows.push(["Placed at", p.location ? (
+      <>{p.location.name}{p.location.inherited && <span className="td-quiet td-sub">From what it's inside</span>}</>
+    ) : quiet("Not placed in the layout")]);
+  }
+  if (r.type === "loc" && design) {
+    rows.push(["What", "Part of the product's physical layout: where its positions sit. Items built from it carry a copy."]);
+  }
   if (r.type === "pos" && !design) {
     rows.push(["Class", p.position_class || quiet("None")]);
     rows.push(["Fitted", p.item ? (

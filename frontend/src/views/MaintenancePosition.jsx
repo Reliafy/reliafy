@@ -445,9 +445,14 @@ function LocationModal({ p, onClose, onDone }) {
   const [locations, setLocations] = useState(null);
   const own = p.location && !p.location.inherited ? p.location.id : "";
   const [to, setTo] = useState(own);
+  // A product's design is placed in its own layout only; a built item's positions at
+  // the places you look after or the item's own locations.
+  const layout = p.layout;
   useEffect(() => {
-    listMaintenanceLocations().then((d) => setLocations(d.locations || [])).catch(() => setLocations([]));
-  }, []);
+    const reads = layout?.kind === "design" ? [listMaintenanceLocations(layout.of)]
+      : layout?.kind === "unit" ? [listMaintenanceLocations(layout.of), listMaintenanceLocations()] : [listMaintenanceLocations()];
+    Promise.all(reads).then((all) => setLocations(all.flatMap((d) => d.locations || []))).catch(() => setLocations([]));
+  }, [layout?.kind, layout?.of]);
   const above = p.path.length > 0;
   return (
     <FormModal title={`Where is ${p.name}?`} submitLabel="Save" canSubmit={to !== own} onClose={onClose}
@@ -460,7 +465,11 @@ function LocationModal({ p, onClose, onDone }) {
         <LocationPicker locations={locations} value={to} onChange={(v) => setTo(v || "")}
                         emptyLabel={above ? "Not set here (where the position above it is)" : "Not set"} />
       </Field>
-      {locations?.length === 0 && <p className="lib-date">No locations yet: add them under Locations.</p>}
+      {locations?.length === 0 && (
+        <p className="lib-date">{layout?.kind === "design"
+          ? "No locations in the product's layout yet: add them on the product's page, by Locations."
+          : "No locations yet: add them under Locations."}</p>
+      )}
     </FormModal>
   );
 }

@@ -2641,7 +2641,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
         name = _text(name, "position's name", required=True)
         if parent_id:
             self._parent_node(parent_id)
-        location_id = self._location_ref(location_id)
+        location_id = self._location_ref(location_id, realm=self._position_realm(parent_id))
         context = _text(operating_context, "operating context")
         self._quota("Position", MAX_POSITIONS)
         pid = new_id()
@@ -2680,7 +2680,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
             now = self._parent(id)
             leaving = self._links_leaving(id, parent) if (now and now["id"]) != parent else []
         if "location_id" in changes:
-            location_id = self._location_ref(changes["location_id"])
+            location_id = self._location_ref(changes["location_id"], realm=self._position_realm(id))
             if location_id != ((self._own_location(id) or {}).get("id")):
                 allowed["location_id"] = location_id
         for effect_id, cause_id in leaving:
@@ -2690,11 +2690,14 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
         out = self._get(id, "Position")
         return out | ({"links_removed": len(leaving), "note": _links_note(len(leaving))} if leaving else {})
 
-    def _location_ref(self, location_id) -> str | None:
-        """A location id from a request, checked (None when not given)."""
+    def _location_ref(self, location_id, realm=None) -> str | None:
+        """A location id from a request for a position (in realm: see _position_realm),
+        checked (None when not given)."""
         if location_id in (None, ""):
             return None
-        return self._live_location(str(location_id))["id"]
+        loc = self._live_location(str(location_id))
+        self._check_place(realm, loc)
+        return loc["id"]
 
     def _live_location(self, location_id) -> dict:
         node = self._get(str(location_id or ""), "Location")
@@ -2794,8 +2797,20 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
         read(source, new, new_name, parent_id)
         return plan
 
-    def _copy_write(self, plan: list[tuple], new: str, parent_id: str | None, today: str) -> dict:
-        """Write a copy read by _copy_read; returns the copy's top position."""
+    def _copy_write(self, plan: list[tuple], new: str, parent_id: str | None, today: str,
+                    place_map: dict | None = None) -> dict:
+        """Write a copy read by _copy_read; returns the copy's top position. A location
+        set on an original comes with the copy where the copy may be placed there (a
+        design's own locations stay with the design); place_map: a location's id ->
+        the one to place the copy at instead (a built unit's copy of its design's)."""
+        realm = self._position_realm(parent_id)
+
+        def where(place: dict | None) -> str | None:
+            if not place:
+                return None
+            if place_map and place["id"] in place_map:
+                return place_map[place["id"]]
+            return place["id"] if self._place_ok(realm, place) else None
         ff_ids: dict[str, str] = {}  # each copied functional failure -> its copy
         copied_modes: dict[str, str] = {}  # every copied failure mode -> its copy (across the branch)
         copied_tasks: list[tuple[list, str]] = []  # (the modes a task prevented, its copy's id)
@@ -2803,11 +2818,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
         self._quota("PartListing", MAX_PART_LISTINGS, adding=sum(len(x[6]) for x in plan), what="parts-list entries")
         for src, pid, label, parent, modes, tasks, listings, place in plan:
             # A location set on the original comes with the copy (one inherited stays inherited).
+            at = where(place)
             self._emit("position.created", {
                 "id": pid, "name": label, "tag": "", "parent_id": parent,
                 "position_class": src.get("position_class", ""), "description": src.get("description", ""),
                 "on": today,
-            } | ({"location_id": place["id"]} if place else {})
+            } | ({"location_id": at} if at else {})
               | ({"operating_context": src["operating_context"]} if src.get("operating_context") else {}))
             mode_ids = {}
             for fm in modes:
@@ -2912,13 +2928,28 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
                     skipped += 1
         return skipped
 
-    def create_location(self, name, parent_id=None, description="") -> dict:
+    def create_location(self, name, parent_id=None, description="", design_of=None) -> dict:
+        """A location, inside parent_id or at the top. design_of: a product's id (its
+        design's top position): one of the product's design locations (its physical
+        layout), at the top of its layout or inside another of its locations. One made
+        inside a product's or a built unit's location is theirs too."""
         name = _text(name, "location's name", required=True)
-        if parent_id:
-            self._live_location(parent_id)
+        description = _text(description, "description")
+        parent = self._live_location(parent_id) if parent_id else None
+        realm = self._location_realm(parent)
+        if design_of not in (None, ""):
+            product = self._live_design(design_of)
+            if parent is not None and realm != ("design", product["id"]):
+                raise Invalid(f"{parent['name']} isn't one of {product['name']}'s locations: make it at the top of "
+                              "the product's layout (no parent_id), or inside one of its locations.")
+            realm = ("design", product["id"])
         lid = new_id()
         self._emit("location.created", {"id": lid, "name": name, "parent_id": parent_id or None,
-                                        "description": _text(description, "description")})
+                                        "description": description})
+        if realm and realm[0] == "design":
+            self._emit("location.design_declared", {"id": lid, "product_id": realm[1]})
+        elif realm:
+            self._emit("location.carried", {"id": lid, "position_id": realm[1]})
         return self._get(lid, "Location")
 
     # ---- where things are: positions located, items fitted or placed ------------------
@@ -2970,11 +3001,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
         return found
 
     def _location_path(self, location_id: str) -> list[dict]:
-        """The locations above one, top first."""
+        """The locations above one, top first. A location a built unit carries is
+        wherever the unit is: its path starts with where the unit's top position is."""
         memo = self._memo.setdefault("paths", {})
         if location_id not in memo:
-            memo[location_id] = [{"id": a["id"], "name": a["name"]} for a in
-                                 (self.s.node(self.org, a) for a in reversed(self._ancestor_ids(location_id))) if a]
+            memo[location_id] = []  # a guard while it's worked out
+            ups = [a for a in (self.s.node(self.org, a) for a in reversed(self._ancestor_ids(location_id))) if a]
+            top = ups[0] if ups else self.s.node(self.org, location_id)
+            lead: list[dict] = []
+            if top and top.get("carried_by") and self.s.node(self.org, top["carried_by"]):
+                unit_at = self._located(top["carried_by"])[0]
+                if unit_at and not unit_at.get("carried_by"):
+                    lead = self._location_path(unit_at["id"]) + [{"id": unit_at["id"], "name": unit_at["name"]}]
+            memo[location_id] = lead + [{"id": a["id"], "name": a["name"]} for a in ups]
         return memo[location_id]
 
     def _location_brief(self, loc: dict | None) -> dict | None:
@@ -3137,7 +3176,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
         now or came out of its last position. A fitted item is where its position
         is: set the position's location instead."""
         item = self._live_item(item_id)
-        self._live_location(location_id)
+        self._guard_design_location(self._live_location(location_id), "items")
         fitted = self._current_fitment_of_item(item_id)
         if fitted:
             position = self.s.out(self.org, fitted["id"], "AT")[0]
@@ -5466,6 +5505,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
         """Receive (positive) or issue (negative) stock of a part at a location."""
         pt = self._get(part_id, "Part")
         loc = self._get(location_id, "Location")
+        self._guard_design_location(loc, "stock")
         delta = _number(delta, "quantity", -MAX_AMOUNT, MAX_AMOUNT)
         if delta > 0 and pt.get("retired"):
             raise Invalid(f"Part {pt['part_number']} has been retired from the catalogue: restore it to receive "
@@ -6630,6 +6670,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
             return node, {"position_id": node["id"]}
         if node.get("retired"):
             raise Invalid(f"{node['name']} has been retired: restore it first.")
+        if kind == "location":
+            self._guard_design_location(node, "tasks or work")
         return node, {"subject": {"kind": kind, "id": node["id"]}}
 
     def _round(self, location_id: str) -> list[dict]:
@@ -8895,9 +8937,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
             changes["description"] = _text(description, "description")
         if parent_id is not ...:
             if parent_id:
-                self._live_location(parent_id)
+                parent = self._live_location(parent_id)
                 if parent_id == location_id or location_id in self._ancestor_ids(parent_id):
                     raise Invalid("A location can't sit inside itself.")
+                if self._location_realm(parent) != self._location_realm(self._get(location_id, "Location")):
+                    raise Invalid("A location stays in its own layout: a place you look after, a product's design "
+                                  "and the locations an item built from it carries are kept apart. Move it inside "
+                                  "a location of the same one.")
             changes["parent_id"] = parent_id or None
         if changes:
             self._emit("location.updated", {"id": location_id, "changes": changes})
@@ -10036,6 +10082,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
         kids = sorted((c for c in self.s.inn(self.org, id, "PART_OF") if c["label"] == "Location"),
                       key=lambda c: c["name"].lower())
         under = {lid: c["id"] for c in kids for lid in self._location_ids_in(c["id"])}
+        # The locations the built units kept here carry (a quadcopter's arms) are here too.
+        for unit_at, carried in self._carried_into(inside):
+            inside += carried
+            if unit_at in under:
+                under.update({lid: under[unit_at] for lid in carried})
         found = self._positions_at(inside)
         loose = self._loose_items(inside)
         open_wos = {p["id"]: sum(1 for w in self.s.inn(self.org, p["id"], "ON")
@@ -10068,10 +10119,18 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
                 })
             group["positions"] = sorted(rows, key=lambda r: r["path"].lower())
         count = lambda rows, lid: sum(1 for r in rows if under.get(r[1]["id"]) == lid)  # noqa: E731
+        owner = self._location_realm(loc)
+        owner_node = owner and self.s.node(self.org, owner[1])
         return {
             "id": id, "name": loc["name"], "description": loc.get("description", ""),
             "coordinates": loc.get("coordinates"), "retired": bool(loc.get("retired")),
             "path": self._location_path(id),
+            # A product's design location (its physical layout), or one a built unit carries.
+            "design_of": {"id": owner[1], "name": (owner_node or {}).get("name", "")}
+            if owner and owner[0] == "design" else None,
+            "carried_by": {"id": owner[1], "name": (owner_node or {}).get("name", ""),
+                           "design_location_id": loc.get("design_location_id")}
+            if owner and owner[0] == "unit" else None,
             "children": [{"id": c["id"], "name": c["name"], "positions": count(found, c["id"]),
                           "items": count(loose, c["id"])} for c in kids],
             "counts": {
@@ -10092,6 +10151,18 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
             # What it's exposed to: its own conditions and the locations' around it.
             **self._conditions_view(loc),
         }
+
+    def _carried_into(self, location_ids) -> list[tuple[str, list[str]]]:
+        """The locations built units carry, for the units whose top position is at any
+        of these locations: (where the unit is, the ids of the locations it carries)."""
+        wanted = set(location_ids)
+        out = []
+        for loc in self.s.nodes(self.org, "Location"):
+            if loc.get("carried_by") and not loc.get("retired") and self._parent(loc["id"]) is None:
+                unit_at = self.s.node(self.org, loc["carried_by"]) and self._located(loc["carried_by"])[0]
+                if unit_at and unit_at["id"] in wanted:
+                    out.append((unit_at["id"], self._location_ids_in(loc["id"])))
+        return out
 
     def _loose_items(self, location_ids) -> list[tuple[dict, dict, dict]]:
         """Items placed at any of these locations and still there (not fitted since):
@@ -10130,10 +10201,14 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
             memo[nid] = top
         return top
 
-    def location_tree(self) -> list[dict]:
+    def location_tree(self, of=None) -> list[dict]:
         """Every location as a tree, with the positions there (set or inherited) and the
-        items placed there (not fitted): here, and with the locations inside it (all_)."""
-        locs = [loc for loc in self.s.nodes(self.org, "Location") if not loc.get("retired")]
+        items placed there (not fitted): here, and with the locations inside it (all_).
+        The places you look after; of: a product's id (its design locations) or a built
+        unit's top position (the locations it carries) instead."""
+        realm = self._realm_of(of) if of not in (None, "") else None
+        locs = [loc for loc in self.s.nodes(self.org, "Location")
+                if not loc.get("retired") and self._location_realm(loc) == realm]
         children: dict[str | None, list] = {}
         for loc in locs:
             parent = self._parent(loc["id"])
@@ -10167,8 +10242,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
         def blank() -> dict:
             return {"positions": 0, "items": 0, "open_work_orders": 0, "due": 0, "overdue": 0, "next_due": None}
 
+        # A product's design locations and the ones a built unit carries aren't assets.
         roots = sorted((loc for loc in self.s.nodes(self.org, "Location")
-                        if self._parent(loc["id"]) is None and not loc.get("retired")),
+                        if self._parent(loc["id"]) is None and not loc.get("retired")
+                        and not self._location_realm(loc)),
                        key=lambda loc: loc["name"].lower())
         out = {r["id"]: {"id": r["id"], "name": r["name"], "description": r.get("description", ""),
                          "locations": len(self._location_ids_in(r["id"])) - 1, **blank()} for r in roots}
@@ -11043,7 +11120,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
             "positions": rows,
             "locations": [{"id": lid, "name": loc["name"],
                            "parent_id": part_of.get(lid) if part_of.get(lid) in locations else None,
-                           "status": status.get(lid)} for lid, loc in locations.items()],
+                           "status": status.get(lid),
+                           # A product's design location, or one a built unit carries (a tree's own).
+                           "design_of": loc.get("design_of"), "carried_by": loc.get("carried_by")}
+                          for lid, loc in locations.items()],
             "spares": [{"id": iid, "name": items[iid].get("name", ""), "serial": items[iid].get("serial", ""),
                         "location_id": lid, "status": status.get(iid)} for iid, lid in placed_at.items()],
             "unhomed": [{"id": iid, "name": i.get("name", ""), "serial": i.get("serial", ""), "status": status.get(iid)}
@@ -11221,6 +11301,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
             "design": self._design_view(p), "implements": self._provenance(p),
             # The product whose design this position is in (none for a plain or built tree).
             "in_design": (lambda root: root and {"id": root["id"], "name": root["name"]})(self._design_root_of(id)),
+            # Whose locations it can be placed at besides the places you look after: its product's
+            # design locations (kind design: only those), or its built unit's (kind unit).
+            "layout": (lambda r: r and {"kind": r[0], "of": r[1]})(self._position_realm(id)),
             "photos": self.photos_of(id),
             "documents": self.documents_of(id),
             "parts_list": self._parts_list(id),
@@ -11961,10 +12044,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps):
             })
         return out
 
-    def locations(self) -> list[dict]:
+    def locations(self, of=None) -> list[dict]:
+        """The places you look after, by name; of: a product's id (its design locations)
+        or a built unit's top position (the locations it carries) instead."""
+        realm = self._realm_of(of) if of not in (None, "") else None
         out = []
         for loc in sorted(self.s.nodes(self.org, "Location"), key=lambda n: n["name"].lower()):
-            if loc.get("retired"):
+            if loc.get("retired") or self._location_realm(loc) != realm:
                 continue
             parent = self._parent(loc["id"])
             out.append({"id": loc["id"], "name": loc["name"], "description": loc.get("description", ""),

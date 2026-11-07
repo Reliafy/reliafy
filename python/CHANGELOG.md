@@ -2,6 +2,13 @@
 
 ## Unreleased (0.5.1)
 
+- **A product's physical layout**: `maintenance locations.create` takes
+  `design_of` (a product's id) for one of the product's design locations
+  (Forward left arm, Battery bay), and `maintenance list.locations` takes
+  `product_id` to list them (or, given a built item's top position, the copy
+  that item carries). Building an item copies them, its positions placed the
+  same way. Design locations never show among the places you look after.
+
 - **One sample quadcopter**: `maintenance positions.add_sample_uav` is gone.
   The sample quadcopter is now the sample product only (`maintenance
   products.add_sample`): its design carries the same scored FME(C)A. Copies

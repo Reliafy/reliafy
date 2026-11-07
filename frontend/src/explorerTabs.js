@@ -13,7 +13,10 @@
 // positions) have no maintenance done to them, so no Failure reports, Signals
 // or stock. They keep RCM and FME(C)A (the design's maintenance programme is a
 // design output; the assets built from it carry it out), Classes, and "Parts"
-// (the parts list, with no stock).
+// (the parts list, with no stock). Its layout's rows (the product's design
+// locations, on its page's Locations) are no place you look after either: no
+// Failure reports, Signals, or Parts and stock; the Summary gives the design
+// facts (what's placed there).
 //
 // Adding a tab is one entry here (id, label, the kinds of row that have it,
 // `asset: true` when a design's rows don't) and its body in TreeDetail. The
@@ -31,6 +34,7 @@ export const TABS = [
   {
     id: "parts", label: "Parts and stock", title: "The parts used here and inside it, and what's in stock where",
     designLabel: "Parts", designTitle: "The parts list: the parts used here and inside it", kinds: ["pos", "loc"],
+    notDesignLoc: true,
   },
   { id: "classes", label: "Classes", title: "The classes used here and inside it, and every class in the register", kinds: ["pos", "loc"] },
   { id: "signals", label: "Signals", title: "Vibration and other sensors that send snapshots: spectra, watch bands and how they change", kinds: ["pos", "item"], asset: true },
@@ -44,9 +48,10 @@ export function tabParam(value) {
 }
 
 // Is the row part of a product's design (its top position, marked `design`,
-// or a position inside it, marked `in_design` when the tree is scoped to the
-// design: products.js scopeTree)?
+// a position inside it, marked `in_design` when the tree is scoped to the
+// design: products.js scopeTree, or one of its design locations, `design_of`)?
 export function isDesignRow(row) {
+  if (row?.type === "loc") return !!(row.ref?.design_of || row.ref?.in_design);
   return row?.type === "pos" && !!(row.ref?.design || row.ref?.in_design);
 }
 
@@ -59,6 +64,7 @@ export function isProductRow(row) {
 // row says "Product"; the positions of its design below it stay "Position".
 export const ROW_KINDS = { pos: "Position", loc: "Location", item: "Item", group: "" };
 export function rowKind(row) {
+  if (row?.type === "loc" && isDesignRow(row)) return "Design location";
   return isProductRow(row) ? "Product" : ROW_KINDS[row?.type] || "";
 }
 
@@ -66,7 +72,7 @@ export function rowKind(row) {
 export function tabsFor(row) {
   if (!row) return [];
   const design = isDesignRow(row);
-  return TABS.filter((t) => t.kinds.includes(row.type) && !(design && t.asset))
+  return TABS.filter((t) => t.kinds.includes(row.type) && !(design && t.asset) && !(design && row.type === "loc" && t.notDesignLoc))
     .map((t) => (design && t.designLabel ? { ...t, label: t.designLabel, title: t.designTitle || t.title } : t));
 }
 
