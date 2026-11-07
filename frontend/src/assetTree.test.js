@@ -99,66 +99,34 @@ test("arranged by locations: placed positions, spares, then the places inside; n
   assert.equal(d.rows.get("site").sum.positions, 5);
 });
 
-test("by items: every item once, A to Z, fitted, then kept at a place, then no home", () => {
-  const d = buildDisplay(DATA, "items");
-  assert.deepEqual(names(d, d.roots), ["Fitted", "At a location, not fitted", "No home yet"]);
-  assert.deepEqual(names(d, d.rows.get("G:fitted").kids), ["Engine", "Valve"]);
-  assert.deepEqual(names(d, d.rows.get("G:placed").kids), ["Spare seal"]);
-  assert.deepEqual(names(d, d.rows.get("G:unhomed").kids), ["Engine B", "Old pump"]);
-  assert.equal(d.items, 5);
-  assert.equal([...d.rows.values()].filter((r) => r.type === "pos").length, 0); // no "Elsewhere" group
-  // What the panel says: the position it's fitted to, where that is; the place a spare is kept.
-  const valve = d.rows.get("i2");
-  assert.deepEqual(valve.ref.fitted_to, { id: "zone2", name: "Zone 2" });
-  assert.deepEqual(valve.ref.place, { id: "site", name: "Site" });
-  assert.deepEqual(d.rows.get("sp").ref.place, { id: "store", name: "Store A" });
-  // The item's own status, not its position's.
-  assert.equal(valve.own.overdue, 1);
-  assert.equal(d.rows.get("G:fitted").sum.overdue, 1);
-  // Found by serial; with the items list, by class, make and model too.
-  assert.deepEqual([...computeFilter(d, { query: "v-77" }).match], ["i2"]);
-  assert.deepEqual([...computeFilter(d, { query: "s-1" }).match], ["sp"]);
-  const list = [
-    { id: "i2", name: "Valve", item_class: { id: "c", name: "Solenoid valve" }, manufacturer_entry: { name: "Hunter" }, model: "PGV-101" },
-    { id: "new", name: "Brand new spare", serial: "N-1", fitted_to: null, location: null },
-  ];
-  const e = buildDisplay(DATA, "items", list);
-  assert.deepEqual([...computeFilter(e, { query: "hunter pgv" }).match], ["i2"]);
-  assert.deepEqual([...computeFilter(e, { query: "solenoid valve" }).match], ["i2"]);
-  // An item the tree hasn't caught up with yet still shows.
-  assert.deepEqual(names(e, e.rows.get("G:unhomed").kids), ["Brand new spare", "Engine B", "Old pump"]);
-  // Nothing at all: no groups.
-  assert.equal(buildDisplay({ positions: [], locations: [] }, "items").roots.length, 0);
-});
-
 test("the arrangement from the address, else the last one used; the Explorer's addresses", () => {
-  assert.deepEqual(ARRANGEMENTS.map((a) => a.label), ["Positions", "Locations", "Items", "Flat"]);
-  assert.equal(arrangementOf("items", "locations"), "items");
+  assert.deepEqual(ARRANGEMENTS.map((a) => a.label), ["Positions", "Locations"]);
+  assert.equal(arrangementOf("locations", "positions"), "locations");
   assert.equal(arrangementOf(null, "locations"), "locations");
   assert.equal(arrangementOf("nonsense", null), "positions");
+  // Items and Flat are gone: an old address (or a saved state) asking for one opens by positions.
+  assert.equal(arrangementOf("items", "locations"), "positions");
+  assert.equal(arrangementOf("flat", null), "positions");
+  assert.equal(arrangementOf(null, "items"), "positions");
+  assert.equal(arrangementOf(null, "flat"), "positions");
   assert.equal(explorerPath(), "/asset-register/explorer?arrange=positions");
-  assert.equal(explorerPath("items", { sel: "i 1", place: "" }), "/asset-register/explorer?arrange=items&sel=i+1");
+  assert.equal(explorerPath("locations", { sel: "l 1", place: "" }), "/asset-register/explorer?arrange=locations&sel=l+1");
 });
 
 test("switching arrangements keeps the same thing picked where it can", () => {
   const pos = buildDisplay(DATA, "positions");
-  const items = buildDisplay(DATA, "items");
   const loc = buildDisplay(DATA, "locations");
-  // A position: itself, or in Items the item fitted there.
-  assert.equal(carryOver(pos.rows.get("zone2"), "items"), "i2");
-  assert.equal(carryOver(pos.rows.get("zone10"), "items"), null);
+  // A position: itself.
   assert.equal(carryOver(pos.rows.get("zone2"), "locations"), "zone2");
-  // An item: itself, or in Positions and Flat the position it's fitted to.
-  assert.equal(carryOver(items.rows.get("i2"), "positions"), "zone2");
-  assert.equal(carryOver(items.rows.get("i2"), "flat"), "zone2");
-  assert.equal(carryOver(items.rows.get("sp"), "locations"), "sp");
-  assert.equal(carryOver(items.rows.get("bench"), "positions"), "bench"); // its row among the items fitted nowhere
-  assert.equal(carryOver(items.rows.get("sp"), "flat"), null);
+  assert.equal(carryOver(loc.rows.get("pool"), "positions"), "pool");
+  // An item: itself (in Positions, the position it's fitted to, if any).
+  assert.equal(carryOver(loc.rows.get("sp"), "locations"), "sp");
+  assert.equal(carryOver(loc.rows.get("bench"), "positions"), "bench"); // its row among the items fitted nowhere
+  assert.equal(carryOver({ type: "item", key: "i2", ref: { fitted_to: { id: "zone2" } } }, "positions"), "zone2");
   // A location: itself in Locations; in Positions the position above
   // everything at that place and the places inside it (so its RCM tab opens
-  // there); never in Items; a heading never.
+  // there); a heading never.
   assert.equal(carryOver(loc.rows.get("site"), "locations"), "site");
-  assert.equal(carryOver(loc.rows.get("site"), "items"), null);
   assert.equal(carryOver(loc.rows.get("site"), "positions"), null);
   const ctx = { display: loc, positions: DATA.positions };
   assert.equal(carryOver(loc.rows.get("site"), "positions", ctx), "house"); // the shed inside it holds the pool pump
@@ -171,15 +139,8 @@ test("switching arrangements keeps the same thing picked where it can", () => {
   ], locations: [{ id: "site", name: "Site", parent_id: null }] };
   const twoLoc = buildDisplay(two, "locations");
   assert.equal(carryOver(twoLoc.rows.get("site"), "positions", { display: twoLoc, positions: two.positions }), "a");
-  assert.equal(carryOver(items.rows.get("G:fitted"), "positions"), null);
-  assert.equal(carryOver(null, "items"), null);
-});
-
-test("flat: every position, A to Z, nothing inside anything", () => {
-  const d = buildDisplay(DATA, "flat");
-  assert.equal(d.roots.length, DATA.positions.length);
-  assert.equal(d.rows.get(d.roots[0]).ref.name, "Alternator");
-  assert.ok([...d.rows.values()].every((r) => r.kids.length === 0));
+  assert.equal(carryOver(loc.rows.get("G:nohome"), "positions"), null);
+  assert.equal(carryOver(null, "locations"), null);
 });
 
 test("levels open the tree to a depth; flatten draws what's open", () => {
@@ -249,9 +210,12 @@ test("8,000 positions build, open and draw quickly", () => {
 test("remembered per workspace, and still works when storage throws", () => {
   const box = new Map();
   const storage = { getItem: (k) => box.get(k) ?? null, setItem: (k, v) => box.set(k, v) };
-  saveTreeState("ws1", { mode: "items", open: { positions: new Set(["a", "b"]) }, selected: { positions: "b" }, width: 400, collapsed: true }, storage);
+  saveTreeState("ws1", { mode: "locations", open: { positions: new Set(["a", "b"]) }, selected: { positions: "b" }, width: 400, collapsed: true }, storage);
   const back = loadTreeState("ws1", storage);
-  assert.equal(back.mode, "items");
+  assert.equal(back.mode, "locations");
+  // A saved arrangement the Explorer no longer has (Items, Flat): none remembered.
+  saveTreeState("ws3", { mode: "flat", open: {}, width: 300 }, storage);
+  assert.equal(loadTreeState("ws3", storage).mode, null);
   assert.equal(loadTreeState("ws2", storage).mode, null);
   assert.deepEqual([...back.open.positions], ["a", "b"]);
   assert.deepEqual(back.selected, { positions: "b" });
@@ -278,8 +242,8 @@ test("Not analysed: the chip finds positions with no RCM yet; the quiet marker c
   assert.deepEqual(markersOf(house, { rcm: true }).find((m) => m.kind === "rcm"),
     { kind: "rcm", text: "2", label: "2 positions not analysed yet inside", inside: true });
   assert.deepEqual(markersOf(d.rows.get("zone10"), { rcm: true }).map((m) => [m.kind, m.text]), [["rcm", "○"]]);
-  // Items have none.
-  assert.equal(computeFilter(buildDisplay(data, "items"), { chips: ["unanalysed"] }).match.size, 0);
+  // Locations have none of their own.
+  assert.ok(!computeFilter(buildDisplay(data, "locations"), { chips: ["unanalysed"] }).match.has("site"));
   // The chip's tooltip says what analysed means (the server's rule), in words.
   const chip = CHIPS.find((c) => c.id === "unanalysed");
   assert.match(chip.title, /at least one function, every function has a functional failure, every functional failure has failure modes or is caused by failures on positions inside it/);

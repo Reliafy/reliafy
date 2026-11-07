@@ -17,9 +17,9 @@ const RCM_TYPES = new Set(["fn", "std", "nostd", "fail", "mode"]);
 
 // Can this row be isolated in this arrangement? Every row a branch can be
 // pinned at (canPin: positions, locations, items with something inside), and
-// the RCM tab's rows. Not the pane's own headings, and nothing in Flat.
+// the RCM tab's rows. Not the pane's own headings.
 export function canIsolate(row, mode, canPin) {
-  if (!row || mode === "flat") return false;
+  if (!row) return false;
   return canPin(row, mode) || RCM_TYPES.has(row.type);
 }
 

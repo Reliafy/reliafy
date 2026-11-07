@@ -53,7 +53,7 @@ export default function MaintenanceItem() {
   }, [id]);
   useEffect(() => refresh(), [refresh]);
 
-  if (error && !item) return <div className="app"><LoadFailed header error={error} notFound="Item not found." to={explorerPath("items")} label={`Open the ${EXPLORER_LABEL}`} /></div>;
+  if (error && !item) return <div className="app"><LoadFailed header error={error} notFound="Item not found." to={ITEMS_PATH} label="Open Items" /></div>;
   if (!item) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const plate = Object.entries(item.nameplate || {});
@@ -65,7 +65,9 @@ export default function MaintenanceItem() {
         // An item's page is under Items; one built from a product names it, and its tree.
         crumbs={[{ label: "Items", to: ITEMS_PATH },
           item.product ? { label: item.product.name, to: productPath(item.product.id, "items") }
-            : { label: EXPLORER_LABEL, to: explorerPath("items", { sel: item.id }) }]}
+            // In the Explorer: the position it's fitted to, else where it's kept.
+            : { label: EXPLORER_LABEL, to: item.fitted_to ? explorerPath("positions", { sel: item.fitted_to.id })
+              : explorerPath(item.location ? "locations" : "positions", { sel: item.id }) }]}
         title={item.name}
         meta={[item.manufacturer, item.model, item.serial && `serial ${item.serial}`].filter(Boolean).join(" · ") || "Item"}
         id={item.id}
