@@ -1,0 +1,31 @@
+/* The Explorer's Measurements tab (MeasurementsPanel.jsx). The state is in
+   words as well as colour. */
+.ms-table td { vertical-align: top; }
+.ms-table tr.ms-picked td { background: var(--warn-bg); }
+.ms-trend { display: block; }
+.ms-state { font-weight: 600; white-space: nowrap; }
+.ms-past { color: var(--danger); }
+.ms-near { color: var(--warn); }
+.ms-ok { color: var(--ok); }
+.ms-nolimit, .ms-none { color: var(--muted); font-weight: 400; }
+.ms-due { color: var(--warn); font-size: 0.85em; }
+.ms-actions { white-space: nowrap; }
+
+/* On a phone each point is a block: label beside each value, nothing wider
+   than the screen. */
+@media (max-width: 600px) {
+  .ms-table, .ms-table tbody, .ms-table tr, .ms-table td { display: block; width: 100%; }
+  .ms-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .ms-table tr { border-bottom: 1px solid var(--line, #ddd); padding: 0.5rem 0; }
+  .ms-table td { border: 0; padding: 0.2rem 0; white-space: normal; }
+  .ms-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.75em;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .ms-state { white-space: normal; }
+  .ms-actions .maint-row { flex-wrap: wrap; }
+}

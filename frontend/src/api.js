@@ -2951,6 +2951,22 @@ export function addMeasurementPoint(positionId, body) {
 export function addItemMeasurementPoint(itemId, body) {
   return postJson(`/api/maintenance/items/${itemId}/points`, body);
 }
+// The measurement points on several positions and items at once (the
+// Explorer's Measurements tab: a branch of the tree): {points, more}. Asked in
+// batches so a big branch doesn't make one very long address.
+export async function listMeasurementPoints({ positionIds = [], itemIds = [] } = {}) {
+  const BATCH = 80;
+  const asks = [];
+  for (let i = 0; i < Math.max(positionIds.length, itemIds.length); i += BATCH) {
+    const q = new URLSearchParams();
+    const ps = positionIds.slice(i, i + BATCH), is = itemIds.slice(i, i + BATCH);
+    if (ps.length) q.set("position_ids", ps.join(","));
+    if (is.length) q.set("item_ids", is.join(","));
+    asks.push(request(`/api/maintenance/points?${q}`));
+  }
+  const got = await Promise.all(asks);
+  return { points: got.flatMap((g) => g.points || []), more: got.some((g) => g.more) };
+}
 // ``at`` (optional) is when it was read, e.g. "2026-10-19T10:14" (#264).
 export function recordMeasurementReading(pointId, value, on, at) {
   return postJson(`/api/maintenance/points/${pointId}/readings`, at ? { value, at } : { value, on });

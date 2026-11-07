@@ -10036,6 +10036,27 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             (x for x in self.s.inn(self.org, node_id, "ON") if x["label"] == "MeasurementPoint" and not x.get("retired")),
             key=lambda x: (x.get("kind") != "counter", x["name"].lower()))]
 
+    MAX_POINTS_AT = 500
+
+    def points_at(self, position_ids=(), item_ids=()) -> dict:
+        """The live measurement points on several positions and items at once (the
+        Explorer's Measurements tab: a branch of the tree), each as ``point`` gives it
+        (its position or item, latest reading, limits, status and recent readings).
+        Ids that aren't a position or an item here are skipped. At most
+        MAX_POINTS_AT points; ``more`` says some were left out."""
+        out, seen = [], set()
+        for label, ids in (("Position", position_ids), ("Item", item_ids)):
+            for nid in ids:
+                if nid in seen or not self.s.node(self.org, nid, label):
+                    continue
+                seen.add(nid)
+                for mp in self.s.inn(self.org, nid, "ON"):
+                    if mp["label"] == "MeasurementPoint" and not mp.get("retired"):
+                        if len(out) >= self.MAX_POINTS_AT:
+                            return {"points": out, "more": True}
+                        out.append(self.point(mp["id"]))
+        return {"points": out, "more": False}
+
     def item(self, id: str) -> dict:
         """An item: its details and nameplate, where it's fitted and where it is now
         (fitted: its position's location; otherwise where it's placed, or last_at:

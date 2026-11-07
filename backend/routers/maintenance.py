@@ -1238,6 +1238,15 @@ def remove_signal_band(point_id: str, m: Maintenance = Depends(maintenance_write
     return _run(m.remove_signal_band, point_id)
 
 
+@router.get("/points")
+def points_at(position_ids: str = "", item_ids: str = "", m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The measurement points on several positions and items (comma-separated ids):
+    the Explorer's Measurements tab reads a branch of the tree with it."""
+    positions = [i.strip() for i in position_ids.split(",") if i.strip()]
+    items = [i.strip() for i in item_ids.split(",") if i.strip()]
+    return _run(m.points_at, positions, items)
+
+
 @router.get("/points/{point_id}")
 def get_point(point_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.point, point_id)
