@@ -78,8 +78,12 @@ export const DETAIL_IDS = {
   "/models/joint/:id": ["/api/joint/models", list("models")],
   "/systems/b/:id": ["/api/rbds", list("rbds")],
   "/systems/runs/:runId": ["/api/rbd-runs", list("runs", "run_id")],
+  // A fault tree: the sample quadcopter tree is seeded.
+  "/systems/fault-trees/:id": ["/api/fault-trees", list("fault_trees")],
   "/data/:id": ["/api/datasets", list("datasets")],
   "/strategy/analyses/:id": ["/api/strategy/analyses", list("analyses")],
+  // A reliability prediction (the sample parts count).
+  "/predictions/:id": ["/api/predictions", list("predictions")],
   // A maintainability prediction: the sample quadcopter's.
   "/maintainability/:id": ["/api/maintainability/predictions", list("predictions")],
   "/risk/:fleetId": ["/api/fleet/tracked", list("fleets")],
@@ -123,6 +127,8 @@ const CHART_PAGES = {
   "/asset-register/classes/:name": (cls) => Boolean(cls.model),
   // A failure-finding analysis is one interval: no chart.
   "/strategy/analyses/:id": (analysis) => analysis.kind !== "failure_finding",
+  // A prediction's Pareto, once a line has a part type.
+  "/predictions/:id": (prediction) => prediction.assigned > 0,
 };
 
 export function expectsChart(path, record = {}) {

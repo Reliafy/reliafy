@@ -105,6 +105,13 @@ can't import honestly.
 - Refused: the dynamic gates with no block-diagram equivalent (PAND, POR, SEQ,
   FDEP, PDEP, MUTEX) and spares shared between gates.
 
+Open-PSA and Galileo files can also come in as **fault trees** rather than
+block diagrams: press **Import** on the [Fault trees](/systems/fault-trees)
+page instead. Each top event becomes a tree, gates and basic events as they are
+in the file; a fixed probability stays a probability there. Spare gates can't
+come in as a fault tree (they're dynamic): import those files as an RBD. See
+[Build a fault tree](/guides/build-a-fault-tree).
+
 **RePyability JSON**
 
 - A file you downloaded from Reliafy comes back exactly as it was: labels,

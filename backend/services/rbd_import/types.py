@@ -39,3 +39,7 @@ class ImportedDiagram:
     #: user's saved models / diagrams (see :func:`.link_references`); None
     #: for formats that carry none.
     links: Optional[Callable] = field(default=None, repr=False, compare=False)
+    #: Fault-tree formats (Open-PSA, Galileo): ``(gate tree, {event: fixed
+    #: probability}, the file's own notes)`` before conversion, so the file can land as a fault
+    #: tree instead (:func:`backend.services.fault_trees.from_imported`).
+    fault_tree: Optional[tuple] = field(default=None, repr=False, compare=False)

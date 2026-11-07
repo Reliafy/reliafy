@@ -499,6 +499,7 @@ def _convert(top: str, gates, events, stem: str) -> ImportedDiagram:
             has_standby = True
 
     tree = ft.FaultTree(nodes, top)
+    tree_notes = list(warnings)  # the file's own notes, before the RBD-only ones
     # Events actually in play (standby groups hide their members).
     in_tree = _reachable(tree)
     used_events = [e for e in nodes if e in events and e in in_tree]
@@ -532,7 +533,9 @@ def _convert(top: str, gates, events, stem: str) -> ImportedDiagram:
 
     graph, more = ft.to_graph(tree, unit="", repairable=repairable)
     warnings.extend(more)
-    return ImportedDiagram(name=stem or top, graph=graph, warnings=warnings)
+    fixed_used = {e: fixed[e] for e in shown_fixed}
+    return ImportedDiagram(name=stem or top, graph=graph, warnings=warnings,
+                           fault_tree=(tree, fixed_used, tree_notes))
 
 
 def _reachable(tree: ft.FaultTree) -> set[str]:

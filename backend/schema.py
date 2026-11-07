@@ -217,6 +217,22 @@ class StrategyAnalysis(BaseModel):
     results: dict = Field(default_factory=dict)
 
 
+class ReliabilityPrediction(BaseModel):
+    """A saved reliability prediction (a parts count from handbook base
+    rates): the parts list and conditions it was made from (``inputs``:
+    environment, mission_time, lines, the product it came from) and the
+    results computed when it was saved, kept as they were."""
+
+    id: str
+    name: str
+    owner_id: Optional[str] = None
+    updated_by: Optional[dict] = None
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+    inputs: dict = Field(default_factory=dict)
+    results: dict = Field(default_factory=dict)
+
+
 class TrackedItem(BaseModel):
     """An asset monitored against a degradation model: its measurement history
     plus the cached threshold-crossing prediction (recomputed on append)."""

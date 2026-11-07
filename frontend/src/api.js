@@ -1140,6 +1140,65 @@ export function rbdFaultTree(graph, t = null, tMax = null) {
   });
 }
 
+// ---- Fault trees built by hand (System models › Fault trees) ---------------
+
+export function listFaultTrees() {
+  return request("/api/fault-trees");
+}
+
+export function getFaultTree(id) {
+  return request(`/api/fault-trees/${id}`);
+}
+
+export function saveFaultTree(name, tree, id, expectedUpdatedAt) {
+  return request("/api/fault-trees", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, tree, id: id || null, expected_updated_at: expectedUpdatedAt || null }),
+  });
+}
+
+export function renameFaultTree(id, name) {
+  return request(`/api/fault-trees/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteFaultTree(id) {
+  return request(`/api/fault-trees/${id}`, { method: "DELETE" });
+}
+
+// The (unsaved) tree's top event, cut sets and importance, at time t (null: the default).
+export function analyseFaultTree(tree, t = null) {
+  return request("/api/fault-trees/analyse", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tree, t: t ?? null }),
+  });
+}
+
+// Save the tree's RBD as a new diagram, linked to the tree: {rbd_id, name, notes}.
+export function faultTreeToRbd(id) {
+  return request(`/api/fault-trees/${id}/rbd`, { method: "POST" });
+}
+
+export function downloadFaultTreeOpenPsa(name, tree, t = null) {
+  return downloadFile("/api/fault-trees/export/openpsa", "fault-tree.xml", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, tree, t: t ?? null }),
+  });
+}
+
+// Parse an Open-PSA or Galileo file into fault trees (nothing saved): {trees: [{name, tree?, notes, error?}]}.
+export function importFaultTreeFile(file) {
+  const form = new FormData();
+  form.append("file", file);
+  return request("/api/fault-trees/import", { method: "POST", body: form });
+}
+
 // A phased mission (#160): the (unsaved) graph's phases worked out — mission
 // reliability, each phase's failure probability, the riskiest phase.
 export function rbdPhases(graph) {
@@ -1580,6 +1639,63 @@ export function renameStrategyAnalysis(id, name) {
 
 export function deleteStrategyAnalysis(id) {
   return request(`/api/strategy/analyses/${id}`, { method: "DELETE" });
+}
+
+// ---- Reliability prediction (a parts count from handbook base rates) ------------
+
+// The handbook's use environments and the page's defaults.
+export function getPredictionEnvironments() {
+  return request("/api/predictions/environments");
+}
+// The parts count for lines in an environment, saving nothing.
+export function computePrediction(lines, environment, missionTime) {
+  return request("/api/predictions/compute", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lines, environment, mission_time: missionTime }),
+  });
+}
+// A product's parts list as prediction lines (Reliafy Maintenance).
+export function getPredictionLinesFromProduct(productId) {
+  return request(`/api/predictions/from-product/${encodeURIComponent(productId)}`);
+}
+// Save a prediction: {name, inputs: {lines, environment, mission_time, product?, notes?}}.
+// The results are computed on the server.
+export function savePrediction(name, inputs) {
+  return request("/api/predictions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, inputs }),
+  });
+}
+export function listPredictions() {
+  return request("/api/predictions");
+}
+export function getPrediction(id) {
+  return request(`/api/predictions/${encodeURIComponent(id)}`);
+}
+// {name?, inputs?}: rename, or replace the parts list (results computed again).
+export function updatePrediction(id, body) {
+  return request(`/api/predictions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+export function deletePrediction(id) {
+  return request(`/api/predictions/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+// The reliability data library's search (public): the part-type picker.
+export function searchLibrary({ q, source, equipmentType, kind, page, pageSize } = {}) {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (source) params.set("source", source);
+  if (equipmentType) params.set("equipment_type", equipmentType);
+  if (kind) params.set("kind", kind);
+  if (page) params.set("page", String(page));
+  if (pageSize) params.set("page_size", String(pageSize));
+  const s = params.toString();
+  return request(`/api/library/search${s ? `?${s}` : ""}`);
 }
 
 // ---- RCM ---------------------------------------------------------------------

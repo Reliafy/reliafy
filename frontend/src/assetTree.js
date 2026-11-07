@@ -51,15 +51,48 @@ export function explorerPath(mode = "positions", extra = {}) {
 // stays itself (in Items, the item fitted there); an item stays itself (in
 // Positions and Flat, the position it's fitted to); a location stays itself
 // in Locations. null: nothing to carry over.
-export function carryOver(row, to) {
+export function carryOver(row, to, ctx = null) {
   if (!row) return null;
   if (row.type === "pos") return to === "items" ? row.ref.item?.id ?? null : row.key;
   if (row.type === "item") {
     if (to === "items" || to === "locations") return row.key;
     return row.ref.fitted_to?.id ?? (to === "positions" ? row.key : null);
   }
-  if (row.type === "loc") return to === "locations" ? row.key : null;
+  if (row.type === "loc") {
+    if (to === "locations") return row.key;
+    // To Positions (the RCM and FME(C)A tabs live there): the position whose
+    // tree holds everything at this place, so its RCM opens.
+    if (to === "positions" && ctx?.display && ctx?.positions) return mainPositionAt(row, ctx.display, ctx.positions);
+    return null;
+  }
   return null;
+}
+
+// The position to open for a place: the lowest position above every position
+// at the place and the places inside it (the Locations arrangement nests them
+// under the place's row); with no common one (two trees share the place),
+// the root with the most of them, A–Z between equals. Null with none there.
+export function mainPositionAt(locRow, display, positions) {
+  const here = [];
+  const stack = [...(locRow?.kids || [])];
+  while (stack.length) {
+    const r = display.rows.get(stack.pop());
+    if (!r) continue;
+    if (r.type === "pos") here.push(r.key);
+    stack.push(...r.kids);
+  }
+  if (!here.length) return null;
+  const byId = new Map((positions || []).map((p) => [p.id, p]));
+  const up = (id) => { const out = []; for (let k = id; k != null; k = byId.get(k)?.parent_id ?? null) out.push(k); return out; };
+  const chains = here.map(up);
+  let common = chains[0];
+  for (const c of chains.slice(1)) { const s = new Set(c); common = common.filter((k) => s.has(k)); }
+  if (common.length) return common[0];
+  const count = new Map();
+  for (const c of chains) count.set(c.at(-1), (count.get(c.at(-1)) || 0) + 1);
+  const roots = [...count.keys()].map((id) => byId.get(id) || { id, name: "" });
+  roots.sort((a, b) => count.get(b.id) - count.get(a.id) || byName(a, b));
+  return roots[0].id;
 }
 
 // Natural A–Z: "Zone 2" before "Zone 10", case ignored.

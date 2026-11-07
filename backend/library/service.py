@@ -156,6 +156,9 @@ def brief(rec: dict) -> dict:
         "citation": f"{rec['citation'].get('report') or rec['citation']['title']}, "
                     f"{rec['citation']['table']}, p. {rec['citation']['page']}",
         **({"environment_factors": rec["environment_factors"]["values"]} if rec.get("environment_factors") else {}),
+        # A handbook part type: its base rate as printed and the handbook's πQ range (a parts count's inputs).
+        **({"per_million_hours": rec["prediction"].get("per_million_hours"),
+            "quality_factor_range": rec["prediction"].get("quality_factor_range")} if rec.get("prediction") else {}),
     }
 
 
