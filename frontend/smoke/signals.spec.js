@@ -160,7 +160,9 @@ test("a file with too many numbers is refused in plain words, and the controls f
 test("the Signals tab is hidden for now: no tab, an old address shows Summary, a channel's link opens the position", async ({ page, request, problems }) => {
   test.skip(EXPLORER_SIGNALS_TAB, "the Signals tab is shown: the tests above cover it");
   const p = await plant(request, "H");
-  for (const width of [1280, 400]) {
+  // Phone width first, desktop last: the health check at the end looks for the
+  // panel's heading in the main pane, which the phone layout keeps off screen.
+  for (const width of [400, 1280]) {
     await page.setViewportSize({ width, height: 800 });
     await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=signals`);
     if (width < 800) await page.getByLabel("Positions").getByText("Sig pump H", { exact: true }).click();
