@@ -9,6 +9,12 @@ wear-out is flagged **contradicted**, not silently trusted. Statuses are
 therefore never stored; they are recomputed from the linked artifacts each
 time the RCM is read.
 
+A decision can also link a report (the app's Reports) or the working behind a
+performance standard (a function's ``standard_basis``) as the case for it.
+Nothing is computed from those: the check says only that one is linked
+("linked", with ``evidence_kind`` report or working), or that it has gone
+("stale"); it never says supported or contradicted.
+
 The maintenance tree (``backend/maintenance/service.py`` and
 ``rcm_graph.py``) owns these rules, and a worksheet import
 (``backend/services/rcm_import.py``) validates what it builds with them, so
@@ -18,8 +24,11 @@ there is one copy.
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 
 from backend.maintenance import fmea
+from backend.services import access
+from backend.services import reports as reports_service
 from backend.services import degradation as degradation_service
 from backend.services import models as models_service
 from backend.services import strategy_store
@@ -34,7 +43,20 @@ class RcmValidationError(ValueError):
 CONSEQUENCES = ("safety", "environmental", "operational", "non_operational", "hidden")
 OUTCOMES = ("on_condition", "fixed_interval", "rtf", "failure_finding", "redesign", "accept")
 RTF_BASES = ("random", "uneconomic")
-EVIDENCE_TYPES = ("model", "strategy_analysis", "degradation_model")
+# Evidence that's checked against the decision (a model or a saved analysis),
+# then evidence that's only linked: a report, or a standard's working (its id is
+# the function's whose performance standard the working sits behind).
+CHECKED_TYPES = ("model", "strategy_analysis", "degradation_model")
+LINKED_TYPES = ("report", "working")
+EVIDENCE_TYPES = CHECKED_TYPES + LINKED_TYPES
+
+
+def evidence_kind(etype) -> str | None:
+    """What a linked piece of evidence is, as the RCM tab groups it: a report, a
+    working, or a model (any checked kind: a model or a saved analysis)."""
+    if etype in LINKED_TYPES:
+        return etype
+    return "model" if etype in CHECKED_TYPES else None
 
 # The vocabulary as the app shows it (GET /api/maintenance/rcm/options): each
 # consequence and outcome with its hint. Suggestions follow the classic RCM
@@ -206,7 +228,7 @@ def _clean_decision(decision) -> dict | None:
         etype = evidence.get("type")
         eid = evidence.get("id")
         if etype not in EVIDENCE_TYPES:
-            raise RcmValidationError(f"Unknown evidence type '{etype}'.")
+            raise RcmValidationError(f"Unknown evidence type '{etype}': it's one of {', '.join(EVIDENCE_TYPES)}.")
         if not isinstance(eid, str) or not eid.strip():
             raise RcmValidationError("Evidence needs the linked artifact's id.")
         # A type that doesn't match the outcome is allowed at write time and
@@ -295,9 +317,11 @@ def clean_tree(functions) -> list[dict]:
 # ---- Evidence resolution (live validation) -----------------------------------
 
 def evidence_fetcher(db, owner_id, hidden=frozenset()):
-    """fetch(type, id): the linked model or analysis a reader (``owner_id``) can
-    open, or None; each looked up once (backend/maintenance/rcm_graph.py reads
-    a whole worksheet with one)."""
+    """fetch(type, id): the linked model, analysis or report a reader
+    (``owner_id``) can open, or None; each looked up once
+    (backend/maintenance/rcm_graph.py reads a whole worksheet with one). A
+    working is on the graph, so the read hands it over (the decision's
+    ``working``), not this."""
     memo: dict = {}
 
     def fetch(etype: str, eid: str):
@@ -311,11 +335,24 @@ def evidence_fetcher(db, owner_id, hidden=frozenset()):
                 memo[key] = strategy_store.get_analysis(db, eid, owner_id)
             elif etype == "degradation_model":
                 memo[key] = degradation_service.get_model(db, eid, owner_id)
+            elif etype == "report":
+                memo[key] = _report(db, eid, owner_id)
             else:
                 memo[key] = None
         return memo[key]
 
     return fetch
+
+
+def _report(db, report_id, owner_id):
+    """A report the reader owns ({id, name}), or None. Reports are their owner's
+    only (backend/services/reports.py)."""
+    if not isinstance(report_id, str) or not report_id:
+        return None
+    owners = access.owner_in(owner_id) if owner_id is not None else None
+    query = {"_id": report_id} | ({"owner_id": {"$in": owners}} if owners is not None else {})
+    doc = db[reports_service.COLLECTION].find_one(query, {"name": 1})
+    return SimpleNamespace(id=doc["_id"], name=doc.get("name") or "Untitled report") if doc else None
 
 
 def blank_rollup() -> dict:
@@ -325,13 +362,44 @@ def blank_rollup() -> dict:
 
 def resolve_decision(decision: dict, fetch) -> dict:
     """A decision's evidence status ({status, reason or summary, artifact_name,
-    artifact_link_path, expected_evidence}) against what ``fetch`` finds."""
-    return _resolve_decision(decision, fetch)
+    artifact_link_path, expected_evidence, evidence_kind}) against what
+    ``fetch`` finds."""
+    out = _resolve_decision(decision, fetch)
+    kind = evidence_kind((decision.get("evidence") or {}).get("type"))
+    return out | {"evidence_kind": kind} if kind else out
+
+
+_LINKED_LABEL = {"report": "Report", "working": "Working"}
+
+
+def _resolve_linked(decision: dict, evidence: dict, fetch) -> dict:
+    """A report or a working: linked, not checked. "linked" while it's there to
+    open, "stale" once it has gone; never supported or contradicted."""
+    kind = evidence["type"]
+    if kind == "report":
+        report = fetch("report", evidence["id"])
+        if report is None:
+            return {"status": "stale", "reason": "The linked report no longer exists."}
+        name, path = report.name, f"/reports?open={report.id}"
+    else:
+        working = decision.get("working")
+        if not working:
+            return {"status": "stale", "reason": "The linked working has gone: its function was deleted or the "
+                                                 "working behind its performance standard was cleared."}
+        name, path = working.get("text") or "Function", f"/asset-register/explorer?tab=rcm&sel={working['id']}"
+    what = "report" if kind == "report" else "working"
+    return {"status": "linked", "artifact_name": name, "artifact_link_path": path,
+            "summary": f"{_LINKED_LABEL[kind]} linked: open it to read the case. Reliafy doesn't check a {what} "
+                       "against the decision."}
 
 
 def _resolve_decision(decision: dict, fetch) -> dict:
     outcome = decision["outcome"]
     evidence = decision.get("evidence")
+
+    # A report or a working can stand behind any decision, a redesign or an accepted risk too.
+    if evidence and evidence.get("type") in LINKED_TYPES:
+        return _resolve_linked(decision, evidence, fetch)
 
     if outcome in ("redesign", "accept"):
         return {"status": None, "reason": "Default action — no supporting analysis required."}
@@ -462,6 +530,8 @@ def _type_label(etype: str) -> str:
         "model": "non-repairable model",
         "strategy_analysis": "saved strategy analysis",
         "degradation_model": "degradation model",
+        "report": "report",
+        "working": "standard's working",
     }.get(etype, etype)
 
 

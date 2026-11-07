@@ -214,10 +214,20 @@ decision can go without one, when another task already covers it: no task is
 made, so say in **Notes** what covers it. While **Apply** can't be pressed, the
 dialog says beside it what's missing.
 
-**3. Link the evidence.** The dialog lists only the evidence the decision
-expects: your non-repairable models with their β verdicts, your degradation
-models, or your saved analyses of the right kind. Pick one and press **Apply**.
-The decision is saved straight away.
+**3. Link the evidence (optional).** Pick the kind of evidence, then one item,
+and press **Apply**. The decision is saved straight away.
+
+- **Models** lists only what the decision expects: your non-repairable models
+  with their β verdicts, your degradation models, or your saved analyses of the
+  right kind. Reliafy checks these against the decision.
+- **Reports** lists your [reports](/reports). Link one when the case for the
+  decision is written up there.
+- **Working** lists the workings behind the performance standards on this
+  position, the failure mode's own function first. Link one when the working
+  is what justifies the decision.
+
+A report or a working can back any decision, a redesign or an accepted risk
+too. Reliafy doesn't check them against the decision, it only links them.
 
 A decision with an interval becomes a scheduled task on the position, shown in
 the **Task** column. Change the decision and the task follows; a decision with
@@ -277,18 +287,24 @@ Each decision's **Evidence check** shows one of these:
 - **Inconclusive** — the evidence can't decide it. The line underneath says
   why: the wrong kind of analysis, mismatched units, or a fit with no
   confidence interval.
-- **Stale link** — the linked analysis has been deleted.
+- **Stale link** — the linked analysis or report has been deleted, or the
+  working has been cleared.
+- **Report linked** or **Working linked** — a report or a working is linked.
+  Nothing is worked out from it, so it never says supported or contradicted.
+  Click it to open the report, or the working beside the table.
 
 A decision with nothing linked yet shows **Not linked**, quietly: plenty of
 decisions are made from judgement, and linking evidence is optional. Its
 Details offer **Link evidence…** when you're ready. Redesign and accept-risk
-decisions need no evidence, so they show no status.
+decisions need no evidence, so they show no status unless you link a report
+or a working.
 
 The chips beside the position's name, at the top of its panel, count the linked
 statuses for that position (*3 supported, 1 contradicted*), and a function's row counts them for
 everything inside it. A position with no red and no amber is one whose every
 decision you can defend. **Show only → Evidence to look at** lists the
 decisions that are contradicted, inconclusive or stale across the whole tree.
+A linked report or working is never one of them.
 
 The check runs again every time the tree opens. Refit a linked non-repairable
 model with new failures and the status follows the new fit. A decision that

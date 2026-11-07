@@ -72,7 +72,31 @@ export const STATUS_LABEL = {
   inconclusive: "Inconclusive",
   unevidenced: "Not linked",
   stale: "Stale link",
+  linked: "Linked",
 };
+// A report or a standard's working: linked, not checked (nothing is computed
+// from them), so the check names what's linked and never says it's supported.
+export const LINKED_LABEL = { report: "Report linked", working: "Working linked" };
+export const isLinkedOnly = (d) => d?.status === "linked";
+// The kinds of evidence a decision can link, as the decision dialog offers
+// them: models (a model or saved analysis, checked) when the decision expects
+// one, then a report and a standard's working (linked, not checked).
+export const EVIDENCE_KIND_LABEL = { model: "Models", report: "Reports", working: "Working" };
+export const evidenceKinds = (expectedType) => [...(expectedType ? ["model"] : []), "report", "working"];
+// The kind the dialog opens on: what's linked now, else models when expected, else reports.
+export function startKind(evidence, expectedType) {
+  const t = evidence?.type;
+  if (t === "report" || t === "working") return t;
+  return expectedType ? "model" : "report";
+}
+// The words for a decision's evidence check ("Supported", "Report linked"...);
+// "" when there's nothing worth showing.
+export function checkLabel(d) {
+  const s = shownStatus(d?.status);
+  if (!s) return "";
+  if (s === "linked") return LINKED_LABEL[d.evidence_kind] || STATUS_LABEL.linked;
+  return STATUS_LABEL[s] || s;
+}
 // A decision's evidence check worth showing: one with linked evidence (a
 // decision with nothing linked yet, "unevidenced", is quiet: most RCM is done
 // from judgement, and nothing is wrong with it).
@@ -328,7 +352,7 @@ export function checkCounts(r) {
 // ("text", "choice" or "number"), and `can(r)` the rows that allow it.
 const CONS_RANK = { safety: 0, environmental: 1, hidden: 2, operational: 3, non_operational: 4 };
 const OUT_RANK = { on_condition: 0, fixed_interval: 1, failure_finding: 2, rtf: 3, redesign: 4, accept: 5 };
-const STATUS_RANK = { contradicted: 0, stale: 1, inconclusive: 3, supported: 4 };
+const STATUS_RANK = { contradicted: 0, stale: 1, inconclusive: 3, supported: 4, linked: 5 };
 const isMode = (r) => r.type === "mode";
 const d = (r) => r.ref.decision || null;
 
@@ -380,14 +404,14 @@ export const COLUMNS = [
   },
   {
     id: "check", label: "Evidence check", width: 126, min: 112, on: true,
-    title: "Whether the linked analysis backs the decision, checked each time the study opens",
-    text: (r) => (isMode(r) ? STATUS_LABEL[shownStatus(d(r)?.status)] || "" : checkCounts(r).map((c) => `${c.n} ${c.label}`).join(", ")),
+    title: "Whether the linked analysis backs the decision, checked each time the study opens (a linked report or working isn't checked)",
+    text: (r) => (isMode(r) ? checkLabel(d(r)) : checkCounts(r).map((c) => `${c.n} ${c.label}`).join(", ")),
     sort: (r) => (isMode(r) ? STATUS_RANK[d(r)?.status] ?? null
       : r.sum.contradicted ? 0 : r.sum.stale ? 1 : r.sum.unsure ? 2 : r.sum.supported ? 4 : null),
   },
   {
     id: "evidence", label: "Evidence", width: 200, min: 90, on: false,
-    title: "The saved model or analysis linked to the decision",
+    title: "The saved model, analysis, report or working linked to the decision",
     text: (r) => (isMode(r) ? d(r)?.artifact_name || "" : ""),
     sort: (r) => (isMode(r) ? d(r)?.artifact_name || null : null),
   },

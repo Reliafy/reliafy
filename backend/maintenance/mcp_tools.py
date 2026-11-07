@@ -320,7 +320,8 @@ FAILURE_MODES: Table = {
         rate_source entered/model/data, mode_ratio α, loss_probability β, operating_time t, severity_class
         I-IV: cm = βαλt). clear: fields to unset. Guide topic plan."""),
     "decide": ("failure_mode_id", "consequence decision task_id", """consequence and the whole decision
-        {outcome, rtf_basis, task, interval, interval_unit, notes, evidence: {type, id}} ({} clears it; values:
+        {outcome, rtf_basis, task, interval, interval_unit, notes, evidence: {type, id}: a model or analysis,
+        checked; or report / working (a function's id): linked, not checked} ({} clears it; values:
         guide topic plan); adds, changes or retires its task (task_id: an existing one is the decision's).
         Returns it with the evidence check and any advice to relay."""),
     "add_task": ("failure_mode_id name interval", "unit outcome instructions", """Another task for the mode

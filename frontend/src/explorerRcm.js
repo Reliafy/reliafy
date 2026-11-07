@@ -314,6 +314,7 @@ const isMode = (r) => r.type === "mode";
 export const RCM_CHIPS = [
   { id: "undecided", label: "Needs a decision", rcmOnly: true, tab: "rcm", test: (r) => isMode(r) && !r.ref.decision },
   { id: "hidden", label: "Hidden failures", rcmOnly: true, tab: "rcm", test: (r) => isMode(r) && r.ref.consequence === "hidden" },
+  // A linked report or working ("linked") isn't checked, so it's never one to look at.
   { id: "check", label: "Evidence to look at", rcmOnly: true, tab: "rcm",
     title: "Linked evidence that contradicts the decision, doesn't settle it, or has gone (a stale link)",
     test: (r) => isMode(r) && ["contradicted", "inconclusive", "stale"].includes(r.ref.decision?.status) },
@@ -327,15 +328,35 @@ export const RCM_CHIPS = [
 // (remembered on this device with the other column choices: explorerCheck).
 
 // Does any decision in the workspace's RCM (GET /api/maintenance/rcm) have
-// evidence linked (a model or analysis, even one that has gone since)?
+// evidence linked (a model, analysis, report or working, even one that has gone since)?
 export function hasLinkedEvidence(rcm) {
   const linked = (m) => !!m.decision && (!!m.decision.evidence
-    || ["supported", "contradicted", "inconclusive", "stale"].includes(m.decision.status));
+    || ["supported", "contradicted", "inconclusive", "stale", "linked"].includes(m.decision.status));
   for (const p of rcm?.positions || []) {
     if ((p.unassigned || []).some(linked)) return true;
-    for (const fn of p.functions || []) for (const ff of fn.failures || []) if ((ff.modes || []).some(linked)) return true;
+    for (const fn of p.functions || []) {
+      if ((fn.modes || []).some(linked)) return true;
+      for (const ff of fn.failures || []) if ((ff.modes || []).some(linked)) return true;
+    }
   }
   return false;
+}
+
+// The workings a failure mode's decision can link (the decision dialog's
+// Working tab): the performance standards' workings on the mode's position,
+// the function it sits under first, as {id: the function's, label, meta}.
+export function workingsFor(rcm, modeId) {
+  const has = (list) => (list || []).some((m) => m.id === modeId);
+  const holds = (fn) => has(fn.modes) || (fn.failures || []).some((ff) => has(ff.modes));
+  for (const p of rcm?.positions || []) {
+    const fns = p.functions || [];
+    if (!fns.some(holds) && !has(p.unassigned)) continue;
+    return fns.filter((fn) => fn.has_basis)
+      .map((fn, i) => ({ fn, i, own: holds(fn) }))
+      .sort((a, b) => (b.own - a.own) || (a.i - b.i))
+      .map(({ fn }) => ({ id: fn.id, label: fn.text, meta: fn.basis_preview || "" }));
+  }
+  return [];
 }
 
 // Where the (i) for a function's working sits: at the end of each of its

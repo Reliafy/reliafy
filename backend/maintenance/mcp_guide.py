@@ -146,7 +146,10 @@ fails), fixed_interval (replace or restore on a schedule), failure_finding (chec
 (rtf_basis random: failures don't depend on age; uneconomic: prevention doesn't pay), redesign, accept. \
 evidence {type, id}: degradation_model for on_condition, strategy_analysis for fixed_interval, failure_finding \
 and rtf uneconomic, model (a non-repairable model) for rtf random; the result's status says whether it supports \
-the decision (supported, contradicted, inconclusive, unevidenced, stale) and why. decide replaces the whole \
+the decision (supported, contradicted, inconclusive, unevidenced, stale) and why. Any decision can instead link \
+a report (type report: a saved report's id) or the working behind a performance standard (type working: the \
+function's id; its standard needs a working written): linked, not checked, so its status is linked \
+(evidence_kind report or working), or stale once it has gone. decide replaces the whole \
 decision: to add evidence, send the current one with it. A decision unusual for its consequence (a hidden \
 failure run to failure) is kept, with advice to relay. A decision that schedules a task (fixed_interval, \
 failure_finding, on_condition with an interval) gets a task on the position; one that doesn't (rtf, redesign, \

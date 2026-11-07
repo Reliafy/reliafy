@@ -102,7 +102,9 @@ export function BasisInfo({ r, onBasis }) {
 }
 
 // One cell's content (desktop).
-export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
+// onWorking(functionId): open a linked working in place (the Explorer); without
+// it the link goes to the working's address.
+export function Cell({ col, r, query, onDecision, readOnly, linkChecks, onWorking = null }) {
   const d = r.ref.decision;
   const mode = r.type === "mode";
   switch (col.id) {
@@ -134,12 +136,21 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
         return <>{own}{below}</>;
       }
     case "check":
-      // linkChecks (the Explorer): the chip opens the model or analysis behind it.
+      // linkChecks (the Explorer): the chip opens the model, analysis or report
+      // behind it; a working opens in the details beside the table.
       if (mode && linkChecks && d?.status && d.artifact_link_path) {
+        const tip = `${d.artifact_name || "The evidence"}: ${d.summary || d.reason || ""}`.trim();
+        if (onWorking && d.evidence_kind === "working" && d.working) {
+          return (
+            <button type="button" className="rw-cklink" title={tip}
+                    onClick={(e) => { e.stopPropagation(); onWorking(d.working.id); }}>
+              <RcmStatusBadge status={d.status} kind={d.evidence_kind} />
+            </button>
+          );
+        }
         return (
-          <Link to={d.artifact_link_path} className="rw-cklink" onClick={(e) => e.stopPropagation()}
-                title={`${d.artifact_name || "The evidence"}: ${d.summary || d.reason || ""}`.trim()}>
-            <RcmStatusBadge status={d.status} />
+          <Link to={d.artifact_link_path} className="rw-cklink" onClick={(e) => e.stopPropagation()} title={tip}>
+            <RcmStatusBadge status={d.status} kind={d.evidence_kind} />
           </Link>
         );
       }
@@ -147,7 +158,7 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
         // Nothing linked yet: quiet, not a warning (most RCM is done from judgement).
         return <span className="rw-quiet" title="No evidence linked yet"><span aria-hidden="true">–</span><span className="sr-only">No evidence linked yet</span></span>;
       }
-      if (mode) return d?.status ? <RcmStatusBadge status={d.status} /> : null;
+      if (mode) return d?.status ? <RcmStatusBadge status={d.status} kind={d.evidence_kind} /> : null;
       // One kind inside: in words ("4 to check"); more: a mark and a count each.
       if (checkCounts(r).length === 1) {
         const [c] = checkCounts(r);
@@ -165,7 +176,9 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
       );
     case "evidence":
       return mode && d?.artifact_name ? (
-        d.artifact_link_path
+        onWorking && d.evidence_kind === "working" && d.working
+          ? <button type="button" className="link rw-txt" onClick={(e) => { e.stopPropagation(); onWorking(d.working.id); }}>{d.artifact_name}</button>
+          : d.artifact_link_path
           ? <Link to={d.artifact_link_path} className="rw-txt" onClick={(e) => e.stopPropagation()}>{d.artifact_name}</Link>
           : <span className="rw-txt">{d.artifact_name}</span>
       ) : null;
@@ -345,7 +358,7 @@ export function PhoneStatus({ r, fmea = false }) {
       return ap ? <Chip tone={AP_TONE[ap]} className="rw-ap">{AP_LABEL[ap]}</Chip> : null;
     }
     const s = shownStatus(r.ref.decision?.status);
-    return s ? <RcmStatusBadge status={s} /> : null;
+    return s ? <RcmStatusBadge status={s} kind={r.ref.decision?.evidence_kind} /> : null;
   }
   if (fmea) return r.sum.high ? <Chip tone="danger" className="rw-ap">{r.sum.high} high</Chip> : null;
   if (r.sum.contradicted) return <span className="rw-ck contradicted">✗{r.sum.contradicted}<span className="sr-only"> contradicted</span></span>;
@@ -555,7 +568,7 @@ export function Details({
         {(chips.length > 0 || saved.name) && (
           <div className="rw-chips-row">
             {chips.map((c) => <Chip key={c.text} tone={c.tone}>{c.text}</Chip>)}
-            {d?.status && shownStatus(d.status) && <RcmStatusBadge status={d.status} />}
+            {d?.status && shownStatus(d.status) && <RcmStatusBadge status={d.status} kind={d.evidence_kind} />}
             <SavedMark saved={saved.name} />
           </div>
         )}
@@ -623,13 +636,16 @@ export function Details({
                       {d.status === "unevidenced" ? (
                         <>
                           None linked{!readOnly && <> · <button type="button" className="link" onClick={() => onDecision(r)}
-                                                               title="Link the saved model or analysis behind this decision (optional)">Link evidence…</button></>}
+                                                               title="Link the model, analysis, report or working behind this decision (optional)">Link evidence…</button></>}
                         </>
                       ) : (
                         <>
-                          {d.status && <RcmStatusBadge status={d.status} />}
-                          {d.artifact_name && (d.artifact_link_path
-                            ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
+                          {d.status && <RcmStatusBadge status={d.status} kind={d.evidence_kind} />}
+                          {d.artifact_name && (d.evidence_kind === "working" && d.working && onSelect
+                            ? <button type="button" className="link" onClick={() => onSelect(d.working.id, { basis: true })}
+                                      title="Open the working behind this performance standard">{d.artifact_name}</button>
+                            : d.artifact_link_path
+                              ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
                           {!d.status && !d.artifact_name && "—"}
                         </>
                       )}

@@ -6,6 +6,9 @@ import Chip from "./ui/Chip.jsx";
 import Field from "./ui/Field.jsx";
 import { TextArea } from "./ui/Controls.jsx";
 
+// Evidence that's linked, not checked: it goes with any decision.
+const LINKED_ONLY = new Set(["report", "working"]);
+
 // The chosen tile's ✓, so the choice isn't shown by colour alone (not part of its name).
 const Tick = () => <span className="choice-tick" aria-hidden="true">✓ </span>;
 import { saveErrorText } from "../confirm.js";
@@ -18,7 +21,9 @@ import { INTERVAL_UNITS, NEEDS_INTERVAL, checkDecision, rememberUnit, startUnit 
 // open, Apply showing "Saving…", until it's done, and a refusal shows here
 // with everything as typed. Apply says what's missing whenever it can't be
 // pressed (decisionCheck.js); `limits` adds the Explorer's own checks.
-export default function DecisionModal({ options, mode, onSave, onClose, limits = false }) {
+// `workings`: the performance standards' workings the decision can link
+// (explorerRcm.js workingsFor), beside models and reports.
+export default function DecisionModal({ options, mode, onSave, onClose, limits = false, workings = [] }) {
   const id = useId();
   const existing = mode.decision || {};
   // The decision's own task, when it also serves other failure modes: it keeps
@@ -39,7 +44,9 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
   // The decision's own unit, else its task's, else the one chosen last on this device, else hours.
   const [intervalUnit, setIntervalUnit] = useState(() => startUnit(existing.interval_unit ? existing : { interval_unit: own?.unit }));
   const [notes, setNotes] = useState(existing.notes || "");
-  const [evidenceId, setEvidenceId] = useState(existing.evidence?.id || null);
+  const [evidence, setEvidence] = useState(existing.evidence || null);
+  // A new outcome or basis expects other models: a linked model goes, a report or a working stays.
+  const dropModel = () => setEvidence((e) => (e && LINKED_ONLY.has(e.type) ? e : null));
 
   const outcomeOpt = options.outcomes.find((o) => o.id === outcome);
   const consequenceOpt = options.consequences.find((c) => c.id === consequence);
@@ -82,9 +89,10 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
       rememberUnit(intervalUnit); // the next decision starts at it
     }
     if (notes.trim()) decision.notes = notes.trim();
-    decision.evidence = expectedEvidence && evidenceId
-      ? { type: expectedEvidence, id: evidenceId }
-      : null;
+    // A report or a working goes with any decision; a model only with one that expects its kind
+    // (or the one linked before, left as it was: the check then says why it doesn't fit).
+    decision.evidence = evidence && (LINKED_ONLY.has(evidence.type) || evidence.type === expectedEvidence
+      || evidence === existing.evidence) ? { type: evidence.type, id: evidence.id } : null;
     busy.current = true;
     setFailed(null);
     const done = onSave({ consequence, decision });
@@ -156,7 +164,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
               onClick={() => {
                 setOutcome(o.id);
                 if (o.id !== "rtf") setRtfBasis(null);
-                setEvidenceId(null);
+                dropModel();
               }}
             >
               <span className="option-title">
@@ -180,7 +188,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
                 type="button"
                 className={"option-tile" + (rtfBasis === b.id ? " selected" : "")}
                 aria-pressed={rtfBasis === b.id}
-                onClick={() => { setRtfBasis(b.id); setEvidenceId(null); }}
+                onClick={() => { setRtfBasis(b.id); dropModel(); }}
               >
                 <span className="option-title">{rtfBasis === b.id && <Tick />}{b.label}</span>
               </button>
@@ -243,14 +251,15 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
         </div>
       )}
 
-      {expectedEvidence && (
+      {outcome && (outcome !== "rtf" || rtfBasis) && (
         <div className="decision-step">
-          <label className="field-label">3. Link the evidence</label>
+          <label className="field-label">3. Link the evidence (optional)</label>
           <EvidencePicker
             expectedType={expectedEvidence}
             analysisKind={analysisKind}
-            value={evidenceId}
-            onChange={setEvidenceId}
+            value={evidence}
+            onChange={setEvidence}
+            workings={workings}
           />
         </div>
       )}
