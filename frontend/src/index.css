@@ -2045,7 +2045,13 @@ button svg {
   height: 15px;
 }
 
-button:hover:not(:disabled) {
+/* The darker hover belongs to the bare primary only. It's written at no
+   weight (:where) so a button reset by a single class (a list row, a title,
+   a close "x" with `all: unset` or `background: none`) keeps its own quiet
+   hover instead of turning solid blue: as `button:hover:not(:disabled)` it
+   outranked every `.x:hover`, which painted the RCM function rows. Variants
+   that want a darker hover on their own fill say so themselves. */
+button:where(:hover:not(:disabled)) {
   background: var(--acc-d);
 }
 
@@ -6882,6 +6888,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .chat-settings-actions .ghost { background: var(--surf); color: var(--muted); }
 .chat-settings-actions .solid { background: var(--acc); color: var(--on-fill); border-color: var(--acc); }
+.chat-settings-actions .solid:hover:not(:disabled) { background: var(--acc-d); }
 .chat-settings-actions .solid:disabled { opacity: 0.5; cursor: default; }
 
 /* Messages */
@@ -7079,6 +7086,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   color: var(--on-fill);
   cursor: pointer;
 }
+.chat-send:hover:not(:disabled) { background: var(--acc-d); }
 .chat-send:disabled { opacity: 0.5; cursor: default; }
 .chat-send svg { width: 17px; height: 17px; }
 

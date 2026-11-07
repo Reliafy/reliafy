@@ -35,7 +35,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tt-h .tt-sortbtn:hover { background: var(--surf-3, var(--surf)); color: var(--text); }
+.tt-h .tt-sortbtn:hover { background: var(--acc-hover); color: var(--ink); }
 .tt-h .tt-sortbtn:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
 .tt-h.is-sorted .tt-sortbtn { color: var(--text); }
 .tt-sortarrow { font-size: 10px; }
