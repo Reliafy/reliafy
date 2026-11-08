@@ -105,8 +105,9 @@ test("Summary row menu: new inside, rename, move to…, delete, pin; the server'
   await expect(dialog).toHaveCount(0);
   expect(renames).toBe(1);
   await page.unroute(`**${M}/positions/${p.skim.id}`);
-  await expect(row(page, `Menu skimmer box ${tag}`)).toHaveAttribute("aria-selected", "true");
+  // Said as the dialog closes (and gone after a few seconds): read before waiting for the tree to read again.
   await expect(page.locator(".tt-headslot")).toContainText(`Renamed it “Menu skimmer box ${tag}”.`);
+  await expect(row(page, `Menu skimmer box ${tag}`)).toHaveAttribute("aria-selected", "true");
 
   // Move to…: never the row itself or anything inside it; moved, shown in its new place, still picked.
   menu = await menuOf(page, `Menu circulation ${tag}`);

@@ -64,7 +64,9 @@ const HEAD_H = 30;
 // The tree column's header on the RCM tab: what its rows are.
 // The table's vertical scrollbar (styled 12 px wide in AssetExplorer.css).
 const SCROLLBAR_W = 12;
-export const TREE_HEAD = "Function, performance standard, failure, mode or task";
+// Short, so it fits the tree column at 1280 px; the levels in full are its tooltip.
+export const TREE_HEAD = "Function, standard, failure, mode or task";
+const TREE_HEAD_TIP = "Function, performance standard, functional failure, failure mode or task";
 // The soft shadow on a side of the table with more to scroll to: its width,
 // and how far from the end it fades in.
 const SHADE_W = 16;
@@ -727,7 +729,8 @@ export default function TreePane({
     <div className="tt-head" role={wideTable ? "row" : undefined} aria-hidden={wideTable || pinHead ? undefined : "true"}
          style={{ width: wideTable ? table.total : width, height: HEAD_H }}>
       <div className="tt-h tt-h-tree" role={wideTable ? "columnheader" : undefined} style={{ width: wideTable ? table.treeW : width }}
-           aria-label={wideTable && pinHead ? table.treeHead || TREE_HEAD : undefined}>
+           aria-label={wideTable && pinHead ? table.treeHead || TREE_HEAD : undefined}
+           title={wideTable && !pinHead && !table.treeHead ? TREE_HEAD_TIP : undefined}>
         {pinHead || (wideTable ? table.treeHead || TREE_HEAD : treeLabel || title)}
       </div>
       {wideTable && table.cols.map((c) => {
