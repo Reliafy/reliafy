@@ -465,9 +465,12 @@ export function clampWidth(width, windowWidth) {
 // the longest name among the rows on show (its indent, arrow, icon and markers too),
 // at least the usual width and at most TREE_FIT.cap or TREE_FIT.share of the window,
 // so the worksheet's columns keep their room. Names are measured at TREE_FIT.charPx a
-// character (the 13px font's average). rows: [{depth, text}].
-export const TREE_FIT = { charPx: 7, extraPx: 72, cap: 600, share: 0.36 };
+// character (the 13px font's average). A window narrower than TREE_FIT.from (a 1280 px
+// laptop, where the table already folds its Interval column: explorerRcm.js NARROW_TABLE)
+// keeps the usual width, so the columns keep theirs. rows: [{depth, text}].
+export const TREE_FIT = { charPx: 7, extraPx: 72, cap: 600, share: 0.36, from: 1400 };
 export function fitTreeWidth(rows, windowWidth) {
+  if (!(windowWidth >= TREE_FIT.from)) return PANE.initial;
   let need = 0;
   for (const r of rows || []) {
     const w = Math.min(r.depth || 0, 30) * 14 + String(r.text || "").length * TREE_FIT.charPx + TREE_FIT.extraPx;

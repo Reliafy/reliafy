@@ -88,7 +88,7 @@ linked, **Evidence check**. On a narrower screen the interval folds into the
 Task cell (*every 130 hours*). A position, function or functional failure row
 counts what's inside it, for example *1 to decide*, so you can close it and
 still see what needs doing. A position counts the positions inside it too: a
-closed *Propulsion* row shows its motors' contradicted evidence. The tree
+closed *Propulsion* row shows its motors' contradicted evidence. On a wide screen the tree
 column widens to fit the names on show; drag its edge to set your own width
 (double-click the edge to let it fit again). Click a row to open its **Details** beside the
 table: for a failure mode, that's its effects, consequence, notes, the decision,

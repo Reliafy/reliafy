@@ -76,6 +76,8 @@ test("the tree column fits the longest name on show, within its bounds", () => {
   assert.equal(huge, Math.min(TREE_FIT.cap, Math.round(1600 * TREE_FIT.share)));
   assert.equal(fitTreeWidth([{ depth: 9, text: "x".repeat(200) }], 800), PANE.initial);
   assert.equal(fitTreeWidth([], 1600), PANE.initial);
+  // A laptop's window keeps the usual width: the columns need the room there.
+  assert.equal(fitTreeWidth([{ depth: 5, text: "Mechanical seal leaks at the pump" }], 1280), PANE.initial);
 });
 
 test("a dragged width is remembered as chosen; an untouched one isn't", () => {
