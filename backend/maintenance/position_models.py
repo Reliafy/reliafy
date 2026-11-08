@@ -989,7 +989,12 @@ def bayes_position(m, db, owners, hidden, position_id: str, baseline: dict | Non
     if not spec:
         cm = m.class_model_of(position_id)
         if cm is None:
-            raise sv.Invalid(f"Pick a baseline: {p['name']} has no class model to start from.")
+            words = (f"{p['name']} has no class model to start from: pick a saved model, give numbers you know or a "
+                     "B10 you believe.")
+            if save:
+                raise sv.Invalid(f"Pick a baseline: {words}")
+            # The preview says so in words (not a refusal): the dialog shows it while the class's model is chosen.
+            return {"needs_baseline": True, "words": words, "position": {"id": p["id"], "name": p["name"]}}
         spec = {"model_id": cm["model_id"]}
     try:
         base = bayes_life.baseline_from(db, owners, hidden, spec)

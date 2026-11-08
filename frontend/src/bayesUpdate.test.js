@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TRUST_CHOICES, baselineOf, bodyOf, ready, rowWords, trustWords } from "./bayesUpdate.js";
+import { TRUST_CHOICES, baselineOf, bodyOf, previewKey, ready, rowWords, trustWords, waitingWords } from "./bayesUpdate.js";
 
 test("the trust choices say their widths in words", () => {
   assert.deepEqual(TRUST_CHOICES.map((t) => t.within), [0.1, 0.3, 0.6]);
@@ -27,4 +27,24 @@ test("a history row in words", () => {
   assert.equal(rowWords({ c: 1, x: 900, status: "still fitted" }, "Hours"), "Still running at 900 hours");
   assert.equal(rowWords({ c: 1, x: 900, status: "removed" }, "Hours"), "Removed at 900 hours");
   assert.equal(rowWords({ c: 2, xl: 100, xr: 200 }, "days"), "Failed between 100 and 200 days");
+});
+
+test("the preview follows the chosen baseline, not the class model", () => {
+  const base = { trust: "guide", exclude: [], unit: "hours", distribution: "weibull", params: {}, b10: {}, shape: {} };
+  const cls = { ...base, kind: "class" };
+  const nums = { ...base, kind: "params" };
+  // The same request (no baseline named) but a different key: switching drops a class refusal.
+  assert.deepEqual(bodyOf(cls), bodyOf(nums));
+  assert.notEqual(previewKey(cls), previewKey(nums));
+  assert.equal(waitingWords(cls), null);
+  assert.equal(waitingWords(nums), "Give the baseline's numbers to see the update.");
+  const typed = { ...nums, unit: "years", params: { alpha: "4", beta: "2" } };
+  assert.ok(ready(typed));
+  assert.equal(waitingWords(typed), null);
+  assert.deepEqual(bodyOf(typed).baseline, { distribution: "weibull", unit: "years", params: [{ name: "alpha", value: 4 }, { name: "beta", value: 2 }] });
+  assert.equal(waitingWords({ ...base, kind: "model" }), "Pick the baseline model to see the update.");
+  assert.ok(ready({ ...base, kind: "model", modelId: "m1" }));
+  const b10 = { ...base, kind: "b10", b10: { value: "5000" } };
+  assert.match(waitingWords(b10), /surprised under and over/);
+  assert.ok(ready({ ...b10, b10: { value: "5000", low: "3000", high: "8000" } }));
 });
