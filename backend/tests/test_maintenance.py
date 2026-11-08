@@ -231,6 +231,33 @@ def test_a_shared_mongo_log_keeps_every_process_in_step():
     assert c.snapshot() == before
 
 
+def test_a_shared_mongo_log_reads_its_own_writes_from_memory_and_others_from_the_log(monkeypatch):
+    """Catching up after its own write, a process takes the event it just appended from memory (no range
+    query: on the in-memory simulator each was a scan of the whole log); another process's events, or a
+    mix, are still read from the log, in order."""
+    from backend.maintenance.store import MongoEventLog
+
+    mongo = mongomock.MongoClient()["maint_log_own"]
+    log_a, log_b = MongoEventLog(mongo), MongoEventLog(mongo)
+    a = Maintenance(GraphStore(":memory:", PROJECTORS, log_a), ORG)
+    b = Maintenance(GraphStore(":memory:", PROJECTORS, log_b), ORG)
+    queried = []
+    find = log_a._events.find
+    monkeypatch.setattr(log_a._events, "find", lambda *x, **k: (queried.append(x), find(*x, **k))[1])
+    pump = a.create_position("Pump")
+    assert queried == []  # its own write: from memory
+    b.create_position("Fan")  # another process's
+    a.create_position("Valve")  # a's catch-up reads b's from the log, then its own
+    assert queried
+    names = {p["name"] for p in a.tree_rows()["positions"]}
+    assert names == {"Pump", "Fan", "Valve"}
+    b.s.sync()
+    assert a.s.snapshot() == b.s.snapshot()
+    assert log_a.since(0) == log_b.since(0) and [e["seq"] for e in log_a.since(0)] == [1, 2, 3]
+    assert log_a.since(3) == [] and log_a.since(1, 1)[0]["seq"] == 2
+    assert a.position(pump["id"])["name"] == "Pump"
+
+
 def test_access_rule(monkeypatch):
     from backend import config
     from backend.maintenance.access import allowed
