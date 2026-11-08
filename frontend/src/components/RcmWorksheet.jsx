@@ -19,7 +19,7 @@ import {
   CATEGORY_LABEL, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, EVIDENT_LABEL, consequenceText, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
   belowDecisionText, belowOf, decisionBody, belowPending, phoneLine, consequenceWords, checkCounts, decisionText, insideWords,
   intervalText, isCombination, memberEvidenceLine, moreTasks, nameOf, shownStatus, tasksOf, tasksTip, checkValue,
-  OUTCOME_LABEL, decisionWithMemberEvidence, everyText, memberEvidenceText, taskKindText, taskSharedText,
+  OUTCOME_LABEL, decisionWithMemberEvidence, everyText, memberEvidenceText, taskKindText, taskServesTip, taskSharedText,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import { modeAnswers } from "../decisionCheck.js";
@@ -228,7 +228,7 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks, onWorkin
 }
 
 // A task row's cells (the tree's fifth level): its kind in the Decision column; how
-// often, then "Shared with N" and "In: ‹package›" as chips, in the Task column.
+// often, then "Serves N here" and "In: ‹package›" as chips, in the Task column.
 function TaskCell({ col, r }) {
   const t = r.ref.task || {};
   if (col.id === "decision") {
@@ -242,7 +242,7 @@ function TaskCell({ col, r }) {
   return (
     <span className="rw-txt rw-taskrow" title={col.text(r)}>
       {every && <span className="rw-task-t">{every}</span>}
-      {shared && <Chip className="rw-tchip" title={`Also serves ${n(t.shared_with, "other failure mode")}`}>{shared}</Chip>}
+      {shared && <Chip className="rw-tchip" title={taskServesTip(t)}>{shared}</Chip>}
       {t.package && <Chip className="rw-tchip" title={`Done on the visits of the work package ${t.package.name}`}>In: {t.package.name}</Chip>}
     </span>
   );
@@ -513,7 +513,7 @@ export function Details({
   const deleteLabel = r.type === "std" && r.ref?.legacy ? "Remove this performance standard" : `Delete this ${kindWord}`;
   // A task comes off this failure mode (a shared one stays with the others), or is retired.
   const shared = isTask && !!r.ref.task?.shared_with;
-  const removeTaskLabel = shared ? "Remove this task from the failure mode" : "Retire the task";
+  const removeTaskLabel = shared ? "Remove from this failure mode" : "Retire the task";
   const removeTask = async () => {
     if (!modeRow || !ops?.removeTask) return;
     const ok = await removeTaskFromMode({ confirm, ops, mode: modeRow, task: r.ref.task, onSaid: said });
@@ -531,7 +531,8 @@ export function Details({
     ? [
       taskKindText(r) ? { text: taskKindText(r), tone: "accent" } : { text: "Not in a decision yet", tone: "warning" },
       everyText(r.ref.task) ? { text: everyText(r.ref.task), tone: "neutral" } : null,
-      taskSharedText(r.ref.task) ? { text: taskSharedText(r.ref.task), tone: "neutral" } : null,
+      taskSharedText(r.ref.task) ? { text: taskSharedText(r.ref.task), tone: "neutral", title: taskServesTip(r.ref.task) } : null,
+      r.ref.task?.package ? { text: `In: ${r.ref.task.package.name}`, tone: "neutral", title: "Done on this work package's visits" } : null,
     ].filter(Boolean)
     : r.type === "mode"
     ? [
@@ -669,24 +670,32 @@ export function Details({
   );
   // A task's own evidence: a combination's member has its own (or the decision's stands for
   // it); the one task of a plain decision has the decision's.
+  // One line, as the failure mode's "Based on": the evidence as a link (or "nothing linked
+  // yet"), Link… / Change…, and its status chip at the right. A plain decision's one task has
+  // the decision's evidence; a combination's member its own (or the decision's stands for it).
   const taskEvidence = isTask && modeRow && (() => {
     const md = modeRow.ref.decision;
-    if (!md) return <p className="rw-fhelp">Decide the failure mode first: evidence is linked to its decision.</p>;
-    if (!isCombination(md)) return evidenceOf(modeRow);
-    const at = md.outcomes.findIndex((o) => o.task_id === r.ref.task_id);
-    if (at < 0) return <p className="rw-fhelp">Linked to the failure mode outside its decision, so it has no evidence of its own.</p>;
-    const m = md.outcomes[at];
+    if (!md) return <p className="rim-tquiet">Decide the failure mode first: evidence is linked to its decision.</p>;
+    const at = isCombination(md) ? md.outcomes.findIndex((o) => o.task_id === r.ref.task_id) : null;
+    if (at != null && at < 0) return <p className="rim-tquiet">Linked beside the decision, so it has no evidence of its own.</p>;
+    const e = at != null ? md.outcomes[at] : md;
+    const own = at == null || !!e.evidence;
+    const none = !e.status || e.status === "unevidenced";
+    const name = own ? e.artifact_name : null;
     return (
-      <div className="rw-evidence">
-        <span className="rw-evlabel">Evidence</span>
-        {m.status && m.status !== "unevidenced" && <RcmStatusBadge status={m.status} kind={m.evidence_kind} />}
-        <span>{memberEvidenceText(m)}</span>
-        {!readOnly && ops?.decide && (
-          <> · <button type="button" className="link" onClick={() => setLinkingEvidence({ at })}
-                       title="Link the model, analysis, report or function notes behind this task (optional)">
-            {m.evidence ? "Change evidence…" : "Link evidence…"}
-          </button></>
-        )}
+      <div className="rw-basedon rw-evidence" role="group" aria-label="Evidence">
+        <span className="rw-basedon-cites">
+          {name ? (e.artifact_link_path ? <Link to={e.artifact_link_path}>{name}</Link> : <span>{name}</span>)
+            : <span className="rw-basedon-none">{at != null && !none ? memberEvidenceText(e) : none ? "nothing linked yet" : "judgement (none needed)"}</span>}
+          {!readOnly && ops?.decide && (
+            <> · <button type="button" className="link" aria-label={none ? "Link evidence…" : "Change evidence…"}
+                         title="The model, analysis, report or function notes behind this task (optional)"
+                         onClick={() => setLinkingEvidence({ at })}>{none ? "Link…" : "Change…"}</button></>
+          )}
+        </span>
+        <span className="rw-basedon-status">
+          {none ? <Chip>None linked</Chip> : <RcmStatusBadge status={e.status} kind={e.evidence_kind} />}
+        </span>
       </div>
     );
   })();
@@ -747,7 +756,7 @@ export function Details({
                     onCommit={(raw) => keep("name", isTask ? saveTaskName(raw) : onCommit(r, "name", raw))} />
         {(chips.length > 0 || saved.name) && (
           <div className="rw-chips-row">
-            {chips.map((c) => <Chip key={c.text} tone={c.tone}>{c.text}</Chip>)}
+            {chips.map((c) => <Chip key={c.text} tone={c.tone} title={c.title}>{c.text}</Chip>)}
             {d?.status && shownStatus(d.status) && <RcmStatusBadge status={d.status} kind={d.evidence_kind} />}
             <SavedMark saved={saved.name} />
           </div>
@@ -833,32 +842,42 @@ export function Details({
             it needs (its LSA record, changed on the LSA tab). */}
         {isTask && modeRow && <RcmTaskSections key={`${r.key}:task`} r={r} mode={modeRow} ops={ops} readOnly={readOnly} onSaid={said} />}
         {isTask && modeRow && (
-          <Section title="Evidence for this task" className="rw-tsec">{taskEvidence}</Section>
+          <section className="rw-sg" aria-label="Based on">
+            <StepLabel>Based on</StepLabel>
+            <div className="rw-sc rim-tcell">{taskEvidence}</div>
+          </section>
         )}
         {isTask && (
-          <Section title="Serves" count={serves.length} className="rw-tsec rw-serves">
-            <ul className="rw-klist">
-              {serves.map(({ key, mode }) => {
-                const here = mode.key === r.ref.mode_id;
-                return (
-                  <li key={key}>
-                    <LevelIcon type="mode" />
-                    <span className="rw-kbody">
+          <section className="rw-sg rw-serves" aria-label="Serves">
+            <StepLabel>Serves</StepLabel>
+            <div className="rw-sc rim-tcell">
+              <p className="rim-tquiet">{`Serves ${n(serves.length, "failure mode")} here`}</p>
+              <ul className="rw-servelist">
+                {serves.map(({ key, mode }) => {
+                  const here = mode.key === r.ref.mode_id;
+                  const t = whole.rows.get(key)?.ref.task || r.ref.task;
+                  return (
+                    <li key={key}>
                       <button type="button" className="link rw-kgo" onClick={() => onSelect(mode.key)} title="Show the failure mode">
                         {nameOf(mode) || "(failure mode)"}
                       </button>
-                      <span className="rw-fhelp">
-                        {[here ? "this one" : null, mode.ref.decision ? decisionText(mode.ref.decision) : "To decide"].filter(Boolean).join(" · ")}
-                      </span>
-                    </span>
-                    {here && shared && !readOnly && ops?.removeTask && (
-                      <button type="button" className="link rw-serves-rm" onClick={removeTask}>Remove from this failure mode</button>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </Section>
+                      {here && <span className="rim-tquiet"> · this one</span>}
+                      {serves.length > 1 && !readOnly && ops?.removeTask && (
+                        <button type="button" className="link rw-serves-rm" aria-label={`Remove from “${nameOf(mode)}”`}
+                                onClick={async () => {
+                                  const ok = await removeTaskFromMode({ confirm, ops, mode, task: t, onSaid: said });
+                                  if (ok && here) onSelect?.(mode.key);
+                                }}>Remove</button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+              {!readOnly && onMove && (
+                <button type="button" className="link rim-tquietlink" onClick={() => onMove(r)}>Link to another failure mode…</button>
+              )}
+            </div>
+          </section>
         )}
         {isTask && <TaskLogistics taskId={r.ref.task_id} positionId={r.ref.task?.position_id || r.ref.position_id} />}
         {/* 3. The quieter things, last. */}
@@ -1280,13 +1299,19 @@ function TaskLogistics({ taskId, positionId }) {
     method ? `Method: ${method}` : null,
   ].filter(Boolean) : [];
   return (
-    <Section title="Logistics" className="rw-tsec rw-logistics">
-      <p className="rw-fhelp">
-        {!here ? "Reading…" : state.error ? `Couldn't read it: ${state.error}`
-          : parts.length ? parts.join(" · ") : "No labour, tools or method set yet."}
-        {" · "}
-        <Link to={explorerPath("positions", { sel: positionId, tab: "lsa", task: taskId })}>Open in LSA</Link>
-      </p>
-    </Section>
+    <section className="rw-sg rw-logistics" aria-label="Logistics">
+      <StepLabel>Logistics</StepLabel>
+      <div className="rw-sc rim-tcell">
+        <p className="rim-tline">
+          <span className="rim-tquiet">
+            {!here ? "Reading…" : state.error ? `Couldn't read it: ${state.error}`
+              : parts.length ? parts.join(" · ") : "No labour, tools or method set yet."}
+          </span>
+          {" · "}
+          <Link to={explorerPath("positions", { sel: positionId, tab: "lsa", task: taskId })}
+                title="How it's done: its instructions, labour, tools, spares and method">Open in LSA</Link>
+        </p>
+      </div>
+    </section>
   );
 }

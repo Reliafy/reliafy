@@ -55,7 +55,7 @@ async function openFleet(page, p, width = 1280) {
   await settled(page);
 }
 
-test("a task's Edit when it's done… shows what it counts and can change it", async ({ page, request, problems }) => {
+test("a task by use says what it counts in its Interval row, and can change it", async ({ page, request, problems }) => {
   const tag = `m${Date.now()}`;
   const p = await fleet(request, tag);
   await openFleet(page, p);
@@ -65,8 +65,7 @@ test("a task's Edit when it's done… shows what it counts and can change it", a
   // No decision yet: the linked task is listed, a link to its own row; its details change it.
   await steps.getByRole("button", { name: `Service ${tag}`, exact: true }).click();
   await expect(dlg.locator(".rw-panel-kind")).toHaveText("Task");
-  const tasks = dlg.getByRole("region", { name: "Kind and interval" });
-  await tasks.getByRole("button", { name: "Edit when it's done…" }).click();
+  const tasks = dlg.getByRole("region", { name: "Interval" });
   const field = tasks.getByRole("group", { name: "Measurement" });
   await expect(field).toContainText(`Engine hours on Truck 12 ${tag}`);
   await expect(field).toContainText("Reads 1,900 hours");
@@ -80,7 +79,7 @@ test("a task's Edit when it's done… shows what it counts and can change it", a
   await field.getByRole("radio", { name: "Enter it" }).check();
   await field.getByRole("spinbutton", { name: /Reading when it was last done/ }).fill("1590");
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/task-measurement-1280.png` });
-  await tasks.getByRole("button", { name: "Save task" }).click();
+  await tasks.getByRole("button", { name: "Save what it counts" }).click();
   await expect.poll(async () => {
     const v = await measurementOf(request, p.task.id);
     return [v.chosen, v.measurement?.id, v.last_done_reading, v.last_done_reading_estimated];
