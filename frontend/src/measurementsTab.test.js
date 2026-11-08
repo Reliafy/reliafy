@@ -110,10 +110,11 @@ test("branchQuery asks for the branch's positions, its items and the items fitte
 
 test("the tab's address: the filter and the open point", () => {
   assert.deepEqual(readMeasurementsQuery(new URLSearchParams("tab=measurements&only=attention&readings=x1")),
-    { attention: true, readings: "x1", point: null, channel: null });
-  assert.deepEqual(readMeasurementsQuery(new URLSearchParams("tab=measurements&point=p1")), { attention: false, readings: null, point: "p1", channel: null });
-  assert.deepEqual(readMeasurementsQuery(new URLSearchParams("tab=measurements&channel=c1")), { attention: false, readings: null, point: null, channel: "c1" });
-  assert.deepEqual(VIEW_PARAMS, ["point", "channel", "readings"]);
+    { attention: true, readings: "x1", point: null, channel: null, consumable: null });
+  assert.deepEqual(readMeasurementsQuery(new URLSearchParams("tab=measurements&point=p1")), { attention: false, readings: null, point: "p1", channel: null, consumable: null });
+  assert.deepEqual(readMeasurementsQuery(new URLSearchParams("tab=measurements&channel=c1")), { attention: false, readings: null, point: null, channel: "c1", consumable: null });
+  assert.equal(readMeasurementsQuery(new URLSearchParams("tab=measurements&consumable=k1")).consumable, "k1");
+  assert.deepEqual(VIEW_PARAMS, ["point", "channel", "consumable", "readings"]);
 });
 
 test("the row's one state chip: the worst state, with the detail in its tooltip", () => {

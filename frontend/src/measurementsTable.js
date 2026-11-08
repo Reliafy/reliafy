@@ -1,17 +1,17 @@
-// The Explorer's Measurements tab as a table (Derryn, 9 Nov 2026: "go down and
+// The Explorer's Measurements tab's rows (Derryn, 9 Nov 2026: "go down and
 // look at all the measuring points against particular things", see their
-// values, enter them, create new ones). One row per measuring point, setting
-// and sensor channel on the picked row and everything below it, built from
-// GET /api/maintenance/points (points and channels): Position (or item),
-// Point (name, tag), Kind, Latest (value with unit, and when), State, Trend
-// (a step line for a setting), Next due, then a box to record a value in
-// place and a ⋯. Search over every column, sortable headers (worst first by
-// default), grouped by position when the branch has several. Pure functions,
-// tested in measurementsTable.test.js; the table is MeasurementsPanel.jsx.
+// values, enter them, create new ones): one per measuring point, setting,
+// consumable and sensor channel, from GET /api/maintenance/points: its place,
+// name and tag, Kind, Latest (value with unit, and when), State, Trend (a step
+// line for a setting, bars for a consumable), Next due, whether it can be
+// recorded in place, and its ⋯. Search, worst-first order and the CSV too.
+// Pure functions, tested in measurementsTable.test.js. The tab draws them as
+// rows of the tree (explorerMeasurements.js, components/MeasurementTable.jsx).
 
 import { toCsv } from "./csv.js";
 import { nextSort, sortParam } from "./lsaTab.js";
 import { dayText, numberText } from "./measuringPoint.js";
+import { consumableState, monthlyTotals, qtyText, stockText } from "./consumables.js";
 import {
   STATES, channelChip, channelPlace, channelValues, isFed, isSetting, needsAttention, nextReadingOn, placeOf, pointChip,
   pointState, readingDue, recentValues, withUnit,
@@ -35,6 +35,7 @@ const SORTABLE = new Set(["position", "point", "kind", "latest", "state", "due"]
 // What kind of row it is, in a word: Fed (a sensor channel, a feed's point, one
 // worked out from a channel), Setting, Counter or Condition.
 export function kindLabel(r) {
+  if (r.kind === "consumable") return "Consumable";
   if (r.kind === "channel" || isFed(r)) return "Fed";
   if (isSetting(r)) return "Setting";
   if (r.kind === "counter") return "Counter";
@@ -72,7 +73,7 @@ export function rowState(r, today) {
 // point or channel), place ({id, name}), name, tag, kind, value, unit, when,
 // state, values (oldest first, for the sparkline), step (a setting), due,
 // canRecord }.
-export function tableRows(points = [], channels = [], today, fittedAt = new Map()) {
+export function tableRows(points = [], channels = [], today, fittedAt = new Map(), consumables = []) {
   const rows = [];
   for (const p of points || []) {
     const placeId = p.position?.id || p.item?.id || "";
@@ -97,6 +98,18 @@ export function tableRows(points = [], channels = [], today, fittedAt = new Map(
       value: c.latest?.value ?? null, unit: c.unit || "", when: c.latest?.t || null,
       state: rowState(r, today), values: channelValues(c, 12), step: false, due: null, canRecord: false,
       attention: rowState(r, today).rank === 0,
+    });
+  }
+  // A consumable: its last addition, its total of the last 90 days, monthly bars.
+  for (const c of consumables || []) {
+    const last = c.uses?.[0];
+    rows.push({
+      key: `consumable:${c.key}`, type: "consumable", item: c,
+      place: { id: c.position?.id || "", name: c.position?.name || "" },
+      name: c.name || "", tag: c.part?.part_number || "", kind: "Consumable",
+      value: last ? last.qty : null, unit: c.unit || "", when: last?.on || null,
+      state: consumableState(c, today), values: monthlyTotals(c.uses, today, 6).map((m) => ({ at: m.month, value: m.value })),
+      bars: true, step: false, due: null, canRecord: true, attention: false, stock: stockText(c),
     });
   }
   return rows;
@@ -163,27 +176,6 @@ export function sortRows(rows, keys = []) {
   });
 }
 
-// Grouped by position when the rows are on more than one: [{ place, rows,
-// attention }] in the order the sorted rows first meet each position (so worst
-// first stays worst first); null when there's one position (no group rows).
-export function groupRows(rows) {
-  const groups = new Map();
-  for (const r of rows) {
-    const k = r.place.id || r.place.name;
-    if (!groups.has(k)) groups.set(k, { key: k, place: r.place, rows: [], attention: 0 });
-    const g = groups.get(k);
-    g.rows.push(r);
-    if (r.state.rank <= 2) g.attention += 1;
-  }
-  return groups.size > 1 ? [...groups.values()] : null;
-}
-
-// A group row's words: "Filter pump · 3 points, 1 needs attention".
-export function groupText(g) {
-  const n = g.rows.length;
-  return `${n} ${n === 1 ? "point" : "points"}${g.attention ? `, ${g.attention} ${g.attention === 1 ? "needs" : "need"} attention` : ""}`;
-}
-
 // A value typed in the Record box: a number, or the reason it isn't one (or is
 // outside a setting's allowed range).
 export function checkValue(text, point) {
@@ -191,6 +183,7 @@ export function checkValue(text, point) {
   if (t === "") return { error: "Type a value" };
   const v = Number(t);
   if (!Number.isFinite(v)) return { error: "Not a number" };
+  if (point.uses !== undefined && point.position) return v > 0 ? { value: v } : { error: "The quantity must be more than 0" };
   if (isSetting(point)) {
     if (point.range_min != null && v < point.range_min) return { error: `Lowest allowed is ${withUnit(point.range_min, point.unit || "")}` };
     if (point.range_max != null && v > point.range_max) return { error: `Highest allowed is ${withUnit(point.range_max, point.unit || "")}` };
@@ -203,12 +196,21 @@ export function checkValue(text, point) {
 
 // What the box says once saved: "✓ Saved", or for a setting "✓ Set to 28 °C".
 export function savedText(point, value) {
+  if (point.uses !== undefined && point.position) return `✓ Added ${qtyText(value, point.unit)}`;
   return isSetting(point) ? `✓ Set to ${withUnit(numberText(value), point.unit || "")}` : "✓ Saved";
 }
 
 // The row's ⋯ menu: Open, Record a reading… (a setting: Record a change…), Edit
 // limits… (or Edit…), Move…, Retire…; a channel's Open and Edit bands….
 export function rowMenu(r) {
+  if (r.type === "consumable") {
+    return [
+      { id: "page", label: "Open" },
+      { id: "use", label: "Record use…" },
+      r.item.listing_id ? { id: "retire", label: "Retire…", danger: true }
+        : { id: "retire", label: "Retire…", danger: true, disabled: true, reason: "Recorded by hand: it stays while it has additions" },
+    ];
+  }
   if (r.type === "channel") return [{ id: "page", label: "Open" }, { id: "bands", label: "Edit bands…" }];
   const p = r.item;
   const manual = p.source === "manual" && !p.derived;

@@ -125,7 +125,7 @@ timer's hours a day, held until the next change, never alarmed or due, range_min
 then record readings. An existing point becomes a setting with measurements.update_point kind setting. One on the \
 wrong position: measurements.move_point (point_id, position_id): its readings and any open alarm work order go \
 with it; tasks that counted it as their position's counter keep counting it; an item's use while fitted follows \
-where the counter now is.
+where the counter now is. Consumables added at a position (salt or acid into a pool, a stabiliser) are neither: measurements.record with position_id, value (the quantity) and part_id (a catalogue part, taken out of stock where held) or name and unit, plus on, cost, note, work_order_id. Put the part on the position's parts list with role consumable to list it before its first use.
 8. Conditions (optional): what places and equipment are exposed to (Outdoor, Seawater, Zone 1). Apply them as high \
 up as they're true (a site, a system): what's inside inherits them. See the conditions topic."""),
     "plan": ("RCM or tasks directly; tasks on a position, an item or a location; work packages.", """\

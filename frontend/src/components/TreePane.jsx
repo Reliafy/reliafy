@@ -94,7 +94,24 @@ const ICON = {
   item: <path d="M8 1.8 14 5v6L8 14.2 2 11V5z M2 5l6 3.2L14 5M8 8.2v6" strokeWidth="1.4" strokeLinejoin="round" />,
 };
 
+// The Measurements tab's rows: what each measures, by its kind.
+const MEAS_ICON = {
+  condition: <><path d="M3 12a5 5 0 1 1 10 0" strokeWidth="1.5" strokeLinecap="round" /><path d="M8 12l2.6-3.4" strokeWidth="1.5" strokeLinecap="round" /></>,
+  counter: <><rect x="2" y="4.5" width="12" height="7" rx="1.5" strokeWidth="1.4" /><path d="M5.5 6.8v2.4M8 6.8v2.4M10.5 6.8v2.4" strokeWidth="1.3" strokeLinecap="round" /></>,
+  setting: <><path d="M4 2.5v11M8 2.5v11M12 2.5v11" strokeWidth="1.3" strokeLinecap="round" /><circle cx="4" cy="10" r="1.6" fill="currentColor" /><circle cx="8" cy="5.5" r="1.6" fill="currentColor" /><circle cx="12" cy="9" r="1.6" fill="currentColor" /></>,
+  fed: <><path d="M2.5 9.5c1.5-3 3-3 4.5 0s3 3 4.5 0" strokeWidth="1.4" strokeLinecap="round" /><path d="M13.5 4.5v7" strokeWidth="1.4" strokeLinecap="round" /></>,
+  channel: <><path d="M2 8h2l1.5-4 2 8 2-6 1.5 2H14" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></>,
+  consumable: <><path d="M5 2.5h6M6 2.5v3L3.5 12a1.2 1.2 0 0 0 1.1 1.5h6.8a1.2 1.2 0 0 0 1.1-1.5L10 5.5v-3" strokeWidth="1.4" strokeLinejoin="round" /><path d="M5 9.5h6" strokeWidth="1.3" /></>,
+};
+
 export function RowIcon({ r }) {
+  if (r.type === "meas") {
+    return (
+      <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
+        {MEAS_ICON[r.ref.mkind] || MEAS_ICON.condition}
+      </svg>
+    );
+  }
   // The "Not under a functional failure" and "No standard" headings take the
   // icon of what's under them.
   if (isRcmRow(r)) return <LevelIcon type={r.type === "unassigned" || r.type === "nofail" ? "fail" : r.type === "nostd" ? "std" : r.type} className="tp-ic" />;
@@ -348,6 +365,20 @@ function Row({ v, r, top, height, open, focused, dim, pinned, underPin = false, 
   if (!table) {
     return <div {...common}><TreeBit r={r} v={v} open={open} phone={phone} query={query} rcm={rcm} pinRoot={pinRoot} />{unpin}{more}</div>;
   }
+  if (phone && table.phoneRow) {
+    // A tab with its own cells (the Measurements tab): its words for the second line.
+    const { line, status } = table.phoneRow(r, open);
+    return (
+      <div {...common}>
+        <div className="tt-l1">
+          <TreeBit r={r} v={v} open={open} phone query={query} rcm={rcm} table pinRoot={pinRoot} onGoto={table.onGoto} />
+          {status && <span className="tt-st">{status}</span>}
+          {unpin}{more}
+        </div>
+        {line && <div className="tt-l2" style={{ paddingLeft: Math.min(v.depth, 8) * 14 + 40 }}>{line}</div>}
+      </div>
+    );
+  }
   if (phone) {
     // The second line: the page's own words for the tab (the FME(C)A's
     // scores), else the RCM's main columns, or a position's own modes.
@@ -362,6 +393,29 @@ function Row({ v, r, top, height, open, focused, dim, pinned, underPin = false, 
           {unpin}{more}
         </div>
         {line && <div className="tt-l2" style={{ paddingLeft: Math.min(v.depth, 8) * 14 + 40 }}>{line}</div>}
+      </div>
+    );
+  }
+  if (table.renderCell) {
+    // A tab with its own cells (the Measurements tab): each column's, and a
+    // parent row's roll-up across them all.
+    const span = table.rollupOf ? table.rollupOf(r, open) : "";
+    const allW = table.cols.reduce((t, c) => t + table.widths[c.id], 0);
+    return (
+      <div {...common}>
+        <div className="tt-tree" role="rowheader" style={{ width: table.treeW }}>
+          <TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table onGoto={table.onGoto} />{more}
+        </div>
+        {span != null && span !== false && r.type !== "meas" ? (
+          <div role="gridcell" aria-colspan={table.cols.length} className="rw-c tt-rollup-c" style={{ width: allW }}>
+            {span && <span className="rw-sum tt-rollup-t" style={{ width: allW - 16 }} title={span}>{span}</span>}
+          </div>
+        ) : table.cols.map((c) => (
+          <div key={c.id} role="gridcell" className={"rw-c" + (c.num ? " num" : "") + ` mt-c-${c.id}`} style={{ width: table.widths[c.id] }}>
+            {table.renderCell(r, c)}
+          </div>
+        ))}
+        <div className="rw-c rw-fill" aria-hidden="true" />
       </div>
     );
   }
@@ -671,8 +725,8 @@ export default function TreePane({
       <label className="tp-filter">
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
         <input type="search" value={query} onChange={(e) => onQuery(e.target.value)}
-               placeholder={table ? "Filter: name, tag, failures, tasks" : "Filter: name, tag, item, serial"}
-               aria-label={table ? "Filter the tree and its RCM" : "Filter the tree"} />
+               placeholder={table ? (table.tab === "measurements" ? "Filter: name, tag, kind, state" : "Filter: name, tag, failures, tasks") : "Filter: name, tag, item, serial"}
+               aria-label={table ? `Filter the tree and its ${table.what || "RCM"}` : "Filter the tree"} />
       </label>
       <TreeControlsMenu
         pinned={branch ? { name: branch.name, onUnpin: branch.onUnpin } : null}

@@ -1374,6 +1374,16 @@ def points_at(position_ids: str = "", item_ids: str = "", m: Maintenance = Depen
     return _run(m.points_at, positions, items)
 
 
+@router.post("/positions/{position_id}/consumables")
+def record_consumable_use(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A consumable added at a position (salt into the pool): qty of a catalogue part
+    (part_id) or a named one (name, unit), on a day (on, default today; or at), with its
+    cost and note; a catalogue part comes out of stock at a store holding enough."""
+    return _run(m.record_consumable_use, position_id, body.get("qty"), body.get("part_id"), body.get("name", ""),
+                body.get("unit"), body.get("cost"), body.get("on"), body.get("note", ""), body.get("work_order_id"),
+                body.get("at"), body.get("from_location_id"))
+
+
 @router.get("/points/{point_id}")
 def get_point(point_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.point, point_id)

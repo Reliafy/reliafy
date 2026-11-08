@@ -23,7 +23,7 @@ def test_points_at_reads_positions_and_items_skipping_others_and_retired():
     by_id = {p["id"]: p for p in got["points"]}
     assert by_id[ph["id"]]["reading"] == 7.4 and by_id[ph["id"]]["position"]["name"] == "Pool"
     assert by_id[hours["id"]]["item"]["name"] == "Pump #2"
-    assert m.points_at([], []) == {"points": [], "more": False, "channels": []}
+    assert m.points_at([], []) == {"points": [], "more": False, "channels": [], "consumables": []}
     assert got["channels"] == []
 
 
@@ -84,7 +84,7 @@ def test_points_route_reads_comma_separated_ids(monkeypatch):
             client.post(f"{api}/positions/{pid}/points", json={"name": name, "alarm_above": 8})
         got = client.get(f"{api}/points", params={"position_ids": f"{a}, {b},"}).json()
         assert sorted(p["name"] for p in got["points"]) == ["Chlorine", "pH"]
-        assert client.get(f"{api}/points").json() == {"points": [], "more": False, "channels": []}
+        assert client.get(f"{api}/points").json() == {"points": [], "more": False, "channels": [], "consumables": []}
         client.post(f"{api}/signals/channels", json={"position_id": a, "name": "Pump power", "unit": "W"})
         got = client.get(f"{api}/points", params={"position_ids": a}).json()
         assert [c["name"] for c in got["channels"]] == ["Pump power"]

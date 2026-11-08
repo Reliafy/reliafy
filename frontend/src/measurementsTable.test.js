@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  checkValue, groupRows, groupText, kindLabel, measurementsCsv, parseSort, rowMenu, rowState, savedText, searchRows,
+  checkValue, kindLabel, measurementsCsv, parseSort, rowMenu, rowState, savedText, searchRows,
   sortRows, tableRows,
 } from "./measurementsTable.js";
 
@@ -69,20 +69,6 @@ test("search over every column, sort worst first by default or by a column, blan
   assert.deepEqual(searchRows(rows, "heater no reading").map((r) => r.key), ["c"]);
   assert.deepEqual(searchRows(rows, "attention").map((r) => r.key), ["b"]);
   assert.deepEqual(parseSort("due,-latest,trend,bogus"), [{ col: "due", dir: 1 }, { col: "latest", dir: -1 }]);
-});
-
-test("grouped by position only when there are several, in the order the sorted rows meet them", () => {
-  const rows = sortRows(tableRows([
-    pt({ id: "a", reading: 120 }),
-    pt({ id: "b", status: "high", reading: 250, position: { id: "pos2", name: "Heater" } }),
-    pt({ id: "c", reading: 110 }),
-  ], [], TODAY));
-  const g = groupRows(rows);
-  assert.deepEqual(g.map((x) => x.place.name), ["Heater", "Filter"]);
-  assert.deepEqual(g[1].rows.map((r) => r.key), ["a", "c"]);
-  assert.equal(groupText(g[0]), "1 point, 1 needs attention");
-  assert.equal(groupText(g[1]), "2 points");
-  assert.equal(groupRows(rows.filter((r) => r.place.id === "pos1")), null);
 });
 
 test("a value typed in place: a number, inside a setting's range, a counter only up", () => {

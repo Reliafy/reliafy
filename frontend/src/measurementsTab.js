@@ -310,12 +310,13 @@ export function readMeasurementsQuery(params) {
     readings: params.get("readings") || null,
     point: params.get("point") || null,
     channel: params.get("channel") || null,
+    consumable: params.get("consumable") || null,
   };
 }
 
 // What leaves the address with the point or channel view: going back to the
 // list, another row, or another tab.
-export const VIEW_PARAMS = ["point", "channel", "readings"];
+export const VIEW_PARAMS = ["point", "channel", "consumable", "readings"];
 
 // ---- signal channels as rows ---------------------------------------------------------
 

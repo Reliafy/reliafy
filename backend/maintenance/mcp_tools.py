@@ -553,11 +553,13 @@ MEASUREMENTS: Table = {
         task goes by it or an alarm work order is open."""),
     "move_point": ("point_id position_id", "", "To another position, with its readings."),
     "restore_point": ("point_id", "", "Bring a retired point back."),
-    "record": ("point_id value", "at on note precision work_order_id task_id", """A manual reading (the hour
-        meter says 12,340), or a setting's new value. Counters only go up. at is when it was read, to the minute
-        or finer (or on, a day); a time of day orders readings taken the same day. work_order_id (task_id): the
-        work order it was taken or set at. Returns the point: latest, rate or trend (a setting: its changes),
-        status, any alarm work order."""),
+    "record": ("value", "point_id at on note precision work_order_id task_id position_id part_id name unit cost",
+               """A manual reading (point_id: the hour meter says 12,340), or a setting's new value. Counters only
+        go up. at is when it was read, to the minute or finer (or on, a day); a time of day orders readings taken
+        the same day. work_order_id (task_id): the work order it was taken or set at. Returns the point: latest,
+        rate or trend (a setting: its changes), status, any alarm work order. A consumable used (salt added to
+        the pool) instead: position_id, value = the quantity, part_id (a catalogue part, out of stock where
+        held) or name and unit, cost (default qty × unit cost), on or at, note, work_order_id."""),
     "void": ("reading_id reason", "", """Strike out a reading entered by mistake (a duplicate, the wrong meter),
         saying why; rates, due dates and alarms leave it out. Returns the point."""),
     "correct": ("reading_id reason", "value at on precision note", """Correct a reading's value (a typo),
@@ -2047,7 +2049,10 @@ def register() -> None:
                                      "record: the day it was read (default today; a past date backdates it). "
                                      "correct: the date it was really read (default unchanged)."))] = None,
                                  note: str | None = None, reading_id: str | None = None,
-                                 reason: str | None = None,
+                                 reason: str | None = None, part_id: str | None = None,
+                                 cost: Annotated[float | None, Field(description=(
+                                     "record, a consumable: what it cost (default the quantity × the part's unit "
+                                     "cost)."))] = None,
                                  at: Annotated[str | None, Field(description=(
                                      "When it was read: 2026-10-19T10:14 (seconds and up to nine decimals "
                                      "allowed; Z or an offset, else the workspace's time zone), or a coarser "
@@ -2090,6 +2095,13 @@ def register() -> None:
         if action == "restore_point":
             return run(m.restore_point, point_id)
         if action == "record":
+            if not point_id and position_id:
+                # A consumable used at a position (no reading: salt added to the pool).
+                return run(m.record_consumable_use, position_id, value, part_id, name or "", unit, cost, on,
+                           note or "", work_order_id, at)
+            if not point_id:
+                raise ToolError("record takes point_id (a reading or a setting) or position_id with part_id or "
+                                "name (a consumable used). See guide(action='maintenance_measurements.record').")
             return run(m.record_reading, point_id, value, on, note or "", at, precision, work_order_id, task_id)
         if action == "void":
             return run(m.void_reading, reading_id, reason)
