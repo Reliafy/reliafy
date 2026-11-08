@@ -316,10 +316,11 @@ def test_a_combination_of_tasks_over_mcp(env):  # noqa: F811
     async def flow(client):
         pid = _ok(await _do(client, "maintenance", "positions.create", name="Pump"))["id"]
         mode = _ok(await _do(client, "maintenance", "failure_modes.add", position_id=pid, text="Bearing worn"))
-        # The RCM decision diagram: a combination only where a failure could hurt someone or the environment.
-        refused = await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=mode["id"],
-                            consequence="operational", decision=COMBINATION)
-        assert refused.is_error and "only for safety or environmental" in refused.content[0].text
+        # A combination is allowed on any consequence (a routine dose plus a periodic test);
+        # on an operational one the advice says each task must pay for itself.
+        allowed = _ok(await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=mode["id"],
+                                hidden=False, consequence="operational", decision=COMBINATION))
+        assert "combination" in (allowed.get("advice") or "").lower()
         out = _ok(await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=mode["id"],
                             hidden=False, consequence="safety", decision=COMBINATION))
         return out, _ok(await _get(client, "position", pid))

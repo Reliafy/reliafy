@@ -193,9 +193,12 @@ RTF_BASIS_OPTIONS = [
 # ---- The decision diagram (SAE JA1011, RCM II) ----------------------------------
 # Tasks are considered in order: on condition, then scheduled restoration or
 # discard (fixed interval), then, for a hidden failure, failure finding. A
-# combination of tasks only where no single task is good enough and the
-# consequence is safety or environmental. When no task is worth doing, the
-# default action follows from the two answers (default_action).
+# combination of tasks where no single task is good enough: RCM II reserves it
+# for safety and environmental consequences, but a routine dose plus a periodic
+# test on one operational mode is common practice, so a combination is allowed
+# on any consequence and advice() says what each task must then justify
+# (Derryn, 9 Nov 2026). When no task is worth doing, the default action follows
+# from the two answers (default_action).
 
 TASK_ORDER = ("on_condition", "fixed_interval", "failure_finding")
 # The tasks that check something (a condition, a hidden function): each can say
@@ -222,10 +225,6 @@ def refusal(hidden, consequence, outcomes) -> str | None:
     if "failure_finding" in members and hidden is False:
         return ("Failure finding is for hidden failures only, and this one is evident (the crew would notice it). "
                 "Mark it hidden if the loss of function can't be seen in normal operation.")
-    if sum(1 for o in members if o in SCHEDULED) > 1 and consequence in ("operational", "non_operational"):
-        return (f"A combination of tasks is only for safety or environmental consequences, where no single task "
-                f"makes the risk tolerable. {_category_word(consequence)} consequence takes the one task that "
-                "costs least over time.")
     return None
 
 
@@ -285,6 +284,10 @@ def advice(consequence, outcome, outcomes=None, hidden=...) -> str | None:
     if hidden and consequence in CONSEQUENCES and not any(o in SCHEDULED for o in members) and "redesign" not in members:
         return ("A hidden failure gets a failure-finding task before no scheduled maintenance, if one is worth "
                 "doing: say in the notes why none is.")
+    if sum(1 for o in members if o in SCHEDULED) > 1 and consequence in ("operational", "non_operational"):
+        return ("A combination of tasks on a cost consequence: each task must pay for itself over time (RCM II "
+                "reserves combinations for safety and environmental consequences). Say in the notes why both "
+                "are worth doing.")
     return None
 
 

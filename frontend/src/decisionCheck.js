@@ -121,9 +121,9 @@ export function doctrineRefusal(hidden, consequence, outcomes) {
   if (members.includes("failure_finding") && hidden === false) {
     return "Failure finding is for hidden failures only, and this one is evident (the crew would notice it). Mark it hidden if the loss of function can't be seen in normal operation.";
   }
-  if (members.filter((o) => SCHEDULED.includes(o)).length > 1 && (consequence === "operational" || consequence === "non_operational")) {
-    return `A combination of tasks is only for safety or environmental consequences, where no single task makes the risk tolerable. ${CATEGORY_WORD[consequence]} consequence takes the one task that costs least over time.`;
-  }
+  // A combination on an operational or non-operational consequence is allowed
+  // (a routine dose plus a periodic test is common); the advice says each task
+  // must then pay for itself.
   return null;
 }
 
