@@ -611,3 +611,15 @@ def test_a_prediction_row_over_rest(maint):
     link = r.json()
     assert link["role"] == "prediction" and link["source"]["environment"] == "GB"
     assert link["prediction"]["results"]["failure_rate_per_hour"] > 0
+
+
+def test_rbd_rows_and_the_model_in_use_over_rest(maint):
+    """maintenance models.link with build_rbd and use_link_id over REST."""
+    top = maint.post("/api/v1/maintenance/positions.create", {"name": "Station R"}).json()
+    for name in ("Pump 1", "Pump 2"):
+        maint.post("/api/v1/maintenance/positions.create", {"name": name, "parent_id": top["id"]})
+    built = maint.post("/api/v1/maintenance/models.link", {"position_id": top["id"], "build_rbd": True})
+    assert built.status_code == 200, built.text
+    assert built.json()["role"] == "rbd" and built.json()["placeholders"] == ["Pump 1", "Pump 2"]
+    used = maint.post("/api/v1/maintenance/models.link", {"position_id": top["id"], "use_link_id": built.json()["id"]})
+    assert used.status_code == 200 and used.json()["in_use"] is True

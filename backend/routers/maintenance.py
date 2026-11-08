@@ -1217,13 +1217,13 @@ def position_models(position_ids: str | None = None, session=Depends(get_session
 
 
 @router.get("/position-models/{link_id}")
-def position_model(link_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
-                   m: Maintenance = Depends(maintenance)) -> JSONResponse:
+def position_model(link_id: str, age: float | None = None, session=Depends(get_session),
+                   ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """One attached model in full: its summary, parameters with bounds, plot lines, the data behind it and
     what uses it."""
     from backend.maintenance import position_models as pm
 
-    return _run(pm.detail, m, session, ctx.read_owners, ctx.hidden, link_id)
+    return _run(pm.detail, m, session, ctx.read_owners, ctx.hidden, link_id, age if age and age > 0 else None)
 
 
 @router.post("/positions/{position_id}/models")
@@ -1233,11 +1233,21 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
     """Attach a model to a position: a saved one (model_id, model_type: model default, recurrent_model,
     degradation_model, alt_model), the position class's (from_class true) or a new fit from its failure
     history (fit true; distribution, scope auto | position | class). failure_mode_ids: the failure modes it's
-    for; replace_link_id: the model on the position it takes the place of; note."""
+    for; replace_link_id: the model on the position it takes the place of; note. An RBD: rbd_id (an existing diagram, linked as
+    it is) or build_rbd true (a new one from the positions inside; with replace_link_id, rebuilt into the
+    same diagram). use_link_id: make that row the position's model in use.
+    """
     from backend import fitting
     from backend.maintenance import position_models as pm
 
     modes, note, replace = body.get("failure_mode_ids"), str(body.get("note") or ""), body.get("replace_link_id")
+    if body.get("use_link_id"):
+        # Which of the position's rows is the model in use.
+        return _run(m.use_position_model, position_id, str(body["use_link_id"]))
+    if body.get("build_rbd"):
+        return _run(pm.build_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner, replace, note)
+    if body.get("rbd_id"):
+        return _run(pm.link_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, body["rbd_id"], note, replace)
     if isinstance(body.get("prediction"), dict):
         # A parts-count prediction from the position's parts list (position_models.predict_position).
         pr = body["prediction"]

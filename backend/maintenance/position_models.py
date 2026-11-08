@@ -23,6 +23,14 @@ Events (new types only; older logs replay unchanged):
   from.
 * ``position.model_unlinked {id, on}``: taken off again (the model stays in
   Models).
+* ``position.model_in_use_set {position_id, link_id}`` (Nov 2026): which of a position's
+  rows is the model in use (one at a time). Without one, the in-use row is its own life
+  model, else its RBD, else its prediction (:meth:`PositionModelOps.in_use_link`).
+
+An RBD is a row too (``model_type`` and ``role`` ``rbd``, Nov 2026: "every position can
+either have a life model, an RBD, or a prediction"): a saved diagram, built from the
+positions inside (each block the child's model in use, else a flagged placeholder) or
+linked as it is. The link points at the diagram; nothing is copied.
 
 A built item inherits its product design's links the way it inherits the RCM: at
 build time each copied position gets the design position's links (role
@@ -45,11 +53,11 @@ from backend.maintenance.store import GraphStore
 
 #: Where a linked model lives: the saved non-repairable models (also condition and
 #: life, regression and competing risks), repairable, degradation and accelerated life.
-MODEL_TYPES = ("model", "recurrent_model", "degradation_model", "alt_model")
+MODEL_TYPES = ("model", "recurrent_model", "degradation_model", "alt_model", "rbd")
 #: How a model came to the position: chosen from the library, fitted from history,
 #: the position class's model, copied from the product design it was built from, or a
 #: Bayesian update of a baseline with its history (backend/services/bayes_life.py).
-ROLES = ("assigned", "fitted", "class", "design", "bayesian", "prediction")
+ROLES = ("assigned", "fitted", "class", "design", "bayesian", "prediction", "rbd")
 MAX_LINKS_EACH = 50  # models on one position
 FIT_SCOPES = ("auto", "position", "class")
 FIT_DISTRIBUTIONS = ("weibull", "best", "lognormal", "exponential", "gamma")
@@ -76,9 +84,15 @@ def _model_unlinked(s: GraphStore, org: str, p: dict) -> None:
         s.delete_edge(org, "HAS_MODEL", node["position_id"], p["id"])
 
 
+def _model_in_use_set(s: GraphStore, org: str, p: dict) -> None:
+    for x in s.out(org, p["position_id"], "HAS_MODEL"):
+        s.patch_node(org, x["id"], {"in_use": x["id"] == p["link_id"]})
+
+
 PROJECTORS = {
     "position.model_linked": _model_linked,
     "position.model_unlinked": _model_unlinked,
+    "position.model_in_use_set": _model_in_use_set,
 }
 
 
@@ -110,9 +124,41 @@ class PositionModelOps:
                 "linked_on": link.get("linked_on")}
 
     def position_models(self, position_id: str) -> list[dict]:
-        """The models attached to a position, oldest first."""
+        """The models attached to a position, oldest first, the one in use marked (``in_use``)."""
         self._get(position_id, "Position")
-        return [self._model_link_view(x) for x in self._model_links(position_id)]
+        links = self._model_links(position_id)
+        used = self._in_use_of(links)
+        return [self._model_link_view(x) | {"in_use": x["id"] == used} for x in links]
+
+    @staticmethod
+    def _in_use_of(links: list[dict]) -> str | None:
+        """The id of the row in use among a position's live links: the one set, else its own life
+        model (the latest), else its RBD, else its prediction."""
+        if not links:
+            return None
+        set_one = next((x for x in links if x.get("in_use")), None)
+        if set_one:
+            return set_one["id"]
+        for roles in (None, ("rbd",), ("prediction",)):
+            group = [x for x in links if (x.get("role") in roles if roles else x.get("role") not in ("rbd", "prediction"))]
+            if group:
+                return group[-1]["id"]  # the latest (links are oldest first)
+        return links[-1]["id"]
+
+    def in_use_link(self, position_id: str) -> dict | None:
+        """The position's model in use (a link view), or None."""
+        links = self._model_links(position_id)
+        used = self._in_use_of(links)
+        return next((self._model_link_view(x) | {"in_use": True} for x in links if x["id"] == used), None)
+
+    def use_position_model(self, position_id: str, link_id: str) -> dict:
+        """Make one of the position's rows the model in use."""
+        sv = _sv()
+        self._get(position_id, "Position")
+        if not any(x["id"] == link_id for x in self._model_links(position_id)):
+            raise sv.Invalid("That model isn't on this position (use_link_id: one of its models).")
+        self._emit("position.model_in_use_set", {"position_id": position_id, "link_id": link_id})
+        return self.in_use_link(position_id)
 
     def all_position_models(self, position_ids=None) -> list[dict]:
         """Every model attached to a position in use (only these positions, when given)."""
@@ -126,6 +172,9 @@ class PositionModelOps:
             if pos is None or pos.get("retired"):
                 continue
             out.append(self._model_link_view(link))
+        used = {pid: self._in_use_of(self._model_links(pid)) for pid in {x["position_id"] for x in out}}
+        for x in out:
+            x["in_use"] = used.get(x["position_id"]) == x["id"]
         return sorted(out, key=lambda x: (x["position_id"] or "", x["linked_on"] or "", x["id"]))
 
     def model_link(self, link_id: str) -> dict:
@@ -261,8 +310,11 @@ def fetcher(db, owners, hidden=frozenset()):
     from backend.services import models as models_service
     from backend.services import recurrent as recurrent_service
 
+    from backend.services import rbds as rbds_service
+
     getters = {"model": models_service.get_model, "recurrent_model": recurrent_service.get_model,
-               "degradation_model": degradation_service.get_model, "alt_model": alt_service.get_model}
+               "degradation_model": degradation_service.get_model, "alt_model": alt_service.get_model,
+               "rbd": rbds_service.get_rbd}
     memo: dict = {}
 
     def fetch(model_type, model_id):
@@ -517,7 +569,7 @@ def rbds_using(db, owners, hidden=frozenset()) -> dict:
     return out
 
 
-def describe(m, db, owners, hidden, links: list[dict]) -> list[dict]:
+def describe(m, db, owners, hidden, links: list[dict], age: float | None = None) -> list[dict]:
     """Each link with its model's summary (``model`` null when the reader can't open it
     any more: deleted, or not theirs) and what uses the model: the RCM decisions that
     link it as evidence and the RBDs with a block on it."""
@@ -529,8 +581,13 @@ def describe(m, db, owners, hidden, links: list[dict]) -> list[dict]:
         doc = fetch(link["model_type"], link["model_id"])
         etype = EVIDENCE_TYPE.get(link["model_type"])
         used = decisions.get((etype, link["model_id"]), []) if etype else []
-        model = summary(link["model_type"], doc) if doc is not None else None
+        if link["model_type"] == "rbd":
+            model = rbd_summary(db, owners, doc, age) if doc is not None else None
+        else:
+            model = summary(link["model_type"], doc) if doc is not None else None
         text = (model or {}).get("bayes_source") or source_text(link)
+        if link["model_type"] == "rbd":
+            text = rbd_source(link, model)
         if model and model.get("covariate_words") and link.get("role") in ("assigned", "design"):
             text = f"{text} ({model['covariate_words']})"
         if model and link.get("role") == "prediction":
@@ -541,6 +598,66 @@ def describe(m, db, owners, hidden, links: list[dict]) -> list[dict]:
                     "source_text": text, "stale": stale(m, link),
                     "used_by": {"decisions": used, "rbds": rbds.get(link["model_id"], [])}})
     return out
+
+
+def _placeholders(graph: dict) -> list[str]:
+    out = []
+    for n in (graph or {}).get("nodes") or []:
+        d = n.get("data") or {}
+        if (d.get("model") or {}).get("placeholder"):
+            out.append(d.get("label") or n.get("id"))
+    return out
+
+
+def rbd_summary(db, owners, doc, age: float | None = None) -> dict:
+    """An RBD in a row: the system's MTBF, B10 and (with ``age``) reliability there, from the exact
+    analysis (no simulation: a repairable diagram's availability is simulated on its own page),
+    and its placeholders."""
+    from backend.services import rbds as rbds_service
+
+    graph = doc.graph or {}
+    unit = graph.get("unit") or ""
+    blocks = [n for n in graph.get("nodes") or [] if n.get("type") not in ("input", "output")]
+    ph = _placeholders(graph)
+    out = {"name": doc.name, "unit": unit, "family": "rbd", "kind": "RBD", "numbers": [], "trend": None,
+           "counts": {"blocks": len(blocks), "placeholders": len(ph)}, "placeholders": ph,
+           "path": f"/systems/b/{doc.id}", "repairable": bool(graph.get("repairable")),
+           "quality": ({"word": f"{len(ph)} placeholder{'s' if len(ph) != 1 else ''}", "tone": "warning",
+                        "why": f"Placeholder models stand in for {', '.join(ph)}: the figures aren't real until they "
+                               "have models."} if ph else {"word": "", "tone": "neutral", "why": ""})}
+    if graph.get("repairable"):
+        out["numbers"].append({"id": "reference", "label": "", "text": "a repairable diagram: open it to simulate "
+                                                                       "availability"})
+        return out
+    try:
+        res = rbds_service.analyze_graph(db, graph, owners, at_times=[float(age)] if age else None)
+    except Exception as err:  # noqa: BLE001 - a row says why rather than failing the read
+        out["analysis_error"] = str(err)[:300]
+        return out
+    out["numbers"].append(_number("mtbf", "MTBF", res.get("mttf"), None, None, unit))
+    out["numbers"].append(_number("mean", "Mean life", res.get("mttf"), None, None, unit))
+    out["numbers"].append(_number("b10", "B10 life", (res.get("blife") or {}).get("b10"), None, None, unit))
+    at = res.get("at") or {}
+    if age and at.get("sf"):
+        r = _num(at["sf"][0])
+        u = unit.lower()
+        out["numbers"].append({"id": "reference", "label": "", "text": f"reliability {r:.1%} at {_num(age):g}{(' ' + u) if u else ''}"
+                               if r is not None else ""})
+        out["at_age"] = {"age": float(age), "reliability": r}
+    out["curves"] = {"x": res.get("time"), "sf": (res.get("system") or {}).get("sf"), "hf": None, "sf_lower": None,
+                     "sf_upper": None, "band": None, "what": "System reliability"}
+    return out
+
+
+def rbd_source(link: dict, model: dict | None) -> str:
+    """An RBD row's Source: "Built from 5 positions inside · 2 placeholders" or "Linked: <name>"."""
+    src = link.get("source") or {}
+    ph = len((model or {}).get("placeholders") or [])
+    tail = f" · {ph} placeholder{'s' if ph != 1 else ''}" if ph else ""
+    if src.get("built_from") is not None:
+        n = int(src["built_from"])
+        return f"Built from {n} position{'s' if n != 1 else ''} inside{tail}"
+    return f"Linked: {(model or {}).get('name') or link.get('name') or 'an RBD'}{tail}"
 
 
 def stale(m, link: dict) -> str | None:
@@ -695,14 +812,19 @@ def source_text(link: dict, position_name: str = "") -> str:
     return f"Assigned: {link.get('name') or 'a saved model'}"
 
 
-def detail(m, db, owners, hidden, link_id: str) -> dict:
+def detail(m, db, owners, hidden, link_id: str, age: float | None = None) -> dict:
     """One link in full, for the panel: the model's summary, its parameters with bounds,
     the plot's lines, the data behind it (counts, unit, where time starts), what uses it
-    and the notes."""
+    and the notes. An RBD: its blocks (each block's model and the position it came from)
+    and the system figures (``age``: the reliability there)."""
     link = m.model_link(link_id)
-    [row] = describe(m, db, owners, hidden, [link])
+    [row] = describe(m, db, owners, hidden, [link], age)
     doc = fetcher(db, owners, hidden)(link["model_type"], link["model_id"])
     pos = m.s.node(m.org, link["position_id"], "Position") or {}
+    if link["model_type"] == "rbd":
+        return {**row, "position": {"id": pos.get("id"), "name": pos.get("name", "")}, "params": [],
+                "curves": (row.get("model") or {}).get("curves"), "origin": "", "model_notes": "",
+                "blocks": rbd_blocks(m, link, doc) if doc is not None else [], "stress_note": None, "prediction": None}
     notes = ""
     if doc is not None:
         notes = str(((doc.spec or {}).get("notes")) or (doc.results or {}).get("notes") or "")
@@ -1060,3 +1182,169 @@ def prediction_detail(db, owners, link: dict) -> dict | None:
         return None
     return {"id": doc.id, "name": doc.name, "results": doc.results, "environment": (doc.inputs or {}).get("environment"),
             "mission_time": (doc.inputs or {}).get("mission_time")}
+
+
+# ---- RBD rows ---------------------------------------------------------------------------
+
+def _model_words(model: dict) -> str:
+    if not isinstance(model, dict):
+        return ""
+    name = model.get("name") or model.get("distribution") or model.get("distribution_id") or "model"
+    params = ", ".join(f"{p.get('name')} {_num(p.get('value')):g}" for p in model.get("params") or []
+                       if _num(p.get("value")) is not None)
+    return f"{name}{(' (' + params + ')') if params and not model.get('name') else ''}"
+
+
+def rbd_blocks(m, link: dict, doc) -> list[dict]:
+    """An RBD's blocks for the panel: each block's label, its model in words (placeholder or not),
+    and the position it came from (a block built from a position inside this one)."""
+    from backend.maintenance import rbd_derive
+
+    kids = {rbd_derive._bid(c["id"]): c for c in m.s.inn(m.org, link["position_id"], "PART_OF")
+            if c["label"] == "Position"}
+    out = []
+    for n in (doc.graph or {}).get("nodes") or []:
+        if n.get("type") in ("input", "output"):
+            continue
+        d = n.get("data") or {}
+        model = d.get("model") or {}
+        sub = d.get("rbd") or {}
+        kid = kids.get(n.get("id"))
+        out.append({"id": n.get("id"), "label": d.get("label") or n.get("id"), "type": n.get("type"),
+                    "model": (f"RBD: {sub.get('name') or 'a sub-system'}" if sub else _model_words(model)) or "—",
+                    "placeholder": bool(model.get("placeholder")),
+                    "position": {"id": kid["id"], "name": kid["name"]} if kid else None})
+    return out
+
+
+def _convert(dist_id: str, params: list[dict], factor: float) -> list[dict] | None:
+    """A distribution's parameters with time multiplied by ``factor`` (one model unit = factor
+    diagram units); None for one this can't convert."""
+    import math
+
+    p = {x["name"]: float(x["value"]) for x in params}
+    if dist_id == "weibull" and {"alpha", "beta"} <= set(p):
+        return [{"name": "alpha", "value": p["alpha"] * factor}, {"name": "beta", "value": p["beta"]}]
+    if dist_id == "exponential" and "failure_rate" in p:
+        return [{"name": "failure_rate", "value": p["failure_rate"] / factor}]
+    if dist_id == "lognormal" and {"mu", "sigma"} <= set(p):
+        return [{"name": "mu", "value": p["mu"] + math.log(factor)}, {"name": "sigma", "value": p["sigma"]}]
+    if dist_id == "normal" and {"mu", "sigma"} <= set(p):
+        return [{"name": "mu", "value": p["mu"] * factor}, {"name": "sigma", "value": p["sigma"] * factor}]
+    return None
+
+
+_HOURS_IN = {"hour": 1.0, "day": 24.0, "week": 168.0, "month": 730.5, "year": 8766.0, "minute": 1 / 60}
+
+
+def _factor(model_unit: str, diagram_unit: str) -> float | None:
+    from backend.units import normalize_unit
+
+    a, b = normalize_unit(model_unit) or "hour", normalize_unit(diagram_unit) or "hour"
+    if a == b:
+        return 1.0
+    if a in _HOURS_IN and b in _HOURS_IN:
+        return _HOURS_IN[a] / _HOURS_IN[b]
+    return None
+
+
+def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = None,
+              replace_link_id: str | None = None, note: str = "") -> dict:
+    """"Build an RBD from what's inside": a new diagram whose blocks are the positions one level
+    inside (each block the child's model in use: a saved model, or its own RBD as a sub-system;
+    else a placeholder, flagged, never invented), wired by their connections and redundancy
+    groups (in series with none), saved under Design › Systems and linked here (role rbd).
+    ``replace_link_id`` (the position's built RBD row): rebuild into the same diagram, adding the
+    positions inside that aren't blocks yet and keeping every edit made to it."""
+    from collections import Counter
+
+    from backend.maintenance import rbd_derive
+    from backend.services import rbds as rbds_service
+    from backend.services.rbd_graph import GraphError, normalize_graph
+    from backend.units import canonical_unit
+
+    sv = _sv()
+    p = m._get(position_id, "Position")
+    fetch = fetcher(db, owners, hidden)
+    children = [c for c in m.s.inn(m.org, position_id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
+    in_use = {c["id"]: m.in_use_link(c["id"]) for c in children}
+    docs = {cid: fetch(x["model_type"], x["model_id"]) if x else None for cid, x in in_use.items()}
+    units = Counter(canonical_unit((d.results or {}).get("unit") or "") for cid, d in docs.items()
+                    if d is not None and in_use[cid]["model_type"] == "model" and (d.results or {}).get("unit"))
+    unit = units.most_common(1)[0][0] if units else "Hours"
+
+    def block(child):
+        x, d = in_use.get(child["id"]), docs.get(child["id"])
+        if x is None or d is None:
+            return None, None
+        if x["model_type"] == "rbd":
+            return {"subsystem_rbd_id": d.id}, None
+        if x["model_type"] != "model" or d.kind not in ("distribution", "regression"):
+            return None, (f"{child['name']}'s model in use ({d.name}) isn't a life distribution an RBD block can take: "
+                          "a placeholder stands in.")
+        r = d.results or {}
+        f = _factor(r.get("unit") or unit, unit)
+        if f == 1.0:
+            return {"model": {"saved_model_id": d.id}}, None
+        conv = _convert(r.get("distribution_id") or d.distribution_id, r.get("params") or [], f) if f and \
+            d.kind == "distribution" else None
+        if conv is None:
+            return None, f"{child['name']}'s model is in {r.get('unit')}, which can't be put in {unit}: a placeholder stands in."
+        return ({"model": {"distribution_id": r.get("distribution_id") or d.distribution_id, "params": conv,
+                           **({"extras": r["extras"]} if r.get("extras") else {})}},
+                f"{child['name']}'s model ({d.name}) is in {r.get('unit')}: its numbers were put in {unit}.")
+
+    old_link = None
+    if replace_link_id:
+        old_link = next((x for x in m.position_models(position_id) if x["id"] == replace_link_id), None)
+        if old_link is None or old_link["model_type"] != "rbd":
+            raise sv.Invalid("Rebuild names this position's RBD row (replace_link_id).")
+    built = rbd_derive.build(m, position_id, block_model=block, unit=unit)
+    resolve = lambda mid: fetch("model", mid)  # noqa: E731
+    try:
+        graph = normalize_graph(built["graph"], resolve_saved_model=resolve)
+        existing = None
+        if old_link is not None:
+            existing = fetch("rbd", old_link["model_id"])
+            if existing is not None:
+                graph = _add_new_blocks(existing.graph or {}, built["graph"], resolve)
+        name = existing.name if existing is not None else f"{p['name']} (from the tree)"
+        rbd = rbds_service.save_rbd(db, name, graph, owner_id or m.org, rbd_id=existing.id if existing else None)
+    except GraphError as err:
+        raise sv.Invalid(f"The diagram couldn't be made: {err}") from None
+    source = {"built_from": len(children), "position_ids": [c["id"] for c in children], "notes": built["notes"][:20]}
+    # A rebuilt row stays the one in use if it was set to be.
+    was_in_use = bool(replace_link_id and (m.s.node(m.org, replace_link_id) or {}).get("in_use"))
+    link = m.link_position_model(position_id, "rbd", rbd.id, "rbd", None, rbd.name, note, source, replace_link_id)
+    if was_in_use:
+        m.use_position_model(position_id, link["id"])
+    return {**link, "notes": built["notes"], "placeholders": built["placeholders"]}
+
+
+def _add_new_blocks(old: dict, fresh: dict, resolve) -> dict:
+    """The diagram as it was, with the positions inside that aren't blocks yet added in series
+    before the output (their models as built); every edit to the rest is kept."""
+    from backend.services.rbd_graph import normalize_graph
+
+    have = {n.get("id") for n in old.get("nodes") or []}
+    new = [n for n in fresh.get("nodes") or [] if n.get("type") == "component" and n["id"] not in have]
+    if not new:
+        return old
+    nodes = [{k: v for k, v in n.items() if k != "position"} for n in old.get("nodes") or []] + new
+    edges = [{"source": e.get("source"), "target": e.get("target")} for e in old.get("edges") or []]
+    for b in new:
+        into_out = [e for e in edges if e["target"] == "out"]
+        edges = [e for e in edges if e["target"] != "out"] + [{"source": e["source"], "target": b["id"]} for e in into_out]
+        edges.append({"source": b["id"], "target": "out"})
+    return normalize_graph({**{k: v for k, v in old.items() if k not in ("nodes", "edges")}, "nodes": nodes,
+                            "edges": edges}, resolve_saved_model=resolve)
+
+
+def link_rbd(m, db, owners, hidden, position_id: str, rbd_id: str, note: str = "",
+             replace_link_id: str | None = None) -> dict:
+    """Link an existing RBD (the reader's, or a sample) to a position, as it is."""
+    sv = _sv()
+    doc = fetcher(db, owners, hidden)("rbd", str(rbd_id or ""))
+    if doc is None:
+        raise sv.NotFound(f"RBD {rbd_id}")
+    return m.link_position_model(position_id, "rbd", doc.id, "rbd", None, doc.name, note, None, replace_link_id)

@@ -149,3 +149,42 @@ test("an ALT model attached as fitted, and a prediction row from the parts list"
   await pd.getByRole("button", { name: "Cancel" }).click();
   await expectHealthy(page, problems, { label: "ALT and prediction rows" });
 });
+
+// An RBD row: built from the two positions inside (one with a model, one a flagged placeholder),
+// its panel's blocks, then made the position's model in use over its own life model.
+test("build an RBD from what's inside, see its blocks, and make it the model in use", async ({ page, request, problems }) => {
+  const tag = `r${Date.now()}`;
+  const station = await postOk(request, `${M}/positions`, { name: `Station ${tag}` });
+  const a = await postOk(request, `${M}/positions`, { name: `Pump A ${tag}`, parent_id: station.id });
+  await postOk(request, `${M}/positions`, { name: `Pump B ${tag}`, parent_id: station.id });
+  await postOk(request, `${M}/positions/${a.id}/models`, { model_id: "sample-model-bearings-weibull" });
+  await postOk(request, `${M}/positions/${station.id}/models`, { model_id: "sample-model-bearings-lognormal" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${station.id}&tab=models`);
+  const head = await headMenu(page);
+  await head.getByRole("button", { name: "Build an RBD from what's inside…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Build an RBD from what's inside" });
+  await expect(dialog.locator("li")).toHaveCount(2);
+  await dialog.getByRole("button", { name: "Build", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const rbd = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Station ${tag} (from the tree)` }) });
+  await expect(rbd.locator(".mt-c-kind")).toContainText("RBD");
+  await expect(rbd.locator(".mt-c-source")).toHaveText("Built from 2 positions inside · 1 placeholder");
+  await expect(rbd.locator(".mt-c-numbers")).toContainText(/MTBF [\d,]+ hours/);
+  await expect(rbd.locator(".mt-c-quality")).toContainText("1 placeholder");
+  // Its own life model is in use by default.
+  const life = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Bearing life — Lognormal" }) });
+  await expect(life.locator(".ml-inuse")).toHaveText("In use");
+  await rbd.locator(".tp-nm").click();
+  await expect(side(page).locator(".ml-blocks tbody tr")).toHaveCount(2);
+  await expect(side(page).locator(".ml-blocks")).toContainText("Placeholder");
+  await expect(side(page).locator(".ml-blocks")).toContainText(`Pump A ${tag}`);
+  // Use this one: the RBD becomes the model in use.
+  await page.keyboard.press("Escape");
+  await rbd.locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menu").last().getByRole("menuitem", { name: "Use this one" }).click();
+  await expect(rbd.locator(".ml-inuse")).toHaveText("In use");
+  await expect(life.locator(".ml-inuse")).toHaveCount(0);
+  await expect(row(page, station.id).locator(".tt-rollup-t")).toContainText("in use: RBD");
+  await expectHealthy(page, problems, { label: "an RBD row" });
+});

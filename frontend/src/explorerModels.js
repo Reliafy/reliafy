@@ -99,6 +99,7 @@ export function countsText(model) {
   const c = model?.counts || {};
   const n = (v, one, many = `${one}s`) => `${Number(v).toLocaleString("en-AU")} ${Number(v) === 1 ? one : many}`;
   if (c.units != null) return n(c.units, "unit measured", "units measured");
+  if (c.blocks != null) return [n(c.blocks, "block"), c.placeholders ? n(c.placeholders, "placeholder") : ""].filter(Boolean).join(", ");
   const out = [];
   if (c.failures != null) out.push(n(c.failures, "failure"));
   if (c.suspensions != null) out.push(n(c.suspensions, "suspension"));
@@ -140,13 +141,14 @@ export function graftModels(display, links = []) {
   for (const [pk, list] of byPos) {
     const p = rows.get(pk);
     const keys = [];
+    p.inUse = list.find((l) => l.in_use) || null;
     for (const link of list) {
       const key = modelKey(link.id);
       const name = link.model?.name || link.name || "(a model that's gone)";
       rows.set(key, {
         key, type: MODEL_TYPE, parent: pk, kids: [], depth: p.depth + 1, own: noStatus(), sum: noStatus(),
         ref: {
-          name, link, position_id: pk, family: link.model?.family || "life",
+          name, link, position_id: pk, family: link.model?.family || "life", many: list.length > 1,
           search: [name, link.model?.kind, link.source_text, forText(link)].filter(Boolean).join(" ").toLowerCase(),
         },
       });
@@ -187,23 +189,38 @@ export function rollupText(r, open = false) {
   const parts = [`${s.n.toLocaleString("en-AU")} model${s.n === 1 ? "" : "s"}`];
   if (s.stale) parts.push(`${s.stale.toLocaleString("en-AU")} stale`);
   if (s.missing) parts.push(`${s.missing.toLocaleString("en-AU")} missing`);
+  // The model in use, where a position has several (its own life model, its RBD, its prediction).
+  if (open && r.inUse && (r.lsum?.n || 0) > 1) parts.push(`in use: ${inUseWords(r.inUse)}`);
   return parts.join(" · ");
 }
 
-// A row's ⋯: Open, Open in Models, Refit… (a fitted one), Replace with…, Unlink….
+// The model in use in a few words: "RBD", "Prediction", or the life model's kind.
+export function inUseWords(link) {
+  if (!link) return "";
+  if (link.model_type === "rbd") return "RBD";
+  if (link.role === "prediction") return "prediction";
+  return link.model?.kind || link.name || "life model";
+}
+
+// A row's ⋯: Open, Open in Models (Open the RBD), Use this one (where the position has
+// several rows), Refit… / Rebuild from what's inside… / Refresh…, Replace with…, Unlink….
 export function rowActions(r, { viewOnly = null } = {}) {
   const link = r.ref.link;
   const off = viewOnly ? { disabled: true, title: viewOnly } : {};
+  const rbd = link.model_type === "rbd";
   return [
     { id: "model-open", label: "Open" },
-    link.model?.path ? { id: "model-page", label: "Open in Models" } : null,
+    link.model?.path ? { id: "model-page", label: rbd ? "Open the RBD" : "Open in Models" } : null,
+    r.ref.many && !link.in_use ? { id: "model-use", label: "Use this one", ...off,
+      title: viewOnly || "Make this the position's model in use: what its roll-up, the RCM and a parent's RBD take" } : null,
+    rbd && link.source?.built_from != null ? { id: "model-rebuild", label: "Rebuild from what's inside…", ...off } : null,
     link.role === "fitted" ? { id: "model-refit", label: "Refit…", ...off } : null,
     link.role === "prediction" ? { id: "model-predict", label: "Refresh the prediction…", ...off } : null,
     // A Bayesian update takes the position's new failures; a plain Weibull, exponential or
     // lognormal model can be the baseline of one (bayesUpdate.js).
     link.role === "bayesian" ? { id: "model-bayes", label: "Update with new failures…", ...off }
       : link.model && /^(Weibull|Exponential|Lognormal)$/.test(link.model.kind || "") ? { id: "model-bayes", label: "Update with this position's history…", ...off } : null,
-    { id: "model-replace", label: "Replace with…", ...off },
+    rbd ? null : { id: "model-replace", label: "Replace with…", ...off },
     { id: "model-unlink", label: "Unlink…", ...off },
   ].filter(Boolean);
 }
@@ -234,8 +251,8 @@ export function attachedFor(links = [], { modeId = null, expectedType = null } =
     const forMode = !!modeId && (l.failure_modes || []).some((f) => f.id === modeId);
     const forAll = !(l.failure_modes || []).length;
     if (!forMode && !forAll) continue;
-    out.push({ type, id: l.model_id, label: l.model?.name || l.name, rank: forMode ? 0 : 1,
-      meta: forMode ? "On this position, for this failure mode" : "On this position" });
+    out.push({ type, id: l.model_id, label: l.model?.name || l.name, rank: (forMode ? 0 : 2) + (l.in_use ? 0 : 1),
+      meta: [forMode ? "On this position, for this failure mode" : "On this position", l.in_use ? "in use" : ""].filter(Boolean).join(" · ") });
   }
   out.sort((a, b) => a.rank - b.rank);
   const seen = new Set();

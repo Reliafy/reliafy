@@ -453,6 +453,16 @@ quality_factor?}}, a record from list kind library; parts without one are left o
 are reused). The environment is set once (default: the position's last, else the nearest above). It's saved as \
 a prediction and an exponential model at its rate (role prediction), replacing an earlier one; preview it in \
 the app. It compares designs early; it never says how the item will fail in service.
+- An RBD: every position can have a life model, an RBD or a prediction. models.link with build_rbd true makes \
+a new RBD whose blocks are the positions one level inside, each taking its model in use (a saved model, or its \
+own RBD as a sub-system); one with none gets a placeholder flagged placeholder=true (never invented data: say \
+which and ask for their models). Wired by connections and redundancy groups, in series where there are none. \
+build_rbd with replace_link_id (its RBD row) rebuilds into the same diagram, adding new positions and keeping \
+edits. rbd_id links an existing RBD as it is. The row reports the system MTBF and B10 (exact analysis; analyse \
+rbd for more).
+- One model in use per position: where it has several rows, the one in use is what its roll-up reports, what \
+the RCM offers first and what a parent's RBD block takes; by default its own life model, else its RBD, else \
+its prediction. models.link with use_link_id changes it (get.position lists models; the in-use read is in the app).
 - Take off: maintenance models.unlink (link_id). The model stays in Models.
 - How they feed the RCM: a failure mode's evidence picker offers the position's models first, those named for \
 that mode at the top; link one as the decision's evidence with failure_modes.decide (evidence {type: model, \

@@ -76,7 +76,7 @@ export default function EvidencePicker({ expectedType, analysisKind, value, onCh
       if (!live) return;
       const got = attachedFor(d.links || [], { modeId, expectedType });
       setAttached(got);
-      if (got[0]?.rank === 0) onCandidate?.(got[0]); // attached for this very mode: the decision's candidate
+      if (got[0]?.rank <= 1) onCandidate?.(got[0]); // attached for this very mode: the decision's candidate
     }, () => {});
     return () => { live = false; };
   }, [positionId, modeId, expectedType]); // eslint-disable-line react-hooks/exhaustive-deps

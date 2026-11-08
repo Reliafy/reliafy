@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   getMaintenancePosition, getPositionModel, linkPositionModel, listAltModels, listDegradationModels, listModels,
-  listPositionModels, listRecurrentModels, unlinkPositionModel,
+  listPositionModels, listRbds, listRecurrentModels, unlinkPositionModel,
 } from "../api.js";
 import Chip from "./ui/Chip.jsx";
 import Field from "./ui/Field.jsx";
@@ -53,7 +53,13 @@ export function ModelCell({ r, col }) {
       : col.id === "source" ? <span className="ml-src" title={link.source_text}>{link.source_text}</span> : <span className="rw-blank">—</span>;
   }
   switch (col.id) {
-    case "kind": return <Chip tone={model.family === "life" ? "accent" : "neutral"} className="pk-kind">{model.kind || "Model"}</Chip>;
+    case "kind":
+      return (
+        <span className="ml-kind">
+          <Chip tone={model.family === "life" ? "accent" : "neutral"} className="pk-kind">{model.kind || "Model"}</Chip>
+          {link.in_use && r.ref.many && <Chip tone="success" className="ml-inuse" title="The position's model in use: what its roll-up, the RCM and a parent's RBD take">In use</Chip>}
+        </span>
+      );
     case "source":
       return (
         <span className="ml-src" title={`${link.source_text}. For: ${forText(link)}.`}>
@@ -142,12 +148,14 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
   const link = r.ref.link;
   const location = useLocation();
   const [state, setState] = useState({ id: null, data: null, error: null });
+  const [age, setAge] = useState("");
+  const askAge = link.model_type === "rbd" && Number(age) > 0 ? Number(age) : null;
   useEffect(() => {
     let live = true;
-    getPositionModel(link.id).then((data) => live && setState({ id: link.id, data, error: null }),
-      (e) => live && setState({ id: link.id, data: null, error: e.message }));
-    return () => { live = false; };
-  }, [link.id]);
+    const t = setTimeout(() => getPositionModel(link.id, { age: askAge }).then((data) => live && setState({ id: link.id, data, error: null }),
+      (e) => live && setState({ id: link.id, data: null, error: e.message })), askAge ? 300 : 0);
+    return () => { live = false; clearTimeout(t); };
+  }, [link.id, askAge]);
   useEffect(() => {
     onMenu?.(rowActions(r).filter((a) => a.id !== "model-open").map((a) => ({
       ...a, id: `side-${a.id}`, onSelect: () => onAction(r, a.id),
@@ -193,6 +201,7 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
             {state.error && <p className="field-error">Couldn't read it: {state.error}</p>}
             {!d && !state.error && <p className="rim-tquiet">Reading the model…</p>}
             {d?.stress_note && <p className="rim-tquiet ml-stress">{d.stress_note}</p>}
+            {link.model_type === "rbd" && <RbdDetails d={d} model={model} age={age} onAge={setAge} />}
             {d && <ModelPlot curves={d.curves} unit={unit} name={r.ref.name} />}
             {d?.prediction && (
               <section aria-label="The parts count">
@@ -259,6 +268,127 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
         )}
       </div>
     </aside>
+  );
+}
+
+// An RBD row's details: the system figures (and its reliability at an age you name), the
+// placeholder warning, and every block with its model and the position it came from.
+function RbdDetails({ d, model, age, onAge }) {
+  const u = (model?.unit || "").toLowerCase();
+  const blocks = d?.blocks || [];
+  return (
+    <section aria-label="The diagram" className="ml-rbd">
+      {model?.placeholders?.length > 0 && (
+        <p className="ml-stale" role="note">Placeholders stand in for {model.placeholders.join(", ")}: the figures aren't real until they have models.</p>
+      )}
+      {model?.repairable && <p className="rim-tquiet">A repairable diagram: its availability is simulated on its own page.</p>}
+      <Field label={`System reliability at an age${u ? ` (${u})` : ""}`} optional>
+        <TextInput inputMode="decimal" value={age} onChange={(e) => onAge(e.target.value)} placeholder={u ? `An age in ${u}` : "An age"} />
+      </Field>
+      {d?.model?.at_age && <p className="ml-lead">{Math.round(d.model.at_age.reliability * 1000) / 10}% chance the system survives {fmt(d.model.at_age.age)} {u}.</p>}
+      <h3 className="ml-h">Blocks</h3>
+      <div className="maint-scroll">
+        <table className="ml-params ml-blocks">
+          <thead><tr><th>Block</th><th>Model</th><th>From</th></tr></thead>
+          <tbody>
+            {blocks.map((b) => (
+              <tr key={b.id}>
+                <td>{b.label}</td>
+                <td>{b.placeholder ? <Chip tone="warning" title="A placeholder: no model in use for this position yet">Placeholder</Chip> : b.model}</td>
+                <td>{b.position ? b.position.name : <span className="rw-blank">—</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+// "Build an RBD from what's inside…": what it will make (the positions inside, each with the
+// model it takes), then Build. Rebuild (`link`): adds the positions inside that aren't blocks
+// yet, keeping the diagram's edits.
+export function RbdBuildModal({ position, kids = [], link = null, onClose, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(null);
+  const build = async () => {
+    setBusy(true);
+    try {
+      const made = await linkPositionModel(position.id, { build_rbd: true, ...(link ? { replace_link_id: link.id } : {}) });
+      const ph = made.placeholders?.length || 0;
+      onDone(made, `${link ? "Rebuilt" : "Built"} ${made.name}${ph ? `: ${ph} placeholder${ph === 1 ? "" : "s"} to give a model` : ""}.`);
+    } catch (e) {
+      setBusy(false);
+      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
+    }
+  };
+  return (
+    <Modal title={link ? "Rebuild the RBD from what's inside" : "Build an RBD from what's inside"} onClose={onClose} locked={busy} trapFocus className="ml-dialog"
+           footer={(
+             <>
+               <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+               <button type="button" onClick={build} disabled={busy || !kids.length} aria-busy={busy || undefined}>{busy ? "Building…" : link ? "Rebuild" : "Build"}</button>
+             </>
+           )}>
+      <p className="rw-fhelp">
+        {link
+          ? <>Adds the positions inside {position.name} that aren’t blocks yet, in series before the output. Everything else in the diagram stays as you left it.</>
+          : <>Makes a reliability block diagram (under Design › Systems) whose blocks are the positions one level inside {position.name}, each taking its model in use. They’re wired by their connections and redundancy groups, in series where there are none. Positions with no model get a placeholder, flagged, never a made-up figure.</>}
+      </p>
+      {kids.length === 0 ? <p className="field-error">There are no positions inside {position.name} to make blocks from.</p> : (
+        <ul className="ml-used">
+          {kids.map((k) => <li key={k.id}>{k.name}: {k.model || <Chip tone="warning">Placeholder</Chip>}</li>)}
+        </ul>
+      )}
+      {failed && <p className="field-error" role="alert">{failed}</p>}
+    </Modal>
+  );
+}
+
+// "Link an existing RBD…": the user's diagrams and the samples.
+export function RbdLinkModal({ position, onClose, onDone }) {
+  const [list, setList] = useState(null);
+  const [chosen, setChosen] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(null);
+  useEffect(() => { listRbds().then((d) => setList(d.rbds || d.items || []), () => setList([])); }, []);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const made = await linkPositionModel(position.id, { rbd_id: chosen });
+      onDone(made, `Linked ${made.name} to ${position.name}.`);
+    } catch (e) {
+      setBusy(false);
+      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
+    }
+  };
+  const groups = [["Yours", (list || []).filter((x) => !x.is_sample)], ["Samples", (list || []).filter((x) => x.is_sample)]];
+  return (
+    <Modal title="Link an existing RBD" onClose={onClose} locked={busy} trapFocus className="ml-dialog"
+           footer={(
+             <>
+               <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+               <button type="button" onClick={save} disabled={busy || !chosen} aria-busy={busy || undefined}>{busy ? "Linking…" : "Link"}</button>
+             </>
+           )}>
+      <p className="rw-fhelp">Links a diagram to {position.name} as it is: it isn’t copied, so edits to it show here.</p>
+      {list === null ? <p className="rim-tquiet">Loading diagrams…</p> : !list.length ? <p className="rim-tquiet">No RBDs yet.</p> : (
+        <div className="evidence-picker" role="radiogroup" aria-label="RBDs">
+          {groups.filter(([, g]) => g.length).map(([title, g]) => (
+            <div key={title}>
+              <div className="ml-group">{title}</div>
+              {g.map((x) => (
+                <label key={x.id} className={"evidence-option" + (chosen === x.id ? " selected" : "")}>
+                  <input type="radio" name="ml-rbd" checked={chosen === x.id} onChange={() => setChosen(x.id)} />
+                  <span className="evidence-name">{x.name}</span>
+                </label>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+      {failed && <p className="field-error" role="alert">{failed}</p>}
+    </Modal>
   );
 }
 
