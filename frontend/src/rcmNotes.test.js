@@ -22,6 +22,10 @@ test("the mark shows on rows with notes, its tooltip the first line with words i
   assert.equal(notesTip(row("mode", { notes: "a".repeat(200) })).length, 120);
   assert.ok(notesTip(row("mode", { notes: "a".repeat(200) })).endsWith("…"));
   assert.equal(notesTip(row("fail", { notes: "Line one\r\nLine two" })), "Line one");
+  // Markdown reads as text: no ** or list marks in the tooltip.
+  assert.equal(notesTip(row("mode", { notes: "**Why this interval.** The 4-weekly test of cyanuric acid." })),
+    "Why this interval. The 4-weekly test of cyanuric acid.");
+  assert.equal(notesTip(row("mode", { notes: "- [Method](https://example.com) used" })), "Method used");
   assert.equal(notesTip(row("fail", {})), "");
 });
 
