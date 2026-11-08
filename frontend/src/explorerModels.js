@@ -297,3 +297,33 @@ export function predictionWords(source = {}) {
   if (!rate) return "No part types chosen yet";
   return `${fmt(rate)} failures per million hours · MTBF ${fmt(source.mtbf_hours)} hours`;
 }
+
+// The Modelling tab's menus for a position (its row's ⋯ and the heading's "…"), two levels
+// (Derryn, 9 Nov 2026: "two levels with logical groups"): Life model ›, RBD ›, Prediction ›.
+// Ids start "model-attach-" (the kind of dialog after it) or "model-refresh-predict".
+// `positionClass`: its class (From the class… needs one); `hasPrediction`: Refresh is offered.
+export function attachGroups({ positionClass = "", hasPrediction = false, viewOnly = null } = {}) {
+  const off = viewOnly ? { disabled: true, reason: viewOnly } : {};
+  return [
+    { id: "model-group-life", label: "Life model", items: [
+      { id: "model-attach-fit", label: "Fit from this position's history…", ...off },
+      { id: "model-attach-bayes", label: "Update a baseline with its history…", ...off },
+      { id: "model-attach-assign", label: "Assign a saved model…", ...off },
+      { id: "model-attach-class", label: "From the class…", ...off,
+        ...(positionClass || viewOnly ? {} : { disabled: true, reason: "This position has no class" }) },
+      { id: "model-attach-params", label: "Enter parameters…", ...off },
+    ] },
+    { id: "model-group-rbd", label: "RBD", items: [
+      { id: "model-attach-rbd-build", label: "Build from what's inside…", ...off },
+      { id: "model-attach-rbd-link", label: "Link an existing RBD…", ...off },
+    ] },
+    { id: "model-group-prediction", label: "Prediction", items: [
+      { id: "model-attach-predict", label: "Add a prediction (parts count)…", ...off },
+      ...(hasPrediction ? [{ id: "model-refresh-predict", label: "Refresh the prediction…", ...off }] : []),
+    ] },
+  ];
+}
+
+// The position items that make sense on the Modelling tab, after the groups: Rename… only
+// (Isolate › and Pin this branch are added by the page); the rest stay on Summary and RCM.
+export const MODEL_POSITION_ITEMS = ["tree-rename"];

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-  getMaintenancePosition, getPositionModel, linkPositionModel, listAltModels, listDegradationModels, listModels,
+  createModelFromParams, getMaintenancePosition, getPositionModel, linkPositionModel, listAltModels, listDegradationModels, listModels,
   listPositionModels, listRbds, listRecurrentModels, unlinkPositionModel,
 } from "../api.js";
 import Chip from "./ui/Chip.jsx";
@@ -387,6 +387,71 @@ export function RbdLinkModal({ position, onClose, onDone }) {
           ))}
         </div>
       )}
+      {failed && <p className="field-error" role="alert">{failed}</p>}
+    </Modal>
+  );
+}
+
+// "Enter parameters…" (Life model ›): a model from numbers you have (a data sheet, a handbook,
+// a vendor's figures), saved to Models through the usual save from parameters and attached here.
+const PARAMS = {
+  weibull: [["alpha", "Characteristic life (alpha)"], ["beta", "Shape (beta)"]],
+  exponential: [["failure_rate", "Failure rate (per unit of time)"]],
+  lognormal: [["mu", "mu (log of the median)"], ["sigma", "sigma (spread)"]],
+  normal: [["mu", "Mean (mu)"], ["sigma", "Standard deviation (sigma)"]],
+  gamma: [["alpha", "alpha (shape)"], ["beta", "beta (rate)"]],
+};
+export function ParamsModal({ position, onClose, onDone }) {
+  const [distribution, setDistribution] = useState("weibull");
+  const [values, setValues] = useState({});
+  const [unit, setUnit] = useState("hours");
+  const [name, setName] = useState(`${position.name} (entered)`);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(null);
+  const names = PARAMS[distribution];
+  const ok = name.trim() && names.every(([k]) => Number(values[k]) > 0 || (k === "mu" && Number.isFinite(Number(values[k])) && values[k] !== ""));
+  const save = async () => {
+    setBusy(true);
+    setFailed(null);
+    try {
+      const model = await createModelFromParams(name.trim(), distribution, names.map(([k]) => ({ name: k, value: Number(values[k]) })), { unit });
+      const made = await linkPositionModel(position.id, { model_id: model.id, model_type: "model" });
+      onDone(made, `Saved ${model.name} and attached it to ${position.name}.`);
+    } catch (e) {
+      setBusy(false);
+      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
+    }
+  };
+  return (
+    <Modal title="Enter parameters" onClose={onClose} locked={busy} trapFocus className="ml-dialog"
+           footer={(
+             <>
+               <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+               <button type="button" onClick={save} disabled={busy || !ok} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save and attach"}</button>
+             </>
+           )}>
+      <p className="rw-fhelp">A life model from numbers you have: a data sheet, a handbook or the vendor’s figures. It’s saved to Models (with no data behind it, so its row says Assumed) and attached to {position.name}.</p>
+      <div className="ml-row">
+        <Field label="Distribution">
+          <Select value={distribution} onChange={(e) => { setDistribution(e.target.value); setValues({}); }}>
+            <option value="weibull">Weibull</option><option value="exponential">Exponential</option>
+            <option value="lognormal">Lognormal</option><option value="normal">Normal</option><option value="gamma">Gamma</option>
+          </Select>
+        </Field>
+        <Field label="Unit">
+          <Select value={unit} onChange={(e) => setUnit(e.target.value)}>
+            {["hours", "days", "weeks", "months", "years", "cycles"].map((x) => <option key={x} value={x}>{x}</option>)}
+          </Select>
+        </Field>
+      </div>
+      <div className="ml-row">
+        {names.map(([k, label]) => (
+          <Field key={k} label={label}>
+            <TextInput inputMode="decimal" value={values[k] || ""} onChange={(e) => setValues((v) => ({ ...v, [k]: e.target.value }))} />
+          </Field>
+        ))}
+      </div>
+      <Field label="Name"><TextInput value={name} onChange={(e) => setName(e.target.value)} /></Field>
       {failed && <p className="field-error" role="alert">{failed}</p>}
     </Modal>
   );

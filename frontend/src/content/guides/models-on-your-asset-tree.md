@@ -48,16 +48,20 @@ to the model's own page.
 
 ## Attach a model
 
-Use the heading's **…** menu:
+The heading's **…** (and a position's **⋯**) has three groups, **Life
+model**, **RBD** and **Prediction**; point at one (or press →) to see its
+items. Under **Life model**:
 
-- **Fit from history…** fits a life distribution to the position's own
+- **Fit from this position's history…** fits a life distribution to the position's own
   failures: each item's days in service, ended by a failure or still running.
   With fewer than two failures of its own it pools its class's positions
   instead (or choose which). Tick the failure modes it's for; failures by
   other modes then count as still running at that age.
 - **Assign a saved model…** links a model from your library, or a sample.
-- **Assign from class…** links the model fitted to the position's class.
-- **Update a baseline with this position's history…** is for a position with
+- **From the class…** links the model fitted to the position's class.
+- **Enter parameters…** saves a model from numbers you have (a data sheet, a
+  handbook) and attaches it.
+- **Update a baseline with its history…** is for a position with
   only one or two failures (below).
 
 A row's **⋯** has **Refit…** (a fitted model), **Replace with…** and
@@ -79,7 +83,7 @@ an RBD block or a calculation.
 ## Predict the failure rate from the parts list
 
 Reliability predictions live here, on the position they're for.
-**Add a prediction…** (in the heading's **…**, or a position's **⋯**) works
+**Prediction › Add a prediction (parts count)…** works
 out a parts count from the position's parts list and those of the positions
 inside it (on a product's design, its bill of materials where they list
 none). Set the environment once, the place the equipment works; the next
@@ -103,12 +107,12 @@ there are failures.
 ## An RBD for a position made of others
 
 Every position can have a life model, an RBD or a prediction. For a system
-made of the positions inside it, **Build an RBD from what's inside…** makes a
+made of the positions inside it, **RBD › Build from what's inside…** makes a
 reliability block diagram (under Design › Systems) whose blocks are the
 positions one level down, each taking its model in use (a position with its
 own RBD comes in as a sub-system). They're wired by their connections and
 redundancy groups, in series where there are none. A position with no model
-gets a placeholder, flagged: the row warns until each has a model. **Link an
+gets a placeholder, flagged: the row warns until each has a model. **RBD › Link an
 existing RBD…** links one you've already drawn.
 
 The RBD row shows the system's MTBF and B10, and its panel lists every block

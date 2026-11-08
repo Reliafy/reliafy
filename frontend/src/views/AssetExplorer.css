@@ -1046,6 +1046,7 @@ button.rw-cklink {
    on a wide screen, in place under its item on a phone. The arrow is drawn,
    not text (no alt text: the item's name stays "Isolate"). */
 .row-menu .ovm-item.row-menu-parent { display: flex; align-items: center; gap: 12px; }
+.row-menu-sep { height: 1px; margin: 4px 8px; background: var(--line, #e9ebee); }
 .row-menu-parent::after { content: "›" / ""; margin-left: auto; color: var(--muted); }
 .row-menu-parent.inline::after { content: "▸" / ""; }
 .row-menu-parent.inline.open::after { content: "▾" / ""; }

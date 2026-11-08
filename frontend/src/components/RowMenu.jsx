@@ -14,7 +14,7 @@ import useMenuDismiss from "./useMenuDismiss.js";
 // scroll that moves its row (the element `anchorId` names) away from it.
 // `onClose` puts the focus back where it belongs (the row).
 //
-// items: [{id, label, danger?, disabled?, reason?, items?}]; onChoose(id) runs
+// items: [{id, label, danger?, disabled?, reason?, items?} | {separator: true}]; onChoose(id) runs
 // after the menu has closed. A disabled item stays in the menu (so it can be
 // found and its reason read: under its label, and to a screen reader as its
 // description) but does nothing.
@@ -166,6 +166,8 @@ export default function RowMenu({ items, at, label, anchorId, onChoose, onClose 
          style={pos ? { left: pos.left, top: pos.top } : { left: at.x, top: at.y, visibility: "hidden" }}
          onKeyDown={onKeyDown} onContextMenu={(e) => e.preventDefault()}>
       {items.map((it, i) => {
+        // A line between groups (not an item: the arrow keys pass over it).
+        if (it.separator) return <div key={`sep-${i}`} role="separator" className="row-menu-sep" />;
         if (!it.items) return button(it, String(i), { hover: phone ? null : () => setSub(null) });
         const open = sub?.id === it.id;
         return (
