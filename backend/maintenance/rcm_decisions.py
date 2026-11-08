@@ -654,8 +654,18 @@ def resolve_decision(decision: dict, fetch) -> dict:
 # A combination's members in words ("the fixed-interval task").
 _MEMBER_WORD = {"on_condition": "on condition", "fixed_interval": "fixed interval",
                 "failure_finding": "failure finding", "redesign": "redesign"}
-# The strategy analysis each scheduled outcome expects (its kind).
-_ANALYSIS_KIND = {"fixed_interval": "optimal_replacement", "failure_finding": "failure_finding"}
+# The strategy analyses each scheduled outcome takes (their kinds): the interval
+# calculators on the task card save on_condition_interval and failure_finding_interval.
+_ANALYSIS_KIND = {"fixed_interval": ("optimal_replacement",),
+                  "failure_finding": ("failure_finding", "failure_finding_interval"),
+                  "on_condition": ("on_condition_interval",)}
+# Evidence an outcome takes besides the type it expects: an on-condition task's
+# interval from the P-F calculator (a saved analysis), as well as its degradation model.
+ALSO_TAKES = {"on_condition": ("strategy_analysis",)}
+
+
+def _takes(outcome: str, etype: str) -> bool:
+    return etype == EXPECTED_EVIDENCE.get(outcome) or etype in ALSO_TAKES.get(outcome, ())
 
 
 def _tasks_words(outcomes: list[str]) -> str:
@@ -672,11 +682,13 @@ def _fits(outcome: str, evidence: dict, fetch) -> bool:
     notes fit any, a model or analysis only the outcome that expects its kind."""
     if evidence["type"] in LINKED_TYPES:
         return True
-    if evidence["type"] != EXPECTED_EVIDENCE.get(outcome):
+    if not _takes(outcome, evidence["type"]):
         return False
     if evidence["type"] == "strategy_analysis":
         artifact = fetch(evidence["type"], evidence["id"])
-        return artifact is None or getattr(artifact, "kind", None) == _ANALYSIS_KIND[outcome]
+        if artifact is None:
+            return evidence["type"] == EXPECTED_EVIDENCE.get(outcome)
+        return getattr(artifact, "kind", None) in _ANALYSIS_KIND[outcome]
     return True
 
 
@@ -803,6 +815,10 @@ def _resolve_decision(decision: dict, fetch) -> dict:
     if artifact is None:
         return {"status": "stale", "reason": "The linked analysis no longer exists."}
 
+    if outcome == "on_condition" and evidence["type"] == "strategy_analysis":
+        base = {"artifact_name": artifact.name, "artifact_link_path": _link_path(evidence["type"], artifact.id)}
+        return {**base, **_check_on_condition_interval(decision, artifact)}
+
     if evidence["type"] != expected:
         return {
             "status": "inconclusive",
@@ -835,13 +851,21 @@ def _resolve_decision(decision: dict, fetch) -> dict:
                     "summary": f"Degradation model (threshold {r.get('threshold')}{unit}) supports condition monitoring."}
         return {**base, "status": "inconclusive", "reason": "The degradation model isn't ready."}
     if outcome == "failure_finding":
-        if artifact.kind != "failure_finding":
+        if artifact.kind not in _ANALYSIS_KIND["failure_finding"]:
             return {**base, "status": "inconclusive",
                     "reason": "The linked analysis isn't a failure-finding interval."}
         r = artifact.results or {}
         mismatch = _unit_mismatch(decision, r.get("unit"))
         if mismatch:
             return {**base, **mismatch}
+        if artifact.kind == "failure_finding_interval":
+            from backend.services.rcm_intervals import DAYS_IN
+            from backend.units import normalize_unit
+
+            longest = None
+            if r.get("basis") == "target" and r.get("interval") and DAYS_IN.get(normalize_unit(r.get("unit"))):
+                longest = float(r["interval"]) * DAYS_IN[normalize_unit(r["unit"])]
+            return {**base, **_interval_summary(r, decision, longest, "the longest that meets the target")}
         interval = r.get("interval")
         if interval is not None:
             unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
@@ -849,6 +873,50 @@ def _resolve_decision(decision: dict, fetch) -> dict:
                     "summary": f"Check every ~{fmt_num(interval)}{unit} for {r.get('target_availability', 0):.0%} availability."}
         return {**base, "status": "inconclusive", "reason": "The analysis has no computed interval."}
     return {**base, "status": "inconclusive", "reason": "Unrecognised decision."}
+
+
+def _task_days(decision: dict):
+    """The task's interval in days, or None when it has none or its unit isn't a time."""
+    from backend.services.rcm_intervals import DAYS_IN
+    from backend.units import normalize_unit
+
+    try:
+        interval = float(decision.get("interval"))
+    except (TypeError, ValueError):
+        return None
+    factor = DAYS_IN.get(normalize_unit(decision.get("interval_unit")))
+    return interval * factor if factor else None
+
+
+def _interval_summary(r: dict, decision: dict, longest_days, too_long: str) -> dict:
+    """A saved interval calculation (the task card's calculators) as evidence: what it
+    found; contradicted when the task's interval is longer than ``longest_days``."""
+    if not r.get("recommended"):
+        return {"status": "contradicted", "summary": r.get("summary") or "The calculation finds checking never pays."}
+    days = _task_days(decision)
+    if days is not None and longest_days is not None and days > longest_days * 1.0001:
+        return {"status": "contradicted", "summary": f"The task's interval is longer than {too_long}. {r.get('summary') or ''}".strip()}
+    return {"status": "supported", "summary": r.get("summary") or "Interval calculated."}
+
+
+def _check_on_condition_interval(decision: dict, analysis) -> dict:
+    """An on-condition task's interval from the P-F calculator (a saved analysis)."""
+    if analysis.kind != "on_condition_interval":
+        return {"status": "inconclusive",
+                "reason": "The linked analysis isn't an on-condition interval (the P-F calculator); an on-condition "
+                          "task takes that or a degradation model."}
+    r = analysis.results or {}
+    mismatch = _unit_mismatch(decision, r.get("unit"))
+    if mismatch:
+        return mismatch
+    from backend.services.rcm_intervals import DAYS_IN
+    from backend.units import normalize_unit
+
+    pf_days = None
+    factor = DAYS_IN.get(normalize_unit(r.get("pf_unit")))
+    if factor and r.get("pf_interval"):
+        pf_days = float(r["pf_interval"]) * factor
+    return _interval_summary(r, decision, pf_days, "the P-F interval: checks that far apart miss warnings")
 
 
 def _check_randomness(model) -> dict:

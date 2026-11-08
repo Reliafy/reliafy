@@ -34,7 +34,9 @@ async function loadOptions(kind, expectedType, analysisKind) {
   }
   if (expectedType === "strategy_analysis") {
     const { analyses } = await listStrategyAnalyses();
-    const filtered = analysisKind ? analyses.filter((a) => a.kind === analysisKind) : analyses;
+    // A failure-finding task takes the Strategy tool's analysis or the task card's test interval.
+    const kinds = analysisKind === "failure_finding" ? ["failure_finding", "failure_finding_interval"] : [analysisKind];
+    const filtered = analysisKind ? analyses.filter((a) => kinds.includes(a.kind)) : analyses;
     return filtered.map((a) => ({ id: a.id, label: a.name, meta: a.headline }));
   }
   if (expectedType === "degradation_model") {

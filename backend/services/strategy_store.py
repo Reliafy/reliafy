@@ -22,7 +22,18 @@ from backend.services import strategy as strategy_service
 from backend.services.strategy import StrategyError
 from backend.units import unit_in_text, with_unit
 
-KINDS = ("optimal_replacement", "compare_two", "failure_finding", "demonstration_test")
+KINDS = ("optimal_replacement", "compare_two", "failure_finding", "demonstration_test",
+         "on_condition_interval", "failure_finding_interval")
+
+# The RCM interval calculators' inputs (backend/services/rcm_intervals.py), as saved.
+ON_CONDITION_INPUTS = (
+    "pf_interval", "pf_unit", "onset_rate", "inspection_cost", "found_cost", "failure_cost",
+    "detection_probability", "unit", "current_interval", "current_unit",
+)
+FAILURE_FINDING_INPUTS = (
+    "failure_rate", "distribution_id", "params", "model_unit", "extras", "target_unavailability", "test_cost",
+    "repair_cost", "demand_rate", "consequence_cost", "unit", "current_interval", "current_unit",
+)
 
 # The demonstration-test calculator's inputs (the endpoint body shape).
 DEMO_INPUTS = (
@@ -72,6 +83,15 @@ def compute(kind: str, inputs: dict) -> dict:
             unit=inputs.get("unit"),
             extras=inputs.get("extras"),
         )
+    if kind == "on_condition_interval":
+        from backend.services import rcm_intervals
+
+        return rcm_intervals.on_condition_interval(**{k: inputs.get(k) for k in ON_CONDITION_INPUTS if k in inputs})
+    if kind == "failure_finding_interval":
+        from backend.services import rcm_intervals
+
+        return rcm_intervals.failure_finding_interval(
+            **{k: inputs.get(k) for k in FAILURE_FINDING_INPUTS if k in inputs})
     if kind == "demonstration_test":
         return strategy_service.demonstration_test(
             **{k: inputs[k] for k in DEMO_INPUTS if k in inputs}
@@ -150,6 +170,12 @@ def headline(doc: StrategyAnalysis) -> str:
         return f"Check every ~{strategy_service.fmt_num(i)}{unit}" if i is not None else "Failure finding"
     if doc.kind == "demonstration_test":
         return demonstration_headline(r)
+    if doc.kind in ("on_condition_interval", "failure_finding_interval"):
+        rec = r.get("recommended")
+        if not rec:
+            return "Checking never pays"
+        verb = "Check" if doc.kind == "on_condition_interval" else "Test"
+        return f"{verb} every {strategy_service.fmt_num(rec['value'])} {unit_in_text(rec['unit'])}"
     return doc.kind
 
 

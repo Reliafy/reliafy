@@ -884,3 +884,8 @@ span.rim-tname.rim-r1-body { display: block; }
   .rim-every { flex-basis: 100%; }
   .rim-every .ctl-group { flex: 1 1 auto; }
 }
+
+/* "Calculate…" beside a task's "every N unit" (IntervalCalculator.jsx has the dialog's styles). */
+.rim-calc { font-size: var(--fs-13); white-space: nowrap; }
+.rim-tcalc { flex: none; margin-left: 8px; }
+@media (max-width: 480px) { .rim-calc { min-height: 36px; } }

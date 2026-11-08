@@ -16,6 +16,8 @@ const KIND_LABEL = {
   compare_two: "Two-model comparison",
   failure_finding: "Failure finding",
   demonstration_test: "Demonstration test",
+  on_condition_interval: "Check interval (P-F)",
+  failure_finding_interval: "Test interval",
 };
 
 const HELP = { walkthrough: "replacement", guide: "optimal-replacement-interval" };

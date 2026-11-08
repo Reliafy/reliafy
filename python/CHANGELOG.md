@@ -2,6 +2,19 @@
 
 ## Unreleased (0.5.1)
 
+- **How often to do an RCM task**: two new `maintenance` actions, both exact
+  and free. `rcm.interval_on_condition` (the P-F calculator) gives the
+  cheapest interval between checks for a warning that comes `pf_interval`
+  before the failure, beside the rule of thumb of half the P-F interval;
+  `rcm.interval_failure_finding` gives the longest test interval that keeps a
+  hidden failure's unavailability within `target_unavailability`, or the
+  cheapest from the costs. Both answer with `recommended`, rounded down to a
+  unit people schedule in, and the task's numbers now with `current_interval`.
+  The fixed-interval one stays `analyse optimal_replacement`. On the command
+  line: `reliafy maintenance rcm.interval_on_condition --pf-interval 10
+  --pf-unit weeks --onset-rate 0.5 --inspection-cost 20 --found-cost 200
+  --failure-cost 2000`. No client code changed.
+
 - **What a check leads to, and one place for the rationale**: `maintenance
   failure_modes.decide` takes `decision.on_found` (and `on_found` on each of
   `decision.outcomes`) for an on-condition or failure-finding task: what's

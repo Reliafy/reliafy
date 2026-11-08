@@ -285,9 +285,9 @@ none is:
 
 | Decision | Evidence it expects |
 |---|---|
-| **On condition** | A degradation model that shows the failure develops measurably |
+| **On condition** | A degradation model that shows the failure develops measurably, or a saved check interval from the P-F calculator |
 | **Fixed interval** | A saved optimal-replacement analysis with a worthwhile interval |
-| **Failure finding** (hidden failures only) | A saved failure-finding analysis |
+| **Failure finding** (hidden failures only) | A saved failure-finding analysis, or a saved test interval |
 | **Run to failure**, *failures are random* | A Weibull fit whose β interval contains 1, or an exponential fit |
 | **Run to failure**, *prevention isn't economic* | A saved optimal-replacement analysis that finds no worthwhile interval |
 | **Accept** (no scheduled maintenance) | None. Write the reason in **Notes** |
@@ -415,6 +415,41 @@ Make it, then come back. A saved analysis comes from the Strategy tools: run
 [optimal replacement](/guides/optimal-replacement-interval) or a
 [failure-finding interval](/guides/failure-finding-interval), then press **Save
 analysis**.
+
+## Working out the interval
+
+Each scheduled task's card has **Calculate…** beside its *every N* (also while
+you change the task with **Edit**). It opens the calculator the kind of task
+calls for, says in a sentence or two what it works out, and starts from what
+the failure mode already has: its linked model or analysis, and the failures
+recorded at the position. Anything it assumed says so; change any input and
+press **Work it out** again.
+
+- **On condition: the P-F calculator.** A failure often gives a warning first
+  (a noise, a leak, a rise in temperature). The time from that first sign to
+  the failure is the P-F interval. Give it, how many failures a year to expect
+  if nothing is done, and what a check, a fix in time and a failure cost. It
+  finds the check interval with the lowest cost a year, and shows the rule of
+  thumb (check at least every half P-F interval) beside it.
+- **Failure finding: the test interval.** Give the protective device's failure
+  rate (or pick its model) and the target: the most it may be failed when it's
+  needed. 1% is filled in as a common starting point for safety, marked
+  *assumed*. It finds the longest test interval that meets the target and
+  shows yours beside it, for example *1 month → 0.4% unavailability*. Clear the
+  target and give the test cost, the demand rate and what a demand on a failed
+  device costs to find the cheapest interval instead.
+- **Fixed interval: the replacement age.** The same calculation as
+  [optimal replacement](/guides/optimal-replacement-interval), from a
+  non-repairable model and the planned and unplanned costs, in the model's
+  time unit.
+
+**Use N months** writes the interval on the task, rounded down to hours, days,
+weeks, months or years so the task is never later than the calculation, and
+adds one paragraph to the failure mode's **Notes and rationale** saying what
+went in and what came out. When the decision has no evidence yet, the
+calculation is saved as a strategy analysis and linked as its evidence, so the
+evidence check can read it: a task further apart than the P-F interval, or than
+the longest that meets the target, shows as contradicted.
 
 ## Read the evidence check
 

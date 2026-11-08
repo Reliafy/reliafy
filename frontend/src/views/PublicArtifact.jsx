@@ -16,6 +16,7 @@ import ReplacementResult from "../components/ReplacementResult.jsx";
 import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
 import DemoTestResult from "../components/DemoTestResult.jsx";
+import IntervalAnalysisResult from "../components/IntervalAnalysisResult.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import PublicRbd from "../components/PublicRbd.jsx";
 import ReportView from "./PublicReport.jsx";
@@ -149,6 +150,9 @@ function Body({ collection, a, token, unlock, framed = false }) {
           {a.kind === "compare_two" && <CompareResult result={a.results} name={a.name} />}
           {a.kind === "failure_finding" && <FfiResult result={a.results} />}
           {a.kind === "demonstration_test" && <DemoTestResult result={a.results} />}
+          {(a.kind === "on_condition_interval" || a.kind === "failure_finding_interval") && (
+            <IntervalAnalysisResult kind={a.kind} result={a.results} />
+          )}
         </div>
       );
     case "datasets":

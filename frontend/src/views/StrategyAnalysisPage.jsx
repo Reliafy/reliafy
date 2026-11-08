@@ -9,6 +9,7 @@ import { ShareButton } from "../components/ShareDialog.jsx";
 import { getStrategyAnalysis } from "../api.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import IntervalAnalysisResult from "../components/IntervalAnalysisResult.jsx";
 import { itemName } from "../components/LibRows";
 import { PageTitle } from "../components/usePageTitle.js";
 
@@ -17,6 +18,8 @@ const KIND_LABEL = {
   compare_two: "Two-model comparison",
   failure_finding: "Failure finding",
   demonstration_test: "Demonstration test",
+  on_condition_interval: "Check interval (P-F)",
+  failure_finding_interval: "Test interval",
 };
 
 // A saved strategy analysis, rendered read-only from its stored results.
@@ -69,6 +72,9 @@ export default function StrategyAnalysisPage() {
         {doc.kind === "compare_two" && <CompareResult result={doc.results} name={doc.name} />}
         {doc.kind === "failure_finding" && <FfiResult result={doc.results} />}
         {doc.kind === "demonstration_test" && <DemoTestResult result={doc.results} />}
+        {(doc.kind === "on_condition_interval" || doc.kind === "failure_finding_interval") && (
+          <IntervalAnalysisResult kind={doc.kind} result={doc.results} />
+        )}
       </div>
     </div>
   );

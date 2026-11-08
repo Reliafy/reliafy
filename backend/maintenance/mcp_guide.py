@@ -172,6 +172,18 @@ text in its instructions. An interval_unit of use (hours, cycles, km) makes a ta
 a failure-finding task, which decisions' evidence needs a look, which modes sit directly under a function with no \
 functional failure yet (no_functional_failure), and which functions, performance standards and \
 functional failures have nothing under them. Whole workspace by default; target_id narrows it to a branch.
+- Working out the interval (exact, free; the app's task card has a Calculate… link for each). On condition: \
+maintenance rcm.interval_on_condition: the P-F interval (how long from the first detectable sign to the failure) \
+with its unit, failures a year, the cost of a check, of fixing a warning found and of a failure: the cheapest \
+interval, beside the rule of thumb of half the P-F interval. Failure finding: maintenance \
+rcm.interval_failure_finding: the device's failure rate a year (or a model) and a target unavailability (the \
+chance it's failed when needed; 1% is a common starting point for safety, say it's assumed), or the costs: the \
+longest interval that meets it, and with current_interval the task's numbers now. Fixed interval: the core \
+analyse tool's optimal_replacement (a non-repairable model, planned and unplanned costs), in the model's unit. \
+Then set the task's interval (maintenance tasks.update), add one line on how it was worked out to the failure \
+mode's notes and rationale (failure_modes.update notes: the current notes with the line at the end), and tell \
+the user. recommended is rounded down \
+to a unit people schedule in; quote the cost a year and the unavailability with it.
 - Scoring the same modes as an FME(C)A (the Explorer's FME(C)A tab; the RCM tab shows the same records): \
 maintenance failure_modes.score (failure_mode_id; severity, occurrence, detection, whole numbers 1-10; cause, \
 effect_local, effect_next, effects (the end effect: the RCM's effects, one field), detection_method; \
