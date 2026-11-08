@@ -674,7 +674,12 @@ offset). get.item and get.position say which product an item or position belongs
 - products.clear: the tree is a plain tree again; refused while items built from it are in use.
 - products.add_sample: a worked example to explore (an invented quadcopter: its design with a scored FME(C)A, its \
 part and BOM, three items built, a replaced motor, two failure reports, and an RBD whose rates are placeholders, \
-said so in its name); once unless again is true."""),
+said so in its name); once unless again is true. products.add_sample make_own=true (product_id: the copy, \
+default the only one) makes a copy the user's own in place: "(sample)" leaves its name (and its part's and built \
+items'), nothing inside changes, ids stay, and the sample isn't added again beside it unless asked.
+- A design's tasks are its maintenance programme, with their LSA records (tasks.set_resources): they never fall \
+due, raise no work orders and join no work packages (list.task_table says why_not). Items built later carry \
+copies, resources included, which do."""),
 }
 
 # Graph queries in Cypher (#423): only for the people allowed them

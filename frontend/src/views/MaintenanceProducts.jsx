@@ -153,7 +153,8 @@ export function ProductDetail() {
   return (
     <>
       <PageTitle name={product.name} />
-      <AssetExplorer key={id} root={product.id} tabKey="view" title={product.name} heading={1} />
+      <AssetExplorer key={id} root={product.id} tabKey="view" title={product.name} heading={1}
+                     onProductChanged={() => getProduct(id).then(setProduct).catch(() => {})} />
     </>
   );
 }

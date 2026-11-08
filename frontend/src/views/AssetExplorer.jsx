@@ -3,7 +3,7 @@ import { VIEW_PARAMS } from "../measurementsTab.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   addSampleProduct, getFmeaExcelBlob, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
-  hasFmeaExcel, restoreRcm, restoreTree,
+  hasFmeaExcel, makeSampleOwn, restoreRcm, restoreTree,
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
@@ -73,7 +73,9 @@ import NewFailureReportModal from "../components/NewFailureReportModal.jsx";
 import LogEventModal from "../components/LogEventModal.jsx";
 import usePhone from "../usePhone.js";
 import { OPEN_SAMPLE_PRODUCT_LABEL, sampleProductId, sampleProductView } from "../sampleProduct.js";
-import { PRODUCTS_PATH, designActions, isDesignScope, productViewPath, scopeTree } from "../products.js";
+import {
+  MAKE_OWN, PRODUCTS_PATH, designActions, isDesignScope, isSampleRow, madeOwnText, makeOwnConfirm, productViewPath, scopeTree,
+} from "../products.js";
 import { BuildItemModal, DesignReports } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
@@ -175,7 +177,7 @@ const FMEA_ROLLUP_COLS = new Set(["failure", "cause", "effect_local", "effect_ne
 // leaves the products' designs and items' trees out (products.js). `tabKey`:
 // the address's name for its tabs (?view= on a product's page). `heading`: the
 // picked row's heading level (1 where the tree is the page, as a product's is).
-export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", title: titleProp = null, heading: headingProp = null }) {
+export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", title: titleProp = null, heading: headingProp = null, onProductChanged = null }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
@@ -975,6 +977,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       else if (id === "report-new") setReportFor({ id: r.key, name: r.ref.name, select: r.key });
       else if (id === "event-log") setEventFor({ id: r.key, name: r.ref.name });
       else if (id === "build-item") buildFrom(r.key);
+      else if (id === "make-own") makeOwn(r);
       else if (id === "pin") pinTo(r.key, { select: true });
       else if (id.startsWith("isolate:")) isolateAt(r, id === "isolate:all" ? "all" : Number(id.slice(8)));
       else if (id === "isolate-incomplete") isolateIncomplete(r);
@@ -1298,6 +1301,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const buildFrom = (id) => {
     getProduct(id).then(setBuildFor, (e) => say(`The product didn't load: ${e.message}`, "error"));
   };
+  // A copy of the sample product's Make this my own…: asked, then done in the dialog;
+  // the tree and the page's title read again, and a few words.
+  const makeOwn = (r) => {
+    confirm({ ...makeOwnConfirm(r.ref.name), run: () => makeSampleOwn(r.key) }).then((out) => {
+      if (!out) return;
+      load();
+      onProductChanged?.(out);
+      say(madeOwnText(out), "ok", { fade: true });
+    });
+  };
+  // A copy of the sample product: Make this my own… heads its own row's "…" too.
+  const ownMenu = (r) => (designScope && isSampleRow(r) && !viewOnly
+    ? [{ ...MAKE_OWN, onSelect: () => makeOwn(r) }] : []);
   const built = (out) => {
     setBuildFor(null);
     load();
@@ -1505,7 +1521,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                 menu={rcmMenu} popover={columns} />
   ) : summaryRow && (
     <SlimHeader display={whole} row={summaryRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
-                headingRef={headingRef} fullScreenButton={fullButton} heading={heading} menu={tabMenu || []}
+                headingRef={headingRef} fullScreenButton={fullButton} heading={heading} menu={[...ownMenu(summaryRow), ...(tabMenu || [])]}
                 meta={rowKind(summaryRow) ? <span className="tt-kind">{rowKind(summaryRow)}</span> : null}
                 message={message?.fade ? msg : null} />
   );
@@ -1634,7 +1650,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                     onSelect={selectFromPanel} onCrumb={(k) => crumbGo(k, selectFromPanel)} above={above}
                     back={back} version={version} empty={emptyDetail} headless={!phone} heading={heading}
                     tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi}
-                    menu={tabMenu || []} onMenu={setTabMenu}
+                    menu={[...ownMenu(data && !nothing ? row : null), ...(tabMenu || [])]} onMenu={setTabMenu}
                     actions={summaryActionsOf(data && !nothing ? row : null)} />
       )}
     </section>
@@ -1682,6 +1698,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         onQuery={setQuery}
         chips={chips}
         onChips={setChips}
+        design={designScope}
         mode={mode}
         onMode={onMode}
         focus={focus}

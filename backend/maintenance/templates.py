@@ -47,7 +47,7 @@ import copy
 import re
 from datetime import date, timedelta
 
-from backend.maintenance import fmea
+from backend.maintenance import fmea, products
 
 
 def _n(count: int, one: str) -> str:
@@ -1519,7 +1519,7 @@ def _add_uav_rcm(m, at_of: dict[str, list[str]], counts: dict) -> None:
 SAMPLE_PRODUCT_NAME = "Survey quadcopter (sample)"
 SAMPLE_PRODUCT_PART = "SQ-4"
 SAMPLE_PRODUCT_REV = "C"
-_PRODUCT_COPY_NAME = re.compile(r"^Survey quadcopter \(sample(?: (\d+))?\)$")
+_PRODUCT_COPY_NAME = products.SAMPLE_NAME
 
 ARMS = 4
 # The design tree: (name, position class, children); the classes pool like positions' life data.
@@ -1586,6 +1586,13 @@ def sample_products(m) -> list[dict]:
     return [p for p in _copies(m, _PRODUCT_COPY_NAME) if p.get("design")]
 
 
+def own_sample_products(m) -> list[dict]:
+    """Copies of the sample product the user has made their own (products.clear_sample):
+    live product designs keeping the sample's key, whatever they're called now."""
+    return sorted((p for p in m.s.nodes(m.org, "Position") if p.get("from_sample") == products.SAMPLE_KEY
+                   and p.get("design") and not p.get("retired")), key=lambda p: p["name"])
+
+
 def _part(m, number: str, name: str) -> dict:
     """The catalogue part with this number, made when there's none (a second copy of the
     sample shares the component parts)."""
@@ -1650,14 +1657,18 @@ def add_sample_product(m, db, again: bool = False) -> dict:
     motor on one, two failure reports, and a flight-critical RBD in the RBDs
     (placeholder failure rates, said so in its name). Once only, unless ``again``."""
     existing = sample_products(m)
-    if existing and not again:
-        have = existing[0]
+    # One made the user's own counts too: the sample is never added again beside it unless asked.
+    owned = [] if existing else own_sample_products(m)
+    if (existing or owned) and not again:
+        have = (existing or owned)[0]
         return {
             "added": False,
             "product": {"id": have["id"], "name": have["name"]},
             "position": {"id": have["id"], "name": have["name"]},
-            "message": f"The sample product is already in your workspace as “{have['name']}”. "
-                       "Ask again to add another copy.",
+            "message": (f"The sample product is already in your workspace as “{have['name']}”. "
+                        "Ask again to add another copy.") if existing else
+                       (f"You made the sample product your own as “{have['name']}”. Ask again to add a fresh copy "
+                        "of the sample beside it."),
         }
     name = _copy_name(_copies(m, _PRODUCT_COPY_NAME), _PRODUCT_COPY_NAME, SAMPLE_PRODUCT_NAME)
     product = m.create_product(name, _free_number(m, SAMPLE_PRODUCT_PART), SAMPLE_PRODUCT_REV,

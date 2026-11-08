@@ -2277,6 +2277,10 @@ export function removeMaintenanceItem(positionId, body) {
 export function addSampleProduct(again = false) {
   return postJson("/api/maintenance/sample-product", { again: !!again });
 }
+// Make a copy of the sample product your own, in place ("(sample)" leaves its name).
+export function makeSampleOwn(productId) {
+  return postJson(`/api/maintenance/products/${encodeURIComponent(productId)}/make-own`, {});
+}
 
 // ---- products (designs) and the items built from them --------------------------
 

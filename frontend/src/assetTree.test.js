@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   nextGutter,
-  ARRANGEMENTS, CHIPS, CHIP_MARK, ancestorsOf, arrangementFor, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
+  ARRANGEMENTS, CHIPS, CHIP_MARK, chipsFor, ancestorsOf, arrangementFor, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, findByPrefix, flatten, insideWords, levelSet, loadTreeState, markersOf, TREE_ROW_MARKERS, pinnedRows, saveTreeState,
   scopedArrangeQuery, statusWords, windowOf,
 } from "./assetTree.js";
@@ -333,4 +333,15 @@ test("row markers are switched off (TREE_ROW_MARKERS) but markersOf and the filt
   assert.equal(TREE_ROW_MARKERS, false);
   const d = buildDisplay(DATA, "positions");
   assert.ok(markersOf(d.rows.get("house")).length > 0);
+});
+
+test("a product's design offers no chips about operated things; the RCM's own stay", () => {
+  const ids = (o) => chipsFor(o).map((c) => c.id);
+  assert.deepEqual(ids(), ["overdue", "open", "alarm", "reports", "empty", "unanalysed"]);
+  assert.deepEqual(ids({ design: true }), ["unanalysed"]);
+  const rcm = ids({ tab: "rcm", design: true });
+  assert.ok(rcm.includes("unanalysed") && rcm.includes("undecided") && rcm.includes("hidden"));
+  assert.ok(!rcm.some((id) => ["overdue", "open", "alarm", "reports", "empty"].includes(id)));
+  assert.ok(ids({ tab: "rcm" }).includes("overdue"));
+  assert.ok(ids({ tab: "fmea", design: true }).includes("ap-high"));
 });

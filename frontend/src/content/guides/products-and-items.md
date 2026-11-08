@@ -28,6 +28,12 @@ three items built from it, each with its flight hours and flights counted, a
 motor replaced on one of them, two failure reports, and a flight-critical RBD
 whose failure rates are placeholders.
 
+To keep it and build on it, pick **Make this my own…** in the **⋯** menu of
+the product's own row (the top of its tree). It stays exactly as it is, with
+"(sample)" taken off its name (and off its part's and its items' names), and
+it's yours to change. The sample isn't added again beside it unless you ask
+for a fresh copy.
+
 ## A product's page
 
 A product's page is its design's tree, laid out like the asset tree on
@@ -48,7 +54,13 @@ have no failure reports, signals, stock, work or due dates. Its tabs:
   - **Analyses of this design**: the product's RBDs, **Make an RBD from this
     structure**, and a reliability prediction from its parts list.
 - **RCM** and **FME(C)A**: the design's maintenance programme and its failure
-  modes. The items built from it carry the programme out.
+  modes, with everything the RCM on **Assets** has: functions, functional
+  failures, failure modes, decisions and their tasks. The items built from it
+  carry the programme out.
+- **LSA**: every task in the design with what it needs to be done (labour,
+  tools, spares, consumables, method), added up. Its tasks are packaged into
+  visits on the items built from it, not on the design. An item built later
+  carries copies of the tasks with what they need.
 
 **Delete…** (in the product's row menu in its tree, or the bin on its row in
 Products) deletes the design and everything inside it. Items built from it stay. Its

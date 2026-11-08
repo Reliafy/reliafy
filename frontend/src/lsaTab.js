@@ -142,6 +142,13 @@ export const TASK_COLUMNS = [
   { id: "method", label: "Method", width: 180, title: "How it's done" },
 ];
 export const DEFAULT_TASK_COLUMNS = TASK_COLUMNS.map((c) => c.id);
+// A product's design (its maintenance programme) has no due dates and no
+// packages: its tasks fall due and are packaged into visits on the items built
+// from it. Its LSA table leaves those columns out.
+const DESIGN_HIDDEN = new Set(["due", "package"]);
+export function lsaColumns({ design = false } = {}) {
+  return design ? TASK_COLUMNS.filter((c) => !DESIGN_HIDDEN.has(c.id)) : TASK_COLUMNS;
+}
 const COLUMN_IDS = new Set(DEFAULT_TASK_COLUMNS);
 const COUNTED = { tools: "tools", spares: "spares", consumables: "consumables" };
 

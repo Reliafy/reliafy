@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  cadenceFor, cadenceWords, cantJoin, cellText, daysLate, freeTasks, kindText, lateText, nextSort, nextVisit, ordinal, packageScope, parseSort, searchTasks, sortParam, sortTasks, tickAll, tickState, proposalBatch, proposalProblem, proposalRows, renameRow, toggleRow, visitRuleText, annualLsa, annualText, cleanSection, countTitle, lsaCsv, lsaRollup, rollupLines, sectionDraft,
+  TASK_COLUMNS, lsaColumns, cadenceFor, cadenceWords, cantJoin, cellText, daysLate, freeTasks, kindText, lateText, nextSort, nextVisit, ordinal, packageScope, parseSort, searchTasks, sortParam, sortTasks, tickAll, tickState, proposalBatch, proposalProblem, proposalRows, renameRow, toggleRow, visitRuleText, annualLsa, annualText, cleanSection, countTitle, lsaCsv, lsaRollup, rollupLines, sectionDraft,
 } from "./lsaTab.js";
 
 const pkg = (over) => ({ id: "x", name: "X", status: "active", parent: null, task_count: 0, cadence: { text: "every Saturday" }, ...over });
@@ -206,4 +206,11 @@ test("the CSV names the tools, spares and consumables and gives the labour in fu
   assert.match(csv[0], /^Position,Failure mode,Task,Kind,Interval,Trade,Next due,Package,Hours,People,Method,Labour,Tools,Spares,Consumables,/);
   assert.match(csv[1], /^Chlorinator,,Clean the cell,/);
   assert.match(csv[1], /,2,2,,2 × Pool technician for 1 h,2 × Photometer; Brush,1 × CELL-1 Chlorinator cell; 2 × O-ring,/);
+});
+
+test("a design's LSA table leaves out Next due and Package: they belong to the built items", () => {
+  assert.deepEqual(lsaColumns(), TASK_COLUMNS);
+  const design = lsaColumns({ design: true }).map((c) => c.id);
+  assert.ok(!design.includes("due") && !design.includes("package"));
+  assert.deepEqual(design, TASK_COLUMNS.map((c) => c.id).filter((id) => id !== "due" && id !== "package"));
 });

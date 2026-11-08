@@ -60,6 +60,7 @@ from backend.maintenance.schedule import Cadence, Season
 from backend.maintenance.signals import PROJECTORS as _SIGNAL_PROJECTORS
 from backend.maintenance.products import PROJECTORS as _PRODUCT_PROJECTORS
 from backend.maintenance.products import ProductOps
+from backend.maintenance.products import is_sample as _is_sample_product
 from backend.maintenance.progression import ProgressionOps
 from backend.maintenance.signals import SignalOps
 from backend.maintenance.tree_delete import PROJECTORS as _TREE_DELETE_PROJECTORS
@@ -6083,6 +6084,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         base = task.get("last_done") or task["start"]
         limit = f"{interval:g} {unit}"
         subject = _subject(self.s, self.org, task) or {}
+        if subject.get("id") in self._design_ids():
+            return {"limit": limit, "next_due": None, "note": "a design's task: due on the items built from it"}
         if _is_calendar(unit):
             first = _first_due(task)
             if first:
@@ -7748,6 +7751,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             kind = subject["label"].lower()
             position_id, item_id, location_id = [subject["id"] if kind == k else None for k in self.SUBJECT_KINDS]
         node, ref = self._subject_ref("work order", position_id, item_id, location_id, live_position=False)
+        if node["label"] == "Position" and node["id"] in self._design_ids():
+            raise Invalid(f"{node['name']} is in a product's design: work is done on the items built from it. "
+                          "Open the work order on one of them.")
         if type not in WORK_ORDER_TYPES:
             raise Invalid(f"The type is one of {', '.join(WORK_ORDER_TYPES)}.")
         if include_positions is None:
@@ -9030,6 +9036,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             raise Invalid(f"What {task['name']} is on has been retired.")
         if subject["label"] == "Item":
             raise Invalid(f"{task['name']} is an item's task: it follows the serial number, so it stays on its own.")
+        if subject["id"] in self._design_ids():
+            raise Invalid(f"{task['name']} is in a product's design: package it on the items built from it.")
         if not _is_calendar(task["unit"]) or (task.get("also_unit") and not _is_calendar(task["also_unit"])):
             raise Invalid(f"{task['name']} goes by use: a package goes by the calendar, so it stays on its own.")
         if task.get("include_positions"):
@@ -9166,6 +9174,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             area = self._get(str(rid), kind)
             if area.get("retired"):
                 raise Invalid(f"{area['name']} has been retired: restore it first.")
+            if area["id"] in self._design_ids() or area.get("design_of"):
+                raise Invalid(f"{area['name']} is in a product's design: tasks are packaged into visits on the "
+                              "items built from it.")
             ref = {"position_id": area["id"]} if kind == "Position" else {"subject": {"kind": "location",
                                                                                          "id": area["id"]}}
         fields = self._cadence_fields(timing or "fixed", 1 if every in (None, "") else every, unit, weekday, nth,
@@ -9662,6 +9673,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 modes_of.setdefault(t["id"], []).append(index["mode"][mode_id])
         packages = self._package_index()
         rows = []
+        designs = self._design_ids()
         for task in self.s.nodes(self.org, "Task"):
             if task.get("retired"):
                 continue
@@ -9687,6 +9699,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 why_not = "by use: it goes by its counter"
             elif task.get("include_positions"):
                 why_not = "a round: it stays on its own"
+            if subject["id"] in designs:
+                why_not = "a product's design: packaged on the items built from it"
             entry = packages.get(task["id"])
             pkg = None
             if entry:
@@ -9700,8 +9714,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                          "next_due": view["next_due"], "overdue": bool(view["overdue"]), "package": pkg,
                          "why_not": why_not, "resources": view["resources"]})
         rows.sort(key=lambda r: (r["subject"]["name"].lower(), r["name"].lower(), r["id"]))
+        # A product's design (or one of its design locations): its programme, packaged on the built items.
         return {"scope": self._subject_brief(scope), "tasks": rows[:limit], "total": len(rows),
-                "truncated": len(rows) > limit}
+                "truncated": len(rows) > limit, "design": scope["id"] in designs or bool(scope.get("design_of"))}
 
     def _package_scope(self, position_id=None, location_id=None) -> dict | None:
         """The position or location a read is limited to (None: the whole workspace)."""
@@ -9833,6 +9848,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         today = self.today()
         groups: dict = {}
         left_out, packaged = [], 0
+        designs = self._design_ids()
         for task in sorted(self.s.nodes(self.org, "Task"), key=lambda t: (t["name"].lower(), t["id"])):
             subject = _subject(self.s, self.org, task)
             if task.get("retired") or subject is None or subject.get("retired"):
@@ -9845,6 +9861,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             brief = {"id": task["id"], "name": task["name"], "subject": self._subject_brief(subject)}
             if subject["label"] == "Item":
                 left_out.append({**brief, "why": "an item's task: it follows the serial number"})
+                continue
+            if subject["id"] in designs:
+                left_out.append({**brief, "why": "a product's design: packaged on the items built from it"})
                 continue
             if not _is_calendar(task["unit"]) or (task.get("also_unit") and not _is_calendar(task["also_unit"])):
                 left_out.append({**brief, "why": "by use: it goes by its counter, on its own"})
@@ -12992,14 +13011,17 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 node_id = part_of.get(node_id)
             return False
 
+        designs = self._design_ids()
         for t in s.nodes(org, "Task"):
             subject = on.get(t["id"])
             if t.get("retired") or not subject:
                 continue
             tasks[subject] = tasks.get(subject, 0) + 1
             packaged = self._package_index().get(t["id"])
-            if out_of_service(subject):
-                due, overdue = None, False  # not due while what it's on is out of service
+            if out_of_service(subject) or subject in designs:
+                # Not due while what it's on is out of service, nor on a product's design
+                # (its programme: the items built from it carry the copies that fall due).
+                due, overdue = None, False
             elif packaged and (packaged["active"] or packaged["held"]):
                 # Due on its work package's visits, overdue once the visit is late.
                 by_package = self._package_due(t, packaged)
@@ -14046,7 +14068,8 @@ def _product_marks(p: dict, top: bool, every: dict) -> dict:
     missing) and a built tree's top (built_from: the product, the revision, the serial)."""
     out: dict = {}
     if p.get("design"):
-        out["design"] = {"rev": p["design"].get("rev", ""), "part_id": p["design"].get("part_id")}
+        out["design"] = {"rev": p["design"].get("rev", ""), "part_id": p["design"].get("part_id")} \
+            | ({"sample": True} if top and _is_sample_product(p) else {})
     dpid = p.get("design_position_id")
     if dpid:
         out["design_position_id"] = dpid

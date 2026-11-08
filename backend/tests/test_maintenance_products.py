@@ -227,10 +227,10 @@ def test_items_cant_be_fitted_into_a_design(m):
     spare = m.create_item("Motor", serial="M-9")["id"]
     with pytest.raises(Invalid, match="This is a product's design"):
         m.move_item(spare, ids["motor"])
-    wo = m.open_work_order(ids["motor"], "Fit a motor")
+    # No work order opens on a design at all (Nov 2026: work is done on the items built from it).
     events = m.s.event_count(ORG)
-    with pytest.raises(Invalid, match="This is a product's design"):
-        m.close_work_order(wo["id"], [{"kind": "replace", "new_item": {"name": "Motor", "serial": "M-2"}}])
+    with pytest.raises(Invalid, match="is in a product's design: work is done on the items built from it"):
+        m.open_work_order(ids["motor"], "Fit a motor")
     assert m.s.event_count(ORG) == events
     # Fitting into an item built from it is fine.
     _, at = _built(m, ids["root"], "0007")

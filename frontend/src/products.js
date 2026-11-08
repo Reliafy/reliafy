@@ -3,6 +3,7 @@
 // the words the lists use. A product's id is its design's top position id.
 
 import { EXPLORER_PARTS_CLASSES_TABS } from "./explorerTabs.js";
+import { explorerPath } from "./assetTree.js";
 
 export const PRODUCTS_PATH = "/products";
 export const ITEMS_PATH = "/items";
@@ -29,6 +30,20 @@ export function productPath(id, tab = null) {
 // top position picked (the Explorer's way to the sample quadcopter).
 export function productViewPath(id, view = "fmea") {
   return `${productPath(id)}?view=${encodeURIComponent(view)}&sel=${encodeURIComponent(id)}`;
+}
+
+// A link to another row or tab of the tree being looked at (the RCM's "Open in
+// LSA", the LSA's "Serves" links): on a product's page it stays on that page
+// (its tabs are ?view=), on an item's tree it keeps the tree (?root=), and
+// elsewhere it's the Explorer by positions. `extra`: { tab, sel, task, ... }.
+export function explorerHere(pathname = "", search = "", extra = {}) {
+  if (pathname.startsWith(`${PRODUCTS_PATH}/`)) {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(extra)) if (v) q.set(k === "tab" ? "view" : k, v);
+    return `${pathname}?${q}`;
+  }
+  const root = new URLSearchParams(search).get("root");
+  return explorerPath("positions", { ...(root ? { root } : {}), ...extra });
 }
 
 // An item's own page, and its tree (the Explorer scoped to that one tree).
@@ -124,13 +139,33 @@ export function isDesignScope(data, root) {
 // The product's own row (the design's top position, `r`) adds Build an item…
 // first, as its Summary does (greyed with the reason when the workspace is
 // view only).
+// A copy of the sample product's own row adds Make this my own… after it (the
+// copy becomes the user's product in place: "(sample)" leaves its name).
 export const BUILD_ITEM = { id: "build-item", label: "Build an item…" };
+export const MAKE_OWN = { id: "make-own", label: "Make this my own…" };
 export function designActions(actions, design, { row = null, viewOnly = null } = {}) {
   if (!design) return actions;
   const out = actions.filter((a) => a.id !== "report-new" && a.id !== "event-log");
   if (row?.type !== "pos" || !row.ref?.design) return out;
-  return [viewOnly ? { ...BUILD_ITEM, disabled: true, reason: viewOnly } : BUILD_ITEM, ...out];
+  const offer = (a) => (viewOnly ? { ...a, disabled: true, reason: viewOnly } : a);
+  return [offer(BUILD_ITEM), ...(isSampleRow(row) ? [offer(MAKE_OWN)] : []), ...out];
 }
+
+// Is the row a copy of the sample product, not yet made the user's own?
+export const isSampleRow = (row) => row?.type === "pos" && !!row.ref?.design?.sample;
+
+// Make this my own…'s question, and what's said once it's done.
+export function makeOwnConfirm(name) {
+  return {
+    title: "Make the sample your own?",
+    body: `“${name}” becomes your own product, exactly as it is: its design, RCM, tasks, items and reports stay, and "(sample)" leaves its name. The sample won't be added again beside it unless you ask for a fresh copy.`,
+    confirmLabel: "Make it my own",
+    pendingLabel: "Making it yours…",
+    failedWhat: "make it your own",
+    destructive: false,
+  };
+}
+export const madeOwnText = (out) => `“${out.was}” is your own product now, as “${out.name}”.`;
 
 // Words.
 const n = (count, one, many = `${one}s`) => `${Number(count || 0).toLocaleString("en-AU")} ${count === 1 ? one : many}`;

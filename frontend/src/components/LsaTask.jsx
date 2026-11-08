@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { getTaskLsa, listMaintenanceParts, updateMaintenanceTask } from "../api.js";
 import { cleanSection, kindText, modeLine, num, sectionDraft } from "../lsaTab.js";
 import { whenText } from "../rcmWorksheet.js";
-import { Link } from "react-router-dom";
-import { explorerPath } from "../assetTree.js";
+import { Link, useLocation } from "react-router-dom";
+import { explorerHere } from "../products.js";
 import { taskKey } from "../explorerRcm.js";
 
 // One task's LSA in the Explorer's LSA tab (?task=<id>, with a back link): the
@@ -55,6 +55,7 @@ function Rows({ rows, onRows, blank, addLabel, render, label }) {
 const SECTIONS = ["labour", "tools", "spares", "consumables", "access", "method", "duration_hours"];
 
 export default function LsaTask({ taskId, onBack, onChanged }) {
+  const location = useLocation();
   const [state, setState] = useState({ id: null, data: null, error: null });
   const [draft, setDraft] = useState(null);
   const [instructions, setInstructions] = useState("");
@@ -148,7 +149,7 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
           {/* Each a link to the task's row under that failure mode on the RCM tab. */}
           <ul>{data.modes.map((m) => (
             <li key={m.id}>
-              <Link to={explorerPath("positions", { sel: taskKey(m.id, t.id), tab: "rcm" })} title="Show this task under the failure mode on the RCM tab">{m.text}</Link>
+              <Link to={explorerHere(location.pathname, location.search, { sel: taskKey(m.id, t.id), tab: "rcm" })} title="Show this task under the failure mode on the RCM tab">{m.text}</Link>
               {modeLine(m) && <span className="lib-date"> · {modeLine(m)}</span>}
             </li>
           ))}</ul>
