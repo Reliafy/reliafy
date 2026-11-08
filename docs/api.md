@@ -263,6 +263,21 @@ so. Things put on the wrong position move with their history intact:
 measurement point with its readings and any open alarm work order; the app's
 route is `POST /api/maintenance/points/{id}/move`).
 
+A value someone sets rather than measures (a chlorinator's output %, a pump
+timer's hours a day) is a **setting**: `measurements.add_point` with
+`kind: "setting"` (optional `range_min` / `range_max`, a sanity check), or an
+existing point changed with `measurements.update_point` `kind: "setting"`. Its
+reads carry `changes` (each change, what it changed `from`, and the work order
+it was set at). Readings and settings taken during a work order go in
+`work_orders.close` or `work_orders.update` as `readings: [{point_id, value,
+unit?, on?, task_id?, note?}]`, or one at a time with `measurements.record`
+and `work_order_id` (`task_id`); readings read back with `work_order_id`,
+`task_id`, `work_order` and `task`. `get.work_order` lists what it asks for
+in `reading_points` and what was taken in `readings_taken`. Example: the
+seasonal change-over records the new chlorinator output with
+`reliafy maintenance work_orders.close --work-order-id W --actions '[{"kind":
+"other"}]' --readings '[{"point_id": "CHL", "value": 60}]'`.
+
 What doing a task needs (its LSA record: the how, where the RCM gives the what
 and why) is `tasks.set_resources` (`task_id`, `resources`): `labour`
 [{trade, people, hours}], `tools` [{name, qty?, note?, point_id?}] (point_id:

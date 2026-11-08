@@ -84,3 +84,30 @@ test("a point in full at 400 px: the panel sheet, nothing scrolls sideways", asy
   await expect(view(page).locator(".rt-row")).toHaveCount(3);
   expect(await sideways(page)).toBeLessThanOrEqual(400);
 });
+
+// A setting (the pool's chlorinator output): a "Setting" chip with its value in
+// the list, and in full a step chart and its changes ("Set to 60% … (from 45%)").
+test("a setting shows its chip in the list, and steps and changes in full", async ({ page, request, problems }) => {
+  const tag = `s${Date.now()}`;
+  const post = (path, data) => postOk(request, path, data);
+  const pool = await post(`${M}/positions`, { name: `Meas pool ${tag}` });
+  const chl = await post(`${M}/positions/${pool.id}/points`, {
+    name: `Chlorinator ${tag}`, kind: "setting", unit: "%", range_min: 0, range_max: 100 });
+  await post(`${M}/points/${chl.id}/readings`, { value: 45, on: ago(200) });
+  await post(`${M}/points/${chl.id}/readings`, { value: 60, on: ago(30) });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${pool.id}&tab=measurements`);
+  const row = page.locator(".ms-panel .ms-row").filter({ hasText: `Chlorinator ${tag}` });
+  await expect(row.locator(".ms-chip")).toHaveText("Setting");
+  await expect(row.locator(".ms-value")).toHaveText("60 %");
+  await row.getByRole("link", { name: `Chlorinator ${tag}` }).click();
+  await expect(view(page).getByRole("heading", { name: "Setting over time" })).toBeVisible();
+  await expect(view(page).locator(".js-plotly-plot")).toBeVisible();
+  const shape = await view(page).locator(".js-plotly-plot").evaluate((el) => el.data?.[0]?.line?.shape);
+  expect(shape).toBe("hv");
+  await expect(view(page).locator(".mv-changes li").first()).toContainText(/^Set to 60% on .+ \(from 45%\)/);
+  const head = await headMenu(page);
+  await expect(head.locator(".ovm-menu .ovm-item")).toContainText(["Record a change…", "Edit…", "Move…"]);
+  await page.keyboard.press("Escape");
+  await expectHealthy(page, problems, { label: "a setting in the Measurements tab" });
+});

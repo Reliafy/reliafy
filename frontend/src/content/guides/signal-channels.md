@@ -154,6 +154,30 @@ that range from every snapshot, old and new, and draws it in **Level over time**
   with its channel.
 - **Stop watching** ends a band. What it recorded stays.
 
+### Settings: values someone sets
+
+Not everything is measured. A chlorinator's output %, a pump timer's hours a
+day or a solar controller's setpoint is **set**, and changed now and then. Add
+it as a **Setting** (Add a measurement → What it is), or turn an existing
+point into one with **Edit…** or **Edit limits…** in its **⋯** menu (What it
+is → Setting). A setting:
+
+- shows a **Setting** chip and its current value on the Measurements tab, and
+  is never due or alarmed;
+- draws as steps when opened (the value holds until the next change), with
+  each change listed: *Set to 60% on 1 Oct 2026 (from 45%) · WO 123*;
+- can have a lowest and highest allowed value, which only catches typing
+  mistakes.
+
+A work order records readings and settings too. Its **Readings and settings**
+section lists the points its task asks for (an instrument in the task's tools,
+the point its trigger watches, its counter, and the settings where the work
+is), each with a value box; a setting's starts at its current value. Fill in
+what changed and press **Record**, or leave it to go in when you close the
+work order. An empty box records nothing. For example, the seasonal
+change-over work order records the new chlorinator output, and the
+chlorinator's history then names that work order.
+
 ### Change a band, and set levels
 
 Choose **Edit bands…** from the channel's **⋯** menu on the Measurements tab (or

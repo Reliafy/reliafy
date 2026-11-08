@@ -79,7 +79,10 @@ function Trend({ point, values = null }) {
   const lo = Math.min(...vals), hi = Math.max(...vals);
   const y = (v) => H - 3 - ((v - lo) / (hi - lo || 1)) * (H - 6);
   const x = (i) => 2 + (i / (rs.length - 1)) * (W - 4);
-  const d = rs.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(r.value).toFixed(1)}`).join(" ");
+  // A setting holds its value until the next change: drawn as steps.
+  const d = point.kind === "setting"
+    ? rs.map((r, i) => (i ? `H${x(i).toFixed(1)} V${y(r.value).toFixed(1)}` : `M${x(0).toFixed(1)} ${y(r.value).toFixed(1)}`)).join(" ")
+    : rs.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(r.value).toFixed(1)}`).join(" ");
   const line = (v) => v != null && (
     <line x1="0" x2={W} y1={y(v)} y2={y(v)} stroke="var(--danger)" strokeDasharray="3 3" strokeWidth="1" />
   );

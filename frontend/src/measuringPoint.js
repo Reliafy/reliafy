@@ -7,7 +7,7 @@
 // marked; a feed's oldest first, values only).
 
 import { isStruck, liveReadings, readingStatusText } from "./maintenanceReadings.js";
-import { needsAttention, nextReadingOn, pointChip, pointState, STATES } from "./measurementsTab.js";
+import { isSetting, needsAttention, nextReadingOn, pointChip, pointState, rangeText, STATES, withUnit } from "./measurementsTab.js";
 
 // The line over the readings, in plain words.
 export const READINGS_INTRO =
@@ -108,6 +108,10 @@ export function readingMenu(r) {
 // chip's words: which limit, the limits, how long since the last reading).
 export function pageState(point, today) {
   const detail = pointChip(point, today).title;
+  if (isSetting(point)) {
+    return point?.reading == null ? { label: "Not set yet", tone: "neutral", title: "Record the value it's set to" }
+      : { label: "Setting", tone: "accent", title: "Holds until the next change: no alarm, never due" };
+  }
   if (point?.reading == null) return { label: "No reading", tone: needsAttention(point, today) ? "warning" : "neutral", title: detail };
   if (needsAttention(point, today)) {
     return { label: "Needs attention", tone: pointState(point, today) === STATES.past ? "danger" : "warning", title: detail };
@@ -120,7 +124,7 @@ const signed = (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${numberText(Math.abs(
 // The rate (a counter) or the trend (condition), in words: {label, text,
 // detail}; null without one.
 export function trendText(point) {
-  if (!point) return null;
+  if (!point || isSetting(point)) return null;
   const u = point.unit ? ` ${point.unit}` : "";
   if (point.kind === "counter") {
     if (point.rate_per_hour != null) return { label: "Rate", text: `${numberText(point.rate_per_hour)}${u} an hour`, detail: "from the last two readings" };
@@ -152,8 +156,10 @@ export function chartTime(r) {
 }
 
 // The chart's data: the readings that count, oldest first, and the limit
-// lines (alarm below / above). Struck-out readings are left out.
-export function chartData(point) {
+// lines (alarm below / above). Struck-out readings are left out. A setting
+// draws as steps (`step`: each value holds until the next change), carried
+// on to `today`, with its allowed range (`range`) in place of alarm limits.
+export function chartData(point, today = null) {
   const live = liveReadings(point?.readings).filter((r) => r.value != null && (r.at || r.on));
   const pts = live.map((r) => ({ x: chartTime(r), y: Number(r.value), label: readingDate(r) }))
     .sort((a, b) => (a.x < b.x ? -1 : a.x > b.x ? 1 : 0));
@@ -161,14 +167,41 @@ export function chartData(point) {
     point?.alarm_above != null && { value: Number(point.alarm_above), label: `Alarm above ${numberText(point.alarm_above)}` },
     point?.alarm_below != null && { value: Number(point.alarm_below), label: `Alarm below ${numberText(point.alarm_below)}` },
   ].filter(Boolean);
-  return { points: pts, limits };
+  if (!isSetting(point)) return { points: pts, limits, step: false, range: [] };
+  const last = pts[pts.length - 1];
+  const held = last && today && today > last.x.slice(0, 10) ? [...pts, { x: today, y: last.y, label: `${dayText(today)} (still set)`, held: true }] : pts;
+  const range = [
+    point.range_max != null && { value: Number(point.range_max), label: `Highest allowed ${numberText(point.range_max)}` },
+    point.range_min != null && { value: Number(point.range_min), label: `Lowest allowed ${numberText(point.range_min)}` },
+  ].filter(Boolean);
+  return { points: held, limits, step: true, range };
+}
+
+// A setting's changes, newest first, as the point view lists them: "Set to 60%
+// on 1 Oct 2026 (from 45%)", and the work order (and task) it was set at.
+export function settingChangeRows(point) {
+  const u = point?.unit || "";
+  return (point?.changes || []).map((c, i) => ({
+    key: c.reading_id || `c${i}`,
+    text: `Set to ${withUnit(numberText(c.value), u)} on ${readingDate(c)}${c.from != null ? ` (from ${withUnit(numberText(c.from), u)})` : ""}`,
+    workOrder: c.work_order || null,
+    task: c.task || null,
+  }));
+}
+
+// The setting's allowed range as the page's fact: {text, detail}.
+export function rangeFact(point) {
+  const text = rangeText(point);
+  return text ? { text: text[0].toUpperCase() + text.slice(1), detail: "a value outside it is refused" }
+    : { text: "Any value", detail: "set a range to catch typing mistakes" };
 }
 
 // What the point is, on one muted line: "Condition · read by hand · mm/s".
 export function pointMeta(point) {
   const source = point.derived ? "from a signal channel" : point.source === "automated"
     ? (point.tag ? `fed by ${point.tag}` : "fed automatically") : "read by hand";
-  return [point.kind === "counter" ? "Counter" : "Condition", source, point.unit, point.retired && "retired"]
+  const kind = point.kind === "counter" ? "Counter" : isSetting(point) ? "Setting" : "Condition";
+  return [kind, source, point.unit, point.retired && "retired"]
     .filter(Boolean).join(" · ");
 }
 

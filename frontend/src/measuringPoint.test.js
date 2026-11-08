@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   READINGS_INTRO, canEditReadings, chartData, chartTime, dayText, numberText, pageState, pointDates, pointMeta, readingChip,
-  readingDate, readingMenu, readingRows, trendText, valueHeading, pointMoveChoices } from "./measuringPoint.js";
+  readingDate, readingMenu, readingRows, trendText, valueHeading, pointMoveChoices, rangeFact, settingChangeRows } from "./measuringPoint.js";
 
 const TODAY = "2026-11-07";
 const point = (over = {}) => ({
@@ -129,4 +129,27 @@ test("Move…: the positions in tree order, the one it's on marked, a search by 
   assert.deepEqual(inside.rows.map((r) => r.id), ["chlor", "cell"]);
   assert.deepEqual(inside.rows[1].path, ["Pool", "Salt chlorinator"]);
   assert.equal(pointMoveChoices(positions, "", null, 2).more, true);
+});
+
+test("a setting: steps carried on to today, its range, its changes in words", () => {
+  const point = { kind: "setting", unit: "%", range_min: 0, range_max: 100, reading: 60,
+    readings: [{ id: "b", on: "2026-10-01", value: 60, status: "ok" }, { id: "a", on: "2026-04-01", value: 45, status: "ok" }],
+    changes: [
+      { reading_id: "b", on: "2026-10-01", when: "2026-10-01", value: 60, from: 45, work_order: { id: "w1", number: 123 }, task: { id: "t", name: "Change-over" } },
+      { reading_id: "a", on: "2026-04-01", when: "2026-04-01", value: 45, from: null },
+    ] };
+  const chart = chartData(point, "2026-11-08");
+  assert.equal(chart.step, true);
+  assert.deepEqual(chart.points.map((p) => [p.x, p.y]), [["2026-04-01", 45], ["2026-10-01", 60], ["2026-11-08", 60]]);
+  assert.deepEqual(chart.range.map((r) => r.value), [100, 0]);
+  assert.equal(chartData({ ...point, kind: "condition" }, "2026-11-08").points.length, 2);
+  const rows = settingChangeRows(point);
+  assert.equal(rows[0].text, "Set to 60% on 1 Oct 2026 (from 45%)");
+  assert.equal(rows[0].workOrder.number, 123);
+  assert.equal(rows[1].text, "Set to 45% on 1 Apr 2026");
+  assert.equal(rangeFact(point).text, "0 to 100%");
+  assert.equal(rangeFact({ unit: "%" }).text, "Any value");
+  assert.equal(pageState(point, "2026-11-08").label, "Setting");
+  assert.equal(trendText(point), null);
+  assert.equal(pointMeta({ ...point, source: "manual" }), "Setting · read by hand · %");
 });

@@ -10,6 +10,8 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import { FailureModePicker, Field, FormModal, NotesCard, fmtDate, today } from "../components/MaintenanceParts.jsx";
 import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
+import WorkOrderReadings from "../components/WorkOrderReadings.jsx";
+import { progressText, readingRows, readingsToSend, startValues } from "../workOrderReadings.js";
 import { partChoices, stockText } from "../maintenanceSpares.js";
 import { actionKinds, itemAtText, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
@@ -35,11 +37,15 @@ export default function MaintenanceWorkOrder() {
   const [wo, setWo] = useState(null);
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(null);
+  // The Readings and settings boxes: here, so closing sends what's filled in.
+  const [values, setValues] = useState({});
 
   const refresh = useCallback(() => {
     getWorkOrder(id).then(setWo).catch((e) => setError(e.message));
   }, [id]);
   useEffect(() => refresh(), [refresh]);
+  // Fresh boxes whenever the work order is (re)loaded or a Record saved: a setting starts at its value.
+  useEffect(() => { if (wo) setValues(startValues(readingRows(wo))); }, [wo]);
 
   if (error && !wo) return <div className="app"><LoadFailed header error={error} notFound="Work order not found." to="/maintenance" label="Back to Maintenance" /></div>;
   if (!wo) return <div className="app"><div className="card empty">Loading…</div></div>;
@@ -108,6 +114,9 @@ export default function MaintenanceWorkOrder() {
                      onChange={async (e) => setWo(await checkWorkItem(wo.id, i, e.target.checked))} />
               <span style={c.done ? { textDecoration: "line-through", color: "var(--muted)" } : null}>
                 {c.position_id ? <Link to={`/asset-register/positions/${c.position_id}`}>{c.text}</Link> : c.text}</span>
+              {c.task_id && !c.step && progressText(wo.readings_by_task?.[c.task_id]) && (
+                <span className="lib-date maint-line-readings">{progressText(wo.readings_by_task[c.task_id])}</span>
+              )}
             </label>
           ))}
         </section>
@@ -120,6 +129,8 @@ export default function MaintenanceWorkOrder() {
                          photos={wo.photos || []} onChanged={refresh}
                          related={[wo.subject, wo.position && { ...wo.position, kind: "Position" },
                            wo.location && { ...wo.location, kind: "Location" }]} />
+
+      {wo.status !== "cancelled" && <WorkOrderReadings wo={wo} values={values} setValues={setValues} onRecorded={setWo} />}
 
       {wo.status === "cancelled" ? (
         <section className="card"><p>Cancelled {fmtDate(wo.closed)}{wo.cancel_reason ? `: ${wo.cancel_reason}` : ""}.</p></section>
@@ -143,16 +154,15 @@ export default function MaintenanceWorkOrder() {
           {wo.close_notes && <p className="maint-notes">{wo.close_notes}</p>}
         </section>
       ) : (
-        <CloseForm wo={wo} onClosed={setWo} />
+        <CloseForm wo={wo} onClosed={setWo} readings={readingsToSend(readingRows(wo), values)} />
       )}
     </div>
   );
 }
 
-function CloseForm({ wo, onClosed }) {
+function CloseForm({ wo, onClosed, readings }) {
   const [on, setOn] = useState(today());
   const [notes, setNotes] = useState("");
-  const [readings, setReadings] = useState({});
   const kinds = actionKinds(KINDS, wo);
   // A replacement can only be recorded at a position (an item's: where it's fitted now).
   const atPosition = wo.can_replace !== false;
@@ -182,9 +192,7 @@ function CloseForm({ wo, onClosed }) {
         new_item: a.kind === "replace" && a.new_name ? { name: a.new_name, serial: a.new_serial || "" } : null,
         ...(a.kind === "replace" && a.part_id ? { part_id: a.part_id, from_location_id: a.from || null } : {}),
       }));
-      const meterReadings = Object.entries(readings).filter(([, v]) => v !== "")
-        .map(([point_id, value]) => ({ point_id, value: Number(value) }));
-      onClosed(await closeWorkOrder(wo.id, { actions: body, on, notes, readings: meterReadings }));
+      onClosed(await closeWorkOrder(wo.id, { actions: body, on, notes, readings }));
     } catch (e) {
       setError(e.message);
       setBusy(false);
@@ -267,13 +275,9 @@ function CloseForm({ wo, onClosed }) {
       </div>
       <div className="rcm-form">
         <Field label="Done on"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
-        {(wo.measurements || []).map((mt) => (
-          <Field key={mt.id} label={`${mt.name} now (${mt.unit}, optional)`}>
-            <input type="number" inputMode="decimal" min="0" step="any" value={readings[mt.id] ?? ""}
-                   placeholder={mt.reading != null ? `last: ${mt.reading}` : ""}
-                   onChange={(e) => setReadings({ ...readings, [mt.id]: e.target.value })} />
-          </Field>
-        ))}
+        {readings.length > 0 && (
+          <p className="lib-date">Closing also records {readings.length === 1 ? "the value" : `the ${readings.length} values`} filled in under Readings and settings.</p>
+        )}
         <Field label="Closing notes (optional; the notes above are kept)"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
       <div className="maint-row">

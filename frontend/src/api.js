@@ -2359,6 +2359,10 @@ export function getWorkOrder(id) {
 export function closeWorkOrder(id, body) {
   return postJson(`/api/maintenance/work-orders/${id}/close`, body);
 }
+// Readings and settings taken at a work order, recorded now ([{point_id, value, task_id?}]): returns the work order.
+export function recordWorkOrderReadings(id, readings) {
+  return postJson(`/api/maintenance/work-orders/${id}/readings`, { readings });
+}
 
 export function setTaskLastDone(taskId, lastDone) {
   return request(`/api/maintenance/tasks/${taskId}`, {

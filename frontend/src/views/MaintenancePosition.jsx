@@ -829,7 +829,7 @@ export function MeasurementsCard({ measurements, target, onChanged }) {
             {measurements.map((c) => (
               <tr key={c.id}>
                 <td>{c.name}
-                  <div className="lib-date">{c.kind === "counter" ? "counts use" : "condition"} · {c.source === "automated" ? `feed: ${c.tag}` : "read by hand"}</div></td>
+                  <div className="lib-date">{c.kind === "counter" ? "counts use" : c.kind === "setting" ? "setting" : "condition"} · {c.source === "automated" ? `feed: ${c.tag}` : "read by hand"}</div></td>
                 <td>{c.reading != null ? `${c.reading} ${c.unit}` : "—"}
                   {c.status !== "ok" && <span className="maint-overdue"> {c.status}</span>}
                   <div className="lib-date">{c.read_at ? readingWhen({ when: c.read_when, precision: c.read_precision, at: c.read_at }, fmtDate) : ""}</div></td>
@@ -837,7 +837,7 @@ export function MeasurementsCard({ measurements, target, onChanged }) {
                 <td className="lib-date">
                   {c.kind === "counter"
                     ? (c.rate_per_day != null ? `${c.rate_per_day} ${c.unit} a day` : "needs two readings")
-                    : <>
+                    : c.kind === "setting" ? "holds until changed" : <>
                       {[c.alarm_above != null && `above ${c.alarm_above}`, c.alarm_below != null && `below ${c.alarm_below}`].filter(Boolean).join(", ") || "no limits"}
                       {c.projected_alarm && <div>reaches it about {fmtDate(c.projected_alarm)}</div>}
                       {c.alarm_work_order && <div><Link to={`/maintenance/work-orders/${c.alarm_work_order.id}`}>#{c.alarm_work_order.number} open</Link></div>}
@@ -863,26 +863,39 @@ export function MeasurementsCard({ measurements, target, onChanged }) {
 }
 
 export function PointModal({ target, onClose, onDone }) {
-  const [f, setF] = useState({ name: "", kind: "condition", unit: "", source: "manual", tag: "", alarm_above: "", alarm_below: "" });
+  const [f, setF] = useState({ name: "", kind: "condition", unit: "", source: "manual", tag: "", alarm_above: "", alarm_below: "",
+    range_min: "", range_max: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const counter = f.kind === "counter";
+  const setting = f.kind === "setting";
+  const blank = (v) => (v === "" ? null : v);
   return (
     <FormModal title="Add a measurement" submitLabel="Add" canSubmit={(counter ? !!f.unit : !!f.name.trim()) && !tooLong(f.name) && (f.source === "manual" || !!f.tag.trim())}
                onClose={onClose} onSubmit={async () => onDone(await (target.kind === "item" ? addItemMeasurementPoint : addMeasurementPoint)(target.id, {
-                 ...f, alarm_above: counter ? null : f.alarm_above, alarm_below: counter ? null : f.alarm_below,
+                 ...f, alarm_above: f.kind === "condition" ? blank(f.alarm_above) : null,
+                 alarm_below: f.kind === "condition" ? blank(f.alarm_below) : null,
+                 range_min: setting ? blank(f.range_min) : null, range_max: setting ? blank(f.range_max) : null,
                }))}>
       <Field label="What it is">
         <select value={f.kind} onChange={set("kind")}>
           <option value="condition">Condition (vibration, temperature, wear)</option>
           <option value="counter">Counts use (run hours, cycles, km)</option>
+          <option value="setting">Setting (output %, hours a day, a setpoint)</option>
         </select>
       </Field>
-      <Field label="Name" text={f.name}><input value={f.name} placeholder={counter ? "e.g. Hour meter" : "e.g. Vibration"} onChange={set("name")} /></Field>
+      <Field label="Name" text={f.name}><input value={f.name} placeholder={counter ? "e.g. Hour meter" : setting ? "e.g. Chlorinator output" : "e.g. Vibration"} onChange={set("name")} /></Field>
       {counter ? (
         <Field label="Counts"><select value={f.unit} onChange={set("unit")}>
           <option value="">Choose…</option>
           {["hours", "cycles", "km", "starts", "tonnes", "litres"].map((u) => <option key={u} value={u}>{u}</option>)}
         </select></Field>
+      ) : setting ? (
+        <>
+          <p className="lib-date">A value someone sets. It holds until the next change: no alarm, never due. A work order can record each change.</p>
+          <Field label="Unit"><input value={f.unit} placeholder="e.g. %, h/day, °C" onChange={set("unit")} /></Field>
+          <Field label="Lowest allowed (optional)"><input type="number" step="any" value={f.range_min} onChange={set("range_min")} /></Field>
+          <Field label="Highest allowed (optional)"><input type="number" step="any" value={f.range_max} onChange={set("range_max")} /></Field>
+        </>
       ) : (
         <>
           <Field label="Unit"><input value={f.unit} placeholder="e.g. mm/s, °C" onChange={set("unit")} /></Field>
@@ -911,12 +924,13 @@ export function PointReadingModal({ point, onClose, onDone }) {
   const [on, setOn] = useState(today());
   // The time of day it was read, now by default: clear it when it isn't known.
   const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5));
+  const setting = point.kind === "setting";
   return (
-    <FormModal title={`Reading: ${point.name}`} submitLabel="Save" canSubmit={value !== ""} onClose={onClose}
+    <FormModal title={`${setting ? "New setting" : "Reading"}: ${point.name}`} submitLabel="Save" canSubmit={value !== ""} onClose={onClose}
                onSubmit={async () => onDone(await recordMeasurementReading(point.id, Number(value), on, time ? `${on}T${time}` : undefined))}>
-      <Field label={`Reading${point.unit ? ` (${point.unit})` : ""}`}><input type="number" step="any" autoFocus value={value}
-             placeholder={point.reading != null ? `last: ${point.reading}` : ""} onChange={(e) => setValue(e.target.value)} /></Field>
-      <Field label="Read on"><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
+      <Field label={`${setting ? "Set to" : "Reading"}${point.unit ? ` (${point.unit})` : ""}`}><input type="number" step="any" autoFocus value={value}
+             placeholder={point.reading != null ? `${setting ? "now" : "last"}: ${point.reading}` : ""} onChange={(e) => setValue(e.target.value)} /></Field>
+      <Field label={setting ? "Changed on" : "Read on"}><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
       <Field label="At (clear it if not known)"><input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></Field>
     </FormModal>
   );

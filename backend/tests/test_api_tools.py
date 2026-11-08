@@ -523,3 +523,36 @@ def test_maintenance_rcm_interval_calculators_over_rest(maint):
     assert r.status_code == 200 and r.json()["recommended"] == {"value": 2, "unit": "years"}, r.text
     r = maint.post("/api/v1/maintenance/rcm.interval_failure_finding", {"failure_rate": 0.1})
     assert r.status_code >= 400 and "Give a target unavailability" in r.text
+
+
+def test_maintenance_settings_and_work_order_readings_over_rest(maint):
+    """A setting point and readings taken at a work order over REST, as over MCP (the
+    action tables make both): kind setting on add_point and update_point, readings on
+    work_orders.update / close, and work_order_id / task_id on record and in reads."""
+    pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Pool"}).json()
+    r = maint.post("/api/v1/maintenance/measurements.add_point", {
+        "position_id": pos["id"], "name": "Chlorinator output", "kind": "setting", "unit": "%", "range_max": 100})
+    assert r.status_code == 200, r.text
+    chl = r.json()
+    assert chl["kind"] == "setting" and chl["range_max"] == 100
+    timer = maint.post("/api/v1/maintenance/measurements.add_point", {
+        "position_id": pos["id"], "name": "Pump timer", "kind": "condition", "unit": "h"}).json()
+    r = maint.post("/api/v1/maintenance/measurements.update_point", {"point_id": timer["id"], "kind": "setting"})
+    assert r.status_code == 200 and r.json()["kind"] == "setting", r.text
+    wo = maint.post("/api/v1/maintenance/work_orders.open", {"position_id": pos["id"], "title": "Change-over"}).json()
+    r = maint.post("/api/v1/maintenance/work_orders.update", {
+        "work_order_id": wo["id"], "readings": [{"point_id": timer["id"], "value": 8}]})
+    assert r.status_code == 200, r.text
+    assert {p["name"] for p in r.json()["reading_points"]} == {"Chlorinator output", "Pump timer"}
+    r = maint.post("/api/v1/maintenance/work_orders.close", {
+        "work_order_id": wo["id"], "actions": [{"kind": "other"}], "readings": [{"point_id": chl["id"], "value": 60}]})
+    assert r.status_code == 200, r.text
+    assert [x["point"]["name"] for x in r.json()["readings_taken"]] == sorted(["Chlorinator output", "Pump timer"])
+    r = maint.post("/api/v1/maintenance/measurements.record", {
+        "point_id": chl["id"], "value": 65, "work_order_id": wo["id"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["readings"][0]["work_order_id"] == wo["id"]
+    assert [c["value"] for c in r.json()["changes"]] == [65, 60]
+    r = maint.post("/api/v1/maintenance/measurements.add_point", {
+        "position_id": pos["id"], "name": "Bad", "kind": "setting", "range_min": 5, "range_max": 1})
+    assert r.status_code >= 400 and "lowest value" in r.text

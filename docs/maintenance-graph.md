@@ -291,6 +291,7 @@ failure is caused by some of the position's failure modes:
 (:Position)-[:CAN_FAIL_AS]->(:FailureMode)          # as before
 (:Task)-[:MITIGATES]->(:FailureMode)                # many-to-many: see below
 (:Task)-[:WATCHES]->(:MeasurementPoint)            # a reading trigger (task.trigger_set)
+(:Reading)-[:READ_DURING]->(:WorkOrder)             # taken or set at a work order (reading.added work_order_id)
 (:LoggedEvent {event_type, note, when})-[:LOGGED_ON]->(:Position)   # position.event_logged
 ```
 
@@ -1129,6 +1130,43 @@ how. Each task carries its LSA record: what doing it needs.
   out and counted).
 - **Copies.** Copying a position copies its tasks' records, less the tools'
   `point_id` (the copy has no points yet).
+
+## Settings, and readings taken at a work order
+
+Some things on a position aren't measured but **set**: a chlorinator's output %,
+a pump timer's hours a day, a solar controller's setpoint. They change at a
+work order (the seasonal change-over) and the history should say so.
+
+- **A point kind, not a new node.** `MeasurementPoint.kind` takes `setting`
+  beside `counter` and `condition` (`point.added` with `kind: "setting"`). An
+  existing point changes kind through `point.updated` (`changes.kind`): a
+  condition point and a setting swap; a counter no task by use goes by can
+  become either; nothing becomes a counter (add one). A condition point a
+  task's trigger watches stays one. Optional `range_min` / `range_max` (in
+  `point.added`, or `point.updated` changes) refuse a value outside them when
+  it's entered: a sanity check, never an alarm.
+- **Its values are readings.** `reading.added` as before; a setting never
+  checks alarm limits or raises a work order, and the app never marks it due.
+  Reads give `changes` (newest first): each time the value changed, what it
+  changed `from`, and the work order. A reading that repeats the value it held
+  is kept but changes nothing.
+- **Readings taken at a work order.** `reading.added` gains optional
+  `work_order_id` and `task_id` (Nov 2026; older events carry neither and
+  replay as before). The projector copies them onto the `Reading` and adds
+  `(:Reading)-[:READ_DURING]->(:WorkOrder)`; a `reading.corrected` keeps them
+  on the corrected reading. They come from `work_orders.close` and
+  `work_orders.update` (`readings: [{point_id, value, unit?, on?, task_id?,
+  note?}]`, all checked before any is written, an empty value skipped), the
+  app's `POST /api/maintenance/work-orders/{id}/readings` (the page's Record)
+  and `measurements.record` with `work_order_id`. The task defaults to the one
+  whose LSA tool, trigger or counter names the point, else the work order's
+  only task.
+- **What a work order asks for.** `work_order().reading_points`: the
+  hand-read points its tasks' LSA tools name (`resources.tools[].point_id`),
+  the point a task's trigger watches, a task by use's counter, and every
+  setting on what each task (or the work order) is on, each once with `why`
+  and whether a value was taken at it. `readings_taken` lists what was;
+  `readings_by_task` counts them per task ("Readings: 2 of 3 recorded").
 
 ## Making Neo4j the primary store later
 

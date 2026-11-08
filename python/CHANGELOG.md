@@ -2,6 +2,18 @@
 
 ## Unreleased (0.5.1)
 
+- **Settings, and readings from a work order**: `maintenance
+  measurements.add_point` takes `kind: "setting"` (a value someone sets, such
+  as a chlorinator's output %: it holds until the next change, never alarms)
+  with optional `range_min` / `range_max`; `measurements.update_point` takes
+  `kind`, `range_min`, `range_max` and `clear_range`, so an existing point can
+  become a setting. `work_orders.update` takes `readings` (as `close` does,
+  each `{point_id, value, unit?, on?, task_id?, note?}`) and
+  `measurements.record` takes `work_order_id` and `task_id`; readings read
+  back with them, a setting's point with `changes`, and `get.work_order` with
+  `reading_points`, `readings_taken` and `readings_by_task`. No new actions
+  and no client code changed.
+
 - **The P-F interval alone is enough**: `maintenance
   rcm.interval_on_condition` needs only `pf_interval` and `pf_unit` and
   answers half the P-F interval, or the net P-F interval (less the new

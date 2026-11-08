@@ -4,6 +4,7 @@ import {
   STATES, branchQuery, latestNote, limitsText, needsAttention, placeOf, pointChip, pointHref, pointMenu, pointState,
   VIEW_PARAMS, measurementAddress, nextReadingOn, pointPagePath, pointSubline, pointsCsv, readMeasurementsQuery, readingDue, recentValues, recordedBy, rowAction, sortPoints, stateText,
   channelChip, channelMenu, channelPlace, channelSubline, channelValues, isFed, measurementRows, rowNeedsAttention,
+  isSetting, kindWord, rangeText, withUnit,
 } from "./measurementsTab.js";
 
 const TODAY = "2026-11-07";
@@ -155,8 +156,10 @@ test("clicking a row, and its ⋯ menu", () => {
   assert.equal(pointHref(cond({ item: { id: "i1" } })), "/asset-register/items/i1");
   assert.deepEqual(pointMenu(read).map((i) => i.id), ["page", "record", "history", "limits", "open", "move"]);
   assert.equal(pointMenu(read)[0].label, "Open");
-  // A counter has no limits to edit; a feed's point can't be read by hand (greyed, with the reason).
-  assert.deepEqual(pointMenu(cond({ kind: "counter" })).map((i) => i.id), ["page", "record", "move"]);
+  // A counter has no limits, but Edit… changes its kind; a feed's point can't be read by hand (greyed, with the reason).
+  assert.deepEqual(pointMenu(cond({ kind: "counter" })).map((i) => i.id), ["page", "record", "limits", "move"]);
+  assert.equal(pointMenu(cond({ kind: "counter" }))[2].label, "Edit…");
+  assert.equal(pointMenu(read)[3].label, "Edit limits…");
   const feed = pointMenu(cond({ source: "automated", tag: "sensor.ph", alarm_work_order: { id: "w", number: 4 } }));
   assert.deepEqual(feed.map((i) => i.id), ["page", "record", "limits", "work-order", "move"]);
   assert.equal(feed[1].disabled, true);
@@ -249,4 +252,24 @@ test("pointsCsv adds the channels shown after the points", () => {
   const lines = csv.trim().split(/\r?\n/);
   assert.equal(lines.length, 3);
   assert.match(lines[2], /^Pump power,Filter pump,sensor,W,650,2026-11-06,sensor,,,OK$/);
+});
+
+test("a setting: a Setting chip with its value, never due, its range in words", () => {
+  const setting = cond({ kind: "setting", unit: "%", alarm_above: null, alarm_below: null, reading: 60, read_at: "2026-10-01",
+    range_min: 0, range_max: 100, readings: trail([["2026-01-01", 45], ["2026-04-01", 45], ["2026-10-01", 60]]) });
+  assert.equal(isSetting(setting), true);
+  assert.equal(kindWord(setting), "setting");
+  assert.deepEqual([pointChip(setting, TODAY).label, pointChip(setting, TODAY).tone], ["Setting", "accent"]);
+  assert.equal(pointChip(setting, TODAY).title, "Set to 60% since 2026-10-01. Allowed 0 to 100%");
+  assert.equal(readingDue(setting, "2030-01-01"), false);
+  assert.equal(needsAttention(setting, "2030-01-01"), false);
+  assert.equal(pointChip(cond({ kind: "setting", reading: null }), TODAY).label, "Setting");
+  assert.equal(limitsText(cond({ kind: "setting", alarm_above: null, alarm_below: null })), "Holds until changed");
+  assert.equal(rangeText({ unit: "h", range_max: 24 }), "at most 24 h");
+  assert.equal(rangeText({ unit: "h", range_min: 2 }), "at least 2 h");
+  assert.equal(withUnit(60, "%"), "60%");
+  assert.equal(withUnit(6, "h/day"), "6 h/day");
+  assert.equal(pointSubline(setting), "setting · %");
+  assert.equal(pointMenu({ ...setting, position: { id: "a" } })[1].label, "Record a change…");
+  assert.equal(pointMenu({ ...setting, position: { id: "a" } }).find((i) => i.id === "limits").label, "Edit…");
 });
