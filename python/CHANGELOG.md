@@ -9,6 +9,11 @@
   `POST /api/v1/maintenance/models.link` and `models.unlink`; the CLI has
   `reliafy maintenance models.link` and `models.unlink`.
 
+- **RBDs on positions, and the model in use**: `maintenance models.link`
+  takes `build_rbd: true` (an RBD from the positions inside; with
+  `replace_link_id`, rebuilt), `rbd_id` (link an existing RBD) and
+  `use_link_id` (which of a position's rows is its model in use).
+
 - **Predictions on positions**: `maintenance models.link` takes `prediction`
   (`{environment?, mission_time?, assign?}`), a parts-count prediction from
   the position's parts list, saved as a prediction and an exponential model.

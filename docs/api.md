@@ -265,6 +265,17 @@ part number a handbook `record_id` (and `quality_factor`): it's saved as a
 reliability prediction (its page links back to the position) and as an
 exponential model at its rate, and attached with role `prediction`. The app
 previews it with `POST /api/maintenance/positions/{id}/prediction`.
+An RBD row: `rbd_id` links an existing diagram; `build_rbd: true` makes a new
+one from the positions one level inside (each block the child's model in use,
+or its own RBD as a sub-system; a flagged placeholder where it has none), wired
+by their connections and redundancy groups, in series where there are none,
+saved under Design › Systems as "<position> (from the tree)"; with
+`replace_link_id` (its RBD row) it's rebuilt into the same diagram, adding new
+positions and keeping edits. `use_link_id` makes one of the position's rows
+its model in use (by default its own life model, else its RBD, else its
+prediction): what its roll-up reports, what the RCM offers first and what a
+parent's RBD block takes. `GET /api/maintenance/position-models/{id}?age=`
+adds an RBD's system reliability at that age.
 `fit: true` with `baseline` or
 `trust` saves a Bayesian update instead (below). `maintenance models.unlink`
 (`link_id`) takes one off; the model stays in Models. `get.position` lists

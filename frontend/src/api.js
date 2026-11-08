@@ -3342,8 +3342,8 @@ export function listPositionModels(positionIds) {
   return request(`/api/maintenance/position-models${q}`);
 }
 // One attached model in full (the panel): parameters, plot lines, data, what uses it.
-export function getPositionModel(linkId) {
-  return request(`/api/maintenance/position-models/${linkId}`);
+export function getPositionModel(linkId, { age } = {}) {
+  return request(`/api/maintenance/position-models/${linkId}${age ? `?age=${encodeURIComponent(age)}` : ""}`);
 }
 // Attach a model: {model_id, model_type} (a saved one), {from_class: true} or {fit: true,
 // distribution, scope}; failure_mode_ids, note and replace_link_id with any of them.

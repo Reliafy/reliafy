@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, markersOf, rowText } from "./assetTree.js";
 import { positionOf } from "./explorerRcm.js";
 import {
-  MODEL_CHIPS, MODEL_USUAL, attachedFor, b10Text, boundsLabel, countsText, fmt, graftModels, headline, isModelRow, meanText, modelKey,
+  MODEL_CHIPS, MODEL_USUAL, attachedFor, b10Text, boundsLabel, countsText, inUseWords, fmt, graftModels, headline, isModelRow, meanText, modelKey,
   openForModels, predictionAssign, predictionWords, rollupText, rowActions, usedText, withBounds,
 } from "./explorerModels.js";
 
@@ -31,7 +31,7 @@ const link = (id, pos, over = {}) => ({
   used_by: { decisions: [], rbds: [] }, ...over,
 });
 const LINKS = [
-  link("a", "pump"),
+  link("a", "pump", { in_use: true }),
   link("b", "pump", { role: "fitted", stale: "2 failures since it was fitted: refit it", failure_modes: [{ id: "seal", text: "Seal leaks" }] }),
   link("c", "fan", { model: null }),
 ];
@@ -53,7 +53,7 @@ test("each link hangs under its position, before the positions inside it", () =>
 
 test("a position rolls up its own models open, and everything inside it closed", () => {
   const g = graftModels(buildDisplay(DATA, "positions"), LINKS);
-  assert.equal(rollupText(g.rows.get("pump"), true), "2 models · 1 stale");
+  assert.equal(rollupText(g.rows.get("pump"), true), "2 models · 1 stale · in use: Weibull");
   assert.equal(rollupText(g.rows.get("plant"), true), "");
   assert.equal(rollupText(g.rows.get("plant"), false), "3 models · 1 stale · 1 missing");
   assert.equal(rollupText(g.rows.get("fan"), true), "1 model · 1 missing");
@@ -86,7 +86,7 @@ test("the row's actions: Refit only for a fitted model, Open in Models only when
   assert.deepEqual(rowActions(g.rows.get(modelKey("a"))).map((a) => a.id),
     ["model-open", "model-page", "model-bayes", "model-replace", "model-unlink"]);
   assert.deepEqual(rowActions(g.rows.get(modelKey("b"))).map((a) => a.id),
-    ["model-open", "model-page", "model-refit", "model-bayes", "model-replace", "model-unlink"]);
+    ["model-open", "model-page", "model-use", "model-refit", "model-bayes", "model-replace", "model-unlink"]);
   const bayes = graftModels(buildDisplay(DATA, "positions"), [link("q", "pump", { role: "bayesian", model: { ...WEIBULL, kind: "Weibull (Bayesian)" } })]);
   assert.equal(rowActions(bayes.rows.get(modelKey("q"))).find((a) => a.id === "model-bayes").label, "Update with new failures…");
   assert.deepEqual(rowActions(g.rows.get(modelKey("c"))).map((a) => a.id), ["model-open", "model-replace", "model-unlink"]);
@@ -155,4 +155,27 @@ test("a covariate model's headline names the level it's read at", () => {
     { id: "reference", label: "at", text: "its lowest tested stress (Temperature (°C) 60, Load 0.5)" },
   ] };
   assert.equal(headline(alt), "Life 2,122 hours (1,789–2,478) · at its lowest tested stress (Temperature (°C) 60, Load 0.5)");
+});
+
+test("one model in use per position: its chip, its actions, the roll-up and the evidence order", () => {
+  const rbdLink = link("r", "pump", { model_type: "rbd", role: "rbd", in_use: false, source: { built_from: 2 },
+    model: { name: "Pump (from the tree)", kind: "RBD", family: "rbd", path: "/systems/b/r", unit: "Hours",
+      numbers: [{ id: "mtbf", value: 849, unit: "Hours" }], counts: { blocks: 2, placeholders: 1 } } });
+  const life = link("l", "pump", { in_use: true });
+  const g = graftModels(buildDisplay(DATA, "positions"), [life, rbdLink]);
+  const pump = g.rows.get("pump");
+  assert.equal(rollupText(pump, true), "2 models · in use: Weibull");
+  const rbdRow = g.rows.get(modelKey("r"));
+  assert.deepEqual(rowActions(rbdRow).map((a) => a.id), ["model-open", "model-page", "model-use", "model-rebuild", "model-unlink"]);
+  assert.equal(rowActions(rbdRow).find((a) => a.id === "model-page").label, "Open the RBD");
+  assert.ok(!rowActions(g.rows.get(modelKey("l"))).some((a) => a.id === "model-use"));
+  assert.equal(headline(rbdLink.model), "MTBF 849 hours");
+  assert.equal(countsText(rbdLink.model), "2 blocks, 1 placeholder");
+  assert.equal(inUseWords(rbdLink), "RBD");
+  const one = graftModels(buildDisplay(DATA, "positions"), [link("x", "fan", { in_use: true })]);
+  assert.ok(!rowActions(one.rows.get(modelKey("x"))).some((a) => a.id === "model-use"));
+  assert.equal(rollupText(one.rows.get("fan"), true), "1 model");
+  const ev = attachedFor([link("a", "pump", { model_id: "plain" }), link("b", "pump", { model_id: "used", in_use: true })], { expectedType: "model" });
+  assert.deepEqual(ev.map((o) => o.id), ["used", "plain"]);
+  assert.equal(ev[0].meta, "On this position · in use");
 });

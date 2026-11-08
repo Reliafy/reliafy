@@ -1199,6 +1199,14 @@ saved model assigned by hand. Code: `backend/maintenance/position_models.py`.
   it's a `position.model_linked` like any other.
 - **Covariate models** (accelerated life, proportional hazards) are linked as
   they are; the link carries no stress (that's set where the model is used).
+- **RBDs** (role and `model_type` `rbd`): a saved diagram linked to a
+  position, built from the positions inside (`source.built_from`, the child
+  ids) or linked as it is. Blocks take each child's model in use; a child with
+  none gets a placeholder (`placeholder: true`). No new event for the link.
+- **The model in use.** `position.model_in_use_set {position_id, link_id}`
+  sets `in_use` on that link and clears it on the position's others. With none
+  set, the in-use row is the latest life model, else the RBD, else the
+  prediction (`in_use_link`); unlinking the set one falls back to that.
 - **For which failures.** `failure_mode_ids` are the position's own failure
   modes it describes; none means every failure there. A fit for some modes
   counts failures by the others as suspensions.

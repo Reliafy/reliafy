@@ -306,3 +306,70 @@ def test_covariate_models_are_attached_as_they_are(m, db):
     full = pm.detail(m, db, OWNERS, set(), alt["id"])
     assert full["stress_note"].startswith("Shown as fitted") and full["curves"]["sf"]
     assert full["curves"]["what"].startswith("Reliability at its lowest tested stress")
+
+
+def test_an_rbd_built_from_whats_inside_with_placeholders_then_rebuilt(m, db):
+    plant = m.create_position("Pump station")["id"]
+    a = m.create_position("Pump A", parent_id=plant)["id"]
+    m.create_position("Pump B", parent_id=plant)
+    pm.link_saved(m, db, OWNERS, set(), a, "model", SAMPLE)
+    link = pm.build_rbd(m, db, OWNERS, set(), plant)
+    assert link["model_type"] == link["role"] == "rbd" and link["placeholders"] == ["Pump B"]
+    rbd = db.rbds.find_one({"_id": link["model_id"]})
+    assert rbd["name"] == "Pump station (from the tree)"
+    blocks = {n["data"]["label"]: n["data"] for n in rbd["graph"]["nodes"] if n["type"] == "component"}
+    assert blocks["Pump A"]["model"].get("modelId") == SAMPLE  # the child's model in use, linked
+    assert blocks["Pump B"]["model"]["placeholder"] is True  # never invented: flagged
+    [row] = pm.describe(m, db, OWNERS, set(), m.position_models(plant), age=500)
+    assert row["source_text"] == "Built from 2 positions inside · 1 placeholder"
+    assert row["model"]["kind"] == "RBD" and row["model"]["quality"]["word"] == "1 placeholder"
+    nums = {n["id"]: n for n in row["model"]["numbers"]}
+    assert nums["mtbf"]["value"] > 0 and nums["reference"]["text"].startswith("reliability ")
+    full = pm.detail(m, db, OWNERS, set(), link["id"])
+    assert {b["label"]: b["position"]["name"] for b in full["blocks"]} == {"Pump A": "Pump A", "Pump B": "Pump B"}
+    assert next(b for b in full["blocks"] if b["label"] == "Pump B")["placeholder"] is True
+    # Rebuild: a new position inside becomes a block; the diagram (and its edits) is kept.
+    db.rbds.update_one({"_id": link["model_id"]}, {"$set": {"graph.nodes.1.data.note": "edited"}})
+    m.create_position("Pump C", parent_id=plant)
+    again = pm.build_rbd(m, db, OWNERS, set(), plant, replace_link_id=link["id"])
+    assert again["model_id"] == link["model_id"]
+    rbd = db.rbds.find_one({"_id": link["model_id"]})
+    labels = [n["data"]["label"] for n in rbd["graph"]["nodes"] if n["type"] == "component"]
+    assert sorted(labels) == ["Pump A", "Pump B", "Pump C"]
+    assert any((n.get("data") or {}).get("note") == "edited" for n in rbd["graph"]["nodes"])
+    _same_after_rebuild(m)
+
+
+def test_one_model_in_use_per_position(m, db):
+    pump = m.create_position("Pump")["id"]
+    inner = m.create_position("Impeller", parent_id=pump)["id"]
+    pm.link_saved(m, db, OWNERS, set(), inner, "model", SAMPLE)
+    life = pm.link_saved(m, db, OWNERS, set(), pump, "model", "sample-model-bearings-lognormal")
+    rbd = pm.build_rbd(m, db, OWNERS, set(), pump)
+    used = {x["id"]: x["in_use"] for x in m.position_models(pump)}
+    assert used == {life["id"]: True, rbd["id"]: False}  # its own life model by default
+    assert m.in_use_link(pump)["id"] == life["id"]
+    m.use_position_model(pump, rbd["id"])
+    assert m.in_use_link(pump)["id"] == rbd["id"]
+    assert {x["id"]: x["in_use"] for x in m.all_position_models([pump])} == {life["id"]: False, rbd["id"]: True}
+    with pytest.raises(Invalid, match="isn't on this position"):
+        m.use_position_model(pump, "nope")
+    _same_after_rebuild(m)
+    # Taken off, the default comes back.
+    m.unlink_position_model(rbd["id"])
+    assert m.in_use_link(pump)["id"] == life["id"]
+
+
+def test_a_parent_rbd_takes_a_childs_rbd_as_a_sub_system(m, db):
+    top = m.create_position("Plant")["id"]
+    line = m.create_position("Line 1", parent_id=top)["id"]
+    m.create_position("Motor", parent_id=line)
+    sub = pm.build_rbd(m, db, OWNERS, set(), line)
+    m.use_position_model(line, sub["id"])
+    parent = pm.build_rbd(m, db, OWNERS, set(), top)
+    rbd = db.rbds.find_one({"_id": parent["model_id"]})
+    [block] = [n for n in rbd["graph"]["nodes"] if n["type"] == "component"]
+    assert (block["data"].get("rbd") or {}).get("id") == sub["model_id"]
+    linked = pm.link_rbd(m, db, OWNERS, set(), top, "sample-rbd-pump-station")
+    [row] = [r for r in pm.describe(m, db, OWNERS, set(), m.position_models(top)) if r["id"] == linked["id"]]
+    assert row["source_text"].startswith("Linked: ")

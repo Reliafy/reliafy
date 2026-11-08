@@ -97,6 +97,30 @@ its design's prediction. A parts count compares designs early: it doesn't say
 how the item will fail in service, so replace it with a fitted model once
 there are failures.
 
+## An RBD for a position made of others
+
+Every position can have a life model, an RBD or a prediction. For a system
+made of the positions inside it, **Build an RBD from what's inside…** makes a
+reliability block diagram (under Design › Systems) whose blocks are the
+positions one level down, each taking its model in use (a position with its
+own RBD comes in as a sub-system). They're wired by their connections and
+redundancy groups, in series where there are none. A position with no model
+gets a placeholder, flagged: the row warns until each has a model. **Link an
+existing RBD…** links one you've already drawn.
+
+The RBD row shows the system's MTBF and B10, and its panel lists every block
+with its model and the position it came from; type an age to see the
+system's reliability there. **Open the RBD** edits the diagram;
+**Rebuild from what's inside…** adds positions added since, keeping your edits.
+
+## The model in use
+
+When a position has more than one row (say its own life model and an RBD), one
+is marked **In use**: by default its own life model, else its RBD, else its
+prediction. **Use this one** on a row's ⋯ changes it. The model in use is what
+the position's row reports, what the RCM offers first as evidence, and what a
+parent's RBD takes for its block.
+
 ## A few failures: update a baseline
 
 With one or two failures a position's own history says little. But there's
