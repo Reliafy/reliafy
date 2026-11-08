@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  ancestorsOf, depthOf, filterOpen, filterRows, findByPrefix, flatten, levelSet, visiblePick,
+  ancestorsOf, depthOf, filterOpen, filterRows, findByPrefix, flatten, keepLevel, levelSet, visiblePick,
 } from "./outlineTree.js";
 
 // A small outline: a → (b → (c, d), e); f.
@@ -62,4 +62,29 @@ test("filtering opens the way down to each match, and a match with matches insid
   const f = filterRows(display, (r) => r.key === "b" || r.key === "c");
   assert.deepEqual([...f.match].sort(), ["b", "c"]);
   assert.deepEqual([...filterOpen(f)].sort(), ["a", "b"]); // b is a match and holds c
+});
+
+// ---- a chosen level kept as rows arrive -------------------------------------------------
+
+test("keepLevel: rows that arrive after a level was chosen open to it; nothing open is closed", () => {
+  const row = (key, parent, depth, kids = []) => [key, { key, parent, depth, kids }];
+  // The tree before the RCM read: a plant with a pump.
+  const before = { rows: new Map([row("plant", null, 0, ["pump"]), row("pump", "plant", 1)]), roots: ["plant"] };
+  const open = keepLevel(before, new Set(), Infinity);
+  assert.deepEqual([...open], ["plant"]);
+  // The RCM arrives: the pump gains a function, which has a failure with a mode.
+  const after = { rows: new Map([
+    row("plant", null, 0, ["pump"]), row("pump", "plant", 1, ["fn"]), row("fn", "pump", 2, ["ff"]),
+    row("ff", "fn", 3, ["mode"]), row("mode", "ff", 4),
+  ]), roots: ["plant"] };
+  assert.deepEqual([...keepLevel(after, open, Infinity)].sort(), ["ff", "fn", "plant", "pump"]);
+  // Level 3 (three levels on show): only the pump is added (its function shows, closed).
+  assert.deepEqual([...keepLevel(after, open, 3)].sort(), ["plant", "pump"]);
+  // A row opened by hand deeper than the level stays open; nothing is closed.
+  const byHand = new Set(["plant", "ff"]);
+  assert.deepEqual([...keepLevel(after, byHand, 3)].sort(), ["ff", "plant", "pump"]);
+  // Nothing to add: the same set back (so the page can tell nothing changed); level 0 adds nothing.
+  const all = keepLevel(after, open, Infinity);
+  assert.equal(keepLevel(after, all, Infinity), all);
+  assert.equal(keepLevel(after, open, 0), open);
 });
