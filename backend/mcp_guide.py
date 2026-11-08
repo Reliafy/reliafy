@@ -198,9 +198,14 @@ MTBF = 1/λ and R(t) = exp(−λt) at mission_time (hours). The result gives the
 assembly (a line's assembly is a name or a path such as "Power › BMS board") and in total, and a Pareto by line and by \
 part category.
 - Assign part types with list kind library (source mil-hdbk-217f-n2): "capacitor ceramic", "resistor film", \
-"connector rectangular", "mosfet". Only handbook records (basis prediction_model) count; a field-data record \
-(NRC / INL) is refused. A part the handbook has no type for (a motor, a microcircuit, a mechanical part) goes in \
-with no record_id: it's listed and left out of the total, and the result says so. Never invent a part type.
+"connector rectangular", "mosfet", "microprocessor MOS", "memory DRAM", "motor", "quartz crystal", "circuit \
+board". Only handbook records (basis prediction_model) count; a field-data record (NRC / INL) is refused. \
+Microcircuits, motors, synchros, circuit boards, crystals, lamps and laser diodes are parts-count records \
+(generic_rates: a rate per environment, environment included; πQ defaults to the lowest grade, e.g. 10 for a \
+commercial microcircuit, unless quality_factor is given). The handbook has no batteries and no mechanical parts: \
+a battery takes rate_per_million_hours only if the user gives one (shown as user-given); a mechanical part \
+(airframe, propeller) takes excluded true (left out, and the result names it). A line with neither and no \
+record_id is listed and left out of the total. Never invent a part type or a rate.
 - The environment is one symbol for the whole prediction (GB, GF, GM, NS, NU, AIC, AIF, AUC, AUF, ARW, SF, MF, ML, \
 CL): ask the user where the equipment works; never guess. A record's prediction.quality_factor_range is the \
 handbook's range for πQ; a line outside it warns.

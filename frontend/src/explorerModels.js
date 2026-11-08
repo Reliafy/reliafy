@@ -260,16 +260,33 @@ export function attachedFor(links = [], { modeId = null, expectedType = null } =
 }
 
 // "Add a prediction…" (a parts count from the position's parts list): the part types chosen
-// in the dialog as the server takes them, {part number (or part id): {record_id, quality_factor}};
-// lines with no part type are left out (and out of the total, as the parts count says).
+// in the dialog as the server takes them, {part number (or part id): {record_id, quality_factor?}},
+// {rate_per_million_hours} (a rate of the user's own: the handbook has no batteries) or
+// {excluded: true} (not an electronic part: left out, and the result says so). A line with none
+// of them is sent as {record_id: null}, so a part type cleared here isn't taken back from the
+// last prediction; it's left out of the total, as the parts count says.
 export function predictionAssign(lines = []) {
   const out = {};
   for (const l of lines) {
     const key = l.reference || l.part_id;
+    if (!key) continue;
+    if (l.excluded) {
+      out[key] = { excluded: true };
+      continue;
+    }
     const record = l.record?.id || l.record_id;
-    if (!key || !record) continue;
-    const q = Number(l.quality_factor);
-    out[key] = { record_id: record, ...(Number.isFinite(q) && q > 0 && q !== 1 ? { quality_factor: q } : {}) };
+    const rate = Number(l.rate_per_million_hours);
+    if (!record && String(l.rate_per_million_hours ?? "").trim() !== "" && Number.isFinite(rate) && rate > 0) {
+      out[key] = { rate_per_million_hours: rate };
+      continue;
+    }
+    if (!record) {
+      out[key] = { record_id: null };
+      continue;
+    }
+    const qs = String(l.quality_factor ?? "").trim();
+    const q = Number(qs);
+    out[key] = { record_id: record, ...(qs !== "" && Number.isFinite(q) && q > 0 ? { quality_factor: q } : {}) };
   }
   return out;
 }

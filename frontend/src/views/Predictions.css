@@ -81,6 +81,15 @@
 .ptp-item-name { font-size: var(--fs-14); color: var(--ink); }
 .ptp-item-meta { font-size: var(--fs-12); color: var(--muted); }
 .ptp-note { padding: 6px 10px; font-size: var(--fs-12); color: var(--muted); }
+.ptp-note button.link { font-size: inherit; }
+
+/* A line's type: the picker, a rate of the user's own, or "Not electronic". */
+.ptc { display: flex; flex-direction: column; gap: 4px; min-width: 12rem; }
+.ptc-rate { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ptc-rate input { width: 6.5rem; }
+.ptc-unit { font-size: var(--fs-12); color: var(--muted); }
+.ptc-exclude { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-12); color: var(--muted); cursor: pointer; min-height: 28px; }
+.ptc-exclude input { margin: 0; }
 
 /* The result. */
 .pred-result .pred-block { margin-top: var(--sp-5); }

@@ -20,6 +20,13 @@ million hours for a ceramic capacitor, a film resistor, a rectangular connector,
 a MOSFET. Reliafy's reliability data library carries these rates from
 MIL-HDBK-217F, the U.S. military's prediction handbook, each one cited.
 
+For microcircuits (logic, microprocessors, memories, GaAs devices), motors,
+synchros and resolvers, circuit boards, quartz crystals, lamps and laser
+diodes, the library carries the handbook's **parts-count** rates instead
+(its Appendix A): a **generic failure rate** (λg) for each environment, with
+the environment already in it. Microcircuits come in complexity bands (gates,
+transistors, bits or memory size), so pick the band your part falls in.
+
 A parts count adds them up. For each line of your parts list:
 
 > failure rate = λb × πE × πQ × quantity
@@ -30,7 +37,14 @@ A parts count adds them up. For each line of your parts list:
   (ground benign, ground fixed, ground mobile, naval, airborne, and so on) and
   every line uses its own factor for it.
 - **πQ** is a **quality factor** for the part's grade, which you set per line.
-  It's 1 unless you say otherwise; each part type's handbook range is shown.
+  Left blank it's 1, except for the parts-count types, which take the lowest
+  grade the handbook lists: 10 for a commercial microcircuit (class B is 1,
+  class S 0.25), non-MIL for a crystal or a board. Each part type's grades
+  show on the box.
+
+For a parts-count type the line is simply λg × πQ × quantity: the handbook
+worked out λg from its full model at its default temperature, package and
+complexity, and the record says which defaults it holds.
 
 The lines' rates add up (every part in series, each with a constant rate), and
 from the total you get the **MTBF** (1 / failure rate) and the **reliability**
@@ -47,28 +61,39 @@ rate per assembly too.
    quantity after a comma (`Ceramic capacitor, 48, Flight controller`; the third
    column is the assembly it's in); **Add a line** adds one at a time.
 4. Give each line a **handbook part type**: type a word or two (`capacitor
-   ceramic`, `resistor film`, `connector rectangular`) and pick the match. Set
-   the **quality factor** (πQ) on a line when its grade isn't the handbook's
-   default.
+   ceramic`, `resistor film`, `microprocessor MOS`, `memory DRAM`, `motor`,
+   `crystal`) and pick the match. Set the **quality factor** (πQ) on a line
+   when its grade isn't the default.
 5. Press **Calculate**, read the result, then **Save prediction**.
 
 The Free plan keeps **1 saved reliability prediction** (the shared sample
 doesn't count); calculating without saving has no limit. To save another,
 delete the one you have or [upgrade to Pro](/billing), which removes the limit.
 
-A part the handbook has no type for, such as a motor, a propeller or a
-microcircuit, stays in the list with no part type: it's shown and left out of
-the total, and the result says so. Don't give it the nearest electronic part
-type just to get a number.
+The handbook covers electronic parts only. It has no batteries and no
+mechanical parts, so:
+
+- Tick **Not electronic** on a mechanical part (an airframe, a propeller, a
+  gimbal's mechanics). It's left out of the total, and the result lists what
+  was left out, so the total is for the electronics.
+- For a part the handbook doesn't have, such as a battery, choose **Give a rate
+  of your own instead** in the part-type search and type its failure rate per
+  million hours, from the maker's data or your own records. The line is marked
+  **user-given** everywhere it shows.
+- A line with neither stays in the list with no part type: it's shown and left
+  out of the total, and the result says so. Don't give it the nearest
+  electronic part type just to get a number.
 
 The sample prediction, the sample quadcopter's electronics, shows a finished
 one with lines in assemblies and two parts left out.
 
 ## Read the result honestly
 
-Only three of the handbook's factors are applied: λb, πE and πQ. The handbook's
-full models also have temperature, electrical stress, construction and power
-factors, and the result names which ones it left out for your parts. Real rates
+Only three of the handbook's factors are applied: λb, πE and πQ (or λg and
+πQ for a parts-count type, whose generic rate holds the rest at the
+handbook's defaults). The handbook's full models also have temperature,
+electrical stress, construction and power factors, and the result names which
+ones it left out for your parts. Real rates
 depend on them: temperature and stress alone can move a part's rate several
 times over. So read a parts count as it's meant to be read:
 

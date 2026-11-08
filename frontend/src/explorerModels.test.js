@@ -141,9 +141,14 @@ test("a prediction's part types as the server takes them, and its numbers in wor
     { reference: "U-7", record_id: "rec-opto", quality_factor: "3" },
     { reference: "G-1", record: null },
     { part_id: "p9", record: { id: "rec-x" } },
+    { reference: "BAT-1", record: null, rate_per_million_hours: "12.5" },
+    { reference: "AF-1", record: { id: "rec-y" }, excluded: true },
   ];
+  // A quality factor typed is sent as typed (1 too: left blank, the part type's default grade applies).
   assert.deepEqual(predictionAssign(lines), {
-    "C-100": { record_id: "rec-cap" }, "U-7": { record_id: "rec-opto", quality_factor: 3 }, p9: { record_id: "rec-x" },
+    "C-100": { record_id: "rec-cap", quality_factor: 1 }, "U-7": { record_id: "rec-opto", quality_factor: 3 },
+    "G-1": { record_id: null }, p9: { record_id: "rec-x" },
+    "BAT-1": { rate_per_million_hours: 12.5 }, "AF-1": { excluded: true },
   });
   assert.equal(predictionWords({ rate_per_million_hours: 12.34, mtbf_hours: 81037 }), "12.3 failures per million hours · MTBF 81,040 hours");
   assert.equal(predictionWords({}), "No part types chosen yet");

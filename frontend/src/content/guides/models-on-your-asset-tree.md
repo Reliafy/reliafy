@@ -86,7 +86,10 @@ none). Set the environment once, the place the equipment works; the next
 prediction below it starts from the same one. Give each part a handbook part
 type (and a quality factor where the handbook has one): each part's rate is
 its base rate times the factors, and the rates add up as if every part were
-needed. The result is a failure rate and an MTBF, with each part's share.
+needed. The handbook covers electronic parts only: tick **Not electronic** on
+a mechanical part (an airframe, a propeller) to leave it out, and give a part
+it doesn't have (a battery) a rate of your own. The result is a failure rate
+and an MTBF, with each part's share, and it names what was left out.
 
 Saved, it's a row of kind **Prediction**, an exponential model at the
 predicted rate, so the RCM, the calculators and RBDs can use it, and it's on

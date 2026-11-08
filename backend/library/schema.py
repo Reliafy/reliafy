@@ -109,9 +109,12 @@ EQUIPMENT_TYPES = {
     "capacitor": "Capacitors",
     "inductive": "Transformers and coils (electronic)",
     "semiconductor": "Diodes, transistors and other semiconductors",
+    "microcircuit": "Microcircuits (integrated circuits, memories, SAW devices)",
+    "rotating": "Motors, synchros and resolvers",
+    "circuit_board": "Printed circuit boards",
     "switch": "Switches (electronic)",
     "connector": "Connectors, sockets and connections",
-    "electronic_other": "Other electronic parts (filters, vibrators, microwave parts)",
+    "electronic_other": "Other electronic parts (crystals, lamps, lasers, filters, microwave parts)",
 }
 
 #: The use environments of MIL-HDBK-217F (its Table 3-2), by the handbook's
@@ -277,6 +280,61 @@ def problems(rec: dict) -> list[str]:
     return out
 
 
+def _rates_problems(block: Any, what: str, bad, each: str) -> dict | None:
+    """A table of numbers by the handbook's environments (``environment_factors`` or
+    ``generic_rates``; ``each`` names one of its numbers): its values, or None after calling
+    ``bad``."""
+    values = block.get("values") if isinstance(block, dict) else None
+    if not isinstance(values, dict) or not values or not block.get("symbol"):
+        bad(f"{what} needs a symbol and values by environment")
+        return None
+    unknown = sorted(set(values) - set(ENVIRONMENTS))
+    if unknown:
+        bad(f"unknown environments {', '.join(unknown)} in {what}")
+    for code, value in values.items():
+        if not _finite_positive(value):
+            bad(f"{each} {code} must be a positive number")
+    return values
+
+
+def _parts_count_problems(rec: dict, bad) -> None:
+    """A parts-count record (the handbook's Appendix A): generic failure rates by environment
+    instead of a base rate and environment factors, its value the reference environment's rate,
+    and a quality factor table whose default is one of its levels."""
+    pred = rec.get("prediction") or {}
+    if rec.get("environment_factors") is not None:
+        bad("a parts-count record has generic_rates, not environment_factors")
+    values = _rates_problems(rec.get("generic_rates"), "generic_rates", bad, "generic rate")
+    if values is None:
+        return
+    ref = pred.get("reference_environment")
+    value = param_dict(rec.get("distribution") or {}).get("value")
+    if ref not in values:
+        bad("prediction.reference_environment must be one of generic_rates' environments")
+    elif value is not None and abs(values[ref] * 1e-6 - value) > BASE_RATE_TOLERANCE * value:
+        bad(f"the value {value:g} per hour isn't the {ref} generic rate {values[ref]:g} per million hours")
+    q = rec.get("quality_factors")
+    if q is None:
+        if pred.get("quality_factor_default") is not None:
+            bad("a quality_factor_default needs quality_factors")
+        return
+    levels = q.get("levels") if isinstance(q, dict) else None
+    if not isinstance(levels, list) or not levels or not all(
+            isinstance(lv, dict) and lv.get("code") and lv.get("name") and _finite_positive(lv.get("value"))
+            for lv in levels):
+        bad("quality_factors needs levels, each with a code, a name and a positive value")
+        return
+    by_code = {lv["code"]: lv["value"] for lv in levels}
+    if q.get("default") is not None and q["default"] not in by_code:
+        bad(f"quality_factors.default {q['default']!r} isn't one of its levels")
+    want = by_code.get(q.get("default")) if q.get("default") is not None else None
+    if pred.get("quality_factor_default") != want:
+        bad("prediction.quality_factor_default must be the default level's value")
+    rng = pred.get("quality_factor_range")
+    if rng != [min(by_code.values()), max(by_code.values())]:
+        bad("prediction.quality_factor_range must span the quality levels")
+
+
 def _prediction_problems(rec: dict, bad) -> None:
     """A handbook prediction model's extra fields: what the handbook's full
     model is and which of its factors the record leaves out (so nothing
@@ -285,19 +343,10 @@ def _prediction_problems(rec: dict, bad) -> None:
     problem."""
     factors = rec.get("environment_factors")
     if factors is not None:
-        values = factors.get("values") if isinstance(factors, dict) else None
-        if not isinstance(values, dict) or not values or not factors.get("symbol"):
-            bad("environment_factors needs a symbol and values by environment")
-        else:
-            unknown = sorted(set(values) - set(ENVIRONMENTS))
-            if unknown:
-                bad(f"unknown environments {', '.join(unknown)} in environment_factors")
-            for code, value in values.items():
-                if not _finite_positive(value):
-                    bad(f"environment factor {code} must be a positive number")
+        _rates_problems(factors, "environment_factors", bad, "environment factor")
     if rec.get("basis") != "prediction_model":
-        if factors is not None:
-            bad("only a prediction model has environment_factors")
+        if factors is not None or rec.get("generic_rates") is not None:
+            bad("only a prediction model has environment_factors or generic_rates")
         return
     pred = rec.get("prediction")
     if not isinstance(pred, dict) or not str(pred.get("formula") or "").strip():
@@ -307,6 +356,10 @@ def _prediction_problems(rec: dict, bad) -> None:
     if not isinstance(not_applied, list) or not all(
             isinstance(f, dict) and f.get("symbol") and f.get("name") for f in not_applied):
         bad("prediction.not_applied must list each factor left out (symbol and name), or be empty")
+    if pred.get("method") == "parts_count" or rec.get("generic_rates") is not None:
+        if pred.get("method") != "parts_count":
+            bad("a record with generic_rates needs prediction.method 'parts_count'")
+        _parts_count_problems(rec, bad)
     base = pred.get("per_million_hours")
     value = param_dict(rec.get("distribution") or {}).get("value")
     if not _finite_positive(base):

@@ -19,6 +19,19 @@
   the position's parts list, saved as a prediction and an exponential model.
   Accelerated-life and covariate models can be linked like any saved model.
 
+- **More handbook part types, rates you give and lines left out**: the
+  library's MIL-HDBK-217F source adds Appendix A's parts-count generic rates
+  (microcircuits by complexity band, motors, synchros and resolvers, circuit
+  boards, quartz crystals, lamps, laser diodes; `generic_rates` by
+  environment, `quality_factors` with a default grade) and SAW devices and
+  helium/argon lasers: 236 records, up from 158. A prediction line (in
+  `analyse prediction` lines and `models.link` `assign`) takes
+  `rate_per_million_hours` (a rate the user gives, for a part the handbook
+  doesn't have, such as a battery: shown as user-given) or `excluded: true`
+  (not an electronic part: left out, and the result's `excluded` and
+  `left_out_note` say so). A line's `quality_factor` left out now means the
+  part type's default grade (10 for a commercial microcircuit), not always 1.
+
 - **A Bayesian update of a baseline**: new action `analyse bayes_update` (Pro):
   a baseline model, numbers or a B10 belief, how much to trust it, and a few
   failures give posterior medians with 90% credible intervals.

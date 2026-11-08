@@ -61,12 +61,17 @@ export default function PredictionResult({ results, name = "Reliability predicti
           { label: "MTBF", value: none ? "—" : `${fmtHours(r.mtbf_hours)} hours`, hint: "1 ÷ the failure rate" },
           { label: `Reliability over ${fmtHours(t)} hours`, value: fmtReliability(r.reliability_at_mission), hint: "chance of no failure in that time" },
           { label: "Parts counted", value: `${fmtQuantity(counts.parts_assigned)} in ${counts.assigned ?? 0} ${counts.assigned === 1 ? "line" : "lines"}`,
-            hint: counts.unassigned ? `${counts.unassigned} ${counts.unassigned === 1 ? "line" : "lines"} left out` : "every line has a part type" },
+            hint: [
+              counts.unassigned ? `${counts.unassigned} ${counts.unassigned === 1 ? "line" : "lines"} with no part type, left out` : "",
+              counts.excluded ? `${counts.excluded} not electronic, left out` : "",
+            ].filter(Boolean).join("; ") || "every line has a part type" },
         ]}
       >
         Every part in series with a constant failure rate: the lines' rates add up. A handbook estimate for comparing designs, not a
         measure of how the equipment will fail.
       </ResultSummary>
+
+      {r.left_out_note && <p className="hint" role="note">{r.left_out_note}</p>}
 
       {warnings.length > 0 && (
         <div className="calc-warn" role="status">
@@ -137,9 +142,9 @@ export default function PredictionResult({ results, name = "Reliability predicti
             <thead>
               <tr>
                 <th>Part</th><th>Assembly</th><th className="num">Qty</th><th>Handbook part type</th>
-                <th className="num" title="The handbook's base failure rate for the part type, per million hours">Base rate<span className="th-unit">λb, per million hours</span></th>
+                <th className="num" title="The handbook's base failure rate for the part type (λb), or its parts-count generic rate for the environment (λg, environment included), per million hours">Base rate<span className="th-unit">λb or λg, per million hours</span></th>
                 <th className="num" title="The handbook's factor for the environment">Environment<span className="th-unit">πE</span></th>
-                <th className="num" title="The quality factor set on the line (1 unless set)">Quality<span className="th-unit">πQ</span></th>
+                <th className="num" title="The quality factor: the line's, else the part type's default grade (1, or the lowest grade for a parts-count type)">Quality<span className="th-unit">πQ</span></th>
                 <th className="num">Failure rate<span className="th-unit">per million hours</span></th><th className="num">Share</th>
               </tr>
             </thead>
@@ -156,15 +161,21 @@ export default function PredictionResult({ results, name = "Reliability predicti
                     {l.assigned ? (
                       <>
                         {l.part_type}
-                        {l.section && <div className="lib-date">{l.section}</div>}
+                        {l.section && <div className="lib-date">{l.section}{l.generic_rate ? " · parts count (λg)" : ""}</div>}
+                        {l.quality_factor_source === "default" && l.quality_level && (
+                          <div className="lib-date">πQ {fmtQuantity(l.quality_factor)}: {l.quality_level.toLowerCase()} (the default)</div>
+                        )}
                         {(l.line_warnings || []).map((w, j) => <div key={j} className="muted-line warn">{w}</div>)}
                       </>
-                    ) : <span className="lib-date">No handbook part type: left out of the total</span>}
+                    ) : l.excluded ? <span className="lib-date">Not an electronic part: left out</span>
+                      : <span className="lib-date">No handbook part type: left out of the total</span>}
                   </td>
                   <td className="num">{l.assigned ? fmtPerMillion(l.base_rate_per_million_hours) : "—"}</td>
-                  <td className="num">{l.assigned ? (l.environment_factor == null ? "—" : fmtQuantity(l.environment_factor)) : "—"}</td>
+                  <td className="num" title={l.generic_rate ? "Included in the generic rate λg" : undefined}>
+                    {l.assigned ? (l.generic_rate ? "in λg" : l.environment_factor == null ? "—" : fmtQuantity(l.environment_factor)) : "—"}
+                  </td>
                   <td className="num" title={l.quality_factor_range ? `Handbook range ${l.quality_factor_range[0]}–${l.quality_factor_range[1]}` : undefined}>
-                    {l.assigned ? fmtQuantity(l.quality_factor) : "—"}
+                    {l.assigned && l.quality_factor != null ? fmtQuantity(l.quality_factor) : "—"}
                   </td>
                   <td className="num">{l.assigned ? fmtPerMillion(l.rate_per_million_hours) : "—"}</td>
                   <td className="num">{l.assigned ? fmtShare(l.share) : "—"}</td>
@@ -173,7 +184,7 @@ export default function PredictionResult({ results, name = "Reliability predicti
             </tbody>
           </table>
         </div>
-        <p className="hint">A line's failure rate is its base rate × the environment factor × its quality factor × its quantity.</p>
+        <p className="hint">A line's failure rate is its base rate × the environment factor × its quality factor × its quantity (a parts-count type: its generic rate for the environment × the quality factor × the quantity; a rate you gave: that rate × the quantity).</p>
       </section>
 
       <ResultDetails summary="How it was worked out">

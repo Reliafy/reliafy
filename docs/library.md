@@ -35,7 +35,7 @@ percentile that disagrees with its parameters, fails the build.
 | Source | Records | Basis | Licence |
 |---|---|---|---|
 | `nrc-inl-2020`: NRC / INL industry-average parameter estimates, 2020 update (INL/EXT-21-65055, Table 1) | 300 | field data | U.S. Government work |
-| `mil-hdbk-217f-n2`: MIL-HDBK-217F with Notice 2, base failure rates and environment factors | 158 | prediction model | U.S. Government work (Distribution Statement A) |
+| `mil-hdbk-217f-n2`: MIL-HDBK-217F with Notice 2, base failure rates and environment factors, and Appendix A's parts-count generic rates | 236 | prediction model | U.S. Government work (Distribution Statement A) |
 
 ### NRC / INL industry averages (2020 update)
 
@@ -98,16 +98,41 @@ benign to cannon, launch).
   (`prediction.not_applied`), and says so in its notes. For connections,
   fuses and a few miscellaneous parts λb × πE (or a fixed rate) is the
   handbook's whole model.
-- Kept: 158 part types from sections 6 (diodes, transistors, thyristors,
-  optoelectronics), 9 to 15 (resistors, capacitors, transformers and coils,
-  elapsed time meters, solid state relays, switches, circuit breakers,
+- Kept, as part stress records: 162 part types from sections 5.6 (SAW
+  devices), 6 (diodes, transistors, thyristors, optoelectronics), 8.1
+  (helium and argon lasers), 9 to 15 (resistors, capacitors, transformers and
+  coils, elapsed time meters, solid state relays, switches, circuit breakers,
   connectors, sockets), 17 (connections) and 18, 21 to 23 (panel meters,
-  filters, fuses, miscellaneous parts). Left out, each with its reason in the
-  data file's `skipped`: parts whose base rate isn't one number (a formula of
-  temperature, frequency, voltage or complexity: microcircuits, mechanical
-  relays, high-frequency transistors, crystals, lamps, motors and others) or
-  is per junction, hole or kilometre; tubes and lasers; and the parts count
-  method (Appendix A).
+  filters, fuses, miscellaneous parts).
+- Kept, as parts-count records (Appendix A): 74 generic failure rates λg,
+  one per environment in `generic_rates` (the environment is in the rate, so
+  there's no πE), with the quality factor table in `quality_factors` and its
+  default grade (the lowest the handbook lists: commercial or unknown
+  screening for microcircuits, πQ 10; non-MIL for the others). 61
+  microcircuits (sections 5.1, 5.2 and 5.4 by complexity band: bipolar and
+  MOS logic, linear, programmable logic, microprocessors, ROM, PROM/EEPROM,
+  DRAM, SRAM, GaAs MMIC and digital), 2 laser diodes (6.13), 6 rotating
+  devices (12.1 motors, general, sensor, servo and stepper, whose life-based
+  model isn't applied: the generic rates assume a 10-year design life; 12.2
+  synchros and resolvers), 2 circuit boards (16.1 plated through holes, 16.2
+  surface mount), a quartz crystal (19.1) and 2 incandescent lamps (20.1).
+  `prediction.not_applied` names what each generic rate holds at the
+  handbook's defaults (`held_at`). Where the handbook marks a part "not
+  normally used" in an environment, that environment has no rate
+  (`generic_rates.not_given`) and a parts count there is refused. The record's
+  own value is its ground, benign (GB) rate. Appendix A's tables are printed
+  sideways and their OCR text is unreadable, so instead of the OCR check each
+  number was typed from the page image and checked against a second,
+  independent reading, and the tests check rows that are one base rate times a
+  section's πE (crystals, plated through hole boards) against that product.
+- Left out, each with its reason in the data file's `skipped`: parts whose
+  base rate isn't one number (a formula of temperature, frequency, voltage or
+  complexity: mechanical relays, high-frequency transistors and others) or is
+  per junction, hole or kilometre; hybrids (the handbook gives no generic
+  rate), VHSIC and bubble memories; tubes (section 7); carbon dioxide and
+  solid state lasers (8.2 to 8.4); Appendix A's rows for parts the library
+  already has part stress records for. The handbook covers electronic parts
+  only: it has no batteries and no mechanical parts.
 - The handbook's spelling and words stay in `source_text`; names are in
   British spelling.
 

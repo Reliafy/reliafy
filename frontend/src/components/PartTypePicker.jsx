@@ -1,16 +1,30 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { searchLibrary } from "../api.js";
-import { fmtPerMillion } from "../predictions.js";
+import { NO_PART_TYPE_HINT, fmtPerMillion } from "../predictions.js";
 
 // The handbook source a parts count draws on (backend/services/reliability_prediction.py).
 export const HANDBOOK_SOURCE = "mil-hdbk-217f-n2";
 const PAGE = 8;
 const SECTION = /Section [\d.]+/;
 
+// A search row's rate in words: a part stress type's base rate, or a parts-count type's
+// generic rates (environment included) from the lowest to the highest environment.
+export function rateMeta(r) {
+  const g = r.generic_rates && Object.values(r.generic_rates);
+  if (g && g.length) {
+    const lo = Math.min(...g);
+    const hi = Math.max(...g);
+    return `λg ${fmtPerMillion(lo)}–${fmtPerMillion(hi)} per 10⁶ h by environment · parts count`;
+  }
+  return `λb ${fmtPerMillion((r.mean || 0) * 1e6)} per 10⁶ h`;
+}
+
 // Choose a handbook part type for one line of a parts list: type to search
 // the reliability data library's handbook records (MIL-HDBK-217F base failure
-// rates), pick one. ``value`` is the chosen record ({ id, name, ... }) or null.
-export default function PartTypePicker({ value, onChange, label = "Handbook part type", placeholder = "Search part types…" }) {
+// rates, and its parts-count generic rates), pick one. ``value`` is the chosen
+// record ({ id, name, ... }) or null. ``onUseRate``, when given, offers "Give a
+// rate of your own" for a part the handbook has no type for (a battery).
+export default function PartTypePicker({ value, onChange, onUseRate = null, label = "Handbook part type", placeholder = "Search part types…" }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState([]);
@@ -61,7 +75,11 @@ export default function PartTypePicker({ value, onChange, label = "Handbook part
   }, [open]);
 
   const pick = (r) => {
-    onChange({ id: r.id, name: r.name, label: r.label, mean: r.mean, quality_factor_range: r.quality_factor_range || null });
+    onChange({
+      id: r.id, name: r.name, label: r.label, mean: r.mean, quality_factor_range: r.quality_factor_range || null,
+      quality_factor_default: r.quality_factor_default ?? null, quality_factors: r.quality_factors || null,
+      generic_rates: r.generic_rates || null,
+    });
     setOpen(false);
     setQuery("");
   };
@@ -122,7 +140,7 @@ export default function PartTypePicker({ value, onChange, label = "Handbook part
           {error && <li className="ptp-note" role="presentation">{error}</li>}
           {!error && !rows.length && (
             <li className="ptp-note" role="presentation">
-              {busy ? "Searching…" : "No handbook part type matches. Try another word: capacitor, resistor, connector, diode, transistor, switch, relay."}
+              {busy ? "Searching…" : `No handbook part type matches. Try another word: microprocessor, memory, motor, crystal, circuit board, capacitor, resistor, connector, transistor. ${NO_PART_TYPE_HINT}`}
             </li>
           )}
           {rows.map((r, i) => (
@@ -139,12 +157,24 @@ export default function PartTypePicker({ value, onChange, label = "Handbook part
             >
               <span className="ptp-item-name">{r.name}</span>
               <span className="ptp-item-meta">
-                λb {fmtPerMillion((r.mean || 0) * 1e6)} per 10⁶ h{SECTION.test(r.citation || "") ? ` · ${SECTION.exec(r.citation)[0]}` : ""}
+                {rateMeta(r)}{SECTION.test(r.citation || "") ? ` · ${SECTION.exec(r.citation)[0]}` : ""}
               </span>
             </li>
           ))}
           {total > rows.length && (
             <li className="ptp-note" role="presentation">{total - rows.length} more match: add a word to narrow it.</li>
+          )}
+          {onUseRate && (
+            <li className="ptp-note" role="presentation">
+              <button type="button" className="link" onMouseDown={(e) => {
+                e.preventDefault();
+                setOpen(false);
+                onUseRate();
+              }}>
+                Give a rate of your own instead
+              </button>
+              {" "}(a part the handbook doesn’t have, such as a battery)
+            </li>
           )}
         </ul>
       )}

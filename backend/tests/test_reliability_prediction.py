@@ -34,7 +34,7 @@ def test_one_diode_line_by_hand():
     assert out["unreliability_at_mission"] == pytest.approx(1 - math.exp(-0.0228e-6 * 1000))
     assert line["applied"] == ["λb", "πE", "πQ"]
     assert [f["symbol"] for f in line["not_applied"]] == ["πT", "πS", "πC"]  # πQ is applied, so not listed
-    assert line["share"] == 1 and out["counts"] == {"lines": 1, "assigned": 1, "unassigned": 0, "parts": 1,
+    assert line["share"] == 1 and out["counts"] == {"lines": 1, "assigned": 1, "unassigned": 0, "excluded": 0, "parts": 1,
                                                     "parts_assigned": 1}
     assert out["environment"] == {"code": "GF", "name": "Ground, fixed",
                                   "covers": "Permanent racks with adequate cooling, perhaps in unheated buildings."}
@@ -105,7 +105,8 @@ def test_a_line_without_a_part_type_is_listed_and_left_out():
     out = rp.compute([{"name": "Motor", "quantity": 4, "reference": "SQ-M2210"},
                       {"name": "D", "record_id": DIODE}], "GF")
     assert out["failure_rate_per_million_hours"] == pytest.approx(0.0228)
-    assert out["counts"] == {"lines": 2, "assigned": 1, "unassigned": 1, "parts": 5, "parts_assigned": 1}
+    assert out["counts"] == {"lines": 2, "assigned": 1, "unassigned": 1, "excluded": 0, "parts": 5,
+                             "parts_assigned": 1}
     assert out["unassigned"] == [{"name": "Motor", "reference": "SQ-M2210", "quantity": 4, "assembly": []}]
     assert out["lines"][0]["assigned"] is False and out["lines"][0]["rate_per_million_hours"] is None
     assert out["warnings"] == ["1 line has no handbook part type and is left out of the total: Motor (×4)."]
@@ -182,7 +183,8 @@ def test_lines_from_a_product_follow_its_structure():
     assert lines[("Capacitor 100 nF", ("Main board",))]["quantity"] == 60  # 30 in each of 2 boards
     assert lines[("Diode", ("Power supply",))]["quantity"] == 4
     assert lines[("Diode", ())]["quantity"] == 1 and lines[("Diode", ())]["reference"] == "D-1"
-    assert all(ln["record_id"] is None and ln["quality_factor"] == 1 for ln in out["lines"])
+    # No quality factor yet: each part type's default applies when one is chosen.
+    assert all(ln["record_id"] is None and ln["quality_factor"] is None for ln in out["lines"])
     assert out["assemblies"] == 2 and out["warnings"] == []
     # Computed with part types assigned, the assembly roll-up follows the tree.
     for ln in out["lines"]:
@@ -397,3 +399,123 @@ def test_the_actions_over_mcp(env):  # noqa: F811
     guide = _ok(_call(token, "guide", {"topic": "prediction", "action": "analyse.prediction"}))
     assert "λb × πE × πQ" in guide["guide"] and guide["action"]["takes"].startswith("lines?")
     assert "record_id" in guide["action"]["arguments"]["$defs"]["PredictionLine"]["properties"]
+
+
+# ---- parts-count part types, rates you give and lines left out --------------------------------
+
+MPU = "mil-hdbk-217f-n2:a-5-1-microprocessors-mos-up-to-16-bits"  # λg GF .17, ARW .40; πQ default 10
+MOTOR = "mil-hdbk-217f-n2:a-12-1-motors-general"  # λg ARW 13; no MF, ML, CL; no πQ
+
+
+def _parts_count_records() -> list[dict]:
+    from backend.library import service as library_service
+
+    return [r for r in library_service._library()["records"]
+            if (r.get("prediction") or {}).get("method") == "parts_count"]
+
+
+def test_every_parts_count_record_resolves_for_its_environments():
+    from backend.library import schema as library_schema
+
+    recs = _parts_count_records()
+    assert len(recs) == 74
+    for rec in recs:
+        values = rec["generic_rates"]["values"]
+        for code in library_schema.ENVIRONMENTS:
+            if code in values:
+                factor = rp._environment_factor(rec, code, "line")
+                assert rec["prediction"]["per_million_hours"] * factor == pytest.approx(values[code], rel=1e-12)
+                assert rp._line_rate(rec, code, "line") == (values[code], None)
+            else:
+                with pytest.raises(rp.PredictionError, match="not normally used there"):
+                    rp._environment_factor(rec, code, "line")
+        out = rp.compute([{"name": "P", "record_id": rec["id"]}], next(iter(values)))
+        assert out["failure_rate_per_million_hours"] > 0
+
+
+def test_a_parts_count_line_uses_its_generic_rate_and_default_grade():
+    out = rp.compute([{"name": "Flight controller MCU", "record_id": MPU}], "ARW", 100)
+    [line] = out["lines"]
+    assert line["generic_rate"] and line["base_rate_per_million_hours"] == 0.40 and line["environment_factor"] is None
+    assert line["quality_factor"] == 10 and line["quality_factor_source"] == "default"
+    assert line["quality_level"] == "Other commercial or unknown screening levels"
+    assert line["rate_per_million_hours"] == pytest.approx(4.0) and line["applied"] == ["λg", "πQ"]
+    assert line["not_applied"] == [] and {f["symbol"] for f in line["held_at_defaults"]} == {"πT", "C1, C2", "πL"}
+    assert out["factors"]["held_at_defaults"] and "λg" in [a["symbol"] for a in out["factors"]["applied"]]
+    assert out["method"] == rp.METHOD_GENERIC and out["warnings"] == []
+    # A grade given wins, 1 too (class B).
+    b = rp.compute([{"name": "MCU", "record_id": MPU, "quality_factor": 1}], "ARW")
+    assert b["lines"][0]["rate_per_million_hours"] == pytest.approx(0.40) and b["lines"][0]["quality_factor_source"] == "given"
+    # No πQ in the handbook for motors; an environment it has no rate for is refused, plainly.
+    assert rp.compute([{"name": "M", "record_id": MOTOR, "quantity": 4}], "ARW")["failure_rate_per_million_hours"] == 52
+    with pytest.raises(rp.PredictionError, match="no quality factor"):
+        rp.compute([{"name": "M", "record_id": MOTOR, "quality_factor": 2}], "ARW")
+    with pytest.raises(rp.PredictionError, match=r"no ML \(missile, launch\) rate for 'Motor, general'"):
+        rp.compute([{"name": "M", "record_id": MOTOR}], "ML")
+
+
+def test_a_rate_you_give_and_a_line_left_out():
+    out = rp.compute([
+        {"name": "Diode", "record_id": DIODE},
+        {"name": "Battery pack", "rate_per_million_hours": 20},
+        {"name": "Propeller", "quantity": 4, "excluded": True},
+        {"name": "Airframe", "excluded": "true"},
+    ], "GF")
+    by = {ln["name"]: ln for ln in out["lines"]}
+    bat = by["Battery pack"]
+    assert bat["assigned"] and bat["user_given"] and bat["rate_per_million_hours"] == 20
+    assert bat["part_type"] == "Rate you gave (user-given)" and bat["category"] == "Rates you gave"
+    assert by["Propeller"]["excluded"] and not by["Propeller"]["assigned"]
+    assert by["Propeller"]["line_warnings"] == [rp.EXCLUDED_NOTE]
+    assert out["failure_rate_per_million_hours"] == pytest.approx(20 + 0.0228)
+    assert out["counts"]["excluded"] == 2 and out["counts"]["unassigned"] == 0 and out["counts"]["assigned"] == 2
+    assert [x["name"] for x in out["excluded"]] == ["Propeller", "Airframe"] and out["unassigned"] == []
+    assert out["left_out_note"].startswith("Left out as not electronic parts (2 lines): Propeller (×4), Airframe.")
+    assert any("rate you gave" in w for w in out["warnings"])
+    assert not any("no handbook part type" in w for w in out["warnings"])
+    for bad, says in [
+        ({"name": "X", "record_id": DIODE, "rate_per_million_hours": 1}, "not both"),
+        ({"name": "X", "rate_per_million_hours": 0}, "must be above 0"),
+        ({"name": "X", "rate_per_million_hours": 1, "quality_factor": 2}, "has no quality factor"),
+        ({"name": "X", "record_id": DIODE, "excluded": True}, "can't also have"),
+    ]:
+        with pytest.raises(rp.PredictionError, match=says):
+            rp.compute([bad], "GF")
+
+
+def test_a_quadcopter_parts_list_computes_end_to_end():
+    """A quadcopter's bill of materials: its electronics typed from the handbook (microprocessor,
+    memory, MOSFETs, motors, crystal, connectors, circuit board), its battery at a rate the user
+    gives, its airframe and propellers left out."""
+    lines = [
+        {"name": "Flight controller MCU", "record_id": MPU, "assembly": "Flight controller"},
+        {"name": "Flash memory", "record_id": "mil-hdbk-217f-n2:a-5-2-mos-memories-prom-uveprom-eeprom-eaprom-256k-to-1-mb",
+         "assembly": "Flight controller"},
+        {"name": "ESC MOSFET", "record_id": "mil-hdbk-217f-n2:6-4-mosfet", "quantity": 24, "assembly": "Speed controllers"},
+        {"name": "Brushless motor", "record_id": MOTOR, "quantity": 4},
+        {"name": "Crystal", "record_id": "mil-hdbk-217f-n2:a-19-1-quartz-crystals", "assembly": "Flight controller"},
+        {"name": "Connector", "record_id": "mil-hdbk-217f-n2:15-1-rectangular", "quantity": 6},
+        {"name": "Controller board", "record_id": "mil-hdbk-217f-n2:a-16-2-surface-mount-technology-circuit-boards",
+         "assembly": "Flight controller"},
+        {"name": "Battery pack", "rate_per_million_hours": 25},
+        {"name": "Airframe", "excluded": True},
+        {"name": "Propeller", "quantity": 4, "excluded": True},
+    ]
+    out = rp.compute(lines, "ARW", 2)
+    by = {ln["name"]: ln for ln in out["lines"]}
+    assert by["Flight controller MCU"]["rate_per_million_hours"] == pytest.approx(0.40 * 10)
+    assert by["Brushless motor"]["rate_per_million_hours"] == pytest.approx(13 * 4)
+    assert by["Crystal"]["rate_per_million_hours"] == pytest.approx(0.74 * 2.1)  # non-MIL, the default
+    assert by["Controller board"]["rate_per_million_hours"] == pytest.approx(6.1)  # no πQ for SMT boards
+    assert by["ESC MOSFET"]["environment_factor"] == 24 and not by["ESC MOSFET"]["generic_rate"]
+    total = sum(ln["rate_per_million_hours"] for ln in out["lines"] if ln["assigned"])
+    assert out["failure_rate_per_million_hours"] == pytest.approx(total) and total > 80
+    assert out["counts"] == {"lines": 10, "assigned": 8, "unassigned": 0, "excluded": 2, "parts": 44,
+                             "parts_assigned": 39}
+    assert out["mtbf_hours"] == pytest.approx(1e6 / total)
+    fc = next(a for a in out["assemblies"] if a["name"] == "Flight controller")
+    assert fc["lines"] == 4 and fc["assigned"] == 4
+    categories = {c["name"] for c in out["pareto"]["by_category"]}
+    assert {"Microcircuits (integrated circuits, memories, SAW devices)", "Motors, synchros and resolvers",
+            "Printed circuit boards", "Rates you gave"} <= categories
+    assert out["left_out_note"].startswith("Left out as not electronic parts (2 lines): Airframe, Propeller (×4).")

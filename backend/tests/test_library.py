@@ -22,7 +22,7 @@ from backend.tests.test_mcp_plans import FREE, PRO, _call, env  # noqa: F401 - e
 
 NRC = "nrc-inl-2020"
 MIL = "mil-hdbk-217f-n2"
-N_NRC, N_MIL = 300, 158
+N_NRC, N_MIL = 300, 236
 
 
 def _rec(code: str) -> dict:
@@ -403,6 +403,11 @@ def _mils() -> list[dict]:
     return [r for r in _all() if r["source"] == MIL]
 
 
+#: Part stress sections whose πE table isn't relative to ground, benign (GB below 1).
+GB_NOT_ONE = {"5.6", "8.1"}
+N_PARTS_COUNT = 74  # Appendix A's generic rates: 61 microcircuits, 2 laser diodes, 6 rotating, 5 others
+
+
 def test_mil_records_are_handbook_rates_kept_apart_from_field_data():
     for r in _mils():
         assert r["basis"] == "prediction_model" and r["kind"] == "rate"
@@ -410,6 +415,8 @@ def test_mil_records_are_handbook_rates_kept_apart_from_field_data():
         assert r["units"] == {"value": "per_hour", "time_basis": "operating", "as_given": "failures per million hours"}
         pred = r["prediction"]
         assert pred["per_million_hours"] * 1e-6 == pytest.approx(r["summary"]["mean"], rel=1e-12)
+        if pred.get("method") == "parts_count":
+            continue  # test_parts_count_records
         assert pred["formula"].startswith("λp") and isinstance(pred["not_applied"], list)
         if pred["not_applied"]:  # says plainly which of the handbook's factors aren't applied
             assert r["label"].endswith(": base failure rate") and "Base failure rate only" in r["notes"][0]
@@ -419,11 +426,14 @@ def test_mil_records_are_handbook_rates_kept_apart_from_field_data():
         factors = r.get("environment_factors")
         if factors:
             assert set(factors["values"]) | set(factors["not_given"]) == set(schema.ENVIRONMENTS)
-            assert factors["values"]["GB"] == 1.0  # every πE table is relative to ground, benign
+            if r["source_code"].split()[0] not in GB_NOT_ONE:
+                assert factors["values"]["GB"] == 1.0  # the πE tables are relative to ground, benign
     # Field data never carries a handbook's fields.
     assert not any("prediction" in r or "environment_factors" in r for r in _all() if r["source"] == NRC)
     with_env = [r for r in _mils() if r.get("environment_factors")]
-    assert len(with_env) == N_MIL - 6  # six miscellaneous parts have a fixed rate with no factors
+    # Six miscellaneous parts have a fixed rate with no factors; the parts-count records have
+    # generic rates by environment instead.
+    assert len(with_env) == N_MIL - N_PARTS_COUNT - 6
 
 
 def test_mil_numbers_match_the_handbook():
@@ -528,7 +538,8 @@ def test_search_mil_by_part_and_environment():
     assert service.search("tantalum capacitor")["total"] == 5
     # An environment's name or symbol finds the parts with a factor for it: never field data.
     naval = service.search("naval sheltered", page_size=100)
-    expect = sum(1 for r in _mils() if "NS" in (r.get("environment_factors") or {}).get("values", {}))
+    expect = sum(1 for r in _mils()
+                 if "NS" in (r.get("environment_factors") or r.get("generic_rates") or {}).get("values", {}))
     assert naval["total"] == expect == N_MIL - 6 and naval["counts"]["source"] == {MIL: expect}
     assert service.search("capacitor missile launch")["total"] == 28
     assert service.search("elapsed time meter cannon launch")["total"] == 0  # its CL is N/A
@@ -599,7 +610,7 @@ def test_mil_conversions_say_what_to_supply():
 
 def test_mil_source_and_public_route(client):
     mil = next(s for s in service.sources()["sources"] if s["id"] == MIL)
-    assert mil["records"] == N_MIL and mil["basis"] == "prediction_model" and mil["skipped"] == 19
+    assert mil["records"] == N_MIL and mil["basis"] == "prediction_model" and mil["skipped"] == 23
     assert mil["licence"]["id"] == "us-government-work" and mil["kinds"] == {"rate": N_MIL}
     r = client.get(f"/api/library/records/{MIL}:9-1-rc-11", params={"environment": "AIC"})
     assert r.status_code == 200 and r.json()["block_model"]["failure_rate"] == pytest.approx(18 * 1.7e-9)
@@ -647,3 +658,102 @@ def test_the_library_environment_over_mcp_and_rest(env):
     r = api.post("/api/v1/get/library_record", json={"id": f"{MIL}:9-1-rc-11", "environment": "GF"},
                  headers={"Authorization": f"Bearer {env.api[PRO]}"})
     assert r.status_code == 200 and r.json()["block_model"]["environment"]["factor"] == 4.0
+
+
+# ---- MIL-HDBK-217F Appendix A: parts-count generic rates ----------------------------------------
+
+def _parts_count() -> list[dict]:
+    return [r for r in _mils() if (r.get("prediction") or {}).get("method") == "parts_count"]
+
+
+def test_parts_count_records():
+    recs = _parts_count()
+    assert len(recs) == N_PARTS_COUNT
+    by_type: dict[str, int] = {}
+    for r in recs:
+        by_type[r["equipment_type"]] = by_type.get(r["equipment_type"], 0) + 1
+        pred, rates = r["prediction"], r["generic_rates"]
+        assert "environment_factors" not in r and r["label"].endswith(": generic failure rate (parts count)")
+        assert pred["formula"].startswith("λ = λg") and pred["reference_environment"] == "GB"
+        assert pred["per_million_hours"] == rates["values"]["GB"]  # the record's own value: the GB rate
+        assert set(rates["values"]) | set(rates["not_given"]) == set(schema.ENVIRONMENTS)
+        assert all(f["held_at"] for f in pred["not_applied"])  # what the generic rate holds at the defaults
+        assert r["citation"]["table"].startswith("Appendix A") and r["citation"]["page"].startswith("A-")
+        q = r.get("quality_factors")
+        if q:
+            values = [lv["value"] for lv in q["levels"]]
+            assert pred["quality_factor_range"] == [min(values), max(values)]
+    assert by_type == {"microcircuit": 61, "semiconductor": 2, "rotating": 6, "circuit_board": 2,
+                       "electronic_other": 3}
+
+
+def test_parts_count_numbers_match_the_handbook():
+    """Spot checks against the page images, and against the handbook's own models where a row is
+    one base rate × its section's πE (failures per million hours)."""
+    up = _mil("a-5-1-microprocessors-mos-up-to-16-bits")  # A-2: 64 pin PGA
+    assert up["generic_rates"]["values"]["GF"] == 0.17 and up["generic_rates"]["values"]["AUF"] == 0.52
+    assert up["generic_rates"]["values"]["CL"] == 5.6 and up["conditions"]["package"] == "64 pin PGA"
+    assert up["quality_factors"]["default"] == "commercial" and up["prediction"]["quality_factor_default"] == 10
+    assert [lv["value"] for lv in up["quality_factors"]["levels"]] == [0.25, 1.0, 2.0, 10.0]  # A-4: S, B, B-1
+    dram = _mil("a-5-2-mos-memories-dram-64k-to-256k")  # A-3
+    assert dram["generic_rates"]["values"]["ARW"] == 0.084
+    motor = _mil("a-12-1-motors-general")  # A-9: "*" for MF, ML, CL
+    assert motor["generic_rates"]["not_given"] == ["MF", "ML", "CL"] and "quality_factors" not in motor
+    assert any("life based" in n for n in motor["notes"])
+    assert _mil("a-12-1-motors-sensor")["generic_rates"]["values"]["AUC"] == 120  # printed 1.2e+02
+    # Quartz crystal: λb .013 f^0.23 at 50 MHz (.032) × the section 19.1 πE, to the printed figures.
+    crystal = _mil("a-19-1-quartz-crystals")["generic_rates"]["values"]
+    pi_e = {"GB": 1, "GF": 3, "GM": 10, "NS": 6, "NU": 16, "AIC": 12, "AIF": 17, "AUC": 22, "AUF": 28, "ARW": 23,
+            "SF": .5, "MF": 13, "ML": 32, "CL": 500}
+    for code, f in pi_e.items():
+        assert crystal[code] == pytest.approx(0.032 * f, rel=0.05), code
+    # Plated through hole board: λb .000017 × (1000 joints × πC 1.3 for 3 planes) × the section 16.1 πE.
+    board = _mil("a-16-1-plated-through-hole-circuit-boards")["generic_rates"]["values"]
+    pi_e = {"GB": 1, "GF": 2, "GM": 7, "NS": 5, "NU": 13, "AIC": 5, "AIF": 8, "AUC": 16, "AUF": 28, "ARW": 19,
+            "SF": .5, "MF": 10, "ML": 27, "CL": 500}
+    for code, f in pi_e.items():
+        assert board[code] == pytest.approx(0.000017 * 1000 * 1.3 * f, rel=0.05), code
+    # Microcircuits: GB and SF share πE .50, so their generic rates agree (to the printed figures).
+    for r in _parts_count():
+        if r["equipment_type"] == "microcircuit":
+            v = r["generic_rates"]["values"]
+            assert v["SF"] == pytest.approx(v["GB"], rel=0.03), r["id"]
+    # Laser diodes: In GaAs/In GaAsP's λb 5.65 over GaAs/Al GaAs's 3.23, in every environment.
+    a = _mil("a-6-13-laser-diodes-gaas-al-gaas")["generic_rates"]["values"]
+    b = _mil("a-6-13-laser-diodes-in-gaas-in-gaasp")["generic_rates"]["values"]
+    for code in a:
+        assert b[code] / a[code] == pytest.approx(5.65 / 3.23, rel=0.06), code
+
+
+def test_parts_count_record_problems_are_caught():
+    good = _mil("a-5-1-microprocessors-mos-up-to-16-bits")
+    assert schema.problems(good) == []
+    for change, says in [
+        (lambda r: r["generic_rates"]["values"].update(GB=0.5), "isn't the GB generic rate"),
+        (lambda r: r["generic_rates"]["values"].update(GF=-1), "generic rate GF must be a positive number"),
+        (lambda r: r["quality_factors"].update(default="nope"), "isn't one of its levels"),
+        (lambda r: r["prediction"].update(quality_factor_default=1.0), "the default level's value"),
+        (lambda r: r.update(environment_factors={"symbol": "πE", "values": {"GB": 1.0}}), "not environment_factors"),
+    ]:
+        rec = copy.deepcopy(good)
+        change(rec)
+        found = schema.problems(rec)
+        assert any(says in p for p in found), found
+
+
+def test_parts_count_records_convert_and_search():
+    from backend.library import convert
+
+    rec = _mil("a-5-1-microprocessors-mos-up-to-16-bits")
+    out = convert.to_block_model(rec, environment="ARW")
+    assert out["failure_rate"] == pytest.approx(0.40e-6 * 10)  # λg ARW × πQ 10 (commercial, the default)
+    assert "parts-count generic rate" in out["assumptions"][0] and "πQ 10" in out["assumptions"][0]
+    with pytest.raises(convert.ConversionError, match="no generic rate for CL"):
+        convert.to_block_model(_mil("a-12-1-motors-general"), environment="CL")
+    detail = service.detail(rec["id"])
+    assert {e["code"]: e["generic_rate_per_million_hours"] for e in detail["environments"]}["GF"] == 0.17
+    row = service.search("microprocessor MOS 16")["results"][0]
+    assert row["id"] == rec["id"] and row["generic_rates"]["GF"] == 0.17 and row["quality_factor_default"] == 10
+    assert row["quality_factors"]["default"] == "commercial"
+    assert service.search("motor", equipment_type="rotating")["total"] == 6  # the type is "Motors, synchros and resolvers"
+    assert service.search("quartz crystal")["results"][0]["id"].endswith("a-19-1-quartz-crystals")

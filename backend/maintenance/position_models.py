@@ -1050,10 +1050,22 @@ def _assigned(assign: dict | None, previous: dict, part_id, reference) -> dict:
     return a if isinstance(a, dict) else {"record_id": a}
 
 
+def _line_type(a: dict) -> dict:
+    """What a line takes from its assignment: a handbook part type (and a quality factor, or
+    None for the part type's default), a rate of the user's own per part, or left out as not an
+    electronic part."""
+    out = {"record_id": a.get("record_id") or None, "quality_factor": a.get("quality_factor") or None}
+    if a.get("rate_per_million_hours") not in (None, ""):
+        out["rate_per_million_hours"] = a["rate_per_million_hours"]
+    if a.get("excluded"):
+        out["excluded"] = True
+    return out
+
+
 def prediction_lines(m, position_id: str, assign: dict | None = None, previous: dict | None = None) -> dict:
     """The parts-count lines for a position: {lines (each with part_id), source ("parts lists" or
     "bill of materials"), positions, warnings}. ``assign`` {part id or part number: {record_id,
-    quality_factor}} and ``previous`` (the last prediction's, by part number) give part types."""
+    quality_factor} or {rate_per_million_hours} or {excluded: true}} and ``previous`` (the last prediction's, by part number) give part types."""
     from backend.services import reliability_prediction as rp
 
     root = m._get(position_id, "Position")
@@ -1069,16 +1081,14 @@ def prediction_lines(m, position_id: str, assign: dict | None = None, previous: 
             ref = part.get("part_number") or ""
             a = _assigned(assign, previous, part["id"], ref)
             lines.append({"part_id": part["id"], "name": part.get("name") or ref or "Part", "reference": ref,
-                          "quantity": view.get("quantity") or 1, "assembly": list(path),
-                          "record_id": a.get("record_id") or None, "quality_factor": a.get("quality_factor") or 1.0})
+                          "quantity": view.get("quantity") or 1, "assembly": list(path), **_line_type(a)})
     source = "parts lists"
     if not lines and root.get("design"):
         bom = rp.lines_from_product(m, position_id)
         warnings += bom.get("warnings") or []
         for ln in bom.get("lines") or []:
             a = _assigned(assign, previous, None, ln.get("reference"))
-            lines.append({**ln, "part_id": None, "record_id": a.get("record_id") or None,
-                          "quality_factor": a.get("quality_factor") or 1.0})
+            lines.append({**ln, "part_id": None, **_line_type(a)})
         source = "bill of materials"
     return {"lines": lines, "source": source, "positions": n, "warnings": warnings,
             "position": {"id": root["id"], "name": root["name"]}}
@@ -1114,8 +1124,9 @@ def _previous_types(db, owners, m, position_id: str) -> dict:
     for x in _prediction_links(m, position_id):
         doc = rp.get_prediction(db, (x.get("source") or {}).get("prediction_id") or "", owners)
         for ln in ((doc.inputs or {}).get("lines") if doc else None) or []:
-            if ln.get("reference") and ln.get("record_id"):
-                out[ln["reference"]] = {"record_id": ln["record_id"], "quality_factor": ln.get("quality_factor") or 1.0}
+            if ln.get("reference") and (ln.get("record_id") or ln.get("excluded")
+                                        or ln.get("rate_per_million_hours") is not None):
+                out[ln["reference"]] = _line_type(ln)
     return out
 
 

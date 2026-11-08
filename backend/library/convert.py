@@ -95,10 +95,16 @@ def _hours_rate(rec: dict, value: Optional[float], length_ft: Optional[float]) -
     return value
 
 
+def _by_environment(rec: dict) -> dict:
+    """A handbook record's numbers by environment: its environment factors, or a parts-count
+    record's generic rates."""
+    return (rec.get("environment_factors") or rec.get("generic_rates") or {}).get("values") or {}
+
+
 def environment_choices(rec: dict) -> str:
-    """The environments a handbook record has factors for, as 'GB (ground,
-    benign), GF (ground, fixed), ...'."""
-    values = (rec.get("environment_factors") or {}).get("values") or {}
+    """The environments a handbook record has factors (or, for a parts-count
+    record, generic rates) for, as 'GB (ground, benign), GF (ground, fixed), ...'."""
+    values = _by_environment(rec)
     return ", ".join(f"{code} ({schema.ENVIRONMENTS[code][0].lower()})" for code in schema.ENVIRONMENTS
                      if code in values)
 
@@ -109,7 +115,7 @@ def environment_factor(rec: dict, environment: Optional[str]) -> Optional[dict]:
     environment factors. Raises :class:`ConversionError` when the record
     needs an environment and none is given, or the one given isn't one it
     has a factor for."""
-    factors = rec.get("environment_factors")
+    factors = rec.get("environment_factors") or rec.get("generic_rates")
     if not factors:
         if environment is not None:
             raise ConversionError(f"'{rec['label']}' doesn't depend on the environment: leave out environment.")
@@ -121,14 +127,48 @@ def environment_factor(rec: dict, environment: Optional[str]) -> Optional[dict]:
     if code not in schema.ENVIRONMENTS:
         raise ConversionError(f"Unknown environment '{environment}'. Use one of {environment_choices(rec)}.")
     if code not in factors["values"]:
-        raise ConversionError(f"The handbook gives no environment factor for {code} "
+        what = "generic rate" if rec.get("generic_rates") else "environment factor"
+        raise ConversionError(f"The handbook gives no {what} for {code} "
                               f"({schema.ENVIRONMENTS[code][0].lower()}) for '{rec['label']}'. Use one of "
                               f"{environment_choices(rec)}.")
+    if rec.get("generic_rates"):
+        return generic_rate(rec, code)
     return {"code": code, "name": schema.ENVIRONMENTS[code][0], "factor": factors["values"][code]}
+
+
+def generic_rate(rec: dict, code: str) -> dict:
+    """A parts-count record's generic rate λg for the environment ``code`` (one it has), as
+    {code, name, generic_rate_per_million_hours, factor}: ``factor`` is λg over the record's own
+    value (its reference environment's rate), so value × factor is the environment's rate."""
+    values = rec["generic_rates"]["values"]
+    ref = values[(rec.get("prediction") or {}).get("reference_environment") or "GB"]
+    return {"code": code, "name": schema.ENVIRONMENTS[code][0], "generic_rate_per_million_hours": values[code],
+            "factor": values[code] / ref}
+
+
+def quality_default(rec: dict) -> Optional[dict]:
+    """A parts-count record's default quality level {code, name, value} (the lowest grade the
+    handbook lists), or None."""
+    q = rec.get("quality_factors") or {}
+    return next((lv for lv in q.get("levels") or [] if lv["code"] == q.get("default")), None)
 
 
 def _handbook_assumption(rec: dict, env: dict) -> str:
     pred = rec.get("prediction") or {}
+    if rec.get("generic_rates"):
+        said = (f"Rate = the handbook's parts-count generic rate λg {env['generic_rate_per_million_hours']:g} per "
+                f"million hours for {env['name'].lower()} ({env['code']}), environment included")
+        q = quality_default(rec)
+        if q:
+            said += f", × πQ {q['value']:g} ({q['name'].lower()}, the handbook's lowest grade)."
+        else:
+            said += "."
+        held = pred.get("not_applied") or []
+        if held:
+            said += (" It holds the handbook's other factors at its defaults: "
+                     + "; ".join(f"{f['symbol']} ({f['name']}) at {f.get('held_at') or 'its default'}" for f in held)
+                     + ".")
+        return said
     said = (f"Rate = {pred.get('per_million_hours', 0):g} per million hours × πE {env['factor']:g} for "
             f"{env['name'].lower()} ({env['code']}).")
     left_out = pred.get("not_applied") or []
@@ -164,6 +204,8 @@ def rate_to_exponential(rec: dict, time_unit: str = "hours", time_basis: Optiona
         raise ConversionError(f"'{rec['label']}' isn't a rate per foot of pipe: leave out length_ft.")
     env = environment_factor(rec, environment)
     factor = env["factor"] if env else 1.0
+    if env and rec.get("generic_rates") and quality_default(rec):
+        factor *= quality_default(rec)["value"]
     assumptions: list[str] = [_handbook_assumption(rec, env)] if env else []
     if target != own_basis:
         if not operating_hours_per_year or not 0 < operating_hours_per_year <= HOURS_PER_YEAR:

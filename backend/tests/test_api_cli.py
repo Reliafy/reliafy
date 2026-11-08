@@ -170,7 +170,7 @@ def test_cli_and_client_search_the_library(server, capsys):
     rec = json.loads(out)["record"]
     assert code == 0 and rec["licence"]["id"] == "us-government-work" and rec["citation"]["table"] == "Table 1"
     code, out, _ = run(capsys, "list", "library_sources")
-    assert code == 0 and "total_records: 458" in out
+    assert code == 0 and "total_records: 536" in out
     code, out, _ = run(capsys, "get", "library_record", "--id", "mil-hdbk-217f-n2:9-1-rc-11", "--environment", "GF",
                        "--json")
     model = json.loads(out)["block_model"]
