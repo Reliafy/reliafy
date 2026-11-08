@@ -27,7 +27,9 @@ test("attach a sample model to a position, see its row and its details, then unl
   await expect(head.locator(".ovm-menu .ovm-item")).toContainText(["Fit from history…", "Assign a saved model…", "Assign from class…", "Columns…"]);
   await head.getByRole("button", { name: "Assign a saved model…" }).click();
   const dialog = page.getByRole("dialog", { name: "Assign a saved model" });
-  await dialog.getByRole("radio", { name: SAMPLE, exact: true }).check();
+  // The radio's accessible name carries the model's kind and figures after its name:
+  // a plain-string name match is a substring match, with nothing to escape.
+  await dialog.getByRole("radio", { name: SAMPLE }).check();
   await dialog.getByRole("button", { name: "Attach" }).click();
   await expect(dialog).toHaveCount(0);
 
