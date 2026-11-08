@@ -188,3 +188,34 @@ test("build an RBD from what's inside, see its blocks, and make it the model in 
   await expect(row(page, station.id).locator(".tt-rollup-t")).toContainText("in use: RBD");
   await expectHealthy(page, problems, { label: "an RBD row" });
 });
+
+// "Numbers I know" as the baseline on a position whose class has no model: the class message
+// goes, and the update previews (data, what moved, credible intervals, the plot) once the
+// numbers and unit are in; Save is on.
+test("a Bayesian update from numbers I know, on a position whose class has no model", async ({ page, request, problems }) => {
+  const tag = `k${Date.now()}`;
+  const ago = (d) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
+  const pump = await postOk(request, `${M}/positions`, { name: `Filter pump ${tag}`, position_class: `Filter pump ${tag}` });
+  await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `Unit A ${tag}` }, on: ago(900) });
+  await postOk(request, `${M}/positions/${pump.id}/remove`, { on: ago(400), reason: "failure" });
+  await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `Unit B ${tag}` }, on: ago(400) });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
+  const head = await headMenu(page);
+  await head.getByRole("button", { name: "Update a baseline with this position's history…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Update a baseline with this position's history" });
+  await expect(dialog).toContainText("no class model");
+  await dialog.getByRole("radio", { name: "Numbers I know" }).click();
+  await expect(dialog).not.toContainText("no class model");
+  await expect(dialog).toContainText("Give the baseline's numbers to see the update.");
+  await dialog.getByLabel("Characteristic life (alpha)").fill("4");
+  await dialog.getByLabel("Shape (beta)").fill("2");
+  await dialog.getByLabel("Unit").selectOption("years");
+  await expect(dialog.getByRole("status")).toContainText("90% chance it lies between");
+  await expect(dialog.getByRole("status")).toContainText("1 failure at");
+  await expect(dialog.locator(".js-plotly-plot")).toBeVisible();
+  await expect(dialog.getByRole("checkbox")).toHaveCount(2);
+  await expect(dialog.locator(".ml-params")).toContainText("Before (baseline)");
+  await expect(dialog.getByRole("button", { name: "Save as this position's model" })).toBeEnabled();
+  await expectHealthy(page, problems, { label: "a Bayesian update from numbers" });
+});

@@ -53,3 +53,17 @@ export function rowWords(r, unit) {
   if (r.c === 2) return `Failed between ${f(r.xl)} and ${f(r.xr)} ${u}`.trim();
   return `${r.c === 0 ? "Failed" : r.status === "removed" ? "Removed" : "Still running"} at ${f(r.x)} ${u}`.trim();
 }
+
+// When the preview is asked again: whenever the chosen baseline's kind or the request changes.
+// The kind is part of it because "Its class's model" and an unfinished "Numbers I know" send the
+// same request (neither names a baseline): without it, a class-model refusal would stay on
+// screen after switching to numbers.
+export const previewKey = (s) => JSON.stringify({ kind: s.kind, ready: ready(s), body: bodyOf(s) });
+
+// What the dialog says while the chosen baseline is incomplete (null once it can be asked).
+export function waitingWords(s) {
+  if (ready(s)) return null;
+  if (s.kind === "model") return "Pick the baseline model to see the update.";
+  if (s.kind === "params") return "Give the baseline's numbers to see the update.";
+  return "Give the B10 with the values you'd be surprised under and over to see the update.";
+}

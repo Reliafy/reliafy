@@ -119,8 +119,11 @@ def test_the_position_flow_previews_saves_and_attaches(db):
     m.fit(pump, new_item={"name": "P1"}, on=start.isoformat())
     m.remove(pump, on=(start + timedelta(days=60)).isoformat(), reason="failure")
     m.fit(pump, new_item={"name": "P2"}, on=(start + timedelta(days=60)).isoformat())
+    # No baseline and no class model: the preview says so in words; saving refuses.
+    asked = pm.bayes_position(m, db, OWNERS, set(), pump)
+    assert asked["needs_baseline"] is True and "no class model" in asked["words"]
     with pytest.raises(Invalid, match="no class model"):
-        pm.bayes_position(m, db, OWNERS, set(), pump)
+        pm.bayes_position(m, db, OWNERS, set(), pump, save=True)
     preview = pm.bayes_position(m, db, OWNERS, set(), pump, {"model_id": "sample-model-bearings-weibull"})
     assert preview["counts"]["failures"] == 1 and preview["rows"][0]["x"] == pytest.approx(60 * 24)  # hours
     one = preview["rows"][0]["fitment_id"]

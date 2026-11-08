@@ -7,7 +7,7 @@ import { Select, TextInput } from "./ui/Controls.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { ACCENT, BAND_FILL, MUTED } from "../plotTheme.js";
 import { saveErrorText } from "../confirm.js";
-import { BASELINE_KINDS, TRUST_CHOICES, bodyOf, ready, rowWords, trustWords } from "../bayesUpdate.js";
+import { BASELINE_KINDS, TRUST_CHOICES, bodyOf, previewKey, ready, rowWords, trustWords, waitingWords } from "../bayesUpdate.js";
 import { fmt } from "../explorerModels.js";
 
 // "Update a baseline with this position's history…" (the Modelling tab's heading "…", and a
@@ -48,10 +48,16 @@ export default function BayesUpdateModal({ position, start = null, onClose, onDo
     return () => { live = false; };
   }, []);
 
-  // Asked again a moment after each change.
+  // Asked again a moment after each change of the chosen baseline or the request (previewKey);
+  // an incomplete baseline clears the last answer and drops any answer still on its way.
   const body = useMemo(() => bodyOf(state), [state]);
+  const key = previewKey(state);
   useEffect(() => {
-    if (!ready(state)) { setPreview({ data: null, error: null, busy: false }); return undefined; }
+    if (!ready(state)) {
+      seq.current += 1;
+      setPreview({ data: null, error: null, busy: false });
+      return undefined;
+    }
     const mine = ++seq.current;
     setPreview((p) => ({ ...p, busy: true }));
     const t = setTimeout(() => {
@@ -60,7 +66,7 @@ export default function BayesUpdateModal({ position, start = null, onClose, onDo
         (e) => mine === seq.current && setPreview({ data: null, error: e.message, busy: false }));
     }, 300);
     return () => clearTimeout(t);
-  }, [JSON.stringify(body), position.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, position.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = async () => {
     setSaving(true);
@@ -152,8 +158,9 @@ export default function BayesUpdateModal({ position, start = null, onClose, onDo
         </>
       )}
       {preview.error && <p className="field-error" role="alert">{preview.error}</p>}
-      {!d && !preview.error && <p className="rim-tquiet">{ready(state) ? "Working it out…" : "Give the baseline to see the update."}</p>}
-      {d && (
+      {!d && !preview.error && <p className="rim-tquiet">{waitingWords(state) || "Working it out…"}</p>}
+      {d?.needs_baseline && <p className="ml-stale" role="note">{d.words}</p>}
+      {d && !d.needs_baseline && (
         <>
           <p className="ml-lead" role="status">{d.words}</p>
           {d.curves && (
