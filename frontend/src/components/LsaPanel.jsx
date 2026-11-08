@@ -11,22 +11,30 @@ import { ShowMe } from "./SectionPage.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import {
-  DEFAULT_TASK_COLUMNS, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, cellText, dayName, daysLate, freeTasks, kindText,
-  lateText, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows, renameRow, searchTasks,
-  sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
-} from "../packagesTab.js";
+  DEFAULT_TASK_COLUMNS, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, cellText, countTitle, dayName, daysLate, freeTasks,
+  kindText, lateText, lsaCsv, lsaRollup, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows,
+  renameRow, rollupLines, searchTasks, sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
+} from "../lsaTab.js";
+import { saveText } from "../sparesPlan.js";
+import { exportFilename } from "../rcmImport.js";
+import LsaTask from "./LsaTask.jsx";
 import { ColumnChooser } from "./RcmWorksheet.jsx";
 import "./RcmWorksheet.css";
 import "./Outline.css";
 import "../views/Maintenance.css";
-import "./PackagesPanel.css";
+import "./LsaPanel.css";
 
-// The Packages tab of the Explorer's panel (Assets › Explorer, ?tab=packages;
-// Derryn, 8 Nov 2026: the tree, and a table of every task below the row picked
-// to search, sort and package from). One row per task on the picked position
-// or place and everything inside it: position, failure mode (its function ›
-// functional failure under it), task, kind, interval, trade, next due and its
-// package. Formatted as the RCM table (RcmWorksheet.css), with the Columns
+// The LSA tab of the Explorer's panel (Assets › Explorer, ?tab=lsa; it was the
+// Packages tab, and ?tab=packages still opens it. Derryn, 8–9 Nov 2026: the
+// tree, and a table of every task below the row picked to search, sort and
+// package from, with what each task needs: the logistic support analysis).
+// One row per task on the picked position or place and everything inside it:
+// position, failure mode (its function › functional failure under it), task,
+// kind, interval, trade, next due, its package, then hours, people, tools,
+// spares, consumables and method. A row opens that task's LSA in the tab
+// (?task=, LsaTask.jsx, with a back link). The bar for the ticked tasks adds up
+// what they need (labour by trade, tools, spares, consumables), as does a
+// package's view. Formatted as the RCM table (RcmWorksheet.css), with the Columns
 // chooser in the heading's "…". Search (?q=) and sort (?sort=, Shift-click a
 // header for a second key) stay in the address. Tick tasks and the bar at the
 // foot offers Package selected… (a new package with them, its cadence from
@@ -35,19 +43,36 @@ import "./PackagesPanel.css";
 // tasks, layers and ⋯ (Pause…, Resume, Retire…, Add tasks…). "Package the
 // tasks…" in the heading's "…" drafts packages from every loose task here.
 
-const HELP = { guide: "work-packages" };
+const HELP = { guide: "lsa" };
 
-function usePackageQuery() {
+// ?package= (a package open) or ?task= (a task's LSA open), kept in the address.
+function useOpenParam(name) {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
   const set = (value) => {
-    const next = new URLSearchParams(location.search);
-    if (value) next.set("package", value);
-    else next.delete("package");
+    const next = new URLSearchParams(window.location.search);
+    if (value) next.set(name, value);
+    else next.delete(name);
     navigate(`${location.pathname}?${next}${location.hash}`, { replace: true, state: location.state });
   };
-  return { open: params.get("package") || null, setOpen: set };
+  return { open: params.get(name) || null, setOpen: set };
+}
+
+// What a set of tasks needs together, as label: text lines.
+function Rollup({ rollup, title, empty = null }) {
+  const lines = rollupLines(rollup);
+  if (!lines.length) return empty;
+  return (
+    <div className="lsa-rollup" role="group" aria-label={title}>
+      <span className="lsa-rollup-title">{title}</span>
+      <dl>
+        {lines.map((l) => (
+          <div key={l.label} className="lsa-rollup-line"><dt>{l.label}</dt><dd>{l.text}</dd></div>
+        ))}
+      </dl>
+    </div>
+  );
 }
 
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
@@ -457,6 +482,8 @@ function PackageView({ id, today, onBack, onOpen, onChanged }) {
           </ul>
         </>
       )}
+      <Rollup rollup={pkg.rollup} title="Each visit needs"
+              empty={pkg.tasks.length ? <p className="lib-date">No labour, tools or spares set on its tasks yet: open a task on the table to add them.</p> : null} />
       {pkg.next_visits?.length > 0 && (
         <p className="lib-date">Next visits: {pkg.next_visits.map((v) => `${fmtDate(v.on)} (${plural(v.tasks, "task")})`).join(", ")}</p>
       )}
@@ -469,7 +496,7 @@ function PackageView({ id, today, onBack, onOpen, onChanged }) {
 
 // ---- the tab: every task here and below, as a table --------------------------------
 
-const COLS_KEY = "reliafy.packages.columns";
+const COLS_KEY = "reliafy.lsa.columns";
 function readCols() {
   try {
     const got = JSON.parse(localStorage.getItem(COLS_KEY) || "null");
@@ -500,7 +527,7 @@ function useTableQuery() {
   };
 }
 
-function TaskCell({ t, col, onPackage }) {
+function TaskCell({ t, col, onPackage, onTask }) {
   if (col === "mode") {
     const m = t.modes?.[0];
     if (!m) return <span className="rw-blank">No failure mode</span>;
@@ -526,14 +553,19 @@ function TaskCell({ t, col, onPackage }) {
     }
     return t.why_not ? <span className="rw-sum" title={`Stays on its own: ${t.why_not}`}>On its own</span> : null;
   }
+  if (col === "task") {
+    return <button type="button" className="link pk-task-link" onClick={() => onTask(t.id)} title={`Open what ${t.name} needs`}>{t.name}</button>;
+  }
   const text = cellText(t, col);
-  return <span className="rw-txt" title={text}>{text}</span>;
+  const counted = countTitle(t, col);
+  return <span className={"rw-txt" + (TASK_COLUMNS.find((c) => c.id === col)?.num ? " pk-num" : "")} title={counted || text}>{text}</span>;
 }
 
 const TICK_W = 36;
 
-export default function PackagesPanel({ row, today, onMenu = null }) {
-  const open = usePackageQuery();
+export default function LsaPanel({ row, today, onMenu = null }) {
+  const open = useOpenParam("package");
+  const taskOpen = useOpenParam("task");
   const tq = useTableQuery();
   const scope = useMemo(() => packageScope(row), [row]);
   const [state, setState] = useState({ key: null, data: null, error: null });
@@ -572,10 +604,19 @@ export default function PackagesPanel({ row, today, onMenu = null }) {
   const where = `at ${row.ref.name || "this row"}`;
   usePanelMenu(onMenu, [
     { id: "pkg-cols", label: "Columns…", onSelect: () => setColsOpen(true) },
+    { id: "lsa-csv", label: "Export CSV", disabled: !all?.length, title: all?.length ? "The table with every column, for Excel" : "No tasks to export",
+      onSelect: () => saveText(lsaCsv(shown || all), exportFilename(row.ref.name, { what: "LSA" })) },
     { id: "pkg-propose", label: "Package the tasks…", onSelect: () => setModal("propose"), title: "Drafts packages from every task here not in one, by how often and by trade" },
     { id: "pkg-new", label: "Add a package…", onSelect: () => setModal("new") },
   ]);
   if (!scope) return null;
+  if (taskOpen.open) {
+    return (
+      <div className="td-tab-page pk-panel">
+        <LsaTask taskId={taskOpen.open} onBack={() => taskOpen.setOpen(null)} onChanged={refresh} />
+      </div>
+    );
+  }
   if (open.open) {
     return (
       <div className="td-tab-page pk-panel">
@@ -591,7 +632,7 @@ export default function PackagesPanel({ row, today, onMenu = null }) {
   return (
     <div className="td-tab-page pk-panel rw">
       <p className="lib-date pk-purpose">
-        Every task here and below. Tick the ones done on the same visit and package them: each visit then raises one work order.
+        Every task here and below, with what it needs: open a task to set its labour, tools, spares and method. Tick the ones done on the same visit and package them: each visit then raises one work order.
       </p>
       <div className="pk-bar">
         <label className="tp-filter pk-filter">
@@ -643,14 +684,14 @@ export default function PackagesPanel({ row, today, onMenu = null }) {
               <p className="lib-date pk-none">No tasks match “{query}”. <button type="button" className="link" onClick={() => setQuery("")}>Clear the search</button></p>
             ) : shown.map((t) => (
               <div key={t.id} role="row" className={"rw-row pk-trow" + (picked.has(t.id) ? " focus" : "")}
-                   onClick={(e) => { if (!t.why_not && !e.target.closest("button, a, input")) flip(t.id); }}>
+                   onClick={(e) => { if (!e.target.closest("button, a, input")) taskOpen.setOpen(t.id); }}>
                 <div className="rw-c pk-tick" role="cell" style={{ width: TICK_W }}>
                   <input type="checkbox" checked={picked.has(t.id)} disabled={!!t.why_not} onChange={() => flip(t.id)}
                          aria-label={`Tick ${t.name}`} title={t.why_not ? `Can't join a package: ${t.why_not}` : undefined} />
                 </div>
                 {columns.map((c) => (
                   <div key={c.id} role="cell" className="rw-c" style={{ width: c.width }}>
-                    <TaskCell t={t} col={c.id} onPackage={open.setOpen} />
+                    <TaskCell t={t} col={c.id} onPackage={open.setOpen} onTask={taskOpen.setOpen} />
                   </div>
                 ))}
                 <div className="rw-c rw-fill" aria-hidden="true" />
@@ -666,6 +707,7 @@ export default function PackagesPanel({ row, today, onMenu = null }) {
                   title={free.length ? undefined : "They're all in a package already"}>Package selected…</button>
           <button type="button" className="link" disabled={!free.length} onClick={() => setModal("add-to")}>Add to a package…</button>
           <button type="button" className="link" onClick={() => setPicked(new Set())}>Clear</button>
+          <Rollup rollup={lsaRollup(chosen)} title="To bring" />
           {inOne.length > 0 && <span className="lib-date pk-actions-note">{plural(inOne.length, "task")} already in a package stay{inOne.length === 1 ? "s" : ""} there.</span>}
         </div>
       )}

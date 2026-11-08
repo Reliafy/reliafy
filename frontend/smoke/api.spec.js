@@ -75,6 +75,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/work-orders"],
   ["GET", "/api/maintenance/packages"], // work packages: tasks done on one visit
   ["GET", "/api/maintenance/packages/propose"],
+  ["GET", "/api/maintenance/tasks/smoke/lsa"], // a task's LSA (what it needs to be done)
   ["GET", "/api/maintenance/packages/smoke"],
   ["POST", "/api/maintenance/packages"],
   ["PATCH", "/api/maintenance/packages/smoke"],

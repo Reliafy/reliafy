@@ -84,6 +84,14 @@ Trigger = Annotated[dict[str, Any] | None, Field(description=(
     "too (otherwise it waits for the event, never overdue)."))]
 
 
+# A task's LSA record: what doing it needs (Maintenance.set_task_resources).
+Resources = Annotated[dict[str, Any] | None, Field(description=(
+    "Sections, each optional: labour [{trade, people, hours}] (hours per person), tools [{name, qty?, note?, "
+    "point_id? (the measuring point or channel it reads)}], spares [{part_id? | name, qty}], consumables [{name, "
+    "qty, unit, cost?}], access {downtime_hours?, permits: [..], isolation?, access_equipment?}, method (how), "
+    "duration_hours (elapsed). null clears a section."))]
+
+
 # ---- actions: what each takes -------------------------------------------------------
 #
 # action: (required arguments, optional arguments, what it does). "Required"
@@ -217,7 +225,8 @@ LIST_KINDS: Table = {
         failure-finding task, evidence to check; empty functions, standards, functional failures. target_id: a
         branch (default: all)."""),
     "packages": ("", "status", """Work packages with next visit and open work order (late, days_late,
-        visits_missed); counts open and late. status active, paused, retired or all (default: not retired)."""),
+        visits_missed) and rollup (what a visit needs: labour by trade, tools, spares, consumables); counts open
+        and late. status active, paused, retired or all (default: not retired)."""),
     "events": ("", "limit since type", """What changed, newest first: each event's seq, type, at, actor and
         payload (the ids it touched: what to restore or undo). limit up to 500 (default 100); since: a seq to
         read forward from; type: one event type."""),
@@ -458,6 +467,9 @@ TASKS: Table = {
     "restore": ("task_id", "", "Put a retired task back on the schedule as it was."),
     "set_last_done": ("task_id on", "", """When it was last done before it was tracked here, so its next due
         date counts from then."""),
+    "set_resources": ("task_id resources", "", """What doing it needs (its LSA record): labour, tools, spares,
+        consumables, access, method, duration_hours. Each section given replaces that one (null clears it);
+        guide topic plan has an example."""),
 }
 
 PROPOSALS: Table = {
@@ -1602,7 +1614,7 @@ def register() -> None:
                           on: Annotated[str | None, Field(description="set_last_done: a date like 2026-10-13.")] = None,
                           reason: str | None = None, measurement: Measurement = None,
                           last_done_reading: float | None = None, trigger: Trigger = None,
-                          clear_trigger: bool | None = None) -> dict[str, Any]:
+                          clear_trigger: bool | None = None, resources: Resources = None) -> dict[str, Any]:
         """Scheduled tasks: they fall due and raise work orders (maintenance work_orders.generate). A task
         is on a position (the job; it counts again from each new item fitted), an item (follows the serial
         number, into a store too) or a location (a round). A task from an RCM decision comes with
@@ -1633,6 +1645,8 @@ def register() -> None:
             return run(lambda: (m.retire_task(task_id, reason or ""), {"retired": task_id})[1])
         if action == "restore":
             return run(m.restore_task, task_id)
+        if action == "set_resources":
+            return run(m.set_task_resources, task_id, resources)
         return run(m.set_last_done, task_id, on)
 
     @tool("maintenance_proposals", _WRITE, "Accept or reject a proposed plan change", PROPOSALS)

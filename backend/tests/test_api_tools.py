@@ -297,6 +297,21 @@ def test_maintenance_names_over_the_limit_say_what_to_do(maint):
     assert r.status_code == 200 and r.json()["skipped"] == [] and r.json()["work_orders"] == []
 
 
+def test_maintenance_task_resources_over_rest(maint):
+    """The LSA on a task over REST: tasks.set_resources, read back on get.task."""
+    pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Pool"}).json()
+    task = maint.post("/api/v1/maintenance/tasks.create", {"position_id": pos["id"], "name": "Test water",
+                                                           "interval": 1, "unit": "weeks"}).json()
+    r = maint.post("/api/v1/maintenance/tasks.set_resources", {"task_id": task["id"], "resources": {
+        "labour": [{"trade": "Pool technician", "people": 1, "hours": 0.5}],
+        "tools": [{"name": "Photometer"}]}})
+    assert r.status_code == 200, r.text
+    got = maint.post("/api/v1/maintenance/get.task", {"id": task["id"]}).json()
+    assert got["task"]["resources"]["labour_hours"] == 0.5
+    assert got["task"]["resources"]["tools"] == [{"name": "Photometer"}]
+    assert maint.post("/api/v1/maintenance/tasks.set_resources", {"task_id": task["id"]}).status_code >= 400
+
+
 def test_maintenance_move_a_measurement_point_over_rest(maint):
     a = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump A"}).json()
     b = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump B"}).json()

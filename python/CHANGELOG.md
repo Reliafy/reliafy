@@ -2,6 +2,16 @@
 
 ## Unreleased (0.5.1)
 
+- **What each task needs (the LSA)**: the new `maintenance tasks.set_resources`
+  (`task_id`, `resources`) records labour (trade, people, hours), tools and
+  instruments (with the measuring point or channel read), spares (linked to
+  the parts register), consumables, access and downtime, method and elapsed
+  hours. Task reads gain `resources`, and each package in `maintenance
+  list.packages` a `rollup` of what its visit needs. On the command line:
+  `reliafy maintenance tasks.set_resources --task-id <id> --resources
+  '{"labour": [{"trade": "Fitter", "people": 1, "hours": 2}]}'`. No client
+  code changed.
+
 - **What a check leads to, and one place for the rationale**: `maintenance
   failure_modes.decide` takes `decision.on_found` (and `on_found` on each of
   `decision.outcomes`) for an on-condition or failure-finding task: what's

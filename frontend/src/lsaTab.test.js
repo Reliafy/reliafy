@@ -1,10 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  cadenceFor, cadenceWords, cantJoin, cellText, daysLate, freeTasks, kindText, lateText, nextSort, nextVisit, ordinal, packageScope,
-  parseSort, searchTasks, sortParam, sortTasks, tickAll, tickState,
-  proposalBatch, proposalProblem, proposalRows, renameRow, toggleRow, visitRuleText,
-} from "./packagesTab.js";
+  cadenceFor, cadenceWords, cantJoin, cellText, daysLate, freeTasks, kindText, lateText, nextSort, nextVisit, ordinal, packageScope, parseSort, searchTasks, sortParam, sortTasks, tickAll, tickState, proposalBatch, proposalProblem, proposalRows, renameRow, toggleRow, visitRuleText, annualLsa, annualText, cleanSection, countTitle, lsaCsv, lsaRollup, rollupLines, sectionDraft,
+} from "./lsaTab.js";
 
 const pkg = (over) => ({ id: "x", name: "X", status: "active", parent: null, task_count: 0, cadence: { text: "every Saturday" }, ...over });
 
@@ -125,4 +123,87 @@ test("ticking, and a new package's cadence from the tasks ticked", () => {
   assert.deepEqual(cadenceFor([task({ interval: 1, unit: "years" })]), { every: 12, unit: "months", mixed: false });
   assert.deepEqual(cadenceFor([tasks[3]]), { every: 1, unit: "weeks", mixed: false });
   assert.deepEqual(cantJoin([tasks[0], task({ id: "z", why_not: "by use" })]).map((t) => t.id), ["z"]);
+});
+
+// ---- the LSA ------------------------------------------------------------------------------
+
+const res = (r) => ({ labour: [], tools: [], spares: [], consumables: [], access: {}, method: "", labour_hours: 0, people: 0, ...r });
+const test1 = {
+  id: "t1", name: "Test the water", trade: "Pool technician", interval: 1, unit: "weeks",
+  resources: res({ labour: [{ trade: "", people: 1, hours: 0.5 }], labour_hours: 0.5, people: 1,
+    tools: [{ name: "photometer", qty: 1 }], consumables: [{ name: "DPD tablets", qty: 2, unit: "each", cost: 1 }],
+    access: { permits: ["chemical handling"] }, method: "Home kit" }),
+};
+const clean1 = {
+  id: "t2", name: "Clean the cell", trade: "", interval: 3, unit: "months",
+  resources: res({ labour: [{ trade: "Pool technician", people: 2, hours: 1 }], labour_hours: 2, people: 2,
+    tools: [{ name: "Photometer", qty: 2 }, { name: "Brush" }],
+    spares: [{ part_id: "p1", part_number: "CELL-1", name: "Chlorinator cell", qty: 1 }, { name: "O-ring", qty: 2 }],
+    consumables: [{ name: "DPD tablets", qty: 3, unit: "each" }, { name: "Acid", qty: 1, unit: "L" }],
+    access: { permits: ["Chemical handling", "Isolation"] } }),
+};
+
+test("the LSA columns show hours, people, counts and method, and sort as numbers", () => {
+  assert.deepEqual(["hours", "people", "tools", "spares", "consumables", "method"].map((c) => cellText(clean1, c)), ["2", "2", "2", "2", "2", ""]);
+  assert.equal(cellText(test1, "method"), "Home kit");
+  assert.equal(cellText({ id: "x" }, "hours"), "");
+  assert.equal(countTitle(clean1, "tools"), "2 × Photometer\nBrush");
+  const bare = { id: "t3", name: "Look", subject: { name: "A" } };
+  assert.deepEqual(sortTasks([clean1, bare, test1], [{ col: "hours", dir: 1 }]).map((t) => t.id), ["t1", "t2", "t3"]);
+  assert.deepEqual(sortTasks([test1, clean1, bare], [{ col: "hours", dir: -1 }]).map((t) => t.id), ["t2", "t1", "t3"]);
+  assert.deepEqual(parseSort("-hours,tools"), [{ col: "hours", dir: -1 }, { col: "tools", dir: 1 }]);
+});
+
+test("the rollup of the ticked tasks adds up what the visit needs, as the server does", () => {
+  const r = lsaRollup([clean1, test1]);
+  assert.equal(r.tasks, 2);
+  assert.equal(r.labour_hours, 2.5);
+  assert.deepEqual(r.labour, [{ trade: "Pool technician", hours: 2.5, people: 2 }]);
+  assert.deepEqual(r.tools, [{ name: "Brush", qty: null }, { name: "Photometer", qty: 2 }]);
+  assert.deepEqual(r.spares.map((x) => [x.name, x.qty]), [["Chlorinator cell", 1], ["O-ring", 2]]);
+  assert.deepEqual(r.consumables, [{ name: "Acid", unit: "L", qty: 1, cost: null }, { name: "DPD tablets", unit: "each", qty: 5, cost: 1 }]);
+  assert.deepEqual(r.permits, ["Chemical handling", "Isolation"]);
+  assert.deepEqual(rollupLines(r).map((l) => l.label), ["Labour", "Tools", "Spares to stage", "Consumables", "Permits"]);
+  assert.equal(rollupLines(r)[0].text, "2.5 h (Pool technician 2.5 h)");
+  assert.equal(rollupLines(r)[2].text, "1 × CELL-1 Chlorinator cell, 2 × O-ring");
+  assert.deepEqual(rollupLines(lsaRollup([])), []);
+});
+
+test("annual labour counts calendar tasks by their interval and leaves out the rest, saying so", () => {
+  // 0.5 h weekly = 26.1 h; 2 h every 3 months = 8 h.
+  const a = annualLsa([test1, clean1]);
+  assert.equal(a.hours, 34.1);
+  assert.equal(a.spareLines, 2);
+  assert.equal(annualText(a), "Annual labour: 34.1 h; spares: 2 lines");
+  const ev = { ...test1, on_event: true };
+  const use = { ...clean1, unit: "hours", interval: 500 };
+  const b = annualLsa([ev, use]);
+  assert.deepEqual([b.hours, b.onEvent, b.byUse], [0, 1, 1]);
+  assert.equal(annualText(b), "Annual labour: 0 h; spares: 2 lines (left out: 1 raised by an event, 1 counted by use)");
+  assert.equal(annualText(annualLsa([{ id: "x", unit: "weeks", interval: 1 }])), "");
+});
+
+test("a section is saved cleaned: empty rows dropped, numbers as numbers, nothing left is null", () => {
+  assert.deepEqual(cleanSection("labour", [{ trade: " Fitter ", people: "2", hours: "1.5" }, { trade: "", people: "", hours: "" }]),
+    [{ trade: "Fitter", people: 2, hours: 1.5 }]);
+  assert.equal(cleanSection("labour", [{ trade: "", people: "1", hours: "" }]), null);
+  assert.deepEqual(cleanSection("tools", [{ name: "Photometer", qty: "", note: "", point_id: "pt1" }, { name: " " }]), [{ name: "Photometer", point_id: "pt1" }]);
+  assert.deepEqual(cleanSection("spares", [{ part_id: "p1", name: "", qty: "" }]), [{ part_id: "p1", qty: 1 }]);
+  assert.deepEqual(cleanSection("consumables", [{ name: "Grease", qty: "0.2", unit: "kg", cost: "" }]), [{ name: "Grease", qty: 0.2, unit: "kg" }]);
+  assert.deepEqual(cleanSection("access", { downtime_hours: "2", permits: "Hot work, , Confined space", isolation: "", access_equipment: "" }),
+    { downtime_hours: 2, permits: ["Hot work", "Confined space"] });
+  assert.equal(cleanSection("access", { downtime_hours: "", permits: "", isolation: "", access_equipment: "" }), null);
+  assert.equal(cleanSection("method", "  "), null);
+  assert.equal(cleanSection("duration_hours", "3"), 3);
+  // And back: what the inputs hold.
+  assert.deepEqual(sectionDraft("labour", clean1.resources), [{ trade: "Pool technician", people: "2", hours: "1" }]);
+  assert.deepEqual(sectionDraft("access", test1.resources), { downtime_hours: "", permits: "chemical handling", isolation: "", access_equipment: "" });
+  assert.deepEqual(cleanSection("labour", sectionDraft("labour", clean1.resources)), clean1.resources.labour);
+});
+
+test("the CSV names the tools, spares and consumables and gives the labour in full", () => {
+  const csv = lsaCsv([{ ...clean1, subject: { name: "Chlorinator" }, modes: [] }]).split("\n");
+  assert.match(csv[0], /^Position,Failure mode,Task,Kind,Interval,Trade,Next due,Package,Hours,People,Method,Labour,Tools,Spares,Consumables,/);
+  assert.match(csv[1], /^Chlorinator,,Clean the cell,/);
+  assert.match(csv[1], /,2,2,,2 × Pool technician for 1 h,2 × Photometer; Brush,1 × CELL-1 Chlorinator cell; 2 × O-ring,/);
 });
