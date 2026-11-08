@@ -25,7 +25,7 @@ import { charCount } from "../maintenanceText.js";
 import { modeAnswers } from "../decisionCheck.js";
 import RcmFunctionStandards from "./RcmFunctionStandards.jsx";
 import { COMPARATORS, COMPARATOR_LABEL, limitReads, limitWords } from "../rcmStandards.js";
-import RcmModeTasks, { RcmTaskSections, removeTaskFromMode } from "./RcmModeTasks.jsx";
+import RcmModeTasks, { RcmTaskSections, StepLabel, removeTaskFromMode } from "./RcmModeTasks.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { getTaskLsa } from "../api.js";
 import { explorerPath } from "../assetTree.js";
@@ -412,7 +412,6 @@ export function PhoneStatus({ r, fmea = false }) {
 export const EDITABLE = new Set(["fn", "std", "fail", "mode"]);
 
 // A failure mode's step heading: "1. Failure effects" (the standard RCM terms, Derryn, 9 Nov 2026).
-const Step = ({ n, children }) => <><span className="rw-stepn">{n}.</span> {children}</>;
 
 // A status chip's tone from its words (the words always say it too).
 const toneOf = (text) => (/to decide|not analysed|no functional failure|no failure modes|nothing inside|not finished/i.test(text) ? "warning"
@@ -575,6 +574,27 @@ export function Details({
       </Field>
     </>
   );
+  // The RCM tab's step 2 as grid rows: "2 · Hidden failure?" and "Consequence", chips only.
+  const consequenceRows = r.type === "mode" && (
+    <>
+      <StepLabel n={2} saved={saved.hidden}>Hidden failure?</StepLabel>
+      <div className="rw-sc">
+        {readOnly ? <span className="rw-fval">{EVIDENT_LABEL[hiddenValue] || "Not set"}</span> : (
+          <ChoiceChips label="Hidden failure?" clearable value={hiddenValue} className="sm"
+                       options={Object.entries(EVIDENT_LABEL).map(([value, label]) => ({ value, label }))}
+                       onChange={(v) => keep("hidden", onCommit(r, "hidden", v))} />
+        )}
+      </div>
+      <StepLabel saved={saved.consequence}>Consequence</StepLabel>
+      <div className="rw-sc">
+        {readOnly ? <span className="rw-fval">{CATEGORY_LABEL[answers.consequence] || "Not set"}</span> : (
+          <ChoiceChips label="Consequence category" clearable value={answers.consequence || ""} className="sm"
+                       options={Object.entries(CATEGORY_LABEL).map(([value, label]) => ({ value, label }))}
+                       onChange={(v) => keep("consequence", onCommit(r, "consequence", v))} />
+        )}
+      </div>
+    </>
+  );
   // Link evidence… (step 3's Evidence): the evidence picker alone, in a small dialog.
   // {at}: a combination's member's own evidence (its index), or the decision's (at null).
   const [linkingEvidence, setLinkingEvidence] = useState(null);
@@ -582,12 +602,12 @@ export function Details({
   // Step 3's open "Evidence": the evidence (Link evidence… when none), what it says and a
   // combination's members' own evidence. The rationale is the failure mode's notes and
   // rationale under its title: one place (Derryn, 9 Nov 2026).
-  const evidenceOf = (m) => {
+  const evidenceOf = (m, { bare = false } = {}) => {
     const d = m.ref.decision;
     return (
     <>
       <div className="rw-evidence">
-        <span className="rw-evlabel">Evidence</span>
+        {!bare && <span className="rw-evlabel">Evidence</span>}
         {d.status === "unevidenced" ? (
           <>
             None linked{!readOnly && ops?.decide && <> · <button type="button" className="link" onClick={() => setLinkingEvidence({ at: null })}
@@ -616,7 +636,8 @@ export function Details({
     </>
     );
   };
-  const decisionWhy = r.type === "mode" && d && evidenceOf(r);
+  // In the steps grid the row's label says "Evidence".
+  const decisionWhy = r.type === "mode" && d && evidenceOf(r, { bare: true });
   // A task's own evidence: a combination's member has its own (or the decision's stands for
   // it); the one task of a plain decision has the decision's.
   const taskEvidence = isTask && modeRow && (() => {
@@ -742,16 +763,18 @@ export function Details({
         {/* A failure mode on the RCM tab: three numbered steps, the flow of the worksheet (Derryn,
             9 Nov 2026): what happens, how bad it is, what we do. The help sentences stay in the
             Decide dialog, where the choice is made; the decision is one card. */}
+        {/* A failure mode on the RCM tab: its three steps as one grid, "step | choice", a row
+            per question (Derryn, 9 Nov 2026). Each step is still a region of its own. */}
         {r.type === "mode" && !fmea?.on && (
-          <Section title={<Step n={1}>Failure effects</Step>} label="Failure effects" className="rw-step"
-                   aside={<SavedMark saved={saved.effects} />}>
-            {field("Failure effects", "effects", { area: true, labelHidden: true, placeholder: "What's seen, what stops, what it costs" })}
-          </Section>
+          <section className="rw-sg rw-steps-first" aria-label="Failure effects">
+            <StepLabel n={1} saved={saved.effects}>Failure effects</StepLabel>
+            <div className="rw-sc">
+              {field("Failure effects", "effects", { area: true, labelHidden: true, placeholder: "What's seen, what stops, what it costs" })}
+            </div>
+          </section>
         )}
         {r.type === "mode" && !fmea?.on && (
-          <Section title={<Step n={2}>Failure consequences</Step>} label="Failure consequences" className="rw-step rw-howbad">
-            {consequenceField}
-          </Section>
+          <section className="rw-sg" aria-label="Failure consequences">{consequenceRows}</section>
         )}
         {(r.type === "mode" || isTask) && linkingEvidence && (isTask ? modeRow?.ref.decision : d) && (
           <EvidenceDialog r={isTask ? modeRow : r} at={linkingEvidence.at} options={options} workings={workings} ops={ops}
@@ -759,10 +782,11 @@ export function Details({
                           onDone={() => { setLinkingEvidence(null); said("Saved the evidence."); }} />
         )}
         {r.type === "mode" && (
-          <Section title={fmea?.on ? "Proactive task or default action" : <Step n={3}>Proactive task or default action</Step>} label="Proactive task or default action" className="rw-step rw-decision">
+          <section className={"rw-sgwrap" + (fmea?.on ? " rw-steps-first" : "")} aria-label="Proactive task or default action">
             <RcmModeTasks key={`${r.key}:tasks`} r={r} ops={ops} readOnly={readOnly} addStart={startOf("task")} onSaid={said}
-                          options={options} why={decisionWhy} own={ownBlock} onPick={onSelect ? (k) => onSelect(k) : null} />
-          </Section>
+                          options={options} why={decisionWhy} own={ownBlock} onPick={onSelect ? (k) => onSelect(k) : null}
+                          n={fmea?.on ? null : 3} />
+          </section>
         )}
         {/* A task (the tree's fifth level): what it is and how often, what's done when its check
             finds it, its instructions, then its evidence, the failure modes it serves and what doing

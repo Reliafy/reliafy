@@ -68,6 +68,16 @@ import { PanelField } from "./PanelField.jsx";
 //   onSaid    (text) a few words in the page's status line once something's done
 //   onPick    (key) picks a row in the tree (a task's row)
 
+// A failure mode's steps as one two-column grid, "step | choice" (Derryn, 9 Nov 2026: "this
+// can be made a lot more dense. Let's try a table layout with step and choice"): one row per
+// question, a hairline between rows, no help sentences. `n`: the step number (accent colour).
+export const StepLabel = ({ n = null, id, children, saved = 0 }) => (
+  <div className="rw-sl" id={id}>
+    <span>{n != null && <><span className="rw-stepn">{n}</span> · </>}{children}</span>
+    <SavedMark saved={saved} />
+  </div>
+);
+
 const SCHEDULED = ["on_condition", "fixed_interval", "failure_finding"];
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 // "every 6 months", or "on event: 120 mm on POOL-RAIN" for a task raised by an event.
@@ -138,7 +148,7 @@ function useIntervalCalc({ r, ops, can, busy = false, onSaid }) {
 }
 
 export default function RcmModeTasks({
-  r, ops = null, readOnly = false, addStart = null, onSaid, options = null, why = null, own = null, onPick = null,
+  r, ops = null, readOnly = false, addStart = null, onSaid, options = null, why = null, own = null, onPick = null, n = 3,
 }) {
   const confirm = useConfirm();
   const d = r.ref.decision || null;
@@ -337,46 +347,60 @@ export default function RcmModeTasks({
     );
   };
 
+  // Rows of the steps grid ("step | choice", Details): the task worth doing, the tasks, the
+  // evidence. Each label cell names its row; the evidence cell is a group named by its label.
+  const hasTasks = needsFirst || cards.length > 0 || canAdd;
+  const whyId = `rim-why-${r.key}`;
   return (
-    <div className={"rim-step" + (editing ? " has-edit" : "")}>
-      <TaskChoice options={options} hidden={answers.hidden} consequence={answers.consequence} value={pick} onChange={choose}
-                  disabled={!can || !answered || busy} locked={answered ? null : LOCKED} moveOnly saved={saved} bridge />
-      {failed && !editing && <p className="field-error" role="alert">{failed}</p>}
-      {needsFirst && (
-        <div className="rim-card rim-one editing" role="group" aria-label="The decision's task">
-          <NewTaskCard key={`${r.key}:${d.outcome}`} r={r} d={d} ops={ops} kind={d.outcome}
-                       start={{ name: d.task || "", interval: d.interval ?? "" }}
-                       onSave={watching((member) => decide(decisionWithFirstTask(d, member)))}
-                       onDone={(said) => { setSaved((n) => n + 1); onSaid?.(said); }} />
-        </div>
-      )}
-      {d && listed.length > 0 && <TaskList r={r} lines={listed} label="The decision's tasks" onPick={onPick} />}
-      {d && carded.length > 0 && <ul className="rim-lines rim-cards" aria-label="The decision's action">{carded.map(card)}</ul>}
-      {!d && cards.length > 0 && (
+    <div className={"rim-step rw-sg" + (editing ? " has-edit" : "")}>
+      <StepLabel n={n} saved={saved}>Task worth doing?</StepLabel>
+      <div className="rw-sc">
+        <TaskChoice options={options} hidden={answers.hidden} consequence={answers.consequence} value={pick} onChange={choose}
+                    disabled={!can || !answered || busy} locked={answered ? null : LOCKED} moveOnly bridge bare />
+        {failed && !editing && <p className="field-error" role="alert">{failed}</p>}
+      </div>
+      {hasTasks && (
         <>
-          <h4 className="rim-before">Tasks linked before the decision</h4>
-          {listed.length > 0 && <TaskList r={r} lines={listed} label="Tasks linked before the decision" onPick={onPick} />}
-          {carded.length > 0 && <ul className="rim-lines rim-cards" aria-label="Other tasks linked before the decision">{carded.map(card)}</ul>}
+          <StepLabel>Tasks</StepLabel>
+          <div className="rw-sc rim-tasks-cell">
+            {needsFirst && (
+              <div className="rim-card rim-one editing" role="group" aria-label="The decision's task">
+                <NewTaskCard key={`${r.key}:${d.outcome}`} r={r} d={d} ops={ops} kind={d.outcome}
+                             start={{ name: d.task || "", interval: d.interval ?? "" }}
+                             onSave={watching((member) => decide(decisionWithFirstTask(d, member)))}
+                             onDone={(said) => { setSaved((x) => x + 1); onSaid?.(said); }} />
+              </div>
+            )}
+            {d && listed.length > 0 && <TaskList r={r} lines={listed} label="The decision's tasks" onPick={onPick} />}
+            {d && carded.length > 0 && <ul className="rim-lines rim-cards" aria-label="The decision's action">{carded.map(card)}</ul>}
+            {!d && cards.length > 0 && (
+              <>
+                <h4 className="rim-before">Tasks linked before the decision</h4>
+                {listed.length > 0 && <TaskList r={r} lines={listed} label="Tasks linked before the decision" onPick={onPick} />}
+                {carded.length > 0 && <ul className="rim-lines rim-cards" aria-label="Other tasks linked before the decision">{carded.map(card)}</ul>}
+              </>
+            )}
+            {canAdd && !editing && (adding ? (
+              <div className="rim-card rim-one rim-adding editing" role="group" aria-label="Add a task">
+                <NewTaskCard r={r} d={d} ops={ops} kinds={addable}
+                             onSave={watching((member) => decide(decisionWithMember(d, member)))}
+                             onCancel={() => setAdding(false)}
+                             onDone={(said) => { setAdding(false); onSaid?.(said); }} />
+              </div>
+            ) : (
+              <button type="button" className="rim-addrow" disabled={busy} onClick={() => { setFailed(null); setAdding(true); }}>
+                + Add a task
+              </button>
+            ))}
+            {calcDialog}
+          </div>
         </>
       )}
-      {canAdd && !editing && (adding ? (
-        <div className="rim-card rim-one rim-adding editing" role="group" aria-label="Add a task">
-          <NewTaskCard r={r} d={d} ops={ops} kinds={addable}
-                       onSave={watching((member) => decide(decisionWithMember(d, member)))}
-                       onCancel={() => setAdding(false)}
-                       onDone={(said) => { setAdding(false); onSaid?.(said); }} />
-        </div>
-      ) : (
-        <button type="button" className="rim-addrow" disabled={busy} onClick={() => { setFailed(null); setAdding(true); }}>
-          + Add a task
-        </button>
-      ))}
-      {calcDialog}
       {d && why && (
-        <div className="rim-whyopen" role="group" aria-labelledby={`rim-why-${r.key}`}>
-          <h4 className="rim-before" id={`rim-why-${r.key}`}>Evidence</h4>
-          {why}
-        </div>
+        <>
+          <StepLabel id={whyId}>Evidence</StepLabel>
+          <div className="rw-sc rim-whyopen" role="group" aria-labelledby={whyId}>{why}</div>
+        </>
       )}
     </div>
   );

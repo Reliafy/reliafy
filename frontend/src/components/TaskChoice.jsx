@@ -46,7 +46,7 @@ export const NO_TASK_LINE = "None of the tasks reduces the risk enough, or costs
 
 export default function TaskChoice({
   options = null, hidden, consequence, value, onChange, disabled = false, locked = null, moveOnly = false, saved = 0,
-  className = "", n = null, bridge = false,
+  className = "", n = null, bridge = false, bare = false,
 }) {
   const { outcome = null, noTask = false, rtfBasis = null } = value || {};
   const opt = (id) => options?.outcomes?.find((o) => o.id === id);
@@ -60,6 +60,38 @@ export default function TaskChoice({
     : first === "none" ? NO_TASK_LINE : first ? worth(first) : null);
   const fallback = noTask && !outcome ? defaultAction(hidden, consequence) : null;
   const basis = bases.find((b) => b.id === rtfBasis);
+  const firstChips = (
+    <ChoiceChips label="Which task is worth doing?" clearable value={first} disabled={disabled} moveOnly={moveOnly} className={bare ? "sm" : ""}
+                 options={[...tasks.map((o) => ({ value: o, label: label(o), ...(bridge ? { title: worth(o) || undefined } : {}) })),
+                   { value: "none", label: "No task is worth doing", ...(bridge ? { title: NO_TASK_LINE } : {}) }]}
+                 onChange={(v) => onChange(v === "none" ? { outcome: null, noTask: true, rtfBasis: null }
+                   : v ? { outcome: v, noTask: false, rtfBasis: null } : { outcome: null, noTask: false, rtfBasis: null })} />
+  );
+  const insteadChips = (
+    <ChoiceChips label="What's done instead" clearable value={DEFAULT_OUTCOMES.includes(outcome) ? outcome : ""}
+                 disabled={disabled} moveOnly={moveOnly} className={bare ? "sm" : ""}
+                 options={defaults.map((o) => ({ value: o, label: label(o), ...(bare && opt(o)?.hint ? { title: opt(o).hint } : {}) }))}
+                 onChange={(v) => onChange({ outcome: v || null, noTask: true, rtfBasis: null })} />
+  );
+  const basisChips = (
+    <ChoiceChips label="Why run to failure?" value={rtfBasis || ""} disabled={disabled} moveOnly={moveOnly} className={bare ? "sm" : ""}
+                 options={bases.map((b) => ({ value: b.id, label: b.label, ...(bare && b.hint ? { title: b.hint } : {}) }))}
+                 onChange={(v) => onChange({ outcome: "rtf", noTask: true, rtfBasis: v || null })} />
+  );
+  if (bare) {
+    // In the steps grid (Details): the chips, the chosen chip's one-line bridge as a quiet
+    // second line, then the rows beneath when "No task is worth doing" is on. No labels
+    // over the chips (the grid's left column names the row) and no help sentences: the
+    // hints are the chips' tooltips.
+    return (
+      <div className={"task-choice bare" + (className ? ` ${className}` : "")}>
+        {firstChips}
+        {firstLine && <p className="tc-line">{firstLine}</p>}
+        {noTask && <div className="tc-sub"><span className="tc-sublabel" aria-hidden="true">Instead</span>{insteadChips}</div>}
+        {outcome === "rtf" && <div className="tc-sub"><span className="tc-sublabel" aria-hidden="true">Why</span>{basisChips}</div>}
+      </div>
+    );
+  }
   return (
     <div className={"task-choice" + (className ? ` ${className}` : "")}>
       <Field label={n ? `${n}. Which task is worth doing?` : "Which task is worth doing?"} saved={saved} className="rw-eyebrow" help={firstLine}>

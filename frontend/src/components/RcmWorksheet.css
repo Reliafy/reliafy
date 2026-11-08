@@ -911,3 +911,35 @@ span.rim-tname.rim-r1-body { display: block; }
 @media (max-width: 600px) {
   .rim-tasklist .rim-tgo, .rw-serves .rw-serves-rm { min-height: 36px; }
 }
+/* A failure mode's steps as one grid, "step | choice" (Derryn, 9 Nov 2026): a fixed left
+   column with the step's name (its number in the accent colour), the choice on the right,
+   a hairline between rows. Each step is its own region (section), each a grid with the
+   same columns, so the rows line up. At phone width one column, the label above. */
+.rw-sg, .rw-sgwrap > .rw-sg { display: grid; grid-template-columns: 170px minmax(0, 1fr); column-gap: 12px; min-width: 0; }
+.rw-sgwrap { min-width: 0; }
+.rw-sg > .rw-sl, .rw-sg > .rw-sc { border-top: 1px solid var(--line2); padding: 7px 0; min-width: 0; }
+.rw-steps-first > .rw-sl:first-child, .rw-steps-first > .rw-sc:nth-child(2),
+.rw-steps-first > .rw-sg > .rw-sl:first-child, .rw-steps-first > .rw-sg > .rw-sc:nth-child(2) { border-top-color: var(--line); }
+.rw-sl { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; font-size: var(--fs-12); font-weight: 600; color: var(--muted); line-height: 1.3; padding-top: 10px !important; }
+.rw-sl .rw-stepn { color: var(--acc); }
+.rw-sl .field-saved { font-weight: 400; }
+.rw-sc { display: flex; flex-direction: column; gap: 4px; }
+.rw-sc .field { margin: 0; }
+.rw-sc .ctl-area { min-height: 0; }
+.rw-sc .rw-evidence { margin: 0; }
+.rim-step.rw-sg { gap: 0 12px; }
+.rim-tasks-cell { gap: 6px; }
+.rim-tasks-cell button.rim-addrow { align-self: flex-start; min-height: 28px; padding: 0 10px; font-size: var(--fs-13); }
+.rw-sc.rim-whyopen { border-top: 1px solid var(--line2); padding-top: 7px; }
+.task-choice.bare { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.task-choice.bare .tc-line { margin: 0; font-size: var(--fs-12); color: var(--muted); }
+.task-choice.bare .tc-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.task-choice.bare .tc-sublabel { font-size: var(--fs-12); color: var(--muted); }
+.choice-chips.sm { gap: 4px; }
+.choice-chips.sm .choice-chip { min-height: 26px; padding: 2px 9px; font-size: var(--fs-13); }
+@media (max-width: 600px) {
+  .rw-sg, .rw-sgwrap > .rw-sg { grid-template-columns: minmax(0, 1fr); }
+  .rw-sg > .rw-sc { border-top: 0; padding-top: 2px; }
+  .rw-sg > .rw-sl { padding-bottom: 0; }
+  .choice-chips.sm .choice-chip { min-height: 36px; }
+}
