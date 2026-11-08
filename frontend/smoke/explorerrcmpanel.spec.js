@@ -380,11 +380,13 @@ test("one order at every level: its notes under the title and chips, what's insi
     await expect(panel(page).getByRole("heading", { level: 2, name: `Seal leaks ${tag}` })).toBeVisible();
     // The FME(C)A's groups (scores, criticality) are on its own tab, not this one; the mode's
     // notes and rationale (the same section at every level) are above all of it, below the chips.
-    // Then its three numbered steps: what happens, how bad, what we do (its tasks are lines of its decision card).
+    // Then its three steps, each a region, together one grid: what happens, how bad, what we do.
     expect(await blocks(page)).toEqual(["Failure effects", "Failure consequences", "Proactive task or default action"]);
     expect(await notesFirst(page)).toBe(true);
     await notesQuiet(page);
-    await expect(panel(page).locator(".rw-step > .psec-head .psec-title")).toHaveText(["1. Failure effects", "2. Failure consequences", "3. Proactive task or default action"]);
+    // One grid, "step | choice": a row per question, the step's name on the left (Derryn, 9 Nov 2026).
+    await expect(panel(page).locator(".rw-sl")).toHaveText(["1 · Failure effects", "2 · Hidden failure?", "Consequence", "3 · Task worth doing?", "Tasks", "Evidence"]);
+    await expect(panel(page).locator(".psec-title", { hasText: /Failure effects|Failure consequences|Proactive task/ })).toHaveCount(0);
     // Step 1 is the effects box alone: the step's title is its label (the box's name, not shown again).
     await expect(panel(page).getByRole("region", { name: "Failure effects" }).getByRole("textbox", { name: /^Failure effects/ })).toBeVisible();
     await expect(panel(page).getByRole("region", { name: "Failure effects" }).locator(".field-head")).toHaveClass(/sr-only/);
