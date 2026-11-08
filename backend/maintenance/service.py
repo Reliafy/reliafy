@@ -4462,11 +4462,18 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             self._emit("task.unlinked", {"id": task["id"], "failure_mode_id": fm["id"], "on": self.today()})
         return self._task_view(self._get(task["id"], "Task"))
 
-    def add_mode_task(self, mode_id: str, name, interval, unit="months", outcome=None, instructions="") -> dict:
+    def add_mode_task(self, mode_id: str, name, interval, unit="months", outcome=None, instructions="",
+                      strict=True) -> dict:
         """Another task for a failure mode (its decision's task stays the first):
         on the mode's position, part of its RCM (no source of its own). outcome:
         what kind of task it is (left out: the decision's, when that schedules
-        work)."""
+        work). On a decided mode the task joins the decision (a combination of
+        tasks, or a redesign beside its task), checked by the same rules as
+        decide_failure_mode, with the same words when they refuse: run to failure
+        and accept stand alone, failure finding is for hidden failures only, and
+        so on. A mode not decided yet gets the task linked to it, as before a
+        decision. strict=False (an import): a task the rules refuse is linked
+        anyway, and the mode's read says it needs review."""
         fm, position = self._live_mode(mode_id)
         name = _text(name, "task's name", required=True)
         unit = _unit(unit, "months")
@@ -4476,6 +4483,20 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         elif outcome not in SCHEDULED_OUTCOMES:
             raise Invalid(f"The outcome is one of {', '.join(SCHEDULED_OUTCOMES)}, or none.")
         text = _text(instructions, "instructions", max_len=LONG_TEXT)
+        hidden, category = rcm_decisions.mode_consequence(fm)
+        if fm.get("outcome") and outcome is None:
+            raise Invalid("Say what kind of task it is (outcome: on_condition, fixed_interval or failure_finding): "
+                          "the decision schedules no task to take it from.")
+        if strict and outcome:
+            why = rcm_decisions.refusal(hidden, category, [outcome])
+            if why:
+                raise Invalid(why)
+        if fm.get("outcome") and outcome:
+            joined = self._join_decision(fm, mode_id, name, interval, unit, outcome, strict)
+            if joined is not None:
+                if text:
+                    self._emit("task.updated", {"id": joined, "changes": {"instructions": text}})
+                return self._task_view(self._get(joined, "Task"))
         self._quota("Task", MAX_TASKS)
         tid = new_id()
         self._emit("task.added", {
@@ -4483,6 +4504,40 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             "outcome": outcome, "interval": interval, "unit": unit, "start": self.today(),
         } | ({"instructions": text} if text else {}))
         return self._task_view(self._get(tid, "Task"))
+
+    def _join_decision(self, fm: dict, mode_id: str, name, interval, unit, outcome, strict) -> str | None:
+        """A new task made a member of the mode's decision (decide_failure_mode with
+        every member sent back by its task_id, plus the new one): its id. Refused
+        with decide's words; strict=False: None when the rules refuse (the caller
+        links it as a loose task)."""
+        tasks = self._mode_tasks(mode_id, fm)
+        live = {t["id"] for t in tasks}
+        if fm.get("outcomes"):
+            members = []
+            for o in fm["outcomes"]:
+                if o["outcome"] in SCHEDULED_OUTCOMES and o.get("task_id") not in live:
+                    continue  # its task has gone: the member goes with it
+                members.append({"outcome": o["outcome"]} | ({"task_id": o["task_id"]} if o.get("task_id") else {}))
+        elif fm["outcome"] in SCHEDULED_OUTCOMES:
+            own = fm.get("task_id") if fm.get("task_id") in live else (tasks[0]["id"] if tasks else None)
+            # With no task of its own yet, a task of its kind is the decision's; another kind can't join a
+            # member with no task (decide says so).
+            members = ([{"outcome": fm["outcome"], "task_id": own}] if own
+                       else [] if outcome == fm["outcome"] else [{"outcome": fm["outcome"]}])
+        else:
+            members = [{"outcome": fm["outcome"]}]
+        members.append({"outcome": outcome, "task": name, "interval": interval, "interval_unit": unit})
+        decision = {"outcome": members[0]["outcome"], "evidence": fm.get("evidence") or None,
+                    "outcomes": members} | ({"rtf_basis": fm["rtf_basis"]} if fm.get("rtf_basis") else {})
+        before = live
+        try:
+            self.decide_failure_mode(mode_id, decision=decision, strict=strict)
+        except Invalid:
+            if strict:
+                raise
+            return None
+        made = [t for t in self._mode_tasks(mode_id) if t["id"] not in before and t.get("name") == name]
+        return made[0]["id"] if made else None
 
     def mode_tasks(self, mode_id: str) -> dict:
         """A failure mode's tasks (the decision's own first), and the live tasks on
@@ -4533,8 +4588,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         each scheduled member with a task of its own (_decide_combination).
         The decision must follow the RCM decision diagram for the mode's answers
         (rcm_decisions.refusal: no run to failure on a safety or environmental
-        consequence, failure finding only on a hidden failure, a combination
-        only on safety or environmental); strict=False (an import, a sample)
+        consequence, failure finding only on a hidden failure; a combination is
+        allowed on any consequence, its advice asks each task to pay on a cost
+        one); strict=False (an import, a sample)
         keeps one that doesn't, and its read carries advice saying so.
         hidden is stored through failure_mode.analysed's open changes dict."""
         fm, position = self._live_mode(mode_id)
@@ -5700,14 +5756,17 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     row["package"] = {"id": entry["package"]["id"], "name": entry["package"]["name"],
                                       "subject": self._subject_brief(on)}
         hidden, consequence = rcm_decisions.mode_consequence(fm)
-        # A decision the diagram wouldn't make now is kept, with a word saying so.
-        said = rcm_decisions.advice(consequence, (decision or {}).get("outcome"),
-                                    [o["outcome"] for o in (decision or {}).get("outcomes") or []], hidden=hidden)
+        # A decision the diagram wouldn't make now is kept, with a word saying so; one that
+        # breaks the rules needs a look before it counts as decided (needs_review).
+        said, needs_review = rcm_decisions.review(
+            consequence, (decision or {}).get("outcome"),
+            [o["outcome"] for o in (decision or {}).get("outcomes") or []], hidden=hidden, tasks=len(tasks))
         return {
             "id": fm["id"], "text": fm["text"], "effects": fm.get("effects") or "",
             "notes": mode_notes(fm.get("notes"), fm.get("decision_notes")),
             "hidden": hidden, "consequence": consequence, "decision": decision,
             **({"advice": said} if said else {}),
+            **({"needs_review": True} if needs_review and decision else {}),
             # Its tasks whether or not it's decided yet (a task linked before the decision).
             "tasks": brief,
             "ad_hoc": bool(fm.get("ad_hoc")),
@@ -5904,17 +5963,35 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         """The RCM of every live position that has any (functions or failure
         modes), for the asset tree's RCM tab: each position's functions ›
         functional failures › failure modes and its unassigned modes, read in
-        bulk. Evidence statuses are added by the caller (rcm_graph.resolve)."""
+        bulk. Evidence statuses are added by the caller (rcm_graph.resolve).
+        parents: {position id: the position it sits in, or None} for each
+        position listed and every position above one, so a position's rollup
+        can count what's inside it (a position carried by an item counts as a
+        top: the asset tree places it through the item's fitment)."""
         index = self._rcm_index()
         out = []
+        live = {}
         for p in self.s.nodes(self.org, "Position"):
             pid = p["id"]
-            if p.get("retired") or not (index["functions"].get(pid) or index["modes"].get(pid)):
+            if p.get("retired"):
+                continue
+            live[pid] = p
+            if not (index["functions"].get(pid) or index["modes"].get(pid)):
                 continue
             # Lean: a working's preview, never its full text (that's per position, or function()).
             out.append({"id": pid, "name": p["name"], "depth": 0, **self._position_rcm(index, pid, full=False)})
         out.sort(key=lambda x: x["id"])
-        return {"positions": out}
+        part_of: dict[str, str] = {}
+        for src, dst in self.s.pairs(self.org, "PART_OF"):
+            part_of.setdefault(src, dst)
+        parents: dict[str, str | None] = {}
+        for p in out:
+            pid = p["id"]
+            while pid is not None and pid not in parents:
+                up = part_of.get(pid)
+                parents[pid] = up if up in live else None
+                pid = parents[pid]
+        return {"positions": out, "parents": parents}
 
     def rcm_worksheet(self, position_id: str, scope: str = "below", limit: int = 2000) -> dict:
         """A position's RCM, read from the graph: for the position (scope "this")

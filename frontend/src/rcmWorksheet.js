@@ -131,9 +131,18 @@ export const TASK_OUTCOMES = new Set(["on_condition", "fixed_interval", "rtf", "
 export const INTERVAL_OUTCOMES = new Set(["on_condition", "fixed_interval", "failure_finding"]);
 
 export const blank = () => ({
-  modes: 0, undecided: 0, tasks: 0, hidden: 0, safety: 0,
+  modes: 0, undecided: 0, review: 0, tasks: 0, hidden: 0, safety: 0,
   supported: 0, contradicted: 0, unsure: 0, stale: 0, unlinked: 0,
 });
+
+// Whether what's inside a row is decided, in words: "2 to decide", then (all decided, some
+// against the decision rules: the server's needs_review) "1 to review", else "all decided"
+// ("All decided" with `cap`).
+export function decidedWords(s, { cap = false } = {}) {
+  if (s.undecided) return `${s.undecided.toLocaleString("en-AU")} to decide`;
+  if (s.review) return `${s.review.toLocaleString("en-AU")} to review`;
+  return cap ? "All decided" : "all decided";
+}
 
 // A failure mode's own counts (each 0 or 1).
 export function modeCounts(m) {
@@ -142,6 +151,8 @@ export function modeCounts(m) {
   return {
     modes: 1,
     undecided: d ? 0 : 1,
+    // Decided, but against the decision rules (the read's needs_review, with its advice).
+    review: d && m.needs_review ? 1 : 0,
     tasks: hasTask(m) ? 1 : 0,
     hidden: isHidden(m) ? 1 : 0,
     safety: categoryOf(m) === "safety" || categoryOf(m) === "environmental" ? 1 : 0,
@@ -745,7 +756,7 @@ export function insideWords(r) {
   }
   return [
     plural(s.modes, "failure mode"),
-    s.undecided ? `${s.undecided.toLocaleString("en-AU")} to decide` : "all decided",
+    decidedWords(s),
     s.tasks ? `${s.tasks.toLocaleString("en-AU")} with a task` : null,
   ].filter(Boolean).join(" · ");
 }
@@ -757,7 +768,7 @@ export function phoneLine(r) {
   if (r.type === "cause") {
     const s = r.sum;
     const where = r.ref.inside === false ? `no longer inside ${r.ref.effect_position || "it"}` : null;
-    return [`on ${r.ref.on}`, where, s.modes ? (s.undecided ? `${s.undecided} to decide` : "all decided") : "no failure modes yet",
+    return [`on ${r.ref.on}`, where, s.modes ? decidedWords(s) : "no failure modes yet",
       s.tasks ? plural(s.tasks, "task") : null].filter(Boolean).join(" · ");
   }
   if (r.type === "fail" && belowOf(r)) {
@@ -840,8 +851,8 @@ export const COLUMNS = [
   {
     id: "decision", label: "Decision", width: 150, min: 84, on: true,
     title: "The maintenance decision for the failure mode",
-    text: (r) => (isTask(r) ? taskKindText(r) : isMode(r) ? decisionText(d(r)) || "To decide"
-      : [r.sum.modes ? (r.sum.undecided ? `${r.sum.undecided} to decide` : "All decided") : "", belowDecisionText(r)].filter(Boolean).join(" · ")),
+    text: (r) => (isTask(r) ? taskKindText(r) : isMode(r) ? (d(r) ? [decisionText(d(r)), r.ref.needs_review ? "Needs review" : ""].filter(Boolean).join(" · ") : "To decide")
+      : [r.sum.modes ? decidedWords(r.sum, { cap: true }) : "", belowDecisionText(r)].filter(Boolean).join(" · ")),
     sort: (r) => (isTask(r) ? OUT_RANK[r.ref.outcome] ?? 9 : isMode(r) ? (d(r) ? OUT_RANK[d(r).outcome] ?? 9 : -1) : -r.sum.undecided),
   },
   {

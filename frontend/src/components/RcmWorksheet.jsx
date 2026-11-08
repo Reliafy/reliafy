@@ -33,6 +33,7 @@ import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
 import RcmNotes from "./RcmNotes.jsx";
 import RcmFunctionPdfs from "./RcmFunctionPdfs.jsx";
+import ModeFailureReports from "./ModeFailureReports.jsx";
 import { hasNotes, hasNotesField, notesTip } from "../rcmNotes.js";
 import { saveErrorText } from "../confirm.js";
 import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
@@ -121,11 +122,21 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks, onWorkin
                     title="Choose the decision for this failure mode">To decide</button>
           );
         }
+        if (r.ref.needs_review) {
+          // Saved against the decision rules: the advice note the guide promises, in the cell.
+          return (
+            <span className="rw-txt rw-review" title={r.ref.advice || "This decision breaks the decision rules: look at it again."}>
+              {decisionText(d)} <span className="rw-todo rw-review-note">· Needs review</span>
+            </span>
+          );
+        }
         return <span className="rw-txt" title={[decisionText(d), d.notes].filter(Boolean).join(": ")}>{decisionText(d)}</span>;
       }
       {
         const own = r.sum.modes ? (r.sum.undecided
           ? <span className="rw-sum rw-todo" title={`${n(r.sum.undecided, "failure mode")} inside with no decision yet`}>{r.sum.undecided.toLocaleString("en-AU")} to decide</span>
+          : r.sum.review
+          ? <span className="rw-sum rw-todo" title={`${n(r.sum.review, "decision")} inside that break${r.sum.review === 1 ? "s" : ""} the decision rules: look again`}>{r.sum.review.toLocaleString("en-AU")} to review</span>
           : <span className="rw-sum rw-done">All decided</span>) : null;
         // A functional failure caused by lower ones (the Explorer): what's decided
         // below, beside its own, never added into it. Short beside its own (the
@@ -383,12 +394,14 @@ export function PhoneStatus({ r, fmea = false }) {
       const ap = r.ref.ap;
       return ap ? <Chip tone={AP_TONE[ap]} className="rw-ap">{AP_LABEL[ap]}</Chip> : null;
     }
+    if (r.ref.decision && r.ref.needs_review) return <Chip tone="warning" title={r.ref.advice || undefined}>Needs review</Chip>;
     const s = shownStatus(r.ref.decision?.status);
     return s ? <RcmStatusBadge status={s} kind={r.ref.decision?.evidence_kind} /> : null;
   }
   if (fmea) return r.sum.high ? <Chip tone="danger" className="rw-ap">{r.sum.high} high</Chip> : null;
   if (r.sum.contradicted) return <span className="rw-ck contradicted">✗{r.sum.contradicted}<span className="sr-only"> contradicted</span></span>;
   if (r.sum.undecided) return <span className="rw-sum rw-todo">{r.sum.undecided} to decide</span>;
+  if (r.sum.review) return <span className="rw-sum rw-todo">{r.sum.review} to review</span>;
   return null;
 }
 
@@ -414,7 +427,7 @@ export const EDITABLE = new Set(["fn", "std", "fail", "mode"]);
 // A failure mode's step heading: "1. Failure effects" (the standard RCM terms, Derryn, 9 Nov 2026).
 
 // A status chip's tone from its words (the words always say it too).
-const toneOf = (text) => (/to decide|not analysed|no functional failure|no failure modes|nothing inside|not finished/i.test(text) ? "warning"
+const toneOf = (text) => (/to decide|to review|not analysed|no functional failure|no failure modes|nothing inside|not finished/i.test(text) ? "warning"
   : /all decided|covered/i.test(text) ? "success" : "neutral");
 
 //   r          the row (cellRow: sum is its own counts)
@@ -538,6 +551,8 @@ export function Details({
       consequenceText(r.ref) ? { text: consequenceText(r.ref), tone: "neutral" } : null,
       d ? { text: [decisionText(d), d.interval && !isCombination(d) ? `every ${intervalText(d)}` : null].filter(Boolean).join(" · "), tone: "accent" }
         : { text: "No decision yet", tone: "warning" },
+      // A saved decision that breaks the decision rules: not decided until it's looked at again.
+      d && r.ref.needs_review ? { text: "Needs review", tone: "warning", title: r.ref.advice || null } : null,
     ].filter(Boolean)
     : (insideWords(r) || "").split(" · ").filter(Boolean).map((t) => ({ text: t, tone: toneOf(t) }));
   const limitNow = r.type === "std" ? limitReads(r.ref) : "";
@@ -747,11 +762,17 @@ export function Details({
                     onCommit={(raw) => keep("name", isTask ? saveTaskName(raw) : onCommit(r, "name", raw))} />
         {(chips.length > 0 || saved.name) && (
           <div className="rw-chips-row">
-            {chips.map((c) => <Chip key={c.text} tone={c.tone}>{c.text}</Chip>)}
+            {chips.map((c) => <Chip key={c.text} tone={c.tone} title={c.title || undefined}>{c.text}</Chip>)}
             {d?.status && shownStatus(d.status) && <RcmStatusBadge status={d.status} kind={d.evidence_kind} />}
             <SavedMark saved={saved.name} />
           </div>
         )}
+        {/* The note the guide promises on a decision the rules wouldn't make now (and a hidden
+            mode's missing category): kept as saved, with what to look at. */}
+        {r.type === "mode" && r.ref.advice && (
+          <p className={"rw-advice" + (r.ref.needs_review ? " rw-advice-review" : "")} role="note">{r.ref.advice}</p>
+        )}
+        {r.type === "mode" && ops && <ModeFailureReports modeId={r.ref.id} positionId={r.ref.position_id} />}
         {/* Notes and rationale come first among the sections, directly below the chips, the
             same section at every level: a failure mode's are its notes. */}
         {hasNotesField(r) && r.type !== "mode" && (

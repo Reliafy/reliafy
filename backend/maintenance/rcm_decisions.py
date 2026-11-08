@@ -266,32 +266,62 @@ def default_action(hidden, consequence) -> dict | None:
                     "worth it."}
 
 
-def advice(consequence, outcome, outcomes=None, hidden=...) -> str | None:
+def advice(consequence, outcome, outcomes=None, hidden=..., tasks=0) -> str | None:
     """A word on a decision the diagram wouldn't make now (a saved one from
     before, or an import's): never a refusal on read, the analyst changes it
     when they next review the mode. Also asks for a hidden mode's category.
     ``outcomes``: every outcome of a combination of tasks (its members').
     ``hidden``: the mode's first answer; left out, it's read from the
-    consequence as mode_consequence reads a saved mode."""
+    consequence as mode_consequence reads a saved mode. ``tasks``: how many
+    live tasks serve the mode (run to failure and accept stand alone)."""
+    return review(consequence, outcome, outcomes, hidden, tasks)[0]
+
+
+# A decision that breaks the rules: it doesn't count as decided until it's
+# looked at again (the rollups' needs_review, the RCM tab's "Needs review").
+_STANDS_ALONE = {
+    "rtf": "Run to failure stands alone",
+    "accept": "Accept stands alone",
+    "redesign": "A redesign on its own schedules no task",
+}
+
+
+def review(consequence, outcome, outcomes=None, hidden=..., tasks=0) -> tuple[str | None, bool]:
+    """(advice, needs_review): the word advice() gives, and whether the saved
+    decision breaks the decision rules (needs a look before it counts as
+    decided): a decision with no consequence answered, one the diagram refuses,
+    or run to failure, accept or a redesign alone with tasks serving the mode.
+    The other words (a hidden mode with no failure-finding task, a combination
+    on a cost consequence) are a nudge, not a fault."""
     if hidden is ...:
         hidden, consequence = mode_consequence({"consequence": consequence})
     members = [o for o in (outcomes or [outcome]) if o]
     if hidden and consequence not in CONSEQUENCES:
         return ("This failure is hidden: say what the multiple failure would do (the hidden failure plus the one "
-                "it protects against): safety, environmental, operational or non-operational.")
+                "it protects against): safety, environmental, operational or non-operational."), bool(members)
     if not members:
-        return None
+        return None, False
+    if consequence not in CONSEQUENCES:
+        return ("This failure mode is decided but its consequence isn't answered: say what the failure would do "
+                "(safety, environmental, operational or non-operational), then check the decision still "
+                "follows."), True
     why = refusal(hidden, consequence, members)
     if why:
-        return f"{why} This decision is kept as it was saved; change it when you next review this failure mode."
+        return f"{why} This decision is kept as it was saved; change it when you next review this failure mode.", True
+    if len(members) == 1 and members[0] in _STANDS_ALONE and tasks:
+        n = f"{tasks} task{'s' if tasks != 1 else ''} serve{'s' if tasks == 1 else ''}"
+        fix = ("make the decision the task it is (on condition, fixed interval or failure finding), or retire the "
+               "task" if members[0] != "redesign" else
+               "make the decision the redesign beside its task (a combination), or retire the task")
+        return f"{_STANDS_ALONE[members[0]]}, yet {n} this failure mode: {fix}.", True
     if hidden and consequence in CONSEQUENCES and not any(o in SCHEDULED for o in members) and "redesign" not in members:
         return ("A hidden failure gets a failure-finding task before no scheduled maintenance, if one is worth "
-                "doing: say in the notes why none is.")
+                "doing: say in the notes why none is."), False
     if sum(1 for o in members if o in SCHEDULED) > 1 and consequence in ("operational", "non_operational"):
         return ("A combination of tasks on a cost consequence: each task must pay for itself over time (RCM II "
                 "reserves combinations for safety and environmental consequences). Say in the notes why both "
-                "are worth doing.")
-    return None
+                "are worth doing."), False
+    return None, False
 
 
 def options() -> dict:
@@ -642,8 +672,26 @@ def _report(db, report_id, owner_id):
 
 
 def blank_rollup() -> dict:
+    """A rollup's counts. needs_review: decided, but against the decision rules
+    (review above), so not counted as all decided."""
     return {"modes": 0, "decided": 0, "supported": 0, "contradicted": 0,
-            "inconclusive": 0, "unevidenced": 0, "stale": 0, "partly": 0}
+            "inconclusive": 0, "unevidenced": 0, "stale": 0, "partly": 0, "needs_review": 0}
+
+
+def rollup_state(rollup: dict) -> str:
+    """The status chip's state for a rollup: empty (no failure modes), to_decide
+    (some undecided), needs_review (all decided, some against the rules) or
+    all_decided."""
+    if not rollup.get("modes"):
+        return "empty"
+    if rollup["modes"] > rollup.get("decided", 0):
+        return "to_decide"
+    return "needs_review" if rollup.get("needs_review") else "all_decided"
+
+
+def finish_rollup(rollup: dict) -> dict:
+    """A rollup with its undecided count and state worked out."""
+    return {**rollup, "undecided": max(0, rollup["modes"] - rollup["decided"]), "state": rollup_state(rollup)}
 
 
 def resolve_decision(decision: dict, fetch) -> dict:

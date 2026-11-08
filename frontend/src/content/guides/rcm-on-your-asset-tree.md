@@ -87,7 +87,10 @@ The columns beside the tree are the worksheet: **Failure effects**,
 linked, **Evidence check**. On a narrower screen the interval folds into the
 Task cell (*every 130 hours*). A position, function or functional failure row
 counts what's inside it, for example *1 to decide*, so you can close it and
-still see what needs doing. Click a row to open its **Details** beside the
+still see what needs doing. A position counts the positions inside it too: a
+closed *Propulsion* row shows its motors' contradicted evidence. The tree
+column widens to fit the names on show; drag its edge to set your own width
+(double-click the edge to let it fit again). Click a row to open its **Details** beside the
 table: for a failure mode, that's its effects, consequence, notes, the decision,
 its tasks and the link to the evidence with one line saying what it shows, for
 example *Optimal interval ≈ 132 hours (73% saving vs run-to-failure)*. Move up
@@ -291,7 +294,13 @@ Reliafy follows the decision diagram of SAE JA1011 and RCM II (Moubray).
 
 The Details and the dialog offer only what the diagram allows, and the dialog
 names the default action. A decision saved before these rules (or
-imported) that they'd refuse is kept, with a note asking you to look again.
+imported) that they'd refuse is kept, with a note asking you to look again:
+the Decision cell reads *Needs review*, the Details say why under the chips,
+and the rows above it count it as *1 to review*, not *All decided*. The same
+goes for a decision saved before its consequence was answered, and for run to
+failure or accept with a task still serving the failure mode. A failure mode
+with failure reports against it says so under its chips (*2 failure reports ·
+Open*).
 
 **1. Would the crew notice the failure on its own?** Choose **Evident** or
 **Hidden**.
@@ -462,7 +471,9 @@ press **Work it out** again.
   P-F interval: add how many failures a year to expect and what a check, a fix
   in time and a failure cost to see the cheapest interval too. On a safety or
   environmental failure the costs are tucked behind **Show costs**: the task
-  must make the risk tolerable whatever it costs.
+  must make the risk tolerable whatever it costs. A task done by use (cycles,
+  flight hours) can give the P-F interval in its own unit: the answer is then
+  in that unit, without costs. The dialog says which unit the answer is in.
 - **Failure finding: the test interval.** Give the protective device's failure
   rate (or pick its model) and the target: the most it may be failed when it's
   needed. 1% is filled in as a common starting point for safety, marked

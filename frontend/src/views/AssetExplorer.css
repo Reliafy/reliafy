@@ -252,6 +252,11 @@
   background: linear-gradient(var(--acc-t), var(--acc-t)), var(--surf);
 }
 
+/* The real row of a pinned one, while its copy is pinned at the top (TreePane underPin). */
+.tp-row.under-pin {
+  visibility: hidden;
+}
+
 .tp-pins-in .tp-row:last-child {
   box-shadow: 0 3px 6px -2px rgba(20, 23, 28, 0.14);
 }

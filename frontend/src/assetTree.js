@@ -429,10 +429,14 @@ export function loadTreeState(ws, storage = globalThis.localStorage) {
       open: Object.fromEntries(Object.entries(v.open || {}).map(([m, keys]) => [m, new Set(keys)])),
       selected: v.selected || {},
       width: Number.isFinite(v.width) ? v.width : PANE.initial,
+      // Whether the width is one the user dragged to (else the RCM tab fits its tree column to
+      // the rows on show, fitTreeWidth). Before Nov 2026 every width was kept: the starting one
+      // wasn't chosen.
+      widthSet: typeof v.widthSet === "boolean" ? v.widthSet : Number.isFinite(v.width) && v.width !== PANE.initial,
       collapsed: !!v.collapsed,
     };
   } catch {
-    return { mode: null, open: {}, selected: {}, width: PANE.initial, collapsed: false };
+    return { mode: null, open: {}, selected: {}, width: PANE.initial, widthSet: false, collapsed: false };
   }
 }
 
@@ -443,6 +447,7 @@ export function saveTreeState(ws, state, storage = globalThis.localStorage) {
       open: Object.fromEntries(Object.entries(state.open || {}).map(([m, set]) => [m, [...set]])),
       selected: state.selected || {},
       width: state.width,
+      widthSet: !!state.widthSet,
       collapsed: !!state.collapsed,
     }));
   } catch {
@@ -454,6 +459,22 @@ export function saveTreeState(ws, state, storage = globalThis.localStorage) {
 export function clampWidth(width, windowWidth) {
   const max = Math.max(PANE.min, Math.round(windowWidth * 0.6));
   return Math.min(max, Math.max(PANE.min, Math.round(width)));
+}
+
+// The RCM (and FME(C)A) tab's tree column until the user drags it: wide enough for
+// the longest name among the rows on show (its indent, arrow, icon and markers too),
+// at least the usual width and at most TREE_FIT.cap or TREE_FIT.share of the window,
+// so the worksheet's columns keep their room. Names are measured at TREE_FIT.charPx a
+// character (the 13px font's average). rows: [{depth, text}].
+export const TREE_FIT = { charPx: 7, extraPx: 72, cap: 600, share: 0.36 };
+export function fitTreeWidth(rows, windowWidth) {
+  let need = 0;
+  for (const r of rows || []) {
+    const w = Math.min(r.depth || 0, 30) * 14 + String(r.text || "").length * TREE_FIT.charPx + TREE_FIT.extraPx;
+    if (w > need) need = w;
+  }
+  const max = Math.max(PANE.initial, Math.min(TREE_FIT.cap, Math.round((windowWidth || 0) * TREE_FIT.share)));
+  return Math.max(PANE.initial, Math.min(max, Math.ceil(need)));
 }
 
 // The Summary tab's scroll area keeps room for the scrollbar (its width is the

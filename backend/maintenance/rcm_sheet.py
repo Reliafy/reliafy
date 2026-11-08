@@ -535,7 +535,7 @@ def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
             if have:
                 m.link_task(have, mode_id)
             else:
-                m.add_mode_task(mode_id, extra["name"], extra["interval"], extra["unit"], extra["outcome"])
+                m.add_mode_task(mode_id, extra["name"], extra["interval"], extra["unit"], extra["outcome"], strict=False)
 
     for fn in functions:
         # A new function with one standard keeps the one text; with several (or

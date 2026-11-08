@@ -1032,3 +1032,11 @@ select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus); }
   .rim-tl-chips:empty { display: none; }
   select.rim-kindchip, .rim-kindtext { height: 32px; line-height: 30px; }
 }
+
+/* A saved decision that breaks the decision rules: "Needs review" beside it in the Decision
+   cell, and the advice under a failure mode's chips in its panel (the reason in words). */
+.rw .rw-review-note { border: 0; padding: 0; background: none; font-weight: 600; }
+.rw-advice { margin: 6px 0 0; font-size: var(--fs-12); line-height: 1.4; color: var(--muted); }
+.rw-advice-review { color: var(--warn); border-left: 3px solid var(--warn-line); padding-left: 8px; }
+/* "2 failure reports · Open" under a failure mode's chips. */
+.rw-mode-reports { margin: 6px 0 0; font-size: var(--fs-12); color: var(--muted); }
