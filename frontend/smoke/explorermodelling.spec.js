@@ -94,6 +94,12 @@ test("update a baseline with a position's one failure, and save it as the positi
   await expect(dialog).toHaveCount(0);
   const model = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Bayesian update of" }) });
   await expect(model.locator(".mt-c-kind")).toHaveText("Weibull (Bayesian)");
-  await expect(model.locator(".mt-c-source")).toContainText("with 1 failure, 1 suspension");
+  await expect(model.locator(".mt-c-source")).toContainText(/^Bayesian update of .* · 1 failure, 1 suspension/);
+  await expect(model.locator(".mt-c-numbers")).toContainText(/Life [\d,.]+ hours, 90% credible [\d,.]+–[\d,.]+/);
+  // Its details: the credible interval named as such, and the curve with its credible band.
+  await model.locator(".tp-nm").click();
+  await expect(side(page).locator(".ml-params thead")).toContainText("90% credible interval");
+  await expect(side(page).locator(".ml-params thead")).not.toContainText(/bounds|confidence/i);
+  await expect(side(page).locator(".js-plotly-plot .legendtext", { hasText: "90% credible band" })).toHaveCount(1);
   await expectHealthy(page, problems, { label: "a Bayesian update" });
 });

@@ -42,14 +42,24 @@ export function fmt(v) {
 // A model's time unit as people write it ("Hours" → "hours").
 export const unitWord = (unit) => String(unit || "").trim().toLowerCase();
 
+// A level as a percentage: 0.9 → "90%".
+const pct = (level) => `${Math.round(Number(level || 0.9) * 100)}%`;
+
+// What a model's intervals are, for a column or a legend: a Bayesian update's are
+// credible intervals at its level ("90% credible interval"), never "bounds" or
+// "confidence"; a fitted model's are its 95% bounds.
+export const boundsLabel = (model) => (model?.credible ? `${pct(model.credible_level)} credible interval` : "95% bounds");
+
 // One number with its bounds and unit: "1,435 hours (1,234–1,669)"; a one-sided lower
-// bound: "1,239 hours (≥ 1,109)".
-export function withBounds(n) {
+// bound: "1,239 hours (≥ 1,109)"; a credible interval (a Bayesian update, `level` its
+// level): "4.15 years, 90% credible 3.23–5.35".
+export function withBounds(n, level = 0.9) {
   if (!n) return "—";
   if (n.text) return n.text;
   const u = n.unit ? ` ${unitWord(n.unit)}` : "";
   const lo = n.lower != null ? fmt(n.lower) : null;
   const hi = n.upper != null ? fmt(n.upper) : null;
+  if (n.bound === "credible") return `${fmt(n.value)}${u}${lo && hi ? `, ${pct(level)} credible ${lo}–${hi}` : ""}`;
   const b = lo && hi ? ` (${lo}–${hi})` : lo && n.bound === "lower" ? ` (≥ ${lo})` : "";
   return `${fmt(n.value)}${u}${b}`;
 }
@@ -62,10 +72,11 @@ const byId = (model, id) => (model?.numbers || []).find((n) => n.id === id) || n
 export function headline(model) {
   if (!model) return "";
   const parts = [];
+  const lv = model.credible_level;
   const life = byId(model, "char_life");
   const shape = byId(model, "shape");
-  if (life) parts.push(`Life ${withBounds(life)}`);
-  if (shape) parts.push(`shape ${withBounds(shape)}`);
+  if (life) parts.push(`Life ${withBounds(life, lv)}`);
+  if (shape) parts.push(`shape ${withBounds(shape, lv)}`);
   const mtbf = byId(model, "mtbf");
   const rate = byId(model, "rate");
   if (rate) parts.push(`Rate ${withBounds(rate)}`);
@@ -75,13 +86,13 @@ export function headline(model) {
     const n = byId(model, id);
     if (n) parts.push(`${n.label} ${n.text}`);
   }
-  if (!parts.length && byId(model, "mean")) parts.push(`Mean life ${withBounds(byId(model, "mean"))}`);
+  if (!parts.length && byId(model, "mean")) parts.push(`Mean life ${withBounds(byId(model, "mean"), lv)}`);
   return parts.join(" · ");
 }
 
 // The Mean life / B10 cells.
-export const meanText = (model) => (byId(model, "mean") ? withBounds(byId(model, "mean")) : "—");
-export const b10Text = (model) => (byId(model, "b10") ? withBounds(byId(model, "b10")) : "—");
+export const meanText = (model) => (byId(model, "mean") ? withBounds(byId(model, "mean"), model.credible_level) : "—");
+export const b10Text = (model) => (byId(model, "b10") ? withBounds(byId(model, "b10"), model.credible_level) : "—");
 
 // The data behind it in a few words: "30 failures, 0 suspensions", "6 units measured".
 export function countsText(model) {

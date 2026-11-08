@@ -15,7 +15,7 @@ import { ACCENT, BAND_FILL } from "../plotTheme.js";
 import { saveErrorText } from "../confirm.js";
 import { explorerHere } from "../products.js";
 import {
-  MODEL_COLUMNS, b10Text, countsText, fmt, forText, headline, meanText, rowActions, unitWord, usedText, withBounds,
+  MODEL_COLUMNS, b10Text, boundsLabel, countsText, fmt, forText, headline, meanText, rowActions, unitWord, usedText, withBounds,
 } from "../explorerModels.js";
 import "./MeasurementTable.css";
 import "./ModelTable.css";
@@ -48,7 +48,7 @@ export function ModelCell({ r, col }) {
   const model = link.model;
   if (!model) {
     return col.id === "kind" ? <Chip tone="warning" title="The saved model was deleted, or isn't yours to open any more">Missing</Chip>
-      : col.id === "source" ? <span className="ml-src">{link.source_text}</span> : <span className="rw-blank">—</span>;
+      : col.id === "source" ? <span className="ml-src" title={link.source_text}>{link.source_text}</span> : <span className="rw-blank">—</span>;
   }
   switch (col.id) {
     case "kind": return <Chip tone={model.family === "life" ? "accent" : "neutral"} className="pk-kind">{model.kind || "Model"}</Chip>;
@@ -96,7 +96,7 @@ export function modelPhoneRow(r, rollup) {
 
 export const modelRowActions = (r, opts) => rowActions(r, opts);
 
-// The plot: reliability (with its 95% bounds) or hazard over age, or a repairable
+// The plot: reliability (with its 95% bounds, or a Bayesian update's credible band) or hazard over age, or a repairable
 // model's expected failures so far.
 function ModelPlot({ curves, unit, name }) {
   const [on, setOn] = useState("sf");
@@ -114,7 +114,8 @@ function ModelPlot({ curves, unit, name }) {
   const traces = [];
   if (!hazard && curves.sf_lower && curves.sf_upper) {
     traces.push({ x: curves.x, y: curves.sf_upper, mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false });
-    traces.push({ x: curves.x, y: curves.sf_lower, mode: "lines", line: { width: 0 }, fill: "tonexty", fillcolor: BAND_FILL, name: "95% bounds", hoverinfo: "skip" });
+    const band = curves.band?.kind === "credible" ? `${Math.round(curves.band.level * 100)}% credible band` : "95% bounds";
+    traces.push({ x: curves.x, y: curves.sf_lower, mode: "lines", line: { width: 0 }, fill: "tonexty", fillcolor: BAND_FILL, name: band, hoverinfo: "skip" });
   }
   traces.push({ x: curves.x, y: hazard ? curves.hf : curves.sf, mode: "lines", line: { color: ACCENT, width: 2 }, name: hazard ? "Hazard rate" : curves.what || "Reliability" });
   return (
@@ -195,7 +196,7 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
                 <h3 className="ml-h">Parameters</h3>
                 <div className="maint-scroll">
                   <table className="ml-params">
-                    <thead><tr><th>Parameter</th><th className="num">Value</th><th className="num">95% bounds</th></tr></thead>
+                    <thead><tr><th>Parameter</th><th className="num">{model.credible ? "Median" : "Value"}</th><th className="num">{boundsLabel(model)}</th></tr></thead>
                     <tbody>
                       {d.params.map((p) => (
                         <tr key={`${p.label}:${p.name}`} title={p.meaning || undefined}>
@@ -216,7 +217,7 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
                 <dt>Unit</dt><dd>{unit || "—"}</dd>
                 <dt>Time starts</dt><dd>{d?.origin || "…"}</dd>
                 {(model.numbers || []).filter((n) => n.id === "mean" || n.id === "b10").map((n) => (
-                  <span key={n.id} className="ml-dlrow"><dt>{n.label}</dt><dd>{withBounds(n)}</dd></span>
+                  <span key={n.id} className="ml-dlrow"><dt>{n.label}</dt><dd>{withBounds(n, model.credible_level)}</dd></span>
                 ))}
               </dl>
             </section>

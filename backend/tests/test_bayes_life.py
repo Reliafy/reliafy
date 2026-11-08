@@ -131,6 +131,20 @@ def test_the_position_flow_previews_saves_and_attaches(db):
     [row] = pm.describe(m, db, OWNERS, set(), m.position_models(pump))
     assert row["model"]["kind"] == "Weibull (Bayesian)" and row["model"]["quality"]["word"] == "Bayesian"
     assert {n["id"] for n in row["model"]["numbers"]} >= {"char_life", "shape", "mean", "b10"}
+    assert row["model"]["credible_level"] == 0.9
+    assert row["source_text"] == "Bayesian update of Bearing life — Weibull (sample) · 1 failure, 1 suspension"
+    # The panel's plot carries the posterior-predictive credible band, not confidence bounds.
+    full = pm.detail(m, db, OWNERS, set(), link["id"])
+    c = full["curves"]
+    assert c["band"] == {"kind": "credible", "level": 0.9}
+    mid = len(c["x"]) // 3
+    assert c["sf_lower"][mid] < c["sf"][mid] < c["sf_upper"][mid]
+    assert full["source_text"] == row["source_text"]
+    # The same model assigned to another position says its baseline and data too, not "Assigned: …".
+    other = m.create_position("Pump B")["id"]
+    pm.link_saved(m, db, OWNERS, set(), other, "model", link["model_id"])
+    [there] = pm.describe(m, db, OWNERS, set(), m.position_models(other))
+    assert there["source_text"] == row["source_text"]
     before = m.s.snapshot()
     m.s.rebuild()
     assert m.s.snapshot() == before

@@ -355,6 +355,8 @@ def summary(model_type: str, doc) -> dict:
             bayes = r.get("bayes") or {}
             out["kind"] = f"{label} (Bayesian)"
             out["credible"] = True
+            out["credible_level"] = float(r.get("credible_level") or 0.9)
+            out["bayes_source"] = bayes_source(r)
             if dist == "weibull" and "alpha" in params and "beta" in params:
                 lo, hi = _ci(params["alpha"])
                 out["numbers"].append(_number("char_life", "Characteristic life", params["alpha"].get("value"), lo, hi,
@@ -438,6 +440,17 @@ def summary(model_type: str, doc) -> dict:
     return out
 
 
+def bayes_source(results: dict) -> str:
+    """A Bayesian update's Source in words: its baseline and its data ("Bayesian update of an
+    assumed seal-and-bearing baseline · 0 failures, 1 suspension")."""
+    bayes = results.get("bayes") or {}
+    split = results.get("split") or {}
+    f, s = int(split.get("failed") or 0), int(split.get("running") or 0)
+    base = (bayes.get("baseline") or {}).get("name") or "a baseline"
+    return (f"Bayesian update of {base} · {f} failure{'' if f == 1 else 's'}, "
+            f"{s} suspension{'' if s == 1 else 's'}")
+
+
 def rbds_using(db, owners, hidden=frozenset()) -> dict:
     """{model id: [{id, name}]}: the reader's RBDs with a block on each saved model."""
     from backend.services import rbds as rbds_service
@@ -471,8 +484,9 @@ def describe(m, db, owners, hidden, links: list[dict]) -> list[dict]:
         doc = fetch(link["model_type"], link["model_id"])
         etype = EVIDENCE_TYPE.get(link["model_type"])
         used = decisions.get((etype, link["model_id"]), []) if etype else []
-        out.append({**link, "model": summary(link["model_type"], doc) if doc is not None else None,
-                    "source_text": source_text(link), "stale": stale(m, link),
+        model = summary(link["model_type"], doc) if doc is not None else None
+        out.append({**link, "model": model,
+                    "source_text": (model or {}).get("bayes_source") or source_text(link), "stale": stale(m, link),
                     "used_by": {"decisions": used, "rbds": rbds.get(link["model_id"], [])}})
     return out
 
@@ -518,14 +532,28 @@ def _curves(model_type: str, doc, db, owners) -> dict | None:
         if not c.get("x") or not c.get("sf"):
             return None
         out = {"x": c["x"], "sf": c["sf"], "hf": c.get("hf"), "sf_lower": None, "sf_upper": None,
-               "what": "Reliability"}
-        if model_type == "model" and doc.kind in ("distribution", "discrete") and doc.dataset_id:
+               "what": "Reliability", "band": None}
+        if model_type == "model" and (doc.spec or {}).get("method") == "bayesian_update":
+            # The posterior-predictive band: the credible interval on R(t) at each age (SurPyval's cri),
+            # from the model rebuilt from its recipe; never confidence bounds.
+            from backend.services import bayes_life
+
+            level = float(r.get("credible_level") or bayes_life.LEVEL)
+            try:
+                band = bayes_life.rebuild(doc.spec).cri(c["x"], alpha_ci=1 - level)
+                out["sf_lower"] = [bayes_life._f(v) for v in band[:, 0]]
+                out["sf_upper"] = [bayes_life._f(v) for v in band[:, 1]]
+                out["band"] = {"kind": "credible", "level": level}
+            except Exception:  # noqa: BLE001 - the line stands without its band
+                pass
+        elif model_type == "model" and doc.kind in ("distribution", "discrete") and doc.dataset_id:
             from backend.services import models as models_service
 
             try:
                 cb = models_service.confidence(db, doc.id, {"on": "sf"}, owners)
                 if cb.get("lower") and len(cb["lower"]) == len(c["x"]):
                     out["sf_lower"], out["sf_upper"] = cb.get("lower"), cb.get("upper")
+                    out["band"] = {"kind": "confidence", "level": 0.95}
             except Exception:  # noqa: BLE001 - the line stands without its bounds
                 pass
         return out
@@ -600,7 +628,7 @@ def detail(m, db, owners, hidden, link_id: str) -> dict:
         if not isinstance(notes, str):
             notes = ""
     return {**row, "position": {"id": pos.get("id"), "name": pos.get("name", "")},
-            "source_text": source_text(link, pos.get("name", "")),
+            "source_text": row["source_text"],
             "params": _params(doc) if doc is not None else [],
             "curves": _curves(link["model_type"], doc, db, owners) if doc is not None else None,
             "origin": origin_text(link, doc), "model_notes": notes[:2000]}
