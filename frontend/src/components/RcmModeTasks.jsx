@@ -4,7 +4,7 @@ import { useConfirm } from "./ConfirmProvider.jsx";
 import { saveErrorText } from "../confirm.js";
 import { DEFAULT_OUTCOMES, INTERVAL_UNITS, TASK_ORDER, modeAnswers, startUnit } from "../decisionCheck.js";
 import {
-  FOUND_EMPTY, OUTCOME_LABEL, ROLE, addableOutcomes, decisionCardLines, decisionRows, decisionWithFirstTask, decisionWithMember,
+  FOUND_EMPTY, OUTCOME_LABEL, ROLE, addableOutcomes, decisionCardLines, decisionRows, decisionWithFirstTask, decisionWithMember, decisionWithoutMember,
   decisionBody, decisionWithOnFound, decisionWithOutcome, everyText, findsSomething, isCombination, roleLine, tasksDropped, tasksOf,
 } from "../rcmWorksheet.js";
 import { getTaskTriggerPoints, saveStrategyAnalysis } from "../api.js";
@@ -227,10 +227,14 @@ export default function RcmModeTasks({
     </button>
   ) : null);
 
+  // A combination's member comes off the decision with its task (the others kept by their
+  // task); any other task is retired, or unlinked when it serves other modes too.
   const remove = async (t) => {
+    const without = decisionWithoutMember(d, t.id);
     const ok = await confirm({
       title: "Remove this task?", body: droppedWords([t]), confirmLabel: t.shared_with ? "Remove from this failure mode" : "Retire the task",
-      pendingLabel: "Removing…", failedWhat: "remove it", run: () => ops.removeTask(r, t).then(() => true),
+      pendingLabel: "Removing…", failedWhat: "remove it",
+      run: () => (without ? decide(without) : ops.removeTask(r, t)).then(() => true),
     });
     if (ok) onSaid?.(t.shared_with ? "Removed the task from this failure mode." : "Retired the task.");
   };
@@ -411,7 +415,11 @@ function intervalWhy(raw) {
 // interval_unit, on_found?}, {outcome, task_id, on_found?} or {outcome}) and returns a
 // promise; a refusal shows here with everything as typed. Escape cancels (when it can be).
 function NewTaskCard({ r, d, ops, kind: fixed = null, kinds = null, start = {}, onSave, onCancel = null, onDone }) {
-  const [kind, setKind] = useState(fixed || kinds?.[0]);
+  // Starts on a kind the decision doesn't have yet (any kind may come again, a click away).
+  const [kind, setKind] = useState(() => {
+    const have = isCombination(d) ? d.outcomes.map((o) => o.outcome) : [d?.outcome];
+    return fixed || kinds?.find((k) => !have.includes(k)) || kinds?.[0];
+  });
   const [use, setUse] = useState("new"); // "new" | "existing"
   const [name, setName] = useState(start.name || "");
   const [interval, setInterval_] = useState(start.interval != null ? String(start.interval) : "");

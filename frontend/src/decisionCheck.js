@@ -28,9 +28,11 @@ const INTERVAL_NEEDED = {
 // (usually safety or environmental consequences), a decision holds two or more
 // outcomes, a regular inspection plus a fixed-time replacement, each with a
 // task of its own. The rules, as the server checks them
-// (backend/maintenance/rcm_decisions.py): two or more of the scheduled
-// outcomes, no outcome twice, or a redesign beside one scheduled task as the
-// interim measure; run-to-failure and accept stand alone.
+// (backend/maintenance/rcm_decisions.py combination_ok): two or more scheduled
+// tasks, one kind as often as needed (a weekly top-up and an annual deep
+// clean, both fixed interval: Derryn, 9 Nov 2026), optionally with one
+// redesign beside them as the interim measure; run-to-failure and accept stand
+// alone. Members are told apart by their task, never by their kind.
 
 export const SCHEDULED = ["on_condition", "fixed_interval", "failure_finding"];
 const COMBINES = [...SCHEDULED, "redesign"];
@@ -38,20 +40,21 @@ const COMBINES = [...SCHEDULED, "redesign"];
 // Whether a list of outcomes may be one decision (one outcome always may).
 export function combinationOk(outcomes) {
   if (outcomes.length < 2) return true;
-  if (new Set(outcomes).size !== outcomes.length || outcomes.some((o) => !COMBINES.includes(o))) return false;
+  if (outcomes.some((o) => !COMBINES.includes(o)) || outcomes.filter((o) => o === "redesign").length > 1) return false;
   const scheduled = outcomes.filter((o) => SCHEDULED.includes(o)).length;
-  return outcomes.includes("redesign") ? scheduled === 1 : scheduled >= 2;
+  return outcomes.includes("redesign") ? scheduled >= 1 : scheduled >= 2;
 }
 
-// The outcomes the dialog offers to join `primary` ([{id, allowed}]), given
-// the ones `chosen` already: none for an outcome that stands alone.
-// `answers` ({hidden, consequence}): the mode's, so the diagram's refusals
-// grey a choice out too (`why` says why).
+// The kinds the dialog offers to add to `primary` ([{id, allowed}]), given
+// the ones `chosen` already: every kind of task each time (one kind may come
+// again, each click adds a task), a redesign only while there's none; none for
+// an outcome that stands alone. `answers` ({hidden, consequence}): the mode's,
+// so the diagram's refusals grey a choice out too (`why` says why).
 export function combineChoices(primary, chosen = [], answers = null) {
   if (!COMBINES.includes(primary)) return [];
-  return COMBINES.filter((o) => o !== primary).map((o) => {
-    const why = answers && !chosen.includes(o) ? doctrineRefusal(answers.hidden, answers.consequence, [primary, ...chosen, o]) : null;
-    const allowed = chosen.includes(o) || (combinationOk([primary, ...chosen, o]) && !why);
+  return COMBINES.map((o) => {
+    const why = answers ? doctrineRefusal(answers.hidden, answers.consequence, [primary, ...chosen, o]) : null;
+    const allowed = combinationOk([primary, ...chosen, o]) && !why;
     return answers ? { id: o, allowed, why } : { id: o, allowed };
   });
 }
@@ -71,12 +74,15 @@ export const analysisKindOf = (outcome) => ({ fixed_interval: "optimal_replaceme
 
 // A combination's further task as the server takes it ({outcome, task,
 // interval, interval_unit, evidence}). `x`: the dialog's row ({outcome, task,
-// interval, intervalUnit, evidence, had: the evidence it had}); `expected`: the
+// interval, intervalUnit, evidence, had: the evidence it had, taskId: the task
+// it had}); `expected`: the
 // evidence type its outcome expects. Its own evidence goes with it when it's a
 // report or notes (fit for any task), the kind it expects, or what it had.
 export function extraBody(x, expected) {
   if (!SCHEDULED.includes(x.outcome)) return { outcome: x.outcome };
-  const out = { outcome: x.outcome, ...(String(x.task || "").trim() ? { task: x.task.trim() } : {}),
+  // A task it had goes back by its id, so the server keeps that task (members are told apart by task).
+  const out = { outcome: x.outcome, ...(x.taskId ? { task_id: x.taskId } : {}),
+    ...(String(x.task || "").trim() ? { task: x.task.trim() } : {}),
     interval: Number(x.interval), interval_unit: x.intervalUnit };
   const e = x.evidence;
   if (e?.type && e?.id && (e.type === "report" || e.type === "working" || e.type === expected || e === x.had)) {

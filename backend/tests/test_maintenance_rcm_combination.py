@@ -133,9 +133,8 @@ def test_redesign_sits_beside_one_scheduled_task(m):
 @pytest.mark.parametrize("outcomes, words", [
     ([{"outcome": "rtf"}, {"outcome": "on_condition", "interval": 1}], "stand alone"),
     ([{"outcome": "accept"}, {"outcome": "fixed_interval", "interval": 1}], "stand alone"),
-    ([{"outcome": "on_condition", "interval": 1}, {"outcome": "on_condition", "interval": 2}], "no outcome twice"),
-    ([{"outcome": "redesign"}, {"outcome": "on_condition", "interval": 1},
-      {"outcome": "fixed_interval", "interval": 2}], "redesign beside one"),
+    ([{"outcome": "redesign"}, {"outcome": "on_condition", "interval": 1}, {"outcome": "redesign"}],
+     "optionally with one redesign"),
     ([{"outcome": "on_condition", "interval": 1}, {"outcome": "fixed_interval"}], "needs its interval"),
     ([{"outcome": "on_condition", "interval": 1}, {"outcome": "nope"}], "one of"),
     ([{"outcome": "redesign", "task": "x"}, {"outcome": "on_condition", "interval": 1}], "doesn't"),
@@ -248,7 +247,9 @@ def test_repeated_rows_with_other_outcomes_build_a_combination_in_row_order(m):
     rows = [
         ["Pump water", "No flow", "Bearing worn", "Safety", "On-condition", "Vibration check", "1", "months"],
         ["", "", "Bearing worn", "", "Fixed interval", "Replace the bearing", "24", "months"],
-        # The same outcome again: another task outside the decision, as before.
+        # The same kind again with a task of its own: another member (one kind may repeat).
+        ["", "", "Bearing worn", "", "On-condition", "Oil sample", "3", "months"],
+        # The same task again: a repeat, passed over.
         ["", "", "Bearing worn", "", "On-condition", "Oil sample", "3", "months"],
         ["", "", "Seal leaks", "Environmental", "Failure finding", "Test the leak alarm", "6", "months"],
         ["", "", "Seal leaks", "", "Redesign", "", "", ""],
@@ -263,8 +264,9 @@ def test_repeated_rows_with_other_outcomes_build_a_combination_in_row_order(m):
     assert out["ok"], out["errors"]
     got = _decisions(m, pid)
     assert got["Bearing worn"] == ("safety", [("on_condition", "Vibration check", 1, "months"),
-                                              ("fixed_interval", "Replace the bearing", 24, "months")],
-                                   [("Oil sample", "on_condition")])
+                                              ("fixed_interval", "Replace the bearing", 24, "months"),
+                                              ("on_condition", "Oil sample", 3, "months")], [])
+    assert any("repeat" in w for w in out["warnings"])
     assert got["Seal leaks"] == ("environmental", [("failure_finding", "Test the leak alarm", 6, "months"),
                                                    ("redesign", None, None, None)], [])
     assert got["Impeller wear"][1] == [("fixed_interval", "Swap impeller", 12, "months")]
@@ -282,8 +284,8 @@ def test_a_combination_exported_and_imported_gives_the_same_decisions(m):
     seal = m.add_failure_mode(pump["id"], "Seal leaks", functional_failure_id=ff["id"])
     alarm = m.add_failure_mode(pump["id"], "Leak alarm dead", functional_failure_id=ff["id"])
     plain = m.add_failure_mode(pump["id"], "Impeller wear", functional_failure_id=ff["id"])
-    m.decide_failure_mode(bearing["id"], "safety", COMBO)
-    m.add_mode_task(bearing["id"], "Oil sample", 3, "months", "on_condition")  # outside the decision
+    m.decide_failure_mode(bearing["id"], "safety", {"outcomes": [
+        *COMBO["outcomes"], {"outcome": "on_condition", "task": "Oil sample", "interval": 3, "interval_unit": "months"}]})
     m.decide_failure_mode(seal["id"], "environmental", {"outcomes": [
         {"outcome": "redesign"},
         {"outcome": "on_condition", "task": "Daily walk-round", "interval": 1, "interval_unit": "days"}]})
@@ -295,7 +297,7 @@ def test_a_combination_exported_and_imported_gives_the_same_decisions(m):
                                                        "interval": 12, "interval_unit": "months"})
     rows = fmea_sheet.rows(m.rcm_worksheet(pump["id"], "this"))
     col = {h: i for i, h in enumerate(rows[0])}
-    # One row per member, in its order (the redesign too), then the task outside the decision.
+    # One row per member, in its order (the redesign too; one kind twice).
     assert [(r[col["Failure mode"]], r[col["Decision"]], r[col["Task"]]) for r in rows[1:]] == [
         ("Bearing worn", "On condition", "Vibration check"),
         ("Bearing worn", "Fixed interval", "Replace the bearing"),
@@ -331,3 +333,94 @@ def test_the_tabs_csv_layout_reads_back_as_the_combination(m):
     [d] = [m.rcm_mode(fm["id"])["decision"] for fm in m.position(pid)["failure_modes"]]
     assert [(o["outcome"], o["task"]) for o in d["outcomes"]] == [("on_condition", "Vibration check"),
                                                                   ("fixed_interval", "Replace the bearing")]
+
+
+# ---- several tasks of one kind (Derryn, 9 Nov 2026) ----------------------------------------
+
+POOL = {"outcomes": [
+    {"outcome": "fixed_interval", "task": "Acid top-up", "interval": 1, "interval_unit": "weeks"},
+    {"outcome": "fixed_interval", "task": "Deep clean", "interval": 12, "interval_unit": "months"},
+    {"outcome": "on_condition", "task": "Shop water test", "interval": 1, "interval_unit": "months",
+     "on_found": "Adjust the dosing"},
+]}
+
+
+def _members(m, mode_id):
+    return [(o["outcome"], o.get("task"), o.get("interval")) for o in m.rcm_mode(mode_id)["decision"]["outcomes"]]
+
+
+def test_one_kind_may_come_several_times_each_with_its_own_task(m):
+    pump, fm = _mode(m, "pH drifts")
+    d = m.decide_failure_mode(fm["id"], "operational", POOL)["decision"]
+    assert _members(m, fm["id"]) == [("fixed_interval", "Acid top-up", 1), ("fixed_interval", "Deep clean", 12),
+                                     ("on_condition", "Shop water test", 1)]
+    ids = [o["task_id"] for o in d["outcomes"]]
+    assert len(set(ids)) == 3 and d["task_id"] == ids[0]
+    assert {n: t["outcome"] for n, t in _live(m, pump["id"]).items()} == {
+        "Acid top-up": "fixed_interval", "Deep clean": "fixed_interval", "Shop water test": "on_condition"}
+    assert d["outcomes"][2]["on_found"] == "Adjust the dosing"
+    # The payload is the list it always was: one entry per member, now with a kind twice.
+    [ev] = _events(m, "failure_mode.outcomes_set")
+    assert [o["outcome"] for o in ev["payload"]["outcomes"]] == ["fixed_interval", "fixed_interval", "on_condition"]
+    # The same again, as a reader sends it back (each member by its task_id): nothing changes.
+    n = len(_events(m))
+    again = {"outcomes": [{"outcome": o["outcome"], "task_id": o["task_id"]} for o in d["outcomes"]]}
+    m.decide_failure_mode(fm["id"], "operational", again)
+    assert len(_events(m)) == n
+    # Without task_ids, by name or by the n-th of its kind: the same tasks, nothing new.
+    m.decide_failure_mode(fm["id"], "operational", POOL)
+    assert len(_events(m)) == n
+    _rebuilds_the_same(m)
+
+
+def test_taking_one_member_off_keeps_the_others_by_their_task(m):
+    pump, fm = _mode(m, "pH drifts")
+    d = m.decide_failure_mode(fm["id"], "operational", POOL)["decision"]
+    weekly, annual, shop = [o["task_id"] for o in d["outcomes"]]
+    # Leave the weekly top-up out: the annual deep clean and the shop test keep their tasks.
+    out = m.decide_failure_mode(fm["id"], "operational", {"outcomes": [
+        {"outcome": "fixed_interval", "task_id": annual}, {"outcome": "on_condition", "task_id": shop}]})["decision"]
+    assert [o["task_id"] for o in out["outcomes"]] == [annual, shop]
+    assert out["task_id"] == annual
+    assert set(_live(m, pump["id"])) == {"Deep clean", "Shop water test"}
+    # Its on_found went with the shop test's task, not with its place in the list.
+    assert out["outcomes"][1]["on_found"] == "Adjust the dosing"
+    # A member renamed by its task_id renames that task only.
+    out = m.decide_failure_mode(fm["id"], "operational", {"outcomes": [
+        {"outcome": "fixed_interval", "task_id": annual, "task": "Deep clean and descale", "interval": 6,
+         "interval_unit": "months"}, {"outcome": "on_condition", "task_id": shop}]})["decision"]
+    assert _members(m, fm["id"]) == [("fixed_interval", "Deep clean and descale", 6),
+                                     ("on_condition", "Shop water test", 1)]
+    _rebuilds_the_same(m)
+
+
+def test_one_task_cannot_be_two_members_and_one_redesign_at_most(m):
+    pump, fm = _mode(m, "pH drifts")
+    d = m.decide_failure_mode(fm["id"], "operational", POOL)["decision"]
+    with pytest.raises(Invalid, match="named twice"):
+        m.decide_failure_mode(fm["id"], "operational", {"outcomes": [
+            {"outcome": "fixed_interval", "task_id": d["outcomes"][0]["task_id"]},
+            {"outcome": "fixed_interval", "task_id": d["outcomes"][0]["task_id"]}]})
+    assert rcm_decisions.combination_ok(["fixed_interval", "fixed_interval"])
+    assert rcm_decisions.combination_ok(["fixed_interval", "fixed_interval", "redesign"])
+    assert rcm_decisions.combination_ok(["on_condition", "redesign"])
+    assert not rcm_decisions.combination_ok(["on_condition", "redesign", "redesign"])
+    assert not rcm_decisions.combination_ok(["fixed_interval", "rtf"])
+    # Failure finding is still for hidden failures only.
+    with pytest.raises(Invalid, match="hidden failures only"):
+        m.decide_failure_mode(fm["id"], "operational", {"outcomes": [
+            *POOL["outcomes"], {"outcome": "failure_finding", "task": "Test alarm", "interval": 6}]}, hidden=False)
+
+
+def test_evidence_per_member_of_one_kind_names_the_task_that_has_none(m):
+    from types import SimpleNamespace
+
+    analysis = SimpleNamespace(id="sa1", name="Top-up interval", kind="optimal_replacement",
+                               results={"beneficial": True, "optimal_time": 1, "savings": 0.2, "unit": "weeks"})
+    pump, fm = _mode(m, "pH drifts")
+    d = m.decide_failure_mode(fm["id"], "operational", {"outcomes": [
+        {**POOL["outcomes"][0], "evidence": {"type": "strategy_analysis", "id": "sa1"}}, POOL["outcomes"][1]]})["decision"]
+    out = rcm_decisions.resolve_decision(d, lambda t, i: analysis if (t, i) == ("strategy_analysis", "sa1") else None)
+    assert out["status"] == "partly"
+    assert out["reason"] == "Partly evidenced: the fixed interval “Deep clean” task has none."
+    assert [o["status"] for o in out["outcomes"]] == ["supported", "unevidenced"]

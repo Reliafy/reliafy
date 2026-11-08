@@ -30,9 +30,10 @@ function has more than one, a functional failure's own row names the one it
 breaches. The export writes them that way. A failure mode may have several tasks: a second row for the same failure mode
 (the same text, under the same function and functional failure) whose task
 differs is that mode's next task, so the export's one-row-per-task layout
-reads back. A second row whose decision is another scheduled outcome (or a
-redesign beside one), where the combination rules allow it, joins the first
-row's decision as a combination of tasks, in row order: the export writes a
+reads back. A second row whose decision is a scheduled outcome with its own
+task (of any kind, the first row's too) or a redesign, where the combination
+rules allow it, joins the first row's decision as a combination of tasks, in
+row order: the export writes a
 combination one row per member, so it reads back as the same decision. A task named in the sheet that is on the position already (the
 same name, case and spacing aside) is linked, not made again: one task then
 serves several modes. A shared task keeps its own interval: a row that names
@@ -435,16 +436,18 @@ def _member(decision, planned: dict, live_tasks: dict, sheet_tasks: dict, row: i
             errors: list[str]) -> dict | None:
     """A repeat row's decision as the next member of the first row's (a
     combination of tasks: {outcome, task, interval, unit, shared}), or None
-    when it can't be one: no decision, the first row's outcome or one already
-    joined, an outcome the combination rules don't allow beside them, or a
-    scheduled member without an interval (a combination's every task needs
-    one, the first row's too)."""
+    when it can't be one: no decision, an outcome the combination rules don't
+    allow beside the others (a second redesign, run to failure, accept), a
+    task the decision has already, or a scheduled member without an interval
+    (a combination's every task needs one, the first row's too). One kind may
+    come on several rows (a weekly top-up and an annual deep clean), each its
+    own member with its own task."""
     first = planned["decision"] or {}
     if not decision or not first:
         return None
     outcomes = [first["outcome"], *(x["outcome"] for x in planned["members"])]
     outcome = decision["outcome"]
-    if outcome in outcomes or not rcm_decisions.combination_ok([*outcomes, outcome]):
+    if not rcm_decisions.combination_ok([*outcomes, outcome]):
         return None
     if first["outcome"] in SCHEDULED_OUTCOMES and not first.get("interval"):
         return None

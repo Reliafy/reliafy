@@ -140,10 +140,14 @@ schedules work gets a task of its own on the position:
      {"outcome": "fixed_interval", "task": "Replace the bearing", "interval": 24, "interval_unit": "months"}]}}}
 ```
 
-The entries are two or more of `on_condition`, `fixed_interval` and
-`failure_finding`, or `redesign` beside one of them as the interim measure;
-`rtf` and `accept` stand alone. Reads add `decision.outcomes` (each with its
-task, interval and `task_id`) beside the first entry's `outcome` and `task`.
+The entries are two or more tasks of `on_condition`, `fixed_interval` and
+`failure_finding` (one kind may come more than once, each with its own task:
+a weekly top-up and an annual deep clean), optionally with one `redesign`
+beside them as the interim measure; `rtf` and `accept` stand alone. Reads add
+`decision.outcomes` (each with its task, interval and `task_id`) beside the
+first entry's `outcome` and `task`. Entries are told apart by their task: to
+change a combination, send every entry back with the `task_id` it was read
+with; an entry left out has its task taken off.
 The app's own route takes the same body (`PUT
 /api/maintenance/failure-modes/{id}/decision`).
 

@@ -376,15 +376,17 @@ export const roleLineText = (l, notes = "") => {
 export const cardLineText = (l) => [l.kind, l.name, l.every].filter(Boolean).join(" · ");
 
 // The outcomes another task can add to a decision, as a combination of tasks
-// (RCM II): two or more scheduled tasks, or a redesign beside one; none for a
-// decision that stands alone (run to failure, accept) or while a scheduled
-// member has no task (its interval is missing: decide it first).
+// (RCM II): two or more scheduled tasks, one kind as often as needed (a weekly
+// top-up and an annual deep clean: Derryn, 9 Nov 2026), optionally with one
+// redesign beside them; none for a decision that stands alone (run to failure,
+// accept) or while a scheduled member has no task (its interval is missing:
+// decide it first). Each kind is offered even when the decision has one.
 const COMBINES = ["on_condition", "fixed_interval", "failure_finding", "redesign"];
 const SCHEDULED_OUTCOMES = new Set(COMBINES.slice(0, 3));
 function combines(list) {
-  if (new Set(list).size !== list.length || list.some((o) => !COMBINES.includes(o))) return false;
+  if (list.some((o) => !COMBINES.includes(o)) || list.filter((o) => o === "redesign").length > 1) return false;
   const scheduled = list.filter((o) => SCHEDULED_OUTCOMES.has(o)).length;
-  return list.includes("redesign") ? scheduled === 1 : scheduled >= 2;
+  return list.includes("redesign") ? scheduled >= 1 : scheduled >= 2;
 }
 // `mode`: the failure mode, so the RCM decision diagram's refusals apply too
 // (a second scheduled task only on a safety or environmental consequence;
@@ -395,7 +397,7 @@ export function addableOutcomes(d, mode = null) {
   if (members.some((o) => SCHEDULED_OUTCOMES.has(o.outcome) && !o.task_id)) return [];
   const have = members.map((o) => o.outcome);
   const answers = mode ? modeAnswers(mode) : null;
-  return COMBINES.filter((o) => !have.includes(o) && combines([...have, o])
+  return COMBINES.filter((o) => combines([...have, o])
     && !(answers && doctrineRefusal(answers.hidden, answers.consequence, [...have, o])));
 }
 
@@ -415,6 +417,24 @@ export function decisionWithMember(d, member) {
   });
   const members = isCombination(d) ? d.outcomes.map(keep) : [keep({ outcome: d.outcome, task_id: d.task_id, on_found: d.on_found })];
   const out = { outcomes: [...members, member] };
+  if (ref(d.evidence)) out.evidence = ref(d.evidence);
+  return out;
+}
+
+// The decision as the server takes it back without the member whose task is
+// `taskId` (its Remove): every other member by its task, its own evidence and
+// on_found kept, so the server takes that task off (retired, or unlinked when
+// it serves other modes too) and leaves the rest as they are. One member left
+// is a plain decision again. Null when the task isn't a member.
+export function decisionWithoutMember(d, taskId) {
+  if (!isCombination(d) || !d.outcomes.some((o) => o.task_id === taskId)) return null;
+  const ref = (e) => (e?.type && e?.id ? { type: e.type, id: e.id } : null);
+  const out = { outcomes: d.outcomes.filter((o) => o.task_id !== taskId).map((o) => ({
+    outcome: o.outcome,
+    ...(o.task_id ? { task_id: o.task_id } : {}),
+    ...(ref(o.evidence) ? { evidence: ref(o.evidence) } : {}),
+    ...(o.on_found ? { on_found: o.on_found } : {}),
+  })) };
   if (ref(d.evidence)) out.evidence = ref(d.evidence);
   return out;
 }
@@ -514,8 +534,9 @@ export function decisionBody(d, patch = {}) {
   if (isCombination(d)) {
     const given = (v) => v !== undefined && v !== null && v !== "";
     // Each member goes back with its own evidence, if any (only {type, id}: the read adds its check).
+    // Each by its task (task_id): one kind may come twice, so a member is its task, never its kind.
     const keep = (o) => ({
-      ...Object.fromEntries(["outcome", "task", "interval", "interval_unit", "on_found"].filter((k) => given(o[k])).map((k) => [k, o[k]])),
+      ...Object.fromEntries(["outcome", "task_id", "task", "interval", "interval_unit", "on_found"].filter((k) => given(o[k])).map((k) => [k, o[k]])),
       ...(o.evidence?.type && o.evidence?.id ? { evidence: { type: o.evidence.type, id: o.evidence.id } } : {}),
     });
     const first = keep(d.outcomes[0]);
@@ -587,7 +608,19 @@ export function everyText(x) {
 
 export function decisionText(d) {
   if (!d) return "";
-  if (isCombination(d)) return d.outcomes.map((o) => OUTCOME_LABEL[o.outcome] || o.outcome).join(" + ");
+  if (isCombination(d)) {
+    // "On condition + 2 fixed interval": each kind once, in order, counted when it repeats.
+    const kinds = [];
+    for (const o of d.outcomes) {
+      const k = kinds.find((x) => x.outcome === o.outcome);
+      if (k) k.n += 1;
+      else kinds.push({ outcome: o.outcome, n: 1 });
+    }
+    return kinds.map(({ outcome, n }) => {
+      const label = OUTCOME_LABEL[outcome] || outcome;
+      return n === 1 ? label : `${n} ${label.toLowerCase()}`;
+    }).join(" + ");
+  }
   const label = OUTCOME_LABEL[d.outcome] || d.outcome || "";
   return d.outcome === "rtf" && RTF_LABEL[d.rtf_basis] ? `${label} (${RTF_LABEL[d.rtf_basis]})` : label;
 }

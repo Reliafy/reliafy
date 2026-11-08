@@ -667,9 +667,14 @@ def add_interval(day: str, interval: float, unit: str) -> str | None:
     return None
 
 
+def _norm_text(a) -> str:
+    """A name with case and spacing aside ("" for none)."""
+    return " ".join(str(a or "").lower().split())
+
+
 def _same_text(a, b) -> bool:
     """Whether two names say the same thing, case and spacing aside."""
-    return " ".join(str(a or "").lower().split()) == " ".join(str(b or "").lower().split())
+    return _norm_text(a) == _norm_text(b)
 
 
 def _end_reason(reason, mode_ref) -> str:
@@ -4636,14 +4641,18 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return self.rcm_mode(mode_id)
 
     @staticmethod
-    def _on_found(fm: dict, outcome, given: dict) -> str:
+    def _on_found(fm: dict, outcome, given: dict, prev: dict | None = None) -> str:
         """What's done when the check finds it, for a decision (or a combination's
-        member) of ``outcome``: the one given ("" clears it); left out, the one the
-        mode had for that kind of task; "" for a task that checks nothing."""
+        member) of ``outcome``: the one given ("" clears it); left out, the one it
+        had: a member's, the member with the same task before (``prev``, when it
+        was of this kind); a decision's, the mode's for that kind of task; "" for a
+        task that checks nothing."""
         if outcome not in rcm_decisions.FINDS:
             return ""
         if "on_found" in given:
             return given["on_found"]
+        if prev is not None:
+            return (prev.get("on_found") or "") if prev.get("outcome") == outcome else ""
         if fm.get("outcomes"):
             return next((o.get("on_found") or "" for o in fm["outcomes"] if o["outcome"] == outcome), "")
         return (fm.get("on_found") or "") if fm.get("outcome") == outcome else ""
@@ -4671,15 +4680,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def _decide_combination(self, fm: dict, position: dict, tasks: list[dict], changes: dict, cleaned: dict,
                             members: list[dict] | None, task_id) -> dict:
         """A decision that combines tasks (``members``: two or more, checked by
-        rcm_decisions), or any decision on a mode that had a combination. Each
-        scheduled member keeps the task it had (the one a member of the same
-        outcome had, else a live task of the mode with that outcome, else the
-        decision's own task for the first member), adopts the one its task_id
-        names, or gets a new one on the position. Tasks of the old decision no
-        member keeps are retired (or unlinked, when they serve other modes too).
-        The members are on the mode as ``outcomes`` [{outcome, task_id}]
-        (failure_mode.outcomes_set); the first is the decision's own (outcome,
-        task_id), so every reader of one outcome reads the combination's first."""
+        rcm_decisions), or any decision on a mode that had a combination.
+        Members are told apart by their task, never by their outcome (one kind
+        may come several times: a weekly top-up and an annual deep clean). Each
+        scheduled member adopts the task its task_id names (a reader sends its
+        members back with their task_id); one without keeps a task of the mode
+        whose name it gives, else the task the n-th member of its kind had
+        before, else a live task of the mode of that kind, else the decision's
+        own task, else it gets a new one on the position. Tasks of the old
+        decision no member keeps are retired (or unlinked, when they serve other
+        modes too). The members are on the mode as ``outcomes`` [{outcome,
+        task_id, ...}] (failure_mode.outcomes_set, its payload the same list as
+        ever); the first is the decision's own (outcome, task_id), so every
+        reader of one outcome reads the combination's first."""
         mode_id = fm["id"]
         outcome = cleaned.get("outcome")
         if members is None:
@@ -4708,11 +4721,24 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 claimed.add(t["id"])
                 found[i] = t
                 adopted.add(i)
-        before = {o["outcome"]: o.get("task_id") for o in fm.get("outcomes") or []}
+        previous = fm.get("outcomes") or []
+        # A member without a task_id: the mode's task it names, else the one the n-th member
+        # of its kind had before, else any live task of the mode of that kind.
+        for i, mm in enumerate(sched):
+            said = _norm_text(mm.get("task"))
+            if i in found or not said:
+                continue
+            t = next((x for x in tasks if x["id"] not in claimed and _norm_text(x["name"]) == said
+                      and x.get("outcome") in (mm["outcome"], None)), None)
+            if t is not None:
+                claimed.add(t["id"])
+                found[i] = t
         for i, mm in enumerate(sched):
             if i in found:
                 continue
-            had = live.get(before.get(mm["outcome"]))
+            nth = sum(1 for m2 in sched[:i] if m2["outcome"] == mm["outcome"])
+            kind = [o for o in previous if o["outcome"] == mm["outcome"]]
+            had = live.get(kind[nth].get("task_id")) if nth < len(kind) else None
             t = had if had and had["id"] not in claimed else next(
                 (x for x in tasks if x["id"] not in claimed and x.get("outcome") == mm["outcome"]), None)
             if t is not None:
@@ -4759,7 +4785,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         changes = {k: v for k, v in changes.items() if fm.get(k) != v and not (fm.get(k) is None and v == "")}
         if changes:
             self._emit("failure_mode.analysed", {"id": mode_id, "changes": changes})
-        task_of: dict[str, str] = {}
+        task_of: dict[int, str] = {}  # each member (by its place in members) -> its task
         for mm, t, wanted, task_changes, adopt in plans:
             if t is None:
                 tid = new_id()
@@ -4771,18 +4797,26 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     self._emit("task.updated", {"id": tid, "changes": task_changes})
                 if self.s.edge(self.org, "MITIGATES", tid, mode_id) is None:
                     self._emit("task.linked", {"id": tid, "failure_mode_id": mode_id, "on": self.today()})
-            task_of[mm["outcome"]] = tid
-        if sched and fm.get("task_id") != task_of[sched[0]["outcome"]]:
-            self._emit("failure_mode.analysed", {"id": mode_id, "changes": {"task_id": task_of[sched[0]["outcome"]]}})
-        # Each member with its task, and its own evidence where it has some (checked for it alone).
-        now = [{"outcome": mm["outcome"], "task_id": task_of.get(mm["outcome"])}
-               | ({"evidence": mm["evidence"]} if mm.get("evidence") else {})
-               | ({"on_found": found} if (found := self._on_found(fm, mm["outcome"], mm)) else {})
-               for mm in members] if combined else []
+            task_of[id(mm)] = tid
+        if sched and fm.get("task_id") != task_of[id(sched[0])]:
+            self._emit("failure_mode.analysed", {"id": mode_id, "changes": {"task_id": task_of[id(sched[0])]}})
+        # Each member with its task, and its own evidence where it has some (checked for it alone);
+        # what's done when its check finds it, left out, is what the member with its task said before.
+        by_task = {o.get("task_id"): o for o in previous if o.get("task_id")}
+
+        def member_now(mm: dict) -> dict:
+            tid = task_of.get(id(mm))
+            prev = by_task.get(tid) if tid else next((o for o in previous if o["outcome"] == mm["outcome"]), None)
+            said = self._on_found(fm, mm["outcome"], mm, prev)
+            return ({"outcome": mm["outcome"], "task_id": tid}
+                    | ({"evidence": mm["evidence"]} if mm.get("evidence") else {})
+                    | ({"on_found": said} if said else {}))
+
+        now = [member_now(mm) for mm in members] if combined else []
         if now != (fm.get("outcomes") or []):
             self._emit("failure_mode.outcomes_set", {"id": mode_id, "outcomes": now})
         # The old decision's tasks no member kept; every task, when the decision schedules none.
-        former = {fm.get("task_id"), *before.values()}
+        former = {fm.get("task_id"), *(o.get("task_id") for o in previous)}
         drop = [t for t in tasks if t["id"] not in claimed and (not sched or t["id"] in former)]
         if drop:
             self._drop_mode_tasks(mode_id, drop, "The failure mode's decision schedules no task now." if not sched
