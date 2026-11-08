@@ -30,4 +30,7 @@
 }
 
 /* A setting's changes: one line each, newest first. */
-.mv-changes { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.25rem; overflow-wrap: anywhere; }
+.mv-summary { margin: 0 0 8px; }
+.mv-changes { list-style: none; margin: 0; padding: 0; }
+.mv-changes li { padding: 6px 0; border-bottom: 1px solid var(--line2); overflow-wrap: anywhere; }
+.mv-change-text { font-weight: 600; }

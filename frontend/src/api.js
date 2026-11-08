@@ -3015,6 +3015,10 @@ export function moveMeasurementPoint(pointId, positionId) {
 export function getMeasurementPoint(pointId) {
   return request(`/api/maintenance/points/${encodeURIComponent(pointId)}`);
 }
+// Stop measuring at a point: it leaves the lists; its readings stay in the history.
+export function retireMeasurementPoint(pointId, reason = "") {
+  return postJson(`/api/maintenance/points/${encodeURIComponent(pointId)}/retire`, { reason });
+}
 export function recordMeasurementReading(pointId, value, on, at) {
   return postJson(`/api/maintenance/points/${pointId}/readings`, at ? { value, at } : { value, on });
 }

@@ -13,7 +13,7 @@ import SignalStorage from "./SignalStorage.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import {
   READINGS_INTRO, canEditReadings, chartData, dayText, numberText, pageState, pointDates, pointMeta, rangeFact, readingDate,
-  settingChangeRows, trendText,
+  settingChangeRows, settingSummary, trendText,
 } from "../measuringPoint.js";
 import { ACCENT, DANGER, MUTED } from "../plotTheme.js";
 import { PointReadingModal } from "../views/MaintenancePosition.jsx";
@@ -255,8 +255,9 @@ export function PointView({ id, onBack, onMenu = null, onChanged }) {
         )}
       </div>
 
-      <section className="mv-section" aria-label={isSetting(point) ? "Setting over time" : "Readings over time"}>
-        <h4>{isSetting(point) ? "Setting over time" : "Readings over time"}</h4>
+      <section className="mv-section" aria-label={isSetting(point) ? "What it's been over time" : "Readings over time"}>
+        <h4>{isSetting(point) ? "What it's been over time" : "Readings over time"}</h4>
+        {isSetting(point) && settingSummary(point) && <p className="mv-summary">{settingSummary(point)}</p>}
         <ReadingsChart point={point} />
       </section>
 
@@ -265,24 +266,31 @@ export function PointView({ id, onBack, onMenu = null, onChanged }) {
           <h4>Changes</h4>
           {point.changes?.length ? (
             <ul className="mv-changes">
-              {settingChangeRows(point).map((c) => (
+              {settingChangeRows(point, today).map((c) => (
                 <li key={c.key}>
-                  {c.text}
-                  {c.workOrder && <> · <Link to={`/maintenance/work-orders/${c.workOrder.id}`}>WO {c.workOrder.number}</Link></>}
-                  {c.task && <span className="lib-date"> · {c.task.name}</span>}
+                  <span className="mv-change-text">{c.text}</span>
+                  {c.workOrder
+                    ? <> · <Link to={`/maintenance/work-orders/${c.workOrder.id}`}>WO {c.workOrder.number}</Link>{c.task && <span className="lib-date"> · {c.task.name}</span>}</>
+                    : <span className="lib-date"> · by hand</span>}
+                  {c.held && <span className="lib-date mv-held"> · {c.held}</span>}
                 </li>
               ))}
             </ul>
-          ) : <p className="lib-date">Not set yet. Record the value it's set to, or record it from the work order that sets it.</p>}
+          ) : (
+            <p className="lib-date">
+              Not set yet. {readable ? <button type="button" className="crumb-link" onClick={() => setModal("read")}>Record the value it&apos;s set to</button> : "Record the value it's set to"}, or record it from the work order that sets it.
+            </p>
+          )}
         </section>
       )}
 
       <section className="mv-section" aria-label="Readings">
-        <h4>Readings</h4>
+        <h4>{isSetting(point) ? "Every recorded value" : "Readings"}</h4>
         {point.readings?.length ? (
           <>
             <p className="lib-date mp-intro">
-              {canEditReadings(point) ? READINGS_INTRO : "The latest readings from its feed, newest first."}
+              {isSetting(point) ? "Each value as recorded, newest first. Correct or void one from its ⋯; a voided value stays listed, struck out."
+                : canEditReadings(point) ? READINGS_INTRO : "The latest readings from its feed, newest first."}
             </p>
             <ReadingsTable point={point} onChanged={(p) => { setPoint(p); onChanged?.(); }} />
           </>
