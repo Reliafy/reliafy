@@ -962,3 +962,73 @@ select.rim-kindchip {
 }
 select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus); }
 @media (max-width: 600px) { select.rim-kindchip { height: 32px; } }
+/* The Tasks row's list (Derryn, 9 Nov 2026): one line per task, columns aligned across the
+   tasks (kind · name · how often · chips) through a subgrid; at phone width a block per task. */
+.rim-tasklist {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
+  column-gap: 10px; row-gap: 0; gap: 0 10px; align-items: center;
+}
+.rim-tasklist li {
+  display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center;
+  min-height: 30px; padding: 2px 0; border-bottom: 1px solid var(--line2); gap: 0 10px;
+}
+.rim-tasklist li:last-child { border-bottom: 0; }
+.rim-tl-kind, .rim-tl-when, .rim-tl-chips { display: inline-flex; align-items: center; min-width: 0; }
+.rim-tl-name { min-width: 0; overflow: hidden; }
+.rim-tl-name .rim-tgo, .rim-tl-name > span {
+  display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
+}
+.rim-tl-when { color: var(--muted); font-size: var(--fs-13); white-space: nowrap; }
+.rim-tl-chips { gap: 4px; justify-content: flex-end; flex-wrap: nowrap; }
+.rim-tl-chips .chip { white-space: nowrap; }
+/* The kind: a compact chip-styled picker, no visible border or chevron until hover or focus. */
+select.rim-kindchip, .rim-kindtext {
+  height: 20px; padding: 0 7px; border: 1px solid transparent; border-radius: var(--r-sm);
+  background-color: var(--surf-2); color: inherit; font: inherit; font-size: var(--fs-12); line-height: 18px;
+}
+select.rim-kindchip {
+  appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 7px;
+  background-repeat: no-repeat; background-position: right 6px center; background-size: 10px 10px;
+}
+select.rim-kindchip:hover, select.rim-kindchip:focus-visible {
+  border-color: var(--line); padding-right: 20px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.4'/%3E%3C/svg%3E");
+}
+select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus); }
+.rim-kindtext { display: inline-flex; align-items: center; }
+.rim-tasks-cell button.add-row.rim-addrow { align-self: stretch; width: 100%; min-height: var(--ctl-h); padding: 0 12px; }
+/* Narrow (a phone, or the details beside the table at 1280 px): a block per task, the name
+   over kind · interval, judged by the cell's own width. The steps grid stacks too when the
+   details are narrow, the label above its control, so no column is squeezed to nothing. */
+.rim-tasks-cell { container-type: inline-size; container-name: rimtasks; }
+.rw-pbody { container-type: inline-size; container-name: rwbody; }
+@container rwbody (max-width: 460px) {
+  .rw-sg, .rw-sgwrap > .rw-sg { grid-template-columns: minmax(0, 1fr); }
+  .rw-sg > .rw-sc { border-top: 0; padding-top: 2px; }
+  .rw-sg > .rw-sl { padding-bottom: 0; }
+}
+@container rimtasks (max-width: 420px) {
+  .rim-tasklist { display: flex; flex-direction: column; }
+  .rim-tasklist li {
+    display: grid; grid-template-columns: max-content minmax(0, 1fr); grid-template-areas: "name name" "kind when" "chips chips";
+    gap: 2px 8px; padding: 6px 0;
+  }
+  .rim-tl-name { grid-area: name; }
+  .rim-tl-kind { grid-area: kind; }
+  .rim-tl-when { grid-area: when; white-space: normal; }
+  .rim-tl-chips { grid-area: chips; justify-content: flex-start; flex-wrap: wrap; }
+  .rim-tl-chips:empty { display: none; }
+}
+@media (max-width: 600px) {
+  .rim-tasklist { display: flex; flex-direction: column; }
+  .rim-tasklist li {
+    display: grid; grid-template-columns: max-content minmax(0, 1fr); grid-template-areas: "name name" "kind when" "chips chips";
+    gap: 2px 8px; padding: 6px 0;
+  }
+  .rim-tl-name { grid-area: name; }
+  .rim-tl-kind { grid-area: kind; }
+  .rim-tl-when { grid-area: when; white-space: normal; }
+  .rim-tl-chips { grid-area: chips; justify-content: flex-start; flex-wrap: wrap; }
+  .rim-tl-chips:empty { display: none; }
+  select.rim-kindchip, .rim-kindtext { height: 32px; line-height: 30px; }
+}

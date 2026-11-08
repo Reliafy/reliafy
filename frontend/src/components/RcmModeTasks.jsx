@@ -21,6 +21,7 @@ import Field, { SavedMark } from "./ui/Field.jsx";
 import InputGroup from "./ui/InputGroup.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import Section from "./ui/Section.jsx";
+import { PlusIcon } from "./icons.jsx";
 import { PanelField } from "./PanelField.jsx";
 
 // Step 3 of a failure mode's details, "Proactive task or default action" (the
@@ -443,8 +444,10 @@ export default function RcmModeTasks({
                              onDone={(said) => { setAdding(false); onSaid?.(said); }} />
               </div>
             ) : (
-              <button type="button" className="rim-addrow" disabled={busy} onClick={() => { setFailed(null); setAdding(true); }}>
-                + Add a task
+              // The same dashed full-width add row as the tree's lists (Derryn, 9 Nov 2026).
+              <button type="button" className="add-row rim-addrow" disabled={busy}
+                      onClick={(e) => { if (e.detail < 2) { setFailed(null); setAdding(true); } }}>
+                <PlusIcon />Add a task
               </button>
             ))}
             {calcDialog}
@@ -861,7 +864,7 @@ export function KindChip({ mode, task, kind, ops = null, can = false, onSaid = n
   const kinds = allowedChoices(TASK_ORDER, answers.hidden, answers.consequence, kind);
   const label = OUTCOME_LABEL[kind] || kind;
   const tip = worthLine(kind, answers.hidden, answers.consequence) || undefined;
-  if (!can || !ops?.decide || !TASK_ORDER.includes(kind) || kinds.length < 2) return <span className="rim-tmeta rim-kindtext" title={tip}>{label}</span>;
+  if (!can || !ops?.decide || !TASK_ORDER.includes(kind) || kinds.length < 2) return <span className="rim-kindtext" title={tip}>{label}</span>;
   const change = async (next) => {
     const d = mode.ref.decision || null;
     const decision = decisionWithKind(d, tasksOf(mode.ref), task.id, next);
@@ -889,26 +892,41 @@ export function KindChip({ mode, task, kind, ops = null, can = false, onSaid = n
   );
 }
 
+// The Tasks row's list (Derryn, 9 Nov 2026: "a small aligned list, one line per task"):
+// columns aligned across the tasks: the kind (a compact chip that changes it), the name as
+// the link to the task's row (cut short with an ellipsis, its full name as the tooltip,
+// never wrapping), how often in the muted colour, then the "Shared with N" and work-package
+// chips at the right. What's done when a check finds it isn't repeated here (it's on the
+// task's row and panel). At phone width each task stacks: the name over kind · interval.
 function TaskList({ r, lines, label, onPick, ops = null, can = false, onSaid = null }) {
   return (
     <ul className="rim-tasklist" aria-label={label}>
       {lines.map((l) => {
         const t = l.task;
+        const name = t.name || t.text;
         const when = every(t) || null;
         return (
           <li key={l.key}>
-            <svg className="rw-ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
-              <path d="M10.6 2.3a3.2 3.2 0 0 0-3.9 4.1L2.4 10.7a1.4 1.4 0 0 0 2 2l4.3-4.3a3.2 3.2 0 0 0 4.1-3.9l-1.9 1.9-1.8-.4-.4-1.8z" strokeWidth="1.3" strokeLinejoin="round" />
-            </svg>
-            <span className="rim-tl-body">
+            <span className="rim-tl-kind">
+              {l.outcome ? <KindChip mode={r} task={t} kind={l.outcome} ops={ops} can={can} onSaid={onSaid} /> : null}
+            </span>
+            <span className="rim-tl-name">
               {onPick ? (
-                <button type="button" className="link rim-tgo" onClick={() => onPick(taskKey(r.key, t.id))} title="Show this task in the tree">
-                  {t.name || t.text}
+                <button type="button" className="link rim-tgo" onClick={() => onPick(taskKey(r.key, t.id))} title={`${name}: show this task in the tree`}>
+                  {name}
                 </button>
-              ) : <span>{t.name || t.text}</span>}
-              {l.outcome && <> <span className="rim-tmeta">·</span> <KindChip mode={r} task={t} kind={l.outcome} ops={ops} can={can} onSaid={onSaid} /></>}
-              {when && <span className="rim-tmeta"> · {when}</span>}
-              {t.shared_with ? <span className="rim-tmeta"> · shared with {plural(t.shared_with, "other failure mode")}</span> : null}
+              ) : <span title={name}>{name}</span>}
+            </span>
+            <span className="rim-tl-when">{when || ""}</span>
+            <span className="rim-tl-chips">
+              {t.shared_with ? <Chip title={`Also serves ${plural(t.shared_with, "other failure mode")}`}>Shared with {t.shared_with.toLocaleString("en-AU")}</Chip> : null}
+              {t.package && (
+                <Link className="chip chip-neutral chip-btn" title="Done on this work package's visits: open it on the LSA tab"
+                      to={explorerPath(t.package.subject?.kind === "location" ? "locations" : "positions",
+                                       { sel: t.package.subject?.id, tab: "lsa", package: t.package.id })}>
+                  In: {t.package.name}
+                </Link>
+              )}
             </span>
           </li>
         );

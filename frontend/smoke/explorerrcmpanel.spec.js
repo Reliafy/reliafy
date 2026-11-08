@@ -254,7 +254,7 @@ test("Open… and Add a task… in the row menu expand the details; Enter shows 
   await page.keyboard.press("Escape"); // the form closes, the panel stays
   await expect(add).toHaveCount(0);
   await expect(panel(page)).toBeVisible();
-  await expect(tasks.getByRole("button", { name: "+ Add a task" })).toBeVisible();
+  await expect(tasks.getByRole("button", { name: "Add a task", exact: true })).toBeVisible();
   await expect(listed).toHaveCount(2);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expectHealthy(page, problems, { label: "rcm open from menu" });
@@ -432,7 +432,7 @@ test("one order at every level: its notes under the title and chips, what's insi
     await expect(todo.locator(".task-choice")).not.toContainText("On condition: a check at an interval"); // no bridge line
     await expect(todo.getByRole("button", { name: /^Edit “|^Remove “/ })).toHaveCount(0);
     await expect(todo.getByRole("button", { name: /^Change…$|^Actions for/ })).toHaveCount(0);
-    await expect(todo.getByRole("button", { name: "+ Add a task" })).toBeVisible();
+    await expect(todo.getByRole("button", { name: "Add a task", exact: true })).toBeVisible();
     await expect(todo.getByRole("textbox", { name: /^Decision notes/ })).toHaveCount(0);
     await expect(todo.getByRole("group", { name: "Evidence" })).toHaveCount(0); // in the Rationale row
     expect(await todo.evaluate((el) => {

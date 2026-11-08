@@ -4,7 +4,7 @@
 // its name, how often (Change, Calculate…), what's done when found, instructions,
 // its evidence, the failure modes it serves and its logistics, and Remove or Retire
 // at its foot. A failure mode's step 3 ("Proactive task or default action") lists its
-// tasks as plain links to their rows, with a dashed "+ Add a task" that asks its kind,
+// tasks as plain links to their rows, with a dashed "Add a task" row that asks its kind,
 // then a new task or an existing one ("New task · Existing task"), in place; the new
 // task's row is picked once saved. The row menu's Add a task… opens that row (the
 // decision dialog when there's no decision yet); a tap on "Which task is worth doing?"
@@ -47,7 +47,7 @@ const tasksOf = (page) => panel(page).getByRole("region", { name: "Proactive tas
 const chipsOf = (page) => panel(page).locator(".rw-chips-row");
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 // Step 3's dashed add row, and the form it opens in place.
-const addRow = (tasks) => tasks.getByRole("button", { name: "+ Add a task" });
+const addRow = (tasks) => tasks.getByRole("button", { name: "Add a task", exact: true });
 const addForm = (tasks) => tasks.getByRole("group", { name: "Add a task" });
 // Step 3's list of the decision's tasks: one line each, the name a link to the task's row.
 const listOf = (tasks) => tasks.getByRole("list", { name: "The decision's tasks" });
@@ -186,6 +186,11 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(lines(tasks).nth(1)).toContainText("every 36 months");
   await expect(tasks.getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` })).toHaveValue("on_condition");
   await expect(tasks.getByRole("combobox", { name: `Kind of “Replace the dosing pump ${tag}”` })).toHaveValue("fixed_interval");
+  // One line per task, the columns aligned: kind, name, how often (no "Then, if found" here).
+  const tops = await lines(tasks).evaluateAll((els) => els.map((li) => [...li.children].map((c) => Math.round(c.getBoundingClientRect().left))));
+  expect(tops[0].slice(0, 3)).toEqual(tops[1].slice(0, 3));
+  for (const li of await lines(tasks).all()) expect((await li.boundingBox()).height).toBeLessThan(40);
+  await expect(lines(tasks).first()).not.toContainText("Then, if found");
   await addRow(tasks).click();
   add = addForm(tasks);
   await expect(add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio"))
@@ -284,8 +289,8 @@ test("one task for several modes: a row under each, adopted by a tap, read-only 
   await expect(tasks.getByRole("heading", { name: "Tasks linked before the decision" })).toBeVisible();
   const before = tasks.getByRole("list", { name: "Tasks linked before the decision" }).getByRole("listitem");
   await expect(before).toHaveCount(1);
-  await expect(before.first()).toContainText(/shared with 1 other failure mode/i);
-  await expect(tasks.getByRole("button", { name: /^\+ Add a task/ })).toHaveCount(0);
+  await expect(before.first()).toContainText("Shared with 1"); // a chip at the line's right, not a sentence
+  await expect(tasks.getByRole("button", { name: /^Add a task/ })).toHaveCount(0);
   // Step 2 answered (hidden, operational): one tap on "Task(s) worth doing" decides, adopting that task
   // as the kind it is (on condition); its kind chip then makes it failure finding (offered: it's hidden).
   await dlg.getByRole("radiogroup", { name: "Hidden failure?" }).getByRole("radio", { name: "Hidden" }).click();
