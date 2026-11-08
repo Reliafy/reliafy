@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, markersOf, rowText } from "./assetTree.js";
 import { positionOf } from "./explorerRcm.js";
 import {
-  MODEL_CHIPS, MODEL_USUAL, attachedFor, b10Text, countsText, fmt, graftModels, headline, isModelRow, meanText, modelKey,
+  MODEL_CHIPS, MODEL_USUAL, attachedFor, b10Text, boundsLabel, countsText, fmt, graftModels, headline, isModelRow, meanText, modelKey,
   openForModels, rollupText, rowActions, usedText, withBounds,
 } from "./explorerModels.js";
 
@@ -116,4 +116,21 @@ test("the evidence picker's models on the position: this mode's first, then ever
   assert.deepEqual(attachedFor(links, { modeId: "seal", expectedType: "model" }).map((o) => o.id), ["mine", "all"]);
   assert.equal(attachedFor(links, { modeId: "seal", expectedType: "model" })[0].meta, "On this position, for this failure mode");
   assert.deepEqual(attachedFor(links, { modeId: "seal", expectedType: "degradation_model" }).map((o) => o.id), ["deg"]);
+});
+
+test("a Bayesian update's numbers are credible intervals at its level, never bounds or confidence", () => {
+  const bayes = {
+    kind: "Weibull (Bayesian)", credible: true, credible_level: 0.9, unit: "Years",
+    numbers: [
+      { id: "char_life", value: 4.1512, lower: 3.2311, upper: 5.3489, unit: "Years", bound: "credible" },
+      { id: "shape", value: 2.03, lower: 1.5, upper: 2.74, unit: "", bound: "credible" },
+      { id: "mean", value: 3.68, lower: 2.9, upper: 4.6, unit: "Years", bound: "credible" },
+    ],
+  };
+  assert.equal(headline(bayes), "Life 4.15 years, 90% credible 3.23–5.35 · shape 2.03, 90% credible 1.5–2.74");
+  assert.equal(meanText(bayes), "3.68 years, 90% credible 2.9–4.6");
+  assert.equal(boundsLabel(bayes), "90% credible interval");
+  assert.equal(boundsLabel({ ...bayes, credible_level: 0.95 }), "95% credible interval");
+  assert.equal(boundsLabel(WEIBULL), "95% bounds");
+  for (const text of [headline(bayes), meanText(bayes), boundsLabel(bayes)]) assert.doesNotMatch(text, /bound|confidence/i);
 });
