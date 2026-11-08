@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildProblem, designActions, hoursText, isDesignScope, itemFilters, itemTreePath, productViewPath, productPath,
+  buildProblem, designActions, explorerHere, isSampleRow, madeOwnText, makeOwnConfirm, hoursText, isDesignScope, itemFilters, itemTreePath, productViewPath, productPath,
   productRbds, productTab, productTreeIds, scopeTree, statusText,
 } from "./products.js";
 
@@ -116,4 +116,39 @@ test("a product's layout (design locations) and a built item's copies stay off t
   assert.equal(built.scope.kind, "unit");
   assert.deepEqual(scopeTree(all, "gone").locations, []);
   assert.equal(scopeTree(all).scope, undefined);
+});
+
+test("a copy of the sample product's own row offers Make this my own… after Build an item…", () => {
+  const actions = [{ id: "tree-new" }];
+  const sample = { type: "pos", key: "d", ref: { name: "Survey quadcopter (sample)", design: { rev: "C", sample: true } } };
+  const own = { type: "pos", key: "d", ref: { name: "Survey quadcopter", design: { rev: "C" } } };
+  assert.ok(isSampleRow(sample));
+  assert.ok(!isSampleRow(own));
+  assert.ok(!isSampleRow({ type: "pos", ref: { in_design: true } }));
+  assert.deepEqual(designActions(actions, true, { row: sample }).map((a) => a.id), ["build-item", "make-own", "tree-new"]);
+  assert.equal(designActions(actions, true, { row: sample })[1].label, "Make this my own…");
+  assert.deepEqual(designActions(actions, true, { row: own }).map((a) => a.id), ["build-item", "tree-new"]);
+  // Inside the design (not the product's own row): never.
+  assert.deepEqual(designActions(actions, true, { row: { type: "pos", ref: { in_design: true } } }).map((a) => a.id), ["tree-new"]);
+  // A view-only workspace sees it greyed, with the reason.
+  const greyed = designActions(actions, true, { row: sample, viewOnly: "View only" })[1];
+  assert.equal(greyed.disabled, true);
+  assert.equal(greyed.reason, "View only");
+  const ask = makeOwnConfirm("Survey quadcopter (sample)");
+  assert.match(ask.body, /“Survey quadcopter \(sample\)” becomes your own product/);
+  assert.equal(ask.destructive, false);
+  assert.equal(madeOwnText({ was: "Survey quadcopter (sample)", name: "Survey quadcopter" }),
+    "“Survey quadcopter (sample)” is your own product now, as “Survey quadcopter”.");
+});
+
+test("a link to another row or tab stays on the tree being looked at", () => {
+  // A product's page: its own address, the tab as ?view=.
+  assert.equal(explorerHere("/products/d", "?view=rcm&sel=x", { sel: "p1", tab: "lsa", task: "t1" }),
+    "/products/d?sel=p1&view=lsa&task=t1");
+  // An item's tree keeps its root.
+  assert.equal(explorerHere("/asset-register/explorer", "?arrange=positions&root=b&tab=rcm", { tab: "lsa", sel: "p1" }),
+    "/asset-register/explorer?arrange=positions&root=b&tab=lsa&sel=p1");
+  // Elsewhere: the Explorer by positions.
+  assert.equal(explorerHere("/asset-register/explorer", "?tab=rcm", { sel: "k", tab: "lsa", task: "t" }),
+    "/asset-register/explorer?arrange=positions&sel=k&tab=lsa&task=t");
 });

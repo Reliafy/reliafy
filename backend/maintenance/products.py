@@ -33,6 +33,10 @@ Events (new types only; older logs replay unchanged):
 * ``location.carried {id, position_id, design_location_id?}``: a location is
   one a built unit carries (copied from its product's design locations when it
   was built, or made inside one later), named by the unit's top position.
+* ``position.sample_cleared {id, name, sample_key}``: a copy of the sample product
+  (templates.py) made the user's own, in place: its name without "(sample)" and
+  marked ``from_sample`` (the sample's key), so the sample is never added again
+  beside it unless asked. Nothing inside it changes; ids stay.
 
 Design locations are the product's physical layout: the design's positions can
 be placed at them (``location_id``, inherited down the tree as everywhere), and
@@ -48,7 +52,14 @@ unit's top position is), so it moves with the unit without any event.
 
 from __future__ import annotations
 
+import re
+
 from backend.maintenance.store import GraphStore
+
+#: The sample product's copies by name ("Survey quadcopter (sample)", "… (sample 2)"),
+#: and the key a copy made the user's own keeps (templates.py adds the sample).
+SAMPLE_NAME = re.compile(r"^Survey quadcopter \(sample(?: (\d+))?\)$")
+SAMPLE_KEY = "survey-quadcopter"
 
 MAX_ITEM_LIST = 500  # items in one page of the items overview
 SHOWN_PATHS = 200  # positions listed in a build's preview
@@ -89,7 +100,19 @@ def _location_carried(s: GraphStore, org: str, p: dict) -> None:
                  | ({"design_location_id": p["design_location_id"]} if p.get("design_location_id") else {}))
 
 
+def _sample_cleared(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"name": p["name"], "from_sample": p.get("sample_key") or "sample"})
+
+
+def is_sample(node: dict | None) -> bool:
+    """A copy of the sample product, not yet made the user's own: a design's top with the
+    sample's name."""
+    return bool(node and node.get("design") and not node.get("from_sample")
+                and SAMPLE_NAME.match(node.get("name") or ""))
+
+
 PROJECTORS = {
+    "position.sample_cleared": _sample_cleared,
     "design.declared": _design_declared,
     "design.cleared": _design_cleared,
     "position.implements": _position_implements,
@@ -157,6 +180,19 @@ class ProductOps:
             if top.get("design") and self._parent(top["id"]) is None:
                 out |= {p["id"] for p in self._tree_positions(top["id"])}
         return out
+
+    def _design_ids(self) -> set[str]:
+        """Every position in a product's design (memoised until the next change). A
+        design's tasks are its maintenance programme, never due themselves: the items
+        built from it carry copies that are."""
+        memo = self._memo.get("design_ids")
+        if memo is None:
+            memo = set()
+            for top in self.s.nodes(self.org, "Position"):
+                if top.get("design") and self._parent(top["id"]) is None:
+                    memo |= {p["id"] for p in self._tree_positions(top["id"])}
+            self._memo["design_ids"] = memo
+        return memo
 
     def _live_design(self, product_id) -> dict:
         node = self._get(str(product_id or ""), "Position")
@@ -334,6 +370,59 @@ class ProductOps:
                                        "rev": rev, "on": self.today()})
         return self.product(root["id"])
 
+    def clear_sample(self, product_id=None) -> dict:
+        """Make a copy of the sample product the user's own, in place: "(sample)" goes
+        from its name (the next free "Survey quadcopter 2" when the plain name is another
+        product's), and from its part's and its built items' names where they carry the
+        sample's name. Its design, RCM, tasks, items and reports stay as they are, ids
+        and all; the sample is never added again beside it unless asked. product_id:
+        the copy (default: the only one)."""
+        sv = _sv()
+        if product_id in (None, ""):
+            copies = sorted((p for p in self.s.nodes(self.org, "Position") if is_sample(p) and not p.get("retired")
+                             and self._parent(p["id"]) is None), key=lambda p: p["name"])
+            if not copies:
+                raise sv.Invalid("There's no copy of the sample product in your workspace to make your own.")
+            if len(copies) > 1:
+                raise sv.Invalid(f"There are {len(copies)} copies of the sample product ("
+                                 + ", ".join(p["name"] for p in copies) + "): give product_id for the one to make "
+                                 "your own.")
+            node = copies[0]
+        else:
+            node = self._live_design(product_id)
+            if not is_sample(node):
+                raise sv.Invalid(f"{node['name']} isn't a copy of the sample product: it's your own already.")
+        old = node["name"]
+        base = old[:old.rindex(" (sample")]
+        taken = {p["name"].lower() for p in self.s.nodes(self.org, "Position")
+                 if p.get("design") and not p.get("retired") and p["id"] != node["id"]}
+        name, n = base, 2
+        while name.lower() in taken:
+            name, n = f"{base} {n}", n + 1
+        self._emit("position.sample_cleared", {"id": node["id"], "name": name, "sample_key": SAMPLE_KEY})
+        # Where the sample's name was copied when it was added: its part, and the trees
+        # and items built from it ("<name> · 0007"). Ordinary renames.
+        renamed = []
+        part_id = (node.get("design") or {}).get("part_id")
+        part = part_id and self.s.node(self.org, part_id, "Part")
+        if part and part.get("name") == old:
+            self.update_part(part_id, name=name)
+            renamed.append(f"part {part['part_number']}")
+        for top in self._built_tops(node["id"]):
+            if top.get("retired") or not top["name"].startswith(f"{old} · "):
+                continue
+            new_name = name + top["name"][len(old):]
+            item = self._top_item(top["id"])
+            self.update_position(top["id"], name=new_name)
+            if item and item.get("name") == top["name"]:
+                self.update_item(item["id"], name=new_name)
+            renamed.append(new_name)
+        also = f" Renamed with it: {', '.join(renamed)}." if renamed else ""
+        return self.product(node["id"]) | {
+            "made_own": True, "was": old,
+            "message": f"“{old}” is your own product now, as “{name}”: change anything in it, and the sample is "
+                       f"never added again beside it unless you ask.{also}"}
+
     # -- reading products
 
     def _built_tops(self, product_id: str) -> list[dict]:
@@ -387,6 +476,7 @@ class ProductOps:
             "declared_on": design.get("on"), "retired": bool(node.get("retired")),
             "positions": sum(1 for p in self._tree_positions(node["id"]) if not p.get("retired")),
             "items_built": len(tops), "open_reports": sum(self._open_reports_in(t["id"]) for t in tops),
+            "sample": is_sample(node),
         }
 
     def products(self) -> dict:

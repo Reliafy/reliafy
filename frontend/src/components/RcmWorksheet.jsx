@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { portalHost } from "../fullScreen.js";
 import useAutoGrow from "./ui/useAutoGrow.js";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import RcmStatusBadge from "./RcmStatusBadge.jsx";
 import { CloseIcon, ExpandIcon, PlusIcon, ShrinkIcon } from "./icons.jsx";
 import Chip from "./ui/Chip.jsx";
@@ -28,7 +28,7 @@ import { COMPARATORS, COMPARATOR_LABEL, limitReads, limitWords } from "../rcmSta
 import RcmModeTasks, { RcmTaskSections, StepLabel, removeTaskFromMode } from "./RcmModeTasks.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { getTaskLsa } from "../api.js";
-import { explorerPath } from "../assetTree.js";
+import { explorerHere } from "../products.js";
 import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
 import RcmNotes from "./RcmNotes.jsx";
@@ -1303,6 +1303,8 @@ function EvidenceDialog({ r, at = null, options, workings, ops, onClose, onDone 
 // A task's logistics in its details: a short summary of its LSA record (labour hours,
 // tools, method), read when the task is picked, and "Open in LSA" for the whole record.
 function TaskLogistics({ taskId, positionId }) {
+  // On a product's page the link stays there (its design's LSA); elsewhere the Explorer's.
+  const location = useLocation();
   const [state, setState] = useState({ id: null, data: null, error: null });
   useEffect(() => {
     let on = true;
@@ -1329,7 +1331,7 @@ function TaskLogistics({ taskId, positionId }) {
               : parts.length ? parts.join(" · ") : "No labour, tools or method set yet."}
           </span>
           {" · "}
-          <Link to={explorerPath("positions", { sel: positionId, tab: "lsa", task: taskId })}
+          <Link to={explorerHere(location.pathname, location.search, { sel: positionId, tab: "lsa", task: taskId })}
                 title="How it's done: its instructions, labour, tools, spares and method">Open in LSA</Link>
         </p>
       </div>

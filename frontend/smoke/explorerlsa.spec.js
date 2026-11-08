@@ -6,7 +6,10 @@
 // key: ?sort=), tick two tasks and Package selected… makes a package with
 // them: the Package column fills in, and the package's name opens it in the
 // tab. At 400 px the table scrolls inside its card, the action bar shows,
-// and nothing scrolls the page sideways.
+// and nothing scrolls the page sideways. A product's design has the tab too:
+// what each task needs and the sum of it, with no ticks, packages or due
+// dates (those happen on the items built from it), and its links stay on the
+// product's page.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { headMenu } from "./explorer.js";
@@ -198,4 +201,60 @@ test("a task's LSA and its row on the RCM tab link to each other: Serves → the
   await expect.poll(() => [query(page).get("tab"), query(page).get("task")]).toEqual(["lsa", taskId]);
   await expect(panel(page).getByRole("heading", { name: `Look in the basket ${tag}` })).toBeVisible();
   await expectHealthy(page, problems, { label: "lsa and rcm task links", root: ".tx" });
+});
+
+test("a product's design has the LSA: what each task needs, added up; packaging is on the built items", async ({ page, request, problems }) => {
+  const tag = `d${Date.now()}`;
+  const post = (path, data) => postOk(request, path, data);
+  const product = await post(`${M}/products`, { name: `LSA drone ${tag}`, part_number: `LD-${tag}` });
+  const motor = await post(`${M}/positions`, { name: `Motor ${tag}`, parent_id: product.id });
+  const fn = await post(`${M}/positions/${motor.id}/functions`, { text: `Turn the propeller ${tag}` });
+  const ff = await post(`${M}/functions/${fn.id}/failures`, { text: `No thrust ${tag}` });
+  const fm = await post(`${M}/positions/${motor.id}/failure-modes`, { text: `Bearing wears ${tag}`, functional_failure_id: ff.id });
+  const res = await request.put(`${M}/failure-modes/${fm.id}/decision`, {
+    data: { consequence: "operational", decision: { outcome: "on_condition", task: `Spin the motor by hand ${tag}`, interval: 1, interval_unit: "months" } },
+  });
+  expect(res.ok()).toBeTruthy();
+  const taskId = (await res.json()).decision.task_id;
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await open(page, `/products/${product.id}?view=lsa&sel=${product.id}`);
+  await expect(rows(page)).toHaveCount(1);
+  // The asset's table less ticks, Next due and Package; the heading's "…" less packaging.
+  await expect(panel(page).getByRole("columnheader")).toHaveText(
+    ["Position", "Failure mode", "Task", "Kind", "Interval", "Trade", "Hours", "People", "Tools", "Spares", "Consumables", "Method"]);
+  await expect(panel(page).getByRole("checkbox")).toHaveCount(0);
+  await expect((await headMenu(page)).locator(".ovm-menu .ovm-item")).toHaveText(["Columns…", "Export CSV", "Open the full page"]);
+  await page.keyboard.press("Escape");
+  await expect(panel(page).locator(".pk-purpose")).toContainText("packaged into visits on the items built from it");
+  const foot = panel(page).getByRole("region", { name: "What the tasks need" });
+  await expect(foot).toContainText("1 task");
+  await expect(foot).toContainText("No labour, tools or spares set yet");
+
+  // A task's LSA, as on an asset: a labour line, then the table and the sum show it.
+  await panel(page).getByRole("button", { name: `Spin the motor by hand ${tag}`, exact: true }).click();
+  await expect.poll(() => query(page).get("task")).toBe(taskId);
+  const labour = panel(page).getByRole("region", { name: "Labour" });
+  await labour.getByRole("button", { name: "+ Add labour" }).click();
+  await labour.getByRole("textbox", { name: "Trade, line 1" }).fill("Drone technician");
+  await labour.getByRole("spinbutton", { name: "Hours each, line 1" }).fill("0.25");
+  await panel(page).getByRole("textbox", { name: "Method" }).click(); // leaving Labour saves it
+  await expect(labour.getByRole("status")).toContainText("Saved");
+  await shot(page, "lsa-design-task");
+  // Serves: the task's row on the design's RCM tab, still on the product's page.
+  await panel(page).locator(".lsa-modes").getByRole("link", { name: `Bearing wears ${tag}` }).click();
+  await expect(page).toHaveURL(new RegExp(`/products/${product.id}\\?.*view=rcm`));
+  const taskRow = page.getByRole("treegrid", { name: /and their RCM/ }).getByRole("row", { name: new RegExp(`^Task: Spin the motor by hand ${tag}`) });
+  await expect(taskRow).toHaveAttribute("aria-selected", "true");
+  // Its details: Open in LSA, back to the design's LSA on the same page.
+  await taskRow.locator(".tp-nm").dblclick();
+  const logistics = page.getByRole("complementary", { name: "Details" }).getByRole("region", { name: "Logistics" });
+  await expect(logistics).toContainText("0.25 labour hours");
+  await logistics.getByRole("link", { name: "Open in LSA" }).click();
+  await expect(page).toHaveURL(new RegExp(`/products/${product.id}\\?.*view=lsa`));
+  await expect.poll(() => query(page).get("task")).toBe(taskId);
+  await panel(page).getByRole("button", { name: "← All tasks here" }).click();
+  await expect(panel(page).getByRole("region", { name: "What the tasks need" }).getByRole("group", { name: "Together they need" }))
+    .toContainText("Drone technician");
+  await shot(page, "lsa-design-table");
+  await expectHealthy(page, problems, { label: "design lsa", root: ".tx" });
 });

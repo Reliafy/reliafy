@@ -1563,6 +1563,13 @@ def build_item(product_id: str, body: dict = Body(...), m: Maintenance = Depends
                 body.get("dry_run", True) is not False)
 
 
+@router.post("/products/{product_id}/make-own")
+def make_sample_own(product_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Make a copy of the sample product your own, in place: "(sample)" goes from its name, nothing
+    inside changes, and the sample is never added again beside it unless asked."""
+    return _run(m.clear_sample, product_id)
+
+
 @router.delete("/products/{product_id}/design")
 def clear_design(product_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """The tree isn't a product's design any more."""

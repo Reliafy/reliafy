@@ -14,7 +14,7 @@ import mongomock
 import pytest
 
 from backend.maintenance import rcm_graph, templates
-from backend.maintenance.service import PROJECTORS, Maintenance
+from backend.maintenance.service import PROJECTORS, Maintenance, _subject
 from backend.maintenance.store import GraphStore
 from backend.tests.test_maintenance_mcp import _do, _ok, _session
 from backend.tests.test_maintenance_mcp import env  # noqa: F401
@@ -275,6 +275,128 @@ def test_over_mcp(env):  # noqa: F811
         assert twice["added"] is False
         another = _ok(await _do(client, "maintenance", "products.add_sample", again=True))
         assert another["product"]["name"] == "Survey quadcopter (sample 2)"
+        return True
+
+    assert _session(env["token"], go)
+
+
+# ---- making the sample your own (9 Nov 2026) -----------------------------------------
+
+def _counts(m, pid):
+    sheet = m.rcm_worksheet(pid, "below")
+    return (len(m._tree_positions(pid)), sum(p["fmea"]["modes"] for p in sheet["positions"]),
+            sum(1 for t in m.s.nodes(ORG, "Task") if not t.get("retired")))
+
+
+def test_make_the_sample_your_own_in_place(store, db):
+    """products.clear_sample: one event renames the copy (no "(sample)") and marks it, its part and built
+    items lose the sample's name too; nothing inside changes and every id stays. The seeder then never adds
+    the sample beside it unless asked, and a fresh copy made your own takes the next free name."""
+    m = Maintenance(store, ORG, "tester")
+    out = templates.add_sample_product(m, db)
+    pid = out["product"]["id"]
+    assert m.product(pid)["sample"] is True
+    [top] = [p for p in m.tree_rows()["positions"] if p["id"] == pid]
+    assert top["design"]["sample"] is True
+    before_ids = {p["id"] for p in m._tree_positions(pid)}
+    before = _counts(m, pid)
+
+    made = m.clear_sample()  # the only copy: no id needed
+    assert made["id"] == pid and made["name"] == "Survey quadcopter" and made["sample"] is False
+    assert made["was"] == "Survey quadcopter (sample)" and made["part"]["part_number"] == "SQ-4"
+    node = m.s.node(ORG, pid)
+    assert node["from_sample"] == "survey-quadcopter" and node["design"]
+    assert {p["id"] for p in m._tree_positions(pid)} == before_ids and _counts(m, pid) == before
+    assert m.s.node(ORG, node["design"]["part_id"])["name"] == "Survey quadcopter"
+    items = m.product_items(pid)["items"]
+    assert [r["name"] for r in items] == [f"Survey quadcopter · {s}" for s in ("0007", "0008", "0009")]
+    assert all(r["item"]["name"] == r["name"] for r in items)
+    [top] = [p for p in m.tree_rows()["positions"] if p["id"] == pid]
+    assert "sample" not in top["design"]
+    _rebuilds_the_same(m)
+
+    # Not twice; and no sample copy left to make your own.
+    with pytest.raises(Exception, match="your own already"):
+        m.clear_sample(pid)
+    with pytest.raises(Exception, match="no copy of the sample product"):
+        m.clear_sample()
+
+    # The seeder: never a second copy beside it, unless asked.
+    again = templates.add_sample_product(m, db)
+    assert again["added"] is False and again["product"] == {"id": pid, "name": "Survey quadcopter"}
+    assert "made the sample product your own" in again["message"]
+    assert len(m.products()["products"]) == 1
+    fresh = templates.add_sample_product(m, db, again=True)
+    assert fresh["added"] and fresh["product"]["name"] == "Survey quadcopter (sample)"
+    second = m.clear_sample(fresh["product"]["id"])
+    assert second["name"] == "Survey quadcopter 2"
+    _rebuilds_the_same(m)
+
+
+def test_make_own_needs_the_copy_when_there_are_two(store, db):
+    m = Maintenance(store, ORG, "tester")
+    first = templates.add_sample_product(m, db)
+    templates.add_sample_product(m, db, again=True)
+    with pytest.raises(Exception, match="give product_id"):
+        m.clear_sample()
+    plain = m.create_product("Pump skid", "PS-1")
+    with pytest.raises(Exception, match="isn't a copy of the sample product"):
+        m.clear_sample(plain["id"])
+    assert m.clear_sample(first["product"]["id"])["name"] == "Survey quadcopter"
+
+
+def test_a_designs_tasks_are_its_programme_never_due(store, db):
+    """A design is a template: its tasks never fall due, raise no work order and join no package (the LSA
+    tab on a design says why); the items built from it carry copies that do, with the LSA records."""
+    m = Maintenance(store, ORG, "tester")
+    pid = templates.add_sample_product(m, db)["product"]["id"]
+    design = m._design_ids()
+    def on(t):
+        return (_subject(m.s, ORG, t) or {}).get("id")
+    calendar = next(t for t in m.s.nodes(ORG, "Task") if t["unit"] in ("days", "weeks", "months", "years")
+                    and on(t) in design)
+    assert m._task_view(calendar)["next_due"] is None
+    m.set_task_resources(calendar["id"], {"labour": [{"trade": "Technician", "hours": 0.5, "people": 1}]})
+    table = m.task_table(position_id=pid)
+    assert table["design"] is True and table["total"] > 0
+    assert all(r["next_due"] is None and not r["overdue"] for r in table["tasks"])
+    assert all(r["why_not"] == "a product's design: packaged on the items built from it" for r in table["tasks"])
+    assert not [t for t in m.due_tasks(4000) if (t.get("subject") or {}).get("id") in design]
+    m.generate(4000)  # the built items' tasks get work orders; the design's none
+    assert all(on(w) not in design for w in m.s.nodes(ORG, "WorkOrder"))
+    with pytest.raises(Exception, match="product's design"):
+        m.open_work_order(None, None, type="preventive", task_id=calendar["id"])
+    with pytest.raises(Exception, match="product's design"):
+        m.create_package("Design visit", position_id=pid, every=1, unit="months")
+    assert all(t["why"].startswith("a product's design") for t in m.propose_packages(position_id=pid)["left_out"])
+    # A new item built carries the task with its LSA record, and there it falls due.
+    built = m.build_item(pid, "0010", dry_run=False)
+    copies = [t for t in m.s.nodes(ORG, "Task") if t["name"] == calendar["name"]
+              and on(t) in {r["id"] for r in built["positions"]}]
+    assert copies and copies[0]["resources"]["labour"][0]["trade"] == "Technician"
+    assert m._task_view(copies[0])["next_due"] is not None
+    _rebuilds_the_same(m)
+
+
+def test_make_own_over_the_route(api):  # noqa: F811
+    M = "/api/maintenance"
+    made = api.post(f"{M}/sample-product").json()
+    pid = made["product"]["id"]
+    assert api.get(f"{M}/products").json()["products"][0]["sample"] is True
+    r = api.post(f"{M}/products/{pid}/make-own")
+    assert r.status_code == 200, r.text
+    assert r.json()["name"] == "Survey quadcopter" and r.json()["sample"] is False
+    assert api.post(f"{M}/products/{pid}/make-own").status_code == 422
+    assert api.post(f"{M}/sample-product", json={}).json()["added"] is False
+
+
+def test_make_own_over_mcp(env):  # noqa: F811
+    async def go(client):
+        made = _ok(await _do(client, "maintenance", "products.add_sample"))
+        own = _ok(await _do(client, "maintenance", "products.add_sample", make_own=True))
+        assert own["id"] == made["product"]["id"] and own["name"] == "Survey quadcopter"
+        twice = _ok(await _do(client, "maintenance", "products.add_sample"))
+        assert twice["added"] is False and twice["product"]["name"] == "Survey quadcopter"
         return True
 
     assert _session(env["token"], go)

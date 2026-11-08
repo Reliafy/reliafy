@@ -2,6 +2,17 @@
 
 ## Unreleased (0.5.1)
 
+- **Make the sample product your own**: `maintenance products.add_sample`
+  takes `make_own: true` (with `product_id`, the copy; default the only one)
+  to turn a copy of the sample quadcopter into your own product in place:
+  "(sample)" leaves its name, its part's and its built items' names, nothing
+  inside changes, and the sample isn't added again beside it unless asked.
+  Over REST it's also `POST /api/maintenance/products/{id}/make-own`; product
+  reads carry `sample`. A product's design's tasks no longer fall due, open
+  work orders or join work packages: they're its programme, and the items
+  built from it carry the copies that do (`list.task_table` says so in
+  `why_not`, with `design: true`). No new actions and no client code changed.
+
 - **When a task first falls due**: `maintenance tasks.create`,
   `tasks.update` and `failure_modes.add_task` take `start`, the date a
   calendar task first falls due (then every interval after), so a 12-monthly

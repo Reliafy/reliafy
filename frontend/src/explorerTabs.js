@@ -18,8 +18,10 @@
 // A product is a design, not an operated thing: its rows (a design's
 // positions) have no maintenance done to them, so no Failure reports,
 // Measurements, Signals or stock. They keep RCM and FME(C)A (the design's maintenance programme is a
-// design output; the assets built from it carry it out), Classes, and "Parts"
-// (the parts list, with no stock). Its layout's rows (the product's design
+// design output; the assets built from it carry it out), the LSA (what each of
+// the programme's tasks needs, also a design output; packaging tasks into
+// visits happens on the built assets, so a design's LSA has no packaging:
+// LsaPanel), Classes, and "Parts" (the parts list, with no stock). Its layout's rows (the product's design
 // locations, on its page's Locations) are no place you look after either: no
 // Failure reports, Signals, or Parts and stock; the Summary gives the design
 // facts (what's placed there).
@@ -65,7 +67,10 @@ export const TABS = [
   },
   { id: "classes", label: "Classes", title: "The classes used here and inside it, and every class in the register", kinds: ["pos", "loc"] },
   { id: "measurements", label: "Measurements", title: "Every measuring point here and inside it: the latest reading, its limits and whether it's past them", kinds: ["pos", "loc", "item"], asset: true },
-  { id: "lsa", label: "LSA", title: "Logistic support analysis: what each task needs to be done, and how the tasks are packaged into visits", kinds: ["pos", "loc"], asset: true },
+  {
+    id: "lsa", label: "LSA", title: "Logistic support analysis: what each task needs to be done, and how the tasks are packaged into visits",
+    designTitle: "Logistic support analysis: what each task in the design needs to be done", kinds: ["pos", "loc"],
+  },
   { id: "signals", label: "Signals", title: "Vibration and other sensors that send snapshots: spectra, watch bands and how they change", kinds: ["pos", "item"], asset: true },
 ];
 const BY_ID = new Map(TABS.filter(offered).map((t) => [t.id, t]));
@@ -107,7 +112,7 @@ export function tabsFor(row) {
   if (!row) return [];
   const design = isDesignRow(row);
   return TABS.filter((t) => offered(t) && t.kinds.includes(row.type) && !(design && t.asset) && !(design && row.type === "loc" && t.notDesignLoc))
-    .map((t) => (design && t.designLabel ? { ...t, label: t.designLabel, title: t.designTitle || t.title } : t));
+    .map((t) => (design && (t.designLabel || t.designTitle) ? { ...t, label: t.designLabel || t.label, title: t.designTitle || t.title } : t));
 }
 
 // The tab to show for a row: the one picked if the row has it, else Summary.

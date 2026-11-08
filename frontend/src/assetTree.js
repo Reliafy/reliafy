@@ -293,19 +293,28 @@ export const ANALYSED_RULE = "Not analysed: positions whose RCM isn't finished. 
   + "caused by other failures on its tree that are answered in turn, and every failure mode has a decision. "
   + "A position with no functions of its own is not analysed.";
 
-// The status filters, as chips.
+// The status filters, as chips. `asset: true`: about what's done to operated
+// things (work, readings, reports, fitted items), so a product's design, which
+// has none of them, doesn't offer it (chipsFor).
 export const CHIPS = [
-  { id: "overdue", label: "Overdue", test: (r) => r.own.overdue > 0 },
-  { id: "open", label: "Open work", test: (r) => r.own.open_work > 0 },
-  { id: "alarm", label: "Alarm", test: (r) => r.own.alarms > 0 },
-  { id: "reports", label: "Open reports", title: "Positions with an open failure report", test: (r) => r.own.open_reports > 0 },
-  { id: "empty", label: "Empty", title: "Positions with a class and nothing fitted", test: (r) => r.type === "pos" && !!r.ref.position_class && !r.ref.item },
+  { id: "overdue", label: "Overdue", test: (r) => r.own.overdue > 0, asset: true },
+  { id: "open", label: "Open work", test: (r) => r.own.open_work > 0, asset: true },
+  { id: "alarm", label: "Alarm", test: (r) => r.own.alarms > 0, asset: true },
+  { id: "reports", label: "Open reports", title: "Positions with an open failure report", test: (r) => r.own.open_reports > 0, asset: true },
+  { id: "empty", label: "Empty", title: "Positions with a class and nothing fitted", test: (r) => r.type === "pos" && !!r.ref.position_class && !r.ref.item, asset: true },
   { id: "unanalysed", label: "Not analysed", title: ANALYSED_RULE, test: (r) => r.own.not_analysed > 0 },
   // The RCM tab's own, about its failure modes (shown on that tab only), and
   // the FME(C)A tab's (on that tab only).
   ...RCM_CHIPS,
   ...FMEA_CHIPS,
 ];
+
+// The chips the tree's ⋯ offers: a tab's own (the RCM's, the FME(C)A's) on
+// that tab only (`tab`: the table's tab, null off the table), and none about
+// operated things on a product's design (`design`).
+export function chipsFor({ tab = null, design = false } = {}) {
+  return CHIPS.filter((c) => (!c.rcmOnly || (tab && (!c.tab || c.tab === tab))) && !(design && c.asset));
+}
 
 // The filter: the rows that match the text and every chip that's on (and the
 // extra test, if any), and every row on the way down to one (keep). null when

@@ -6,9 +6,11 @@
 // across the items, linking to each on its item, and the Items list with its
 // filters. The Assets list leaves the products' trees out. At 400 px nothing
 // scrolls the page sideways. smoke/seed.js adds one sample product first.
+// Make this my own… turns a fresh copy of the sample into the user's product
+// in place (and the copy is deleted after, so the other tests see the seed).
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
-import { test, expect, open, expectHealthy } from "./health.js";
+import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { EXPLORER_PARTS_CLASSES_TABS } from "../src/explorerTabs.js";
 
 // One after another: building an item writes its tree in steps, and the Assets list is checked meanwhile.
@@ -436,3 +438,36 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expectHealthy(page, problems, { label: `parts and classes tabs ${width}`, root: width < 600 ? ".td" : "main" });
   });
 }
+
+test("Make this my own… turns a copy of the sample into your own product, in place", async ({ page, request, problems }) => {
+  test.setTimeout(300000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const copy = await postOk(request, `${M}/sample-product`, { again: true });
+  const id = copy.product.id;
+  try {
+    await open(page, `/products/${id}?sel=${id}`);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText(copy.product.name);
+    await page.locator(".tt-actions").getByRole("button", { name: "More actions" }).click();
+    await page.locator(".tt-actions .ovm-menu").getByRole("button", { name: "Make this my own…" }).click();
+    const dialog = page.getByRole("alertdialog", { name: "Make the sample your own?" });
+    await expect(dialog).toContainText("becomes your own product, exactly as it is");
+    await shot(page, "1440-make-own-confirm");
+    await dialog.getByRole("button", { name: "Make it my own" }).click();
+    await expect(dialog).toHaveCount(0, { timeout: 60000 });
+    await expect(page.getByText(/is your own product now, as “Survey quadcopter( \d+)?”/)).toBeVisible();
+    await expect(page.locator(".tp-title")).toHaveText(/^Survey quadcopter( \d+)?$/);
+    await expect(page.getByRole("heading", { level: 1 })).not.toContainText("(sample");
+    await shot(page, "1440-made-own");
+    // Once yours, it isn't offered again.
+    await page.locator(".tt-actions").getByRole("button", { name: "More actions" }).click();
+    await expect(page.locator(".tt-actions .ovm-menu").getByRole("button", { name: "Make this my own…" })).toHaveCount(0);
+    await expect(page.getByLabel("Summary").getByRole("button", { name: "Make this my own…" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    expect((await (await request.get(`${M}/products/${id}`)).json()).sample).toBe(false);
+    await expectHealthy(page, problems, { label: "make the sample your own" });
+  } finally {
+    const { items } = await (await request.get(`${M}/products/${id}/items`)).json();
+    for (const it of items || []) await request.post(`${M}/positions/${it.top_position_id}/retire`, { data: { cascade: true } });
+    await request.post(`${M}/positions/${id}/retire`, { data: { cascade: true } });
+  }
+});

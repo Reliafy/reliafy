@@ -4,7 +4,7 @@ import TreeControlsMenu from "./TreeControlsMenu.jsx";
 import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
 import { NotesMark, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
-import { ARRANGEMENTS, CHIPS, CHIP_MARK, PANE, TREE_ROW_MARKERS, clampWidth, markersOf, nextGutter } from "../assetTree.js";
+import { ARRANGEMENTS, CHIP_MARK, PANE, chipsFor, TREE_ROW_MARKERS, clampWidth, markersOf, nextGutter } from "../assetTree.js";
 import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensPanel } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN, ROLE, decidedWords } from "../rcmWorksheet.js";
@@ -447,7 +447,7 @@ export default function TreePane({
   onToggle, onLevel, onCloseAll, level = null, changed = [], onReset, phone, width, onWidth, collapsed, onCollapse,
   addRow = null, canArrange = true, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table: tableIn = null,
   head = null, headTabs = null, phoneTabs = null, layoutKey = "", anchorKey = null, side = null, arrangeLocked = null,
-  rowMenu = null, branch = null, branchNote = null, fullScreenKey = false,
+  rowMenu = null, branch = null, branchNote = null, fullScreenKey = false, design = false,
 }) {
   const H = phone ? (tableIn ? 54 : 44) : 30;
   const wide = !phone;
@@ -648,7 +648,7 @@ export default function TreePane({
   );
   const dim = (key) => filter && !filter.match.has(key);
   // A tab's own chips (the RCM's, the FME(C)A's) show on that tab only.
-  const chipList = CHIPS.filter((c) => !c.rcmOnly || (table && (!c.tab || c.tab === (table.tab || "rcm"))));
+  const chipList = chipsFor({ tab: table ? table.tab || "rcm" : null, design });
   const status = statusText ? <p className="tp-status" role="status" title={statusText}>{statusText}</p> : null;
   const titleRow = (
     <div className="tp-title-row">

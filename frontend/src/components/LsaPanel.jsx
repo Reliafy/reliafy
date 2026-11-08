@@ -12,12 +12,13 @@ import { useConfirm } from "./ConfirmProvider.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import {
   DEFAULT_TASK_COLUMNS, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, cellText, countTitle, dayName, daysLate, freeTasks,
-  kindText, lateText, lsaCsv, lsaRollup, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows,
+  kindText, lateText, lsaColumns, lsaCsv, lsaRollup, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows,
   renameRow, rollupLines, searchTasks, sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
 } from "../lsaTab.js";
 import { saveText } from "../sparesPlan.js";
 import { exportFilename } from "../rcmImport.js";
 import LsaTask from "./LsaTask.jsx";
+import { isDesignRow } from "../explorerTabs.js";
 import { ColumnChooser } from "./RcmWorksheet.jsx";
 import "./RcmWorksheet.css";
 import "./Outline.css";
@@ -42,6 +43,13 @@ import "./LsaPanel.css";
 // package's name opens it in the same tab (?package=, with a back link): its
 // tasks, layers and ⋯ (Pause…, Resume, Retire…, Add tasks…). "Package the
 // tasks…" in the heading's "…" drafts packages from every loose task here.
+//
+// On a product's design (Derryn, 9 Nov 2026: a design's maintenance programme
+// and its logistic support are design outputs) the table is the same, less
+// what only built assets have: no ticks, no packaging bar, no packages to open
+// and no Next due or Package columns (the design's tasks are packaged into
+// visits, and fall due, on the items built from it: one line says so). The
+// foot adds up what every task shown needs. A task's LSA opens as on an asset.
 
 const HELP = { guide: "lsa" };
 
@@ -596,18 +604,29 @@ export default function LsaPanel({ row, today, onMenu = null }) {
   const data = state.key === key ? state.data : null;
   const all = data?.tasks || null;
   const shown = useMemo(() => all && sortTasks(searchTasks(all, query), tq.sort), [all, query, tq.sort]);
-  const columns = TASK_COLUMNS.filter((c) => cols.includes(c.id));
-  const total = TICK_W + columns.reduce((n, c) => n + c.width, 0);
+  const design = isDesignRow(row);
+  const offered = lsaColumns({ design });
+  const columns = offered.filter((c) => cols.includes(c.id));
+  const tickW = design ? 0 : TICK_W;
+  const total = tickW + columns.reduce((n, c) => n + c.width, 0);
   const refresh = () => setVersion((v) => v + 1);
-  const setCols = (next) => { setColsState(next); saveCols(next); };
+  // A design's chooser lists fewer columns: the ones it leaves out keep their state for assets.
+  const setCols = (next) => {
+    const kept = cols.filter((id) => !offered.some((c) => c.id === id));
+    const merged = DEFAULT_TASK_COLUMNS.filter((id) => next.includes(id) || kept.includes(id));
+    setColsState(merged);
+    saveCols(merged);
+  };
   const chosen = all ? all.filter((t) => picked.has(t.id)) : [];
   const where = `at ${row.ref.name || "this row"}`;
   usePanelMenu(onMenu, [
     { id: "pkg-cols", label: "Columns…", onSelect: () => setColsOpen(true) },
     { id: "lsa-csv", label: "Export CSV", disabled: !all?.length, title: all?.length ? "The table with every column, for Excel" : "No tasks to export",
       onSelect: () => saveText(lsaCsv(shown || all), exportFilename(row.ref.name, { what: "LSA" })) },
-    { id: "pkg-propose", label: "Package the tasks…", onSelect: () => setModal("propose"), title: "Drafts packages from every task here not in one, by how often and by trade" },
-    { id: "pkg-new", label: "Add a package…", onSelect: () => setModal("new") },
+    ...(design ? [] : [
+      { id: "pkg-propose", label: "Package the tasks…", onSelect: () => setModal("propose"), title: "Drafts packages from every task here not in one, by how often and by trade" },
+      { id: "pkg-new", label: "Add a package…", onSelect: () => setModal("new") },
+    ]),
   ]);
   if (!scope) return null;
   if (taskOpen.open) {
@@ -617,7 +636,7 @@ export default function LsaPanel({ row, today, onMenu = null }) {
       </div>
     );
   }
-  if (open.open) {
+  if (open.open && !design) {
     return (
       <div className="td-tab-page pk-panel">
         <PackageView id={open.open} today={today} onBack={() => open.setOpen(null)} onOpen={open.setOpen} onChanged={refresh} />
@@ -632,18 +651,20 @@ export default function LsaPanel({ row, today, onMenu = null }) {
   return (
     <div className="td-tab-page pk-panel rw">
       <p className="lib-date pk-purpose">
-        Every task here and below, with what it needs: open a task to set its labour, tools, spares and method. Tick the ones done on the same visit and package them: each visit then raises one work order.
+        {design
+          ? "Every task in the design here and below, with what it needs: open a task to set its labour, tools, spares and method. Tasks are packaged into visits on the items built from it."
+          : "Every task here and below, with what it needs: open a task to set its labour, tools, spares and method. Tick the ones done on the same visit and package them: each visit then raises one work order."}
       </p>
       <div className="pk-bar">
         <label className="tp-filter pk-filter">
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter: position, failure mode, task, package"
+          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={design ? "Filter: position, failure mode, task" : "Filter: position, failure mode, task, package"}
                  aria-label="Search the tasks" />
         </label>
         {shown && <span className="lib-date pk-count">{shown.length === all.length ? plural(all.length, "task") : `${shown.length} of ${plural(all.length, "task")}`}</span>}
         {colsOpen && (
           <div className="pk-cols">
-            <ColumnChooser cols={cols} onCols={setCols} usual={DEFAULT_TASK_COLUMNS} columns={TASK_COLUMNS} open={colsOpen}
+            <ColumnChooser cols={cols} onCols={setCols} usual={DEFAULT_TASK_COLUMNS} columns={offered} open={colsOpen}
                            onClose={() => setColsOpen(false)} />
           </div>
         )}
@@ -653,18 +674,21 @@ export default function LsaPanel({ row, today, onMenu = null }) {
       {data?.truncated && <p className="lib-date">Showing the first {all.length} of {data.total} tasks: pick a smaller branch to see the rest.</p>}
       {!shown && !state.error ? <div className="card empty">Loading…</div> : shown && all.length === 0 ? (
         <div className="card empty pk-empty">
-          <p>No tasks here or below yet. Decide the failure modes on the RCM tab: their tasks show here to package.</p>
+          <p>{design ? "No tasks in the design here or below yet. Decide the failure modes on the RCM tab: their tasks show here, to say what each needs."
+            : "No tasks here or below yet. Decide the failure modes on the RCM tab: their tasks show here to package."}</p>
           <p className="section-empty-more"><ShowMe help={HELP}>How work packages work</ShowMe></p>
         </div>
       ) : shown && (
         <div className="maint-scroll rw-grid pk-grid">
           <div className="pk-table" role="table" aria-label="Tasks here and below" aria-rowcount={shown.length + 1} style={{ minWidth: total }}>
             <div className="rw-head" role="row">
-              <div className="rw-h pk-tick" role="columnheader" style={{ width: TICK_W }}>
-                <input type="checkbox" aria-label="Tick every task shown" checked={tick === "all"} disabled={!shown.length}
-                       ref={(el) => { if (el) el.indeterminate = tick === "some"; }}
-                       onChange={(e) => setPicked(tickAll(shown.filter((t) => !t.why_not), picked, e.target.checked))} />
-              </div>
+              {!design && (
+                <div className="rw-h pk-tick" role="columnheader" style={{ width: TICK_W }}>
+                  <input type="checkbox" aria-label="Tick every task shown" checked={tick === "all"} disabled={!shown.length}
+                         ref={(el) => { if (el) el.indeterminate = tick === "some"; }}
+                         onChange={(e) => setPicked(tickAll(shown.filter((t) => !t.why_not), picked, e.target.checked))} />
+                </div>
+              )}
               {columns.map((c) => {
                 const at = tq.sort.findIndex((k) => k.col === c.id);
                 const dir = at >= 0 ? tq.sort[at].dir : 0;
@@ -685,10 +709,12 @@ export default function LsaPanel({ row, today, onMenu = null }) {
             ) : shown.map((t) => (
               <div key={t.id} role="row" className={"rw-row pk-trow" + (picked.has(t.id) ? " focus" : "")}
                    onClick={(e) => { if (!e.target.closest("button, a, input")) taskOpen.setOpen(t.id); }}>
-                <div className="rw-c pk-tick" role="cell" style={{ width: TICK_W }}>
-                  <input type="checkbox" checked={picked.has(t.id)} disabled={!!t.why_not} onChange={() => flip(t.id)}
-                         aria-label={`Tick ${t.name}`} title={t.why_not ? `Can't join a package: ${t.why_not}` : undefined} />
-                </div>
+                {!design && (
+                  <div className="rw-c pk-tick" role="cell" style={{ width: TICK_W }}>
+                    <input type="checkbox" checked={picked.has(t.id)} disabled={!!t.why_not} onChange={() => flip(t.id)}
+                           aria-label={`Tick ${t.name}`} title={t.why_not ? `Can't join a package: ${t.why_not}` : undefined} />
+                  </div>
+                )}
                 {columns.map((c) => (
                   <div key={c.id} role="cell" className="rw-c" style={{ width: c.width }}>
                     <TaskCell t={t} col={c.id} onPackage={open.setOpen} onTask={taskOpen.setOpen} />
@@ -700,7 +726,14 @@ export default function LsaPanel({ row, today, onMenu = null }) {
           </div>
         </div>
       )}
-      {picked.size > 0 && (
+      {design && shown?.length > 0 && (
+        <div className="pk-actions pk-design-foot" role="region" aria-label="What the tasks need">
+          <span className="pk-actions-n">{shown.length === all.length ? plural(all.length, "task") : `${shown.length} of ${plural(all.length, "task")}`}</span>
+          <Rollup rollup={lsaRollup(shown)} title="Together they need"
+                  empty={<span className="lib-date">No labour, tools or spares set yet: open a task to add them.</span>} />
+        </div>
+      )}
+      {!design && picked.size > 0 && (
         <div className="pk-actions" role="region" aria-label="Selected tasks">
           <span className="pk-actions-n">{plural(picked.size, "task")} selected</span>
           <button type="button" className="link" disabled={!free.length} onClick={() => setModal("package")}
