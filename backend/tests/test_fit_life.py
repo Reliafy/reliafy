@@ -121,3 +121,14 @@ def test_saving_a_plain_fit_and_a_fit_with_a_prior(m, db):
     before = m.s.snapshot()
     m.s.rebuild()
     assert m.s.snapshot() == before
+
+
+def test_a_refusal_still_carries_the_history(m, db):
+    new = _plant(m)
+    with pytest.raises(Invalid) as err:
+        fit_life.fit(m, db, OWNERS, set(), new, data="position", method="mle")
+    ctx = err.value.context
+    assert ctx["counts"] == {"failures": 1, "suspensions": 1} and len(ctx["rows"]) == 2 and ctx["method"] == "mle"
+    plain = fit_life.fit(m, db, OWNERS, set(), new, data="class", method="mle", age=300)
+    assert plain["plot"]["scatter"]["x"] and 0 < plain["at_age"]["reliability"] < 1
+    assert plain["at_age"]["lower"] < plain["at_age"]["reliability"] < plain["at_age"]["upper"]

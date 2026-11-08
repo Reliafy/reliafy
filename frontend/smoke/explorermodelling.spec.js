@@ -217,7 +217,9 @@ test("a Bayesian update from numbers I know, on a position whose class has no mo
   const dialog = page.getByRole("dialog", { name: "Fit a life model" });
   // A plain fit to one failure is refused, in words; with a prior, the class has nothing besides this pump.
   await expect(dialog.getByRole("alert")).toContainText("a plain weibull fit needs at least 2");
-  await dialog.getByRole("radio", { name: "With a prior" }).click();
+  // The refusal offers the way out: fit with a prior.
+  await dialog.getByRole("button", { name: "Fit with a prior instead" }).click();
+  await expect(dialog.getByRole("radio", { name: "With a prior" })).toHaveAttribute("aria-checked", "true");
   await expect(dialog.getByRole("alert")).toContainText("no history besides");
   await dialog.getByRole("radio", { name: "Numbers I know" }).click();
   await expect(dialog).not.toContainText("no history besides");
@@ -229,7 +231,7 @@ test("a Bayesian update from numbers I know, on a position whose class has no mo
   await expect(dialog.getByRole("status")).toContainText("1 failure at");
   await expect(dialog.locator(".js-plotly-plot")).toBeVisible();
   await expect(dialog.getByRole("checkbox")).toHaveCount(2);
-  await expect(dialog.locator(".ml-params")).toContainText("90% credible interval");
+  await expect(dialog.locator(".fit2-numbers")).toContainText("90% credible interval");
   await expect(dialog.getByRole("button", { name: "Save as this position's model" })).toBeEnabled();
   await expectHealthy(page, problems, { label: "a Bayesian update from numbers" });
 });
@@ -305,17 +307,42 @@ test("Fit a life model… through each Data choice on a class of two positions",
   await headPick(page, "Life model", "Fit a life model…");
   const dialog = page.getByRole("dialog", { name: "Fit a life model" });
   await expect(dialog.getByRole("status")).toContainText("A plain fit (maximum likelihood) to 2 failures and 1 suspension in this position's history");
-  await expect(dialog.locator(".ml-params thead")).toContainText("95% confidence bounds");
-  await dialog.getByRole("radio", { name: "The class's pooled history" }).click();
-  await expect(dialog).toContainText(`2 positions of the class ${klass}: 5 failures, 2 suspensions.`);
+  await expect(dialog.locator(".fit2-numbers thead")).toContainText("95% confidence bounds");
+  await dialog.getByRole("radio", { name: "The class", exact: true }).click();
+  await expect(dialog).toContainText(`2 positions of ${klass}: 5 failures, 2 suspensions`);
   await expect(dialog.getByRole("status")).toContainText("5 failures and 2 suspensions in the class");
-  await dialog.getByRole("radio", { name: "Both: this position's, with the class's as a prior" }).click();
+  await dialog.getByRole("radio", { name: "Both", exact: true }).click();
   await expect(dialog.getByRole("status")).toContainText("counted as half of its evidence");
-  await expect(dialog.locator(".ml-params thead")).toContainText("90% credible interval");
+  await expect(dialog.locator(".fit2-numbers thead")).toContainText("90% credible interval");
   await expect(dialog.locator(".js-plotly-plot")).toBeVisible();
   await dialog.getByRole("button", { name: "Save as this position's model" }).click();
   await expect(dialog).toHaveCount(0);
   const model = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Bayesian update of the class" }) });
   await expect(model.locator(".mt-c-kind")).toHaveText("Weibull (Bayesian)");
   await expectHealthy(page, problems, { label: "Fit a life model" });
+});
+
+test("the Fit dialog at 400 px: inputs, then the result, nothing sideways, Save in reach", async ({ page, request }) => {
+  const tag = `w${Date.now()}`;
+  const ago = (d) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
+  const pump = await postOk(request, `${M}/positions`, { name: `Narrow pump ${tag}` });
+  let at = 1500;
+  for (const life of [300, 420, 380]) {
+    await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `N${life} ${tag}` }, on: ago(at) });
+    at -= life;
+    await postOk(request, `${M}/positions/${pump.id}/remove`, { on: ago(at), reason: "failure" });
+  }
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
+  await row(page, pump.id).locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Life model", exact: true }).click();
+  await page.getByRole("group", { name: "Life model" }).getByRole("menuitem", { name: "Fit a life model…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Fit a life model" });
+  await expect(dialog.getByRole("status")).toContainText("A plain fit (maximum likelihood) to 3 failures");
+  const inBox = await dialog.locator(".fit2-in").boundingBox();
+  const outBox = await dialog.locator(".fit2-out").boundingBox();
+  expect(outBox.y).toBeGreaterThan(inBox.y);  // stacked: inputs first
+  expect(await sideways(page)).toBeLessThanOrEqual(400);
+  await dialog.getByRole("button", { name: "Save as this position's model" }).scrollIntoViewIfNeeded();
+  await expect(dialog.getByRole("button", { name: "Save as this position's model" })).toBeEnabled();
 });

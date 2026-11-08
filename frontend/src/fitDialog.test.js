@@ -28,3 +28,18 @@ test("the request for each choice, and what's missing", () => {
   assert.equal(problem({ ...base, method: "bayes", distribution: "best" }), "“Best of” is for a plain fit: choose a distribution.");
   assert.notEqual(previewKey(base), previewKey({ ...base, data: "class" }));
 });
+
+test("the panel's words: For, the history, a refusal's way out", async () => {
+  const { countsWords, forWords, historyRow, refusalSwitch } = await import("./fitDialog.js");
+  const modes = Array.from({ length: 8 }, (_, i) => ({ id: `m${i}`, text: `Mode ${i}` }));
+  assert.equal(forWords(modes, []), "All failures of this position");
+  assert.equal(forWords(modes, ["m2"]), "Mode 2");
+  assert.equal(forWords(modes, ["m1", "m2", "m3"]), "3 of 8 picked");
+  assert.equal(countsWords({ failures: 0, suspensions: 1 }), "0 failures, 1 suspension");
+  assert.deepEqual(historyRow({ c: 0, x: 1440.4, to: "2026-01-02", failure_mode: "Seal leaks", item: "P1" }, "Days"),
+    { when: "2026-01-02", what: "Seal leaks · P1", age: "1,440 days", kind: "Failure" });
+  assert.equal(historyRow({ c: 1, x: 90, from: "2026-03-01", status: "still fitted" }).what, "Still running");
+  assert.equal(historyRow({ c: 2, xl: 100, xr: 200 }, "days").age, "100–200 days");
+  assert.deepEqual(refusalSwitch("mle"), { to: "bayes", label: "Fit with a prior instead" });
+  assert.equal(refusalSwitch("bayes"), null);
+});

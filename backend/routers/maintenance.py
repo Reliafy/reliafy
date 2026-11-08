@@ -1339,7 +1339,7 @@ def preview_position_fit(position_id: str, body: dict = Body(default={}), sessio
     except NotFound:
         return JSONResponse(status_code=404, content={"detail": "Not found."})
     except (Invalid, fitting.FitError) as err:
-        return JSONResponse(content={"refused": client_message(err)})
+        return JSONResponse(content={"refused": client_message(err), **(getattr(err, "context", None) or {})})
 
 
 @router.delete("/position-models/{link_id}")
