@@ -349,8 +349,9 @@ FAILURE_MODES: Table = {
         failure_finding check finds it (left out: kept). notes: deprecated, added to the mode's notes (update
         notes). A decision the RCM decision diagram forbids for the mode is
         refused (guide topic plan). Returns it with the evidence check and any advice to relay."""),
-    "add_task": ("failure_mode_id name interval", "unit outcome instructions", """Another task for the mode
-        (an inspection plus a hard-time replacement); its decision's stays first."""),
+    "add_task": ("failure_mode_id name interval", "unit outcome instructions start", """Another task for the mode
+        (an inspection plus a hard-time replacement); its decision's stays first. start: the date it first
+        falls due."""),
     "assign": ("failure_mode_id", "functional_failure_id function_id", "Put it under one of its position's "
                "functional failures, or (function_id) directly under a function (both left out: under none)."),
     "retire": ("failure_mode_id", "cascade dry_run", "Delete it, with its tasks (a shared one is unlinked; "
@@ -441,22 +442,24 @@ PRODUCTS: Table = {
 TASKS: Table = {
     "create": ("name", "interval position_id item_id location_id unit outcome also_interval also_unit point_id "
                "instructions checklist source reference failure_mode_id failure_mode_ids last_done trade while_stored "
-               "include_positions trigger", """A scheduled task added directly (not from an RCM decision), on exactly one subject:
+               "include_positions trigger start", """A scheduled task added directly (not from an RCM decision), on exactly one subject:
         position_id (the job: lubricate the pump), item_id (follows the serial number: calibration,
         certification, a rotable's overhaul, preserving a stored spare) or location_id (a round; calendar units
         only). unit (default months): days, weeks, months, years, or hours / cycles / km from a counter
         (point_id). also_interval + also_unit: whichever comes first. outcome: fixed_interval, failure_finding,
         on_condition or none. source: manual (default), oem, statutory, other, with reference.
         failure_mode_id (or failure_mode_ids, several): modes it prevents, on the position or inside it.
-        last_done if known. trade: who may do it. while_stored (item): run or pause. include_positions
+        last_done if known. start: the date it first falls due (default one interval from today), then
+        every interval (a summer task made in November, first due in October). trade: who may do it. while_stored (item): run or pause. include_positions
         (location): list the positions there. interval is required unless trigger raises it instead (an event
         or a reading past a limit). maintenance guide topic plan has examples."""),
     "update": ("task_id", "name interval unit also_interval also_unit point_id last_done_reading instructions "
                "checklist failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade "
-               "while_stored include_positions trigger clear_trigger", """Rename it or change its interval, second limit (also_interval 0
+               "while_stored include_positions trigger clear_trigger start", """Rename it or change its interval, second limit (also_interval 0
         removes it), measurement (point_id, last_done_reading), instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
         true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
-        or include_positions, or its trigger (clear_trigger true: the interval alone again). Its subject can't
+        or include_positions, or its trigger (clear_trigger true: the interval alone again), or when it next
+        falls due (start, a date; then every interval; '' goes back to one interval from last done). Its subject can't
         change: move it, or retire it and create another."""),
     "link": ("task_id failure_mode_id", "", "The task also prevents that mode (on its position or one inside it); "
              "its other links stay."),
@@ -1502,6 +1505,8 @@ def register() -> None:
                                       "score: the recommended action (the record's 'action' field)."))] = None,
                                   action_owner: str | None = None,
                                   action_due: Annotated[str | None, Field(description="score: a date, YYYY-MM-DD.")] = None,
+                                  start: Annotated[str | None, Field(
+                                      description="add_task: the date it first falls due, YYYY-MM-DD.")] = None,
                                   action_status: Literal["open", "in_progress", "done"] | None = None,
                                   failure_rate: float | None = None, time_unit: str | None = None,
                                   rate_source: Literal["entered", "model", "data"] | None = None,
@@ -1573,7 +1578,7 @@ def register() -> None:
             return rcm_graph.mode_status(_db(), mode, reader.read_owners)
         if action == "add_task":
             return run(m.add_mode_task, failure_mode_id, name, interval, _d(unit, "months"), outcome,
-                       instructions or "")
+                       instructions or "", start=start)
         if action == "assign":
             return run(m.assign_failure_mode, failure_mode_id, functional_failure_id, function_id)
         if action == "retire":
@@ -1647,7 +1652,10 @@ def register() -> None:
                           on: Annotated[str | None, Field(description="set_last_done: a date like 2026-10-13.")] = None,
                           reason: str | None = None, measurement: Measurement = None,
                           last_done_reading: float | None = None, trigger: Trigger = None,
-                          clear_trigger: bool | None = None, resources: Resources = None) -> dict[str, Any]:
+                          clear_trigger: bool | None = None, resources: Resources = None,
+                          start: Annotated[str | None, Field(description=(
+                              "create/update: the date it (next) falls due, e.g. 2027-10-01; then every "
+                              "interval. Default one interval from today; '' clears."))] = None) -> dict[str, Any]:
         """Scheduled tasks: they fall due and raise work orders (maintenance work_orders.generate). A task
         is on a position (the job; it counts again from each new item fitted), an item (follows the serial
         number, into a store too) or a location (a round). A task from an RCM decision comes with
@@ -1660,14 +1668,14 @@ def register() -> None:
                        also_unit, point_id, instructions or "", checklist, _d(source, "manual"), reference or "",
                        failure_mode_id, last_done, trade or "", item_id=item_id, location_id=location_id,
                        while_stored=while_stored, include_positions=include_positions,
-                       failure_mode_ids=failure_mode_ids, trigger=trigger)
+                       failure_mode_ids=failure_mode_ids, trigger=trigger, start=start)
         if action == "update":
             mode = "" if unlink_failure_mode else failure_mode_id
             return run(m.update_task, task_id, name, interval, unit, also_interval, also_unit, point_id,
                        instructions, checklist, mode, source, reference,
                        None if clear_outcome else outcome if outcome is not None else ..., trade, while_stored,
                        include_positions, last_done_reading,
-                       None if clear_trigger else trigger if trigger is not None else ...)
+                       None if clear_trigger else trigger if trigger is not None else ..., start=start)
         if action == "link":
             return run(m.link_task, task_id, failure_mode_id)
         if action == "unlink":

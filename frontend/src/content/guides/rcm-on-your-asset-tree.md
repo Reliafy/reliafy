@@ -415,6 +415,13 @@ many other failure modes share it.
 
 ### Tasks raised by an event
 
+A task first falls due one interval after you make it. For seasonal work, set
+the date yourself: a 12-monthly "Raise the acid dose for summer" made in
+November can first fall due next October. When you add a task, choose **Set
+when it's first due…**; later, in the task's details, choose **Change…** beside
+**First due** or **Next due** under **Interval**. It falls due on that date,
+then every interval after.
+
 Some work isn't done on a calendar: after 120 mm of rain in 24 hours, test and
 re-dose the pool; after a lightning strike, inspect the chlorinator. In the
 task's details, choose **Raise it on an event instead…** under **Interval**,

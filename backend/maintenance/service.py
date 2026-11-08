@@ -1382,13 +1382,34 @@ def _task_added(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "Task", {
         "name": p["name"], "outcome": p.get("outcome"), "interval": p["interval"], "unit": p["unit"],
         "start": p["start"], "last_done": None,
-    } | {k: p[k] for k in _TASK_EXTRAS if k in p})
+    } | {k: p[k] for k in _TASK_EXTRAS if k in p}
+      # When it first falls due, when given (Nov 2026): it stands until the task is done.
+      | ({"first_due": p["first_due"], "rescheduled_on": p["start"]} if p.get("first_due") else {}))
     s.put_edge(org, "ON", p["id"], _subject_id(p))
     # The failure modes it prevents: one (failure_mode_id, as always) and, since
     # a task could serve several, failure_mode_ids (older code reads the one).
     for mode in [p.get("failure_mode_id"), *(p.get("failure_mode_ids") or [])]:
         if mode:
             s.put_edge(org, "MITIGATES", p["id"], mode)
+
+
+def _task_rescheduled(s: GraphStore, org: str, p: dict) -> None:
+    """When a task next falls due, set by hand (Nov 2026): first_due, from which it goes every
+    interval after; None goes back to counting from its start or last done. It stands until
+    the task is done on or after the day it was set (``on``)."""
+    s.patch_node(org, p["id"], {"first_due": p.get("first_due"), "rescheduled_on": p["on"]})
+
+
+def _first_due(task: dict) -> str | None:
+    """The date a task was set to fall due next (task.rescheduled, or a start given when it
+    was made), while it stands: until the task is done on or after the day it was set."""
+    due = task.get("first_due")
+    if not due:
+        return None
+    done = task.get("last_done")
+    if done and done >= (task.get("rescheduled_on") or task.get("start") or ""):
+        return None
+    return due
 
 
 def _task_updated(s: GraphStore, org: str, p: dict) -> None:
@@ -2578,6 +2599,8 @@ PROJECTORS = {
     "failure_mode.merged": _failure_mode_merged,
     "task.added": _task_added,
     "task.updated": _task_updated,
+    # When it next falls due, set by hand: then every interval after (Nov 2026).
+    "task.rescheduled": _task_rescheduled,
     # One task may prevent several failure modes, and a mode may have several tasks.
     "task.linked": _task_linked,
     "task.unlinked": _task_unlinked,
@@ -4462,11 +4485,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             self._emit("task.unlinked", {"id": task["id"], "failure_mode_id": fm["id"], "on": self.today()})
         return self._task_view(self._get(task["id"], "Task"))
 
-    def add_mode_task(self, mode_id: str, name, interval, unit="months", outcome=None, instructions="") -> dict:
+    def add_mode_task(self, mode_id: str, name, interval, unit="months", outcome=None, instructions="",
+                      start=None) -> dict:
         """Another task for a failure mode (its decision's task stays the first):
         on the mode's position, part of its RCM (no source of its own). outcome:
         what kind of task it is (left out: the decision's, when that schedules
-        work)."""
+        work). start: the date it first falls due (left out: one interval from today)."""
         fm, position = self._live_mode(mode_id)
         name = _text(name, "task's name", required=True)
         unit = _unit(unit, "months")
@@ -4476,12 +4500,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         elif outcome not in SCHEDULED_OUTCOMES:
             raise Invalid(f"The outcome is one of {', '.join(SCHEDULED_OUTCOMES)}, or none.")
         text = _text(instructions, "instructions", max_len=LONG_TEXT)
+        first = self._first_due_of(start, unit)
         self._quota("Task", MAX_TASKS)
         tid = new_id()
         self._emit("task.added", {
             "id": tid, "position_id": position["id"], "failure_mode_id": mode_id, "name": name,
             "outcome": outcome, "interval": interval, "unit": unit, "start": self.today(),
-        } | ({"instructions": text} if text else {}))
+        } | ({"instructions": text} if text else {}) | first)
         return self._task_view(self._get(tid, "Task"))
 
     def mode_tasks(self, mode_id: str) -> dict:
@@ -5600,7 +5625,18 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                  "interval": t.get("interval"), "unit": t.get("unit"), "outcome": t.get("outcome"),
                  "instructions": t.get("instructions") or "",
                  "shared_with": shares(t["id"]) if shares else 0}
-                | ({"position_id": t["position_id"]} if t.get("position_id") else {}) for t in tasks]
+                | ({"position_id": t["position_id"]} if t.get("position_id") else {})
+                | Maintenance._calendar_due(t) for t in tasks]
+
+    @staticmethod
+    def _calendar_due(t: dict) -> dict:
+        """A calendar task's next due date for a light read (no meter readings): next_due, and
+        first_due while a date it was set to fall due stands. Empty for a task by use."""
+        if not t.get("unit") or not _is_calendar(t["unit"]) or _on_event_only(t) or not t.get("start"):
+            return {}
+        first = _first_due(t)
+        due = first or add_interval(t.get("last_done") or t["start"], t["interval"], t["unit"])
+        return {"next_due": due} | ({"first_due": first} if first else {})
 
     @staticmethod
     def _decision_of(fm: dict, tasks: list[dict], shares=None) -> dict | None:
@@ -5968,6 +6004,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         limit = f"{interval:g} {unit}"
         subject = _subject(self.s, self.org, task) or {}
         if _is_calendar(unit):
+            first = _first_due(task)
+            if first:
+                # Set to fall due on a date (a summer task first due in October): that, then every interval.
+                return {"limit": limit, "next_due": first, "first_due": first}
             if subject.get("label") == "Item" and task.get("while_stored") == "pause":
                 return {"limit": limit, **self._paused_due(subject, base, interval, unit)}
             return {"limit": limit, "next_due": add_interval(base, interval, unit)}
@@ -6098,6 +6138,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # True when the last-done reading was worked out from the date (a measurement changed).
             "last_done_reading_estimated": bool(task.get("last_done_reading_estimated")),
             "limits": limits, "next_due": nxt, "by_use": not _is_calendar(task["unit"]),
+            # The date it was set to fall due next (start), while that stands; else null.
+            "first_due": _first_due(task),
             "overdue": bool(nxt and nxt < self.today()),
             "open_work_order": open_wo and {"id": open_wo["id"], "number": open_wo["number"]},
             "proposal": next(({"id": p["id"], "proposed": p.get("proposed"), "kind": p.get("kind")}
@@ -9971,6 +10013,15 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 out["include_positions"] = flag
         return out
 
+    def _first_due_of(self, start, unit, also_unit=None) -> dict:
+        """A task's start (the date it first falls due) checked: {first_due} or {} when not given.
+        Only a calendar task has one: a task by use falls due on its counter."""
+        if start in (None, ""):
+            return {}
+        if not _is_calendar(unit) and not (also_unit and _is_calendar(also_unit)):
+            raise Invalid(f"A start date is for a task by the calendar; this one goes by {unit}.")
+        return {"first_due": _day(start, "start date")}
+
     def _task_counter(self, point_id: str, node: dict, units) -> dict:
         """A counter chosen for a task, checked: on the task's own subject, in its unit."""
         point = self._counter(point_id)
@@ -9986,7 +10037,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def create_task(self, position_id: str | None, name, interval, unit="months", outcome=None, also_interval=None,
                     also_unit=None, point_id=None, instructions="", checklist=None, source="manual", reference="",
                     failure_mode_id=None, last_done=None, trade="", item_id=None, location_id=None,
-                    while_stored=None, include_positions=None, failure_mode_ids=None, trigger=None) -> dict:
+                    while_stored=None, include_positions=None, failure_mode_ids=None, trigger=None,
+                    start=None) -> dict:
         """A scheduled task added directly (not an RCM decision's): from the maker's manual (source 'oem'),
         a law or standard ('statutory'), your own practice ('manual') or elsewhere
         ('other'). It's scheduled and raises work orders like a task from RCM. outcome
@@ -10007,7 +10059,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
           checklist of the work orders it raises.
 
         trigger: raised by an event as well as, or instead of, the interval (set_task_trigger).
-        A task raised only by its trigger needs no interval (it keeps 12 months, unused)."""
+        A task raised only by its trigger needs no interval (it keeps 12 months, unused).
+
+        start: the date it first falls due (a summer task made in November, first due in
+        October), then every interval after; left out, one interval from today (or from
+        last_done)."""
         node, ref = self._subject_ref("task", position_id, item_id, location_id)
         name = _text(name, "task's name", required=True)
         checked_trigger = self._checked_trigger(trigger)
@@ -10029,6 +10085,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         payload |= {k: v for k, v in self._also_limit(also_interval, also_unit).items() if v is not None}
         payload |= self._subject_checks(node, unit, payload.get("also_unit"), failure_mode_id, while_stored,
                                         include_positions)
+        payload |= self._first_due_of(start, unit, payload.get("also_unit"))
         if point_id:
             self._task_counter(point_id, node, (unit, payload.get("also_unit")))
             payload["point_id"] = point_id
@@ -10060,8 +10117,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def update_task(self, task_id: str, name=None, interval=None, unit=None, also_interval=None,
                     also_unit=None, point_id=None, instructions=None, checklist=None, failure_mode_id=None,
                     source=None, reference=None, outcome=..., trade=None, while_stored=None,
-                    include_positions=None, last_done_reading=None, trigger=...) -> dict:
-        """Change a task. trigger: what raises it besides its interval (set_task_trigger); None
+                    include_positions=None, last_done_reading=None, trigger=..., start=None) -> dict:
+        """Change a task. start: the date it next falls due, then every interval after ('' goes
+        back to one interval from when it was last done, or made). trigger: what raises it besides its interval (set_task_trigger); None
         clears it. also_interval / also_unit add a second limit, whichever comes
         first (500 hours or 6 months); also_interval 0 removes it. point_id picks the
         measurement a task by use counts ('' : its position's, or item's, counter in its
@@ -10132,8 +10190,15 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         changes = {k: v for k, v in changes.items() if k not in ("while_stored", "include_positions")
                    or v != task.get(k)}
         checked_trigger = self._checked_trigger(trigger) if trigger is not ... else ...
+        rescheduled = None
+        if start is not None:
+            rescheduled = self._first_due_of(start, new_unit, new_also).get("first_due")
+            if rescheduled == _first_due(task):
+                rescheduled = ...
         if changes:
             self._emit("task.updated", {"id": task_id, "changes": changes})
+        if start is not None and rescheduled is not ...:
+            self._emit("task.rescheduled", {"id": task_id, "first_due": rescheduled, "on": self.today()})
         if checked_trigger is not ... and checked_trigger != (task.get("trigger") or None):
             self._emit("task.trigger_set", {"id": task_id, "trigger": checked_trigger})
         return self._task_view(self._get(task_id, "Task"))
@@ -12927,7 +12992,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         dues = []
         for interval, unit in limits:
             if _is_calendar(unit) and not (subject_label == "Item" and task.get("while_stored") == "pause"):
-                due = add_interval(task.get("last_done") or task["start"], interval, unit)
+                due = _first_due(task) or add_interval(task.get("last_done") or task["start"], interval, unit)
             else:
                 due = self._due_by(task, interval, unit)["next_due"]
             if due:

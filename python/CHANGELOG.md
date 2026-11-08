@@ -2,6 +2,14 @@
 
 ## Unreleased (0.5.1)
 
+- **When a task first falls due**: `maintenance tasks.create`,
+  `tasks.update` and `failure_modes.add_task` take `start`, the date a
+  calendar task first falls due (then every interval after), so a 12-monthly
+  summer task made in November can first fall due next October. Left out, it
+  is one interval from today, as before; `tasks.update --start ''` clears
+  it. Task reads carry `first_due`. No new actions and no client code
+  changed.
+
 - **Settings, and readings from a work order**: `maintenance
   measurements.add_point` takes `kind: "setting"` (a value someone sets, such
   as a chlorinator's output %: it holds until the next change, never alarms)
