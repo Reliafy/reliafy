@@ -110,9 +110,17 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(panel(page).getByRole("navigation", { name: "Inside" })).toContainText(`Acid under-dosed ${tag}`);
   await expect(chipsOf(page)).toContainText("On condition");
   await expect(chipsOf(page)).toContainText("every 1 week");
-  await expect(panel(page).locator(".psec-title")).toHaveText(["Kind and interval", "Then, if found", "Instructions", "Evidence for this task", "Serves", "Logistics"]);
+  // The failure mode's grid style, "step | choice": a muted label column, one line per row. No
+  // instructions (how it's done is the LSA's: Logistics links there) and no notes box.
+  await expect(panel(page).locator(".rw-sl")).toHaveText(["Kind", "Interval", "Then, if found", "Based on", "Serves", "Logistics"]);
+  await expect(panel(page).getByRole("textbox", { name: "Instructions" })).toHaveCount(0);
+  await expect(panel(page).getByRole("region", { name: "Notes and rationale" })).toHaveCount(0);
   // Its kind is a small chip here too, changed on the task.
-  await expect(section(page, "Kind and interval").getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` })).toHaveValue("on_condition");
+  await expect(section(page, "Kind").getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` })).toHaveValue("on_condition");
+  // How often, as boxes where the words are; the event's fields only when asked for.
+  await expect(section(page, "Interval").getByRole("spinbutton", { name: "Interval" })).toHaveValue("1");
+  await expect(section(page, "Interval").getByRole("button", { name: "Raise it on an event instead…" })).toBeVisible();
+  await expect(section(page, "Interval").getByRole("group", { name: "Raised by an event" })).toHaveCount(0);
   // What's done when the check finds it: kept on Enter, and quietly after the row's name.
   const found = section(page, "Then, if found").getByRole("textbox", { name: "Then, if found:" });
   await expect(found).toHaveAttribute("placeholder", "Say what's done when the check finds it");
@@ -121,6 +129,8 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(section(page, "Then, if found").getByRole("status")).toHaveText("✓ Saved");
   await expect(checkRow.locator(".tp-found")).toHaveText(`Then, if found: Dose acid by hand ${tag}`);
   await expect(section(page, "Serves").getByRole("listitem")).toHaveCount(1);
+  await expect(section(page, "Serves")).toContainText("Serves 1 failure mode here");
+  await expect(section(page, "Based on")).toContainText("nothing linked yet");
   await expect(section(page, "Logistics")).toContainText("No labour, tools or method set yet.");
   await expect(section(page, "Logistics").getByRole("link", { name: "Open in LSA" })).toHaveAttribute("href", new RegExp(`tab=lsa&task=${p.own}`));
 
@@ -156,16 +166,12 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(pumpRow).toHaveAttribute("aria-selected", "true");
   // A fixed-interval task has no "Then, if found".
   await expect(section(page, "Then, if found")).toHaveCount(0);
-  // Its instructions, kept when you leave the field.
-  const inst = section(page, "Instructions").getByRole("textbox", { name: "Instructions" });
-  await inst.fill("Swap the pump head.");
-  await inst.blur();
-  await expect(section(page, "Instructions").getByRole("status")).toHaveText("✓ Saved");
-  // Change how often, in place.
-  await section(page, "Kind and interval").getByRole("button", { name: `Change how often “Replace the acid pump ${tag}” is done` }).click();
-  await section(page, "Kind and interval").getByRole("spinbutton", { name: "Interval" }).fill("36");
-  await section(page, "Kind and interval").getByRole("button", { name: "Save", exact: true }).click();
-  await expect(section(page, "Kind and interval")).toContainText("every 36 months");
+  // How often, changed where it's shown: kept on Enter.
+  const every = section(page, "Interval").getByRole("spinbutton", { name: "Interval" });
+  await every.fill("36");
+  await every.press("Enter");
+  await expect(section(page, "Interval").getByRole("status")).toHaveText("✓ Saved");
+  await expect(chipsOf(page)).toContainText("every 36 months");
   // Its name, a click on the title: kept on Enter (the row follows).
   await titleOf(page).getByRole("button").click();
   const box = panel(page).getByRole("textbox", { name: "Task" });
@@ -253,7 +259,7 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   const rcm = await (await request.get(`${M}/rcm`)).json();
   const mode = rcm.positions.find((x) => x.id === p.pool.id).functions[0].failures[0].modes.find((x) => x.id === p.acid.id);
   expect(mode.decision.tasks.map((t) => [t.name, t.interval, t.unit, t.instructions])).toEqual([
-    [`Weekly pH check ${tag}`, 1, "weeks", ""], [`Replace the dosing pump ${tag}`, 36, "months", "Swap the pump head."]]);
+    [`Weekly pH check ${tag}`, 1, "weeks", ""], [`Replace the dosing pump ${tag}`, 36, "months", ""]]);
   expect(mode.decision.outcomes[0].on_found).toBe(`Dose acid by hand ${tag}`);
   await expectHealthy(page, problems, { label: "rcm tasks rows" });
 });
@@ -289,7 +295,8 @@ test("one task for several modes: a row under each, adopted by a tap, read-only 
   await expect(tasks.getByRole("heading", { name: "Tasks linked before the decision" })).toBeVisible();
   const before = tasks.getByRole("list", { name: "Tasks linked before the decision" }).getByRole("listitem");
   await expect(before).toHaveCount(1);
-  await expect(before.first()).toContainText("Shared with 1"); // a chip at the line's right, not a sentence
+  await expect(before.first()).toContainText("Serves 2 here"); // a chip at the line's right, not a sentence
+  await expect(before.first().getByText("Serves 2 here")).toHaveAttribute("title", "Serves 2 failure modes on this position or inside it");
   await expect(tasks.getByRole("button", { name: /^Add a task/ })).toHaveCount(0);
   // Step 2 answered (hidden, operational): one tap on "Task(s) worth doing" decides, adopting that task
   // as the kind it is (on condition); its kind chip then makes it failure finding (offered: it's hidden).
@@ -320,13 +327,16 @@ test("one task for several modes: a row under each, adopted by a tap, read-only 
   await saltRow.locator(".tp-nm").dblclick();
   await goTask(tasksOf(page), `Weekly pH check ${tag}`).click();
   await expect(kindOf(page)).toHaveText("Task");
-  await expect(chipsOf(page)).toContainText("Shared with 1");
+  await expect(chipsOf(page)).toContainText("Serves 2 here");
   const serves = section(page, "Serves");
   await expect(serves.getByRole("listitem")).toHaveCount(2);
+  await expect(serves).toContainText("Serves 2 failure modes here");
+  await expect(serves.getByRole("button", { name: "Link to another failure mode…" })).toBeVisible();
   await expect(serves).toContainText(`Salinity low ${tag}`);
   await expect(serves).toContainText(`Acid under-dosed ${tag}`);
-  // Remove from this failure mode: unlinked, not retired; the pool's mode keeps it.
-  await serves.getByRole("button", { name: "Remove from this failure mode" }).click();
+  // Remove (at the right of this failure mode's line): unlinked, not retired; the pool's mode keeps it.
+  await expect(panel(page).getByRole("button", { name: "Remove from this failure mode", exact: true })).toBeVisible(); // the foot
+  await serves.getByRole("button", { name: `Remove from “Salinity low ${tag}”` }).click();
   const ask = page.getByRole("alertdialog", { name: "Remove this task?" });
   await expect(ask).toContainText("also serves 1 other failure mode, so it stays with them");
   await ask.getByRole("button", { name: "Remove from this failure mode" }).click();
@@ -385,9 +395,9 @@ test("at 400 px the decision's tasks, the Add a task form and a task's own sheet
   await goTask(tasks, `Weekly pH check ${tag}`).click();
   await expect(kindOf(page)).toHaveText("Task");
   await expect(panel(page)).toHaveClass(/sheet/);
-  await expect(section(page, "Kind and interval")).toContainText("every 1 week");
+  await expect(section(page, "Interval").getByRole("spinbutton", { name: "Interval" })).toHaveValue("1");
   expect(await overflow(page)).toBe(0);
-  for (const name of ["Kind and interval", "Then, if found", "Serves", "Logistics"]) {
+  for (const name of ["Kind", "Interval", "Then, if found", "Based on", "Serves", "Logistics"]) {
     const b = await section(page, name).boundingBox();
     expect(b.x + b.width).toBeLessThanOrEqual(400.5);
   }
@@ -407,8 +417,8 @@ test("Calculate… in an on-condition task's details: the P-F interval alone, co
   await expect(row).toHaveAttribute("aria-selected", "true");
   await row.locator(".tp-nm").dblclick();
   await expect(kindOf(page)).toHaveText("Task");
-  const kind = section(page, "Kind and interval");
-  await expect(kind).toContainText("every 1 week");
+  const kind = section(page, "Interval");
+  await expect(kind.getByRole("spinbutton", { name: "Interval" })).toHaveValue("1");
   await kind.getByRole("button", { name: `Calculate how often to do “Weekly pH check ${tag}”` }).click();
   const calc = dialog(page, "Work out the check interval");
   await expect(calc).toBeVisible();
@@ -435,9 +445,10 @@ test("Calculate… in an on-condition task's details: the P-F interval alone, co
   await expect(calc.locator(".ivc-facts")).toContainText("Half the P-F interval");
   await calc.getByRole("button", { name: "Use 5 weeks" }).click();
   await expect(calc).toHaveCount(0);
-  await expect(kind).toContainText("every 5 weeks");
+  await expect(kind.getByRole("spinbutton", { name: "Interval" })).toHaveValue("5");
+  await expect(chipsOf(page)).toContainText("every 5 weeks");
   // The calculation linked as the decision's evidence (the task's, a plain decision's one task).
-  await expect(section(page, "Evidence for this task")).toContainText("Supported");
+  await expect(section(page, "Based on")).toContainText("Supported");
   await expect.poll(async () => {
     const rcm = await (await request.get(`${M}/rcm`)).json();
     const mode = rcm.positions.find((x) => x.id === p.pool.id).functions[0].failures[0].modes.find((x) => x.id === p.acid.id);

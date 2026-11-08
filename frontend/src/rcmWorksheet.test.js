@@ -230,7 +230,7 @@ test("a decision's tasks: its own first, how many more, the tooltip, and an olde
   assert.equal(tasksOf(d).length, 2);
   assert.equal(moreTasks(d), "+1 task");
   assert.equal(moreTasks({ ...d, tasks: [...d.tasks, { id: "t3", name: "Look", interval: 1, unit: "months" }] }), "+2 tasks");
-  assert.equal(tasksTip(d), "Weekly pH check · every 1 week (shared with 1 other failure mode)\nReplace the acid pump · every 24 months");
+  assert.equal(tasksTip(d), "Weekly pH check · every 1 week (serves 2 failure modes here)\nReplace the acid pump · every 24 months");
   const old = { outcome: "on_condition", task: "Weekly pH check", interval: 1, interval_unit: "weeks" };
   assert.deepEqual(tasksOf(old), [{ id: null, name: "Weekly pH check", text: "Weekly pH check", interval: 1, unit: "weeks", shared_with: 0 }]);
   assert.equal(moreTasks(old), "");
@@ -452,8 +452,8 @@ test("a task row's words: its kind, how often, its chips, and what's done when f
   const r = { type: "task", ref: { outcome: "failure_finding", on_found: "Repair the trip",
     task: { id: "t", name: "Test the trip", interval: 6, unit: "months", shared_with: 2, package: { id: "k", name: "Half-yearly" } } } };
   assert.equal(taskKindText(r), "Failure finding");
-  assert.equal(taskRowWords(r), "every 6 months · Shared with 2 · In: Half-yearly");
-  assert.equal(taskRowWords(r, { found: true }), "Failure finding · every 6 months · Shared with 2 · In: Half-yearly · Then, if failed: Repair the trip");
+  assert.equal(taskRowWords(r), "every 6 months · Serves 3 here · In: Half-yearly");
+  assert.equal(taskRowWords(r, { found: true }), "Failure finding · every 6 months · Serves 3 here · In: Half-yearly · Then, if failed: Repair the trip");
   const ev = { type: "task", ref: { outcome: "on_condition", task: { id: "e", name: "Re-dose", interval: 1, unit: "weeks", trigger: { text: "120 mm on POOL-RAIN" } } } };
   assert.equal(taskRowWords(ev), "on event: 120 mm on POOL-RAIN");
 });

@@ -77,7 +77,7 @@ that answer them:
   decision: *Check the connector torque*, its kind (*On condition*) in the
   Decision column and how often (*every 50 hours*) in the Task column. A task
   that serves several failure modes has a row under each of them, marked
-  **Shared with N**; one done on a work package's visits is marked **In:** and
+  **Serves N here** (N failure modes on this position or inside it); one done on a work package's visits is marked **In:** and
   the package's name. A check's row says quietly after its name what's done
   when it finds something. Run to failure, accept and redesign have no task
   rows: the failure mode's own row says the decision.
@@ -215,18 +215,20 @@ fields, then the quieter things at the foot:
   shows the evidence (**Link evidence…** opens the evidence picker). Why you
   decided goes in the failure mode's **Notes and rationale**, under its title:
   there's one place for it.
-- a task: its title is its name (click it to change it; a shared task's name
-  changes for every failure mode it serves). **Kind and interval** says its
-  kind and how often, with **Change** to set the interval in place and
-  **Calculate…** to work it out; **Edit when it's done…** opens its form, for
-  what raises it (its interval, or an event) and what a task by use counts.
-  **Then, if found** (**Then, if failed** for failure finding) is what's done
-  when the check finds something, kept when you leave the box or press Enter.
-  Then its **Instructions**, its **Evidence for this task**, the failure modes
-  it **Serves** (each a link), and **Logistics**: its labour hours, tools and
-  method from its LSA record, with **Open in LSA** for the whole record. At
-  its foot, **Retire the task** (when it serves only this failure mode) or
-  **Remove this task from the failure mode** (when it serves others too).
+- a task: its title is its name (click it to change it; a task that serves
+  several failure modes changes for all of them). Its rows read like a failure
+  mode's, one line each: **Kind** (a chip, offering only the kinds the
+  decision diagram allows); **Interval** (*every N unit*, typed where it's
+  shown and kept on Enter, with **Calculate…** to work it out and **Raise it on
+  an event instead…** for a reading past a limit or an event someone logs; a
+  task by use also says what it counts here); **Then, if found** (**Then, if
+  failed** for failure finding), what's done when the check finds something;
+  **Based on**, its evidence; **Serves**, the failure modes it serves here, each
+  a link with **Remove** at its right, and **Link to another failure mode…**;
+  and **Logistics**, its labour hours, tools and method from its LSA record,
+  with **Open in LSA**. How it's done (its instructions) belongs to the LSA,
+  not here. At its foot, **Retire the task** (when it serves only this failure
+  mode) or **Remove from this failure mode** (when it serves others too).
 
 Every row, whatever its level, opens its details with **Notes and rationale**,
 a section of its own directly below its title and status line and above
@@ -369,7 +371,7 @@ Each task of a combination needs its own evidence. The evidence you link in
 step 4 counts for every task it fits: a degradation model backs the
 inspection, a replacement analysis backs the fixed-interval task, and a report
 or a function's notes back any task. Where one piece can't cover them all,
-open **Evidence for this task** under the other task and link its own. Until
+open the other task's row and link its own under **Based on**. Until
 every task has some, the check reads *Partly evidenced*, and the Evidence card
 names the task that has none.
 
@@ -392,8 +394,8 @@ many other failure modes share it.
   the decision, making it a combination of tasks. It asks its kind in place
   first (*On condition*, *Fixed interval* or *Failure finding*, or a
   *Redesign* beside the tasks), then its name and how often, then Enter. The
-  new task's row is picked: write its instructions there, as for any other
-  task. One kind can come more than once (two fixed-interval tasks, each with
+  new task's row is picked (its instructions go in the LSA, from **Open in
+  LSA**). One kind can come more than once (two fixed-interval tasks, each with
   its own interval); failure finding is offered only on a hidden failure, and
   one redesign at most. (**Add a task…** in the failure mode's row menu opens
   the same row, or the decision dialog when there's no decision yet.)
@@ -404,18 +406,18 @@ many other failure modes share it.
 - Tasks linked before a failure mode had a decision show under **Tasks linked
   before the decision** until you decide.
 - Each task shows how many other failure modes share it. A shared task keeps
-  one interval for all of them: change it on the task (its row's **Kind and
-  interval**), not in the decision dialog, which shows it read-only.
-- A task by use (hours, cycles, km) shows its **Measurement** in its form
-  (**Edit when it's done…** in its details):
+  one interval for all of them: change it on the task (its **Interval** row),
+  not in the decision dialog, which shows it read-only.
+- A task by use (hours, cycles, km) shows its **Measurement** under its
+  **Interval** row:
   what it counts, the latest reading and the reading when it was last done.
   **Change the measurement…** picks another in the same unit, on the position,
   above or below it, or on the item fitted there, and asks for the last-done
   reading on the new one (or works it out from the date, marked as an
-  estimate).
+  estimate); **Save what it counts** keeps it.
 - **Retire the task** at the foot of a task's details (or in its row's menu)
-  retires a task that serves only this failure mode; **Remove this task from
-  the failure mode** (also beside this failure mode under **Serves**) unlinks
+  retires a task that serves only this failure mode; **Remove from this
+  failure mode** (or **Remove** beside a failure mode under **Serves**) unlinks
   one that serves others too, and it stays with them. Choosing a
   decision that schedules nothing (or clearing it) asks first, naming the
   tasks that would come off.
@@ -424,8 +426,8 @@ many other failure modes share it.
 
 Some work isn't done on a calendar: after 120 mm of rain in 24 hours, test and
 re-dose the pool; after a lightning strike, inspect the chlorinator. In the
-task's details, choose **Edit when it's done…**, then **Raise it on an event
-instead…**, then
+task's details, choose **Raise it on an event instead…** under **Interval**,
+then
 choose what happens: **A reading passes a limit** (pick a measuring point and
 the limit, at or above 120 mm on the rain gauge) or **Someone logs an event**
 (type its name, *Lightning strike*). The decision stays as it is; the
@@ -455,7 +457,7 @@ analysis**.
 ## Working out the interval
 
 Each scheduled task's details have **Calculate…** beside its *every N*, under
-**Kind and interval** (also while you change the interval). It opens the calculator the kind of task
+**Interval**. It opens the calculator the kind of task
 calls for, says in a sentence or two what it works out, and starts from what
 the failure mode already has: its linked model or analysis, and the failures
 recorded at the position. Anything it assumed says so; change any input and
@@ -655,7 +657,7 @@ can drag rows in the RCM table to rearrange it:
 - **A task's own row** (under its failure mode) is copied, never moved: drag it
   onto another failure mode on the task's position, or on a position inside it,
   and the label says **Link here** with a **+**. The task then prevents both
-  (each row says **Shared with 1**). It joins that mode's decision as another
+  (each row says **Serves 2 here**). It joins that mode's decision as another
   task, or becomes its task, or is listed under **Tasks linked before the
   decision** when the mode has none yet. Any other row refuses it. From the
   keyboard, the task row's menu has **Link to another failure mode…**.

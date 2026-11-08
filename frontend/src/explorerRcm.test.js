@@ -787,13 +787,13 @@ test("a task row's cells, phone line, menu and search", () => {
   const t1 = cellRow(d.rows.get(taskKey("m1", "t1")));
   const t2 = cellRow(d.rows.get(taskKey("m1", "t2")));
   assert.equal(COLUMN.decision.text(t1), "On condition");
-  assert.equal(COLUMN.task.text(t1), "every 4 weeks · Shared with 1");
+  assert.equal(COLUMN.task.text(t1), "every 4 weeks · Serves 2 here");
   assert.equal(COLUMN.task.text(t2), "every 1 year · In: Yearly overhaul");
   assert.equal(COLUMN.interval.text(t1), "");
   assert.equal(COLUMN.modes.text(t1), ""); // never "0": nothing is inside a task
   assert.equal(COLUMN.consequence.text(t1), "");
-  assert.equal(TASK_WITH_INTERVAL.text(t1), "every 4 weeks · Shared with 1");
-  assert.equal(phoneLine(t1), "On condition · every 4 weeks · Shared with 1 · Then, if found: Grease it");
+  assert.equal(TASK_WITH_INTERVAL.text(t1), "every 4 weeks · Serves 2 here");
+  assert.equal(phoneLine(t1), "On condition · every 4 weeks · Serves 2 here · Then, if found: Grease it");
   assert.equal(insideWords(t1), "");
   assert.ok(opensItem(t1));
   assert.deepEqual(rowActions(t1).map((a) => a.label), ["Open…", "Link to another failure mode…", "Remove from this failure mode…"]);

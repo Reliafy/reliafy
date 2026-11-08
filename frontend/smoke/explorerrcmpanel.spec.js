@@ -445,12 +445,13 @@ test("one order at every level: its notes under the title and chips, what's insi
     expect(at("Under")).toBe(-1);
     expect(await overflow(page)).toBe(0);
     // A task (the fifth level): its row picked from the list; no notes of its own, then its sections
-    // in one order: what it is and how often, what's done when found, instructions, evidence, what it
-    // serves, logistics; Retire (or Remove) at its foot.
+    // as the failure mode's grid, one order: its kind, how often, what's done when found, what it's
+    // based on, what it serves, logistics (no instructions: how it's done is the LSA's); Retire (or
+    // Remove) at its foot.
     await todo.getByRole("button", { name: `Check the seal ${tag}`, exact: true }).click();
     await expect(panel(page).getByRole("heading", { level: 2, name: `Check the seal ${tag}` })).toBeVisible();
     await expect(panel(page).locator(".rw-panel-kind")).toHaveText("Task");
-    expect(await blocks(page)).toEqual(["Kind and interval", "Then, if found", "Instructions", "Evidence for this task", "Serves", "Logistics"]);
+    expect(await blocks(page)).toEqual(["Kind", "Interval", "Then, if found", "Based on", "Serves", "Logistics"]); // no instructions: the LSA's
     await expect(panel(page).getByRole("region", { name: "Notes and rationale" })).toHaveCount(0);
     await expect(panel(page).getByRole("region", { name: "Then, if found" }).getByRole("textbox", { name: "Then, if found:" })).toBeVisible();
     await expect(panel(page).getByRole("button", { name: "Retire the task", exact: true })).toBeVisible();
