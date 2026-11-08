@@ -9,6 +9,11 @@
   `POST /api/v1/maintenance/models.link` and `models.unlink`; the CLI has
   `reliafy maintenance models.link` and `models.unlink`.
 
+- **Predictions on positions**: `maintenance models.link` takes `prediction`
+  (`{environment?, mission_time?, assign?}`), a parts-count prediction from
+  the position's parts list, saved as a prediction and an exponential model.
+  Accelerated-life and covariate models can be linked like any saved model.
+
 - **A Bayesian update of a baseline**: new action `analyse bayes_update` (Pro):
   a baseline model, numbers or a B10 belief, how much to trust it, and a few
   failures give posterior medians with 90% credible intervals.

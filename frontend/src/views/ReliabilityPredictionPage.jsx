@@ -72,6 +72,12 @@ export default function ReliabilityPredictionPage() {
           </button>
         }
       >
+        {doc.inputs?.position?.id && maintenance && (
+          <p className="hint">
+            The parts count of <b>{doc.inputs.position.name}</b>, made on its Modelling tab ·{" "}
+            <Link to={`/asset-register/explorer?arrange=positions&sel=${encodeURIComponent(doc.inputs.position.id)}&tab=models`}>Open on the asset</Link>.
+          </p>
+        )}
         {product?.name && (
           <p className="hint">
             For the product <b>{product.name}</b>{product.rev ? `, rev ${product.rev}` : ""}{product.part_number ? ` (part ${product.part_number})` : ""}

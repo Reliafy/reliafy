@@ -598,3 +598,16 @@ def test_bayes_update_over_rest(maint):
                      "unit": "days"}})
     assert link.status_code == 200, link.text
     assert link.json()["role"] == "bayesian" and link.json()["update"]["counts"]["failures"] == 1
+
+
+def test_a_prediction_row_over_rest(maint):
+    """maintenance models.link with prediction (a parts count from the position's parts list) over REST."""
+    pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Controller R"}).json()
+    part = maint.post("/api/v1/maintenance/parts.create", {"part_number": "C-9", "name": "Capacitor"}).json()
+    maint.post("/api/v1/maintenance/parts.add_to_position", {"position_id": pos["id"], "part_id": part["id"], "quantity": 3})
+    r = maint.post("/api/v1/maintenance/models.link", {
+        "position_id": pos["id"], "prediction": {"environment": "GB", "assign": {"C-9": {"record_id": "mil-hdbk-217f-n2:10-1-cp-25"}}}})
+    assert r.status_code == 200, r.text
+    link = r.json()
+    assert link["role"] == "prediction" and link["source"]["environment"] == "GB"
+    assert link["prediction"]["results"]["failure_rate_per_hour"] > 0

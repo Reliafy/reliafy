@@ -82,7 +82,7 @@ export function headline(model) {
   if (rate) parts.push(`Rate ${withBounds(rate)}`);
   else if (mtbf) parts.push(`MTBF ${withBounds(mtbf)}`);
   if (model.trend) parts.push(model.trend);
-  for (const id of ["threshold", "marker"]) {
+  for (const id of ["threshold", "marker", "reference"]) {
     const n = byId(model, id);
     if (n) parts.push(`${n.label} ${n.text}`);
   }
@@ -198,6 +198,7 @@ export function rowActions(r, { viewOnly = null } = {}) {
     { id: "model-open", label: "Open" },
     link.model?.path ? { id: "model-page", label: "Open in Models" } : null,
     link.role === "fitted" ? { id: "model-refit", label: "Refit…", ...off } : null,
+    link.role === "prediction" ? { id: "model-predict", label: "Refresh the prediction…", ...off } : null,
     // A Bayesian update takes the position's new failures; a plain Weibull, exponential or
     // lognormal model can be the baseline of one (bayesUpdate.js).
     link.role === "bayesian" ? { id: "model-bayes", label: "Update with new failures…", ...off }
@@ -239,4 +240,26 @@ export function attachedFor(links = [], { modeId = null, expectedType = null } =
   out.sort((a, b) => a.rank - b.rank);
   const seen = new Set();
   return out.filter((o) => (seen.has(o.id) ? false : seen.add(o.id)));
+}
+
+// "Add a prediction…" (a parts count from the position's parts list): the part types chosen
+// in the dialog as the server takes them, {part number (or part id): {record_id, quality_factor}};
+// lines with no part type are left out (and out of the total, as the parts count says).
+export function predictionAssign(lines = []) {
+  const out = {};
+  for (const l of lines) {
+    const key = l.reference || l.part_id;
+    const record = l.record?.id || l.record_id;
+    if (!key || !record) continue;
+    const q = Number(l.quality_factor);
+    out[key] = { record_id: record, ...(Number.isFinite(q) && q > 0 && q !== 1 ? { quality_factor: q } : {}) };
+  }
+  return out;
+}
+
+// A prediction row's numbers in words: "12.3 failures per million hours · MTBF 81,300 hours".
+export function predictionWords(source = {}) {
+  const rate = source.rate_per_million_hours;
+  if (!rate) return "No part types chosen yet";
+  return `${fmt(rate)} failures per million hours · MTBF ${fmt(source.mtbf_hours)} hours`;
 }

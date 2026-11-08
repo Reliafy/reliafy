@@ -4,7 +4,7 @@ import { buildDisplay, computeFilter, flatten, markersOf, rowText } from "./asse
 import { positionOf } from "./explorerRcm.js";
 import {
   MODEL_CHIPS, MODEL_USUAL, attachedFor, b10Text, boundsLabel, countsText, fmt, graftModels, headline, isModelRow, meanText, modelKey,
-  openForModels, rollupText, rowActions, usedText, withBounds,
+  openForModels, predictionAssign, predictionWords, rollupText, rowActions, usedText, withBounds,
 } from "./explorerModels.js";
 
 const DATA = {
@@ -133,4 +133,26 @@ test("a Bayesian update's numbers are credible intervals at its level, never bou
   assert.equal(boundsLabel({ ...bayes, credible_level: 0.95 }), "95% credible interval");
   assert.equal(boundsLabel(WEIBULL), "95% bounds");
   for (const text of [headline(bayes), meanText(bayes), boundsLabel(bayes)]) assert.doesNotMatch(text, /bound|confidence/i);
+});
+
+test("a prediction's part types as the server takes them, and its numbers in words", () => {
+  const lines = [
+    { reference: "C-100", record: { id: "rec-cap" }, quality_factor: "1" },
+    { reference: "U-7", record_id: "rec-opto", quality_factor: "3" },
+    { reference: "G-1", record: null },
+    { part_id: "p9", record: { id: "rec-x" } },
+  ];
+  assert.deepEqual(predictionAssign(lines), {
+    "C-100": { record_id: "rec-cap" }, "U-7": { record_id: "rec-opto", quality_factor: 3 }, p9: { record_id: "rec-x" },
+  });
+  assert.equal(predictionWords({ rate_per_million_hours: 12.34, mtbf_hours: 81037 }), "12.3 failures per million hours · MTBF 81,040 hours");
+  assert.equal(predictionWords({}), "No part types chosen yet");
+});
+
+test("a covariate model's headline names the level it's read at", () => {
+  const alt = { kind: "Accelerated life (Weibull)", numbers: [
+    { id: "char_life", value: 2121.8, lower: 1788.5, upper: 2478, unit: "Hours" },
+    { id: "reference", label: "at", text: "its lowest tested stress (Temperature (°C) 60, Load 0.5)" },
+  ] };
+  assert.equal(headline(alt), "Life 2,122 hours (1,789–2,478) · at its lowest tested stress (Temperature (°C) 60, Load 0.5)");
 });

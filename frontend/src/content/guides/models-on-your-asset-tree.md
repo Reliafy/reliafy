@@ -66,6 +66,37 @@ A row's **⋯** has **Refit…** (a fitted model), **Replace with…** and
 A product's design carries models too. An item built from the product takes
 its design's models when it's built, as it takes the RCM.
 
+## Accelerated-life and covariate models
+
+An accelerated-life model (how life shortens with temperature, voltage or
+load) or a covariate model such as proportional hazards attaches like any
+saved model: pick it under **Accelerated life** or **Non-repairable** in
+**Assign a saved model…**. Its row shows the model as it was fitted: the life
+at its lowest tested stress, or at the average covariates of its data. The
+stress at this position isn't set here: it's set where the model is used, in
+an RBD block or a calculation.
+
+## Predict the failure rate from the parts list
+
+Reliability predictions live here, on the position they're for.
+**Add a prediction…** (in the heading's **…**, or a position's **⋯**) works
+out a parts count from the position's parts list and those of the positions
+inside it (on a product's design, its bill of materials where they list
+none). Set the environment once, the place the equipment works; the next
+prediction below it starts from the same one. Give each part a handbook part
+type (and a quality factor where the handbook has one): each part's rate is
+its base rate times the factors, and the rates add up as if every part were
+needed. The result is a failure rate and an MTBF, with each part's share.
+
+Saved, it's a row of kind **Prediction**, an exponential model at the
+predicted rate, so the RCM, the calculators and RBDs can use it, and it's on
+the **Reliability prediction** page too, with **Open on the asset** back to
+the position. **Refresh the prediction…** works it out again from the parts
+list as it is now, keeping the part types. An item built from a product takes
+its design's prediction. A parts count compares designs early: it doesn't say
+how the item will fail in service, so replace it with a fitted model once
+there are failures.
+
 ## A few failures: update a baseline
 
 With one or two failures a position's own history says little. But there's

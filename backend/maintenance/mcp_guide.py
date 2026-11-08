@@ -443,6 +443,16 @@ or attach unasked: say what the data supports first (failures, suspensions, the 
 {distribution, params, unit} or a B10 belief; left out, the class's model) and trust (close, guide, start) saves \
 a Bayesian update of the baseline with the position's history and attaches it (Pro; the core guide topic \
 life_data says more). With plenty of failures, fit the history instead.
+- Accelerated-life and covariate (proportional-hazards) models attach as they are, like any saved model: \
+the row shows the model as fitted (its lowest tested stress, or the fit's average covariates). The stress at \
+the position is set where the model is used (an RBD block, a calculation), not on the link.
+- A parts-count prediction: models.link with prediction {environment?, mission_time?, assign?} predicts the \
+position's failure rate from its parts list and those of the positions inside it (a product design's bill of \
+materials where they list none): each part needs a handbook part type (assign {part number: {record_id, \
+quality_factor?}}, a record from list kind library; parts without one are left out, and its last prediction's \
+are reused). The environment is set once (default: the position's last, else the nearest above). It's saved as \
+a prediction and an exponential model at its rate (role prediction), replacing an earlier one; preview it in \
+the app. It compares designs early; it never says how the item will fail in service.
 - Take off: maintenance models.unlink (link_id). The model stays in Models.
 - How they feed the RCM: a failure mode's evidence picker offers the position's models first, those named for \
 that mode at the top; link one as the decision's evidence with failure_modes.decide (evidence {type: model, \

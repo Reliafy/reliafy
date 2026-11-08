@@ -3368,3 +3368,10 @@ export function savePositionBayes(positionId, body) {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
 }
+// A parts-count prediction of a position from its parts list, previewed: body {environment?,
+// mission_time?, assign?}. Save with linkPositionModel(id, {prediction: body}).
+export function previewPositionPrediction(positionId, body) {
+  return request(`/api/maintenance/positions/${positionId}/prediction`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+}

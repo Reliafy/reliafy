@@ -225,3 +225,84 @@ def test_link_read_and_unlink_over_rest(client):
     assert nope.status_code == 422 and "no position class" in nope.json()["detail"]
     assert client.delete(f"/api/maintenance/position-models/{link['id']}").status_code == 200
     assert client.get("/api/maintenance/position-models").json()["links"] == []
+
+
+CAP = "mil-hdbk-217f-n2:10-1-cp-25"
+OPTO = "mil-hdbk-217f-n2:6-11-opto-isolator-light-sensitive-resistor-single-device"
+
+
+def _board(m):
+    """A controller with two parts on its own list and one inside it (a consumable left out)."""
+    ctl = m.create_position("Controller")["id"]
+    psu = m.create_position("Power supply", parent_id=ctl)["id"]
+    cap = m.create_part("C-100", "Bypass capacitor")["id"]
+    opto = m.create_part("U-7", "Opto-isolator")["id"]
+    grease = m.create_part("G-1", "Grease")["id"]
+    m.add_position_part(ctl, cap, role="component", quantity=4)
+    m.add_position_part(ctl, grease, role="consumable", quantity=1)
+    m.add_position_part(psu, opto, role="replacement", quantity=1)
+    return ctl, psu
+
+
+def test_a_prediction_row_from_the_parts_list(m, db):
+    from backend.services import reliability_prediction as rp
+
+    ctl, psu = _board(m)
+    preview = pm.predict_position(m, db, OWNERS, set(), ctl)
+    assert [ln["reference"] for ln in preview["lines"]] == ["C-100", "U-7"]  # the consumable isn't in it
+    assert preview["lines"][1]["assembly"] == ["Power supply"] and preview["environment"] == "GF"
+    with pytest.raises(Invalid, match="handbook part type"):
+        pm.predict_position(m, db, OWNERS, set(), ctl, save=True)
+    assign = {"C-100": {"record_id": CAP}, "U-7": {"record_id": OPTO}}
+    link = pm.predict_position(m, db, OWNERS, set(), ctl, environment="GM", assign=assign, save=True)
+    assert link["role"] == "prediction" and link["source"]["environment"] == "GM"
+    rate = link["prediction"]["results"]["failure_rate_per_hour"]
+    model = db.models.find_one({"_id": link["model_id"]})
+    assert model["distribution_id"] == "exponential" and model["results"]["method"] == "parts_count"
+    assert model["results"]["params"][0]["value"] == pytest.approx(rate)
+    saved = rp.get_prediction(db, link["source"]["prediction_id"], OWNERS)
+    assert saved.inputs["position"] == {"id": ctl, "name": "Controller"}
+    # The rate is the parts count's: the lines' rates add (λ = Σ λb πE πQ n).
+    lines = saved.results["lines"]
+    assert sum(ln["rate_per_hour"] for ln in lines) == pytest.approx(rate)
+    [row] = pm.describe(m, db, OWNERS, set(), m.position_models(ctl))
+    assert row["model"]["kind"] == "Prediction (parts count)" and row["model"]["quality"]["word"] == "Predicted"
+    assert row["source_text"].startswith("Predicted from its parts list (parts count")
+    full = pm.detail(m, db, OWNERS, set(), link["id"])
+    assert full["prediction"]["results"]["counts"]["assigned"] == 2
+    # Again: it replaces the last prediction, keeping its part types; the environment carries down.
+    again = pm.predict_position(m, db, OWNERS, set(), ctl, save=True)
+    assert [x["id"] for x in m.position_models(ctl)] == [again["id"]] and again["source"]["environment"] == "GM"
+    assert pm.default_environment(m, psu) == "GM"
+    _same_after_rebuild(m)
+
+
+def test_a_built_items_prediction_follows_its_design(m, db):
+    product = m.create_product("Drone", part_number="DR-2")["id"]
+    esc = m.create_position("Speed controller", parent_id=product)["id"]
+    cap = m.create_part("C-200", "Capacitor")["id"]
+    m.add_position_part(esc, cap, role="component", quantity=2)
+    link = pm.predict_position(m, db, OWNERS, set(), esc, assign={"C-200": {"record_id": CAP}}, save=True)
+    built = m.build_item(product, "SN-9", dry_run=False)
+    copy = next(r["id"] for r in built["positions"] if r["design_position_id"] == esc)
+    [there] = m.position_models(copy)
+    assert there["model_id"] == link["model_id"] and there["source"]["design_role"] == "prediction"
+
+
+def test_covariate_models_are_attached_as_they_are(m, db):
+    pump = m.create_position("Seal")["id"]
+    alt = pm.link_saved(m, db, OWNERS, set(), pump, "alt_model", "sample-alt-seal")
+    ph = pm.link_saved(m, db, OWNERS, set(), pump, "model", "sample-model-seal-weibull-ph")
+    rows = {r["id"]: r for r in pm.describe(m, db, OWNERS, set(), m.position_models(pump))}
+    a = rows[alt["id"]]
+    assert a["source_text"] == ("Assigned: Valve seal — Weibull ALT on temp & load (sample) (accelerated life, "
+                                "stress: temperature, load)")
+    ref = next(n for n in a["model"]["numbers"] if n["id"] == "reference")
+    assert ref["text"] == "its lowest tested stress (Temperature (°C) 60, Load 0.5)"
+    assert "covariates" not in a or a.get("covariates") is None
+    p = rows[ph["id"]]
+    assert p["source_text"].endswith("(covariate model, covariates: temp_C, load)")
+    assert {n["id"] for n in p["model"]["numbers"]} >= {"mean", "b10", "reference"}
+    full = pm.detail(m, db, OWNERS, set(), alt["id"])
+    assert full["stress_note"].startswith("Shown as fitted") and full["curves"]["sf"]
+    assert full["curves"]["what"].startswith("Reliability at its lowest tested stress")

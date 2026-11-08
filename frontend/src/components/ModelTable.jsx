@@ -10,6 +10,8 @@ import { Select, TextInput } from "./ui/Controls.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Modal from "./Modal.jsx";
 import Plot from "./Plot.jsx";
+import PredictionResult from "./PredictionResult.jsx";
+import { predictionPath } from "../predictions.js";
 import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
 import { ACCENT, BAND_FILL } from "../plotTheme.js";
 import { saveErrorText } from "../confirm.js";
@@ -190,7 +192,14 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
               {model.path && <Link to={model.path}>Open in Models</Link>}</p>
             {state.error && <p className="field-error">Couldn't read it: {state.error}</p>}
             {!d && !state.error && <p className="rim-tquiet">Reading the model…</p>}
+            {d?.stress_note && <p className="rim-tquiet ml-stress">{d.stress_note}</p>}
             {d && <ModelPlot curves={d.curves} unit={unit} name={r.ref.name} />}
+            {d?.prediction && (
+              <section aria-label="The parts count">
+                <h3 className="ml-h">The parts count <Link className="rw-sum" to={predictionPath(d.prediction.id)}>Open in Predictions</Link></h3>
+                <PredictionResult results={d.prediction.results} name={d.prediction.name} />
+              </section>
+            )}
             {d?.params?.length > 0 && (
               <section aria-label="Parameters">
                 <h3 className="ml-h">Parameters</h3>
