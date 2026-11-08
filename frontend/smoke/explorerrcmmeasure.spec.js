@@ -49,9 +49,12 @@ async function openFleet(page, p, width = 1280) {
   await page.setViewportSize({ width, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}&pin=${p.top.id}&tab=rcm`);
   await expect(table(page)).toBeVisible();
+  // The tree and its RCM read first (a truck's row says what it holds), as the drag specs do.
+  await expect(trow(page, `^Truck 12 `).getByText(/to decide/)).toBeVisible();
   await page.getByRole("button", { name: "Tree options" }).click();
   await page.getByRole("menuitemradio", { name: "Open everything" }).click();
   await page.keyboard.press("Escape");
+  await expect(table(page).getByRole("row", { name: /^Failure mode: Engine wears / }).first()).toBeVisible();
   await settled(page);
 }
 
