@@ -191,6 +191,9 @@ class SqliteEventLog:
                  "payload": json.loads(r["payload"])} for r in rows]
 
 
+OWN_KEPT = 1000  # a process's own appended events kept for its next read
+
+
 class MongoEventLog:
     """The log as a MongoDB collection, numbered by an atomic counter so every
     process replays the events in the same order."""
@@ -201,6 +204,10 @@ class MongoEventLog:
         self._counter_id = collection
         self._events.create_index("seq", unique=True)
         self._events.create_index([("org", 1), ("seq", -1)])
+        # The events this process appended, by seq, until a read has handed them on:
+        # catching up after its own write then needs no range query (one per event
+        # otherwise, and a scan of the whole log on the in-memory simulator).
+        self._own: dict[int, dict] = {}
 
     def append(self, event: dict) -> int:
         from pymongo import ReturnDocument
@@ -212,9 +219,24 @@ class MongoEventLog:
         seq = int(counter["seq"])
         self._events.insert_one({"_id": event["id"], "seq": seq, "org": event["org"], "type": event["type"],
                                  "at": event["at"], "actor": event["actor"], "payload": event["payload"]})
+        self._own[seq] = {"seq": seq, "org": event["org"], "type": event["type"], "payload": event["payload"]}
+        if len(self._own) > OWN_KEPT:
+            for old in sorted(self._own)[:-OWN_KEPT]:
+                del self._own[old]
         return seq
 
     def since(self, seq: int, limit: int | None = None) -> list[dict]:
+        # The counter says how far the log goes: nothing past seq, nothing to read;
+        # only this process's own events past it, those from memory.
+        for old in [k for k in self._own if k <= seq]:
+            del self._own[old]
+        top = self._counters.find_one({"_id": self._counter_id})
+        top = int(top["seq"]) if top else 0
+        if top <= seq:
+            return []
+        upto = top if limit is None else min(top, seq + int(limit))
+        if all(k in self._own for k in range(seq + 1, upto + 1)):
+            return [self._own[k] for k in range(seq + 1, upto + 1)]
         cursor = self._events.find({"seq": {"$gt": seq}}).sort("seq", 1)
         if limit is not None:
             cursor = cursor.limit(int(limit))
