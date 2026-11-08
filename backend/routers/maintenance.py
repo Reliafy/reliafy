@@ -388,7 +388,7 @@ def _create_task(m: Maintenance, body: dict, **subject) -> JSONResponse:
                 body.get("source") or "manual", body.get("reference", ""), body.get("failure_mode_id"),
                 body.get("last_done"), body.get("trade", ""), while_stored=body.get("while_stored"),
                 include_positions=body.get("include_positions"), failure_mode_ids=body.get("failure_mode_ids"),
-                trigger=body.get("trigger"), **subject)
+                trigger=body.get("trigger"), start=body.get("start"), **subject)
 
 
 @router.post("/positions/{position_id}/tasks")
@@ -760,9 +760,10 @@ def failure_mode_tasks(mode_id: str, m: Maintenance = Depends(maintenance)) -> J
 @router.post("/failure-modes/{mode_id}/tasks")
 def add_failure_mode_task(mode_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Another task for the failure mode: name, interval, unit (default months), outcome (default: the
-    decision's, when it schedules work), instructions."""
+    decision's, when it schedules work), instructions, start (the date it first falls due; default one
+    interval from today)."""
     return _run(m.add_mode_task, mode_id, body.get("name"), body.get("interval"), body.get("unit") or "months",
-                body.get("outcome"), body.get("instructions", ""))
+                body.get("outcome"), body.get("instructions", ""), start=body.get("start"))
 
 
 @router.post("/tasks/{task_id}/failure-modes/{mode_id}")
@@ -1023,15 +1024,17 @@ def add_sample_product(body: dict | None = Body(None), session=Depends(get_sessi
 
 @router.patch("/tasks/{task_id}")
 def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Set when it was last done, and/or change its name, interval or unit, its trigger or
-    what doing it needs (resources: its LSA record)."""
+    """Set when it was last done, and/or change its name, interval or unit, when it next falls due
+    (start; null or '' goes back to one interval from last done), its trigger or what doing it
+    needs (resources: its LSA record)."""
     def go():
         view = None
         if body.get("last_done"):
             view = m.set_last_done(task_id, body["last_done"])
         if any(k in body for k in ("name", "interval", "unit", "also_interval", "also_unit", "point_id",
                                    "instructions", "checklist", "failure_mode_id", "source", "reference",
-                                   "outcome", "trade", "while_stored", "include_positions", "last_done_reading")):
+                                   "outcome", "trade", "while_stored", "include_positions", "last_done_reading",
+                                   "start")):
             view = m.update_task(task_id, body.get("name"), body.get("interval"), body.get("unit"),
                                  body.get("also_interval"), body.get("also_unit"), body.get("point_id"),
                                  body.get("instructions"), body.get("checklist"),
@@ -1040,7 +1043,8 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
                                  body.get("source"), body.get("reference"),
                                  body["outcome"] if "outcome" in body else ..., body.get("trade"),
                                  body.get("while_stored"), body.get("include_positions"),
-                                 body.get("last_done_reading"))
+                                 body.get("last_done_reading"),
+                                 start=("" if body["start"] is None else body["start"]) if "start" in body else None)
         if "trigger" in body:
             # What raises it besides (or instead of) its interval; null clears it.
             view = m.set_task_trigger(task_id, body["trigger"])

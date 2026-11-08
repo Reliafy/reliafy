@@ -463,6 +463,44 @@ test("Calculate… in an on-condition task's details: the P-F interval alone, co
   await expectHealthy(page, problems, { label: "rcm interval calculator" });
 });
 
+test("a task's first due date: set on Add a task (behind a link), shown and changed in its Interval row, cleared", async ({ page, request, problems }) => {
+  const tag = `d${Date.now()}`;
+  const p = await plant(request, tag);
+  const year = new Date().getFullYear() + 1;
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&tab=rcm`);
+  const acidRow = trow(page, `^Failure mode: Acid under-dosed ${tag}`);
+  await acidRow.locator(".tp-nm").dblclick();
+  const tasks = tasksOf(page);
+  await addRow(tasks).click();
+  const add = addForm(tasks);
+  // Folded: the common case stays one line.
+  await expect(add.getByLabel("First due")).toHaveCount(0);
+  await add.getByRole("textbox", { name: "Task" }).fill(`Raise the acid dose for summer ${tag}`);
+  await add.getByRole("spinbutton", { name: "Interval" }).fill("12");
+  await add.getByRole("combobox", { name: "Interval unit" }).selectOption("months");
+  await add.getByRole("button", { name: "Set when it's first due…" }).click();
+  await add.getByLabel("First due").fill(`${year}-10-01`);
+  await add.getByRole("button", { name: "Save" }).click();
+  await expect(titleOf(page)).toHaveText(`Raise the acid dose for summer ${tag}`);
+  const iv = section(page, "Interval");
+  await expect(iv.locator(".rim-tdue")).toContainText(`First due 1 Oct ${year}`);
+  // Changed in place: a date box, Save.
+  await iv.getByRole("button", { name: "Change…" }).click();
+  const form = iv.getByRole("form", { name: "When it's first due" });
+  await form.getByLabel("First due").fill(`${year}-04-01`);
+  await form.getByRole("button", { name: "Save" }).click();
+  await expect(iv.locator(".rim-tdue")).toContainText(`First due 1 Apr ${year}`);
+  // Cleared: one interval from when it was made again.
+  await iv.getByRole("button", { name: "Change…" }).click();
+  await iv.getByRole("button", { name: "Count from last done instead" }).click();
+  await expect(iv.locator(".rim-tdue")).toContainText("Next due");
+  // A task by the calendar without a date set says its next due date too.
+  await page.setViewportSize({ width: 400, height: 860 });
+  expect(await overflow(page)).toBe(0);
+  await expectHealthy(page, problems, { label: "task first due" });
+});
+
 test("screenshots of a failure mode with several tasks and the table rows (SMOKE_SHOTS_DIR)", async ({ page, request }) => {
   test.skip(!SHOTS, "only when saving screenshots");
   const tag = `shot`;

@@ -11,6 +11,7 @@ import { getTaskTriggerPoints, saveStrategyAnalysis } from "../api.js";
 import { appendNotes, calculatorFor, linksEvidence } from "../rcmIntervals.js";
 import IntervalCalculator from "./IntervalCalculator.jsx";
 import { asksInterval, pointLabel, triggerBody, triggerState, triggerWhy } from "../taskTrigger.js";
+import { dueText, madeTask, startBody, startWhy, takesStart } from "../taskStart.js";
 import { modeTaskRows, secondTaskHint, taskKey } from "../explorerRcm.js";
 import { explorerPath } from "../assetTree.js";
 import { TaskMeasurementField } from "./TaskMeasurement.jsx";
@@ -530,10 +531,14 @@ function NewTaskCard({ r, d, ops, kind: fixed = null, kinds = null, start = {}, 
   const [choices, setChoices] = useState(null);
   const [picked, setPicked] = useState("");
   const [found, setFound] = useState("");
+  // "First due", folded behind a link: most tasks start one interval from today.
+  const [dueOpen, setDueOpen] = useState(false);
+  const [due, setDue] = useState("");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const [tried, setTried] = useState(false);
   const alive = useRef(true);
+  const dueId = `rim-due${useId()}`;
   useEffect(() => () => { alive.current = false; }, []);
   const foundId = `rim-found${useId()}`;
   const scheduled = SCHEDULED.includes(kind);
@@ -545,9 +550,10 @@ function NewTaskCard({ r, d, ops, kind: fixed = null, kinds = null, start = {}, 
     return () => { on = false; };
   }, [use, choices, ops, r]);
   const n = Number(interval);
+  const asksDue = scheduled && use === "new" && takesStart({ unit });
   const why = !scheduled ? null
     : use === "existing" ? (picked ? null : "Choose a task.")
-      : !name.trim() ? "Name the task." : intervalWhy(interval) || null;
+      : !name.trim() ? "Name the task." : intervalWhy(interval) || (asksDue && startWhy(due)) || null;
   const hint = kinds && scheduled && use === "new" ? secondTaskHint(r) : null;
   const here = r.ref.position_id;
   const save = async (e) => {
@@ -560,8 +566,12 @@ function NewTaskCard({ r, d, ops, kind: fixed = null, kinds = null, start = {}, 
         : { outcome: kind, task: name.trim(), interval: n, interval_unit: unit, ...said };
     setBusy(true);
     setFailed(null);
+    const before = [...(r.ref.tasks || []), ...(r.ref.decision?.tasks || [])].map((t) => t.id);
     try {
-      await onSave(member);
+      const out = await onSave(member);
+      // A first due date: set on the task just made (the decision makes it; then its start).
+      const made = asksDue && due.trim() ? madeTask(before, out, member.task) : null;
+      if (made) await ops.editTask(made.id, startBody(due));
       if (alive.current) setBusy(false);
       onDone?.(use === "existing" && scheduled ? "Linked the task." : "Added the task.");
     } catch (err) {
@@ -628,6 +638,16 @@ function NewTaskCard({ r, d, ops, kind: fixed = null, kinds = null, start = {}, 
           <TextInput id={foundId} value={found} readOnly={busy} placeholder={FOUND_EMPTY} maxLength={500} onChange={(e) => setFound(e.target.value)} />
         </Row2>
       )}
+      {asksDue && (dueOpen ? (
+        <Row2 lead="First due" id={dueId}>
+          <TextInput id={dueId} type="date" value={due} readOnly={busy} autoFocus
+                     aria-invalid={tried && startWhy(due) ? "true" : undefined} onChange={(e) => setDue(e.target.value)} />
+        </Row2>
+      ) : (
+        <button type="button" className="link rim-tquietlink" disabled={busy} onClick={() => setDueOpen(true)}>
+          Set when it's first due…
+        </button>
+      ))}
       {(hint || (use === "existing" && scheduled) || failed || (tried && why && !busy)) && (
         <div className="rim-r3">
           {hint && <p className="rw-fhelp">{hint}</p>}
@@ -1009,6 +1029,10 @@ export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
             ) : <span className="rim-tevery">{every(t) || "No interval yet"}</span>}
             {!eventOnly && calcLink(t, outcome)}
           </div>
+          {!eventOnly && takesStart(t) && (
+            <DueLine key={`${t.id}:${t.first_due || ""}:${t.next_due || ""}`} task={t} can={can} busy={busy}
+                     onSave={(value) => save(startBody(value), value ? "Saved when it's first due." : "Back to one interval from when it was last done.", "interval")} />
+          )}
           {t.trigger && !eventOpen && (
             <p className="rim-tquiet">
               {eventOnly ? "Only " : "Or "}{triggerText(t.trigger)}{eventOnly ? "" : ", whichever comes first"}.
@@ -1041,6 +1065,50 @@ export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
       )}
       {calcDialog}
     </>
+  );
+}
+
+// "First due 1 Oct 2027 · Change…" (a date set for it) or "Next due 9 Nov 2027 · Change…": when
+// a calendar task falls due. Change… puts a date box in place (Save, Cancel; a date set can go
+// back to one interval from when it was last done). A summer task made in November can first
+// fall due in October, then every interval after.
+function DueLine({ task, can, busy, onSave }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(task.first_due || task.next_due || "");
+  const [tried, setTried] = useState(false);
+  const why = startWhy(value);
+  const text = dueText(task);
+  if (!open) {
+    if (!text && !can) return null;
+    return (
+      <p className="rim-tquiet rim-tdue">
+        {text ? text.charAt(0).toUpperCase() + text.slice(1) : "No due date yet"}
+        {can && <> · <button type="button" className="link" disabled={busy} onClick={() => setOpen(true)}>Change…</button></>}
+      </p>
+    );
+  }
+  const submit = (e) => {
+    e?.preventDefault();
+    setTried(true);
+    if (why || !value || busy) return;
+    onSave(value).then((ok) => { if (ok) setOpen(false); });
+  };
+  return (
+    <form className="rim-tdue rim-tdueform" aria-label="When it's first due" onSubmit={submit}
+          onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); } }}>
+      <label className="rim-trole" htmlFor={`due-${task.id}`}>First due</label>
+      <TextInput id={`due-${task.id}`} type="date" value={value} readOnly={busy} autoFocus
+                 aria-invalid={tried && why ? "true" : undefined} onChange={(e) => setValue(e.target.value)} />
+      <button type="submit" className="sm" disabled={busy || !value}>{busy ? "Saving…" : "Save"}</button>
+      <button type="button" className="secondary sm" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
+      {task.first_due && (
+        <button type="button" className="link" disabled={busy}
+                onClick={() => onSave("").then((ok) => { if (ok) setOpen(false); })}>
+          Count from last done instead
+        </button>
+      )}
+      {tried && why && <span className="rim-why" role="alert">{why}</span>}
+    </form>
   );
 }
 
