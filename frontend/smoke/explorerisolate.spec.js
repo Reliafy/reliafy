@@ -276,3 +276,30 @@ test("at 400 px: Isolate opens in place in the ⋯ menu; the rest closes; the RC
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   await expectHealthy(page, problems, { label: "isolate at 400 px", root: ".tx" });
 });
+
+test("a level chosen before the RCM has loaded still opens the RCM rows when they arrive", async ({ page, request, problems }) => {
+  const tag = `l${Date.now()}`;
+  const p = await plant(request, tag);
+  // The RCM read held back a moment, so the level is chosen while only the positions are in.
+  let release;
+  const held = new Promise((done) => { release = done; });
+  await page.route(/\/api\/maintenance\/rcm(\?|$)/, async (route) => { await held; return route.continue(); });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await open(page, `/asset-register/explorer?arrange=positions&tab=rcm&sel=${p.top.id}&pin=${p.top.id}`);
+  const table = page.getByRole("treegrid", { name: /and their RCM/ });
+  const trow = (name) => table.getByRole("row", { name: new RegExp(name) });
+  await expect(trow(`^Works line A ${tag}`)).toBeVisible();
+  await page.getByRole("button", { name: "Tree options" }).click();
+  await page.getByRole("menuitemradio", { name: "Open everything" }).click();
+  await page.keyboard.press("Escape");
+  await expect(trow(`^Works seal A ${tag}`)).toBeVisible(); // the positions there were, opened
+  release();
+  // The RCM arrives: its rows open to the level chosen too, down to the failure mode.
+  await expect(trow(`^Failure mode: Seal leaks ${tag}`)).toBeVisible();
+  await expect(trow(`^Functional failure: No flow ${tag}`)).toHaveAttribute("aria-expanded", "true");
+  // By hand after that, as before: a row closes when asked.
+  await trow(`^Function: Pump water ${tag}`).locator(".tp-chev").click();
+  await expect(trow(`^Functional failure: No flow ${tag}`)).toHaveCount(0);
+  await page.unroute(/\/api\/maintenance\/rcm(\?|$)/);
+  await expectHealthy(page, problems, { label: "level kept as the RCM arrives", root: ".tx" });
+});
