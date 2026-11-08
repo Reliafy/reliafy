@@ -230,7 +230,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const [openBy, setOpenBy] = useState(saved.open);
   const [selected, setSelected] = useState(saved.selected);
   const [width, setWidth] = useState(() => clampWidth(saved.width, window.innerWidth));
-  // A width the user dragged to (kept); until then the RCM tab fits its tree column (fitWidth below).
+  // A width the user dragged to (kept); until then the tree column fits its names, the same on every tab (fitWidth below).
   const [widthSet, setWidthSet] = useState(() => !!saved.widthSet);
   // The edge dragged (or ← →): kept; double-clicked (back to the usual width): fitted again.
   const onWidth = useCallback((w) => {
@@ -390,12 +390,21 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // each function in that order; the tree itself stays as it is.
   const order = useMemo(() => (fmeaOn && fsort ? fmeaOrder(display, fsort) : null), [fmeaOn, fsort, display]);
   const { list, index } = useMemo(() => flatten(display, open, filter, order), [display, open, filter, order]);
-  // The tree column on the RCM and FME(C)A tabs (a wide screen): fitted to the rows on show
-  // until the user drags it (the review, Nov 2026: at 1600 px names were cut to a few letters).
-  const fitWidth = useMemo(() => (rcmOn && !phone && !widthSet ? fitTreeWidth(list.map((v) => {
-    const r = display.rows.get(v.key);
-    return { depth: v.depth, text: (isRcmRow(r) ? r?.ref?.text : r?.ref?.name) || "" };
-  }), window.innerWidth) : null), [rcmOn, phone, widthSet, list, display]);
+  // The tree column (a wide screen): fitted to the names on show until the user drags it (the
+  // review, Nov 2026: at 1600 px names were cut to a few letters). The same width on every tab,
+  // so switching tabs moves nothing: worked out from the tree with its RCM in it (read with the
+  // tree, whatever the tab) and the rows open in this arrangement, not from the tab's own rows.
+  const fitTree = useMemo(() => (!phone && !widthSet && data ? (rcm ? graftRcm(base, rcm) : base) : null),
+    [phone, widthSet, data, rcm, base]);
+  const fitWidth = useMemo(() => {
+    if (!fitTree) return null;
+    const shown = pinKey && fitTree.rows.has(pinKey) ? pinDisplay(fitTree, pinKey) : fitTree;
+    const { list: rows } = flatten(shown, openBy[mode] || levelSet(fitTree, 2));
+    return fitTreeWidth(rows.map((v) => {
+      const r = shown.rows.get(v.key);
+      return { depth: v.depth, text: (isRcmRow(r) ? r?.ref?.text : r?.ref?.name) || "" };
+    }), window.innerWidth);
+  }, [fitTree, pinKey, openBy, mode]);
   const shownWidth = fitWidth ?? width;
   // A row asked for (?sel=, a link, a new row) that's in the tree is the one
   // shown, even before the effect below reveals it: else the first row is shown
@@ -1710,7 +1719,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           setOpenSet(new Set());
         }}
         phone={phone}
-        width={rcmOn ? shownWidth : width}
+        width={shownWidth}
         onWidth={onWidth}
         collapsed={collapsed}
         onCollapse={setCollapsed}
