@@ -27,7 +27,7 @@ test("attach a sample model to a position, see its row and its details, then unl
   await expect(head.locator(".ovm-menu .ovm-item")).toContainText(["Fit from history…", "Assign a saved model…", "Assign from class…", "Columns…"]);
   await head.getByRole("button", { name: "Assign a saved model…" }).click();
   const dialog = page.getByRole("dialog", { name: "Assign a saved model" });
-  await dialog.getByRole("radio", { name: new RegExp(SAMPLE.replace(/[()]/g, "\\$&")) }).check();
+  await dialog.getByRole("radio", { name: SAMPLE, exact: true }).check();
   await dialog.getByRole("button", { name: "Attach" }).click();
   await expect(dialog).toHaveCount(0);
 
