@@ -39,6 +39,14 @@ def _sv():
     return service
 
 
+def _refused(message: str, context: dict):
+    """A refusal that still carries what the dialog shows beside it (the history used, its counts,
+    the class's numbers): the preview answers it in words with these."""
+    err = _sv().Invalid(message)
+    err.context = context
+    return err
+
+
 def _in_unit(rows: list[dict], per: float, exclude) -> list[dict]:
     """Life rows (days) in a unit of ``per`` days, each marked used unless excluded."""
     skip = set(exclude or ())
@@ -164,9 +172,33 @@ def fit(m, db, owners, hidden, position_id: str, data: str = "position", method:
         raise sv.Invalid(str(err)) from None
     rows = _rows(m, position_id, "class" if data == "class" else "position", texts, exclude, per)
     counts = _counts(rows)
+    context = {"rows": rows, "counts": counts, "class_history": cls, "unit": unit, "method": method, "data": data}
+    try:
+        return _fit_on(m, db, p, position_id, data, method, prior, distribution, modes, texts, trust, age, save, name,
+                       note, replace_link_id, owner_id, cls, base, unit, per, rows, counts)
+    except sv.Invalid as err:
+        if getattr(err, "context", None) is None:
+            raise _refused(str(err), context) from None
+        raise
+
+
+def _fit_on(m, db, p, position_id, data, method, prior, distribution, modes, texts, trust, age, save, name, note,
+            replace_link_id, owner_id, cls, base, unit, per, rows, counts):
+    import surpyval as sp
+
+    from backend.services import bayes_life as bl
+
+    sv = _sv()
 
     if method == "mle":
         result, model = _mle(p, rows, counts, distribution, unit, data, cls)
+        c = result.get("curves") or {}
+        if age and c.get("x") and c.get("sf"):
+            # Reliability at the age asked, read off the fitted curve (and its 95% band).
+            t = float(age)
+            at = lambda ys: float(np.interp(t, c["x"], ys)) if ys else None  # noqa: E731
+            result["at_age"] = {"age": t, "reliability": at(c["sf"]), "lower": at(c.get("sf_lower")),
+                                "upper": at(c.get("sf_upper"))}
     else:
         if prior.get("kind") == "class":
             # The class's other positions: this one's own history is the data, so it isn't in the prior too.
@@ -295,6 +327,7 @@ def _mle(p, rows: list[dict], counts: dict, distribution: str, unit: str, data: 
             words += f", shape {num(shape['median'])}"
     words += "."
     result = {
+        "plot": res.get("plot"),  # the probability plot (data points, the fit, its bounds), as on the Models page
         "method": "mle", "interval_label": "95% confidence bounds", "data": data, "distribution": res.get("distribution_id"),
         "distribution_label": res.get("distribution"), "unit": unit, "counts": counts, "rows": rows, "prior": [],
         "posterior": post,

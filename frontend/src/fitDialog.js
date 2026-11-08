@@ -60,3 +60,45 @@ export function bodyOf(s) {
 
 // The preview's key: whenever the request (or what's missing) changes.
 export const previewKey = (s) => JSON.stringify({ body: bodyOf(s), problem: problem(s) });
+
+// The Data choices as the dialog's chips (short: the grid's label says "Data").
+export const DATA_CHIPS = [
+  { value: "position", label: "This position", title: "This position's own history" },
+  { value: "class", label: "The class", title: "Every position of the same class, pooled" },
+  { value: "both", label: "Both", title: "This position's history, with the class's other positions' history as a prior" },
+];
+
+// The method's one line, the result pane's subtitle.
+export const METHOD_LINE = {
+  mle: "Maximum likelihood: the numbers that make the data most likely, with 95% confidence bounds.",
+  bayes: "Bayesian: the prior moved by the data, with 90% credible intervals.",
+};
+
+// "For": every failure of the position, one mode by name, or "3 of 8 picked".
+export function forWords(modes = [], picked = []) {
+  if (!picked.length || !modes.length) return "All failures of this position";
+  if (picked.length === 1) return modes.find((m) => m.id === picked[0])?.text || "1 picked";
+  return `${picked.length} of ${modes.length} picked`;
+}
+
+// The history's one-line summary: "2 failures, 1 suspension".
+export function countsWords(counts) {
+  if (!counts) return "";
+  const f = counts.failures || 0;
+  const s = counts.suspensions || 0;
+  return `${f} failure${f === 1 ? "" : "s"}, ${s} suspension${s === 1 ? "" : "s"}`;
+}
+
+// A history row as the table shows it: when (the day it ended, or began if still running),
+// what happened, its age in the result's unit, and failure or suspension.
+export function historyRow(r, unit = "") {
+  const u = String(unit || "").toLowerCase();
+  const n = (v) => Number(Number(v).toPrecision(4)).toLocaleString("en-AU");
+  const age = r.c === 2 ? `${n(r.xl)}–${n(r.xr)}` : n(r.x);
+  const what = r.c === 1 ? (r.status === "removed" ? "Removed" : "Still running") : (r.failure_mode || "Failed");
+  return { when: r.to || r.from || "", what: [what, r.item, r.position].filter(Boolean).join(" · "), age: `${age}${u ? ` ${u}` : ""}`,
+    kind: r.c === 1 ? "Suspension" : "Failure" };
+}
+
+// The link a refusal offers: a plain fit that can't be done switches to a fit with a prior.
+export const refusalSwitch = (method) => (method === "mle" ? { to: "bayes", label: "Fit with a prior instead" } : null);
