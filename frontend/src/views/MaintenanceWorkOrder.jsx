@@ -11,7 +11,7 @@ import { FailureModePicker, Field, FormModal, NotesCard, fmtDate, today } from "
 import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import WorkOrderReadings from "../components/WorkOrderReadings.jsx";
-import { progressText, readingRows, readingsToSend, startValues } from "../workOrderReadings.js";
+import { mergeValues, progressText, readingRows, readingsToSend } from "../workOrderReadings.js";
 import { partChoices, stockText } from "../maintenanceSpares.js";
 import { actionKinds, itemAtText, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
@@ -44,8 +44,9 @@ export default function MaintenanceWorkOrder() {
     getWorkOrder(id).then(setWo).catch((e) => setError(e.message));
   }, [id]);
   useEffect(() => refresh(), [refresh]);
-  // Fresh boxes whenever the work order is (re)loaded or a Record saved: a setting starts at its value.
-  useEffect(() => { if (wo) setValues(startValues(readingRows(wo))); }, [wo]);
+  // Boxes for the work order as (re)loaded: a setting starts at its value, and a box being typed in keeps
+  // what was typed (a functional update, so it can't race a keystroke after a Record or a checklist tick).
+  useEffect(() => { if (wo) setValues((prev) => mergeValues(readingRows(wo), prev)); }, [wo]);
 
   if (error && !wo) return <div className="app"><LoadFailed header error={error} notFound="Work order not found." to="/maintenance" label="Back to Maintenance" /></div>;
   if (!wo) return <div className="app"><div className="card empty">Loading…</div></div>;

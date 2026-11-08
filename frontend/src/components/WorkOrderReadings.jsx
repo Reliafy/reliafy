@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { recordWorkOrderReadings } from "../api.js";
 import { pointPagePath } from "../measurementsTab.js";
-import { boxLabel, progressText, readingRows, readingsToSend, rowDetail, takenText } from "../workOrderReadings.js";
+import { boxLabel, clearSent, progressText, readingRows, readingsToSend, rowDetail, takenText } from "../workOrderReadings.js";
 import { fmtDate } from "./MaintenanceParts.jsx";
 
 // A work order's "Readings and settings" (workOrderReadings.js): a value box for
@@ -28,7 +28,10 @@ export default function WorkOrderReadings({ wo, values, setValues, onRecorded })
     setBusy(true);
     setError(null);
     try {
-      onRecorded(await recordWorkOrderReadings(wo.id, pending));
+      const sent = pending;
+      const fresh = await recordWorkOrderReadings(wo.id, sent);
+      setValues((v) => clearSent(v, sent));
+      onRecorded(fresh);
     } catch (e) {
       setError(e.message);
     } finally {
