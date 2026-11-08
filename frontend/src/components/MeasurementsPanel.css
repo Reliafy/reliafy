@@ -1,87 +1,49 @@
-/* The Explorer's Measurements tab (MeasurementsPanel.jsx): a scannable grid,
-   one line per point (two with the muted line under). Fixed column widths so
-   values, chips and trends line up down the list; long names and notes are
-   cut with an ellipsis, in full in their tooltips and the readings history.
-   The state is a chip in words as well as colour. */
-.ms-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-}
-.ms-purpose { margin: 0 0 10px; }
-.ms-bar { margin: 0 0 8px; }
-/* The list's dashed add row, over it (a new point goes on the picked row). */
-.ms-panel button.ms-add { width: 100%; margin: 0 0 8px; }
-.ms-add-note { margin: 0 0 8px; }
+/* The Explorer's Measurements tab (MeasurementsPanel.jsx): a table like the
+   LSA tab's (RcmWorksheet.css's rw-* grid, LsaPanel.css's pk-* bar), one row
+   per measuring point, setting or sensor channel, grouped under a quiet row
+   per position when there are several. The table scrolls inside its card;
+   nothing scrolls the page sideways. The state is a chip in words as well as
+   colour. */
 button.ms-filter { line-height: 26px; padding: 0 10px; font-size: var(--fs-13); }
-.ms-count { min-width: 0; }
+.ms-chip { cursor: default; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 
-/* The list is its own container: the grid turns into blocks where the panel
-   is narrow, whatever the window's width (the panel sits beside the tree). */
-.ms-list { container: mslist / inline-size; }
+.ms-tbl .rw-hs.ms-hs { cursor: default; }
+.ms-trow .rw-c { align-items: center; }
+.ms-c-latest .pk-two { align-items: flex-end; width: 100%; }
+.ms-name-link { font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 
-.ms-table { table-layout: fixed; }
-.ms-table .ms-c-latest { width: 150px; }
-.ms-table .ms-c-state { width: 136px; }
-.ms-table .ms-c-trend { width: 140px; }
-.ms-table .ms-c-menu { width: 44px; }
-.ms-table thead th { padding: 0 10px 8px; white-space: nowrap; }
-.ms-table th.ms-num { text-align: right; }
-.ms-table td {
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--line2);
-  vertical-align: middle;
-  white-space: nowrap;
-  overflow: hidden;
+/* Group rows: one per position, quiet, folding its rows. */
+.ms-grow { display: flex; border-bottom: 1px solid var(--line2); background: var(--surf-2); position: sticky; left: 0; }
+button.ms-gbtn {
+  display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 5px 10px; border: 0; border-radius: 0;
+  background: transparent; box-shadow: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer;
 }
-.ms-row.ms-clickable { cursor: pointer; }
-.ms-row:hover td { background: var(--acc-hover); }
-.ms-row.ms-picked td { background: var(--acc-t); }
+button.ms-gbtn:hover:not(:disabled) { background: var(--acc-hover); color: var(--ink); }
+.ms-gcaret { width: 10px; color: var(--muted); }
+.ms-gname { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ms-gcount { white-space: nowrap; }
 
-/* Point: the name on one line, the muted line under it. */
-.ms-name, .ms-sub {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* The Record box: type, Enter. Quiet until hovered or focused. */
+.ms-rec { display: flex; flex-direction: column; gap: 1px; width: 100%; min-width: 0; }
+input.ms-rec-input {
+  width: 100%; min-width: 0; padding: 2px 6px; font-size: var(--fs-13); font-variant-numeric: tabular-nums;
+  border: 1px solid transparent; background: transparent; border-radius: var(--r-sm);
 }
-.ms-name { font-weight: 600; color: var(--ink); }
-button.ms-name {
-  background: none;
-  border: none;
-  box-shadow: none;
-  padding: 0;
-  font: inherit;
-  font-weight: 600;
-  letter-spacing: inherit;
-  color: var(--ink);
-  text-align: left;
-  cursor: pointer;
+.ms-trow:hover input.ms-rec-input, input.ms-rec-input:focus { border-color: var(--line); background: var(--surf); }
+input.ms-rec-input::placeholder { color: var(--muted); }
+.ms-rec-said { font-size: var(--fs-12); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ms-rec-said.ok { color: var(--success, #15803d); }
+.ms-rec-said.bad { color: var(--danger); }
+.ms-rec-none { padding-left: 6px; }
+/* No hover on a touch screen: the box shows its outline. */
+@media (hover: none) {
+  input.ms-rec-input { border-color: var(--line); background: var(--surf); }
 }
-button.ms-name:hover:not(:disabled) { background: none; color: var(--acc); text-decoration: underline; text-underline-offset: 2px; }
-a.ms-name { color: var(--ink); text-decoration: none; }
-a.ms-name:hover, a.ms-name:focus-visible { color: var(--acc); text-decoration: underline; text-underline-offset: 2px; }
-.ms-sub { font-size: var(--fs-12); line-height: 1.35; }
-/* The name and, for a row nobody reads by hand, the "Fed" chip after it. */
-.ms-name-line { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
-.ms-name-line .ms-name { min-width: 0; }
-.ms-fed { flex: none; }
-
-/* Latest: the value right-aligned so numbers line up; the note mark before it. */
-.ms-latest { text-align: right; font-variant-numeric: tabular-nums; }
-.ms-value-line { display: flex; justify-content: flex-end; align-items: center; gap: 5px; min-width: 0; }
-.ms-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ms-note { flex: none; display: inline-grid; place-items: center; color: var(--muted); cursor: help; }
-
-.ms-chip { cursor: default; }
-.ms-wo { margin-left: 6px; font-size: var(--fs-12); }
 
 .ms-trend { display: block; }
 .ms-no-trend { display: inline-block; width: 120px; }
 
-.ms-menu-cell { text-align: right; overflow: visible !important; padding-left: 0 !important; padding-right: 4px !important; }
+.ms-c-menu { justify-content: flex-end; padding-right: 4px !important; overflow: visible !important; }
 button.ms-more {
   display: inline-grid;
   place-items: center;
@@ -95,35 +57,15 @@ button.ms-more {
   color: var(--muted);
 }
 button.ms-more:hover:not(:disabled), button.ms-more.open { background: var(--acc-t); color: var(--acc); }
+.ms-empty-add { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 640px) {
+  button.ms-more { width: 44px; height: 40px; }
+  input.ms-rec-input { padding: 6px; }
+}
 
-/* Narrow (a phone, or a narrow panel): each point is a block, nothing wider
-   than the screen. Name and ⋯ on top; then the chip, the latest value and its
-   date; then the trend. */
-@container mslist (max-width: 620px) {
-  .ms-table, .ms-table tbody { display: block; width: 100%; }
-  .ms-table colgroup, .ms-table thead { display: none; }
-  .ms-table tr.ms-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "point menu"
-      "state state"
-      "latest latest"
-      "trend trend";
-    align-items: center;
-    row-gap: 4px;
-    padding: 10px 2px;
-    border-bottom: 1px solid var(--line2);
-  }
-  .ms-table td { display: block; padding: 0; border: 0; min-width: 0; }
-  .ms-row:hover td, .ms-row.ms-picked td { background: none; }
-  .ms-row.ms-picked { background: var(--acc-t); }
-  .ms-point { grid-area: point; }
-  .ms-menu-cell { grid-area: menu; padding: 0 !important; }
-  .ms-state-cell { grid-area: state; }
-  .ms-latest { grid-area: latest; text-align: left; display: flex !important; align-items: baseline; gap: 8px; }
-  .ms-latest .ms-value-line { justify-content: flex-start; flex: none; }
-  .ms-latest .ms-sub { flex: 1 1 auto; min-width: 0; }
-  .ms-trend-cell { grid-area: trend; }
-  button.ms-more { width: 44px; height: 44px; }
+/* The point's name (first when grouped) stays in view while the table scrolls sideways in its card. */
+.ms-tbl.ms-grouped .rw-h.ms-c-point { position: sticky; left: 0; z-index: 2; background: var(--surf-2); }
+.ms-tbl.ms-grouped .ms-trow .rw-c.ms-c-point { position: sticky; left: 0; z-index: 1; background: var(--surf); }
+.ms-tbl.ms-grouped .ms-trow:hover .rw-c.ms-c-point, .ms-tbl.ms-grouped .ms-trow.focus .rw-c.ms-c-point {
+  background: linear-gradient(var(--acc-hover), var(--acc-hover)), var(--surf);
 }

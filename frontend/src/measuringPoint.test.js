@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   READINGS_INTRO, canEditReadings, chartData, chartTime, dayText, numberText, pageState, pointDates, pointMeta, readingChip,
-  readingDate, readingMenu, readingRows, trendText, valueHeading, pointMoveChoices, rangeFact, settingChangeRows } from "./measuringPoint.js";
+  readingDate, readingMenu, readingRows, trendText, valueHeading, pointMoveChoices, rangeFact, settingChangeRows, settingSummary, spanText } from "./measuringPoint.js";
 
 const TODAY = "2026-11-07";
 const point = (over = {}) => ({
@@ -147,6 +147,17 @@ test("a setting: steps carried on to today, its range, its changes in words", ()
   assert.equal(rows[0].text, "Set to 60% on 1 Oct 2026 (from 45%)");
   assert.equal(rows[0].workOrder.number, 123);
   assert.equal(rows[1].text, "Set to 45% on 1 Apr 2026");
+  assert.equal(rows[0].byHand, false);
+  assert.equal(rows[1].byHand, true);
+  // How long each value held: the latest up to today.
+  const held = settingChangeRows(point, "2026-11-08");
+  assert.equal(held[0].held, "still set, 38 days so far");
+  assert.equal(held[1].held, "held about 6 months");
+  assert.equal(settingSummary(point), "Set 2 times since 1 Apr 2026, between 45% and 60%. 60% now, since 1 Oct 2026.");
+  assert.equal(settingSummary({ ...point, changes: [point.changes[1]] }), "Set once since 1 Apr 2026, always 45%. 45% now, since 1 Apr 2026.");
+  assert.equal(settingSummary({ kind: "setting", changes: [] }), "");
+  assert.equal(spanText(1), "1 day");
+  assert.equal(spanText(800), "about 2.2 years");
   assert.equal(rangeFact(point).text, "0 to 100%");
   assert.equal(rangeFact({ unit: "%" }).text, "Any value");
   assert.equal(pageState(point, "2026-11-08").label, "Setting");

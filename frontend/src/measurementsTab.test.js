@@ -61,6 +61,7 @@ test("a hand-read point is due when never read, or when it's been longer than us
   // Due again half as long again as its usual round after the last: 7 days → 10.5 → 11 days on.
   assert.equal(nextReadingOn(cond({ readings: weekly })), "2026-11-02");
   assert.equal(nextReadingOn(cond({ readings: weekly.slice(0, 2) })), null);
+  assert.equal(nextReadingOn(cond({ kind: "setting", readings: weekly })), null); // a setting is never due
   assert.equal(nextReadingOn(cond({ source: "automated", readings: weekly })), null);
   assert.equal(needsAttention(cond({ readings: weekly }), TODAY), true);
   assert.equal(needsAttention(cond({ readings: weekly }), "2026-10-27"), false);

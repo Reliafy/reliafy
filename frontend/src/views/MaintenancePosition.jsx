@@ -862,15 +862,16 @@ export function MeasurementsCard({ measurements, target, onChanged }) {
   );
 }
 
-export function PointModal({ target, onClose, onDone }) {
-  const [f, setF] = useState({ name: "", kind: "condition", unit: "", source: "manual", tag: "", alarm_above: "", alarm_below: "",
+// `kind`: the kind it starts as ("setting" from Add a setting…).
+export function PointModal({ target, kind = "condition", onClose, onDone }) {
+  const [f, setF] = useState({ name: "", kind, unit: "", source: "manual", tag: "", alarm_above: "", alarm_below: "",
     range_min: "", range_max: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const counter = f.kind === "counter";
   const setting = f.kind === "setting";
   const blank = (v) => (v === "" ? null : v);
   return (
-    <FormModal title="Add a measurement" submitLabel="Add" canSubmit={(counter ? !!f.unit : !!f.name.trim()) && !tooLong(f.name) && (f.source === "manual" || !!f.tag.trim())}
+    <FormModal title={kind === "setting" ? "Add a setting" : "Add a measuring point"} submitLabel="Add" canSubmit={(counter ? !!f.unit : !!f.name.trim()) && !tooLong(f.name) && (f.source === "manual" || !!f.tag.trim())}
                onClose={onClose} onSubmit={async () => onDone(await (target.kind === "item" ? addItemMeasurementPoint : addMeasurementPoint)(target.id, {
                  ...f, alarm_above: f.kind === "condition" ? blank(f.alarm_above) : null,
                  alarm_below: f.kind === "condition" ? blank(f.alarm_below) : null,

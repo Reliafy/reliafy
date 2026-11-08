@@ -178,15 +178,47 @@ export function chartData(point, today = null) {
 }
 
 // A setting's changes, newest first, as the point view lists them: "Set to 60%
-// on 1 Oct 2026 (from 45%)", and the work order (and task) it was set at.
-export function settingChangeRows(point) {
+// on 1 Oct 2026 (from 45%)", the work order (and task) it was set at, or by
+// hand, and how long it held that value ("held 6 months"; the latest: "still
+// set, 38 days so far", with `today`).
+export function settingChangeRows(point, today = null) {
   const u = point?.unit || "";
-  return (point?.changes || []).map((c, i) => ({
-    key: c.reading_id || `c${i}`,
-    text: `Set to ${withUnit(numberText(c.value), u)} on ${readingDate(c)}${c.from != null ? ` (from ${withUnit(numberText(c.from), u)})` : ""}`,
-    workOrder: c.work_order || null,
-    task: c.task || null,
-  }));
+  const changes = point?.changes || [];
+  const day = (c) => String(c.on || c.when || "").slice(0, 10);
+  return changes.map((c, i) => {
+    const until = i ? day(changes[i - 1]) : today;
+    const days = until && day(c) ? Math.round((Date.parse(`${until}T00:00:00Z`) - Date.parse(`${day(c)}T00:00:00Z`)) / 86400000) : null;
+    return {
+      key: c.reading_id || `c${i}`,
+      text: `Set to ${withUnit(numberText(c.value), u)} on ${readingDate(c)}${c.from != null ? ` (from ${withUnit(numberText(c.from), u)})` : ""}`,
+      workOrder: c.work_order || null,
+      task: c.task || null,
+      byHand: !c.work_order,
+      held: days == null || days < 0 ? "" : i ? `held ${spanText(days)}` : `still set, ${spanText(days)} so far`,
+    };
+  });
+}
+
+// A number of days as people say it: "today", "1 day", "12 days", "about 3 months", "about 1.5 years".
+export function spanText(days) {
+  if (days <= 0) return "since today";
+  if (days < 60) return `${days} ${days === 1 ? "day" : "days"}`;
+  if (days < 548) return `about ${Math.round(days / 30.44)} months`;
+  return `about ${Math.round((days / 365.25) * 10) / 10} years`;
+}
+
+// What a setting has been over time, in one line: "Set 3 times since 1 Apr
+// 2026, between 45% and 60%. 60% now, since 1 Oct 2026." ("" with no changes).
+export function settingSummary(point) {
+  const changes = point?.changes || [];
+  if (!changes.length) return "";
+  const u = point.unit || "";
+  const values = changes.map((c) => Number(c.value)).filter(Number.isFinite);
+  const lo = Math.min(...values), hi = Math.max(...values);
+  const first = changes[changes.length - 1], last = changes[0];
+  const span = lo === hi ? `always ${withUnit(numberText(lo), u)}` : `between ${withUnit(numberText(lo), u)} and ${withUnit(numberText(hi), u)}`;
+  const times = changes.length === 1 ? "Set once" : `Set ${changes.length} times`;
+  return `${times} since ${readingDate(first)}, ${span}. ${withUnit(numberText(last.value), u)} now, since ${readingDate(last)}.`;
 }
 
 // The setting's allowed range as the page's fact: {text, detail}.

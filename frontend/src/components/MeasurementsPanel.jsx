@@ -1,18 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { listMeasurementPoints } from "../api.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { listMeasurementPoints, recordMeasurementReading, retireMeasurementPoint } from "../api.js";
 import { branchOf } from "../explorerTabs.js";
-import { fmtDate } from "./MaintenanceParts.jsx";
 import { ChannelPane, LimitsModal, PointView } from "./MeasurementViews.jsx";
-import { PlusIcon } from "./LibRows.jsx";
 import Chip from "./ui/Chip.jsx";
 import RowMenu from "./RowMenu.jsx";
-import { readingWhen } from "../maintenanceReadings.js";
+import { useConfirm } from "./ConfirmProvider.jsx";
+import { ColumnChooser } from "./RcmWorksheet.jsx";
+import { ShowMe } from "./SectionPage.jsx";
+import { VIEW_PARAMS, branchQuery, pointPagePath, readMeasurementsQuery, recentValues, withUnit } from "../measurementsTab.js";
 import {
-  VIEW_PARAMS, branchQuery, latestNote, pointChip, pointHref, pointMenu, pointPagePath, pointSubline, pointsCsv, readMeasurementsQuery,
-  recentValues, recordedBy, rowAction,
-  channelChip, channelMenu, channelSubline, channelValues, isFed, measurementRows, rowNeedsAttention,
-} from "../measurementsTab.js";
+  DEFAULT_MEAS_COLUMNS, MEAS_COLUMNS, checkValue, groupRows, groupText, measurementsCsv, nextSort, parseSort, rowMenu,
+  savedText, searchRows, sortParam, sortRows, sortable, tableRows, whenText,
+} from "../measurementsTable.js";
+import { numberText } from "../measuringPoint.js";
 import { channelPath } from "../signals.js";
 import NewChannel from "./SignalChannelForm.jsx";
 import { usePanelMenu } from "../panelMenu.js";
@@ -20,29 +21,34 @@ import { saveText } from "../sparesPlan.js";
 import { exportFilename } from "../rcmImport.js";
 import { PointModal, PointReadingModal, ReadingsModal } from "../views/MaintenancePosition.jsx";
 import PointMoveModal from "./PointMoveModal.jsx";
+import "./RcmWorksheet.css";
+import "./LsaPanel.css";
 import "../views/Maintenance.css";
 import "./MeasurementsPanel.css";
 
 // The Measurements tab of the Explorer's panel (Assets › Explorer,
-// ?tab=measurements): every measuring point on the picked row and everything
-// inside it (a fitted item's own points too), worst first, one line each (two
-// with the muted line under): the point, its latest value and when, one state
-// chip, a small trend, and a ⋯ menu. The detail a row would otherwise carry
-// (which limit, the limits, the reading's note) is in tooltips and the
-// readings history, so the list stays scannable. Clicking a row opens its
-// readings. The filter (?only=attention), the point whose readings are open
-// (?readings=), and a point or channel open in full (?point=, ?channel=: its
-// name or "Open" in its ⋯ menu; MeasurementViews.jsx) are in the address, so a
-// link opens the tab as it was. Where the
-// panel is narrow (a phone) each point becomes a block. A new point: the
-// dashed "+ Add a measuring point" row over the list, or the panel heading's
-// "…" (given through `onMenu`), which also exports the points shown as CSV.
+// ?tab=measurements; Derryn, 9 Nov 2026): a table of every measuring point,
+// setting and sensor channel on the picked row and everything below it
+// (positions, items, places), one row each: Position, Point (name, tag), Kind
+// (Condition, Setting, Counter, Fed), Latest (value with unit, and when),
+// State (OK, Needs attention, Due, No reading; a setting: "Set 1 Oct 2026"),
+// Trend (a sparkline; a setting's is a step line), Next due, a Record box and
+// a ⋯ (Open, Record a reading…, Edit limits…, Move…, Retire…). The same table
+// as the LSA tab's (LsaPanel.jsx): search over every column (?q=), sortable
+// headers (?sort=, Shift-click for a second key; worst first when none),
+// Columns… and Export CSV in the heading's "…". When the rows are on several
+// positions they're grouped under a quiet row per position, which folds.
 //
-// Signal channels (sensors that send snapshots: a vibration sensor, a smart
-// plug's power) are rows of the same list, marked "Fed" like a feed's points:
-// the latest level, the state of its watch bands, the recent trend, and a ⋯
-// menu (Open: in full in the tab, with the spectrum; Edit bands…). The heading's "…"
-// adds one ("Add a sensor channel…").
+// Type a value in a row's Record box and press Enter: it's recorded now (a
+// setting's new value: "✓ Set to 28 °C"), the row's value and sparkline
+// update. The heading's "…" adds a measuring point, a setting (the same
+// dialog, kind preset) or a sensor channel; so does the empty state.
+//
+// A point's or channel's name (or Open) shows it in full in the tab
+// (?point=, ?channel=: MeasurementViews.jsx, with "← Measurements" back): its
+// history, for a setting what it's been over time and each change.
+// ?only=attention keeps the rows that need a look; ?readings= opens a
+// point's Readings dialog (older links).
 
 function useMeasurementsQuery() {
   const [params] = useSearchParams();
@@ -100,63 +106,11 @@ function Trend({ point, values = null }) {
 
 const fmtValue = (v) => (typeof v === "number" ? Number(v.toPrecision(4)) : v);
 
-// A small mark for a reading that has a note: the note is its tooltip, and in full in the history.
-const NoteMark = ({ note }) => (
-  <span className="ms-note" role="img" aria-label={`Note: ${note}`} title={note}>
-    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2"
-         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M5 4h14v12l-4 4H5z" /><path d="M15 20v-4h4M9 9h6M9 13h4" />
-    </svg>
-  </span>
-);
-
 const MoreIcon = () => (
   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
     <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
   </svg>
 );
-
-
-// Not read by hand: a sensor channel, a feed's point, or one worked out from a channel.
-const FedChip = () => <Chip tone="neutral" className="ms-fed" title="Fed automatically: nobody reads it by hand">Fed</Chip>;
-
-// A sensor channel as a row: its name (to its own page) and "Fed", the latest
-// level and when, its bands' state, the recent levels, and its ⋯ menu.
-function ChannelRow({ ch, branchy, fittedAt, picked, onOpen, onMenu, onContextMenu }) {
-  const chip = channelChip(ch);
-  const sub = channelSubline(ch, { branch: branchy, fittedAt });
-  const when = ch.latest?.t ? fmtDate(String(ch.latest.t).slice(0, 10)) : "";
-  return (
-    <tr id={`ms-channel-${ch.id}`} className={"ms-row ms-clickable ms-channel" + (picked ? " ms-picked" : "")}
-        onClick={onOpen} title="Open its page: spectrum, watch bands and settings" onContextMenu={onContextMenu}>
-      <td className="ms-point">
-        <span className="ms-name-line">
-          <Link className="ms-name" to={channelPath(ch)} title={`${ch.name}: open its page`} onClick={(e) => e.stopPropagation()}>{ch.name}</Link>
-          <FedChip />
-        </span>
-        <span className="lib-date ms-sub" title={sub}>{sub}</span>
-      </td>
-      <td className="ms-latest">
-        <span className="ms-value-line">
-          <strong className="ms-value">{ch.latest ? `${fmtValue(ch.latest.value)}${ch.unit ? ` ${ch.unit}` : ""}` : "—"}</strong>
-        </span>
-        <span className="lib-date ms-sub" title={when ? `${when}, from the sensor${ch.tag ? ` (${ch.tag})` : ""}` : "No snapshot yet"}>
-          {when ? `${when} · sensor` : "no data yet"}
-        </span>
-      </td>
-      <td className="ms-state-cell">
-        <Chip tone={chip.tone} className={`ms-chip ms-${chip.key}`} title={chip.title}>{chip.label}</Chip>
-      </td>
-      <td className="ms-trend-cell"><Trend point={ch} values={channelValues(ch, 12)} /></td>
-      <td className="ms-menu-cell">
-        <button type="button" className={"ms-more" + (picked ? " open" : "")} aria-haspopup="menu" aria-expanded={picked}
-                aria-label={`Actions for ${ch.name}`} title="Actions" onClick={onMenu}>
-          <MoreIcon />
-        </button>
-      </td>
-    </tr>
-  );
-}
 
 // The tab: the list, or (with ?point= or ?channel=) one point or channel in
 // full, with a link back to the list.
@@ -167,14 +121,116 @@ export default function MeasurementsPanel(props) {
   return <MeasurementsList {...props} q={q} />;
 }
 
+const COLS_KEY = "reliafy.measurements.columns";
+function readCols() {
+  try {
+    const got = JSON.parse(localStorage.getItem(COLS_KEY) || "null");
+    if (Array.isArray(got) && got.length) return DEFAULT_MEAS_COLUMNS.filter((id) => got.includes(id));
+  } catch { /* storage blocked: the usual columns */ }
+  return DEFAULT_MEAS_COLUMNS;
+}
+function saveCols(cols) {
+  try { localStorage.setItem(COLS_KEY, JSON.stringify(cols)); } catch { /* not kept */ }
+}
+
+// ?q= and ?sort=, kept in the address (each change starts from the address as
+// it is when written, so a sort clicked while the search box waits isn't lost).
+function useTableQuery() {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const set = (changes) => {
+    const next = new URLSearchParams(window.location.search);
+    for (const [k, v] of Object.entries(changes)) if (v) next.set(k, v); else next.delete(k);
+    navigate(`${location.pathname}?${next}${location.hash}`, { replace: true, state: location.state });
+  };
+  return {
+    q: params.get("q") || "", setQ: (v) => set({ q: v }),
+    sort: parseSort(params.get("sort")), setSort: (keys) => set({ sort: sortParam(keys) }),
+  };
+}
+
+// A row's Record box: type a value, Enter records it now. Saved: "✓ Saved" (a
+// setting: "✓ Set to 28 °C") for a few seconds; a refusal stays under it.
+function RecordBox({ r, onSaved }) {
+  const p = r.item;
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState(null); // {ok, text}
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  if (!r.canRecord) {
+    return <span className="lib-date ms-rec-none" title={r.type === "channel" ? "Its sensor sends the values" : "Read by a feed"}>—</span>;
+  }
+  const save = async () => {
+    const got = checkValue(text, p);
+    if (got.error) { setSaid({ ok: false, text: got.error }); return; }
+    setBusy(true);
+    try {
+      // Now, as an instant (the server puts it on the workspace's day and clock).
+      const fresh = await recordMeasurementReading(p.id, got.value, undefined, new Date().toISOString().slice(0, 16) + "Z");
+      setText("");
+      setSaid({ ok: true, text: savedText(p, got.value) });
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => setSaid(null), 4000);
+      onSaved(fresh);
+    } catch (e) {
+      setSaid({ ok: false, text: e.message });
+    }
+    setBusy(false);
+  };
+  const setting = p.kind === "setting";
+  return (
+    <span className="ms-rec">
+      <input type="text" inputMode="decimal" className="ms-rec-input" value={text} disabled={busy}
+             placeholder={setting ? "Set to…" : "Record…"} aria-label={`${setting ? "New setting" : "New reading"} for ${p.name}${p.unit ? ` (${p.unit})` : ""}`}
+             title={`Type a value${p.unit ? ` in ${p.unit}` : ""} and press Enter to record it now`}
+             onChange={(e) => { setText(e.target.value); if (said && !said.ok) setSaid(null); }}
+             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") { setText(""); setSaid(null); } }} />
+      {said && <span className={"ms-rec-said" + (said.ok ? " ok" : " bad")} role={said.ok ? "status" : "alert"}>{said.text}</span>}
+    </span>
+  );
+}
+
+function Cell({ r, col, onOpen }) {
+  switch (col) {
+    case "position": return <span className="rw-txt" title={r.place.name}>{r.place.name || <span className="rw-blank">—</span>}</span>;
+    case "point":
+      return (
+        <span className="pk-two">
+          <button type="button" className="link ms-name-link" onClick={() => onOpen(r)} title={`Open ${r.name}: its history${r.step ? " and changes" : ""}`}>{r.name}</button>
+          {r.tag && <span className="rw-sum" title={`Tag ${r.tag}`}>{r.tag}</span>}
+        </span>
+      );
+    case "kind": return <Chip tone={r.kind === "Setting" ? "accent" : "neutral"} className="pk-kind">{r.kind}</Chip>;
+    case "latest":
+      return r.value == null ? <span className="rw-blank pk-num">—</span> : (
+        <span className="pk-two ms-latest-cell" title={r.when ? `${whenText(r.when)}` : undefined}>
+          <strong className="pk-num">{withUnit(numberText(r.value), r.unit)}</strong>
+          <span className="rw-sum pk-num">{whenText(r.when)}</span>
+        </span>
+      );
+    case "state": return <Chip tone={r.state.tone} className="ms-chip" title={r.state.title}>{r.state.label}</Chip>;
+    case "trend": return <Trend point={{ ...r.item, kind: r.step ? "setting" : r.item.kind, name: r.name }} values={r.values} />;
+    case "due": return r.due ? <span className={r.state.label === "Due" || r.state.label === "No reading" ? "pk-overdue" : undefined}>{whenText(r.due)}</span> : null;
+    default: return null;
+  }
+}
+
 function MeasurementsList({ row, display, today, onMenu = null, q }) {
   const navigate = useNavigate();
+  const confirm = useConfirm();
+  const tq = useTableQuery();
   const branch = useMemo(() => branchOf(display, row.key), [display, row.key]);
   const ask = useMemo(() => branchQuery(display, branch), [display, branch]);
   const [state, setState] = useState({ key: null, points: null, channels: [], more: false, error: null });
   const [modal, setModal] = useState(null);
-  const [menu, setMenu] = useState(null); // {point, at}
-  const [moved, setMoved] = useState(null); // what the last Move… said
+  const [menu, setMenu] = useState(null); // {r, at}
+  const [said, setSaid] = useState(null);
+  const [cols, setColsState] = useState(readCols);
+  const [colsOpen, setColsOpen] = useState(false);
+  const [query, setQuery] = useState(tq.q);
+  const [folded, setFolded] = useState(() => new Set());
   const key = `${row.key}:${ask.positionIds.length}:${ask.itemIds.length}`;
   const load = useCallback(() => {
     let live = true;
@@ -184,191 +240,195 @@ function MeasurementsList({ row, display, today, onMenu = null, q }) {
     return () => { live = false; };
   }, [ask, key]);
   useEffect(() => load(), [load]);
+  // The search box writes the address a moment after typing stops.
+  useEffect(() => {
+    if (query === tq.q) return undefined;
+    const t = setTimeout(() => tq.setQ(query), 250);
+    return () => clearTimeout(t);
+  }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const points = state.key === key ? state.points : null;
   const channels = state.key === key ? state.channels : null;
-  // Points and sensor channels, worst first, as one list.
-  const sorted = useMemo(() => points && measurementRows(points, channels, today, ask.fittedAt), [points, channels, today, ask.fittedAt]);
-  const shown = sorted && (q.attention ? sorted.filter((r) => rowNeedsAttention(r, today)) : sorted);
-  const attention = sorted ? sorted.filter((r) => rowNeedsAttention(r, today)).length : 0;
-  const branchy = branch.pos.size + branch.item.size + branch.loc.size > 1;
+  const all = useMemo(() => points && tableRows(points, channels, today, ask.fittedAt), [points, channels, today, ask.fittedAt]);
+  const shown = useMemo(() => {
+    if (!all) return null;
+    const kept = q.attention ? all.filter((r) => r.attention) : all;
+    return sortRows(searchRows(kept, query), tq.sort);
+  }, [all, q.attention, query, tq.sort]);
+  const groups = useMemo(() => shown && groupRows(shown), [shown]);
+  const attention = all ? all.filter((r) => r.attention).length : 0;
+  // Grouped: each group row names the position, so the Position column goes.
+  const columns = MEAS_COLUMNS.filter((c) => cols.includes(c.id) && !(groups && c.id === "position"));
+  const total = columns.reduce((n, c) => n + c.width, 0) + 44;
   const open = q.readings && points?.find((p) => p.id === q.readings);
   // A point is added to the picked position or item (a place has none of its own).
   const target = row.type === "pos" ? { kind: "position", id: row.key } : row.type === "item" ? { kind: "item", id: row.key } : null;
   const done = () => { setModal(null); load(); };
-  const where = `at ${row.ref.name || "this row"}${branchy ? " and inside it" : ""}`;
-  const nChannels = channels?.length || 0;
-  const things = sorted && (nChannels
-    ? `${sorted.length - nChannels} measuring point${sorted.length - nChannels === 1 ? "" : "s"} and ${nChannels} sensor channel${nChannels === 1 ? "" : "s"}`
-    : `${sorted.length} measuring point${sorted.length === 1 ? "" : "s"}`);
-  const count = sorted && (q.attention ? `${shown.length} of ${things} ${where}` : `${things} ${where}`);
+  const branchy = branch.pos.size + branch.item.size + branch.loc.size > 1;
+  const where = `at ${row.ref.name || "this row"}${branchy ? " and below" : ""}`;
+  const setCols = (next) => { setColsState(next); saveCols(next); };
+  // A value recorded in place: the row takes the point the server sends back.
+  const saved = (fresh) => setState((s) => ({ ...s, points: s.points.map((p) => (p.id === fresh.id ? { ...p, ...fresh } : p)) }));
 
-  const noTarget = "Pick a position or an item to add a measuring point: a place has none of its own.";
-  const shownOf = (kind) => (shown || []).filter((r) => r.kind === kind).map((r) => r.row);
-  const exportCsv = () => saveText(pointsCsv(shownOf("point"), today, ask.fittedAt, shownOf("channel")), exportFilename(row.ref.name, { what: "measuring points" }));
-  const noChannelTarget = "Pick a position or an item to add a sensor channel: a place has none of its own.";
+  const noTarget = "Pick a position or an item: a place has none of its own.";
+  const adds = [
+    { id: "point-new", label: "Add a measuring point…", onSelect: () => setModal({ add: "condition" }), disabled: !target, title: target ? "" : noTarget },
+    { id: "setting-new", label: "Add a setting…", onSelect: () => setModal({ add: "setting" }), disabled: !target, title: target ? "Something someone sets (a setpoint, output %, hours a day): its changes are kept" : noTarget },
+    { id: "channel-new", label: "Add a sensor channel…", onSelect: () => setModal({ channel: true }), disabled: !target, title: target ? "" : noTarget },
+  ];
   usePanelMenu(onMenu, [
-    { id: "point-new", label: "Add a measuring point…", onSelect: () => setModal({ add: true }), disabled: !target, title: target ? "" : noTarget },
-    { id: "channel-new", label: "Add a sensor channel…", onSelect: () => setModal({ channel: true }), disabled: !target, title: target ? "" : noChannelTarget },
-    { id: "points-csv", label: "Export CSV", onSelect: exportCsv, disabled: !shown?.length, title: shown?.length ? "" : "No measuring points to export" },
+    ...adds,
+    { id: "points-cols", label: "Columns…", onSelect: () => setColsOpen(true) },
+    { id: "points-csv", label: "Export CSV", disabled: !shown?.length, title: shown?.length ? "The rows shown, for Excel" : "Nothing to export",
+      onSelect: () => saveText(measurementsCsv(shown || []), exportFilename(row.ref.name, { what: "measurements" })) },
   ]);
 
-  const act = (id, p) => {
-    if (id === "page") navigate(pointPagePath(p));
+  const openRow = (r) => navigate(r.type === "channel" ? channelPath(r.item) : pointPagePath(r.item));
+  const retire = (p) => confirm({
+    title: `Retire ${p.name}?`,
+    body: "It stops being measured and leaves this table. Its readings stay in the history.",
+    confirmLabel: "Retire", pendingLabel: "Retiring…", failedWhat: "retire it",
+    run: () => retireMeasurementPoint(p.id).then(() => { setSaid(`Retired ${p.name}.`); load(); return true; }),
+  });
+  const act = (id, r) => {
+    const p = r.item;
+    if (id === "page") openRow(r);
+    else if (id === "bands") navigate(channelPath(p, { bands: true }));
     else if (id === "record") setModal({ read: p });
-    else if (id === "history") q.setReadings(p.id);
     else if (id === "limits") setModal({ limits: p });
-    else if (id === "open") navigate(pointHref(p));
-    else if (id === "work-order") navigate(`/maintenance/work-orders/${p.alarm_work_order.id}`);
     else if (id === "move") setModal({ move: p });
+    else if (id === "retire") retire(p);
   };
-  // A channel row's menu: its own page (the spectrum, bands, settings), at its bands, or its position or item.
-  const actChannel = (id, c) => {
-    if (id === "page") navigate(channelPath(c));
-    else if (id === "bands") navigate(channelPath(c, { bands: true }));
-    else if (id === "open") navigate(c.position?.id ? `/asset-register/positions/${c.position.id}` : `/asset-register/items/${c.item.id}`);
-  };
-  const openChannelMenu = (e, c) => {
+  const openMenu = (e, r) => {
     e.stopPropagation();
     const b = e.currentTarget.getBoundingClientRect();
-    setMenu({ channel: c, at: { x: b.right, y: b.bottom + 2 } });
+    setMenu({ r, at: { x: b.right, y: b.bottom + 2 } });
   };
-  const openRow = (p) => {
-    const a = rowAction(p);
-    if (a) act(a, p);
-  };
-  const openMenu = (e, p) => {
-    e.stopPropagation();
-    const b = e.currentTarget.getBoundingClientRect();
-    setMenu({ point: p, at: { x: b.right, y: b.bottom + 2 } });
-  };
+  const fold = (k) => setFolded((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+
+  const rowEl = (r) => (
+    <div key={r.key} id={`ms-${r.key.replace(":", "-")}`} role="row"
+         className={"rw-row pk-trow ms-trow" + (menu?.r.key === r.key ? " focus" : "")}
+         onContextMenu={(e) => { e.preventDefault(); setMenu({ r, at: { x: e.clientX, y: e.clientY } }); }}>
+      {columns.map((c) => (
+        <div key={c.id} role="cell" className={"rw-c ms-c-" + c.id} style={{ width: c.width }}>
+          {c.id === "record" ? <RecordBox r={r} onSaved={saved} /> : <Cell r={r} col={c.id} onOpen={openRow} />}
+        </div>
+      ))}
+      <div className="rw-c ms-c-menu" role="cell" style={{ width: 44 }}>
+        <button type="button" className={"ms-more" + (menu?.r.key === r.key ? " open" : "")} aria-haspopup="menu"
+                aria-expanded={menu?.r.key === r.key} aria-label={`Actions for ${r.name}`} title="Actions" onClick={(e) => openMenu(e, r)}>
+          <MoreIcon />
+        </button>
+      </div>
+      <div className="rw-c rw-fill" aria-hidden="true" />
+    </div>
+  );
+
+  const empty = (
+    <div className="card empty pk-empty">
+      <p>Nothing measured {where} yet. Add a measuring point (a pressure, a temperature, run hours), a setting someone changes (a setpoint, output %), or a sensor channel that sends readings{target ? "" : ": pick one of the positions here first"}.</p>
+      {target && (
+        <p className="ms-empty-add">
+          {adds.map((a) => <button key={a.id} type="button" className="secondary" onClick={a.onSelect}>{a.label}</button>)}
+        </p>
+      )}
+      <p className="section-empty-more"><ShowMe help={{ guide: "signal-channels" }}>How measurements work</ShowMe></p>
+    </div>
+  );
 
   return (
-    <div className="td-tab-page ms-panel">
-      <p className="lib-date ms-purpose">Read by hand or fed automatically, worst first: past alarm, near a limit, due a reading.</p>
-      {sorted && sorted.length > 0 && (
-        <div className="ms-bar">
+    <div className="td-tab-page pk-panel rw ms-panel">
+      <p className="lib-date pk-purpose">
+        Every measuring point, setting and sensor here and below, worst first. Type a value in Record and press Enter to record it now; open a point for its history.
+      </p>
+      {all && all.length > 0 && (
+        <div className="pk-bar">
+          <label className="tp-filter pk-filter">
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+            <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter: position, point, tag, kind, state"
+                   aria-label="Search the measurements" />
+          </label>
           <button type="button" aria-pressed={q.attention} onClick={() => q.setAttention(!q.attention)}
                   className={"chip chip-btn ms-filter " + (q.attention ? "chip-accent" : "chip-neutral")}
-                  title="Past alarm, near a limit, or due a reading">
+                  title="Past or near an alarm limit, or a reading due">
             Needs attention ({attention})
           </button>
-          <span className="lib-date ms-count">{count}</span>
+          {shown && <span className="lib-date pk-count">{shown.length === all.length ? `${all.length} ${all.length === 1 ? "row" : "rows"}` : `${shown.length} of ${all.length} rows`}</span>}
+          {colsOpen && (
+            <div className="pk-cols">
+              <ColumnChooser cols={cols} onCols={setCols} usual={DEFAULT_MEAS_COLUMNS} columns={MEAS_COLUMNS} open={colsOpen}
+                             onClose={() => setColsOpen(false)} />
+            </div>
+          )}
         </div>
       )}
-      {/* The list's add row, first: a point goes on the picked position or item. */}
-      {target ? (
-        <button type="button" className="add-row ms-add" onClick={(e) => { if (e.detail < 2) setModal({ add: true }); }}>
-          <PlusIcon /> Add a measuring point
-        </button>
-      ) : <p className="lib-date ms-add-note">Pick a position or an item to add a measuring point.</p>}
-      {moved && <p className="lib-date ms-moved" role="status">{moved}</p>}
-      {state.error && <div className="card error">{state.error}</div>}
+      {said && <p className="lib-date" role="status">{said}</p>}
+      {state.error && <div className="card error">Couldn&apos;t load the measurements: {state.error}</div>}
       {state.more && <p className="lib-date">Showing the first {points.length} points: pick a smaller branch to see the rest.</p>}
-      {shown === null ? <div className="card empty">Loading…</div> : shown.length === 0 ? (
-        <div className="card empty">
-          {q.attention && sorted.length > 0
-            ? <>Nothing past alarm, near a limit or due a reading {where}. <button type="button" className="crumb-link" onClick={() => q.setAttention(false)}>Show every point</button></>
-            : <>Nothing measured {where}. Add a counter (run hours, cycles) or a condition point (pH, chlorine, pressure,
-              vibration) with alarm limits, or a sensor channel that sends readings{target ? "" : " on one of the positions here"}.</>}
-        </div>
-      ) : (
-        <div className="ms-list">
-          <table className="lib-table ms-table">
-            <colgroup>
-              <col /><col className="ms-c-latest" /><col className="ms-c-state" /><col className="ms-c-trend" /><col className="ms-c-menu" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Point</th><th className="ms-num">Latest</th><th>State</th><th>Trend</th><th><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((r) => {
-                if (r.kind === "channel") {
-                  return <ChannelRow key={r.key} ch={r.row} branchy={branchy} fittedAt={ask.fittedAt} picked={menu?.channel?.id === r.row.id}
-                                     onOpen={() => actChannel("page", r.row)} onMenu={(e) => openChannelMenu(e, r.row)}
-                                     onContextMenu={(e) => { e.preventDefault(); setMenu({ channel: r.row, at: { x: e.clientX, y: e.clientY } }); }} />;
-                }
-                const p = r.row;
-                const chip = pointChip(p, today);
-                const note = latestNote(p);
-                const sub = pointSubline(p, { branch: branchy, fittedAt: ask.fittedAt });
-                const when = p.read_at ? readingWhen({ when: p.read_when, precision: p.read_precision, at: p.read_at }, fmtDate) : "";
-                const by = recordedBy(p);
-                const action = rowAction(p);
-                const rowTitle = action === "history" ? "Open its readings" : action === "record" ? "Record its first reading" : action === "open" ? `Open its ${p.position?.id ? "position" : "item"}` : undefined;
+      {!shown && !state.error ? <div className="card empty">Loading…</div> : shown && all.length === 0 ? empty : shown && (
+        <div className="maint-scroll rw-grid pk-grid ms-grid">
+          <div className={"pk-table ms-tbl" + (groups ? " ms-grouped" : "")} role="table" aria-label="Measurements here and below" style={{ minWidth: total }}>
+            <div className="rw-head" role="row">
+              {columns.map((c) => {
+                const at = tq.sort.findIndex((k) => k.col === c.id);
+                const dir = at >= 0 ? tq.sort[at].dir : 0;
                 return (
-                  <tr key={p.id} id={`ms-${p.id}`}
-                      className={"ms-row" + (action ? " ms-clickable" : "") + (q.readings === p.id || menu?.point?.id === p.id ? " ms-picked" : "")}
-                      onClick={() => openRow(p)} title={rowTitle}
-                      onContextMenu={(e) => { e.preventDefault(); setMenu({ point: p, at: { x: e.clientX, y: e.clientY } }); }}>
-                    <td className="ms-point">
-                      {/* The name opens the point's own page; the rest of the row its readings (or first reading). */}
-                      <span className="ms-name-line">
-                        <Link className="ms-name" to={pointPagePath(p)} title={`${p.name}: open its page`}
-                              onClick={(e) => e.stopPropagation()}>{p.name}</Link>
-                        {isFed(p) && <FedChip />}
-                      </span>
-                      <span className="lib-date ms-sub" title={sub}>{sub}</span>
-                    </td>
-                    <td className="ms-latest">
-                      <span className="ms-value-line">
-                        {note && <NoteMark note={note} />}
-                        <strong className="ms-value">{p.reading != null ? `${fmtValue(p.reading)}${p.unit ? ` ${p.unit}` : ""}` : "—"}</strong>
-                      </span>
-                      <span className="lib-date ms-sub" title={when ? `${when}, ${by}` : by}>
-                        {when ? `${when}${p.source === "manual" && !p.derived ? "" : ` · ${p.derived ? "signal" : "feed"}`}` : p.reading == null ? "never read" : by}
-                      </span>
-                    </td>
-                    <td className="ms-state-cell">
-                      <Chip tone={chip.tone} className={`ms-chip ms-${chip.key}`} title={chip.title}>{chip.label}</Chip>
-                      {p.alarm_work_order && <span className="lib-date ms-wo" title={`Work order #${p.alarm_work_order.number} is open`}>#{p.alarm_work_order.number}</span>}
-                    </td>
-                    <td className="ms-trend-cell"><Trend point={p} /></td>
-                    <td className="ms-menu-cell">
-                      <button type="button" className={"ms-more" + (menu?.point?.id === p.id ? " open" : "")} aria-haspopup="menu"
-                              aria-expanded={menu?.point?.id === p.id} aria-label={`Actions for ${p.name}`} title="Actions"
-                              onClick={(e) => openMenu(e, p)}>
-                        <MoreIcon />
+                  <div key={c.id} role="columnheader" className={"rw-h ms-c-" + c.id} style={{ width: c.width }}
+                       aria-sort={dir ? (dir < 0 ? "descending" : "ascending") : "none"} title={c.title ? `${c.label}: ${c.title}` : c.label}>
+                    {sortable(c.id) ? (
+                      <button type="button" className="rw-hs" onClick={(e) => tq.setSort(nextSort(tq.sort, c.id, e.shiftKey))}
+                              aria-label={`${c.label}: sort (Shift-click to add it as a second sort)`}>
+                        {c.label}{dir ? <span className="tt-sortarrow" aria-hidden="true">{dir < 0 ? " ▼" : " ▲"}{tq.sort.length > 1 ? at + 1 : ""}</span> : null}
                       </button>
-                    </td>
-                  </tr>
+                    ) : <span className="rw-hs ms-hs">{c.label}</span>}
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
+              <div className="rw-h ms-c-menu" role="columnheader" style={{ width: 44 }}><span className="sr-only">Actions</span></div>
+              <div className="rw-h rw-fill" aria-hidden="true" />
+            </div>
+            {shown.length === 0 ? (
+              <p className="lib-date pk-none">
+                {query ? <>Nothing matches “{query}”. <button type="button" className="link" onClick={() => setQuery("")}>Clear the search</button></>
+                  : <>Nothing needs attention {where}. <button type="button" className="link" onClick={() => q.setAttention(false)}>Show every row</button></>}
+              </p>
+            ) : groups ? groups.map((g) => (
+              <div key={g.key} role="rowgroup" className="ms-group">
+                <div role="row" className="ms-grow">
+                  <button type="button" className="ms-gbtn" aria-expanded={!folded.has(g.key)} onClick={() => fold(g.key)}
+                          title={folded.has(g.key) ? "Show its rows" : "Fold its rows"}>
+                    <span className="ms-gcaret" aria-hidden="true">{folded.has(g.key) ? "▸" : "▾"}</span>
+                    <span className="ms-gname">{g.place.name || "Unplaced"}</span>
+                    <span className="lib-date ms-gcount">{groupText(g)}</span>
+                  </button>
+                </div>
+                {!folded.has(g.key) && g.rows.map(rowEl)}
+              </div>
+            )) : shown.map(rowEl)}
+          </div>
         </div>
       )}
-      {menu?.channel && (
-        <RowMenu items={channelMenu(menu.channel)} at={menu.at} label={`Actions for ${menu.channel.name}`} anchorId={`ms-channel-${menu.channel.id}`}
-                 onChoose={(id) => actChannel(id, menu.channel)}
+      {menu && (
+        <RowMenu items={rowMenu(menu.r)} at={menu.at} label={`Actions for ${menu.r.name}`} anchorId={`ms-${menu.r.key.replace(":", "-")}`}
+                 onChoose={(id) => act(id, menu.r)}
                  onClose={() => {
-                   const id = menu.channel.id;
+                   const id = `ms-${menu.r.key.replace(":", "-")}`;
                    setMenu(null);
-                   document.getElementById(`ms-channel-${id}`)?.querySelector(".ms-more")?.focus({ preventScroll: true });
-                 }} />
-      )}
-      {menu?.point && (
-        <RowMenu items={pointMenu(menu.point)} at={menu.at} label={`Actions for ${menu.point.name}`} anchorId={`ms-${menu.point.id}`}
-                 onChoose={(id) => act(id, menu.point)}
-                 onClose={() => {
-                   const id = menu.point.id;
-                   setMenu(null);
-                   document.getElementById(`ms-${id}`)?.querySelector(".ms-more")?.focus({ preventScroll: true });
+                   document.getElementById(id)?.querySelector(".ms-more")?.focus({ preventScroll: true });
                  }} />
       )}
       {modal?.channel && target && (
         <NewChannel target={target.kind === "item" ? { itemId: target.id } : { positionId: target.id }}
                     onCancel={() => setModal(null)} onDone={done} />
       )}
-      {modal?.add && target && <PointModal target={target} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.add && target && <PointModal target={target} kind={modal.add} onClose={() => setModal(null)} onDone={done} />}
       {modal?.read && <PointReadingModal point={modal.read} onClose={() => setModal(null)} onDone={done} />}
       {modal?.limits && <LimitsModal point={modal.limits} onClose={() => setModal(null)} onDone={done} />}
       {modal?.move && (
         <PointMoveModal point={modal.move} onClose={() => setModal(null)}
                         onDone={(r) => {
-                          setMoved(`${r.name} moved to ${r.position?.name || "its new position"}.${r.note ? ` ${r.note}` : ""}`);
+                          setSaid(`${r.name} moved to ${r.position?.name || "its new position"}.${r.note ? ` ${r.note}` : ""}`);
                           done();
                         }} />
       )}

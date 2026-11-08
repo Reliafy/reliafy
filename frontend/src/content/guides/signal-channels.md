@@ -17,6 +17,29 @@ trends and projected alarm dates work on it as they do on any other.
 This is in beta. A slow sensor, like a pressure transducer, works the same way
 without the spectrum.
 
+## The Measurements tab
+
+Pick any row in **Assets → Explorer** and open the **Measurements** tab: it's a
+table of every measuring point, setting and sensor channel on that row and
+everything below it, one row each, worst first. The columns are the position,
+the point (with its tag), its kind (*Condition*, *Setting*, *Counter*, or
+*Fed* when a sensor or feed sends it), the latest value and when, its state
+(*OK*, *Needs attention*, *Due*, *No reading*; a setting shows when it was
+set), a small trend, and when the next reading is due. When the rows are on
+several positions they're grouped under each one; click a group to fold it.
+Search over every column, click a heading to sort (Shift-click for a second
+key), and choose the columns or export a CSV from the **…** menu.
+
+- **Record a value in place:** type it in a row's **Record** box and press
+  Enter. It's recorded now and the row updates (*✓ Saved*; for a setting
+  *✓ Set to 28 °C*). A setting's value outside its allowed range is refused.
+- **Add one:** the **…** menu has **Add a measuring point…**, **Add a
+  setting…** and **Add a sensor channel…**; an empty tab offers the same.
+- **A setting's history:** open a setting to see what it's been over time: a
+  step chart, a line such as *Set 3 times since 1 Apr 2026, between 45% and
+  60%*, and each change with who set it (a work order, or by hand) and how
+  long it held.
+
 ## Channels are rows of Measurements
 
 A channel lives with the hand-read measuring points on the same position. Open
@@ -158,12 +181,12 @@ that range from every snapshot, old and new, and draws it in **Level over time**
 
 Not everything is measured. A chlorinator's output %, a pump timer's hours a
 day or a solar controller's setpoint is **set**, and changed now and then. Add
-it as a **Setting** (Add a measurement → What it is), or turn an existing
+it with **Add a setting…** in the Measurements tab's **…** menu, or turn an existing
 point into one with **Edit…** or **Edit limits…** in its **⋯** menu (What it
 is → Setting). A setting:
 
-- shows a **Setting** chip and its current value on the Measurements tab, and
-  is never due or alarmed;
+- shows its current value and when it was set (*Set 1 Oct 2026*) on the
+  Measurements tab, and is never due or alarmed;
 - draws as steps when opened (the value holds until the next change), with
   each change listed: *Set to 60% on 1 Oct 2026 (from 45%) · WO 123*;
 - can have a lowest and highest allowed value, which only catches typing

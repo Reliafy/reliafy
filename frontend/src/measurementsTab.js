@@ -108,7 +108,8 @@ export function recentValues(point, n = 12) {
 // half as long again as its usual spacing (at least a day), in days. null
 // when it isn't read by hand or has too few readings to know its round.
 function allowedGap(point) {
-  if (!point || point.source !== "manual" || point.derived) return null;
+  // A setting holds until it's changed: it's never due a reading.
+  if (!point || point.source !== "manual" || point.derived || isSetting(point)) return null;
   const rs = recentValues(point, 7);
   if (rs.length < 3) return null;
   const gaps = rs.slice(1).map((r, i) => daysBetween(rs[i].at, r.at)).filter((g) => g > 0).sort((a, b) => a - b);

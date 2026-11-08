@@ -32,7 +32,7 @@ test("a point opens in full in the Measurements tab, the tree still on the left"
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 800 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=measurements`);
-  await page.locator(".ms-panel").getByRole("link", { name: `Bearing ${tag}` }).click();
+  await page.locator(".ms-panel").getByRole("button", { name: `Bearing ${tag}`, exact: true }).click();
   await expect.poll(() => query(page).get("point")).toBe(p.point.id);
   expect(query(page).get("sel")).toBe(p.pump.id);
   // The tree stays, its row picked; the panel shows the point.
@@ -52,7 +52,7 @@ test("a point opens in full in the Measurements tab, the tree still on the left"
   // Back to the list.
   await view(page).getByRole("button", { name: "← Measurements" }).click();
   await expect.poll(() => query(page).get("point")).toBe(null);
-  await expect(page.locator(".ms-panel .ms-row")).toHaveCount(2);
+  await expect(page.locator(".ms-panel .ms-trow")).toHaveCount(2);
   await expectHealthy(page, problems, { label: "point in the Measurements tab" });
 });
 
@@ -97,17 +97,89 @@ test("a setting shows its chip in the list, and steps and changes in full", asyn
   await post(`${M}/points/${chl.id}/readings`, { value: 60, on: ago(30) });
   await page.setViewportSize({ width: 1280, height: 800 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pool.id}&tab=measurements`);
-  const row = page.locator(".ms-panel .ms-row").filter({ hasText: `Chlorinator ${tag}` });
-  await expect(row.locator(".ms-chip")).toHaveText("Setting");
-  await expect(row.locator(".ms-value")).toHaveText("60 %");
-  await row.getByRole("link", { name: `Chlorinator ${tag}` }).click();
-  await expect(view(page).getByRole("heading", { name: "Setting over time" })).toBeVisible();
+  const row = page.locator(".ms-panel .ms-trow").filter({ hasText: `Chlorinator ${tag}` });
+  await expect(row.locator(".ms-c-kind")).toHaveText("Setting");
+  await expect(row.locator(".ms-chip")).toHaveText(/^Set \d{1,2} \w{3} \d{4}$/);
+  await expect(row.locator(".ms-c-latest strong")).toHaveText("60%");
+  // A new setting typed in place: recorded now, the row shows it.
+  await row.getByRole("textbox", { name: `New setting for Chlorinator ${tag} (%)` }).fill("70");
+  await row.getByRole("textbox", { name: `New setting for Chlorinator ${tag} (%)` }).press("Enter");
+  await expect(row.locator(".ms-rec-said")).toHaveText("✓ Set to 70%");
+  await expect(row.locator(".ms-c-latest strong")).toHaveText("70%");
+  // Outside its allowed range: refused in place, nothing recorded.
+  await row.getByRole("textbox", { name: `New setting for Chlorinator ${tag} (%)` }).fill("140");
+  await row.getByRole("textbox", { name: `New setting for Chlorinator ${tag} (%)` }).press("Enter");
+  await expect(row.locator(".ms-rec-said")).toHaveText("Highest allowed is 100%");
+  await row.getByRole("button", { name: `Chlorinator ${tag}`, exact: true }).click();
+  await expect(view(page).getByRole("heading", { name: "What it's been over time" })).toBeVisible();
+  await expect(view(page).locator(".mv-summary")).toContainText("Set 3 times since");
   await expect(view(page).locator(".js-plotly-plot")).toBeVisible();
   const shape = await view(page).locator(".js-plotly-plot").evaluate((el) => el.data?.[0]?.line?.shape);
   expect(shape).toBe("hv");
-  await expect(view(page).locator(".mv-changes li").first()).toContainText(/^Set to 60% on .+ \(from 45%\)/);
+  await expect(view(page).locator(".mv-changes li").first()).toContainText(/^Set to 70% on .+ \(from 60%\) · by hand · still set/);
   const head = await headMenu(page);
   await expect(head.locator(".ovm-menu .ovm-item")).toContainText(["Record a change…", "Edit…", "Move…"]);
   await page.keyboard.press("Escape");
   await expectHealthy(page, problems, { label: "a setting in the Measurements tab" });
+});
+
+// The tab is a table of every point, setting and sensor below the row picked:
+// grouped by position (each group folds), searched, sorted, a reading typed in
+// place, and "Add a setting…" in the heading's "…" opens the dialog as a setting.
+test("the Measurements table: groups, search, sort, a reading in place, add a setting", async ({ page, request, problems }) => {
+  const tag = `t${Date.now()}`;
+  const post = (path, data) => postOk(request, path, data);
+  const plantRoot = await post(`${M}/positions`, { name: `Meas plant ${tag}` });
+  const filter = await post(`${M}/positions`, { name: `Meas filter ${tag}`, parent_id: plantRoot.id });
+  const heater = await post(`${M}/positions`, { name: `Meas heater ${tag}`, parent_id: plantRoot.id });
+  const gauge = await post(`${M}/positions/${filter.id}/points`, {
+    name: `Filter pressure ${tag}`, kind: "condition", unit: "kPa", alarm_above: 200, tag: `PT-${tag}` });
+  await post(`${M}/points/${gauge.id}/readings`, { value: 120, on: ago(3) });
+  const hot = await post(`${M}/positions/${heater.id}/points`, {
+    name: `Water temp ${tag}`, kind: "condition", unit: "°C", alarm_above: 30 });
+  await post(`${M}/points/${hot.id}/readings`, { value: 35, on: ago(1) });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${plantRoot.id}&tab=measurements`);
+  const panel = page.locator(".ms-panel");
+  // Two positions below: a group row each, worst first (the hot water first).
+  await expect(panel.locator(".ms-grow")).toHaveCount(2);
+  await expect(panel.locator(".ms-gname")).toHaveText([`Meas heater ${tag}`, `Meas filter ${tag}`]);
+  await expect(panel.locator(".ms-grow").first()).toContainText("1 point, 1 needs attention");
+  await panel.getByRole("button", { name: new RegExp(`Meas heater ${tag}`) }).click();
+  await expect(panel.locator(".ms-trow")).toHaveCount(1);
+  await panel.getByRole("button", { name: new RegExp(`Meas heater ${tag}`) }).click();
+  await expect(panel.locator(".ms-trow")).toHaveCount(2);
+  // Search: the tag finds its point.
+  await panel.getByRole("searchbox", { name: "Search the measurements" }).fill(`pt-${tag}`);
+  await expect(panel.locator(".ms-trow")).toHaveCount(1);
+  await expect.poll(() => query(page).get("q")).toBe(`pt-${tag}`);
+  await panel.getByRole("searchbox", { name: "Search the measurements" }).fill("");
+  // Sort by point name.
+  await panel.getByRole("button", { name: /^Point: sort/ }).click();
+  await expect.poll(() => query(page).get("sort")).toBe("point");
+  // A reading typed in place.
+  const row = panel.locator(".ms-trow").filter({ hasText: `Filter pressure ${tag}` });
+  const box = row.getByRole("textbox", { name: `New reading for Filter pressure ${tag} (kPa)` });
+  await box.fill("130");
+  await box.press("Enter");
+  await expect(row.locator(".ms-rec-said")).toHaveText("✓ Saved");
+  await expect(row.locator(".ms-c-latest strong")).toHaveText("130 kPa");
+  // The heading's "…": add a setting (the dialog opens as one).
+  const head = await headMenu(page);
+  await expect(head.locator(".ovm-menu .ovm-item")).toContainText(["Add a measuring point…", "Add a setting…", "Add a sensor channel…", "Columns…", "Export CSV"]);
+  await head.locator(".ovm-menu .ovm-item", { hasText: "Add a setting…" }).click();
+  await expect(page.getByRole("dialog", { name: "Add a setting" })).toBeVisible();
+  await page.getByRole("dialog", { name: "Add a setting" }).getByRole("button", { name: "Cancel" }).click();
+  // The row's ⋯.
+  await row.getByRole("button", { name: `Actions for Filter pressure ${tag}` }).click();
+  await expect(page.locator(".ovm-menu").last().getByRole("menuitem")).toHaveText(["Open", "Record a reading…", "Edit limits…", "Move…", "Retire…"]);
+  await page.keyboard.press("Escape");
+  await expectHealthy(page, problems, { label: "the Measurements table" });
+
+  // At 400 px: the table scrolls in its card, the page doesn't.
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${plantRoot.id}&tab=measurements`);
+  await page.getByRole("treeitem", { name: new RegExp(`^Meas plant ${tag}`) }).locator(".tp-nm").click();
+  await expect(page.locator(".ms-panel .ms-trow")).toHaveCount(2);
+  expect(await sideways(page)).toBeLessThanOrEqual(400);
 });
