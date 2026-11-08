@@ -6,15 +6,16 @@ import Chip from "./ui/Chip.jsx";
 import Plot from "./Plot.jsx";
 import ReadingsTable from "./ReadingsTable.jsx";
 import { Field, FormModal, today as workspaceToday } from "./MaintenanceParts.jsx";
-import { pointMoveItem } from "../measurementsTab.js";
+import { editLabel, isSetting, pointMoveItem } from "../measurementsTab.js";
 import PointMoveModal from "./PointMoveModal.jsx";
 import { ChannelView } from "./SignalsPanel.jsx";
 import SignalStorage from "./SignalStorage.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import {
-  READINGS_INTRO, canEditReadings, chartData, dayText, numberText, pageState, pointDates, pointMeta, readingDate, trendText,
+  READINGS_INTRO, canEditReadings, chartData, dayText, numberText, pageState, pointDates, pointMeta, rangeFact, readingDate,
+  settingChangeRows, trendText,
 } from "../measuringPoint.js";
-import { ACCENT, DANGER } from "../plotTheme.js";
+import { ACCENT, DANGER, MUTED } from "../plotTheme.js";
 import { PointReadingModal } from "../views/MaintenancePosition.jsx";
 import "../views/Maintenance.css";
 import "./MeasurementViews.css";
@@ -30,21 +31,57 @@ import "./MeasurementViews.css";
 // every tab's actions; full screen works as for any tab. A channel shows its
 // spectrum, watch bands and settings (SignalsPanel's ChannelView).
 
-// A condition point's alarm limits: either may be left blank (no limit that side).
+// Edit limits… (a condition point) or Edit… (a counter or a setting): what the
+// point is (a condition point and a setting swap; a counter no task goes by can
+// become either), a condition point's alarm limits and a setting's allowed
+// range. Any limit may be left blank (no limit that side). A band or level
+// worked out from a signal channel stays a condition point.
 export function LimitsModal({ point, onClose, onDone }) {
   const str = (v) => (v == null ? "" : String(v));
+  const [kind, setKind] = useState(point.kind || "condition");
   const [above, setAbove] = useState(str(point.alarm_above));
   const [below, setBelow] = useState(str(point.alarm_below));
+  const [lo, setLo] = useState(str(point.range_min));
+  const [hi, setHi] = useState(str(point.range_max));
   const num = (v) => (v.trim() === "" ? null : Number(v));
-  const bad = above.trim() !== "" && below.trim() !== "" && Number(below) >= Number(above);
+  const badAlarm = kind === "condition" && above.trim() !== "" && below.trim() !== "" && Number(below) >= Number(above);
+  const badRange = kind === "setting" && lo.trim() !== "" && hi.trim() !== "" && Number(lo) > Number(hi);
   const u = point.unit ? ` (${point.unit})` : "";
+  const submit = async () => {
+    const body = kind !== point.kind ? { kind } : {};
+    if (kind === "condition") Object.assign(body, { alarm_above: num(above), alarm_below: num(below) });
+    if (kind === "setting") Object.assign(body, { range_min: num(lo), range_max: num(hi) });
+    onDone(await updateMeasurementPoint(point.id, body));
+  };
   return (
-    <FormModal title={`Limits: ${point.name}`} submitLabel="Save" canSubmit={!bad} onClose={onClose}
-               onSubmit={async () => onDone(await updateMeasurementPoint(point.id, { alarm_above: num(above), alarm_below: num(below) }))}>
-      <p className="lib-date">An alarm when a reading goes past either limit. Leave one blank for no limit on that side.</p>
-      <Field label={`Alarm above${u}`}><input type="number" inputMode="decimal" step="any" autoFocus value={above} onChange={(e) => setAbove(e.target.value)} /></Field>
-      <Field label={`Alarm below${u}`}><input type="number" inputMode="decimal" step="any" value={below} onChange={(e) => setBelow(e.target.value)} /></Field>
-      {bad && <p className="lib-date" role="alert">The low alarm must be below the high alarm.</p>}
+    <FormModal title={`${kind === "condition" && point.kind === "condition" ? "Limits" : "Edit"}: ${point.name}`} submitLabel="Save"
+               canSubmit={!badAlarm && !badRange} onClose={onClose} onSubmit={submit}>
+      {!point.derived && (
+        <Field label="What it is">
+          <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Kind">
+            {point.kind === "counter" && <option value="counter">Counts use (run hours, cycles, km)</option>}
+            <option value="condition">Condition (vibration, temperature, wear)</option>
+            <option value="setting">Setting (output %, hours a day, a setpoint)</option>
+          </select>
+        </Field>
+      )}
+      {kind === "setting" && (
+        <>
+          <p className="lib-date">A value someone sets. It holds until the next change: no alarm, never due. The range only catches typing mistakes.</p>
+          <Field label={`Lowest allowed${u}`}><input type="number" inputMode="decimal" step="any" value={lo} onChange={(e) => setLo(e.target.value)} /></Field>
+          <Field label={`Highest allowed${u}`}><input type="number" inputMode="decimal" step="any" value={hi} onChange={(e) => setHi(e.target.value)} /></Field>
+          {badRange && <p className="lib-date" role="alert">The lowest allowed must not be above the highest.</p>}
+        </>
+      )}
+      {kind === "condition" && (
+        <>
+          <p className="lib-date">An alarm when a reading goes past either limit. Leave one blank for no limit on that side.</p>
+          <Field label={`Alarm above${u}`}><input type="number" inputMode="decimal" step="any" autoFocus value={above} onChange={(e) => setAbove(e.target.value)} /></Field>
+          <Field label={`Alarm below${u}`}><input type="number" inputMode="decimal" step="any" value={below} onChange={(e) => setBelow(e.target.value)} /></Field>
+          {badAlarm && <p className="lib-date" role="alert">The low alarm must be below the high alarm.</p>}
+        </>
+      )}
+      {kind === "counter" && <p className="lib-date">A counter counts use and only goes up. Pick another kind to change it.</p>}
     </FormModal>
   );
 }
@@ -54,7 +91,7 @@ const Back = ({ onBack }) => (
 );
 
 function ReadingsChart({ point }) {
-  const { points, limits } = useMemo(() => chartData(point), [point]);
+  const { points, limits, step, range } = useMemo(() => chartData(point, workspaceToday()), [point]);
   if (points.length < 2) {
     return (
       <p className="lib-date mp-chart-empty">
@@ -66,22 +103,24 @@ function ReadingsChart({ point }) {
   const data = [{
     type: "scatter", mode: "lines+markers", x: points.map((p) => p.x), y: points.map((p) => p.y),
     text: points.map((p) => p.label), name: point.name,
-    line: { color: ACCENT, width: 2 }, marker: { size: 6, color: ACCENT },
+    line: { color: ACCENT, width: 2, ...(step ? { shape: "hv" } : {}) },
+    marker: { size: points.map((p) => (p.held ? 0 : 6)), color: ACCENT },
     hovertemplate: `%{text}<br>%{y:.4g}${unit}<extra></extra>`,
   }];
+  const lines = [...limits.map((l) => ({ ...l, color: DANGER })), ...range.map((l) => ({ ...l, color: MUTED }))];
   const layout = {
     height: 300,
     showlegend: false,
     margin: { l: 56, r: 16, t: 16, b: 40 },
     xaxis: { type: "date" },
     yaxis: { title: { text: point.unit || "" } },
-    shapes: limits.map((l) => ({
+    shapes: lines.map((l) => ({
       type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: l.value, y1: l.value,
-      line: { color: DANGER, width: 1.2, dash: "dash" },
+      line: { color: l.color, width: 1.2, dash: "dash" },
     })),
-    annotations: limits.map((l) => ({
+    annotations: lines.map((l) => ({
       xref: "paper", x: 1, xanchor: "right", yref: "y", y: l.value, yanchor: "bottom", showarrow: false,
-      text: `${l.label}${unit}`, font: { size: 11, color: DANGER },
+      text: `${l.label}${unit}`, font: { size: 11, color: l.color },
     })),
   };
   return <Plot data={data} layout={layout} download={`${point.name} readings`} />;
@@ -95,8 +134,8 @@ export function pointViewMenu(point, { onRead, onLimits, onMove }) {
     ? `Read by a feed${point.tag ? ` (${point.tag})` : ""}` : point.retired ? "This point is retired" : "";
   const move = pointMoveItem(point);
   return [
-    { id: "point-read", label: "Add reading…", onSelect: onRead, disabled: !readable, title: readable ? "" : why },
-    point.kind !== "counter" && !point.retired && { id: "point-limits", label: "Edit limits…", onSelect: onLimits },
+    { id: "point-read", label: isSetting(point) ? "Record a change…" : "Add reading…", onSelect: onRead, disabled: !readable, title: readable ? "" : why },
+    !point.retired && { id: "point-limits", label: editLabel(point), onSelect: onLimits },
     !point.retired && { id: "point-move", label: "Move…", onSelect: onMove, disabled: !!move.disabled, title: move.reason || "" },
   ].filter(Boolean);
 }
@@ -149,11 +188,18 @@ export function PointView({ id, onBack, onMenu = null, onChanged }) {
 
       <div className="mp-facts" role="group" aria-label="Latest reading and limits">
         <div className="mp-fact">
-          <span className="mp-fact-label">Latest</span>
+          <span className="mp-fact-label">{isSetting(point) ? "Set to" : "Latest"}</span>
           <span className="mp-fact-value">{point.reading != null ? `${numberText(point.reading)}${unit}` : "No reading yet"}</span>
           {latestWhen && <span className="lib-date">{latestWhen}</span>}
         </div>
-        {point.kind !== "counter" && (
+        {isSetting(point) && (
+          <div className="mp-fact">
+            <span className="mp-fact-label">Allowed range</span>
+            <span className="mp-fact-value">{rangeFact(point).text}</span>
+            <span className="lib-date">{rangeFact(point).detail}</span>
+          </div>
+        )}
+        {point.kind === "condition" && (
           <div className="mp-fact">
             <span className="mp-fact-label">Alarm limits</span>
             <span className="mp-fact-value">
@@ -209,10 +255,27 @@ export function PointView({ id, onBack, onMenu = null, onChanged }) {
         )}
       </div>
 
-      <section className="mv-section" aria-label="Readings over time">
-        <h4>Readings over time</h4>
+      <section className="mv-section" aria-label={isSetting(point) ? "Setting over time" : "Readings over time"}>
+        <h4>{isSetting(point) ? "Setting over time" : "Readings over time"}</h4>
         <ReadingsChart point={point} />
       </section>
+
+      {isSetting(point) && (
+        <section className="mv-section" aria-label="Changes">
+          <h4>Changes</h4>
+          {point.changes?.length ? (
+            <ul className="mv-changes">
+              {settingChangeRows(point).map((c) => (
+                <li key={c.key}>
+                  {c.text}
+                  {c.workOrder && <> · <Link to={`/maintenance/work-orders/${c.workOrder.id}`}>WO {c.workOrder.number}</Link></>}
+                  {c.task && <span className="lib-date"> · {c.task.name}</span>}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="lib-date">Not set yet. Record the value it's set to, or record it from the work order that sets it.</p>}
+        </section>
+      )}
 
       <section className="mv-section" aria-label="Readings">
         <h4>Readings</h4>

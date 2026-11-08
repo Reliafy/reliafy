@@ -39,6 +39,25 @@ export const daysBetween = (from, to) => (dayMs(to) - dayMs(from)) / DAY;
 
 const hasLimits = (p) => p?.alarm_above != null || p?.alarm_below != null;
 
+// A setting: a value someone sets (output %, hours a day, a setpoint). It holds
+// until the next change, so it's never "due" and has no alarm.
+export const isSetting = (p) => p?.kind === "setting";
+
+// What a point is, in one word ("counter", "condition", "setting").
+export const kindWord = (p) => (p?.kind === "counter" ? "counter" : isSetting(p) ? "setting" : "condition");
+
+// A value with its unit: "60%" (a percentage goes straight after the number), "6 h".
+export const withUnit = (value, unit) => (!unit ? String(value) : unit === "%" ? `${value}%` : `${value} ${unit}`);
+
+// A setting's allowed range in words ("0 to 100%", "at least 2 h", "at most 24 h"), or "".
+export function rangeText(point) {
+  const lo = point?.range_min, hi = point?.range_max, u = point?.unit || "";
+  if (lo != null && hi != null) return `${lo} to ${withUnit(hi, u)}`;
+  if (lo != null) return `at least ${withUnit(lo, u)}`;
+  if (hi != null) return `at most ${withUnit(hi, u)}`;
+  return "";
+}
+
 // The point's state against its limits: one of STATES.
 export function pointState(point, today = new Date().toISOString().slice(0, 10)) {
   if (!point || point.reading == null) return STATES.none;
@@ -73,6 +92,7 @@ export function limitsText(point) {
   const parts = [point.alarm_below != null && `below ${point.alarm_below}${u}`,
     point.alarm_above != null && `above ${point.alarm_above}${u}`].filter(Boolean);
   if (parts.length) return `Alarm ${parts.join(" or ")}`;
+  if (isSetting(point)) return rangeText(point) ? `Allowed ${rangeText(point)}` : "Holds until changed";
   return point.kind === "counter" ? "Counts use" : "No limits";
 }
 
@@ -99,7 +119,7 @@ function allowedGap(point) {
 
 // Is a hand-read point due a reading?
 export function readingDue(point, today = new Date().toISOString().slice(0, 10)) {
-  if (!point || point.source !== "manual" || point.derived) return false;
+  if (!point || point.source !== "manual" || point.derived || isSetting(point)) return false;
   if (point.reading == null) return true;
   const gap = allowedGap(point);
   return gap ? daysBetween(gap.last, today) > gap.days : false;
@@ -140,6 +160,11 @@ export function latestNote(point) {
 // tooltip) has the detail the row leaves out: which limit, the limits
 // themselves, how long since the last reading.
 export function pointChip(point, today) {
+  if (isSetting(point)) {
+    const since = point.read_at ? ` since ${String(point.read_at).slice(0, 10)}` : "";
+    return { key: "setting", label: "Setting", tone: "accent",
+      title: point.reading != null ? `Set to ${withUnit(point.reading, point.unit)}${since}. ${limitsText(point)}` : "Not set yet: record its value" };
+  }
   const s = pointState(point, today);
   const due = readingDue(point, today);
   const limits = point.kind === "counter" && !hasLimits(point) ? "" : limitsText(point);
@@ -163,7 +188,7 @@ export function pointChip(point, today) {
 // The muted line under a point's name: where it is (only when the tab shows
 // a branch, so the place varies), what it measures, its unit.
 export function pointSubline(point, { branch = false, fittedAt = new Map() } = {}) {
-  return [branch && placeOf(point, fittedAt), point.kind === "counter" ? "counter" : "condition", point.unit]
+  return [branch && placeOf(point, fittedAt), kindWord(point), point.unit]
     .filter(Boolean).join(" · ");
 }
 
@@ -205,19 +230,24 @@ export function rowAction(point) {
 // point, greyed with the reason, so it can be found and the reason read.
 export function pointMenu(point) {
   const manual = point.source === "manual" && !point.derived;
+  const record = isSetting(point) ? "Record a change…" : "Record a reading…";
   const items = [
     { id: "page", label: "Open" },
-    manual ? { id: "record", label: "Record a reading…" }
-      : { id: "record", label: "Record a reading…", disabled: true,
+    manual ? { id: "record", label: record }
+      : { id: "record", label: record, disabled: true,
         reason: point.derived ? "Worked out from a signal channel" : `Read by a feed${point.tag ? ` (${point.tag})` : ""}` },
   ];
   if (manual && point.readings?.length) items.push({ id: "history", label: "Readings…" });
-  if (point.kind !== "counter") items.push({ id: "limits", label: "Edit limits…" });
+  // Edit limits… (a condition point), or Edit… (its kind, a setting's range).
+  items.push({ id: "limits", label: editLabel(point) });
   if (pointHref(point)) items.push({ id: "open", label: point.position?.id ? "Open its position" : "Open its item" });
   if (point.alarm_work_order) items.push({ id: "work-order", label: `Open work order #${point.alarm_work_order.number}` });
   items.push(pointMoveItem(point));
   return items;
 }
+
+// The edit dialog's name: a condition point's limits, else the point (its kind, a setting's range).
+export const editLabel = (point) => (point?.kind === "condition" ? "Edit limits…" : "Edit…");
 
 // "Move…": a position's point to another position. An item's point travels
 // with the item, and a band or level stays with its signal channel.
@@ -372,7 +402,7 @@ export function pointsCsv(points, today, fittedAt = new Map(), channels = []) {
   const head = ["Point", "Where", "Kind", "Unit", "Latest reading", "Read on", "Source", "Alarm below", "Alarm above", "State"];
   const num = (v) => (v == null ? "" : v);
   const rows = (points || []).map((p) => [
-    p.name || "", placeOf(p, fittedAt), p.kind === "counter" ? "counter" : "condition", p.unit || "",
+    p.name || "", placeOf(p, fittedAt), kindWord(p), p.unit || "",
     num(p.reading), p.read_at ? String(p.read_at).slice(0, 10) : "",
     p.read_at ? (p.derived ? "signal" : p.source === "manual" ? "by hand" : "feed") : "",
     num(p.alarm_below), num(p.alarm_above), pointChip(p, today).label,

@@ -120,9 +120,12 @@ list; critical spares with min_on_hand).
 create_group for positions that back each other up (duty and standby, 'either one is enough': k = 1). \
 generate_rbd and impact rely on it.
 7. Meters and condition: maintenance measurements.add_point (counter: run hours, cycles; condition: vibration, \
-temperature, with alarm limits), then record readings. One on the wrong position: measurements.move_point \
-(point_id, position_id): its readings and any open alarm work order go with it; tasks that counted it as their \
-position's counter keep counting it; an item's use while fitted follows where the counter now is.
+temperature, with alarm limits; setting: a value someone sets, such as a chlorinator's output % or a pump \
+timer's hours a day, held until the next change, never alarmed or due, range_min / range_max as a sanity check), \
+then record readings. An existing point becomes a setting with measurements.update_point kind setting. One on the \
+wrong position: measurements.move_point (point_id, position_id): its readings and any open alarm work order go \
+with it; tasks that counted it as their position's counter keep counting it; an item's use while fitted follows \
+where the counter now is.
 8. Conditions (optional): what places and equipment are exposed to (Outdoor, Seawater, Zone 1). Apply them as high \
 up as they're true (a site, a system): what's inside inherits them. See the conditions topic."""),
     "plan": ("RCM or tasks directly; tasks on a position, an item or a location; work packages.", """\
@@ -389,8 +392,12 @@ append_note for a finding, check to tick a checklist line.
 suggested_parts; from_location_id issues it from stock there), cost (a contractor, hire, call-out).
 - close, with the actions in order: replace (it failed: name failure_mode_id, or failure_mode_text when none \
 fits; none named = a planned replacement; new_item, item_id or part_id is what went in), repair, inspect (finding \
-ok, degraded or found_failed), other; plus readings taken. Read maintenance get.work_order first for the \
-failure-mode ids. Never record a failure as planned: it corrupts the life data. Nothing is saved if any action is \
+ok, degraded or found_failed), other; plus readings taken (readings [{point_id, value}]: get.work_order's \
+reading_points lists what it asks for: its tasks' tools' points, a trigger's point, a counter, the settings \
+there). Example: the seasonal change-over work order records the new chlorinator output, {action: \
+'work_orders.close', work_order_id, actions: [{kind: 'other'}], readings: [{point_id: <CHL-SET>, value: 60}]}: \
+the point's changes then say "60 from 45, WO #123". update with readings records them before closing. Read \
+maintenance get.work_order first for the failure-mode ids. Never record a failure as planned: it corrupts the life data. Nothing is saved if any action is \
 invalid. A location's work order (a round) takes only repair, inspect and other: open a work order on the \
 position for anything to replace.
 - Mistakes: cancel (it won't be done), remove_entry (a labour, part or cost line), maintenance fitments.void or \

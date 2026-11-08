@@ -520,3 +520,15 @@ button.maint-toggle {
 /* Assets' landing: links to the register's other pages (they aren't in the menu). */
 .assets-links { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: -4px 0 12px; font-size: var(--fs-14); }
 .assets-links a { color: var(--acc); font-weight: 500; }
+
+/* A work order's Readings and settings: a label (name, then why and the last value) and a value box per point. */
+.wor-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 0.75rem;
+  padding: 0.4rem 0; border-bottom: 1px solid var(--line, #e9ebee); }
+.wor-label { display: flex; flex-direction: column; min-width: 0; flex: 1 1 14rem; }
+.wor-name { font-weight: 500; overflow-wrap: anywhere; }
+.wor-detail { overflow-wrap: anywhere; }
+.wor-input { width: 9rem; max-width: 100%; }
+.wor-other { margin-top: 0.5rem; }
+.wor-other summary { cursor: pointer; padding: 0.3rem 0; }
+.wor-taken-head { font-size: 0.95rem; margin: 0.75rem 0 0.25rem; }
+.maint-line-readings { margin-left: 0.5rem; }

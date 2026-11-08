@@ -484,9 +484,10 @@ WORK_ORDERS: Table = {
         number) or location_id (a round); with task_id alone, on the task's subject. type: corrective (default),
         preventive, inspection, other. trade: the licence or competency it needs (a task's by default).
         include_positions: a location's checklist lists the positions there. Flags warranty."""),
-    "update": ("work_order_id", "title due notes type assignee planned_for append_note trade", """Change an open
-        one's title, due ('' clears), notes (replaces the whole note), type, assignee, planned_for or trade
-        ('' clears). append_note adds a dated line, also on closed and cancelled ones."""),
+    "update": ("work_order_id", "title due notes type assignee planned_for append_note trade readings", """Change an
+        open one's title, due ('' clears), notes (replaces the whole note), type, assignee, planned_for or trade
+        ('' clears). append_note adds a dated line, also on closed and cancelled ones. readings records readings
+        and settings taken at it now, linked to it (get.work_order reading_points lists what it asks for)."""),
     "status": ("work_order_id status", "note", "Move an open one along: planned, in_progress, waiting, or open."),
     "close": ("work_order_id", "actions on notes readings not_done", """Close it with what was done (actions, in order).
         A replace ends the fitted item's time at the position (a failure if a failure mode is named, else
@@ -494,7 +495,8 @@ WORK_ORDERS: Table = {
          first; if none fits, use failure_mode_text, never a failure as planned. An item's work
         order acts at the position it's fitted to now; a location's (a round) takes repair, inspect and other
         only. A work package's: not_done for lines not ticked; an action's position_id picks a line's position.
-        Nothing is saved if any action is invalid."""),
+        readings: values read or set during the work (a new chlorinator setting), linked to it. Nothing is saved
+        if any action or reading is invalid."""),
     "cancel": ("work_order_id", "reason", """Cancel one that won't be done (a duplicate, raised by mistake);
         reason kept as cancel_reason. Work that was done: close."""),
     "generate": ("", "horizon_days", """Open a preventive work order for every task due within horizon_days
@@ -531,21 +533,27 @@ PACKAGES: Table = {
 }
 
 MEASUREMENTS: Table = {
-    "add_point": ("", "position_id item_id name kind unit source tag alarm_above alarm_below", """Something
-        measured on a position (position_id) or an item (item_id: a meter it carries; its tasks by use go by
-        it). kind counter (default condition): use, only goes up (run hours, cycles, km); condition: vibration,
-        temperature, wear, with alarm limits (a reading past one opens an inspection). source manual (default:
+    "add_point": ("", "position_id item_id name kind unit source tag alarm_above alarm_below range_min range_max",
+                  """Something measured on a position (position_id) or an item (item_id: a meter it carries; its
+        tasks by use go by it). kind counter (default condition): use, only goes up (run hours, cycles, km);
+        condition: vibration, temperature, wear, with alarm limits (a reading past one opens an inspection);
+        setting: a value someone sets (output %, hours a day, a setpoint), held until the next change, never
+        alarmed or due; range_min / range_max refuse values outside them (a sanity check). source manual (default:
         someone reads it) or automated (a feed sends readings under tag to POST /api/ingest/maintenance/readings
         with an ingest-scope token)."""),
-    "update_point": ("point_id", "name alarm_above alarm_below clear_alarm_above clear_alarm_below tag", """Rename
-        a point, set or clear its alarm limits, or change an automated point's tag."""),
+    "update_point": ("point_id", "name alarm_above alarm_below clear_alarm_above clear_alarm_below tag kind "
+                     "range_min range_max clear_range", """Rename a point, set or clear its alarm limits or allowed
+        range, change an automated point's tag, or its kind (a condition point, or a counter no task goes by, to
+        setting; a setting to condition)."""),
     "retire_point": ("point_id", "reason", """Stop measuring there (readings kept, its tag freed). Not while a
         task goes by it or an alarm work order is open."""),
     "move_point": ("point_id position_id", "", "To another position, with its readings."),
     "restore_point": ("point_id", "", "Bring a retired point back."),
-    "record": ("point_id value", "at on note precision", """A manual reading (the hour meter says 12,340).
-        Counters only go up. at is when it was read, to the minute or finer (or on, a day); a time of day orders
-        readings taken the same day. Returns the point: latest, rate or trend, status, any alarm work order."""),
+    "record": ("point_id value", "at on note precision work_order_id task_id", """A manual reading (the hour
+        meter says 12,340), or a setting's new value. Counters only go up. at is when it was read, to the minute
+        or finer (or on, a day); a time of day orders readings taken the same day. work_order_id (task_id): the
+        work order it was taken or set at. Returns the point: latest, rate or trend (a setting: its changes),
+        status, any alarm work order."""),
     "void": ("reading_id reason", "", """Strike out a reading entered by mistake (a duplicate, the wrong meter),
         saying why; rates, due dates and alarms leave it out. Returns the point."""),
     "correct": ("reading_id reason", "value at on precision note", """Correct a reading's value (a typo),
@@ -1711,7 +1719,8 @@ def register() -> None:
                 "order: one of its line_positions, where the action is), notes?}"))] = None,
             on: DateText = None,
             readings: Annotated[list[dict] | None, Field(description=(
-                "close: manual readings taken during the work: [{point_id, value}]."))] = None,
+                "close / update: readings and settings taken during the work: [{point_id, value, unit?, on?, "
+                "task_id?, note?}] (an empty value records nothing)."))] = None,
             not_done: Annotated[list[dict] | None, Field(description=(
                 "close, a work package's work order: each line not ticked that wasn't done, [{task_id, reason}]: "
                 "it stays due and goes on the next work order. A line not ticked must be ticked or listed."))]
@@ -1739,7 +1748,7 @@ def register() -> None:
                        trade, item_id, location_id, include_positions)
         if action == "update":
             return run(m.update_work_order, work_order_id, title, due, notes, type, assignee, planned_for,
-                       append_note, trade)
+                       append_note, trade, readings or None)
         if action == "status":
             return run(m.set_work_status, work_order_id, status, note or "")
         if action == "close":
@@ -1916,7 +1925,14 @@ def register() -> None:
     @tool("maintenance_measurements", _WRITE, "Measurement points and readings", MEASUREMENTS)
     def maintenance_measurements(action: _choice(MEASUREMENTS), ctx: Context, point_id: str | None = None,
                                  position_id: str | None = None, item_id: str | None = None,
-                                 name: str | None = None, kind: Literal["counter", "condition"] | None = None,
+                                 name: str | None = None,
+                                 kind: Literal["counter", "condition", "setting"] | None = None,
+                                 range_min: Annotated[float | None, Field(description=(
+                                     "The lowest value allowed (a setting's sanity check, not an alarm)."))] = None,
+                                 range_max: Annotated[float | None, Field(description=(
+                                     "The highest value allowed."))] = None,
+                                 clear_range: bool | None = None,
+                                 work_order_id: str | None = None, task_id: str | None = None,
                                  unit: str | None = None, source: Literal["manual", "automated"] | None = None,
                                  tag: str | None = None, alarm_above: float | None = None,
                                  alarm_below: float | None = None, clear_alarm_above: bool | None = None,
@@ -1940,7 +1956,8 @@ def register() -> None:
         m = m_for(ctx)
         if action == "add_point":
             return run(m.add_point, position_id, name or "", _d(kind, "condition"), unit or "",
-                       _d(source, "manual"), tag or "", alarm_above, alarm_below, item_id=item_id)
+                       _d(source, "manual"), tag or "", alarm_above, alarm_below, item_id=item_id,
+                       range_min=range_min, range_max=range_max)
         if action == "update_point":
             kwargs = {}
             if name is not None:
@@ -1951,6 +1968,14 @@ def register() -> None:
                 kwargs["alarm_below"] = None if clear_alarm_below else alarm_below
             if tag is not None:
                 kwargs["tag"] = tag
+            if kind is not None:
+                kwargs["kind"] = kind
+            if clear_range:
+                kwargs |= {"range_min": None, "range_max": None}
+            if range_min is not None:
+                kwargs["range_min"] = range_min
+            if range_max is not None:
+                kwargs["range_max"] = range_max
             return run(m.update_point, point_id, **kwargs)
         if action == "move_point":
             return run(m.move_point, point_id, position_id)
@@ -1959,7 +1984,7 @@ def register() -> None:
         if action == "restore_point":
             return run(m.restore_point, point_id)
         if action == "record":
-            return run(m.record_reading, point_id, value, on, note or "", at, precision)
+            return run(m.record_reading, point_id, value, on, note or "", at, precision, work_order_id, task_id)
         if action == "void":
             return run(m.void_reading, reading_id, reason)
         return run(m.correct_reading, reading_id, value, on, reason, at, precision, note)

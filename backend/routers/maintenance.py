@@ -1255,8 +1255,10 @@ def class_life_data(position_class: str, m: Maintenance = Depends(maintenance)) 
 
 @router.post("/positions/{position_id}/points")
 def add_point(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """kind counter, condition or setting (a value someone sets: range_min / range_max optional)."""
     return _run(m.add_point, position_id, body.get("name", ""), body.get("kind") or "condition", body.get("unit", ""),
-                body.get("source") or "manual", body.get("tag", ""), body.get("alarm_above"), body.get("alarm_below"))
+                body.get("source") or "manual", body.get("tag", ""), body.get("alarm_above"), body.get("alarm_below"),
+                range_min=body.get("range_min"), range_max=body.get("range_max"))
 
 
 @router.post("/items/{item_id}/points")
@@ -1264,7 +1266,7 @@ def add_item_point(item_id: str, body: dict = Body(...), m: Maintenance = Depend
     """A measurement point on an item (its own hour meter): it travels with the item."""
     return _run(m.add_point, None, body.get("name", ""), body.get("kind") or "condition", body.get("unit", ""),
                 body.get("source") or "manual", body.get("tag", ""), body.get("alarm_above"), body.get("alarm_below"),
-                item_id=item_id)
+                item_id=item_id, range_min=body.get("range_min"), range_max=body.get("range_max"))
 
 
 # ---- signal channels (rows of the Explorer's Measurements tab; their own pages) --------------------------------------
@@ -1375,8 +1377,8 @@ def get_point(point_id: str, m: Maintenance = Depends(maintenance)) -> JSONRespo
 
 @router.patch("/points/{point_id}")
 def update_point(point_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.update_point, point_id, **{k: body[k] for k in ("name", "alarm_above", "alarm_below", "tag")
-                                             if k in body})
+    return _run(m.update_point, point_id, **{k: body[k] for k in ("name", "alarm_above", "alarm_below", "tag", "kind",
+                                                                  "range_min", "range_max") if k in body})
 
 
 @router.post("/points/{point_id}/move")
@@ -1388,7 +1390,7 @@ def move_point(point_id: str, body: dict = Body(...), m: Maintenance = Depends(m
 @router.post("/points/{point_id}/readings")
 def record_reading(point_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.record_reading, point_id, body.get("value"), body.get("on"), body.get("note", ""),
-                body.get("at"), body.get("precision"))
+                body.get("at"), body.get("precision"), body.get("work_order_id"), body.get("task_id"))
 
 
 @router.post("/readings/{reading_id}/void")
@@ -1707,7 +1709,15 @@ def update_work_order(work_order_id: str, body: dict = Body(...),
     return _run(m.update_work_order, work_order_id, body.get("title"), body.get("due") if "due" in body else None,
                 body.get("notes"), body.get("type"), body.get("assignee"),
                 body.get("planned_for") if "planned_for" in body else None, body.get("append_note"),
-                body.get("trade"))
+                body.get("trade"), body.get("readings"))
+
+
+@router.post("/work-orders/{work_order_id}/readings")
+def record_work_order_readings(work_order_id: str, body: dict = Body(...),
+                               m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Readings and settings taken at the work order, recorded now (the page's Record):
+    readings [{point_id, value, unit?, on?, task_id?, note?}]. Returns the work order."""
+    return _run(m.record_work_order_readings, work_order_id, body.get("readings") or [])
 
 
 @router.post("/work-orders/{work_order_id}/status")

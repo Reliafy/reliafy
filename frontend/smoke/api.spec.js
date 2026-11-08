@@ -88,6 +88,7 @@ const SIGNED_IN = [
   ["POST", "/api/maintenance/positions/smoke/out-of-service"], // tasks not due while it's out of service
   ["POST", "/api/maintenance/items/smoke/back-in-service"],
   ["PUT", "/api/maintenance/work-orders/smoke/lines/smoke"], // a package line's mark, saved during the visit
+  ["POST", "/api/maintenance/work-orders/smoke/readings"], // readings and settings taken at a work order, recorded now
   ["GET", "/api/rbd-runs"],
   ["POST", "/api/rbds/import"],
   ["GET", "/api/rbds"],
