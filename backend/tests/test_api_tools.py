@@ -508,20 +508,20 @@ def test_maintenance_decide_with_hidden_over_rest(maint):
 
 
 def test_maintenance_rcm_interval_calculators_over_rest(maint):
-    """rcm.interval_on_condition and rcm.interval_failure_finding over REST: the action table makes both, with
+    """rcm.pf_interval and rcm.ff_interval over REST: the action table makes both, with
     the calculators' plain refusals."""
-    r = maint.post("/api/v1/maintenance/rcm.interval_on_condition", {
+    r = maint.post("/api/v1/maintenance/rcm.pf_interval", {
         "pf_interval": 30, "pf_unit": "days", "onset_rate": 365.25 / 400, "inspection_cost": 20, "found_cost": 300,
         "failure_cost": 5000})
     assert r.status_code == 200, r.text
     assert r.json()["recommended"] == {"value": 2, "unit": "weeks"}  # half the P-F interval
     assert r.json()["cost_optimal"]["recommended"] == {"value": 4, "unit": "weeks"}
-    r = maint.post("/api/v1/maintenance/rcm.interval_on_condition", {"pf_interval": 30, "pf_unit": "days"})
+    r = maint.post("/api/v1/maintenance/rcm.pf_interval", {"pf_interval": 30, "pf_unit": "days"})
     assert r.status_code == 200 and r.json()["cost_optimal"] is None, r.text
-    r = maint.post("/api/v1/maintenance/rcm.interval_failure_finding", {
+    r = maint.post("/api/v1/maintenance/rcm.ff_interval", {
         "failure_rate": 0.001, "target_unavailability": 0.001})
     assert r.status_code == 200 and r.json()["recommended"] == {"value": 2, "unit": "years"}, r.text
-    r = maint.post("/api/v1/maintenance/rcm.interval_failure_finding", {"failure_rate": 0.1})
+    r = maint.post("/api/v1/maintenance/rcm.ff_interval", {"failure_rate": 0.1})
     assert r.status_code >= 400 and "Give a target unavailability" in r.text
 
 
@@ -556,3 +556,45 @@ def test_maintenance_settings_and_work_order_readings_over_rest(maint):
     r = maint.post("/api/v1/maintenance/measurements.add_point", {
         "position_id": pos["id"], "name": "Bad", "kind": "setting", "range_min": 5, "range_max": 1})
     assert r.status_code >= 400 and "lowest value" in r.text
+
+
+def test_life_models_on_positions_over_rest(maint):
+    """maintenance models.link / models.unlink over REST (the action table makes both); get.position lists
+    the models attached."""
+    from backend import db as db_mod
+    from backend.services import samples
+
+    if not db_mod.get_db().models.find_one({"_id": "sample-model-bearings-weibull"}):
+        samples.seed_samples(db_mod.get_db())
+    pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump M"}).json()
+    r = maint.post("/api/v1/maintenance/models.link", {"position_id": pos["id"], "model_id": "sample-model-bearings-weibull"})
+    assert r.status_code == 200, r.text
+    link = r.json()
+    assert link["role"] == "assigned"
+    got = maint.post("/api/v1/maintenance/get.position", {"id": pos["id"]}).json()
+    assert [x["id"] for x in got["models"]] == [link["id"]]
+    two = maint.post("/api/v1/maintenance/models.link", {"position_id": pos["id"], "model_id": "x", "from_class": True})
+    assert two.status_code in (400, 422) and "one of" in two.text
+    assert maint.post("/api/v1/maintenance/models.unlink", {"link_id": link["id"]}).status_code == 200
+
+
+def test_bayes_update_over_rest(maint):
+    """analyse bayes_update (typed numbers as the baseline, a few failures) and maintenance models.link with fit +
+    baseline (the position's history), over REST."""
+    r = maint.post("/api/v1/analyse/bayes_update", {
+        "baseline": {"distribution": "weibull", "params": [{"name": "alpha", "value": 3000}, {"name": "beta", "value": 2}],
+                     "unit": "hours"},
+        "trust": "guide", "x": [1400, 1900, 800], "c": [0, 0, 1]})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["method"] == "bayesian_update" and out["counts"] == {"failures": 2, "suspensions": 1}
+    assert "pulled the characteristic life" in out["moved"] and "data_notice" in out
+    pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump B"}).json()
+    maint.post("/api/v1/maintenance/fitments.fit", {"position_id": pos["id"], "item_name": "U1", "on": "2024-01-01"})
+    maint.post("/api/v1/maintenance/fitments.remove", {"position_id": pos["id"], "on": "2024-03-01", "reason": "failure"})
+    link = maint.post("/api/v1/maintenance/models.link", {
+        "position_id": pos["id"], "fit": True, "trust": "guide",
+        "baseline": {"distribution": "weibull", "params": [{"name": "alpha", "value": 120}, {"name": "beta", "value": 2}],
+                     "unit": "days"}})
+    assert link.status_code == 200, link.text
+    assert link.json()["role"] == "bayesian" and link.json()["update"]["counts"]["failures"] == 1

@@ -12,7 +12,8 @@
 // inside it with what it needs to be done, and how the tasks are packaged into
 // visits, LsaPanel; it was "Packages" until 9 Nov 2026, and ?tab=packages
 // still opens it); Signals for a
-// position or an item (sensor snapshots and their spectra). A tab a kind
+// position or an item (sensor snapshots and their spectra); Modelling for a position (the
+// life models attached to it and to the positions inside it, a design's too). A tab a kind
 // doesn't have isn't shown (never greyed out).
 //
 // A product is a design, not an operated thing: its rows (a design's
@@ -66,6 +67,9 @@ export const TABS = [
     notDesignLoc: true,
   },
   { id: "classes", label: "Classes", title: "The classes used here and inside it, and every class in the register", kinds: ["pos", "loc"] },
+  // The life models on each position (Derryn, 9 Nov 2026): a design's positions carry them too
+  // (a built item inherits its design's), so no `asset`. Drawn as a tree-table (explorerModels.js).
+  { id: "models", label: "Modelling", title: "The life models on this position and the positions inside it: what each says, where it came from and what uses it", kinds: ["pos"] },
   { id: "measurements", label: "Measurements", title: "Every measuring point here and inside it: the latest reading, its limits and whether it's past them", kinds: ["pos", "loc", "item"], asset: true },
   {
     id: "lsa", label: "LSA", title: "Logistic support analysis: what each task needs to be done, and how the tasks are packaged into visits",

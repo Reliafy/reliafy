@@ -3334,3 +3334,37 @@ export function getTaskTable(scope = {}) {
 export function getTaskLsa(id) {
   return request(`/api/maintenance/tasks/${encodeURIComponent(id)}/lsa`);
 }
+
+// Life models on positions (the Explorer's Modelling tab): every model attached to a
+// position in the tree, described (kind, headline numbers, quality, what uses it).
+export function listPositionModels(positionIds) {
+  const q = positionIds?.length ? `?position_ids=${encodeURIComponent(positionIds.join(","))}` : "";
+  return request(`/api/maintenance/position-models${q}`);
+}
+// One attached model in full (the panel): parameters, plot lines, data, what uses it.
+export function getPositionModel(linkId) {
+  return request(`/api/maintenance/position-models/${linkId}`);
+}
+// Attach a model: {model_id, model_type} (a saved one), {from_class: true} or {fit: true,
+// distribution, scope}; failure_mode_ids, note and replace_link_id with any of them.
+export function linkPositionModel(positionId, body) {
+  return request(`/api/maintenance/positions/${positionId}/models`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+}
+export function unlinkPositionModel(linkId) {
+  return request(`/api/maintenance/position-models/${linkId}`, { method: "DELETE" });
+}
+// A Bayesian update of a baseline with a position's history: previewed (nothing saved),
+// or saved to Models and attached. body: {baseline, trust, exclude, age} (+ name, note,
+// replace_link_id to save).
+export function previewPositionBayes(positionId, body) {
+  return request(`/api/maintenance/positions/${positionId}/bayes`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+}
+export function savePositionBayes(positionId, body) {
+  return request(`/api/maintenance/positions/${positionId}/bayes/save`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+}

@@ -63,6 +63,8 @@ LEGACY: dict = {
 # them that are heavy (a compute slot) or whose results carry people's text (the
 # data notice). A PR that adds core actions adds them here, under its own comment.
 NEW_ACTIONS = {
+    # A Bayesian update of a baseline life model with a few failures (Nov 2026).
+    ("analyse", "bayes_update"),
     # Maintainability prediction (Nov 2026).
     ("get", "maintainability_prediction"), ("list", "maintainability_predictions"), ("analyse", "maintainability"),
     ("change", "maintainability_save"), ("change", "maintainability_update"), ("change", "maintainability_delete"),
@@ -152,12 +154,13 @@ def test_gating_and_slots_are_the_earlier_ones_renamed():
     data-notice calls are exactly the earlier ones under their new names."""
     from backend import mcp_server
 
-    assert {_new_key(k) for k in OLD_PRO_ONLY} == mcp_server.PRO_ONLY_TOOLS
+    # Plus the Bayesian update (Nov 2026): fitting, so Pro like the rest.
+    assert {_new_key(k) for k in OLD_PRO_ONLY} | {"analyse.bayes_update"} == mcp_server.PRO_ONLY_TOOLS
     assert {_new_key(k) for k in OLD_HEAVY} | NEW_HEAVY == mcp_server.HEAVY_TOOLS
     assert {_new_key(k) for k in OLD_UNGATED} == mcp_server.UNGATED_TOOLS
     assert {_new_key(k) for k in OLD_UNCOUNTED} == mcp_server.UNCOUNTED_TOOLS
     assert {_new_key(k) for k in OLD_TEXT} | NEW_TEXT == mcp_server.TEXT_RESULT_TOOLS
-    assert mcp_server._FIT_TOOLS == {_new_key(k) for k in OLD_PRO_ONLY if "fleet" not in k}
+    assert mcp_server._FIT_TOOLS == {_new_key(k) for k in OLD_PRO_ONLY if "fleet" not in k} | {"analyse.bayes_update"}
 
 
 def test_earlier_names_are_gone(env):
@@ -448,7 +451,7 @@ def test_maintenance_adds_its_calls_to_the_same_sets():
         _, table = mcp_tools.TOOL_TABLES["maintenance"]
         expected = {f"{area[len('maintenance_'):]}.{verb}" for area, (_, t) in mcp_tools.TABLES.items() for verb in t}
         expected |= {"overview", "guide", "view_photo", "graph_schema", "graph_query", "apply"}
-        assert set(table) == expected and len(table) == 245  # 189 + work packages (Nov 2026): 9 actions, 2 reads, work_orders.mark, out of service ×4; + signals ×9, signal_data ×3; progression ×2; + failure reports (Nov 2026): 7 actions, 2 reads; + FME(C)A: failure_modes.score (positions.add_sample_uav since removed: the sample quadcopter is products.add_sample); + products (Nov 2026): 4 actions, 2 gets, 3 lists; products.add_sample; - positions.add_sample_truck (Nov 2026: the sample product is the one sample); + failure_modes.undo_delete (Nov 2026); + positions.log_event (Nov 2026); + measurements.move_point (Nov 2026); + tasks.set_resources (Nov 2026: the LSA); + rcm.interval_on_condition, rcm.interval_failure_finding (Nov 2026)
+        assert set(table) == expected and len(table) == 247  # 189 + work packages (Nov 2026): 9 actions, 2 reads, work_orders.mark, out of service ×4; + signals ×9, signal_data ×3; progression ×2; + failure reports (Nov 2026): 7 actions, 2 reads; + FME(C)A: failure_modes.score (positions.add_sample_uav since removed: the sample quadcopter is products.add_sample); + products (Nov 2026): 4 actions, 2 gets, 3 lists; products.add_sample; - positions.add_sample_truck (Nov 2026: the sample product is the one sample); + failure_modes.undo_delete (Nov 2026); + positions.log_event (Nov 2026); + measurements.move_point (Nov 2026); + tasks.set_resources (Nov 2026: the LSA); + rcm.pf_interval, rcm.ff_interval (Nov 2026; first named interval_on_condition, interval_failure_finding); + models.link, models.unlink (Nov 2026: life models on positions)
         # The whole list an operator loads on every connection, guarded (301,819 characters as 40 tools).
         listed = json.dumps([t.model_dump(mode="json", by_alias=True, exclude_none=True) for t in every])
         assert len(listed) < 22_000  # was 20,000 before the signal channel actions, 21,000 before failure reports

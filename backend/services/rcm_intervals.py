@@ -688,11 +688,13 @@ def history_rate(rows: list[dict], mode_text: str = "") -> Optional[dict]:
             "text": f"{n} failure{'s' if n != 1 else ''} {what} in {fmt_num(years)} years of service at this position"}
 
 
-def starting_inputs(mode: dict, rows: list[dict], fetch) -> dict:
+def starting_inputs(mode: dict, rows: list[dict], fetch, attached: list | None = None) -> dict:
     """What the task card's calculators start from for a failure mode: its linked
     evidence (a non-repairable model, a saved replacement or interval analysis, a
-    degradation model) and its position's failure history. Each value says where it
-    came from; anything not found is left for the user to type."""
+    degradation model), then the models attached to its position (``attached``:
+    [(model_type, doc)], those for this failure mode first: position_models.py), and
+    its position's failure history. Each value says where it came from; anything not
+    found is left for the user to type."""
     decision = mode.get("decision") or {}
     evidence = decision.get("evidence") or {}
     out: dict = {"onset_rate": None, "device": None, "life_model": None, "pf": None, "costs": {}, "evidence": None}
@@ -730,6 +732,25 @@ def starting_inputs(mode: dict, rows: list[dict], fetch) -> dict:
         out["pf"] = {"source": "degradation_model", "name": artifact.name,
                      "text": f"“{artifact.name}” shows the failure develops measurably; enter how long from the first "
                              "sign to the failure."}
+    for model_type, doc in attached or []:
+        if model_type == "model" and (out["life_model"] is None or out["device"] is None):
+            try:
+                model_in = model_inputs(doc)
+            except IntervalError:
+                continue
+            model_in = {**model_in, "source": "position"}
+            if out["life_model"] is None:
+                out["life_model"] = model_in
+            if out["device"] is None:
+                out["device"] = model_in
+            rate = _yearly_rate(model_in)
+            if rate and out["onset_rate"] is None:
+                out["onset_rate"] = {"rate": rate, "source": "position_model",
+                                     "text": f"one over the mean life of “{doc.name}”, the position's model"}
+        elif model_type == "degradation_model" and out["pf"] is None:
+            out["pf"] = {"source": "position_model", "name": doc.name,
+                         "text": f"“{doc.name}” (on this position) shows the failure develops measurably; enter how "
+                                 "long from the first sign to the failure."}
     if out["onset_rate"] is None:
         out["onset_rate"] = history_rate(rows, mode.get("text") or "")
     return out

@@ -342,15 +342,15 @@ def _decision_in(sheet, mode_id, whole=False):
 # ---- the MCP actions, over REST as over MCP ----------------------------------------------
 
 def test_mcp_rcm_actions(api):
-    """maintenance rcm.interval_on_condition and rcm.interval_failure_finding, called as the
+    """maintenance rcm.pf_interval and rcm.ff_interval, called as the
     one maintenance tool's actions."""
     from backend.maintenance import mcp_tools
 
     mcp_tools.register()
     try:
-        assert {"rcm.interval_on_condition", "rcm.interval_failure_finding"} <= set(
+        assert {"rcm.pf_interval", "rcm.ff_interval"} <= set(
             mcp_tools.TOOL_TABLES["maintenance"][1])
-        assert mcp_tools.scope_of("maintenance_rcm.interval_on_condition") == "read"
+        assert mcp_tools.scope_of("maintenance_rcm.pf_interval") == "read"
     finally:
         mcp_tools.unregister()
 

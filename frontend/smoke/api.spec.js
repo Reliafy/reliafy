@@ -13,6 +13,8 @@ const SIGNED_IN = [
   // The interval calculators on an RCM task card.
   ["POST", "/api/maintenance/rcm/interval/on-condition"],
   ["POST", "/api/maintenance/rcm/interval/failure-finding"],
+  // Life models on positions (the Explorer's Modelling tab).
+  ["GET", "/api/maintenance/position-models"],
   // Reliability prediction: the parts count, the saved predictions, a product's parts list.
   ["POST", "/api/predictions/compute"],
   ["POST", "/api/predictions"],

@@ -267,7 +267,8 @@ const TreeDetail = forwardRef(function TreeDetail({
         {shown === "reports" && reports
           ? (reports?.rollup ? reports.rollup(row) : <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} onMenu={onMenu} />)
           // The Measurements tab is the tree-table (AssetExplorer, MeasurementTable.jsx), not a panel.
-          : shown === "measurements"
+          // So is the Modelling tab (AssetExplorer, ModelTable.jsx).
+          : shown === "measurements" || shown === "models"
           ? null
           : shown === "lsa"
           ? <Suspense fallback={loading}><LsaPanel row={row} today={today} onMenu={onMenu} /></Suspense>

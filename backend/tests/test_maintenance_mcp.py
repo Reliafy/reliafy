@@ -291,12 +291,12 @@ def test_the_guide_by_topic(env):
         return index, pages, bad
 
     index, pages, bad = _session(env["token"], flow)
-    assert set(index["topics"]) == {"start", "model", "register", "plan", "run", "learn", "decide", "data",
+    assert set(index["topics"]) == {"start", "model", "register", "plan", "run", "learn", "modelling", "decide", "data",
                                     "classes", "conditions", "structure", "signals", "failures", "products", "apply"}
     apply = pages["apply"]["guide"]
     assert "maintenance apply" in apply and "@p" in apply and "confirm" in apply and "dry_run" in apply
     structure = pages["structure"]["guide"]
-    assert "add_component" in structure and "positions_from_structure" in structure and "loop" in structure
+    assert "add_component" in structure and "build_positions" in structure and "loop" in structure
     conditions = pages["conditions"]["guide"]
     assert "exclude_condition" in conditions and "connection holds only its own conditions" in conditions
     assert "guide" not in index and bad.is_error
@@ -1017,9 +1017,9 @@ def test_product_structure_over_mcp(env):
                                levels=["System", "Subsystem", "LRU", "Shop unit", "Component"],
                                renamed={"SRU": "Shop unit"}))
         top = _ok(await _do(client, "maintenance", "positions.create", name="Cooling"))
-        positions = _ok(await _do(client, "maintenance", "parts.positions_from_structure", part_id=parts["SYS-1"],
+        positions = _ok(await _do(client, "maintenance", "parts.build_positions", part_id=parts["SYS-1"],
                                   position_id=top["id"], levels=["System", "Subsystem"]))
-        made = _ok(await _do(client, "maintenance", "parts.positions_from_structure", part_id=parts["SYS-1"],
+        made = _ok(await _do(client, "maintenance", "parts.build_positions", part_id=parts["SYS-1"],
                              position_id=top["id"], levels=["System", "Subsystem"], dry_run=False))
         stray = await _do(client, "maintenance", "parts.set_level", part_id=seal["id"], level="LRU", ref="x")
         return dry, done, again, loop, changed, structure, used, level, levels, positions, made, stray

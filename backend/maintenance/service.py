@@ -67,6 +67,8 @@ from backend.maintenance.tree_delete import PROJECTORS as _TREE_DELETE_PROJECTOR
 from backend.maintenance.tree_delete import TreeDeleteOps
 from backend.maintenance.rcm_delete import PROJECTORS as _RCM_DELETE_PROJECTORS
 from backend.maintenance.rcm_delete import RcmDeleteOps
+from backend.maintenance.position_models import PROJECTORS as _POSITION_MODEL_PROJECTORS
+from backend.maintenance.position_models import PositionModelOps
 
 logger = logging.getLogger(__name__)
 
@@ -2800,7 +2802,7 @@ PROJECTORS = {
 
 # ---- the domain ------------------------------------------------------------------
 
-class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps):
+class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -13432,6 +13434,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # The failure reports raised here (not inside): open, total, latest_on.
             "failure_reports": self._position_reports(id),
             "life_data": self.life_data(id),
+            # The life models attached to it (the Explorer's Modelling tab, position_models.py).
+            "models": [self._model_link_view(x) for x in self._model_links(id)],
             "coordinates": p.get("coordinates"),
             "measurements": self._points_on(id),
             "connections": self.connections(id),
@@ -14312,5 +14316,7 @@ PROJECTORS.update(_PRODUCT_PROJECTORS)
 PROJECTORS.update(_TREE_DELETE_PROJECTORS)
 # Deleting an RCM row with everything under it and undoing it (Nov 2026, rcm_delete.py).
 PROJECTORS.update(_RCM_DELETE_PROJECTORS)
+# Life models attached to positions (Nov 2026, position_models.py).
+PROJECTORS.update(_POSITION_MODEL_PROJECTORS)
 
 PROJECTION_VERSION = 5

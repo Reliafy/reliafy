@@ -242,6 +242,9 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
             </button>
           </div>
         )}
+        {result.method === "bayesian_update" && result.bayes?.label && (
+          <p className="muted life-bayes">{result.bayes.label}. {result.bayes.words}</p>
+        )}
         {params.map((p) => {
           const v = paramView(result, p);
           return (
@@ -249,7 +252,9 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
               <span className="gk">{v.label}</span>
               <span className="gv-col">
                 <span className="gv">{id === "weibull" && p.name === "beta" ? fmtShape(p.value) : v.value}</span>
-                {v.ci && <span className="param-ci" title={result.ci_note || HOW_CI}>95% {v.ci}</span>}
+                {/* A Bayesian update's are credible intervals (bayes_life.py), never confidence bounds. */}
+                {v.ci && <span className="param-ci" title={result.ci_note || HOW_CI}>
+                  {result.method === "bayesian_update" ? `${Math.round((result.credible_level || 0.9) * 100)}% credible` : "95%"} {v.ci}</span>}
               </span>
             </div>
           );

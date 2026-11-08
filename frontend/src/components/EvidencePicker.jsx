@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { listModels, listReports, listStrategyAnalyses, listDegradationModels } from "../api.js";
+import { listModels, listPositionModels, listReports, listStrategyAnalyses, listDegradationModels } from "../api.js";
+import { attachedFor } from "../explorerModels.js";
 import { EVIDENCE_KIND_LABEL, evidenceKinds, startKind } from "../rcmWorksheet.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 
@@ -57,13 +58,28 @@ async function loadOptions(kind, expectedType, analysisKind) {
 // position: `workings`, [{id: the function's, label, meta}]). A report or notes are
 // linked, not checked. Non-repairable models surface their randomness
 // verdicts so users can pick a defensible one for RTF decisions.
-export default function EvidencePicker({ expectedType, analysisKind, value, onChange, workings = [] }) {
+// `positionId` (and `modeId`): the life models attached to the failure mode's position
+// (the Modelling tab) are offered first among the models, those for this mode at the top;
+// `onCandidate(option)` hears one attached for this very mode, which the dialog picks when nothing is linked yet.
+export default function EvidencePicker({ expectedType, analysisKind, value, onChange, workings = [], positionId = null, modeId = null, onCandidate = null }) {
   const kinds = evidenceKinds(expectedType);
   // Its own radio group: a combination's dialog shows a picker per task.
   const group = useId();
   const [kind, setKind] = useState(() => startKind(value, expectedType));
   const shown = kinds.includes(kind) ? kind : kinds[0];
   const [options, setOptions] = useState(null);
+  const [attached, setAttached] = useState([]);
+  useEffect(() => {
+    if (!positionId || (expectedType !== "model" && expectedType !== "degradation_model")) return undefined;
+    let live = true;
+    listPositionModels([positionId]).then((d) => {
+      if (!live) return;
+      const got = attachedFor(d.links || [], { modeId, expectedType });
+      setAttached(got);
+      if (got[0]?.rank === 0) onCandidate?.(got[0]); // attached for this very mode: the decision's candidate
+    }, () => {});
+    return () => { live = false; };
+  }, [positionId, modeId, expectedType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (shown === "working") return undefined;
@@ -76,12 +92,17 @@ export default function EvidencePicker({ expectedType, analysisKind, value, onCh
   }, [shown, expectedType, analysisKind]);
 
   const list = useMemo(() => {
+    if (shown === "model" && options && attached.length) {
+      // The position's own models first, then the rest of the library without them again.
+      const ids = new Set(attached.map((a) => a.id));
+      return [...attached, ...options.filter((o) => !ids.has(o.id))];
+    }
     if (shown !== "working") return options;
     // The working linked now stays offered even when it's on another position.
     const linked = value?.type === "working" && !workings.some((w) => w.id === value.id)
       ? [{ id: value.id, label: "The function's notes linked now", meta: "" }] : [];
     return [...linked, ...workings];
-  }, [shown, options, workings, value]);
+  }, [shown, options, workings, value, attached]);
 
   const typeOf = (k) => (k === "model" ? expectedType : k);
   const chosen = value && value.type === typeOf(shown) ? value.id : null;

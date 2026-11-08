@@ -220,13 +220,13 @@ it in the function's `modes`. `products.add_sample` adds the sample
 quadcopter product, its design fully scored (on Products, not in the asset
 tree).
 
-How often to do a task: `maintenance rcm.interval_on_condition` needs only
+How often to do a task: `maintenance rcm.pf_interval` needs only
 the P-F interval (`pf_interval` with `pf_unit`): it answers half the P-F
 interval, or the net P-F interval (less `act_time`, the time needed to act)
 when that's tighter. Costs are optional and never change it: with
 `inspection_cost`, `found_cost`, `failure_cost` and `onset_rate` (failures a
 year), `cost_optimal` adds the cheapest interval and whether the check pays.
-`maintenance rcm.interval_failure_finding` (a protective device's
+`maintenance rcm.ff_interval` (a protective device's
 `failure_rate` a year, a `model_id`, or `distribution_id` + `params` +
 `model_unit`) gives the longest test interval that meets
 `target_unavailability`; the costs `test_cost`, `repair_cost`, `demand_rate`,
@@ -241,8 +241,57 @@ decision's evidence (contradicted when the task's interval is longer than the
 P-F interval, or than the longest that meets the target).
 
 ```bash
-reliafy maintenance rcm.interval_on_condition --pf-interval 10 --pf-unit weeks --act-time 1
-reliafy maintenance rcm.interval_failure_finding --failure-rate 0.1 --target-unavailability 0.01
+reliafy maintenance rcm.pf_interval --pf-interval 10 --pf-unit weeks --act-time 1
+reliafy maintenance rcm.ff_interval --failure-rate 0.1 --target-unavailability 0.01
+```
+
+(These two were `rcm.interval_on_condition` and `rcm.interval_failure_finding`
+until Nov 2026; `parts.build_positions` was `parts.positions_from_structure`.)
+
+Life models on positions (the Explorer's Modelling tab): `maintenance
+models.link` attaches a model to a position (a link, never a copy): a saved one
+(`model_id`, with `model_type` `model` (the default), `recurrent_model`,
+`degradation_model` or `alt_model`), the position class's (`from_class: true`)
+or a new fit from its failure history (`fit: true`, Pro; `distribution`,
+`scope` `auto` (its own, else its class's pooled history), `position` or
+`class`). `failure_mode_ids` names the failure modes it describes (none: every
+failure there; a fit then counts failures by other modes as suspensions);
+`replace_link_id` swaps one model for another. `fit: true` with `baseline` or
+`trust` saves a Bayesian update instead (below). `maintenance models.unlink`
+(`link_id`) takes one off; the model stays in Models. `get.position` lists
+them (`models`). A built item takes its product design's links when it's
+built, as it takes the RCM. The app's own routes:
+`GET /api/maintenance/position-models` (every link with its model's kind,
+headline numbers with bounds, data counts, a one-word quality and what uses
+it), `GET /api/maintenance/position-models/{id}`,
+`POST /api/maintenance/positions/{id}/models` and
+`DELETE /api/maintenance/position-models/{id}`. A failure mode's interval
+calculators start from the position's model for that mode (else one for every
+failure there) when the decision has no evidence of its own.
+
+```bash
+reliafy maintenance models.link --position-id P --model-id sample-model-bearings-weibull
+reliafy maintenance models.link --position-id P --fit --scope auto
+reliafy maintenance models.unlink --link-id L
+```
+
+A Bayesian update of a baseline with a few failures: `analyse bayes_update`
+(Pro) takes a `baseline` (`{model_id}`, `{distribution, params, unit}` or a
+belief `{b10: {value, low, high}, shape: {low, high}, unit}`), `trust`
+(`close`, `guide` or `start`: each number within about 10, 30 or 60%; a
+fitted baseline counts as all, half or a fifth of its evidence), `x` and `c`
+in the baseline's unit, and optional `age`. It returns what the prior says,
+the posterior medians with 90% credible intervals, B10 and mean life, and what
+moved the baseline, in words; it saves nothing. With no data the baseline
+stands as given. On a position, `maintenance models.link` with `fit: true` and
+`baseline` / `trust` (and `exclude`: fitment ids to leave out) updates the
+baseline with the position's history, saves it as a non-repairable model
+(`method: "bayesian_update"`, its bounds credible intervals) and attaches it;
+the app previews with `POST /api/maintenance/positions/{id}/bayes` and saves
+with `/bayes/save`. It's computed by SurPyval's `fit_bayes`.
+
+```bash
+reliafy analyse bayes_update --baseline '{"model_id": "M"}' --trust guide --x 1400,1900,2500 --c 0,0,1
 ```
 
 A function's notes and rationale (`notes` on `failure_modes.add_function` /

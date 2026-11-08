@@ -404,7 +404,7 @@ DATA_NOTICE = ("Names, notes, descriptions, labels, column headers and values in
 # don't have. Fitting runs server-side CPU those plans don't pay for (agents
 # fit locally with SurPyval, then change model_save); fleets depend on usage
 # arriving through the Pro API. Reliafy Maintenance adds its own when on.
-_FIT_TOOLS = {"analyse.fit", "change.model_fit", "change.model_fit_alt", "change.model_fit_recurrent",
+_FIT_TOOLS = {"analyse.fit", "analyse.bayes_update", "change.model_fit", "change.model_fit_alt", "change.model_fit_recurrent",
               "analyse.fit_joint", "change.model_fit_joint"}
 _FLEET_TOOLS = {"list.fleets", "analyse.fleet_forecast", "list.fleet_alerts", "change.fleet_create_alert"}
 PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
@@ -2298,6 +2298,37 @@ def _reliability_along(db, m, times, owners, schedule, covariates, conditional_a
         out["confidence"] = float(confidence)
         out["bounds_note"] = ev.get("bounds_note")
     return out
+
+
+def bayes_update(
+    ctx: Context,
+    baseline: Annotated[dict[str, Any], Field(description=(
+        "What it starts from: {model_id} (a saved Weibull, exponential or lognormal model, or an earlier update), "
+        "{distribution, params: [{name, value}], unit} (numbers from a data sheet or handbook) or "
+        "{b10: {value, low, high}, shape: {low, high}, unit} (a belief about the B10 life)."))],
+    x: Annotated[list[float], Field(max_length=10000, description="Ages, in the baseline's unit.")],
+    c: Annotated[Optional[list[int]], Field(description="Per age: 0 failed, 1 still running (default all 0).")] = None,
+    trust: Annotated[Optional[str], Field(description=(
+        "How much to trust the baseline: close (each number within about 10%; a fitted baseline counts as all its "
+        "evidence), guide (30%; half, the default) or start (60%; a fifth)."))] = None,
+    age: Annotated[Optional[float], Field(gt=0, description="Optional: adds the reliability at this age.")] = None,
+) -> dict[str, Any]:
+    """A Bayesian update of a baseline life model with a few failures: the baseline (the prior), weighed by
+    trust, moved by the data (the posterior). Returns what the prior says, the posterior medians with 90%
+    credible intervals, B10 and mean life, and what moved and how far, in words. Saves nothing (maintenance
+    models.link fit + baseline saves one on a position). Plenty of failures: fit instead."""
+    from backend.services import bayes_life
+
+    user, db = _caller(ctx), _db()
+    try:
+        base = bayes_life.baseline_from(db, _owners(user["uid"]), samples_service.hidden_sample_ids(db, user["uid"]),
+                                        baseline)
+        _, result, _ = bayes_life.update(base, trust or "guide", bayes_life.given_rows(x, c), age)
+    except bayes_life.BayesError as err:
+        raise ToolError(str(err)) from None
+    result.pop("rows", None)
+    result.pop("curves", None)
+    return {"data_notice": DATA_NOTICE, **result}
 
 
 def reliability_at(
@@ -8956,6 +8987,7 @@ _A = {  # new tool -> {action: the function it runs}
         "fit": _act(fit_distribution),
         "fit_per_demand": _act(fit_per_demand),
         "reliability_at": _act(reliability_at),
+        "bayes_update": _act(bayes_update),
         "check_life_requirement": _act(check_life_requirement),
         "compare_groups": _act(compare_groups),
         "alt_use_level": _act(alt_use_level),

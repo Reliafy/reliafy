@@ -1173,6 +1173,46 @@ work order (the seasonal change-over) and the history should say so.
   and whether a value was taken at it. `readings_taken` lists what was;
   `readings_by_task` counts them per task ("Readings: 2 of 3 recorded").
 
+## Life models on positions (the Modelling tab)
+
+A position (a functional location, or a position of a product's design) can
+carry the life models that describe it: a Weibull fitted to its own history,
+its class's model, a Bayesian update of a baseline with its history, or any
+saved model assigned by hand. Code: `backend/maintenance/position_models.py`.
+
+- **A link, never a copy.** `position.model_linked {id, position_id,
+  model_type, model_id, role, failure_mode_ids, name, note, source, on}` makes
+  a `ModelLink` node and `(:Position)-[:HAS_MODEL]->(:ModelLink)`.
+  `model_type` names the store the model lives in (`model`,
+  `recurrent_model`, `degradation_model`, `alt_model`): the models stay in
+  MongoDB, so a refit or rename there shows on every position that links it.
+  `role` says how it came: `assigned`, `fitted`, `class`, `design` or
+  `bayesian`; `name` is the model's name when linked (history and reads that
+  can't open it); `source` what a fit used (scope, failures, suspensions,
+  class) or the design position a built one came from.
+  `position.model_unlinked {id, on}` marks it removed and drops the edge.
+- **For which failures.** `failure_mode_ids` are the position's own failure
+  modes it describes; none means every failure there. A fit for some modes
+  counts failures by the others as suspensions.
+- **Built items.** `build_item` emits `position.model_linked` (role `design`)
+  for each copied position, its failure modes matched by their words, as it
+  copies the RCM; a later change to the design doesn't reach the item.
+- **Reads.** `Maintenance.position(id).models`; `all_position_models()` for
+  the tree; the REST read (`GET /api/maintenance/position-models`) adds each
+  model's summary (kind, headline numbers with bounds, counts, a one-word
+  quality), `stale` (failures recorded since a fit or update) and `used_by`
+  (RCM decisions linking the model as evidence, the reader's RBD blocks on it).
+- **The RCM.** A failure mode's evidence picker offers the position's models
+  first (those for that mode at the top, and picks one for that mode when
+  nothing's linked yet); the interval calculators start from them when the
+  decision has no evidence.
+- **A Bayesian update** (`backend/services/bayes_life.py`, SurPyval's
+  `fit_bayes`) is saved as an ordinary non-repairable model with
+  `method: "bayesian_update"`, its parameters the posterior medians with 90%
+  credible intervals and its recipe (the data and the prior) in its spec; the
+  calculators and RBDs rebuild it from the recipe (about a third of a second)
+  rather than storing the posterior grid.
+
 ## Making Neo4j the primary store later
 
 Worth it when Neo4j is close to Cloud Run (AuraDB Professional in

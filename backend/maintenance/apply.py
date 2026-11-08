@@ -46,11 +46,11 @@ DRY: contextvars.ContextVar = contextvars.ContextVar("maintenance_apply_dry", de
 #: with side effects outside the event log. They stay single calls.
 EXCLUDED = {
     "reliability.fit_class_model", "topology.generate_rbd", "workspace.set_time_zone",
-    "workspace.import_history", "parts.import_bom", "parts.positions_from_structure", "item_classes.import",
+    "workspace.import_history", "parts.import_bom", "parts.build_positions", "item_classes.import",
     "item_classes.load_starter", "item_classes.import_conditions", "manufacturers.link_by_name",
     "positions.adopt_placements", "attachments.photo_link",
     "failure_modes.split_standard", "signals.add_snapshot", "signals.add_band", "signals.add_level", "signals.update_band",
-    "signals.set_storage_cap", "products.build", "products.add_sample",
+    "signals.set_storage_cap", "products.build", "products.add_sample", "models.link",
 }
 
 #: Delete-type actions: the argument naming what goes, for the confirm check.
