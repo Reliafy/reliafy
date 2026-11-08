@@ -173,12 +173,12 @@ def test_an_agent_saves_a_calculation_as_evidence(env):  # noqa: F811
         _ok(await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=mode, consequence="operational",
                       decision={"outcome": "on_condition", "task": "Vibration check", "interval": 3,
                                 "interval_unit": "months"}))
-        plain = _ok(await _do(client, "maintenance", "rcm.interval_on_condition", pf_interval=8, pf_unit="weeks"))
-        used = _ok(await _do(client, "maintenance", "rcm.interval_on_condition", pf_interval=8, pf_unit="weeks",
+        plain = _ok(await _do(client, "maintenance", "rcm.pf_interval", pf_interval=8, pf_unit="weeks"))
+        used = _ok(await _do(client, "maintenance", "rcm.pf_interval", pf_interval=8, pf_unit="weeks",
                              failure_mode_id=mode, save_evidence=True))
-        no_mode = await _do(client, "maintenance", "rcm.interval_on_condition", pf_interval=8, pf_unit="weeks",
+        no_mode = await _do(client, "maintenance", "rcm.pf_interval", pf_interval=8, pf_unit="weeks",
                             save_evidence=True)
-        ff = await _do(client, "maintenance", "rcm.interval_failure_finding", failure_rate=0.1,
+        ff = await _do(client, "maintenance", "rcm.ff_interval", failure_rate=0.1,
                        target_unavailability=0.01, failure_mode_id=mode, save_evidence=True)
         read = _ok(await _get(client, "failure_mode", mode))
         return plain, used, no_mode, ff, read

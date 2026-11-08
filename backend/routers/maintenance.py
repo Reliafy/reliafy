@@ -991,6 +991,26 @@ def rcm_interval_failure_finding(body: dict = Body(...), session=Depends(get_ses
     return _interval(rcm_intervals.failure_finding_interval, body, FAILURE_FINDING_INPUTS)
 
 
+def _attached_models(m: Maintenance, session, ctx: AccessCtx, position: dict | None, mode_id: str) -> list:
+    """The models on a failure mode's position the reader can open, as [(model_type, doc)]: those
+    attached for this mode first, then those for every failure there (one for other modes only is left out)."""
+    from backend.maintenance import position_models as pm
+
+    if not position:
+        return []
+    fetch = pm.fetcher(session, ctx.read_owners, ctx.hidden)
+    links = m.position_models(position["id"])
+    rank = lambda x: 0 if any(f["id"] == mode_id for f in x["failure_modes"]) else 1 if not x["failure_modes"] else 2  # noqa: E731
+    out = []
+    for link in sorted(links, key=rank):
+        if rank(link) == 2:
+            continue  # a model for other failure modes isn't this one's
+        doc = fetch(link["model_type"], link["model_id"])
+        if doc is not None:
+            out.append((link["model_type"], doc))
+    return out
+
+
 @router.get("/failure-modes/{mode_id}/interval-inputs")
 def failure_mode_interval_inputs(mode_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
                                  m: Maintenance = Depends(maintenance)) -> JSONResponse:
@@ -1005,7 +1025,7 @@ def failure_mode_interval_inputs(mode_id: str, session=Depends(get_session), ctx
         _, position = m._live_mode(mode_id)
         rows = m.life_data(position["id"]) if position else []
         fetch = rcm_decisions.evidence_fetcher(session, ctx.read_owners, ctx.hidden)
-        return rcm_intervals.starting_inputs(mode, rows, fetch)
+        return rcm_intervals.starting_inputs(mode, rows, fetch, _attached_models(m, session, ctx, position, mode_id))
     return _run(go)
 
 
@@ -1176,6 +1196,91 @@ def fit_class_model(body: dict = Body(...), session=Depends(get_session),
                     body.get("distribution") or "weibull")
     except fitting.FitError as err:
         return JSONResponse(status_code=422, content={"detail": f"The fit didn't work: {client_message(err)}"})
+
+
+# ---- life models on positions (the Explorer's Modelling tab, position_models.py) ----------
+
+def _fit_failed(err) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"detail": f"The fit didn't work: {client_message(err)}"})
+
+
+@router.get("/position-models")
+def position_models(position_ids: str | None = None, session=Depends(get_session),
+                    ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Every model attached to a position in use (position_ids: only these, comma-separated), each with its
+    model's kind, headline numbers with bounds, data counts and a one-word quality, and what uses it (RCM
+    decisions linking it as evidence, RBD blocks)."""
+    from backend.maintenance import position_models as pm
+
+    ids = [x for x in (position_ids or "").split(",") if x] or None
+    return _run(lambda: {"links": pm.describe(m, session, ctx.read_owners, ctx.hidden, m.all_position_models(ids))})
+
+
+@router.get("/position-models/{link_id}")
+def position_model(link_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                   m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """One attached model in full: its summary, parameters with bounds, plot lines, the data behind it and
+    what uses it."""
+    from backend.maintenance import position_models as pm
+
+    return _run(pm.detail, m, session, ctx.read_owners, ctx.hidden, link_id)
+
+
+@router.post("/positions/{position_id}/models")
+def link_position_model(position_id: str, body: dict = Body(...), session=Depends(get_session),
+                        ctx: AccessCtx = Depends(get_access),
+                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Attach a model to a position: a saved one (model_id, model_type: model default, recurrent_model,
+    degradation_model, alt_model), the position class's (from_class true) or a new fit from its failure
+    history (fit true; distribution, scope auto | position | class). failure_mode_ids: the failure modes it's
+    for; replace_link_id: the model on the position it takes the place of; note."""
+    from backend import fitting
+    from backend.maintenance import position_models as pm
+
+    modes, note, replace = body.get("failure_mode_ids"), str(body.get("note") or ""), body.get("replace_link_id")
+    try:
+        if body.get("fit"):
+            return _run(pm.fit_position_model, m, session, position_id, body.get("distribution") or "weibull",
+                        modes, body.get("scope") or "auto", note, replace)
+    except fitting.FitError as err:
+        return _fit_failed(err)
+    if body.get("from_class"):
+        return _run(pm.link_from_class, m, session, ctx.read_owners, ctx.hidden, position_id, modes, note, replace)
+    return _run(pm.link_saved, m, session, ctx.read_owners, ctx.hidden, position_id,
+                body.get("model_type") or "model", body.get("model_id"), modes, note, replace)
+
+
+@router.post("/positions/{position_id}/bayes")
+def bayes_position(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                   ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """A Bayesian update of a baseline with this position's history, previewed (nothing saved): baseline
+    ({model_id}, {distribution, params, unit} or {b10: {value, low, high}, shape: {low, high}, unit}; left
+    out, the position class's model), trust (close, guide, start), exclude (fitment ids to leave out), age
+    (adds the reliability there). Returns what the prior says, the history used, the posterior medians with
+    90% credible intervals, B10 and mean life, the plot's curves and the result in words."""
+    from backend.maintenance import position_models as pm
+
+    return _run(pm.bayes_position, m, session, ctx.read_owners, ctx.hidden, position_id, body.get("baseline"),
+                body.get("trust") or "guide", body.get("exclude") or [], body.get("age"))
+
+
+@router.post("/positions/{position_id}/bayes/save")
+def bayes_position_save(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                        ctx: AccessCtx = Depends(get_access),
+                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """The update saved to Models as a non-repairable model and attached to the position (role bayesian);
+    name (default "Bayesian update of <baseline> with n failures, m suspensions"), note, replace_link_id."""
+    from backend.maintenance import position_models as pm
+
+    return _run(pm.bayes_position, m, session, ctx.read_owners, ctx.hidden, position_id, body.get("baseline"),
+                body.get("trust") or "guide", body.get("exclude") or [], body.get("age"), True, body.get("name"),
+                str(body.get("note") or ""), body.get("replace_link_id"))
+
+
+@router.delete("/position-models/{link_id}")
+def unlink_position_model(link_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Take a model off its position (the model stays in Models)."""
+    return _run(m.unlink_position_model, link_id)
 
 
 @router.get("/classes/economics")

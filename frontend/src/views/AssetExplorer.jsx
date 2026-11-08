@@ -5,6 +5,11 @@ import {
 } from "../components/MeasurementTable.jsx";
 import { graftMeasurements, isMeasRow, measKey, openForMeasurements, rollupText as measRollup } from "../explorerMeasurements.js";
 import { measurementsCsv } from "../measurementsTable.js";
+import {
+  MODEL_COLUMNS, MODEL_TREE_HEAD, ModelCell, ModelDialogs, ModelSide, modelPhoneRow, modelRowActions, unlinkModel, useTreeModels,
+} from "../components/ModelTable.jsx";
+import BayesUpdateModal from "../components/BayesUpdateModal.jsx";
+import { MODEL_USUAL, graftModels, isModelRow, openForModels, rollupText as modelRollup } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   addSampleProduct, getFmeaExcelBlob, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
@@ -201,7 +206,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // tree, just like in the RCM table"): each position's measurement rows hang under
   // it, with the table's columns beside them. `tableOn`: either table.
   const measOn = tab === "measurements";
-  const tableOn = rcmOn || measOn;
+  // The Modelling tab (Derryn, 9 Nov 2026): the life models on each position hang under it, the same way.
+  const modelsOn = tab === "models";
+  const tableOn = rcmOn || measOn || modelsOn;
   // RCM (and the FME(C)A) is by position: on its tab the tree is arranged by positions.
   // One tree on show (a product's design, an item's tree) opens by positions; its
   // Locations (?arrange=locations) are its own layout, never what's remembered here.
@@ -286,6 +293,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     try { localStorage.setItem("reliafy.measurements.treecols", JSON.stringify(next)); } catch { /* not kept */ }
   };
   const [measModal, setMeasModal] = useState(null);
+  // The Modelling tab: its columns (remembered; B10 is offered in Columns…), and a dialog its actions open.
+  const [modelCols, setModelColsState] = useState(() => {
+    try {
+      const got = JSON.parse(localStorage.getItem("reliafy.models.treecols") || "null");
+      if (Array.isArray(got) && got.length) return MODEL_COLUMNS.map((c) => c.id).filter((id) => got.includes(id));
+    } catch { /* storage blocked: the usual columns */ }
+    return MODEL_USUAL;
+  });
+  const setModelCols = (next) => {
+    setModelColsState(next);
+    try { localStorage.setItem("reliafy.models.treecols", JSON.stringify(next)); } catch { /* not kept */ }
+  };
+  const [modelModal, setModelModal] = useState(null);
   const { full, toggle: toggleFull } = useFullScreen(frame, { returnFocus: fullBtn });
   const pending = useRef(params.get("sel") || location.state?.treeReveal || null);
 
@@ -378,9 +398,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const base = useMemo(() => buildDisplay(data, mode), [data, mode]);
   // The Measurements tab: every position's points, settings, channels and consumables.
   const meas = useTreeMeasurements({ on: measOn && !!data, display: data ? base : null });
+  // The Modelling tab: every model attached to a position.
+  const pmodels = useTreeModels({ on: modelsOn && !!data });
   const whole = useMemo(() => (rcmOn && rcm ? (fmeaOn ? graftFmea(base, rcm) : graftRcm(base, rcm))
     : measOn && meas.data ? graftMeasurements(base, meas.data, data?.today || new Date().toISOString().slice(0, 10), meas.fittedAt)
-      : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today]);
+      : modelsOn && pmodels.links ? graftModels(base, pmodels.links)
+        : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links]);
   const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
   // The modes picked that are still in the tree after a read.
   useEffect(() => {
@@ -441,7 +464,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     : want ?? (display.rows.has(selected[mode]) ? selected[mode] : list[0]?.key ?? null);
   const focusRow = focus != null ? display.rows.get(focus) : null;
   // The position the selection is on (a function, failure or mode: its position).
-  const selPos = isRcmRow(focusRow) || isMeasRow(focusRow) ? positionOf(focusRow) : focus;
+  const selPos = isRcmRow(focusRow) || isMeasRow(focusRow) || isModelRow(focusRow) ? positionOf(focusRow) : focus;
 
   // A link on the page that names another row (?sel=: a task's row from the LSA tab's
   // Serves, a task's package): that row is revealed once it's in the tree, before the
@@ -518,6 +541,18 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const more = openForMeasurements(display, selected.positions);
     setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...more]) }));
   }, [measOn, meas.data, display, whole, selected.positions]);
+  // Opening the Modelling tab opens the position picked, so its models show.
+  const openedModels = useRef(false);
+  useLayoutEffect(() => {
+    if (!modelsOn) {
+      openedModels.current = false;
+      return;
+    }
+    if (!pmodels.links || openedModels.current || !display.rows.has(selected.positions)) return;
+    openedModels.current = true;
+    const more = openForModels(display, selected.positions);
+    setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...more]) }));
+  }, [modelsOn, pmodels.links, display, whole, selected.positions]);
   // A link to a point, channel or consumable (?point=, ?channel=, ?consumable=):
   // its row picked and its details open beside the table, once it's in the tree.
   const viewParam = !measOn ? null : params.get("point") ? measKey(params.get("point"))
@@ -552,7 +587,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const setTab = (t) => {
     if (t === tab) return;
     setEditing(null);
-    const toTable = t === "rcm" || t === "fmea" || t === "measurements";
+    const toTable = t === "rcm" || t === "fmea" || t === "measurements" || t === "models";
     if (!toTable) {
       // Back to Summary: the rows below positions go; the selection is the position they were on.
       setRcmFocus(null);
@@ -564,6 +599,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (t !== "rcm") setChips((c) => c.filter((x) => !["undecided", "hidden", "check"].includes(x)));
     if (t !== "fmea") setChips((c) => c.filter((x) => !FMEA_CHIP_IDS.includes(x)));
     if (t !== "fmea") setFsort(null);
+    if (t !== "models") setChips((c) => c.filter((x) => x !== "stale"));
     if (toTable && tab !== "summary" && focusRow?.type === "pos") setPanel(false);
     let keep = null;
     if (toTable && mode !== "positions") {
@@ -626,7 +662,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (filter) setFopen((s) => new Set([...(s || filterOpen(filter)), ...up]));
     else setOpenBy((o) => ({ ...o, [mode]: new Set([...(o[mode] || defaultOpen), ...up]) }));
     const r = display.rows.get(key);
-    if (isRcmRow(r) || isMeasRow(r)) {
+    if (isRcmRow(r) || isMeasRow(r) || isModelRow(r)) {
       setRcmFocus(key);
       setSelected((s) => ({ ...s, [mode]: positionOf(r) }));
     } else {
@@ -682,7 +718,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const r = display.rows.get(key);
     // A reference row (a failure below that causes one above) goes to the real row.
     if (r?.type === "cause" && opts.go) return reveal(r.ref.cause_id);
-    if (isRcmRow(r) || isMeasRow(r)) {
+    if (isRcmRow(r) || isMeasRow(r) || isModelRow(r)) {
       setRcmFocus(key);
       setSelected((s) => ({ ...s, [mode]: positionOf(r) }));
       if (opts.go) setPanel(true);
@@ -1036,13 +1072,41 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     else if (id === "move") setMeasModal({ kind: "move", item: row.item });
     else if (id === "retire") retireMeasurement(confirm, row, (text) => { say(text); meas.load(); });
   };
+  // A model row's details spread across the table (a double-click, Open, Enter), as a measurement row's.
+  const openModel = (key) => {
+    pick(key, { go: true });
+    if (!phone) setExpanded(true);
+    setTimeout(() => detailsHeading.current?.focus(), 0);
+  };
+  const modelAction = (r, id) => {
+    const link = r.ref.link;
+    const position = { id: r.ref.position_id, name: whole.rows.get(r.ref.position_id)?.ref.name || "(no name)" };
+    if (id === "model-open") openModel(r.key);
+    else if (id === "model-page" && link.model?.path) navigate(link.model.path);
+    else if (id === "model-refit") setModelModal({ kind: "fit", position, link });
+    else if (id === "model-bayes") setModelModal({ kind: "bayes", position: { ...position, position_class: whole.rows.get(r.ref.position_id)?.ref.position_class || "" }, start: { modelId: link.model_id, link: link.role === "bayesian" ? link : null } });
+    else if (id === "model-replace") setModelModal({ kind: "assign", position, link });
+    else if (id === "model-unlink") unlinkModel(confirm, link, (text) => { say(text); setPanel(false); setRcmFocus(null); pmodels.load(); });
+  };
   const rowMenu = {
     // The moves a drag does: on a phone, or from the keyboard (no dragging there).
     actions: (r, { keyboard = false } = {}) => {
       if (!tableOn) return withPin(designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), [...isolateItem(r), ...pinItem(r)]);
       // The Measurements tab: a measurement row's own (Open, Record…, Edit…, Move…, Retire…);
       // a position's as on Summary, with isolating and pinning.
-      if (measOn) {
+      if (modelsOn && isModelRow(r)) return modelRowActions(r, { viewOnly });
+      // A position's own on the Modelling tab: attach a model (the heading's "…" isn't there on a phone).
+      if (modelsOn && r.type === "pos") {
+        const off = viewOnly ? { disabled: true, title: viewOnly } : {};
+        const attach = [
+          { id: "model-attach-fit", label: "Fit from history…", ...off },
+          { id: "model-attach-assign", label: "Assign a saved model…", ...off },
+          { id: "model-attach-bayes", label: "Update a baseline with its history…", ...off },
+          ...(r.ref.position_class ? [{ id: "model-attach-class", label: "Assign from class…", ...off }] : []),
+        ];
+        return withPin([...attach, ...designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly })], [...isolateItem(r), ...pinItem(r)]);
+      }
+      if (measOn || modelsOn) {
         if (isMeasRow(r)) return measRowActions(r);
         return withPin(designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), [...isolateItem(r), ...pinItem(r)]);
       }
@@ -1057,6 +1121,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     },
     onAction: (r, id) => {
       if (id.startsWith("meas-")) return measAction(r, id.slice(5));
+      if (id.startsWith("model-attach-")) {
+        const position = { id: r.key, name: r.ref.name || "(no name)", position_class: r.ref.position_class || "" };
+        return setModelModal({ kind: id.slice(13), position });
+      }
+      if (id.startsWith("model-")) return modelAction(r, id);
       if (id === "tree-new") {
         setNewParent(r.key);
         setModal(r.type === "loc" ? "location" : "position");
@@ -1492,6 +1561,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The line under the tree's title shows only what needs saying: that the
   // RCM didn't load, or how many rows match the filter. No counts otherwise.
   const statusText = !data ? "" : measOn && !filter ? (meas.error ? `The measurements didn't load: ${meas.error}` : "")
+    : modelsOn && !filter ? (pmodels.error ? `The models didn't load: ${pmodels.error}` : "")
     : rcmOn && !filter
     ? (rcmError ? `The ${what} didn't load: ${rcmError}` : "")
     : filter
@@ -1549,7 +1619,21 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     phoneRow: (r, isOpen) => measPhoneRow(r, r.type === "pos" ? measRollup(r, isOpen) : ""),
     hint: null, drag: null,
   };
-  const table = measOn ? measTable : rcmOn ? {
+  // The Modelling tab's table: the tree, then Kind, Source, Headline, Mean life (or B10),
+  // Confidence and Used by; a position's roll-up across them.
+  const lcols = wideDetails ? [] : MODEL_COLUMNS.filter((c) => modelCols.includes(c.id));
+  const lwidths = Object.fromEntries(lcols.map((c) => [c.id, c.width]));
+  const modelTable = {
+    cols: lcols, widths: lwidths, treeW: shownWidth, total: shownWidth + lcols.reduce((t, c) => t + c.width, 0), expanded: wideDetails,
+    tab: "models", what: "life models", treeHead: MODEL_TREE_HEAD, readOnly: true,
+    canEditName: () => false, onEdit: () => {}, onCommit: () => {}, onCancel: () => {}, onGoto: (key) => reveal(key),
+    renderCell: (r, c) => (isModelRow(r) ? <ModelCell r={r} col={c} /> : null),
+    onOpen: (key) => (isModelRow(display.rows.get(key)) ? openModel(key) : undefined),
+    rollupOf: (r, isOpen) => (r.type === "pos" ? modelRollup(r, isOpen) : null),
+    phoneRow: (r, isOpen) => modelPhoneRow(r, r.type === "pos" ? modelRollup(r, isOpen) : ""),
+    hint: null, drag: null,
+  };
+  const table = measOn ? measTable : modelsOn ? modelTable : rcmOn ? {
     cols, widths, treeW: shownWidth, total: shownWidth + cols.reduce((t, c) => t + widths[c.id], 0), expanded: wideDetails,
     foldInterval: !fmeaOn && !shownCols.includes("interval"),
     intervalW: rprefs.widths.interval ?? COLUMN.interval.width,
@@ -1645,7 +1729,30 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     <ColumnChooser open cols={measCols} usual={MEAS_TABLE_COLS.map((c) => c.id)} columns={MEAS_TABLE_COLS}
                    onCols={(next) => setMeasCols(next)} onClose={() => setColsOpen(false)} returnFocus={moreButton} />
   );
-  const head = phone ? null : measOn ? posRow && posRow.type === "pos" && (
+  // The Modelling tab's "…": attach a model to the position picked (fit from its history, a
+  // saved one, its class's), the columns; and the row picked's own (from its details).
+  const modelPosition = posRow?.type === "pos" ? { id: posRow.key, name: posRow.ref.name || "(no name)" } : null;
+  const modelOff = viewOnly ? { disabled: true, title: viewOnly } : {};
+  const modelMenu = modelsOn && modelPosition ? [
+    { id: "l-fit", label: "Fit from history…", onSelect: () => setModelModal({ kind: "fit", position: modelPosition }), ...modelOff },
+    { id: "l-assign", label: "Assign a saved model…", onSelect: () => setModelModal({ kind: "assign", position: modelPosition }), ...modelOff },
+    { id: "l-bayes", label: "Update a baseline with this position's history…", ...modelOff,
+      onSelect: () => setModelModal({ kind: "bayes", position: { ...modelPosition, position_class: posRow.ref.position_class || "" } }) },
+    { id: "l-class", label: "Assign from class…", onSelect: () => setModelModal({ kind: "class", position: modelPosition }), ...modelOff,
+      ...(posRow.ref.position_class ? {} : { disabled: true, title: "This position has no class" }) },
+    !phone && { id: "l-columns", label: "Columns…", onSelect: () => setColsOpen(true) },
+    ...(isModelRow(focusRow) && panel ? tabMenu || [] : []),
+  ].filter(Boolean) : [];
+  const modelColumns = modelsOn && colsOpen && !phone && (
+    <ColumnChooser open cols={modelCols} usual={MODEL_USUAL} columns={MODEL_COLUMNS}
+                   onCols={(next) => setModelCols(next)} onClose={() => setColsOpen(false)} returnFocus={moreButton} />
+  );
+  const head = phone ? null : modelsOn ? posRow && posRow.type === "pos" && (
+    <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
+                headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
+                meta={pmodels.links ? <span className="tt-rollup mt-rollup">{modelRollup(posRow, false) || "No models here yet"}</span> : null}
+                menu={modelMenu} popover={modelColumns} />
+  ) : measOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
                 meta={meas.data ? <span className="tt-rollup mt-rollup">{measRollup(posRow, false) || "Nothing measured here yet"}</span> : null}
@@ -1801,7 +1908,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                 today={data?.today} />
     </div>
   ) : null;
-  const side = rcmOn ? rcmSide : measOn ? measSide : phone ? null : summary;
+  // The Modelling tab with a model row picked: its details beside the table (a sheet on a phone).
+  const modelRow = modelsOn && panel && isModelRow(focusRow) ? focusRow : null;
+  const modelSide = modelRow ? (
+    <div className="rw tt-side">
+      {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
+      <ModelSide r={modelRow} phone={phone} expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
+                 onClose={closeDetails} headingRef={detailsHeading} onMenu={setTabMenu} onAction={modelAction} />
+    </div>
+  ) : null;
+  const side = rcmOn ? rcmSide : measOn ? measSide : modelsOn ? modelSide : phone ? null : summary;
 
   // The tree's quiet last row: a new position (or location) at the top level.
   // Inside a pinned branch, or one tree on show (a product's structure, an
@@ -1876,6 +1992,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         onEnter={(key) => {
           const r = display.rows.get(key);
           if (isMeasRow(r)) return openMeas(key);
+          if (isModelRow(r)) return openModel(key);
           if (isRcmRow(r)) {
             setPanel(true);
             return setTimeout(() => detailsHeading.current?.focus(), 0);
@@ -1894,13 +2011,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         phoneTabs={phoneTabs}
         // The row picked stays where it is on screen when the tab changes, and
         // when the RCM's rows first arrive.
-        layoutKey={`${tab}:${rcmOn && rcm ? "rcm" : measOn && meas.data ? "meas" : ""}`}
+        layoutKey={`${tab}:${rcmOn && rcm ? "rcm" : measOn && meas.data ? "meas" : modelsOn && pmodels.links ? "models" : ""}`}
         anchorKey={selPos}
         branch={pinKey ? {
           key: pinKey, name: whole.rows.get(pinKey).ref.name || "(no name)", path: pinPath(whole, pinKey), onUnpin: () => unpin(),
         } : null}
         branchNote={pinNote}
         arrangeLocked={measOn ? "Measurements hang under their positions, so the Measurements tab shows the positions tree"
+          : modelsOn ? "Models hang under their positions, so the Modelling tab shows the positions tree"
           : rcmOn ? `${what} is by position, so the ${what} tab shows the positions tree` : null}
       />
       {phone && summary}
@@ -1934,6 +2052,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           <button type="button" className="rcm-toast-x" onClick={() => setToast(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
+      {modelModal?.kind === "bayes" && (
+        <BayesUpdateModal position={modelModal.position} start={modelModal.start || null} onClose={() => setModelModal(null)}
+                          onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
+      )}
+      <ModelDialogs modal={modelModal?.kind === "bayes" ? null : modelModal} onClose={() => setModelModal(null)}
+                    onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       <MeasDialogs modal={measModal} onClose={() => setMeasModal(null)} onSaid={(text) => say(text)}
                    onDone={() => { setMeasModal(null); meas.load(); }} />
       {moving && (moving.src || moving.taskFrom) && (

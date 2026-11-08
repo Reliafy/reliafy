@@ -576,6 +576,8 @@ class ProductOps:
         for src_id, pid in mapping.items():
             self._emit("position.implements", {"position_id": pid, "design_position_id": src_id, "design_rev": rev_text}
                        | ({"item_id": item["id"], "serial": serial} if pid == new else {}))
+        # The design's life models come with it, as its RCM does (position_models.py).
+        self._copy_model_links(mapping)
         for row in rows:
             row["id"] = mapping[row["design_position_id"]]
         out |= {"positions": rows[:SHOWN_PATHS], "top_position_id": new,

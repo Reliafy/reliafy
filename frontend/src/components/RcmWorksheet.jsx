@@ -1294,7 +1294,9 @@ function EvidenceDialog({ r, at = null, options, workings, ops, onClose, onDone 
              </>
            )}>
       <p className="rw-fhelp">The model, analysis, report or function notes behind this {member ? "task" : "decision"} (optional).</p>
-      <EvidencePicker expectedType={expected} analysisKind={analysisKind} value={value} onChange={setValue} workings={workings} />
+      <EvidencePicker expectedType={expected} analysisKind={analysisKind} value={value} onChange={setValue} workings={workings}
+                      positionId={r.ref.position_id || null} modeId={r.ref.id || null}
+                      onCandidate={(o) => { if (!start?.id) setValue((v) => v || { type: o.type, id: o.id }); }} />
       {failed && <p className="field-error" role="alert">{failed}</p>}
     </Modal>
   );

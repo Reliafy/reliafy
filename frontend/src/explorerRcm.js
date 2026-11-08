@@ -291,6 +291,8 @@ export function positionOf(r) {
   if (r.type === "pos") return r.key;
   // A measurement row (the Measurements tab): the position it hangs under.
   if (r.type === "meas") return r.ref.position_id;
+  // A model row (the Modelling tab): the position it's attached to.
+  if (r.type === "pmodel") return r.ref.position_id;
   return isRcmRow(r) ? r.ref.position_id : null;
 }
 

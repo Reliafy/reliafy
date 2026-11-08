@@ -2,6 +2,22 @@
 
 ## Unreleased (0.5.1)
 
+- **Life models on positions** (the Explorer's Modelling tab): new actions
+  `maintenance models.link` (a saved model, the class's model, a fit from the
+  position's history, or a Bayesian update of a baseline with it) and
+  `maintenance models.unlink`; `get.position` lists `models`. Over REST
+  `POST /api/v1/maintenance/models.link` and `models.unlink`; the CLI has
+  `reliafy maintenance models.link` and `models.unlink`.
+
+- **A Bayesian update of a baseline**: new action `analyse bayes_update` (Pro):
+  a baseline model, numbers or a B10 belief, how much to trust it, and a few
+  failures give posterior medians with 90% credible intervals.
+
+- **Renamed** (to make room for the above): `maintenance rcm.interval_on_condition`
+  is now `rcm.pf_interval`, `rcm.interval_failure_finding` is `rcm.ff_interval`
+  and `parts.positions_from_structure` is `parts.build_positions`. Their
+  arguments and answers are unchanged; the old names are gone.
+
 - **Make the sample product your own**: `maintenance products.add_sample`
   takes `make_own: true` (with `product_id`, the copy; default the only one)
   to turn a copy of the sample quadcopter into your own product in place:

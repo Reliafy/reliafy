@@ -104,7 +104,21 @@ const MEAS_ICON = {
   consumable: <><path d="M5 2.5h6M6 2.5v3L3.5 12a1.2 1.2 0 0 0 1.1 1.5h6.8a1.2 1.2 0 0 0 1.1-1.5L10 5.5v-3" strokeWidth="1.4" strokeLinejoin="round" /><path d="M5 9.5h6" strokeWidth="1.3" /></>,
 };
 
+// The Modelling tab's rows: a life curve, a repairable model's rising count, a wear path.
+const MODEL_ICON = {
+  life: <path d="M2.5 3c1.8 0 2.8 1.2 4 4s2.6 5.5 7 6" strokeWidth="1.5" strokeLinecap="round" />,
+  repairable: <path d="M2.5 13.5h3v-3h3v-3h3v-4h2" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />,
+  degradation: <><path d="M2.5 12.5 13.5 4" strokeWidth="1.5" strokeLinecap="round" /><path d="M2.5 4.5h11" strokeWidth="1.2" strokeDasharray="2 2" /></>,
+};
+
 export function RowIcon({ r }) {
+  if (r.type === "pmodel") {
+    return (
+      <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
+        {MODEL_ICON[r.ref.family] || MODEL_ICON.life}
+      </svg>
+    );
+  }
   if (r.type === "meas") {
     return (
       <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
@@ -345,7 +359,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, underPin = false, 
     // details across the table; not on a data cell (an editable one's own
     // double-click edits it in place), a control or the chevron.
     // A measurement row (the Measurements tab) spreads its details the same way.
-    onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas") ? (e) => {
+    onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas" || r.type === "pmodel") ? (e) => {
       if (e.target.closest("input, select, textarea, a, button, .tp-chev, .rw-c, [contenteditable='true']")) return;
       e.preventDefault();
       window.getSelection?.()?.removeAllRanges?.();
@@ -407,7 +421,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, underPin = false, 
         <div className="tt-tree" role="rowheader" style={{ width: table.treeW }}>
           <TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table onGoto={table.onGoto} />{more}
         </div>
-        {span != null && span !== false && r.type !== "meas" ? (
+        {span != null && span !== false && r.type !== "meas" && r.type !== "pmodel" ? (
           <div role="gridcell" aria-colspan={table.cols.length} className="rw-c tt-rollup-c" style={{ width: allW }}>
             {span && <span className="rw-sum tt-rollup-t" style={{ width: allW - 16 }} title={span}>{span}</span>}
           </div>
@@ -726,7 +740,7 @@ export default function TreePane({
       <label className="tp-filter">
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
         <input type="search" value={query} onChange={(e) => onQuery(e.target.value)}
-               placeholder={table ? (table.tab === "measurements" ? "Filter: name, tag, kind, state" : "Filter: name, tag, failures, tasks") : "Filter: name, tag, item, serial"}
+               placeholder={table ? (table.tab === "measurements" ? "Filter: name, tag, kind, state" : table.tab === "models" ? "Filter: model, kind, source" : "Filter: name, tag, failures, tasks") : "Filter: name, tag, item, serial"}
                aria-label={table ? `Filter the tree and its ${table.what || "RCM"}` : "Filter the tree"} />
       </label>
       <TreeControlsMenu

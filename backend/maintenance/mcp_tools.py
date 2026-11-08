@@ -63,8 +63,8 @@ _ORIGINAL: dict = {}
 # server's other fitting tools (added to its plan gating when registered).
 PRO_FIT_CALLS = ("maintenance_reliability.fit_class_model",)
 # Calls that can take a while: they share the MCP server's heavy-call slots.
-HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_workspace.import_history",
-               "maintenance_parts.import_bom", "maintenance_parts.positions_from_structure",
+HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_models.link", "maintenance_workspace.import_history",
+               "maintenance_parts.import_bom", "maintenance_parts.build_positions",
                "maintenance_get.plan_economics", "maintenance_get.class_forecast", "maintenance_get.spares_plan",
                "maintenance_topology.generate_rbd", "maintenance_graph_query", "maintenance_graph_schema",
                "maintenance_apply")
@@ -110,7 +110,8 @@ GET_KINDS: Table = {
         work orders, item_tasks (the fitted item's own), documents, parts_list (replacement part first, with
         stock, supersession, alternatives, critical minimums, notes), connections, life_data (one row per item
         fitted: days in service, c = 0 failed / 1 censored / 2 within xl..xr) and location (display, inherited,
-        inherited_from; null when none is set on it or above it)."""),
+        inherited_from; null when none is set on it or above it), models (the life models attached: maintenance
+        models.link)."""),
     "item": ("id", "", """A serial-numbered thing: details, nameplate, notes with note_history, purchase /
         in-service / manufacture dates (precision, source), replacement cost, warranty (with a summary),
         documents, where it's fitted and where it is (location: how = fitted or placed; or last_at), every
@@ -656,12 +657,12 @@ PARTS: Table = {
     "set_level": ("part_id", "level", "Set a part's indenture level from the workspace's list ('' clears it)."),
     "set_levels": ("levels", "renamed", "Replace the workspace's indenture level list, top first."),
     "import_bom": ("rows", "dry_run", "Import a BOM, one row per parent-child line (dry_run default true)."),
-    "positions_from_structure": ("part_id", "position_id levels dry_run",
+    "build_positions": ("part_id", "position_id levels dry_run",
                                  "Make positions from a part's structure under position_id (dry_run default true)."),
 }
 
 STRUCTURE_ACTIONS = ("add_component", "update_component", "remove_component", "set_level", "set_levels",
-                     "import_bom", "positions_from_structure")
+                     "import_bom", "build_positions")
 
 RELIABILITY: Table = {
     "set_class_costs": ("position_class", "planned_cost failure_cost availability_target replacement_cost "
@@ -673,6 +674,20 @@ RELIABILITY: Table = {
         lognormal, exponential, gamma) to every fitment of the class's positions, save it as a model and
         propose task intervals from it and the costs. Needs at least 2 failures (exponential: 1, a constant
         failure rate while there's little history). Then generate_rbd uses it for the class's blocks."""),
+}
+
+# Life models on positions (the Explorer's Modelling tab, position_models.py). Read them with get.position (models).
+POSITION_MODELS: Table = {
+    "link": ("position_id", "model_id model_type from_class fit distribution scope failure_mode_ids note "
+                            "replace_link_id baseline trust exclude", """Attach a life model to a position (a link: the model isn't
+        copied). One of: model_id (a saved model; model_type model default, recurrent_model, degradation_model,
+        alt_model), from_class true (its position class's fitted model) or fit true (Pro: fit distribution, weibull
+        default, to its own failure history, or its class's pooled history when its own is thin: scope auto,
+        position or class; saved to Models). failure_mode_ids: the modes it's for (none: every failure there);
+        replace_link_id: the model on it this replaces. fit true with baseline or trust: a Bayesian update of a
+        baseline (the class's model by default) with its history, for one or two failures (guide topic modelling).
+        The RCM offers these models first as evidence."""),
+    "unlink": ("link_id", "", "Take a model off its position (the model stays in Models)."),
 }
 
 TOPOLOGY: Table = {
@@ -774,7 +789,7 @@ ATTACHMENTS: Table = {
 # How often to do an RCM task: exact calculators, free on every plan. The fixed-interval
 # one is the analyse tool's optimal_replacement.
 RCM: Table = {
-    "interval_on_condition": ("pf_interval pf_unit", "act_time onset_rate inspection_cost found_cost failure_cost "
+    "pf_interval": ("pf_interval pf_unit", "act_time onset_rate inspection_cost found_cost failure_cost "
                               "detection_probability unit current_interval current_unit failure_mode_id task_id "
                               "save_evidence", """How often to check for a
         warning sign that comes pf_interval (in pf_unit: hours, days, weeks, months or years) before the failure. The
@@ -788,7 +803,7 @@ RCM: Table = {
         costs. save_evidence true, with failure_mode_id (task_id: which task, else its first on-condition one): also
         sets the task's interval to recommended, adds a line to the mode's notes and saves the calculation as its
         evidence (saved)."""),
-    "interval_failure_finding": ("", "failure_rate model_id distribution_id params model_unit target_unavailability "
+    "ff_interval": ("", "failure_rate model_id distribution_id params model_unit target_unavailability "
                                  "test_cost repair_cost demand_rate consequence_cost unit current_interval current_unit "
                                  "failure_mode_id task_id save_evidence",
                                  """How often to test a protective device whose failure is hidden. The device:
@@ -798,7 +813,7 @@ RCM: Table = {
         met by a failed device) add cost_optimal, the cheapest interval (alone, without a target, they give it). Returns the interval, recommended (rounded down), the mean unavailability and
         cost a year there and, with current_interval + current_unit, the task's numbers now and whether they meet
         the target. A model in a unit of use (cycles, flight hours) answers in it, with a target and no costs.
-        save_evidence true, with failure_mode_id (task_id optional): as interval_on_condition's."""),
+        save_evidence true, with failure_mode_id (task_id optional): as pf_interval's."""),
 }
 
 
@@ -904,7 +919,8 @@ TABLES: dict[str, tuple[str, Table]] = {
     "maintenance_measurements": ("action", MEASUREMENTS), "maintenance_signals": ("action", SIGNALS),
     "maintenance_signal_data": ("action", SIGNAL_DATA),
     "maintenance_locations": ("action", LOCATIONS), "maintenance_parts": ("action", PARTS),
-    "maintenance_reliability": ("action", RELIABILITY), "maintenance_topology": ("action", TOPOLOGY),
+    "maintenance_reliability": ("action", RELIABILITY), "maintenance_models": ("action", POSITION_MODELS),
+    "maintenance_topology": ("action", TOPOLOGY),
     "maintenance_item_classes": ("action", ITEM_CLASSES), "maintenance_manufacturers": ("action", MANUFACTURERS),
     "maintenance_attachments": ("action", ATTACHMENTS), "maintenance_workspace": ("action", WORKSPACE),
     "maintenance_progression": ("action", PROGRESSION), "maintenance_rcm": ("action", RCM),
@@ -914,8 +930,8 @@ TABLES: dict[str, tuple[str, Table]] = {
 
 # ---- a calculated interval used, as the task card's "Use" does --------------------------
 
-_CALCULATOR = {"interval_on_condition": ("on_condition", "on_condition_interval", "P-F calculator", "check interval"),
-               "interval_failure_finding": ("failure_finding", "failure_finding_interval",
+_CALCULATOR = {"pf_interval": ("on_condition", "on_condition_interval", "P-F calculator", "check interval"),
+               "ff_interval": ("failure_finding", "failure_finding_interval",
                                             "failure-finding calculator", "test interval")}
 
 
@@ -2331,6 +2347,50 @@ def register() -> None:
         except fitting.FitError as err:
             raise ToolError(f"The fit didn't work: {err}") from None
 
+    @tool("maintenance_models", _WRITE, "Life models on positions", POSITION_MODELS)
+    def maintenance_models(action: _choice(POSITION_MODELS), ctx: Context, position_id: str | None = None,
+                           model_id: str | None = None,
+                           model_type: Literal["model", "recurrent_model", "degradation_model", "alt_model"] | None
+                           = None, from_class: bool | None = None, fit: bool | None = None,
+                           distribution: Literal["weibull", "best", "lognormal", "exponential", "gamma"] | None = None,
+                           scope: Literal["auto", "position", "class"] | None = None,
+                           failure_mode_ids: list[str] | None = None, note: str | None = None,
+                           replace_link_id: str | None = None, link_id: str | None = None,
+                           baseline: Annotated[dict[str, Any] | None, Field(description=(
+                               "With fit: the Bayesian update's baseline: {model_id}, {distribution, params, unit} or "
+                               "{b10: {value, low, high}, shape: {low, high}, unit}; left out, the class's model."))] = None,
+                           trust: Literal["close", "guide", "start"] | None = None,
+                           exclude: list[str] | None = None) -> dict[str, Any]:
+        """The life models on a position (a functional location, or a position of a product's design): attach a
+        saved model, the class's model or a new fit from its history; take one off. The guide's modelling topic
+        says how they feed the RCM."""
+        from backend.maintenance import position_models as pm
+        from backend import fitting
+
+        m = m_for(ctx)
+        if action == "unlink":
+            return run(m.unlink_position_model, link_id)
+        reader = _reader(_caller(ctx))
+        chosen = sum(bool(x) for x in (model_id, from_class, fit))
+        if chosen != 1:
+            raise ToolError("Give one of model_id (a saved model), from_class true or fit true.")
+        if fit:
+            if _caller(ctx).get("mcp_plan", "pro") != "pro":
+                raise mcp_server.Refusal(mcp_server._pro_only_message("analyse.fit"), "pro_only")
+            if baseline or trust:
+                return run(pm.bayes_position, m, _db(), reader.read_owners, reader.hidden, position_id, baseline,
+                           _d(trust, "guide"), exclude or [], None, True, None, note or "", replace_link_id)
+            try:
+                return run(pm.fit_position_model, m, _db(), position_id, _d(distribution, "weibull"),
+                           failure_mode_ids, _d(scope, "auto"), note or "", replace_link_id)
+            except fitting.FitError as err:
+                raise ToolError(f"The fit didn't work: {err}") from None
+        if from_class:
+            return run(pm.link_from_class, m, _db(), reader.read_owners, reader.hidden, position_id,
+                       failure_mode_ids, note or "", replace_link_id)
+        return run(pm.link_saved, m, _db(), reader.read_owners, reader.hidden, position_id,
+                   _d(model_type, "model"), model_id, failure_mode_ids, note or "", replace_link_id)
+
     @tool("maintenance_topology", _WRITE, "Connections, redundancy and the generated RBD", TOPOLOGY)
     def maintenance_topology(action: _choice(TOPOLOGY), ctx: Context, from_id: str | None = None,
                              to_id: str | None = None,
@@ -2601,7 +2661,7 @@ def register() -> None:
         if save_evidence and not failure_mode_id:
             raise ToolError("save_evidence needs failure_mode_id: the failure mode whose task takes the interval.")
         try:
-            if action == "interval_on_condition":
+            if action == "pf_interval":
                 inputs = {k: v for k, v in {
                     "pf_interval": pf_interval, "pf_unit": pf_unit, "onset_rate": onset_rate,
                     "inspection_cost": inspection_cost, "found_cost": found_cost, "failure_cost": failure_cost,

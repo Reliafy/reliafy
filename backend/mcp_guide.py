@@ -30,6 +30,16 @@ assumption holds, with what to try if not), shared frailty (group_column; frailt
 heavier-tailed frailty), competing risks (causes / cause_column: each failure mode's share). method: MLE unless \
 the user asks.
 - A fit that didn't converge or has no finite maximum leads with fit_ok false: don't quote its numbers.
+- One or two failures and a credible baseline (a class's or fleet's model, a vendor's or handbook's numbers, a \
+B10 the user believes): analyse bayes_update (Pro) updates the baseline with the data: baseline {model_id} or \
+{distribution, params, unit} or {b10: {value, low, high}, shape: {low, high}, unit}; trust close / guide / start \
+(each number within about 10 / 30 / 60%; a fitted baseline counts as all, half or a fifth of its evidence); x and c \
+in the baseline's unit. E.g. baseline {model_id: <the class's Weibull>}, trust guide, x [1400, 1900, 2500], c \
+[0, 0, 1]. It returns posterior medians with 90% credible intervals ("a 90% chance the B10 lies between ..."), \
+never confidence bounds, and says what moved the baseline. It's a Bayesian update of a baseline: use it for \
+sparse data with a baseline the user trusts, say the baseline and the trust when quoting it; with plenty of \
+failures fit instead. No data: the baseline stands as given. On a maintenance position, maintenance models.link \
+with fit and baseline saves one and attaches it.
 - Weibull beta < 1 = infant mortality, ≈ 1 = random failures, > 1 = wear-out.
 - Read saved models: list kind models, get kind model (parameters with 95% CIs, goodness of fit, B-lives with \
 one-sided 90% lower bounds; regression models: validation and the proportional-hazards checks).

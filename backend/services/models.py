@@ -378,7 +378,10 @@ def public_results(model: Model) -> dict:
         functions["evaluate_path"] = f"/api/models/{model.id}/evaluate"
         # A parametric regression model has bands at its covariates (#54);
         # Cox PH has none, and says why.
-        if model.kind in ("distribution", "discrete", "nonparametric", fitting.more_models.FLEXIBLE_KIND) or \
+        if results.get("method") == "bayesian_update":
+            # Credible intervals, not confidence bounds: SurPyval's cb refuses on a Bayesian model.
+            functions["bands_note"] = results.get("ci_note") or "A Bayesian update has credible intervals, not confidence bounds."
+        elif model.kind in ("distribution", "discrete", "nonparametric", fitting.more_models.FLEXIBLE_KIND) or \
                 regression_bands.result_has_bands(results):
             functions["confidence_path"] = f"/api/models/{model.id}/confidence"
             functions["life_path"] = f"/api/models/{model.id}/life"
@@ -632,6 +635,11 @@ def _refit(model: Model) -> str:
     model."""
     from backend.db import get_db  # local import to avoid a cycle
 
+    if _spec(model).get("method") == "bayesian_update":
+        # A Bayesian update is rebuilt from its recipe (the data and the prior), not refitted by MLE.
+        from backend.services import bayes_life
+
+        return bayes_life.live_cache_id(_spec(model))
     dataset = datasets_service.get_dataset(
         get_db(), model.dataset_id, owner_id=model.owner_id
     )
