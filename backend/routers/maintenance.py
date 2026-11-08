@@ -1022,7 +1022,8 @@ def add_sample_product(body: dict | None = Body(None), session=Depends(get_sessi
 
 @router.patch("/tasks/{task_id}")
 def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Set when it was last done, and/or change its name, interval or unit."""
+    """Set when it was last done, and/or change its name, interval or unit, its trigger or
+    what doing it needs (resources: its LSA record)."""
     def go():
         view = None
         if body.get("last_done"):
@@ -1042,10 +1043,20 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
         if "trigger" in body:
             # What raises it besides (or instead of) its interval; null clears it.
             view = m.set_task_trigger(task_id, body["trigger"])
+        if "resources" in body:
+            # What doing it needs (its LSA record): each section given replaces that one.
+            view = m.set_task_resources(task_id, body["resources"])
         if view is None:
             raise Invalid("Nothing to change.")
         return view
     return _run(go)
+
+
+@router.get("/tasks/{task_id}/lsa")
+def task_lsa(task_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """One task's LSA page: the task with its resources, the failure modes it serves,
+    and the measuring points, channels and parts its lines can pick from."""
+    return _run(m.task_lsa, task_id)
 
 
 @router.get("/tasks/{task_id}/trigger-points")

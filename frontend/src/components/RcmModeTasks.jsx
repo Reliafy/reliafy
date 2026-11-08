@@ -290,9 +290,9 @@ export default function RcmModeTasks({
               <span className="rim-chips">
                 {t.shared_with ? <Chip>Shared with {plural(t.shared_with, "other failure mode")}</Chip> : null}
                 {t.package && (
-                  <Link className="chip chip-neutral chip-btn" title="Done on this work package's visits: open it on the Packages tab"
+                  <Link className="chip chip-neutral chip-btn" title="Done on this work package's visits: open it on the LSA tab"
                         to={explorerPath(t.package.subject?.kind === "location" ? "locations" : "positions",
-                                         { sel: t.package.subject?.id, tab: "packages", package: t.package.id })}>
+                                         { sel: t.package.subject?.id, tab: "lsa", package: t.package.id })}>
                     In: {t.package.name}
                   </Link>
                 )}

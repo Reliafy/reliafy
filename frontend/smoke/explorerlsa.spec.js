@@ -1,6 +1,8 @@
-// The Explorer's Packages tab (Operate › Assets › Explorer, ?tab=packages): a
-// table of every task on the picked row and below it, formatted as the RCM
-// table. Search it (?q=), sort it (a header click, Shift-click for a second
+// The Explorer's LSA tab (Operate › Assets › Explorer, ?tab=lsa; it was the
+// Packages tab, and ?tab=packages still opens it): a table of every task on the
+// picked row and below it with what each needs, formatted as the RCM table. A
+// task's row opens its LSA (?task=): add a labour line and a tool and the
+// table's Hours and Tools fill in, and the bar adds up the ticked tasks. Search it (?q=), sort it (a header click, Shift-click for a second
 // key: ?sort=), tick two tasks and Package selected… makes a package with
 // them: the Package column fills in, and the package's name opens it in the
 // tab. At 400 px the table scrolls inside its card, the action bar shows,
@@ -30,17 +32,18 @@ const panel = (page) => page.locator(".pk-panel");
 const rows = (page) => panel(page).locator(".pk-trow");
 const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth);
 
-test("Packages: search and sort the tasks below, tick two and package them", async ({ page, request, problems }) => {
+test("LSA: search and sort the tasks below, tick two and package them", async ({ page, request, problems }) => {
   const tag = `k${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 800 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}`);
-  await page.getByRole("tab", { name: "Packages" }).click();
-  await expect.poll(() => query(page).get("tab")).toBe("packages");
+  await page.getByRole("tab", { name: "LSA" }).click();
+  await expect.poll(() => query(page).get("tab")).toBe("lsa");
   await expect(rows(page)).toHaveCount(3);
   await expect(panel(page).getByRole("columnheader")).toHaveText(
-    ["", "Position", "Failure mode", "Task", "Kind", "Interval", "Trade", "Next due", "Package"]);
-  await expect((await headMenu(page)).locator(".ovm-menu .ovm-item")).toHaveText(["Columns…", "Package the tasks…", "Add a package…", "Open the full page"]);
+    ["", "Position", "Failure mode", "Task", "Kind", "Interval", "Trade", "Next due", "Package", "Hours", "People", "Tools", "Spares",
+      "Consumables", "Method"]);
+  await expect((await headMenu(page)).locator(".ovm-menu .ovm-item")).toHaveText(["Columns…", "Export CSV", "Package the tasks…", "Add a package…", "Open the full page"]);
   await page.keyboard.press("Escape");
 
   // Search: every column; kept in the address.
@@ -84,11 +87,11 @@ test("Packages: search and sort the tasks below, tick two and package them", asy
   await expectHealthy(page, problems, { label: "packages", root: ".tx" });
 });
 
-test("Packages at 400 px: the table scrolls in its card, the bar shows, nothing scrolls sideways", async ({ page, request }) => {
+test("LSA at 400 px: the table scrolls in its card, the bar shows, nothing scrolls sideways", async ({ page, request }) => {
   const tag = `m${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=packages`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=packages`); // the old address: opens the LSA tab
   // On a phone the panel is its own screen: tap the row to open it.
   await page.getByRole("treeitem", { name: new RegExp(`^Package pump ${tag}`) }).locator(".tp-nm").click();
   await expect(rows(page)).toHaveCount(3);
@@ -106,4 +109,46 @@ test("Packages at 400 px: the table scrolls in its card, the bar shows, nothing 
   await expect(panel(page).getByRole("button", { name: `Pump weekly ${tag}` })).toHaveCount(1);
   await shot(page, "packages-table-phone");
   expect(await sideways(page)).toBeLessThanOrEqual(400);
+  // A task's LSA fits too: its lines wrap.
+  await panel(page).getByRole("button", { name: `Skim ${tag}`, exact: true }).click();
+  await panel(page).getByRole("region", { name: "Labour" }).getByRole("button", { name: "+ Add labour" }).click();
+  await panel(page).getByRole("region", { name: "Tools and instruments" }).getByRole("button", { name: "+ Add a tool" }).click();
+  await shot(page, "lsa-task-phone");
+  expect(await sideways(page)).toBeLessThanOrEqual(400);
+});
+
+test("LSA: open a task, add a labour line and a tool, see them in the table and the bar", async ({ page, request, problems }) => {
+  const tag = `l${Date.now()}`;
+  const p = await plant(request, tag);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&tab=lsa`);
+  await expect(rows(page)).toHaveCount(3);
+  await panel(page).getByRole("button", { name: `Test water ${tag}`, exact: true }).click();
+  await expect.poll(() => query(page).get("task")).toBeTruthy();
+  const labour = panel(page).getByRole("region", { name: "Labour" });
+  await labour.getByRole("button", { name: "+ Add labour" }).click();
+  await labour.getByRole("textbox", { name: "Trade, line 1" }).fill("Pool technician");
+  await labour.getByRole("spinbutton", { name: "Hours each, line 1" }).fill("0.5");
+  const tools = panel(page).getByRole("region", { name: "Tools and instruments" });
+  await tools.getByRole("button", { name: "+ Add a tool" }).click(); // leaving Labour saves it
+  await expect(labour.getByRole("status")).toContainText("Saved");
+  await tools.getByRole("textbox", { name: "Tool, line 1" }).fill("Photometer");
+  await panel(page).getByRole("textbox", { name: "Method" }).click(); // leaving Tools saves it
+  await expect(tools.getByRole("status")).toContainText("Saved");
+  await expect(panel(page).locator(".lsa-total")).toContainText("0.5 labour hours");
+  await shot(page, "lsa-task-desktop");
+
+  await panel(page).getByRole("button", { name: "← All tasks here" }).click();
+  await expect.poll(() => query(page).get("task")).toBeNull();
+  await expect(rows(page)).toHaveCount(3);
+  const row = rows(page).filter({ hasText: `Test water ${tag}` });
+  const cols = await panel(page).getByRole("columnheader").allTextContents();
+  const cell = (name) => row.getByRole("cell").nth(cols.findIndex((c) => c.startsWith(name)));
+  await expect(cell("Hours")).toHaveText("0.5");
+  await expect(cell("Tools")).toHaveText("1");
+  await panel(page).getByRole("checkbox", { name: `Tick Test water ${tag}` }).check();
+  const bar = panel(page).getByRole("region", { name: "Selected tasks" });
+  await expect(bar.getByRole("group", { name: "To bring" })).toContainText("0.5 h (Pool technician 0.5 h)");
+  await expect(bar.getByRole("group", { name: "To bring" })).toContainText("Photometer");
+  await expectHealthy(page, problems, { label: "lsa task", root: ".tx" });
 });

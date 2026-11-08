@@ -262,6 +262,20 @@ so. Things put on the wrong position move with their history intact:
 measurement point with its readings and any open alarm work order; the app's
 route is `POST /api/maintenance/points/{id}/move`).
 
+What doing a task needs (its LSA record: the how, where the RCM gives the what
+and why) is `tasks.set_resources` (`task_id`, `resources`): `labour`
+[{trade, people, hours}], `tools` [{name, qty?, note?, point_id?}] (point_id:
+the measuring point or signal channel an instrument reads), `spares`
+[{part_id? | name, qty}], `consumables` [{name, qty, unit, cost?}], `access`
+{downtime_hours?, permits, isolation?, access_equipment?}, `method` and
+`duration_hours`. Each section sent replaces that one; null clears it. Every
+task read carries `resources` (with `labour_hours`, `people`,
+`materials_cost`), and each package in `list packages` its `rollup` (labour by
+trade, tools, spares, consumables: what a visit brings). The app's routes are
+`PATCH /api/maintenance/tasks/{id}` with `resources`, and
+`GET /api/maintenance/tasks/{id}/lsa` (the task, the failure modes it serves,
+and the points, channels and parts its lines can pick from).
+
 Everything in the tree can be taken out of use and brought back (`retire` /
 `restore` on positions, locations, items, parts, manufacturers, measurement
 points, tasks, failure modes, classes, conditions, groups, connections and

@@ -7,9 +7,11 @@
 // and stock (the parts used and kept there and inside it); Classes (the
 // classes used there and inside it, and the whole taxonomy); Measurements for
 // a position, a location or an item (every measuring point there and inside
-// it: the latest reading, its limits and state, read by hand or fed); Packages for
-// a position or a location (the work packages planned there and inside it:
-// tasks done together on one visit, PackagesPanel); Signals for a
+// it: the latest reading, its limits and state, read by hand or fed); LSA for
+// a position or a location (the logistic support analysis: every task there and
+// inside it with what it needs to be done, and how the tasks are packaged into
+// visits, LsaPanel; it was "Packages" until 9 Nov 2026, and ?tab=packages
+// still opens it); Signals for a
 // position or an item (sensor snapshots and their spectra). A tab a kind
 // doesn't have isn't shown (never greyed out).
 //
@@ -63,15 +65,20 @@ export const TABS = [
   },
   { id: "classes", label: "Classes", title: "The classes used here and inside it, and every class in the register", kinds: ["pos", "loc"] },
   { id: "measurements", label: "Measurements", title: "Every measuring point here and inside it: the latest reading, its limits and whether it's past them", kinds: ["pos", "loc", "item"], asset: true },
-  { id: "packages", label: "Packages", title: "Every task here and below in a table: search, sort and tick the ones done on one visit to package them", kinds: ["pos", "loc"], asset: true },
+  { id: "lsa", label: "LSA", title: "Logistic support analysis: what each task needs to be done, and how the tasks are packaged into visits", kinds: ["pos", "loc"], asset: true },
   { id: "signals", label: "Signals", title: "Vibration and other sensors that send snapshots: spectra, watch bands and how they change", kinds: ["pos", "item"], asset: true },
 ];
 const BY_ID = new Map(TABS.filter(offered).map((t) => [t.id, t]));
 export const DEFAULT_TAB = "summary";
 
+// Earlier tab ids and the tab they open now (Derryn, 9 Nov 2026: Packages became
+// the LSA tab, packaging included).
+export const TAB_ALIASES = { packages: "lsa" };
+
 // The tab the address asks for, if it's one (else Summary).
 export function tabParam(value) {
-  return BY_ID.has(value) ? value : DEFAULT_TAB;
+  const id = TAB_ALIASES[value] || value;
+  return BY_ID.has(id) ? id : DEFAULT_TAB;
 }
 
 // Is the row part of a product's design (its top position, marked `design`,
