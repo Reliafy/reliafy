@@ -1,10 +1,11 @@
-import { Suspense, forwardRef, lazy, useEffect, useMemo, useState } from "react";
+import { Suspense, forwardRef, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { getMaintenancePosition } from "../api.js";
 import Tabs from "./ui/Tabs.jsx";
 import FailureReportsPanel from "./FailureReportsPanel.jsx";
 import SignalsPanel from "./SignalsPanel.jsx";
 import OverflowMenu from "./OverflowMenu.jsx";
+import RowMenu from "./RowMenu.jsx";
 import { ancestorsOf } from "../assetTree.js";
 import { branchOf, classesInBranch, isDesignRow, isProductRow, rowKind, shownTab, tabsFor } from "../explorerTabs.js";
 import TreeSummary from "./TreeSummary.jsx";
@@ -223,6 +224,8 @@ export function SlimHeader({
 // The heading's "…": the tab's items (a link for Open the full page), greyed
 // where a row has none (a group), so the heading looks the same on every row.
 export function HeaderMenu({ items }) {
+  // Grouped items (a submenu: `items`, or a separator) open the tree's row menu, two levels.
+  if (items.some((it) => it.items || it.separator)) return <GroupedHeaderMenu items={items} />;
   return (
     <OverflowMenu triggerClass="tp-icon-btn" disabled={!items.length} title={items.length ? "More actions" : "Nothing more for this row"}>
       {items.map((it) => (it.to ? (
@@ -232,6 +235,52 @@ export function HeaderMenu({ items }) {
                 onClick={it.onSelect}>{it.label}</button>
       )))}
     </OverflowMenu>
+  );
+}
+
+// The heading's "…" with groups (the Modelling tab's: Life model ›, RBD ›, Prediction ›): the
+// row menu's two levels, opened under the button; → opens a group, at 400 px it opens in place.
+function GroupedHeaderMenu({ items }) {
+  const [at, setAt] = useState(null);
+  const btn = useRef(null);
+  const navigate = useNavigate();
+  const find = (list, id) => {
+    for (const it of list) {
+      if (it.id === id) return it;
+      const got = it.items && find(it.items, id);
+      if (got) return got;
+    }
+    return null;
+  };
+  // No line at either end (a group with nothing after it on a phone).
+  const trim = (list) => list.filter((it, i) => !(it.separator && (i === 0 || i === list.length - 1)));
+  const strip = (list) => trim(list).map((it) => (it.separator ? it : {
+    id: it.id, label: it.label, disabled: !!it.disabled, reason: it.disabled ? it.title : undefined,
+    ...(it.items ? { items: strip(it.items) } : {}),
+  }));
+  return (
+    <div className="ovm">
+      <button ref={btn} type="button" className="tp-icon-btn ovm-trigger" aria-label="More actions" aria-haspopup="menu"
+              aria-expanded={!!at} title="More actions"
+              onClick={() => {
+                if (at) { setAt(null); return; }
+                const r = btn.current.getBoundingClientRect();
+                setAt({ x: Math.max(8, r.right - 260), y: r.bottom + 4 });
+              }}>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+          <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
+        </svg>
+      </button>
+      {at && (
+        <RowMenu items={strip(items)} at={at} label="More actions"
+                 onClose={() => { setAt(null); btn.current?.focus(); }}
+                 onChoose={(id) => {
+                   const it = find(items, id);
+                   if (it?.to) navigate(it.to);
+                   else it?.onSelect?.();
+                 }} />
+      )}
+    </div>
   );
 }
 

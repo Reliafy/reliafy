@@ -14,6 +14,14 @@ const row = (page, key) => page.locator(`.tp-row[data-key="${key}"]`);
 const side = (page) => page.locator(".ml-panel");
 const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth);
 
+// The heading's "…" on the Modelling tab is two levels (Life model ›, RBD ›, Prediction ›): open
+// it, open the group, pick the item.
+async function headPick(page, group, item) {
+  await headMenu(page);
+  await page.getByRole("menuitem", { name: group, exact: true }).click();
+  await page.getByRole("menu", { name: group }).getByRole("menuitem", { name: item }).click();
+}
+
 test("attach a sample model to a position, see its row and its details, then unlink it", async ({ page, request, problems }) => {
   const tag = `l${Date.now()}`;
   const pump = await postOk(request, `${M}/positions`, { name: `Model pump ${tag}` });
@@ -23,9 +31,14 @@ test("attach a sample model to a position, see its row and its details, then unl
   await expect(page.locator(".tt-headslot .mt-rollup")).toHaveText("No models here yet");
 
   // Assign a saved model… from the heading's "…": the library's samples, picked and attached.
-  const head = await headMenu(page);
-  await expect(head.locator(".ovm-menu .ovm-item")).toContainText(["Fit from history…", "Assign a saved model…", "Assign from class…", "Columns…"]);
-  await head.getByRole("button", { name: "Assign a saved model…" }).click();
+  await headMenu(page);
+  const top = page.getByRole("menu", { name: "More actions" });
+  await expect(top.locator(":scope > [role='menuitem']")).toContainText(["Life model", "RBD", "Prediction", "Columns…"]);
+  await top.getByRole("menuitem", { name: "Life model", exact: true }).click();
+  // (From the class… is off here, its reason under it: no class.)
+  await expect(page.getByRole("menu", { name: "Life model" }).getByRole("menuitem")).toContainText(["Fit from this position's history…",
+    "Update a baseline with its history…", "Assign a saved model…", "From the class…", "Enter parameters…"]);
+  await page.getByRole("menu", { name: "Life model" }).getByRole("menuitem", { name: "Assign a saved model…" }).click();
   const dialog = page.getByRole("dialog", { name: "Assign a saved model" });
   // The radio's accessible name carries the model's kind and figures after its name:
   // a plain-string name match is a substring match, with nothing to escape.
@@ -84,8 +97,7 @@ test("update a baseline with a position's one failure, and save it as the positi
   await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `Unit B ${tag}` }, on: ago(150) });
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
-  const head = await headMenu(page);
-  await head.getByRole("button", { name: "Update a baseline with this position's history…" }).click();
+  await headPick(page, "Life model", "Update a baseline with its history…");
   const dialog = page.getByRole("dialog", { name: "Update a baseline with this position's history" });
   const option = await dialog.locator("option", { hasText: "Bearing life — Weibull" }).first().getAttribute("value");
   await dialog.getByRole("combobox", { name: "Baseline model" }).selectOption(option);
@@ -113,8 +125,7 @@ test("an ALT model attached as fitted, and a prediction row from the parts list"
   const seal = await postOk(request, `${M}/positions`, { name: `ALT seal ${tag}` });
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${seal.id}&tab=models`);
-  const head = await headMenu(page);
-  await head.getByRole("button", { name: "Assign a saved model…" }).click();
+  await headPick(page, "Life model", "Assign a saved model…");
   const dialog = page.getByRole("dialog", { name: "Assign a saved model" });
   await dialog.getByRole("radio", { name: "Accelerated life" }).click();
   await dialog.getByRole("radio", { name: /Valve seal — Weibull ALT/ }).check();
@@ -161,8 +172,7 @@ test("build an RBD from what's inside, see its blocks, and make it the model in 
   await postOk(request, `${M}/positions/${station.id}/models`, { model_id: "sample-model-bearings-lognormal" });
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${station.id}&tab=models`);
-  const head = await headMenu(page);
-  await head.getByRole("button", { name: "Build an RBD from what's inside…" }).click();
+  await headPick(page, "RBD", "Build from what's inside…");
   const dialog = page.getByRole("dialog", { name: "Build an RBD from what's inside" });
   await expect(dialog.locator("li")).toHaveCount(2);
   await dialog.getByRole("button", { name: "Build", exact: true }).click();
@@ -201,8 +211,7 @@ test("a Bayesian update from numbers I know, on a position whose class has no mo
   await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `Unit B ${tag}` }, on: ago(400) });
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
-  const head = await headMenu(page);
-  await head.getByRole("button", { name: "Update a baseline with this position's history…" }).click();
+  await headPick(page, "Life model", "Update a baseline with its history…");
   const dialog = page.getByRole("dialog", { name: "Update a baseline with this position's history" });
   await expect(dialog).toContainText("no class model");
   await dialog.getByRole("radio", { name: "Numbers I know" }).click();
@@ -218,4 +227,52 @@ test("a Bayesian update from numbers I know, on a position whose class has no mo
   await expect(dialog.locator(".ml-params")).toContainText("Before (baseline)");
   await expect(dialog.getByRole("button", { name: "Save as this position's model" })).toBeEnabled();
   await expectHealthy(page, problems, { label: "a Bayesian update from numbers" });
+});
+
+// The position's own row menu on the Modelling tab: the three groups (→ opens one), a line,
+// then Rename…, Isolate and Pin this branch; nothing from Summary's (New position inside, a
+// failure report, an event, Move to…, Delete…). "Enter parameters…" saves a model and attaches it.
+test("a position's row menu on the Modelling tab is two levels, and Enter parameters… attaches a model", async ({ page, request, problems }) => {
+  const tag = `m${Date.now()}`;
+  const pump = await postOk(request, `${M}/positions`, { name: `Menu pump ${tag}` });
+  await postOk(request, `${M}/positions`, { name: `Menu seal ${tag}`, parent_id: pump.id });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
+  await row(page, pump.id).locator(".tp-nm").click({ button: "right" });
+  const menu = page.getByRole("menu", { name: new RegExp(`^Actions for Menu pump ${tag}`) });
+  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Life model", "RBD", "Prediction", "Rename…", "Isolate", "Pin this branch"]);
+  await expect(menu.getByRole("separator")).toHaveCount(1);
+  for (const gone of ["New position inside", "Add failure report…", "Log an event…", "Move to…", "Delete…"]) {
+    await expect(menu.getByRole("menuitem", { name: gone })).toHaveCount(0);
+  }
+  // The keyboard: → opens a group.
+  await menu.getByRole("menuitem", { name: "RBD", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("menu", { name: "RBD" }).getByRole("menuitem")).toHaveText(["Build from what's inside…", "Link an existing RBD…"]);
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  // Enter parameters…: a Weibull typed in, saved and attached.
+  await row(page, pump.id).locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Life model", exact: true }).click();
+  await page.getByRole("menu", { name: "Life model" }).getByRole("menuitem", { name: "Enter parameters…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Enter parameters" });
+  await dialog.getByLabel("Characteristic life (alpha)").fill("5000");
+  await dialog.getByLabel("Shape (beta)").fill("1.5");
+  await dialog.getByRole("button", { name: "Save and attach" }).click();
+  await expect(dialog).toHaveCount(0);
+  const model = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Menu pump ${tag} (entered)` }) });
+  await expect(model.locator(".mt-c-kind")).toContainText("Weibull");
+  await expect(model.locator(".mt-c-numbers")).toContainText("Life 5,000 hours");
+  await expectHealthy(page, problems, { label: "the Modelling row menu" });
+});
+
+test("the Modelling row menu at 400 px: groups open in place", async ({ page, request }) => {
+  const tag = `n${Date.now()}`;
+  const pump = await postOk(request, `${M}/positions`, { name: `Phone pump ${tag}` });
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
+  await row(page, pump.id).locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Prediction", exact: true }).click();
+  await expect(page.getByRole("group", { name: "Prediction" }).getByRole("menuitem")).toHaveText(["Add a prediction (parts count)…"]);
+  expect(await sideways(page)).toBeLessThanOrEqual(400);
 });

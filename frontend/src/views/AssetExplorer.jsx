@@ -6,12 +6,12 @@ import {
 import { graftMeasurements, isMeasRow, measKey, openForMeasurements, rollupText as measRollup } from "../explorerMeasurements.js";
 import { measurementsCsv } from "../measurementsTable.js";
 import {
-  MODEL_COLUMNS, MODEL_TREE_HEAD, ModelCell, ModelDialogs, ModelSide, RbdBuildModal, RbdLinkModal, modelPhoneRow, modelRowActions,
+  MODEL_COLUMNS, MODEL_TREE_HEAD, ModelCell, ModelDialogs, ModelSide, ParamsModal, RbdBuildModal, RbdLinkModal, modelPhoneRow, modelRowActions,
   unlinkModel, useTreeModels,
 } from "../components/ModelTable.jsx";
 import BayesUpdateModal from "../components/BayesUpdateModal.jsx";
 import PredictionModal from "../components/PredictionModal.jsx";
-import { MODEL_USUAL, graftModels, inUseWords, isModelRow, openForModels, rollupText as modelRollup } from "../explorerModels.js";
+import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, graftModels, inUseWords, isModelRow, openForModels, rollupText as modelRollup } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   addSampleProduct, getFmeaExcelBlob, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
@@ -1074,6 +1074,15 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     else if (id === "move") setMeasModal({ kind: "move", item: row.item });
     else if (id === "retire") retireMeasurement(confirm, row, (text) => { say(text); meas.load(); });
   };
+  // The Modelling tab's attach groups for a position (explorerModels.attachGroups), and what each item opens.
+  const predictionOf = (pid) => (pmodels.links || []).find((l) => l.position_id === pid && l.role === "prediction") || null;
+  const modelGroups = (pid, positionClass) => attachGroups({ positionClass: positionClass || "", hasPrediction: !!predictionOf(pid), viewOnly });
+  const attachAt = (pid, id) => {
+    const rr = whole.rows.get(pid);
+    const position = { id: pid, name: rr?.ref.name || "(no name)", position_class: rr?.ref.position_class || "" };
+    if (id === "model-refresh-predict") return setModelModal({ kind: "predict", position, link: predictionOf(pid) });
+    return setModelModal({ kind: id.slice(13), position });
+  };
   // A model row's details spread across the table (a double-click, Open, Enter), as a measurement row's.
   const openModel = (key) => {
     pick(key, { go: true });
@@ -1107,17 +1116,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (modelsOn && isModelRow(r)) return modelRowActions(r, { viewOnly });
       // A position's own on the Modelling tab: attach a model (the heading's "…" isn't there on a phone).
       if (modelsOn && r.type === "pos") {
-        const off = viewOnly ? { disabled: true, title: viewOnly } : {};
-        const attach = [
-          { id: "model-attach-fit", label: "Fit from history…", ...off },
-          { id: "model-attach-assign", label: "Assign a saved model…", ...off },
-          { id: "model-attach-bayes", label: "Update a baseline with its history…", ...off },
-          { id: "model-attach-predict", label: "Add a prediction…", ...off },
-          { id: "model-attach-rbd-build", label: "Build an RBD from what's inside…", ...off },
-          { id: "model-attach-rbd-link", label: "Link an existing RBD…", ...off },
-          ...(r.ref.position_class ? [{ id: "model-attach-class", label: "Assign from class…", ...off }] : []),
-        ];
-        return withPin([...attach, ...designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly })], [...isolateItem(r), ...pinItem(r)]);
+        // Two levels (Derryn, 9 Nov 2026): Life model ›, RBD ›, Prediction ›, a line, then only the
+        // position items that make sense here (Rename…, Isolate ›, Pin this branch).
+        const own = summaryActions(r, { mode, viewOnly }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id));
+        return [...modelGroups(r.key, r.ref.position_class), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
       }
       if (measOn || modelsOn) {
         if (isMeasRow(r)) return measRowActions(r);
@@ -1134,10 +1136,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     },
     onAction: (r, id) => {
       if (id.startsWith("meas-")) return measAction(r, id.slice(5));
-      if (id.startsWith("model-attach-")) {
-        const position = { id: r.key, name: r.ref.name || "(no name)", position_class: r.ref.position_class || "" };
-        return setModelModal({ kind: id.slice(13), position });
-      }
+      if (id.startsWith("model-attach-") || id === "model-refresh-predict") return attachAt(r.key, id);
       if (id.startsWith("model-")) return modelAction(r, id);
       if (id === "tree-new") {
         setNewParent(r.key);
@@ -1745,21 +1744,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The Modelling tab's "…": attach a model to the position picked (fit from its history, a
   // saved one, its class's), the columns; and the row picked's own (from its details).
   const modelPosition = posRow?.type === "pos" ? { id: posRow.key, name: posRow.ref.name || "(no name)" } : null;
-  const modelOff = viewOnly ? { disabled: true, title: viewOnly } : {};
+  // The heading's "…": the same three groups (two levels), a line, Columns… and the row picked's own.
   const modelMenu = modelsOn && modelPosition ? [
-    { id: "l-fit", label: "Fit from history…", onSelect: () => setModelModal({ kind: "fit", position: modelPosition }), ...modelOff },
-    { id: "l-assign", label: "Assign a saved model…", onSelect: () => setModelModal({ kind: "assign", position: modelPosition }), ...modelOff },
-    { id: "l-bayes", label: "Update a baseline with this position's history…", ...modelOff,
-      onSelect: () => setModelModal({ kind: "bayes", position: { ...modelPosition, position_class: posRow.ref.position_class || "" } }) },
-    { id: "l-predict", label: "Add a prediction…", ...modelOff,
-      title: viewOnly || "Predict its failure rate from its parts list (a parts count)",
-      onSelect: () => setModelModal({ kind: "predict", position: modelPosition }) },
-    { id: "l-rbd-build", label: "Build an RBD from what's inside…", ...modelOff,
-      onSelect: () => setModelModal({ kind: "rbd-build", position: modelPosition }) },
-    { id: "l-rbd-link", label: "Link an existing RBD…", ...modelOff,
-      onSelect: () => setModelModal({ kind: "rbd-link", position: modelPosition }) },
-    { id: "l-class", label: "Assign from class…", onSelect: () => setModelModal({ kind: "class", position: modelPosition }), ...modelOff,
-      ...(posRow.ref.position_class ? {} : { disabled: true, title: "This position has no class" }) },
+    ...modelGroups(modelPosition.id, posRow.ref.position_class).map((g) => ({
+      ...g, items: g.items.map((it) => ({ ...it, title: it.reason, onSelect: () => attachAt(modelPosition.id, it.id) })),
+    })),
+    { separator: true },
     !phone && { id: "l-columns", label: "Columns…", onSelect: () => setColsOpen(true) },
     ...(isModelRow(focusRow) && panel ? tabMenu || [] : []),
   ].filter(Boolean) : [];
@@ -2085,6 +2075,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                          })}
                        onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       )}
+      {modelModal?.kind === "params" && (
+        <ParamsModal position={modelModal.position} onClose={() => setModelModal(null)}
+                     onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
+      )}
       {modelModal?.kind === "rbd-link" && (
         <RbdLinkModal position={modelModal.position} onClose={() => setModelModal(null)}
                       onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
@@ -2093,7 +2087,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <PredictionModal position={modelModal.position} link={modelModal.link || null} onClose={() => setModelModal(null)}
                          onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       )}
-      <ModelDialogs modal={["bayes", "predict", "rbd-build", "rbd-link"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
+      <ModelDialogs modal={["bayes", "predict", "rbd-build", "rbd-link", "params"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
                     onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       <MeasDialogs modal={measModal} onClose={() => setMeasModal(null)} onSaid={(text) => say(text)}
                    onDone={() => { setMeasModal(null); meas.load(); }} />

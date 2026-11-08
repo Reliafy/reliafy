@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, markersOf, rowText } from "./assetTree.js";
 import { positionOf } from "./explorerRcm.js";
 import {
-  MODEL_CHIPS, MODEL_USUAL, attachedFor, b10Text, boundsLabel, countsText, inUseWords, fmt, graftModels, headline, isModelRow, meanText, modelKey,
+  MODEL_CHIPS, MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, attachedFor, b10Text, boundsLabel, countsText, inUseWords, fmt, graftModels, headline, isModelRow, meanText, modelKey,
   openForModels, predictionAssign, predictionWords, rollupText, rowActions, usedText, withBounds,
 } from "./explorerModels.js";
 
@@ -183,4 +183,18 @@ test("one model in use per position: its chip, its actions, the roll-up and the 
   const ev = attachedFor([link("a", "pump", { model_id: "plain" }), link("b", "pump", { model_id: "used", in_use: true })], { expectedType: "model" });
   assert.deepEqual(ev.map((o) => o.id), ["used", "plain"]);
   assert.equal(ev[0].meta, "On this position · in use");
+});
+
+test("the Modelling tab's position menu: three groups, two levels", () => {
+  const g = attachGroups({ positionClass: "Pump", hasPrediction: true });
+  assert.deepEqual(g.map((x) => x.label), ["Life model", "RBD", "Prediction"]);
+  assert.deepEqual(g[0].items.map((x) => x.label), ["Fit from this position's history…", "Update a baseline with its history…",
+    "Assign a saved model…", "From the class…", "Enter parameters…"]);
+  assert.deepEqual(g[1].items.map((x) => x.label), ["Build from what's inside…", "Link an existing RBD…"]);
+  assert.deepEqual(g[2].items.map((x) => x.id), ["model-attach-predict", "model-refresh-predict"]);
+  const bare = attachGroups();
+  assert.equal(bare[0].items.find((x) => x.id === "model-attach-class").reason, "This position has no class");
+  assert.equal(bare[2].items.length, 1);
+  assert.ok(attachGroups({ viewOnly: "View only" }).every((grp) => grp.items.every((x) => x.disabled)));
+  assert.deepEqual(MODEL_POSITION_ITEMS, ["tree-rename"]);
 });
