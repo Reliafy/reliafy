@@ -482,12 +482,15 @@ function saveCols(cols) {
 }
 
 // ?q= and ?sort= (with ?package=, the package open), kept in the address.
+// Each change starts from the address as it is when it's written, not as it
+// was when the change was made: the search box writes a moment after typing
+// stops, and a sort clicked meanwhile must not be undone by it.
 function useTableQuery() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
   const set = (changes) => {
-    const next = new URLSearchParams(location.search);
+    const next = new URLSearchParams(window.location.search);
     for (const [k, v] of Object.entries(changes)) if (v) next.set(k, v); else next.delete(k);
     navigate(`${location.pathname}?${next}${location.hash}`, { replace: true, state: location.state });
   };

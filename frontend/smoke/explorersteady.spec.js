@@ -3,7 +3,8 @@
 // search box, the counts, the tree's column header and scroll area, every row
 // on screen up to the row picked (the RCM tab adds rows under positions, so
 // rows below it may go down), the panel's heading and its tabs all stay within
-// 1 px, the tree's scroll comes back exactly each time a tab comes back, no
+// 1 px, the row picked comes back to exactly its place each time a tab comes
+// back (and so does the tree's scroll, unless another test added rows above), no
 // frame in between flashes (a part that jumps and comes back, or no rows
 // drawn), and the focus stays on the tab picked.
 // By click, by the arrow keys, and by the browser's Back and Forward; for a
@@ -64,13 +65,22 @@ async function check(page, label, go, { wantTab, focusTab = true, rows = true, s
   expect(flashes(frames), `${label}: flashes`).toEqual([]);
   if (focusTab) await expect(tab(page, wantTab), `${label}: the focus stays on the tab`).toBeFocused();
   // Each tab comes back to the same scroll it had.
-  const scroll = (scrolls[wantTab] ??= after.scrollTop);
-  expect(Math.abs(after.scrollTop - scroll), `${label}: the tree's scroll on ${wantTab} (${after.scrollTop}, was ${scroll})`).toBeLessThanOrEqual(1);
+  // The smoke suite shares one workspace, so another test can add rows above
+  // the row picked between two visits: the scroll then moves by those rows
+  // while the row picked stays put. So what must come back is the row
+  // picked's place in the tree's scroll area (the same thing as the scroll
+  // when nothing above changed: scroll = the rows above × row height − place).
+  const was = (scrolls[wantTab] ??= after);
+  const place = (f) => (f.selected && f.rows[f.selected] ? f.rows[f.selected].y - f.boxes.tree.y : null);
+  const [p0, p1] = [place(was), place(after)];
+  const said = `${label}: the tree's scroll on ${wantTab} (${after.scrollTop}, was ${was.scrollTop}; the row picked ${p1} px down it, was ${p0})`;
+  if (p0 != null && p1 != null) expect(Math.abs(p1 - p0), said).toBeLessThanOrEqual(1);
+  else expect(Math.abs(after.scrollTop - was.scrollTop), said).toBeLessThanOrEqual(1);
 }
 
 async function switchEveryWay(page, start, options = {}) {
   const [a, b] = start === "RCM" ? ["RCM", "Summary"] : ["Summary", "RCM"];
-  const opts = { ...options, scrolls: { [a]: (await frameOf(page)).scrollTop } };
+  const opts = { ...options, scrolls: { [a]: await frameOf(page) } };
   await check(page, `click ${b}`, () => tab(page, b).click(), { ...opts, wantTab: b });
   await check(page, `click ${a}`, () => tab(page, a).click(), { ...opts, wantTab: a });
   // The arrow keys move along the tabs and open the next.
@@ -174,7 +184,7 @@ test("on a phone with a branch pinned, switching tabs leaves the frame where it 
   const p = await plant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&pin=${p.top.id}`);
   await expect(page.getByRole("treeitem", { name: new RegExp(`^Pinned: Steady plant ${tag}`) })).toBeVisible();
-  const scrolls = { Summary: (await frameOf(page)).scrollTop };
+  const scrolls = { Summary: await frameOf(page) };
   await check(page, "phone, pinned: to RCM", () => tab(page, "RCM").click(), { wantTab: "RCM", rows: false, scrolls });
   await check(page, "phone, pinned: to Summary", () => tab(page, "Summary").click(), { wantTab: "Summary", rows: false, scrolls });
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
@@ -192,7 +202,7 @@ test("on a phone, switching tabs leaves the title, the tabs, the search box and 
   await settled(page);
   // On a phone the RCM tab's rows are two lines (the second its RCM in words),
   // so the rows themselves change; the frame round them doesn't.
-  const scrolls = { Summary: (await frameOf(page)).scrollTop };
+  const scrolls = { Summary: await frameOf(page) };
   await check(page, "phone: to RCM", () => tab(page, "RCM").click(), { wantTab: "RCM", rows: false, scrolls });
   await check(page, "phone: to Summary", () => tab(page, "Summary").click(), { wantTab: "Summary", rows: false, scrolls });
   await check(page, "phone: to RCM again", () => tab(page, "RCM").click(), { wantTab: "RCM", rows: false, scrolls });
