@@ -344,7 +344,8 @@ function Row({ v, r, top, height, open, focused, dim, pinned, underPin = false, 
     // performance standard, functional failure or failure mode opens its
     // details across the table; not on a data cell (an editable one's own
     // double-click edits it in place), a control or the chevron.
-    onDoubleClick: table && !phone && table.onOpen && opensPanel(r) ? (e) => {
+    // A measurement row (the Measurements tab) spreads its details the same way.
+    onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas") ? (e) => {
       if (e.target.closest("input, select, textarea, a, button, .tp-chev, .rw-c, [contenteditable='true']")) return;
       e.preventDefault();
       window.getSelection?.()?.removeAllRanges?.();
