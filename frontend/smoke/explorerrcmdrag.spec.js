@@ -12,6 +12,10 @@
 //   puts all of it back; a refusal under it shows before the drop; at 400 px
 //   the standard's Move to… does the same;
 // - a task, from its failure mode's Task cell, onto another failure mode;
+// - a task's own row is dragged to copy, never to move ("Link here", a +
+//   badge): onto a sibling failure mode, which then has it too (Shared with 1);
+//   onto a function it's refused quietly; the row menu's Link to another
+//   failure mode… does the same from the keyboard;
 // - a refusal the server knows (a same-named failure mode on the other
 //   position) shows before the drop: the no-drop cursor and the reason, and
 //   dropping writes nothing;
@@ -283,6 +287,53 @@ test("a task dragged from its failure mode's Task cell moves to another failure 
     const ffs = (await rcmOf(request, p.a.id)).functions[0].failures;
     return [ffs[0].modes[0].tasks.length, ffs[1].modes[0].tasks.map((t) => t.name)];
   }).toEqual([0, [`Grease bearings ${tag}`]]);
+});
+
+test("a task's row drags to copy: linked to a sibling failure mode, kept on its own; refused on a function; the menu links it too", async ({ page, request }) => {
+  const tag = `k${Date.now()}`;
+  const p = await plant(request, tag);
+  await openPlant(page, p);
+  const taskRow = trow(page, `^Task: Grease bearings ${tag}`);
+  await expect(taskRow).toBeVisible();
+  // Onto a function: refused quietly (the drop cue says no; nothing is written, nothing said after).
+  await dragTo(page, taskRow, trow(page, `^Function: Contain the water ${tag}`), { hold: true });
+  await expect(ghost(page)).toHaveClass(/is-no/);
+  await expect(table(page).locator(".tp-row.drop-no")).toHaveCount(1);
+  await page.mouse.up();
+  await expect(page.locator(".tt-msg.error")).toHaveCount(0);
+  // Onto the sibling failure mode: "Link here" with a + badge, and it reads as a copy.
+  await dragTo(page, taskRow, trow(page, `^Failure mode: Seal leaks ${tag}`).first(), { hold: true });
+  await expect(ghost(page)).toHaveClass(/is-ok/);
+  await expect(ghost(page).locator(".rcm-ghost-plus")).toHaveText("+");
+  await expect(ghost(page)).toContainText(`Link here: the task “Grease bearings ${tag}” will also prevent “Seal leaks ${tag}”`);
+  await expect(table(page).locator(".tp-row.drop-copy")).toHaveCount(1);
+  await expect(taskRow).not.toHaveClass(/dragged/); // a copy: its row stays as it is
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/drag-task-link-1280.png` });
+  await page.mouse.up();
+  await expect(toast(page)).toContainText(`Linked the task “Grease bearings ${tag}” to “Seal leaks ${tag}” as well`);
+  // Both failure modes show it, each "Shared with 1"; it never left the bearing.
+  await expect(trow(page, `^Task: Grease bearings ${tag}`)).toHaveCount(2);
+  await expect(trow(page, `^Task: Grease bearings ${tag}`).first()).toContainText("Shared with 1");
+  await expect(trow(page, `^Task: Grease bearings ${tag}`).nth(1)).toContainText("Shared with 1");
+  await expect.poll(async () => {
+    const modes = (await rcmOf(request, p.a.id)).functions[0].failures[0].modes;
+    return modes.map((m) => [m.text, (m.tasks || []).map((t) => t.id)]);
+  }).toEqual([[`Bearing seizes ${tag}`, [p.task.id]], [`Seal leaks ${tag}`, [p.task.id]]]);
+  // The keyboard's way: its row menu's Link to another failure mode…, the picker, Link.
+  await trow(page, `^Task: Grease bearings ${tag}`).first().locator(".tp-nm").click();
+  await page.keyboard.press("Shift+F10");
+  await page.getByRole("menu").getByRole("menuitem", { name: "Link to another failure mode…" }).click();
+  const pick = page.getByRole("dialog", { name: `Link the task “Grease bearings ${tag}” to another failure mode` });
+  await expect(pick).toBeVisible();
+  // Only failure modes it can reach and doesn't prevent yet are offered (Pump A's seal has it now; Pump B is beside it).
+  await pick.getByRole("searchbox", { name: "Find a place" }).fill(tag);
+  await expect(pick.getByRole("treeitem", { name: new RegExp(`Seal leaks ${tag}`) })).toHaveCount(0);
+  await expect(pick.getByRole("treeitem", { name: new RegExp(`Bearing seizes ${tag}`) })).toContainText("linked here");
+  await pick.getByRole("treeitem", { name: new RegExp(`Impeller worn ${tag}`) }).click();
+  await pick.getByRole("button", { name: "Link", exact: true }).click();
+  await expect(pick).toHaveCount(0);
+  await expect(trow(page, `^Task: Grease bearings ${tag}`)).toHaveCount(3);
+  await expect(trow(page, `^Task: Grease bearings ${tag}`).first()).toContainText("Shared with 2");
 });
 
 test("a refusal shows before the drop (no-drop cursor and the reason); dropping writes nothing; nothing moves while dragging", async ({ page, request }) => {

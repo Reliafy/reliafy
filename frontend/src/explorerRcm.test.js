@@ -786,8 +786,8 @@ test("a task row's cells, phone line, menu and search", () => {
   assert.equal(phoneLine(t1), "On condition · every 4 weeks · Shared with 1 · Then, if found: Grease it");
   assert.equal(insideWords(t1), "");
   assert.ok(opensItem(t1));
-  assert.deepEqual(rowActions(t1).map((a) => a.label), ["Open…", "Remove from this failure mode…"]);
-  assert.deepEqual(rowActions(t2).map((a) => a.label), ["Open…", "Retire the task…"]);
+  assert.deepEqual(rowActions(t1).map((a) => a.label), ["Open…", "Link to another failure mode…", "Remove from this failure mode…"]);
+  assert.deepEqual(rowActions(t2).map((a) => a.label), ["Open…", "Link to another failure mode…", "Retire the task…"]);
   // The one search box finds a task by its name, its instructions and what's done when found.
   const f = computeFilter(d, { query: "grease it" });
   assert.ok(f.match.has(taskKey("m1", "t1")));

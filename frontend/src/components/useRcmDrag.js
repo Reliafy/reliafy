@@ -9,7 +9,8 @@ import { dragSource, dropZones, planDrop, sourceWords, zoneAt } from "../rcmDrag
 // tooltip float over the page.
 //
 // A press on a row's tree cell (or a mode's Task cell, for its task) that
-// moves 5 px starts a drag; Escape cancels it. Over a row the drop is worked
+// moves 5 px starts a drag (a task's own row: to link it to another failure
+// mode as well, a copy; the ghost and the drop say "Link here"); Escape cancels it. Over a row the drop is worked
 // out at once (rcmDrag.planDrop): what the tree knows is said at once; the
 // rest is asked of the server with a dry run once the pointer rests on the
 // row (150 ms), remembered per batch, so passing over rows sends nothing and
@@ -57,6 +58,7 @@ export default function useRcmDrag({ whole, picked, enabled, check, drop, say, h
       state = next;
       live.current = next;
       root.classList.toggle("rcm-nodrop", !!next && next.verdict?.state === "no");
+      root.classList.toggle("rcm-copying", !!next && next.src?.kind === "copy" && next.verdict?.state === "ok");
       setDrag(next);
     };
     const hit = () => {
@@ -69,7 +71,9 @@ export default function useRcmDrag({ whole, picked, enabled, check, drop, say, h
       const zone = zoneAt(dropZones(env.current.whole, src, key2).zones, (at.y - b.top) / Math.max(1, b.height));
       const plan = planDrop(env.current.whole, src, key2, zone || "into");
       if (plan.none) return show({ ...base, key: null });
-      if (plan.refuse) return show({ ...base, key: key2, zone: "into", plan, verdict: { state: "no", text: plan.refuse } });
+      if (plan.refuse) return show({ ...base, key: key2, zone: "into", plan, verdict: { state: "no", text: plan.refuse, quiet: !!plan.quiet } });
+      // A task's row dropped to link it (a copy): the decide or link route, checked by the server when it's sent.
+      if (plan.copy) return show({ ...base, key: key2, zone: "into", plan, verdict: { state: "ok", text: plan.text } });
       const { id, known } = verdictFor(plan);
       const verdict = known ? (known.ok ? { state: "ok", text: plan.text, notes: known.notes } : { state: "no", text: known.reason })
         : { state: "checking", text: plan.text };
@@ -120,7 +124,7 @@ export default function useRcmDrag({ whole, picked, enabled, check, drop, say, h
       window.removeEventListener("keydown", onKey, true);
       clearTimeout(rest);
       clearInterval(scroll);
-      root.classList.remove("rcm-dragging", "rcm-nodrop");
+      root.classList.remove("rcm-dragging", "rcm-nodrop", "rcm-copying");
       live.current = null;
       cleanup.current = null;
       setDrag(null);
@@ -138,7 +142,7 @@ export default function useRcmDrag({ whole, picked, enabled, check, drop, say, h
       if (!was) return;
       swallowClick();
       if (!s?.key || !s.plan) return env.current.say("Not moved.");
-      if (s.verdict?.state === "no") return env.current.drop(s.src, { refuse: s.verdict.text }, s.key);
+      if (s.verdict?.state === "no") return env.current.drop(s.src, { refuse: s.verdict.text, quiet: !!s.verdict.quiet }, s.key);
       return env.current.drop(s.src, s.plan, s.key);
     };
     const cancel = () => {

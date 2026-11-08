@@ -789,6 +789,22 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     });
   });
   const applyMove = async (src, plan, key) => {
+    // A task's row dropped on another failure mode (or linked from its menu): a copy, never a move.
+    // It joins the target's decision (the decide route) or is linked to it (the link route).
+    if (plan.copy) {
+      const target = whole.rows.get(plan.copy.target);
+      if (!target) throw new Error("That failure mode isn't on the tree any more.");
+      try {
+        if (plan.copy.decision) await ops.decide(target, { consequence: target.ref.consequence || null, decision: plan.copy.decision });
+        else await ops.linkTask(target, src.task.id);
+      } catch (e) {
+        throw new Error(e.status === 422 ? refusalText(e) : saveErrorText(e, { offline: offline() }));
+      }
+      pending.current = shownAfter(src, plan.copy.target);
+      setToast({ text: plan.done, undo: null, at: Date.now() });
+      announce(plan.done);
+      return null;
+    }
     let answer;
     try {
       answer = await ops.arrange(plan.ops);
@@ -811,6 +827,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     return answer;
   };
   const dropMove = (src, plan, key) => {
+    // A task's row dropped where it can't be linked: the drop cue said so; nothing more.
+    if (plan.refuse && plan.quiet) {
+      announce(`Not linked: ${plan.refuse}`);
+      return;
+    }
     if (plan.refuse) {
       say(`Not moved: ${plan.refuse}`, "error");
       announce(`Not moved: ${plan.refuse}`);
@@ -954,6 +975,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       else if (id === "print") openPrint(r.key);
       else if (id === "export-excel") exportExcel(r);
       else if (id === "move-to") setMoving({ src: dragSource(whole, r.key, { picked }) });
+      // A task's row: the picker, to link it to another failure mode as well (the keyboard's drag).
+      else if (id === "link-task") setMoving({ src: dragSource(whole, r.key) });
       else if (id === "move-task") setMoving({ taskFrom: r.key });
       else if (id === "step-up" || id === "step-down") stepMove(r, id === "step-up" ? -1 : 1);
       else if (id === "move-up" || id === "move-down") {
@@ -1413,8 +1436,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       taskOf: (r) => tasksOf(r.ref).find((t) => t.id) || null,
       picked,
       onPickMany: pickMany,
-      over: drag?.key ? { key: drag.key, zone: drag.zone, state: drag.verdict?.state } : null,
-      dragging: drag ? new Set(drag.src.kind === "task" ? [] : drag.src.keys) : null,
+      over: drag?.key ? { key: drag.key, zone: drag.zone, state: drag.verdict?.state, copy: drag.src.kind === "copy" } : null,
+      // A copy leaves its row where it is: never shown as moving.
+      dragging: drag ? new Set(drag.src.kind === "task" || drag.src.kind === "copy" ? [] : drag.src.keys) : null,
     } : null,
   } : null;
   const msg = message && <p className={"tt-msg " + message.tone} role="status" title={message.text}>{message.text}</p>;
@@ -1693,6 +1717,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
              style={{ left: Math.min(drag.x + 16, window.innerWidth - 320), top: drag.y + 18 }}>
           <span className="rcm-ghost-what">
             {drag.src.kind === "modes" && drag.src.keys.length > 1 && <span className="rcm-ghost-n">{drag.src.keys.length}</span>}
+            {/* A task's row is copied (linked to another failure mode too): a + badge, and "Link here". */}
+            {drag.src.kind === "copy" && <span className="rcm-ghost-n rcm-ghost-plus" aria-hidden="true">+</span>}
             {/* "The performance standard “…” and its 3 functional failures": a label, so a capital first. */}
             {String(drag.words || "").replace(/^\p{Ll}/u, (c) => c.toUpperCase())}
           </span>
