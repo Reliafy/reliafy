@@ -283,10 +283,14 @@ def _moved(base: dict, post: list[dict], rows: list[dict], unit: str) -> str:
     return text + "."
 
 
-def update(base: dict, trust: str, rows: list[dict], age: float | None = None) -> tuple[Any, dict, Any]:
-    """The update: (the SurPyval model or None with no data, the result for the reader, the prior)."""
+def update(base: dict, trust: str, rows: list[dict], age: float | None = None,
+           priors=None) -> tuple[Any, dict, Any]:
+    """The update: (the SurPyval model or None with no data, the result for the reader, the prior).
+    ``priors``: built by the caller (a power prior from the class's history: fit_life.py)."""
     dist_id = base["distribution"]
-    if base["source"] == "update":
+    if priors is not None:
+        pass
+    elif base["source"] == "update":
         from surpyval.bayes.prior import PriorSpec
 
         priors = PriorSpec.from_dict(base["recipe"]["priors"])
@@ -295,7 +299,10 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None) -
     unit = base.get("unit") or ""
     dist = DISTS[dist_id]
     x, c = arrays(rows)
-    prior = prior_table(dist_id, priors)
+    try:
+        prior = prior_table(dist_id, priors)
+    except Exception:  # noqa: BLE001 - a prior SurPyval can't summarise before data still fits
+        prior = []
     failures = int(np.sum(c != 1))
     suspensions = int(np.sum(c == 1))
     t = TRUST.get(trust, TRUST["guide"])
@@ -319,7 +326,13 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None) -
                       words=f"No history to update with yet: the baseline ({base['name']}) stands as given, with the "
                             "range the trust allows. Add failures or running units first.")
         return None, result, priors
-    model = _fit(dist_id, x, c, priors, unit)
+    import warnings
+
+    with warnings.catch_warnings(record=True) as said:
+        warnings.simplefilter("always")
+        model = _fit(dist_id, x, c, priors, unit)
+    # SurPyval says when the data disagree with the prior ("neither is taken as right"): pass it on.
+    result["warnings"] = sorted({str(w.message) for w in said if "prior" in str(w.message).lower()})[:3]
     post = []
     for name, median in zip(dist.parameter_names, model.params):  # the params are the posterior medians
         lo, hi = model.param_cri(name, alpha_ci=ALPHA)
@@ -332,7 +345,7 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None) -
         b10={"point": _f(model.quantile_cri(0.1, alpha_ci=ALPHA, point=True)), "lower": _f(b10[0]), "upper": _f(b10[1]),
              "next_unit": _f(model.qf(0.1))},
         mean={"point": _f(np.ravel(model.mean())[0]), "lower": _f(mean[0]), "upper": _f(mean[1])},
-        at_age=None, curves=curves(model, base, dist_id), can_save=True,
+        at_age=None, curves=curves(model, base, dist_id, float(np.max(x)) if len(x) else None), can_save=True,
     )
     if age is not None and _f(age) and float(age) > 0:
         lo_hi = np.ravel(model.cri(float(age), alpha_ci=ALPHA))
@@ -347,14 +360,21 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None) -
     return model, result, priors
 
 
-def curves(model, base: dict, dist_id: str) -> dict:
+def curves(model, base: dict, dist_id: str, x_max: float | None = None) -> dict:
     """The plot: the baseline's reliability, the updated (predictive) reliability and its
     90% credible band, over ages to where 99% of new units have failed."""
     dist = DISTS[dist_id]
-    try:
-        hi = float(np.ravel(model.qf(0.99))[0])
-    except Exception:  # noqa: BLE001
-        hi = float(np.max(model.data["x"])) * 2 if getattr(model, "data", None) else 1.0
+    hi = None
+    for q in (0.99, 0.95, 0.9):
+        try:
+            v = float(np.ravel(model.qf(q))[0])
+        except Exception:  # noqa: BLE001 - a quantile that doesn't converge: try a lower one
+            continue
+        if math.isfinite(v) and v > 0:
+            hi = v
+            break
+    if hi is None:
+        hi = float(x_max) * 2 if x_max else 1.0
     base_model = None
     if base.get("params") and all(n in base["params"] for n in dist.parameter_names):
         base_model = dist.from_params([base["params"][n] for n in dist.parameter_names])

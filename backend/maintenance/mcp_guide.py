@@ -439,6 +439,13 @@ failures and falls back to its class's pooled history when there are fewer than 
 which of the position's failure modes it describes (fit: failures by other modes count as suspensions); none \
 means every failure there. replace_link_id swaps one model for another (a refit, a better model). Never fit \
 or attach unasked: say what the data supports first (failures, suspensions, the shape).
+- Fitting from history: models.link with fit true, data (position: its own history; class: the class's pooled \
+history; both: its own history with the class's other positions' history as the prior) and method (mle: a plain \
+fit, 95% confidence bounds; bayes: with a prior, 90% credible intervals). The prior: {kind: class} (the class's \
+history as a power prior, SurPyval's prior.from_data: trust close counts all of its evidence, guide half, start a \
+fifth), {kind: model, model_id}, {kind: params, distribution, params, unit} or {kind: b10, ...}. The class can't \
+be both the data and the prior. Say which data and method when quoting it, with confidence or credible as the \
+result says. With one failure a plain Weibull fit refuses: use a prior, or exponential.
 - One or two failures and a baseline the user trusts: models.link with fit true and baseline ({model_id}, \
 {distribution, params, unit} or a B10 belief; left out, the class's model) and trust (close, guide, start) saves \
 a Bayesian update of the baseline with the position's history and attaches it (Pro; the core guide topic \

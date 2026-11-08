@@ -3375,3 +3375,10 @@ export function previewPositionPrediction(positionId, body) {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
 }
+// "Fit a life model…" previewed: body {data, method, prior?, distribution, trust?, failure_mode_ids,
+// exclude, age?}. Save with linkPositionModel(id, {fit: true, ...body}).
+export function previewPositionFit(positionId, body) {
+  return request(`/api/maintenance/positions/${positionId}/fit-preview`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+}

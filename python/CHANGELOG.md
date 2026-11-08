@@ -9,6 +9,12 @@
   `POST /api/v1/maintenance/models.link` and `models.unlink`; the CLI has
   `reliafy maintenance models.link` and `models.unlink`.
 
+- **Fit a life model**: `maintenance models.link` with `fit` takes `data`
+  (`position`, `class`, `both`), `method` (`mle`, `bayes`) and `prior`
+  (`{kind: class | model | params | b10, ...}`; the class's history is a power
+  prior). `analyse bayes_update` takes `baseline: {class_power_prior: true,
+  position_id}`.
+
 - **RBDs on positions, and the model in use**: `maintenance models.link`
   takes `build_rbd: true` (an RBD from the positions inside; with
   `replace_link_id`, rebuilt), `rbd_id` (link an existing RBD) and

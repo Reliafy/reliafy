@@ -10,6 +10,7 @@ import {
   unlinkModel, useTreeModels,
 } from "../components/ModelTable.jsx";
 import BayesUpdateModal from "../components/BayesUpdateModal.jsx";
+import FitModal from "../components/FitModal.jsx";
 import PredictionModal from "../components/PredictionModal.jsx";
 import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, graftModels, inUseWords, isModelRow, openForModels, rollupText as modelRollup } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
@@ -1094,7 +1095,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const position = { id: r.ref.position_id, name: whole.rows.get(r.ref.position_id)?.ref.name || "(no name)" };
     if (id === "model-open") openModel(r.key);
     else if (id === "model-page" && link.model?.path) navigate(link.model.path);
-    else if (id === "model-refit") setModelModal({ kind: "fit", position, link });
+    else if (id === "model-refit") {
+      const scope = link.source?.scope;
+      setModelModal({ kind: "fit-life", position: { ...position, position_class: whole.rows.get(r.ref.position_id)?.ref.position_class || "" },
+        link, start: { data: scope === "class" ? "class" : "position" } });
+    }
     else if (id === "model-predict") setModelModal({ kind: "predict", position, link });
     else if (id === "model-rebuild") setModelModal({ kind: "rbd-build", position, link });
     else if (id === "model-use") {
@@ -1103,7 +1108,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         pmodels.load();
       }, (e) => say(e.message, "error"));
     }
-    else if (id === "model-bayes") setModelModal({ kind: "bayes", position: { ...position, position_class: whole.rows.get(r.ref.position_id)?.ref.position_class || "" }, start: { modelId: link.model_id, link: link.role === "bayesian" ? link : null } });
+    else if (id === "model-bayes") {
+      const withClass = { ...position, position_class: whole.rows.get(r.ref.position_id)?.ref.position_class || "" };
+      // A Bayesian row takes its new failures (its own prior kept); a plain model can be the prior of a new fit.
+      if (link.role === "bayesian") setModelModal({ kind: "bayes", position: withClass, start: { modelId: link.model_id, link } });
+      else setModelModal({ kind: "fit-life", position: withClass, start: { method: "bayes", priorKind: "model", modelId: link.model_id } });
+    }
     else if (id === "model-replace") setModelModal({ kind: "assign", position, link });
     else if (id === "model-unlink") unlinkModel(confirm, link, (text) => { say(text); setPanel(false); setRcmFocus(null); pmodels.load(); });
   };
@@ -2075,6 +2085,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                          })}
                        onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       )}
+      {modelModal?.kind === "fit-life" && (
+        <FitModal position={modelModal.position} start={modelModal.start || {}} link={modelModal.link || null} onClose={() => setModelModal(null)}
+                  onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
+      )}
       {modelModal?.kind === "params" && (
         <ParamsModal position={modelModal.position} onClose={() => setModelModal(null)}
                      onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
@@ -2087,7 +2101,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <PredictionModal position={modelModal.position} link={modelModal.link || null} onClose={() => setModelModal(null)}
                          onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       )}
-      <ModelDialogs modal={["bayes", "predict", "rbd-build", "rbd-link", "params"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
+      <ModelDialogs modal={["bayes", "predict", "rbd-build", "rbd-link", "params", "fit-life"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
                     onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       <MeasDialogs modal={measModal} onClose={() => setMeasModal(null)} onSaid={(text) => say(text)}
                    onDone={() => { setMeasModal(null); meas.load(); }} />

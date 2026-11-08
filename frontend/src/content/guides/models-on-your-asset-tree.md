@@ -1,6 +1,6 @@
 ---
 title: "Put life models on your asset tree"
-task: "How do I attach a life model to a position, fit one from its history or update a baseline with a few failures, and use it in the RCM?"
+task: "How do I attach a life model to a position, fit one from its history (or its class's), with a prior when failures are few, and use it in the RCM?"
 category: "Maintenance strategy"
 prerequisites: "A position in your asset tree (or a product's design), and a saved model or some failure history."
 order: 27
@@ -52,17 +52,23 @@ The heading's **…** (and a position's **⋯**) has three groups, **Life
 model**, **RBD** and **Prediction**; point at one (or press →) to see its
 items. Under **Life model**:
 
-- **Fit from this position's history…** fits a life distribution to the position's own
-  failures: each item's days in service, ended by a failure or still running.
-  With fewer than two failures of its own it pools its class's positions
-  instead (or choose which). Tick the failure modes it's for; failures by
-  other modes then count as still running at that age.
+- **Fit a life model…** fits a life distribution to history. Choose the
+  **data**: this position's own history (each item's days in service, ended
+  by a failure or still running), its class's pooled history (every position
+  of the class: the dialog says how many, with their failures and
+  suspensions), or **both**: this position's history, with the class's other
+  positions' history as a prior. Choose the **method**: a plain fit (the
+  numbers that make the data most likely, with 95% confidence bounds) or
+  **with a prior** (what you already believed, moved by the data, with 90%
+  credible intervals). The prior can be the class's history, a saved model,
+  numbers you know or a B10 you believe, and you say how much to trust it
+  (the class's history then counts as all, half or a fifth of its
+  evidence). The class's history can't be both the data and the prior. Tick
+  the failure modes it's for; failures by other modes count as still running.
 - **Assign a saved model…** links a model from your library, or a sample.
 - **From the class…** links the model fitted to the position's class.
 - **Enter parameters…** saves a model from numbers you have (a data sheet, a
   handbook) and attaches it.
-- **Update a baseline with its history…** is for a position with
-  only one or two failures (below).
 
 A row's **⋯** has **Refit…** (a fitted model), **Replace with…** and
 **Unlink…**. Unlinking takes it off the position; the model stays in Models.
@@ -128,21 +134,22 @@ prediction. **Use this one** on a row's ⋯ changes it. The model in use is what
 the position's row reports, what the RCM offers first as evidence, and what a
 parent's RBD takes for its block.
 
-## A few failures: update a baseline
+## A few failures: fit with a prior
 
 With one or two failures a position's own history says little. But there's
-often a baseline you'd trust: the class's model, the vendor's numbers, a
-handbook model, or a belief such as "the B10 is about 5,000 hours". A
-**Bayesian update** starts from that baseline and lets the position's own
-failures and running units move it.
+often something you'd trust beside it: the class's other positions, the
+vendor's numbers, a handbook model, or a belief such as "the B10 is about
+5,000 hours". In **Fit a life model…**, choose **With a prior** (or **Both**,
+for the class's history as the prior) and the position's own failures and
+running units move that prior.
 
-1. Choose what to **start from**: its class's model, a saved model, numbers you
+1. Choose the **prior**: the class's history, a saved model, numbers you
    know, or a B10 you believe.
 2. Choose **how much to trust it**:
-   - *Trust it closely*: each number within about 10% (a fitted baseline
-     counts as all its evidence);
-   - *Use it as a guide*: within about 30% (half its evidence);
-   - *Only a starting point*: within about 60% (a fifth of its evidence).
+   - *Trust it closely*: each number within about 10%, or all of the class's
+     (or a fitted model's) evidence;
+   - *Use it as a guide*: within about 30%, or half of it;
+   - *Only a starting point*: within about 60%, or a fifth of it.
 3. Check the history it will use, and untick anything that doesn't belong.
 
 The result says first what moved and how far, for example "2 failures at 1,400

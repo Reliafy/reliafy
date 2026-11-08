@@ -188,8 +188,7 @@ test("one model in use per position: its chip, its actions, the roll-up and the 
 test("the Modelling tab's position menu: three groups, two levels", () => {
   const g = attachGroups({ positionClass: "Pump", hasPrediction: true });
   assert.deepEqual(g.map((x) => x.label), ["Life model", "RBD", "Prediction"]);
-  assert.deepEqual(g[0].items.map((x) => x.label), ["Fit from this position's history…", "Update a baseline with its history…",
-    "Assign a saved model…", "From the class…", "Enter parameters…"]);
+  assert.deepEqual(g[0].items.map((x) => x.label), ["Fit a life model…", "Assign a saved model…", "From the class…", "Enter parameters…"]);
   assert.deepEqual(g[1].items.map((x) => x.label), ["Build from what's inside…", "Link an existing RBD…"]);
   assert.deepEqual(g[2].items.map((x) => x.id), ["model-attach-predict", "model-refresh-predict"]);
   const bare = attachGroups();

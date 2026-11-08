@@ -276,6 +276,17 @@ its model in use (by default its own life model, else its RBD, else its
 prediction): what its roll-up reports, what the RCM offers first and what a
 parent's RBD block takes. `GET /api/maintenance/position-models/{id}?age=`
 adds an RBD's system reliability at that age.
+`fit: true` with `data` (`position`, `class`, or `both`: the position's history
+with its class's other positions' history as the prior) and `method` (`mle`:
+a plain fit with 95% confidence bounds; `bayes`: with a `prior`, 90% credible
+intervals) is "Fit a life model…": `prior` is `{kind: class}` (the class's
+history as a power prior, SurPyval's `prior.from_data`, weighed by `trust`:
+`close` all of its evidence, `guide` half, `start` a fifth), `{kind: model,
+model_id}`, `{kind: params, distribution, params, unit}` or `{kind: b10, …}`.
+The class can't be both the data and the prior. The app previews with
+`POST /api/maintenance/positions/{id}/fit-preview` (a refusal comes back as
+`{refused: words}`). `analyse bayes_update` takes `baseline:
+{class_power_prior: true, position_id}` for the same prior.
 `fit: true` with `baseline` or
 `trust` saves a Bayesian update instead (below). `maintenance models.unlink`
 (`link_id`) takes one off; the model stays in Models. `get.position` lists

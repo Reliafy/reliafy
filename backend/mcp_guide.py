@@ -38,7 +38,9 @@ in the baseline's unit. E.g. baseline {model_id: <the class's Weibull>}, trust g
 [0, 0, 1]. It returns posterior medians with 90% credible intervals ("a 90% chance the B10 lies between ..."), \
 never confidence bounds, and says what moved the baseline. It's a Bayesian update of a baseline: use it for \
 sparse data with a baseline the user trusts, say the baseline and the trust when quoting it; with plenty of \
-failures fit instead. No data: the baseline stands as given. On a maintenance position, maintenance models.link \
+failures fit instead. No data: the baseline stands as given. With Reliafy Maintenance, baseline \
+{class_power_prior: true, position_id} uses that position's class's other positions' history as a power prior \
+(SurPyval's prior.from_data, weighed by trust). On a maintenance position, maintenance models.link \
 with fit and baseline saves one and attaches it.
 - Weibull beta < 1 = infant mortality, ≈ 1 = random failures, > 1 = wear-out.
 - Read saved models: list kind models, get kind model (parameters with 95% CIs, goodness of fit, B-lives with \
