@@ -59,6 +59,7 @@ import {
   ARRANGEMENTS, CHIPS, PANE, ancestorsOf, arrangementFor, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath, fitTreeWidth,
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
+import { keepLevel } from "../outlineTree.js";
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL, EXPLORER_PATH } from "../navigation.js";
 import { isolateItems, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
@@ -1139,6 +1140,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     else next.delete(key);
     setOpenSet(next);
   };
+
+  // A level chosen in the ⋯ menu stays chosen until a row is opened or closed by hand
+  // (levelBy is null then): rows that arrive after it was chosen (the RCM read after the
+  // tree, a read again after a write) open to it too (keepLevel), nothing is closed.
+  const chosenLevel = Object.prototype.hasOwnProperty.call(levelBy, mode) ? levelBy[mode] : null;
+  useEffect(() => {
+    if (filter || typeof chosenLevel !== "number" || !(chosenLevel > 0)) return;
+    setOpenBy((o) => {
+      const cur = o[mode] || defaultOpen;
+      const next = keepLevel(display, cur, chosenLevel);
+      return next === cur ? o : { ...o, [mode]: next };
+    });
+  }, [display, chosenLevel, filter, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The levels: after closing, the pick moves up to the row it's hidden in.
   const setLevel = (n) => {

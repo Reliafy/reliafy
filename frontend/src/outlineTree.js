@@ -19,6 +19,22 @@ export function levelSet(display, n, root = null) {
   return open;
 }
 
+// A level chosen in the tree's ⋯ menu is kept, not a one-off: when rows arrive
+// later (the RCM read after the tree, a read again after a write), the rows the
+// level opens that aren't open yet are added. Rows open already stay open (a
+// row revealed or opened by hand), and nothing is closed. `open` is returned
+// as it is when nothing is added, so a caller can tell nothing changed.
+export function keepLevel(display, open, n, root = null) {
+  if (!(n > 0)) return open;
+  let next = null;
+  for (const k of levelSet(display, n, root)) {
+    if (open.has(k)) continue;
+    if (!next) next = new Set(open);
+    next.add(k);
+  }
+  return next || open;
+}
+
 // The deepest level in a display (1: only tops).
 export function depthOf(display) {
   let max = 0;
