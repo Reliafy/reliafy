@@ -42,6 +42,24 @@ export function startValues(rows) {
   return out;
 }
 
+// The boxes after the work order is (re)loaded: fresh start values, except
+// a box someone has typed in and not yet recorded, which keeps what they typed.
+// (A checklist tick or a status change reloads the work order too; it must
+// never wipe a value being entered.)
+export function mergeValues(rows, prev) {
+  const start = startValues(rows);
+  for (const id of Object.keys(start)) if (prev?.[id]?.dirty) start[id] = prev[id];
+  return start;
+}
+
+// The boxes once `sent` ([{point_id}]) are recorded: those go back to clean
+// (the reload then gives them their new start value); the rest are untouched.
+export function clearSent(values, sent) {
+  const out = { ...values };
+  for (const r of sent || []) if (out[r.point_id]) out[r.point_id] = { ...out[r.point_id], dirty: false };
+  return out;
+}
+
 // What to send: every box edited and not empty, [{point_id, value, task_id?}].
 // An empty box (or one left as prefilled) records nothing.
 export function readingsToSend(rows, values) {

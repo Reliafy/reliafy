@@ -36,6 +36,9 @@ test("a work order records a reading now and a new setting when it closes", asyn
   await expect(section.locator(".maint-list li")).toContainText([`Salt ${tag} 3200 ppm`]);
   // The new setting goes in with the close.
   await setting.fill("60");
+  // Ticking a checklist line or a Record reloads the work order: a value being typed stays.
+  await expect(setting).toHaveValue("60");
+  await expect(page.getByText("Closing also records the value filled in under Readings and settings.")).toBeVisible();
   await page.getByLabel("What was done").selectOption("other");
   await page.getByRole("button", { name: "Close work order" }).click();
   await expect(section.locator(".maint-list li")).toContainText([`Chlorinator ${tag} set to 60% (from 45%)`]);

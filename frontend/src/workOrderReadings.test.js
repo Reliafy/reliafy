@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { progressText, readingRows, readingsToSend, rowDetail, startValues, takenText, whyText } from "./workOrderReadings.js";
+import { clearSent, mergeValues, progressText, readingRows, readingsToSend, rowDetail, startValues, takenText, whyText } from "./workOrderReadings.js";
 
 const WO = {
   reading_points: [
@@ -34,4 +34,15 @@ test("progress and what was taken, in words", () => {
   assert.equal(takenText({ point: { name: "Chlorinator output", unit: "%", kind: "setting" }, value: 60, from: 45 }),
     "Chlorinator output set to 60% (from 45%)");
   assert.equal(takenText({ point: { name: "Salt", unit: "ppm", kind: "condition" }, value: 3200 }), "Salt 3200 ppm");
+});
+
+test("a reload keeps a box being typed in; a Record clears only what it sent", () => {
+  const rows = readingRows(WO);
+  const typed = { ...startValues(rows), chl: { value: "60", dirty: true }, temp: { value: "24", dirty: true } };
+  const merged = mergeValues(rows, typed);
+  assert.deepEqual(merged.chl, { value: "60", dirty: true });
+  assert.deepEqual(merged.salt, { value: "", dirty: false });
+  const after = mergeValues(rows, clearSent(typed, [{ point_id: "temp" }]));
+  assert.deepEqual(after.temp, { value: "", dirty: false });
+  assert.deepEqual(after.chl, { value: "60", dirty: true });
 });
