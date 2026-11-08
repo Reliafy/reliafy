@@ -11,7 +11,7 @@ const LINKED_ONLY = new Set(["report", "working"]);
 const Tick = () => <span className="choice-tick" aria-hidden="true">✓ </span>;
 import { saveErrorText } from "../confirm.js";
 import {
-  DEFAULT_OUTCOMES, INTERVAL_UNITS, NEEDS_INTERVAL, SCHEDULED, analysisKindOf, checkDecision, combineChoices,
+  DEFAULT_OUTCOMES, INTERVAL_UNITS, NEEDS_INTERVAL, SCHEDULED, TASK_ORDER, analysisKindOf, checkDecision, combineChoices,
   defaultAction, extraBody, modeAnswers, pruneExtras, rememberUnit, startUnit,
 } from "../decisionCheck.js";
 
@@ -60,6 +60,9 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
   // "No task is worth doing" picked: the default actions show (Derryn, 9 Nov 2026).
   // Starts on when the saved decision is already one of them.
   const [noTask, setNoTask] = useState(() => DEFAULT_OUTCOMES.includes(existing.outcome));
+  // "Task(s) worth doing" picked (Derryn, 9 Nov 2026: step 3 is a yes or no, each task of
+  // its own kind): the first task's kind is chosen under it.
+  const [yes, setYes] = useState(() => TASK_ORDER.includes(existing.outcome));
   const [rtfBasis, setRtfBasis] = useState(existing.rtf_basis || null);
   const [task, setTask] = useState(existing.task || own?.text || own?.name || "");
   const [interval, setInterval_] = useState(existing.interval ?? own?.interval ?? "");
@@ -110,6 +113,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
   // A choice in question 3: a new outcome or basis drops a linked model that no longer fits.
   const onTaskChoice = (next) => {
     setNoTask(next.noTask);
+    setYes(!!next.yes);
     if (next.outcome !== outcome) {
       setOutcome(next.outcome);
       setExtras((xs) => (next.outcome ? pruneExtras(next.outcome, xs) : []));
@@ -239,7 +243,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
             the doctrine allows here; the default actions once "No task is worth doing" is picked
             (or the saved decision is one); run to failure's reason under it. */}
         <TaskChoice n={3} options={options} hidden={hidden} consequence={consequence}
-                    value={{ outcome, noTask, rtfBasis }} onChange={onTaskChoice} />
+                    value={{ outcome, noTask, rtfBasis, yes }} onChange={onTaskChoice} />
         {fallback && !noTask && (
           <p className="decision-default" role="note">
             <strong>{fallback.outcome ? "The default action: " : "Next: "}</strong>{fallback.text}

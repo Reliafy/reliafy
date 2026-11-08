@@ -2,9 +2,9 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { saveErrorText } from "../confirm.js";
-import { DEFAULT_OUTCOMES, INTERVAL_UNITS, TASK_ORDER, modeAnswers, startUnit } from "../decisionCheck.js";
+import { DEFAULT_OUTCOMES, INTERVAL_UNITS, TASK_ORDER, allowedChoices, modeAnswers, startUnit, worthLine } from "../decisionCheck.js";
 import {
-  FOUND_EMPTY, OUTCOME_LABEL, ROLE, addableOutcomes, decisionCardLines, decisionRows, decisionWithFirstTask, decisionWithMember, decisionWithoutMember,
+  FOUND_EMPTY, OUTCOME_LABEL, ROLE, addableOutcomes, decisionCardLines, decisionRows, decisionWithKind, decisionWithMember, decisionWithNewFirst, isMemberTask, decisionWithoutMember,
   decisionBody, decisionWithOnFound, decisionWithOutcome, everyText, findsSomething, isCombination, onEventOnly, roleLine, tasksDropped, tasksOf,
 } from "../rcmWorksheet.js";
 import { getTaskTriggerPoints, saveStrategyAnalysis } from "../api.js";
@@ -28,6 +28,11 @@ import { PanelField } from "./PanelField.jsx";
 // card's ⋯ asked the step-2 questions again in a dialog; it's gone). Top to
 // bottom:
 //
+// (Derryn, 9 Nov 2026: step 3 is a yes or no, "Task(s) worth doing" · "No task is worth
+// doing"; each task carries its own kind, a small chip on its line (KindChip) that changes
+// it; "Task(s) worth doing" with no task opens the first task's row, its kind first, and
+// nothing is saved until that task is; no bridge line. The evidence moved to the panel's
+// Rationale row, "Based on:". Older notes below describe the rest.)
 // 1. "Which task is worth doing?" (TaskChoice, shared with the decision
 //    dialog): the kinds the RCM decision diagram allows for the mode's two
 //    answers, then "No task is worth doing" (its default actions, and run to
@@ -84,8 +89,12 @@ const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n =
 const every = (t) => everyText(t);
 const KIND_LABEL = { ...OUTCOME_LABEL, redesign: "Redesign (until the change is made)" };
 const LOCKED = "Answer step 2 first: what's worth doing depends on the consequence.";
+// "Task(s) worth doing" is on for a decision with tasks (a kind, or a combination; Derryn,
+// 9 Nov 2026). Tasks linked before any decision don't make it so: a tap adopts them.
+const scheduledDecision = (d) => !!d && (isCombination(d) || SCHEDULED.includes(d.outcome));
 const fromDecision = (d) => ({
   outcome: d?.outcome || null, noTask: DEFAULT_OUTCOMES.includes(d?.outcome), rtfBasis: d?.rtf_basis || null,
+  yes: scheduledDecision(d),
 });
 // What a confirm says about the tasks a change takes off the failure mode.
 function droppedWords(going) {
@@ -167,11 +176,15 @@ export default function RcmModeTasks({
   const rowsHere = modeTaskRows(r.ref);
   const listed = rowsHere.map((x) => ({ key: x.task.id, task: x.task, outcome: x.outcome }));
   const carded = cards.filter((l) => !(l.task?.id && rowsHere.some((x) => x.task.id === l.task.id)));
+  const linkedBefore = !d && tasks.some((t) => t.id);
   const [pick, setPick] = useState(() => fromDecision(d));
   const [editing, setEditing] = useState(null); // the task being changed in place
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const [adding, setAdding] = useState(false);
+  // "Task(s) worth doing" picked with no task yet: the first task's row, its kind first.
+  // Nothing is saved until that task is.
+  const [first, setFirst] = useState(false);
   const [saved, setSaved] = useState(0);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
@@ -181,10 +194,11 @@ export default function RcmModeTasks({
   useEffect(() => {
     if (keyWas.current !== r.key) {
       keyWas.current = r.key;
-      setPick(fromDecision(d)); setEditing(null); setAdding(false); setFailed(null); setSaved(0);
+      setPick(fromDecision(d)); setEditing(null); setAdding(false); setFirst(false); setFailed(null); setSaved(0);
       return;
     }
-    setPick((p) => (d ? fromDecision(d) : { outcome: null, noTask: p.noTask && !TASK_ORDER.includes(p.outcome), rtfBasis: null }));
+    setPick((p) => (d ? fromDecision(d) : { outcome: null, noTask: p.noTask && !TASK_ORDER.includes(p.outcome), rtfBasis: null, yes: p.yes }));
+    if (scheduledDecision(d)) setFirst(false);
   }, [r.key, d?.outcome, d?.rtf_basis]); // eslint-disable-line react-hooks/exhaustive-deps
   const addable = can && d ? addableOutcomes(d, r.ref) : [];
   const canAdd = addable.length > 0 && tasks.some((t) => t.id);
@@ -195,7 +209,11 @@ export default function RcmModeTasks({
     opened.current = addStart;
     if (canAdd) setAdding(true);
   }, [addStart, canAdd]);
-  const needsFirst = can && d && !isCombination(d) && SCHEDULED.includes(d.outcome) && !tasks.some((t) => t.id);
+  // A first task wanted: a scheduled decision whose task has gone, or "Task(s) worth doing"
+  // picked on a mode with no task.
+  const needsFirst = can && ((d && !isCombination(d) && SCHEDULED.includes(d.outcome) && !tasks.some((t) => t.id))
+    || (first && pick.yes && !scheduledDecision(d)));
+  const kindsHere = allowedChoices(TASK_ORDER, answers.hidden, answers.consequence);
   const decide = (decision) => ops.decide(r, { consequence: r.ref.consequence || null, decision });
   const errorText = (e) => saveErrorText(e, { offline: navigator.onLine === false });
 
@@ -204,8 +222,39 @@ export default function RcmModeTasks({
   const choose = async (next) => {
     if (busy || !can) return;
     const prev = pick;
-    setPick(next);
     setFailed(null);
+    if (next.yes) {
+      // "Task(s) worth doing": tasks a decision has already make it so; tasks linked before any
+      // decision are adopted (the first, of its own kind); otherwise the first task's row opens.
+      setPick(next);
+      if (scheduledDecision(d)) return;
+      if (linkedBefore) {
+        const t = tasks.find((x) => x.id);
+        const kind = kindsHere.includes(t.outcome) ? t.outcome : kindsHere[0];
+        setBusy(true);
+        try {
+          await decide(decisionWithOutcome(null, tasks, kind));
+        } catch (e) {
+          if (alive.current) { setBusy(false); setPick(prev); setFailed(errorText(e)); }
+          return;
+        }
+        if (!alive.current) return;
+        setBusy(false);
+        setSaved((x) => x + 1);
+        onSaid?.("Saved the decision.");
+        return;
+      }
+      setFirst(true);
+      return;
+    }
+    if (!next.noTask && !next.outcome && prev.yes && !scheduledDecision(d)) {
+      // "Task(s) worth doing" taken back before any task was saved: as it was.
+      setFirst(false);
+      setPick(fromDecision(d));
+      return;
+    }
+    setFirst(false);
+    setPick(next);
     let target; // the outcome to save; null clears the decision; undefined saves nothing
     if (next.outcome && (next.outcome !== "rtf" || next.rtfBasis)) target = next.outcome;
     else if (!next.outcome && !next.noTask) target = d ? null : undefined;
@@ -349,15 +398,19 @@ export default function RcmModeTasks({
 
   // Rows of the steps grid ("step | choice", Details): the task worth doing, the tasks, the
   // evidence. Each label cell names its row; the evidence cell is a group named by its label.
-  const hasTasks = needsFirst || cards.length > 0 || canAdd;
-  const whyId = `rim-why-${r.key}`;
+  const yesNow = pick.yes && !pick.noTask;
+  // Run to failure, accept or redesign on its own: its card sits under the chips, in step 3.
+  const defaultCards = d && !scheduledDecision(d) ? carded : [];
+  const hasTasks = needsFirst || (yesNow && (listed.length > 0 || (scheduledDecision(d) && carded.length > 0) || canAdd))
+    || (!d && cards.length > 0);
   return (
     <div className={"rim-step rw-sg" + (editing ? " has-edit" : "")}>
       <StepLabel n={n} saved={saved}>Task worth doing?</StepLabel>
       <div className="rw-sc">
         <TaskChoice options={options} hidden={answers.hidden} consequence={answers.consequence} value={pick} onChange={choose}
-                    disabled={!can || !answered || busy} locked={answered ? null : LOCKED} moveOnly bridge bare />
+                    disabled={!can || !answered || busy} locked={answered ? null : LOCKED} moveOnly bare />
         {failed && !editing && <p className="field-error" role="alert">{failed}</p>}
+        {defaultCards.length > 0 && <ul className="rim-lines rim-cards" aria-label="The decision's action">{defaultCards.map(card)}</ul>}
       </div>
       {hasTasks && (
         <>
@@ -365,22 +418,24 @@ export default function RcmModeTasks({
           <div className="rw-sc rim-tasks-cell">
             {needsFirst && (
               <div className="rim-card rim-one editing" role="group" aria-label="The decision's task">
-                <NewTaskCard key={`${r.key}:${d.outcome}`} r={r} d={d} ops={ops} kind={d.outcome}
-                             start={{ name: d.task || "", interval: d.interval ?? "" }}
-                             onSave={watching((member) => decide(decisionWithFirstTask(d, member)))}
-                             onDone={(said) => { setSaved((x) => x + 1); onSaid?.(said); }} />
+                <NewTaskCard key={`${r.key}:${d?.outcome || "first"}`} r={r} d={d} ops={ops}
+                             kinds={kindsHere} kind={SCHEDULED.includes(d?.outcome) ? d.outcome : null}
+                             start={{ name: SCHEDULED.includes(d?.outcome) ? d.task || "" : "", interval: SCHEDULED.includes(d?.outcome) ? d.interval ?? "" : "" }}
+                             onSave={watching((member) => decide(decisionWithNewFirst(d, member)))}
+                             onCancel={first ? () => { setFirst(false); setPick(fromDecision(d)); } : null}
+                             onDone={(said) => { setFirst(false); setSaved((x) => x + 1); onSaid?.(said); }} />
               </div>
             )}
-            {d && listed.length > 0 && <TaskList r={r} lines={listed} label="The decision's tasks" onPick={onPick} />}
-            {d && carded.length > 0 && <ul className="rim-lines rim-cards" aria-label="The decision's action">{carded.map(card)}</ul>}
+            {d && listed.length > 0 && <TaskList r={r} lines={listed} label="The decision's tasks" onPick={onPick} ops={ops} can={can} onSaid={onSaid} />}
+            {scheduledDecision(d) && carded.length > 0 && <ul className="rim-lines rim-cards" aria-label="The decision's action">{carded.map(card)}</ul>}
             {!d && cards.length > 0 && (
               <>
                 <h4 className="rim-before">Tasks linked before the decision</h4>
-                {listed.length > 0 && <TaskList r={r} lines={listed} label="Tasks linked before the decision" onPick={onPick} />}
+                {listed.length > 0 && <TaskList r={r} lines={listed} label="Tasks linked before the decision" onPick={onPick} ops={ops} can={can} onSaid={onSaid} />}
                 {carded.length > 0 && <ul className="rim-lines rim-cards" aria-label="Other tasks linked before the decision">{carded.map(card)}</ul>}
               </>
             )}
-            {canAdd && !editing && (adding ? (
+            {canAdd && yesNow && !editing && (adding ? (
               <div className="rim-card rim-one rim-adding editing" role="group" aria-label="Add a task">
                 <NewTaskCard r={r} d={d} ops={ops} kinds={addable}
                              onSave={watching((member) => decide(decisionWithMember(d, member)))}
@@ -394,12 +449,6 @@ export default function RcmModeTasks({
             ))}
             {calcDialog}
           </div>
-        </>
-      )}
-      {d && why && (
-        <>
-          <StepLabel id={whyId}>Evidence</StepLabel>
-          <div className="rw-sc rim-whyopen" role="group" aria-labelledby={whyId}>{why}</div>
         </>
       )}
     </div>
@@ -800,12 +849,52 @@ function Instructions({ text }) {
 
 // Step 3's list of the decision's tasks: one line each, its name a link that picks its row
 // in the tree (where it's changed), then its kind and how often, quietly.
-function TaskList({ r, lines, label, onPick }) {
+// A task's kind, as a small chip that changes it (Derryn, 9 Nov 2026: step 3 is a yes or
+// no; each task carries its own kind): only the kinds the decision diagram allows for the
+// mode's answers, the worth-doing test as its tooltip. A member of the decision changes
+// the decision (decisionWithKind); a task outside it changes its own outcome. Read-only,
+// or with one kind only: the kind in words.
+export function KindChip({ mode, task, kind, ops = null, can = false, onSaid = null }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(null);
+  const answers = modeAnswers(mode.ref);
+  const kinds = allowedChoices(TASK_ORDER, answers.hidden, answers.consequence, kind);
+  const label = OUTCOME_LABEL[kind] || kind;
+  const tip = worthLine(kind, answers.hidden, answers.consequence) || undefined;
+  if (!can || !ops?.decide || !TASK_ORDER.includes(kind) || kinds.length < 2) return <span className="rim-tmeta rim-kindtext" title={tip}>{label}</span>;
+  const change = async (next) => {
+    const d = mode.ref.decision || null;
+    const decision = decisionWithKind(d, tasksOf(mode.ref), task.id, next);
+    if (!decision && isMemberTask(d, task.id)) return;
+    setBusy(true);
+    setFailed(null);
+    try {
+      if (decision) await ops.decide(mode, { consequence: mode.ref.consequence || null, decision });
+      else await ops.editTask(task.id, { outcome: next });
+      onSaid?.(`Made “${task.name}” ${String(OUTCOME_LABEL[next] || next).toLowerCase()}.`);
+    } catch (e) {
+      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <select className="rim-kindchip" aria-label={`Kind of “${task.name || task.text}”`} title={tip} value={kind} disabled={busy}
+              onChange={(e) => change(e.target.value)}>
+        {kinds.map((k) => <option key={k} value={k}>{OUTCOME_LABEL[k] || k}</option>)}
+      </select>
+      {failed && <span className="field-error" role="alert"> {failed}</span>}
+    </>
+  );
+}
+
+function TaskList({ r, lines, label, onPick, ops = null, can = false, onSaid = null }) {
   return (
     <ul className="rim-tasklist" aria-label={label}>
       {lines.map((l) => {
         const t = l.task;
-        const meta = [l.outcome ? OUTCOME_LABEL[l.outcome] || l.outcome : null, every(t) || null].filter(Boolean).join(" · ");
+        const when = every(t) || null;
         return (
           <li key={l.key}>
             <svg className="rw-ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
@@ -817,7 +906,8 @@ function TaskList({ r, lines, label, onPick }) {
                   {t.name || t.text}
                 </button>
               ) : <span>{t.name || t.text}</span>}
-              {meta && <span className="rim-tmeta"> · {meta}</span>}
+              {l.outcome && <> <span className="rim-tmeta">·</span> <KindChip mode={r} task={t} kind={l.outcome} ops={ops} can={can} onSaid={onSaid} /></>}
+              {when && <span className="rim-tmeta"> · {when}</span>}
               {t.shared_with ? <span className="rim-tmeta"> · shared with {plural(t.shared_with, "other failure mode")}</span> : null}
             </span>
           </li>
@@ -886,7 +976,9 @@ export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
           </div>
         ) : (
           <>
-            <p className="rim-tkind">{OUTCOME_LABEL[outcome] || "Not in a decision yet"}</p>
+            <p className="rim-tkind">
+              {outcome ? <KindChip mode={mode} task={t} kind={outcome} ops={ops} can={can} onSaid={onSaid} /> : "Not in a decision yet"}
+            </p>
             {form === "interval" ? (
               <IntervalForm task={t} d={d} busy={busy} failed={failed} calculate={(fill) => calcLink(t, outcome, fill)}
                             onCancel={() => { setForm(null); setFailed(null); }}

@@ -507,6 +507,62 @@ export function decisionWithFirstTask(d, member) {
   return out;
 }
 
+// ---- step 3 as a yes/no, kinds per task (Derryn, 9 Nov 2026) ------------------------
+// "3 · Task worth doing?" asks only yes or no; each task carries its own kind (the
+// decision's member outcome), changed on the task. The data is the same: a decision's
+// outcomes are its tasks' kinds.
+
+// A decision's first task, of the kind it was made as (`member.outcome`): a new one
+// ({outcome, task, interval, interval_unit, on_found?}) or an existing one ({outcome,
+// task_id, on_found?}). It replaces a decision with no task (run to failure, accept,
+// redesign, or a scheduled one whose task has gone); a report or function notes linked as
+// evidence stay, and a model stays when the kind is the decision's.
+export function decisionWithNewFirst(d, member) {
+  const ev = evidenceRef(d?.evidence);
+  const found = member.on_found ? { on_found: member.on_found } : {};
+  const out = member.task_id
+    ? { outcomes: [{ outcome: member.outcome, task_id: member.task_id, ...found }] }
+    : { outcome: member.outcome, task: member.task, interval: member.interval, interval_unit: member.interval_unit, ...found };
+  if (ev && (LINKED_EVIDENCE.has(ev.type) || d?.outcome === member.outcome)) out.evidence = ev;
+  return out;
+}
+
+// Whether a task is one of the decision's own (a member of its combination, or a plain
+// decision's own task): only then is its kind the decision's.
+export function isMemberTask(d, taskId) {
+  if (!d || !taskId) return false;
+  return isCombination(d) ? d.outcomes.some((o) => o.task_id === taskId) : d.task_id === taskId;
+}
+
+// The decision with one task's kind changed to `kind` (a member's outcome), as the server
+// takes it: every member by its task, so nothing else changes. A member whose kind changes
+// drops a model linked for its old kind (a report or function notes stay) and what its old
+// check led to. null when the task isn't the decision's (its own outcome is changed on the
+// task instead) or the kind is the same.
+export function decisionWithKind(d, tasks, taskId, kind) {
+  if (!isMemberTask(d, taskId)) return null;
+  if (!isCombination(d)) return d.outcome === kind ? null : decisionWithOutcome(d, tasks, kind);
+  const at = d.outcomes.findIndex((o) => o.task_id === taskId);
+  if (d.outcomes[at].outcome === kind) return null;
+  const ev = evidenceRef(d.evidence);
+  const out = {
+    outcomes: d.outcomes.map((o, i) => {
+      const changed = i === at;
+      const outcome = changed ? kind : o.outcome;
+      const own = evidenceRef(o.evidence);
+      return {
+        outcome,
+        ...(o.task_id ? { task_id: o.task_id }
+          : Object.fromEntries(["task", "interval", "interval_unit"].filter((k) => o[k] != null && o[k] !== "").map((k) => [k, o[k]]))),
+        ...(own && (!changed || LINKED_EVIDENCE.has(own.type)) ? { evidence: own } : {}),
+        ...(FINDS.has(outcome) ? { on_found: changed ? "" : o.on_found || "" } : {}),
+      };
+    }),
+  };
+  if (ev) out.evidence = ev;
+  return out;
+}
+
 // The decision as the server takes it back with what's done when one of its checks
 // finds it (`at`: the combination's member index, 0 the decision's own task) set to
 // `text` ("" clears it): every member by its task (task_id) where it has one, so

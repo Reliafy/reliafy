@@ -833,9 +833,13 @@ test("the decision dialog says what's missing: the interval a schedule needs, wh
   await expect(apply).toBeEnabled();
   await expect(why).toHaveCount(0);
   // Fixed interval and failure finding: the interval is needed, marked and said.
-  // Back to the tasks: picking one unselects "No task is worth doing". Failure finding is
-  // offered on a hidden failure (and while the question is still open, as here); Evident
-  // takes it off the list, Hidden brings it back.
+  // Back to the tasks: "Task(s) worth doing" unselects "No task is worth doing", and the first
+  // task's kind is chosen under it (step 3 is a yes or no, each task of its own kind). Failure
+  // finding is offered on a hidden failure (and while the question is still open, as here);
+  // Evident takes it off the list, Hidden brings it back.
+  await dialog.getByRole("radio", { name: /Task\(s\) worth doing/ }).click();
+  await expect(dialog.getByRole("radiogroup", { name: "Kind of task" })).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: /Run to failure/ })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Evident" }).click();
   await expect(dialog.getByRole("radio", { name: /Failure finding/ })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Hidden" }).click();

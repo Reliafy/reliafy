@@ -943,3 +943,22 @@ span.rim-tname.rim-r1-body { display: block; }
   .rw-sg > .rw-sl { padding-bottom: 0; }
   .choice-chips.sm .choice-chip { min-height: 36px; }
 }
+/* A failure mode's Rationale row, the grid's foot: "Based on:" its evidence as citations,
+   the status at the right, then the notes (Derryn, 9 Nov 2026). */
+.rw-rationale .rw-notes.bare { display: flex; flex-direction: column; gap: 6px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.rw-basedon-wrap { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rw-basedon { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: var(--fs-13); min-width: 0; }
+.rw-basedon-lead { font-weight: 600; }
+.rw-basedon-cites { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.rw-basedon-none { color: var(--muted); }
+.rw-basedon-status { margin-left: auto; flex: none; }
+.rw-basedon-wrap .rw-dwhy, .rw-basedon-wrap .rw-members { margin: 0; font-size: var(--fs-13); color: var(--muted); }
+.rw-notes-foot { display: flex; align-items: center; gap: 8px; }
+.rw-notes-foot .rw-notes-act { font-size: var(--fs-13); }
+/* A task's kind in the Tasks row and its panel: a small chip that changes it. */
+select.rim-kindchip {
+  appearance: auto; height: 24px; padding: 0 6px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surf); color: inherit; font: inherit; font-size: var(--fs-12); max-width: 100%;
+}
+select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus); }
+@media (max-width: 600px) { select.rim-kindchip { height: 32px; } }
