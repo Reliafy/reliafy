@@ -640,8 +640,14 @@ can drag rows in the RCM table to rearrange it:
   move several at once, pick them with Ctrl-click (Cmd-click on a Mac) or
   Shift-click, then drag one of them; the label shows how many.
 - **A task**: drag a failure mode's **Task** cell onto another failure mode. The
-  task moves there and stops preventing the mode it came from. To have one task
-  prevent several modes, use **Add a task…** › **Use an existing task…**.
+  task moves there and stops preventing the mode it came from.
+- **A task's own row** (under its failure mode) is copied, never moved: drag it
+  onto another failure mode on the task's position, or on a position inside it,
+  and the label says **Link here** with a **+**. The task then prevents both
+  (each row says **Shared with 1**). It joins that mode's decision as another
+  task, or becomes its task, or is listed under **Tasks linked before the
+  decision** when the mode has none yet. Any other row refuses it. From the
+  keyboard, the task row's menu has **Link to another failure mode…**.
 
 While you drag, a line shows where it will go (above, below), or the row is
 outlined (inside). If it can't go there, the pointer changes to a no-entry sign

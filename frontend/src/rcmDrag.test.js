@@ -379,3 +379,58 @@ test("helpers: place, the undo batch, the server's notes and refusals in plain w
   assert.equal(refusalText(err), "It's already on Pump A: pick another position.");
   assert.equal(refusalText({ message: "Nothing was changed: op 0 (tasks.move): Grease has an open work order (#4)." }), "Grease has an open work order (#4).");
 });
+
+// ---- a task's row dragged to copy it (link it to another failure mode too) -------------
+import { linkPlanFor, shownAfter } from "./rcmDrag.js";
+
+test("a task's row drags to copy: onto a failure mode it can reach and doesn't serve yet, never moved", () => {
+  const w = whole();
+  const key = "T:m1:t1";
+  const src = dragSource(w, key);
+  assert.equal(src.kind, "copy");
+  assert.deepEqual(src.task, { id: "t1", name: "Grease bearings", position_id: "pump", outcome: null, from: "m1" });
+  assert.equal(sourceWords(w, src), "the task “Grease bearings”");
+  // A sibling failure mode with no decision: linked (listed before the decision there).
+  assert.deepEqual(dropZones(w, src, "m2"), { zones: ["into"] });
+  const p = planDrop(w, src, "m2", "into");
+  assert.deepEqual(p.copy, { target: "m2", decision: null });
+  assert.match(p.text, /^Link here: the task “Grease bearings” will also prevent “Seal leaks”/);
+  assert.equal(p.ops, undefined); // not a move batch
+  assert.equal(shownAfter(src, "m2"), "T:m2:t1");
+  // A position inside the task's: it can serve the motor's modes.
+  assert.ok(planDrop(w, src, "k1", "into").copy);
+  // Quiet refusals (the drop cue says no): another position's mode, a mode that has it, any other row.
+  for (const target of ["n1", "m1", "f1", "x1", "pump", key]) {
+    const r = planDrop(w, src, target, "into");
+    assert.ok(r.refuse && r.quiet, target);
+  }
+  // Its menu never moves it.
+  assert.deepEqual(moveItems(w, w.rows.get(key)), []);
+  // The picker (Link to another failure mode…): only failure modes it can reach; where it is now said.
+  const tree = moveTree(w, src);
+  assert.equal(tree.here, "m1");
+  assert.equal(tree.nodes.get("m2").ok, true);
+  assert.equal(tree.nodes.get("k1").ok, true);
+  assert.equal(tree.nodes.has("n1") ? tree.nodes.get("n1").ok : false, false);
+  assert.equal(tree.nodes.get("x1").ok, false);
+  assert.equal(planMoveTo(w, src, "m2").copy.target, "m2");
+});
+
+test("how a linked task joins the target: another task of its decision where the rules allow, else beside it", () => {
+  const task = { id: "t9", outcome: "fixed_interval" };
+  const on = (decision, consequence = "safety", hidden = false) => ({ ref: { id: "m", consequence, hidden, decision, tasks: [] } });
+  // No decision: linked.
+  assert.deepEqual(linkPlanFor(on(null), task), { decision: null });
+  // A scheduled decision with no task yet: it becomes its task.
+  assert.deepEqual(linkPlanFor(on({ outcome: "on_condition", on_found: "Fix" }), task).decision, { outcomes: [{ outcome: "on_condition", task_id: "t9", on_found: "Fix" }] });
+  // Safety: another task, as the target's kind.
+  const safe = linkPlanFor(on({ outcome: "on_condition", task_id: "t1" }), task).decision;
+  assert.deepEqual(safe.outcomes.map((o) => [o.outcome, o.task_id]), [["on_condition", "t1"], ["on_condition", "t9"]]);
+  // Operational: a combination is allowed too.
+  assert.equal(linkPlanFor(on({ outcome: "on_condition", task_id: "t1" }, "operational"), task).decision.outcomes.length, 2);
+  // Where the rules take no other task (a member still without its task): linked beside the decision.
+  const waiting = { outcome: "on_condition", outcomes: [{ outcome: "on_condition", task_id: null }, { outcome: "fixed_interval", task_id: "t2" }] };
+  assert.deepEqual(linkPlanFor(on(waiting), task), { decision: null });
+  // A decision that schedules nothing takes no task: said why.
+  assert.match(linkPlanFor(on({ outcome: "rtf" }), task).refuse, /run to failure, which schedules no task/);
+});

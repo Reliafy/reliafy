@@ -1319,6 +1319,23 @@ button.rw-cklink {
 .tp-row.drop-before::after { top: -2px; height: 4px; border-radius: 2px; background: var(--acc); }
 .tp-row.drop-after::after { bottom: -2px; height: 4px; border-radius: 2px; background: var(--acc); }
 .tp-row.drop-no::after { top: 0; bottom: 0; box-shadow: inset 0 0 0 2px var(--danger); }
+/* A task's row dropped to link it (a copy, never a move): "+ Link here" at the row's right. */
+.tp-row.drop-copy::before {
+  content: "+ Link here";
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 4;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--acc);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  pointer-events: none;
+}
+html.rcm-dragging.rcm-copying, html.rcm-dragging.rcm-copying * { cursor: copy !important; }
 html.rcm-dragging, html.rcm-dragging * { cursor: grabbing !important; user-select: none !important; }
 html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !important; }
 .rcm-ghost {
@@ -1351,6 +1368,7 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
   font-size: 11.5px;
 }
 .rcm-ghost-say { color: var(--muted, #6b7280); }
+.rcm-ghost-plus { font-size: 14px; font-weight: 700; }
 .rcm-ghost.is-no { border-color: var(--danger); }
 .rcm-ghost.is-no .rcm-ghost-say { color: var(--danger); }
 .rcm-toast {

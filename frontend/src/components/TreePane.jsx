@@ -281,7 +281,8 @@ function UnpinButton({ pinRoot }) {
 function dropClass(drag, key) {
   const o = drag?.over;
   if (!o || o.key !== key) return "";
-  return o.state === "no" ? " drop-no" : ` drop-${o.zone || "into"}`;
+  // A task's row dropped to link it (a copy): the outline says "+ Link here".
+  return o.state === "no" ? " drop-no" : ` drop-${o.zone || "into"}${o.copy ? " drop-copy" : ""}`;
 }
 
 function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen, rowW, pinRoot }) {

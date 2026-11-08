@@ -21,7 +21,15 @@
 // - a task (a failure mode's Task cell): onto another failure mode (it moves:
 //   it stops preventing the mode it came from; to link one task to several
 //   modes, use the mode's "Add a task…" › Use an existing task), or onto a
-//   position (the task moves there).
+//   position (the task moves there);
+// - a task's own row (the tree's fifth level) is dragged to copy, never to move
+//   (Derryn, 9 Nov 2026: "A task needs to be draggable to copy, not to move"):
+//   onto another failure mode on its position or a position inside it, where it
+//   is linked as well ("Link here"), so it serves both. It joins the target's
+//   decision as another task (its kind: the target's, else its own, as the
+//   decision rules allow), or the target's first task, or is linked before any
+//   decision; where the rules allow no other task it's linked beside the
+//   decision. Not a batch: the decide or link route (linkPlanFor).
 //
 // The rules the tree knows (what can go inside what, "it's there already")
 // are checked here at once. The rest (work done on a task, recorded failures,
@@ -30,6 +38,8 @@
 // row, and the server checks every drop again.
 //
 // Pure functions (no React), tested in rcmDrag.test.js.
+
+import { addableOutcomes, decisionWithFirstTask, decisionWithMember, isCombination, OUTCOME_LABEL } from "./rcmWorksheet.js";
 
 const q = (s) => `“${String(s || "").trim().slice(0, 60) || "(no name)"}”`;
 const textOf = (r) => (r?.type === "pos" ? r.ref.name : r?.ref.text) || "";
@@ -44,6 +54,11 @@ export function dragSource(whole, key, { picked = null, task = null } = {}) {
   if (task) {
     if (r.type !== "mode" || !task.id) return null;
     return { kind: "task", keys: [key], task: { id: task.id, name: task.name || task.text || "", position_id: task.position_id || r.ref.position_id } };
+  }
+  // A task's row: dragged to copy it (link it to another failure mode too), never to move it.
+  if (r.type === "task") {
+    const t = r.ref.task || {};
+    return { kind: "copy", keys: [key], task: { id: r.ref.task_id, name: t.name || r.ref.text || "", position_id: t.position_id || r.ref.position_id, outcome: r.ref.outcome || t.outcome || null, from: r.ref.mode_id } };
   }
   if (r.type === "fn" || r.type === "fail") return { kind: r.type, keys: [key] };
   if (r.type === "std") return r.ref.legacy ? null : { kind: "std", keys: [key] };
@@ -63,7 +78,7 @@ export function dragBlock(r) {
 
 // The words for what's dragged: "“No flow”", "3 failure modes", "the task “Grease bearings”".
 export function sourceWords(whole, src) {
-  if (src.kind === "task") return `the task ${q(src.task.name)}`;
+  if (src.kind === "task" || src.kind === "copy") return `the task ${q(src.task.name)}`;
   if (src.kind === "modes" && src.keys.length > 1) return plural(src.keys.length, "failure mode");
   if (src.kind === "std") {
     // A standard carries the functional failures under it: say how many.
@@ -119,6 +134,7 @@ const hasList = (whole, fnKey) => (whole.rows.get(fnKey)?.ref.standards || []).l
 export function dropZones(whole, src, targetKey) {
   const t = whole.rows.get(targetKey);
   if (!t || !src) return { zones: [] };
+  if (src.kind === "copy") return copyZones(whole, src, t);
   // A task's row (under a failure mode) is never a place to drop: nothing is shown, nothing said.
   if (t.type === "task") return { zones: [] };
   if (src.kind !== "task" && src.keys.some((k) => within(whole, targetKey, k))) return { zones: [] };
@@ -167,8 +183,8 @@ export function zoneAt(zones, frac) {
 // comes back to exactly where it was. text: what it will do (the tooltip);
 // done: what it did (the toast).
 export function planDrop(whole, src, targetKey, zone) {
-  const { zones, reason } = dropZones(whole, src, targetKey);
-  if (!zones.length) return reason ? { refuse: reason } : { none: true };
+  const { zones, reason, quiet = false } = dropZones(whole, src, targetKey);
+  if (!zones.length) return reason ? { refuse: reason, ...(quiet ? { quiet } : {}) } : { none: true };
   if (!zones.includes(zone)) zone = zones.includes("into") ? "into" : zones[0];
   const t = whole.rows.get(targetKey);
   const what = sourceWords(whole, src);
@@ -179,7 +195,51 @@ export function planDrop(whole, src, targetKey, zone) {
   if (src.kind === "fail") return planFailure(whole, src, t, zone, what, plan, where);
   if (src.kind === "modes") return planModes(whole, src, t, zone, what, plan, where);
   if (src.kind === "task") return planTask(whole, src, t, what, plan);
+  if (src.kind === "copy") {
+    const how = linkPlanFor(t, src.task);
+    if (how.refuse) return { refuse: how.refuse };
+    return { copy: { target: t.key, decision: how.decision }, text: `Link here: ${what} will also prevent ${q(textOf(t))}`,
+      done: `Linked ${what} to ${q(textOf(t))} as well: it prevents both now.` };
+  }
   return { none: true };
+}
+
+// Where a task's row can be dropped to link it (a copy): a failure mode on the
+// task's position or a position inside it that it doesn't serve yet. Any other
+// row refuses quietly (the drop cue says no; nothing is said after the drop).
+const QUIET = { zones: [], quiet: true };
+function copyZones(whole, src, t) {
+  if (t.type !== "mode") return { ...QUIET, reason: "Drop it on a failure mode to link it there." };
+  if ((t.ref.tasks || []).some((x) => x.id === src.task.id)) return { ...QUIET, reason: "It prevents this failure mode too." };
+  if (!positionWithin(whole, t.ref.position_id, src.task.position_id)) {
+    return { ...QUIET, reason: "A task can prevent failure modes on its own position and on the positions inside it." };
+  }
+  return { zones: ["into"] };
+}
+
+// How a task joins a failure mode it's linked to: {decision} the decision the
+// target takes back (decide route), {decision: null} linked (link route), or
+// {refuse} why not. With no decision yet: linked, and listed under "Tasks linked
+// before the decision". A scheduled decision with no task yet: it becomes its
+// task. Otherwise another task of its decision, as the target's kind (else the
+// task's own) where the decision rules allow one more; where they don't (a
+// member still waiting for its task, failure finding on an evident failure),
+// linked beside the decision. A
+// decision that schedules nothing (run to failure, accept, redesign) takes none.
+const SCHEDULED = new Set(["on_condition", "fixed_interval", "failure_finding"]);
+export function linkPlanFor(mode, task) {
+  const d = mode?.ref?.decision || null;
+  if (!d) return { decision: null };
+  const combo = isCombination(d);
+  if (!combo && SCHEDULED.has(d.outcome) && !d.task_id) return { decision: decisionWithFirstTask(d, { task_id: task.id, ...(d.on_found ? { on_found: d.on_found } : {}) }) };
+  if (!combo && !SCHEDULED.has(d.outcome)) {
+    return { refuse: `Its decision is ${String(OUTCOME_LABEL[d.outcome] || d.outcome).toLowerCase()}, which schedules no task: change the decision first.` };
+  }
+  const own = combo ? (d.outcomes.find((o) => SCHEDULED.has(o.outcome))?.outcome || null) : d.outcome;
+  const allowed = addableOutcomes(d, mode.ref);
+  const kind = [own, task.outcome].find((k) => k && SCHEDULED.has(k) && allowed.includes(k));
+  if (kind) return { decision: decisionWithMember(d, { outcome: kind, task_id: task.id }) };
+  return { decision: null };
 }
 
 function planFunction(whole, src, t, zone, what, plan, where) {
@@ -345,7 +405,7 @@ function planTask(whole, src, t, what, plan) {
 
 // The row to show after a drop: the first thing moved (a task: the mode it
 // went to).
-export const shownAfter = (src, targetKey) => (src.kind === "task" ? targetKey : src.keys[0]);
+export const shownAfter = (src, targetKey) => (src.kind === "task" ? targetKey : src.kind === "copy" ? `T:${targetKey}:${src.task.id}` : src.keys[0]);
 
 // The Undo batch: the server's undo list, then the reorders that put moved
 // things back in their places.
@@ -401,6 +461,7 @@ const MOVE_REASON = {
   modes: { any: "A failure mode goes under a functional failure, or a position's “Not under a functional failure”." },
   modesMany: { any: "Failure modes go under a functional failure, or a position's “Not under a functional failure”." },
   task: { any: "A task goes on a failure mode, or on a position." },
+  copy: { any: "A task is linked to a failure mode." },
 };
 const HERE = "It's here now.";
 
@@ -412,6 +473,7 @@ const SHOWS = {
   fail: new Set(["pos", "fn", "std", "nostd"]),
   modes: new Set(["pos", "fn", "std", "nostd", "fail", "unassigned"]),
   task: new Set(["pos", "fn", "std", "nostd", "fail", "unassigned", "mode"]),
+  copy: new Set(["pos", "fn", "std", "nostd", "fail", "unassigned", "nofail", "mode"]),
 };
 
 // The whole tree plus the empty groups a picker offers ("No performance
@@ -438,6 +500,7 @@ function hereOf(whole, src) {
   const r = whole.rows.get(src.keys[0]);
   if (!r) return null;
   if (src.kind === "task") return r.key;
+  if (src.kind === "copy") return r.ref.mode_id;
   if (src.kind === "fn") return r.ref.position_id;
   if (src.kind === "std") return r.ref.function_id;
   if (src.kind === "fail") {
@@ -469,7 +532,7 @@ export function moveTree(whole, src) {
     const sel = selectable(w, src, r);
     if (!sel) return { ok: false, reason: words[r.type] || words.any || "It can't go there." };
     const p = planDrop(w, src, r.key, "into");
-    if (p.ops) return { ok: true, reason: null };
+    if (p.ops || p.copy) return { ok: true, reason: null };
     if (p.none || /already/i.test(p.refuse || "")) return { ok: false, reason: HERE };
     return { ok: false, reason: p.refuse || "It can't go there." };
   };
@@ -524,6 +587,7 @@ function selectable(whole, src, r) {
     case "fail": return r.type === "std" || r.type === "nostd" || (r.type === "fn" && !(r.ref.standards || []).length);
     case "modes": return r.type === "fail" || r.type === "unassigned";
     case "task": return r.type === "mode" || r.type === "pos";
+    case "copy": return r.type === "mode";
     default: return false;
   }
 }
@@ -603,7 +667,8 @@ export function stepTarget(whole, key, by) {
 // With failure modes picked, Move to… takes them all. [{id, label, disabled?}]
 export function moveItems(whole, r, { picked = null, steps = true } = {}) {
   const s = r ? dragSource(whole, r.key, { picked }) : null;
-  if (!s) return [];
+  // A task's row is never moved (it's linked elsewhere: its own menu's Link to another failure mode…).
+  if (!s || s.kind === "copy") return [];
   const n = s.kind === "modes" ? s.keys.length : 1;
   const out = [{ id: "move-to", label: n > 1 ? `Move ${n} failure modes to…` : "Move to…" }];
   if (steps && s.kind !== "std" && !(r.type === "mode" && !r.ref.functional_failure_id)) {

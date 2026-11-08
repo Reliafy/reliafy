@@ -80,6 +80,8 @@ export default function RcmMoveModal({ whole, src: given = null, taskFrom = null
   };
   if (!src && !taskFrom) return null;
   const what = src ? sourceWords(whole, src) : "the task";
+  // A task's row: linked to another failure mode as well (a copy), never moved.
+  const copy = src?.kind === "copy";
   const refused = plan?.refuse || (verdict && !verdict.ok ? verdict.reason : null);
   const toggle = (n, want = !open.has(n.key)) => setOpen((o) => {
     const next = new Set(o);
@@ -116,8 +118,9 @@ export default function RcmMoveModal({ whole, src: given = null, taskFrom = null
     }
   };
   return (
-    <FormModal title={`Move ${what}`} submitLabel="Move" pendingLabel="Moving…" onClose={onClose}
-               canSubmit={!!plan?.ops && !refused}
+    <FormModal title={copy ? `Link ${what} to another failure mode` : `Move ${what}`} submitLabel={copy ? "Link" : "Move"}
+               pendingLabel={copy ? "Linking…" : "Moving…"} onClose={onClose}
+               canSubmit={!!(plan?.ops || plan?.copy) && !refused}
                onSubmit={async () => {
                  await onApply(src, plan, to);
                  onClose();
@@ -133,7 +136,7 @@ export default function RcmMoveModal({ whole, src: given = null, taskFrom = null
         <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Position, function or failure"
                aria-label="Find a place" />
       </Field>
-      <ul ref={box} className="rcm-move-tree" role="tree" aria-label="Where it goes">
+      <ul ref={box} className="rcm-move-tree" role="tree" aria-label={copy ? "Which failure mode" : "Where it goes"}>
         {list.map((n) => {
           const picked = n.key === to;
           return (
@@ -153,17 +156,18 @@ export default function RcmMoveModal({ whole, src: given = null, taskFrom = null
               ) : <span className="rcm-mt-arrow" aria-hidden="true" />}
               <RowIcon r={{ type: n.type, ref: { item: n.fitted } }} />
               <span className="rcm-mt-name"><Highlight text={n.name} query={query} /></span>
-              {n.here && <span className="rcm-mt-here">here now</span>}
+              {n.here && <span className="rcm-mt-here">{copy ? "linked here" : "here now"}</span>}
             </li>
           );
         })}
       </ul>
       {!list.length && <p className="lib-date">{tree.roots.length ? "Nothing matches that." : "There's nowhere else for it to go yet."}</p>}
       <p className={"rcm-move-say" + (refused || note ? " no" : "")} role="status" aria-live="polite">
-        {note ? `It can't go there. ${note}`
-          : !to ? "Pick where it goes. Greyed places say why they can't be picked. You can undo the move afterwards."
+        {note ? `${copy ? "It can't be linked there." : "It can't go there."} ${note}`
+          : !to ? (copy ? "Pick a failure mode on its position or a position inside it. It stays where it is and prevents both."
+            : "Pick where it goes. Greyed places say why they can't be picked. You can undo the move afterwards.")
             : refused ? `It can't go there: ${refused}`
-              : `${String(plan?.text || "").replace(/\.?$/, ".")}${verdict?.notes?.length ? ` ${verdict.notes.join(" ")}` : ""}${verdict ? "" : " (checking…)"}`}
+              : `${String(plan?.text || "").replace(/\.?$/, ".")}${verdict?.notes?.length ? ` ${verdict.notes.join(" ")}` : ""}${verdict || copy ? "" : " (checking…)"}`}
       </p>
     </FormModal>
   );

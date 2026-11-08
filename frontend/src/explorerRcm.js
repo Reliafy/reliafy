@@ -352,7 +352,9 @@ export function rowActions(r, { canRename = true, moves = true, viewOnly = null 
     // Its details have the rest; here what changes the tree: off this failure mode (a shared
     // task stays with the others), or retired when this is the only one it serves.
     const shared = !!r.ref.task?.shared_with;
-    return [...open, { id: "remove-task", label: shared ? "Remove from this failure mode…" : "Retire the task…", danger: true }];
+    // Link to another failure mode…: the picker, the keyboard's way to drag it (a copy, never a move).
+    return [...open, { id: "link-task", label: "Link to another failure mode…" },
+      { id: "remove-task", label: shared ? "Remove from this failure mode…" : "Retire the task…", danger: true }];
   }
   if (r.type === "mode") {
     return [
