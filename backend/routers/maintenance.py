@@ -1238,6 +1238,11 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
     from backend.maintenance import position_models as pm
 
     modes, note, replace = body.get("failure_mode_ids"), str(body.get("note") or ""), body.get("replace_link_id")
+    if isinstance(body.get("prediction"), dict):
+        # A parts-count prediction from the position's parts list (position_models.predict_position).
+        pr = body["prediction"]
+        return _run(pm.predict_position, m, session, ctx.read_owners, ctx.hidden, position_id, pr.get("environment"),
+                    pr.get("mission_time"), pr.get("assign"), True, note, replace, ctx.write_owner)
     try:
         if body.get("fit"):
             return _run(pm.fit_position_model, m, session, position_id, body.get("distribution") or "weibull",
@@ -1275,6 +1280,21 @@ def bayes_position_save(position_id: str, body: dict = Body(default={}), session
     return _run(pm.bayes_position, m, session, ctx.read_owners, ctx.hidden, position_id, body.get("baseline"),
                 body.get("trust") or "guide", body.get("exclude") or [], body.get("age"), True, body.get("name"),
                 str(body.get("note") or ""), body.get("replace_link_id"))
+
+
+@router.post("/positions/{position_id}/prediction")
+def preview_position_prediction(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                                ctx: AccessCtx = Depends(get_access),
+                                m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """A parts-count prediction of this position from its parts list (and those of the positions inside
+    it; a product design's bill of materials where they list none), previewed: environment (a handbook
+    symbol; default this position's last, else the nearest above, else GF), mission_time (hours), assign
+    ({part id or part number: {record_id, quality_factor}}). Saves nothing; save with POST
+    /positions/{id}/models {prediction: {...}}."""
+    from backend.maintenance import position_models as pm
+
+    return _run(pm.predict_position, m, session, ctx.read_owners, ctx.hidden, position_id, body.get("environment"),
+                body.get("mission_time"), body.get("assign"))
 
 
 @router.delete("/position-models/{link_id}")

@@ -39,6 +39,7 @@ handle and owners.
 from __future__ import annotations
 
 import io
+import re
 
 from backend.maintenance.store import GraphStore
 
@@ -48,7 +49,7 @@ MODEL_TYPES = ("model", "recurrent_model", "degradation_model", "alt_model")
 #: How a model came to the position: chosen from the library, fitted from history,
 #: the position class's model, copied from the product design it was built from, or a
 #: Bayesian update of a baseline with its history (backend/services/bayes_life.py).
-ROLES = ("assigned", "fitted", "class", "design", "bayesian")
+ROLES = ("assigned", "fitted", "class", "design", "bayesian", "prediction")
 MAX_LINKS_EACH = 50  # models on one position
 FIT_SCOPES = ("auto", "position", "class")
 FIT_DISTRIBUTIONS = ("weibull", "best", "lognormal", "exponential", "gamma")
@@ -350,6 +351,24 @@ def summary(model_type: str, doc) -> dict:
             return out
         params = {str(p.get("name")): p for p in r.get("params") or []}
         label = DIST_LABELS.get(dist) or r.get("distribution") or dist or "Model"
+        if kind == "regression":
+            # A covariate (e.g. proportional-hazards) model as fitted: its covariates, and the figures at the
+            # training data's averages; the stress at a position is set where it's used (an RBD block, a calculation).
+            names = [c.get("name") for c in (r.get("functions") or {}).get("covariates") or [] if c.get("name")]
+            means = r.get("at_covariate_means") or {}
+            out["kind"] = r.get("distribution") or "Covariate model"
+            out["covariates"] = names
+            out["covariate_words"] = f"covariate model, covariates: {', '.join(names)}" if names else "covariate model"
+            if means.get("mttf") is not None:
+                out["numbers"].append(_number("mean", "Mean life", means.get("mttf"), None, None, unit))
+            if means.get("b10") is not None:
+                out["numbers"].append(_number("b10", "B10 life", means.get("b10"), None, None, unit))
+            if means.get("covariates"):
+                at = ", ".join(f"{c.get('name')} {_num(c.get('value')):g}" for c in means["covariates"]
+                               if _num(c.get("value")) is not None)
+                out["numbers"].append({"id": "reference", "label": "at", "text": f"the fit's average covariates ({at})"})
+            out["quality"] = _quality(failed, "life", warning=r.get("fit_warning"))
+            return out
         if r.get("method") == "bayesian_update":
             # Posterior medians with 90% credible intervals (bayes_life.py), never confidence bounds.
             bayes = r.get("bayes") or {}
@@ -436,8 +455,34 @@ def summary(model_type: str, doc) -> dict:
         out["kind"] = f"Accelerated life ({r.get('distribution') or 'model'})"
         out["counts"] = {"failures": r.get("n_failures"), "n": r.get("n")}
         out["quality"] = _quality(r.get("n_failures"), "life")
+        # The model as fitted: its stresses, and the life at its lowest tested level (the stress at a
+        # position is set where the model is used: an RBD block, a calculation).
+        labels = [st.get("label") or st.get("column") or "" for st in r.get("stresses") or []]
+        out["covariates"] = labels
+        plain = [re.sub(r"\s*\(.*?\)", "", x).strip().lower() or x for x in labels]  # "Temperature (°C)" → "temperature"
+        out["covariate_words"] = f"accelerated life, stress: {', '.join(plain)}" if labels else "accelerated life"
+        ref = _alt_reference(r)
+        if ref:
+            lo, hi = (ref["level"].get("own") or {}).get("life_ci") or (None, None)
+            out["numbers"].append(_number("char_life", "Characteristic life", ref["level"].get("characteristic_life"),
+                                          lo, hi, unit))
+            out["numbers"].append({"id": "reference", "label": "at", "text": f"its lowest tested stress ({ref['words']})"})
         return out
     return out
+
+
+def _alt_reference(results: dict) -> dict | None:
+    """An ALT's lowest tested level, {level, stress, words}: the reference its row and plot show."""
+    levels = sorted([lvl for lvl in results.get("levels") or [] if lvl.get("stress")], key=lambda lvl: lvl["stress"])
+    if not levels:
+        return None
+    stresses = results.get("stresses") or []
+    words = []
+    for i, v in enumerate(levels[0]["stress"]):
+        st = stresses[i] if i < len(stresses) else {}
+        unit = st.get("unit") or ""
+        words.append(f"{st.get('label') or st.get('column') or 'stress'} {_num(v):g}{(' ' + unit) if unit else ''}")
+    return {"level": levels[0], "stress": levels[0]["stress"], "words": ", ".join(words)}
 
 
 def bayes_source(results: dict) -> str:
@@ -485,8 +530,15 @@ def describe(m, db, owners, hidden, links: list[dict]) -> list[dict]:
         etype = EVIDENCE_TYPE.get(link["model_type"])
         used = decisions.get((etype, link["model_id"]), []) if etype else []
         model = summary(link["model_type"], doc) if doc is not None else None
+        text = (model or {}).get("bayes_source") or source_text(link)
+        if model and model.get("covariate_words") and link.get("role") in ("assigned", "design"):
+            text = f"{text} ({model['covariate_words']})"
+        if model and link.get("role") == "prediction":
+            model = {**model, "kind": "Prediction (parts count)", "family": "life",
+                     "quality": {"word": "Predicted", "tone": "neutral",
+                                 "why": "A handbook parts count: no failure data behind it, and no bounds."}}
         out.append({**link, "model": model,
-                    "source_text": (model or {}).get("bayes_source") or source_text(link), "stale": stale(m, link),
+                    "source_text": text, "stale": stale(m, link),
                     "used_by": {"decisions": used, "rbds": rbds.get(link["model_id"], [])}})
     return out
 
@@ -527,12 +579,38 @@ def _curves(model_type: str, doc, db, owners) -> dict | None:
             return {"x": s["x"], "sf": s["sf"], "sf_lower": s.get("sf_lower"), "sf_upper": s.get("sf_upper"),
                     "hf": None, "what": "Reliability of a new unit"}
         return None
-    if model_type in ("model", "alt_model"):
+    if model_type == "alt_model":
+        # At its lowest tested level, with the Wald band: the model as fitted (a position's stress is set
+        # where the model is used).
+        ref = _alt_reference(r)
+        if not ref:
+            return None
+        from backend.services import alt as alt_service
+
+        try:
+            ev = alt_service.evaluate(db, doc.id, list(ref["stress"]), owners)
+        except Exception:  # noqa: BLE001 - no plot rather than a failed read
+            return None
+        c = ev.get("curves") or {}
+        band = (ev.get("bounds") or {}).get("band") or {}
+        out = {"x": c.get("x"), "sf": c.get("sf"), "hf": c.get("hf"), "sf_lower": None, "sf_upper": None,
+               "band": None, "what": f"Reliability at its lowest tested stress ({ref['words']})"}
+        if band.get("x") and band.get("lower") and len(band["x"]) == len(band["lower"]):
+            import numpy as np
+
+            x = np.asarray(c.get("x") or [], dtype=float)
+            if len(x):
+                out["sf_lower"] = np.interp(x, band["x"], band["lower"]).tolist()
+                out["sf_upper"] = np.interp(x, band["x"], band["upper"]).tolist()
+                out["band"] = {"kind": "confidence", "level": 0.95}
+        return out if out["x"] and out["sf"] else None
+    if model_type == "model":
         c = (r.get("functions") or {}).get("curves") or {}
         if not c.get("x") or not c.get("sf"):
             return None
         out = {"x": c["x"], "sf": c["sf"], "hf": c.get("hf"), "sf_lower": None, "sf_upper": None,
-               "what": "Reliability", "band": None}
+               "what": "Reliability at the fit's average covariates" if doc.kind == "regression" else "Reliability",
+               "band": None}
         if model_type == "model" and (doc.spec or {}).get("method") == "bayesian_update":
             # The posterior-predictive band: the credible interval on R(t) at each age (SurPyval's cri),
             # from the model rebuilt from its recipe; never confidence bounds.
@@ -611,6 +689,9 @@ def source_text(link: dict, position_name: str = "") -> str:
         return src.get("label") or f"Bayesian update of {src.get('baseline') or 'a baseline'}"
     if role == "design":
         return "From the product's design"
+    if role == "prediction":
+        env = src.get("environment_name") or src.get("environment") or ""
+        return f"Predicted from its parts list (parts count{', ' + env if env else ''})"
     return f"Assigned: {link.get('name') or 'a saved model'}"
 
 
@@ -631,7 +712,12 @@ def detail(m, db, owners, hidden, link_id: str) -> dict:
             "source_text": row["source_text"],
             "params": _params(doc) if doc is not None else [],
             "curves": _curves(link["model_type"], doc, db, owners) if doc is not None else None,
-            "origin": origin_text(link, doc), "model_notes": notes[:2000]}
+            "origin": origin_text(link, doc), "model_notes": notes[:2000],
+            # A covariate model is shown as fitted: the stress is set where it's used.
+            "stress_note": ("Shown as fitted. The stress (or covariates) at this position is set where the model is "
+                            "used: an RBD block or a calculation." if (row.get("model") or {}).get("covariate_words")
+                            else None),
+            "prediction": prediction_detail(db, owners, link) if link.get("role") == "prediction" else None}
 
 
 def link_saved(m, db, owners, hidden, position_id: str, model_type: str, model_id: str, failure_mode_ids=None,
@@ -801,3 +887,176 @@ def bayes_position(m, db, owners, hidden, position_id: str, baseline: dict | Non
     link = m.link_position_model(position_id, "model", doc.id, "bayesian", None, doc.name, note, source,
                                  replace_link_id)
     return {**link, "update": {k: result[k] for k in ("words", "posterior", "b10", "mean", "counts", "label")}}
+
+
+# ---- reliability prediction rows (the parts-count method) ---------------------------------
+#
+# A position's predicted failure rate from its parts list (Derryn, 9 Nov 2026: "failure
+# prediction in the sense of the parts/component method; this is the only place that should
+# go"): the parts listed at the position and every position inside it (replacement parts and
+# components; consumables aren't in it), or a product design's bill of materials where its
+# positions list none. Each part takes a handbook part type (MIL-HDBK-217F base rate) and a
+# quality factor; the environment is set once on the position (default: the nearest position
+# above with a prediction, else the handbook's ground fixed). The parts count itself is
+# backend/services/reliability_prediction.py. It's saved as a reliability prediction (on the
+# Predictions page, linked back to the position) and as an exponential model at its rate, so
+# the RCM, the calculators and RBDs use it like any model; the link (role prediction) names the
+# model and the prediction.
+
+PREDICTION_ROLES = ("replacement", "component")
+
+
+def _branch(m, root_id: str) -> list[tuple[str, list[str]]]:
+    """The position and every position inside it, each with its path below the root."""
+    out, stack = [], [(root_id, [])]
+    while stack:
+        pid, path = stack.pop()
+        out.append((pid, path))
+        kids = sorted([c for c in m.s.inn(m.org, pid, "PART_OF") if c["label"] == "Position" and not c.get("retired")],
+                      key=lambda c: c["name"].lower(), reverse=True)
+        stack += [(c["id"], path + [c["name"]]) for c in kids]
+    return out
+
+
+def _assigned(assign: dict | None, previous: dict, part_id, reference) -> dict:
+    a = (assign or {}).get(part_id) or (assign or {}).get(reference) or previous.get(reference) or {}
+    return a if isinstance(a, dict) else {"record_id": a}
+
+
+def prediction_lines(m, position_id: str, assign: dict | None = None, previous: dict | None = None) -> dict:
+    """The parts-count lines for a position: {lines (each with part_id), source ("parts lists" or
+    "bill of materials"), positions, warnings}. ``assign`` {part id or part number: {record_id,
+    quality_factor}} and ``previous`` (the last prediction's, by part number) give part types."""
+    from backend.services import reliability_prediction as rp
+
+    root = m._get(position_id, "Position")
+    previous = previous or {}
+    lines, warnings, n = [], [], 0
+    for pid, path in _branch(m, position_id):
+        n += 1
+        for x in m._listings_at(pid):
+            view = m._listing_view(x)
+            if view["role"] not in PREDICTION_ROLES:
+                continue
+            part = view["part"]
+            ref = part.get("part_number") or ""
+            a = _assigned(assign, previous, part["id"], ref)
+            lines.append({"part_id": part["id"], "name": part.get("name") or ref or "Part", "reference": ref,
+                          "quantity": view.get("quantity") or 1, "assembly": list(path),
+                          "record_id": a.get("record_id") or None, "quality_factor": a.get("quality_factor") or 1.0})
+    source = "parts lists"
+    if not lines and root.get("design"):
+        bom = rp.lines_from_product(m, position_id)
+        warnings += bom.get("warnings") or []
+        for ln in bom.get("lines") or []:
+            a = _assigned(assign, previous, None, ln.get("reference"))
+            lines.append({**ln, "part_id": None, "record_id": a.get("record_id") or None,
+                          "quality_factor": a.get("quality_factor") or 1.0})
+        source = "bill of materials"
+    return {"lines": lines, "source": source, "positions": n, "warnings": warnings,
+            "position": {"id": root["id"], "name": root["name"]}}
+
+
+def _prediction_links(m, position_id: str) -> list[dict]:
+    return [x for x in m.position_models(position_id) if x.get("role") == "prediction"]
+
+
+def default_environment(m, position_id: str) -> str:
+    """The environment a new prediction starts from: this position's last, else the nearest
+    position above with one, else the handbook's default."""
+    from backend.services import reliability_prediction as rp
+
+    pid = position_id
+    seen = set()
+    while pid and pid not in seen:
+        seen.add(pid)
+        for x in _prediction_links(m, pid):
+            env = (x.get("source") or {}).get("environment")
+            if env:
+                return env
+        parent = m._parent(pid)
+        pid = parent["id"] if parent and parent.get("label") == "Position" else None
+    return rp.DEFAULT_ENVIRONMENT
+
+
+def _previous_types(db, owners, m, position_id: str) -> dict:
+    """The part types the position's last prediction used, by part number."""
+    from backend.services import reliability_prediction as rp
+
+    out = {}
+    for x in _prediction_links(m, position_id):
+        doc = rp.get_prediction(db, (x.get("source") or {}).get("prediction_id") or "", owners)
+        for ln in ((doc.inputs or {}).get("lines") if doc else None) or []:
+            if ln.get("reference") and ln.get("record_id"):
+                out[ln["reference"]] = {"record_id": ln["record_id"], "quality_factor": ln.get("quality_factor") or 1.0}
+    return out
+
+
+def predict_position(m, db, owners, hidden, position_id: str, environment: str | None = None,
+                     mission_time=None, assign: dict | None = None, save: bool = False, note: str = "",
+                     replace_link_id: str | None = None, owner_id: str | None = None) -> dict:
+    """The parts count for a position: previewed (``save`` false: the lines with their part
+    types, the environment and the result), or saved as a prediction and an exponential model and
+    attached (role prediction; an earlier prediction on the position is replaced)."""
+    from backend.db import to_doc
+    from backend.schema import ReliabilityPrediction
+    from backend.services import models as models_service
+    from backend.services import reliability_prediction as rp
+
+    sv = _sv()
+    p = m._get(position_id, "Position")
+    if p.get("retired"):
+        raise sv.Invalid(f"{p['name']} has been retired: restore it first.")
+    env = environment or default_environment(m, position_id)
+    got = prediction_lines(m, position_id, assign, _previous_types(db, owners, m, position_id))
+    if not got["lines"]:
+        raise sv.Invalid(f"{p['name']} has no parts list (nor anything inside it): add the parts it's made of to its "
+                         "parts list first.")
+    raw = {"environment": env, "mission_time": mission_time, "notes": note or "",
+           "lines": [{k: v for k, v in ln.items() if k != "part_id"} for ln in got["lines"]]}
+    try:
+        inputs = rp.normalise_inputs(raw)
+        results = rp.results_for(inputs)
+    except rp.PredictionError as err:
+        raise sv.Invalid(str(err)) from None
+    preview = {**got, "environment": inputs["environment"], "mission_time": inputs["mission_time"], "results": results}
+    if not save:
+        return preview
+    rate = results.get("failure_rate_per_hour")
+    if not rate:
+        raise sv.Invalid("No part on the list has a handbook part type yet: choose one for each part (the "
+                         "others are left out), then save.")
+    owner = owner_id or m.org
+    inputs["position"] = {"id": p["id"], "name": p["name"]}
+    name = f"{p['name']}: parts count"[:200]
+    pred = ReliabilityPrediction(id=sv.new_id(), name=name, owner_id=owner, inputs=inputs, results=results)
+    db[rp.COLLECTION].insert_one(to_doc(pred))
+    env_info = results.get("environment") or {}
+    model = models_service.import_model(
+        db, owner, f"{p['name']} (predicted, parts count)"[:200], "exponential", unit="Hours",
+        params=[{"name": "failure_rate", "value": float(rate)}],
+        notes=f"A MIL-HDBK-217F parts count of {p['name']}'s parts list in {env_info.get('name') or inputs['environment']}.")
+    db.models.update_one({"_id": model.id}, {"$set": {"results.method": "parts_count",
+                                                      "results.prediction_id": pred.id}})
+    old = replace_link_id or next((x["id"] for x in _prediction_links(m, position_id)), None)
+    counts = results.get("counts") or {}
+    source = {"prediction_id": pred.id, "environment": inputs["environment"],
+              "environment_name": env_info.get("name"), "mission_time": inputs["mission_time"],
+              "rate_per_million_hours": results.get("failure_rate_per_million_hours"),
+              "mtbf_hours": results.get("mtbf_hours"), "lines": counts.get("lines"), "assigned": counts.get("assigned"),
+              "parts_source": got["source"]}
+    link = m.link_position_model(position_id, "model", model.id, "prediction", None, model.name, note, source, old)
+    return {**link, "prediction": {"id": pred.id, "results": results}}
+
+
+def prediction_detail(db, owners, link: dict) -> dict | None:
+    """The saved prediction behind a prediction row: every line's contribution, the factors and
+    the handbook, as the Predictions page shows them."""
+    from backend.services import reliability_prediction as rp
+
+    pid = (link.get("source") or {}).get("prediction_id")
+    doc = rp.get_prediction(db, pid, owners) if pid else None
+    if doc is None:
+        return None
+    return {"id": doc.id, "name": doc.name, "results": doc.results, "environment": (doc.inputs or {}).get("environment"),
+            "mission_time": (doc.inputs or {}).get("mission_time")}

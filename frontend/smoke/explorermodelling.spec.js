@@ -103,3 +103,47 @@ test("update a baseline with a position's one failure, and save it as the positi
   await expect(side(page).locator(".js-plotly-plot .legendtext", { hasText: "90% credible band" })).toHaveCount(1);
   await expectHealthy(page, problems, { label: "a Bayesian update" });
 });
+
+// An accelerated-life model attached as it is (the stress is set where it's used), and a
+// parts-count prediction row from a position's parts list.
+test("an ALT model attached as fitted, and a prediction row from the parts list", async ({ page, request, problems }) => {
+  const tag = `p${Date.now()}`;
+  const seal = await postOk(request, `${M}/positions`, { name: `ALT seal ${tag}` });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${seal.id}&tab=models`);
+  const head = await headMenu(page);
+  await head.getByRole("button", { name: "Assign a saved model…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Assign a saved model" });
+  await dialog.getByRole("radio", { name: "Accelerated life" }).click();
+  await dialog.getByRole("radio", { name: /Valve seal — Weibull ALT/ }).check();
+  await dialog.getByRole("button", { name: "Attach" }).click();
+  const alt = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Valve seal — Weibull ALT" }) });
+  await expect(alt.locator(".mt-c-source")).toContainText("(accelerated life, stress: temperature, load)");
+  await expect(alt.locator(".mt-c-numbers")).toContainText("at its lowest tested stress");
+  await alt.locator(".tp-nm").click();
+  await expect(side(page).locator(".ml-stress")).toContainText("set where the model is used");
+
+  // A controller with a capacitor on its parts list, predicted (the part type given through the API).
+  const ctl = await postOk(request, `${M}/positions`, { name: `Controller ${tag}` });
+  const part = await postOk(request, `${M}/parts`, { part_number: `C-${tag}`, name: `Bypass capacitor ${tag}` });
+  await postOk(request, `${M}/positions/${ctl.id}/parts`, { part_id: part.id, role: "component", quantity: 4 });
+  await postOk(request, `${M}/positions/${ctl.id}/models`, {
+    prediction: { environment: "GB", assign: { [`C-${tag}`]: { record_id: "mil-hdbk-217f-n2:10-1-cp-25" } } } });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${ctl.id}&tab=models`);
+  const pred = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Controller ${tag} (predicted, parts count)` }) });
+  await expect(pred.locator(".mt-c-kind")).toHaveText("Prediction (parts count)");
+  await expect(pred.locator(".mt-c-source")).toContainText("Predicted from its parts list (parts count");
+  await expect(pred.locator(".mt-c-numbers")).toContainText(/MTBF [\d,]+ hours/);
+  await expect(row(page, ctl.id).locator(".tt-rollup-t")).toHaveText("1 model");
+  await pred.locator(".tp-nm").click();
+  await expect(side(page).getByRole("link", { name: "Open in Predictions" })).toBeVisible();
+  await expect(side(page)).toContainText(`Bypass capacitor ${tag}`);
+  // Refresh the prediction…: the dialog lists the part with its part type.
+  await pred.locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menu").last().getByRole("menuitem", { name: "Refresh the prediction…" }).click();
+  const pd = page.getByRole("dialog", { name: "Refresh the prediction" });
+  await expect(pd.locator(".ml-lines tbody tr")).toHaveCount(1);
+  await expect(pd.getByRole("status")).toContainText("failures per million hours");
+  await pd.getByRole("button", { name: "Cancel" }).click();
+  await expectHealthy(page, problems, { label: "ALT and prediction rows" });
+});

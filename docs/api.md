@@ -256,7 +256,16 @@ or a new fit from its failure history (`fit: true`, Pro; `distribution`,
 `scope` `auto` (its own, else its class's pooled history), `position` or
 `class`). `failure_mode_ids` names the failure modes it describes (none: every
 failure there; a fit then counts failures by other modes as suspensions);
-`replace_link_id` swaps one model for another. `fit: true` with `baseline` or
+`replace_link_id` swaps one model for another. Accelerated-life and covariate
+models attach as they are (their stress is set where they're used, an RBD block
+or a calculation). `prediction: {environment?, mission_time?, assign?}` makes a
+parts-count prediction from the position's parts list (and those inside it; a
+product design's bill of materials where they list none), `assign` giving each
+part number a handbook `record_id` (and `quality_factor`): it's saved as a
+reliability prediction (its page links back to the position) and as an
+exponential model at its rate, and attached with role `prediction`. The app
+previews it with `POST /api/maintenance/positions/{id}/prediction`.
+`fit: true` with `baseline` or
 `trust` saves a Bayesian update instead (below). `maintenance models.unlink`
 (`link_id`) takes one off; the model stays in Models. `get.position` lists
 them (`models`). A built item takes its product design's links when it's

@@ -9,6 +9,7 @@ import {
   MODEL_COLUMNS, MODEL_TREE_HEAD, ModelCell, ModelDialogs, ModelSide, modelPhoneRow, modelRowActions, unlinkModel, useTreeModels,
 } from "../components/ModelTable.jsx";
 import BayesUpdateModal from "../components/BayesUpdateModal.jsx";
+import PredictionModal from "../components/PredictionModal.jsx";
 import { MODEL_USUAL, graftModels, isModelRow, openForModels, rollupText as modelRollup } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -1084,6 +1085,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (id === "model-open") openModel(r.key);
     else if (id === "model-page" && link.model?.path) navigate(link.model.path);
     else if (id === "model-refit") setModelModal({ kind: "fit", position, link });
+    else if (id === "model-predict") setModelModal({ kind: "predict", position, link });
     else if (id === "model-bayes") setModelModal({ kind: "bayes", position: { ...position, position_class: whole.rows.get(r.ref.position_id)?.ref.position_class || "" }, start: { modelId: link.model_id, link: link.role === "bayesian" ? link : null } });
     else if (id === "model-replace") setModelModal({ kind: "assign", position, link });
     else if (id === "model-unlink") unlinkModel(confirm, link, (text) => { say(text); setPanel(false); setRcmFocus(null); pmodels.load(); });
@@ -1102,6 +1104,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           { id: "model-attach-fit", label: "Fit from history…", ...off },
           { id: "model-attach-assign", label: "Assign a saved model…", ...off },
           { id: "model-attach-bayes", label: "Update a baseline with its history…", ...off },
+          { id: "model-attach-predict", label: "Add a prediction…", ...off },
           ...(r.ref.position_class ? [{ id: "model-attach-class", label: "Assign from class…", ...off }] : []),
         ];
         return withPin([...attach, ...designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly })], [...isolateItem(r), ...pinItem(r)]);
@@ -1738,6 +1741,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     { id: "l-assign", label: "Assign a saved model…", onSelect: () => setModelModal({ kind: "assign", position: modelPosition }), ...modelOff },
     { id: "l-bayes", label: "Update a baseline with this position's history…", ...modelOff,
       onSelect: () => setModelModal({ kind: "bayes", position: { ...modelPosition, position_class: posRow.ref.position_class || "" } }) },
+    { id: "l-predict", label: "Add a prediction…", ...modelOff,
+      title: viewOnly || "Predict its failure rate from its parts list (a parts count)",
+      onSelect: () => setModelModal({ kind: "predict", position: modelPosition }) },
     { id: "l-class", label: "Assign from class…", onSelect: () => setModelModal({ kind: "class", position: modelPosition }), ...modelOff,
       ...(posRow.ref.position_class ? {} : { disabled: true, title: "This position has no class" }) },
     !phone && { id: "l-columns", label: "Columns…", onSelect: () => setColsOpen(true) },
@@ -2056,7 +2062,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <BayesUpdateModal position={modelModal.position} start={modelModal.start || null} onClose={() => setModelModal(null)}
                           onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       )}
-      <ModelDialogs modal={modelModal?.kind === "bayes" ? null : modelModal} onClose={() => setModelModal(null)}
+      {modelModal?.kind === "predict" && (
+        <PredictionModal position={modelModal.position} link={modelModal.link || null} onClose={() => setModelModal(null)}
+                         onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
+      )}
+      <ModelDialogs modal={modelModal?.kind === "bayes" || modelModal?.kind === "predict" ? null : modelModal} onClose={() => setModelModal(null)}
                     onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       <MeasDialogs modal={measModal} onClose={() => setMeasModal(null)} onSaid={(text) => say(text)}
                    onDone={() => { setMeasModal(null); meas.load(); }} />
