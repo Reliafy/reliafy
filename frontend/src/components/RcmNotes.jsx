@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Section from "./ui/Section.jsx";
 import Field from "./ui/Field.jsx";
 import { TextArea } from "./ui/Controls.jsx";
-import ClampLines from "./ui/ClampLines.jsx";
 import { renderBasisMarkdown } from "../basisMarkdown.js";
 import { FUNCTION_NOTES_HINT, checkNotes, notesChanged, notesCount, notesLimit, notesOf, notesPrompt } from "../rcmNotes.js";
 import "./OperatingContextCard.css";
@@ -27,7 +26,7 @@ import "./OperatingContextCard.css";
 // section. `openToken` changes when the notes are asked for in full (a
 // decision's linked notes clicked): they unfold.
 
-// A function's notes as Markdown, folded to about six lines with Show all.
+// A row's notes as Markdown, folded to about six lines with Show all.
 function MarkdownClamp({ text, openToken }) {
   const html = useMemo(() => renderBasisMarkdown(text), [text]);
   const box = useRef(null);
@@ -140,8 +139,9 @@ export default function RcmNotes({ r, readOnly = false, onSave, openToken = null
     // its tooltip and the box's placeholder); read-only, a quiet "None".
     body = readOnly ? <p className="td-quiet rw-notes-none">None</p> : null;
   } else {
-    body = fn ? <MarkdownClamp text={text} openToken={openToken} />
-      : <ClampLines text={text} lines={6} what="the notes" textClassName="td-ctx-text" />;
+    // Every level's notes read as Markdown, folded or open (a bold-led paragraph,
+    // "**Why this interval.** …", reads as text in the folded view too; line breaks kept).
+    body = <MarkdownClamp text={text} openToken={fn ? openToken : null} />;
   }
 
   return (
