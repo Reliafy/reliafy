@@ -175,79 +175,130 @@ def _optimal_on_condition(pf, onset, inspection, found, failed, p) -> float:
     return min(candidates, key=lambda tau: rate(math.log(tau)))
 
 
+def _given(*values) -> bool:
+    return any(v not in (None, "") for v in values)
+
+
+def _as_unit(days: float, unit: Optional[str]) -> dict:
+    """``days`` rounded down for the task: in ``unit`` when one is asked for, else the unit that reads best."""
+    if not unit:
+        return nice_interval(days)
+    key = _time_unit(unit, "result")
+    value = _floor_value(days / DAYS_IN[key])
+    return {"value": value, "unit": TASK_UNIT[key], "days": value * DAYS_IN[key]}
+
+
 def on_condition_interval(pf_interval=None, pf_unit=None, onset_rate=None, inspection_cost=None, found_cost=None,
                           failure_cost=None, detection_probability=1.0, unit: Optional[str] = None,
-                          current_interval=None, current_unit: Optional[str] = None) -> dict:
-    """The cheapest interval between checks for a warning sign that comes a P-F
-    interval before the failure. ``onset_rate``: warnings (failures, if nothing is
-    done) per year; the costs: one check, acting on a warning found (the planned
-    fix), and a failure (the unplanned one). ``unit``: the unit to answer in (by
-    default the one that reads best). ``current_interval`` (in ``current_unit``):
-    the task's interval now, to compare."""
+                          current_interval=None, current_unit: Optional[str] = None, act_time=None) -> dict:
+    """How often to check for a warning sign that comes a P-F interval before the
+    failure.
+
+    The P-F interval alone gives the answer: check at least every half P-F interval
+    (the standard rule), or every net P-F interval (the P-F interval less
+    ``act_time``, the time needed to act on a warning, in ``pf_unit``) when that's
+    tighter. Costs never change the P-F interval; they only say whether the check
+    pays for itself. With all three (a check, acting on a warning found, a failure)
+    and ``onset_rate`` (failures a year if nothing is done), ``cost_optimal`` adds
+    the cheapest interval (RePyability's ``optimal_on_condition_interval``) and the
+    cost a year against letting it fail. ``unit``: answer in this unit (default the
+    one that reads best). ``current_interval`` (in ``current_unit``): the task's
+    interval now, to compare."""
     pf = _number(pf_interval, "P-F interval", positive=True)
     pf_key = _time_unit(pf_unit, "P-F interval")
-    onset = _number(onset_rate, "onset rate (failures a year)", positive=True)
-    inspection = _number(inspection_cost, "cost of a check", positive=True)
-    found = _number(found_cost, "cost when a warning is found")
-    failed = _number(failure_cost, "cost of a failure")
-    p = _number(detection_probability if detection_probability is not None else 1.0,
+    act = _number(act_time, "time needed to act", allow_none=True) or 0.0
+    if act >= pf:
+        raise IntervalError("The time needed to act must be shorter than the P-F interval: otherwise no check can "
+                            "find the warning in time.")
+    p = _number(detection_probability if detection_probability not in (None, "") else 1.0,
                 "chance a check finds the warning", positive=True)
     if p > 1:
         raise IntervalError("The chance a check finds the warning is at most 1 (100%).")
-    if failed <= found:
-        raise IntervalError("The cost of a failure must be more than the cost of fixing a warning found in time: "
-                            "otherwise checking can't pay.")
+    priced = _given(inspection_cost, found_cost, failure_cost)
+    onset = _number(onset_rate, "onset rate (failures a year)", positive=True, allow_none=True)
+    if priced:
+        inspection = _number(inspection_cost, "cost of a check", positive=True)
+        found = _number(found_cost, "cost when a warning is found")
+        failed = _number(failure_cost, "cost of a failure")
+        if onset is None:
+            raise IntervalError("The cost-optimal interval needs the failures a year if nothing is done (the onset "
+                                "rate). Leave the costs out for the interval from the P-F interval alone.")
+        if failed <= found:
+            raise IntervalError("The cost of a failure must be more than the cost of fixing a warning found in time: "
+                                "otherwise checking can't pay.")
 
-    pf_days = pf * DAYS_IN[pf_key]
-    per_day = onset / DAYS_A_YEAR
-    best_days = _optimal_on_condition(pf_days, per_day, inspection, found, failed, p)
-    rtf = onset * failed
-    rule = pf_days / 2
+    day = DAYS_IN[pf_key]
+    pf_days, act_days = pf * day, act * day
+    half, net = pf_days / 2, pf_days - act_days
+    by_net = net < half
+    rule_days = net if by_net else half
+    nice = _as_unit(rule_days, unit)
+    shown_key = normalize_unit(nice["unit"])
+    at = 1.0 - _miss_fixed(pf_days, nice["days"], p)
     out = {
         "kind": "on_condition_interval",
-        "pf_interval": pf, "pf_unit": TASK_UNIT[pf_key], "onset_rate": onset, "inspection_cost": inspection,
-        "found_cost": found, "failure_cost": failed, "detection_probability": p,
-        "run_to_failure_cost_rate": rtf,
-        "explanation": ("A failure gives a warning a while before it happens (the P-F interval). Check too often and "
-                        "the checks cost more than they save; too rarely and warnings are missed and become failures. "
-                        "This finds the interval with the lowest cost a year, checks, planned fixes and failures together."),
-    }
-    if not math.isfinite(best_days):
-        out |= {"worth_it": False, "interval": None, "unit": unit or TASK_UNIT[pf_key], "recommended": None,
-                "cost_rate": rtf,
-                "summary": (f"Checking never pays at these prices: failures cost about ${fmt_num(rtf)} a year, "
-                            "less than any schedule of checks.")}
-        return out
-    shown = _result_unit(unit, best_days)
-    nice = nice_interval(best_days) if not unit else {
-        "value": _floor_value(best_days / shown["days"]), "unit": shown["unit"]}
-    nice["days"] = nice["value"] * DAYS_IN[normalize_unit(nice["unit"])]
-    best = _on_condition_numbers(pf_days, best_days, p, per_day, inspection, found, failed)
-    at = _on_condition_numbers(pf_days, nice["days"], p, per_day, inspection, found, failed)
-    rule_nice = nice_interval(rule)
-    out |= {
-        "worth_it": best["cost_rate"] * DAYS_A_YEAR < rtf,
-        "unit": nice["unit"],
-        "interval": best_days / DAYS_IN[normalize_unit(nice["unit"])],
+        "pf_interval": pf, "pf_unit": TASK_UNIT[pf_key], "act_time": act or None, "detection_probability": p,
+        "onset_rate": onset,
+        "basis": "net_pf" if by_net else "half_pf",
+        "unit": nice["unit"], "interval": rule_days / DAYS_IN[shown_key],
         "recommended": {"value": nice["value"], "unit": nice["unit"]},
-        "detection_probability_at_best": best["detection_probability"],
-        "cost_rate": best["cost_rate"] * DAYS_A_YEAR,
-        "at_recommended": {"detection_probability": at["detection_probability"],
-                           "failures_per_year": at["failure_rate"] * DAYS_A_YEAR,
-                           "cost_rate": at["cost_rate"] * DAYS_A_YEAR},
-        "rule_of_thumb": {"value": rule / DAYS_IN[normalize_unit(nice["unit"])], "unit": nice["unit"],
-                          "nice": rule_nice and {"value": rule_nice["value"], "unit": rule_nice["unit"]},
+        "at_recommended": {"detection_probability": at,
+                           "failures_per_year": None if onset is None else onset * (1 - at)},
+        "rule_of_thumb": {"value": half / DAYS_IN[shown_key], "unit": nice["unit"],
                           "text": f"Rule of thumb: check at least every half P-F interval, {_with_unit(pf / 2, TASK_UNIT[pf_key])}."},
+        "explanation": ("A failure gives a warning a while before it happens: the P-F interval. Checks at least every "
+                        "half P-F interval find the warning with time to act; when acting takes longer, the net P-F "
+                        "interval (the P-F interval less the time needed to act) is the limit. Costs only matter for "
+                        "whether the check pays for itself, not for the P-F interval."),
+        "cost_optimal": None,
     }
+    why = (f"the net P-F interval ({_with_unit(pf - act, TASK_UNIT[pf_key])}: {_with_unit(pf, TASK_UNIT[pf_key])} less "
+           f"{_with_unit(act, TASK_UNIT[pf_key])} to act)" if by_net else
+           f"half the P-F interval of {_with_unit(pf, TASK_UNIT[pf_key])}")
+    out["summary"] = f"Check every {_with_unit(nice['value'], nice['unit'])}: {why}."
+    if p < 1:
+        out["summary"] += f" A check that finds {p:.0%} of warnings finds {at:.0%} of them in time at that interval."
+    if priced:
+        per_day = onset / DAYS_A_YEAR
+        rtf = onset * failed
+        best_days = _optimal_on_condition(pf_days, per_day, inspection, found, failed, p)
+        here = _on_condition_numbers(pf_days, nice["days"], p, per_day, inspection, found, failed)
+        out["at_recommended"]["cost_rate"] = here["cost_rate"] * DAYS_A_YEAR
+        out |= {"inspection_cost": inspection, "found_cost": found, "failure_cost": failed,
+                "run_to_failure_cost_rate": rtf}
+        if math.isfinite(best_days):
+            best = _on_condition_numbers(pf_days, best_days, p, per_day, inspection, found, failed)
+            cheap = _as_unit(best_days, unit)
+            cheap_at = _on_condition_numbers(pf_days, cheap["days"], p, per_day, inspection, found, failed)
+            out["cost_optimal"] = {
+                "interval": best_days / DAYS_IN[normalize_unit(cheap["unit"])], "unit": cheap["unit"],
+                "recommended": {"value": cheap["value"], "unit": cheap["unit"]},
+                "cost_rate": best["cost_rate"] * DAYS_A_YEAR,
+                "at_recommended": {"cost_rate": cheap_at["cost_rate"] * DAYS_A_YEAR,
+                                   "detection_probability": cheap_at["detection_probability"]},
+                "worth_it": best["cost_rate"] * DAYS_A_YEAR < rtf,
+            }
+            worth = out["cost_optimal"]["worth_it"]
+        else:
+            worth = False
+        out["worth_it"] = here["cost_rate"] * DAYS_A_YEAR < rtf
+        out["summary"] += (f" At these prices it costs about ${fmt_num(out['at_recommended']['cost_rate'])} a year, "
+                           f"against ${fmt_num(rtf)} a year letting it fail: "
+                           + ("the check pays for itself." if out["worth_it"] else "the check costs more than the failures it prevents."))
+        if out["cost_optimal"] and worth:
+            c = out["cost_optimal"]
+            out["summary"] += (f" The cheapest interval is {_with_unit(c['recommended']['value'], c['unit'])} "
+                               f"(about ${fmt_num(c['at_recommended']['cost_rate'])} a year).")
     if current_interval not in (None, ""):
         cur = _number(current_interval, "task's interval now", positive=True)
         cur_days = cur * DAYS_IN[_time_unit(current_unit, "task's interval now")]
-        now = _on_condition_numbers(pf_days, cur_days, p, per_day, inspection, found, failed)
-        out["current"] = {"value": cur, "unit": current_unit, "detection_probability": now["detection_probability"],
-                          "cost_rate": now["cost_rate"] * DAYS_A_YEAR}
-    out["summary"] = (f"Check every {_with_unit(nice['value'], nice['unit'])}: about ${fmt_num(out['at_recommended']['cost_rate'])} "
-                      f"a year, against ${fmt_num(rtf)} a year letting it fail. "
-                      f"It finds {at['detection_probability']:.0%} of warnings in time.")
+        now = {"value": cur, "unit": current_unit,
+               "detection_probability": 1.0 - _miss_fixed(pf_days, cur_days, p),
+               "within": cur_days <= rule_days * 1.0001}
+        if priced:
+            now["cost_rate"] = _on_condition_numbers(pf_days, cur_days, p, onset / DAYS_A_YEAR, inspection, found,
+                                                     failed)["cost_rate"] * DAYS_A_YEAR
+        out["current"] = now
     return out
 
 
@@ -423,11 +474,22 @@ def failure_finding_interval(failure_rate=None, distribution_id: Optional[str] =
         "at_recommended": at,
         "explanation": ("A protective device can fail without anyone knowing; only a test shows it. The longer between "
                         "tests, the likelier it's already failed when it's needed (its unavailability). "
-                        + ("This finds the longest interval that keeps that chance within the target."
+                        + ("This finds the longest interval that keeps that chance within the target; costs are "
+                           "optional and only add the cheapest interval."
                            if target is not None else
                            "This finds the interval with the lowest cost a year: tests, repairs and demands met by a "
                            "failed device.")),
     }
+    # With a target and the costs a cheapest interval needs, that one too (costs never move the target's).
+    out["cost_optimal"] = None
+    if target is not None and test > 0 and consequence > 0 and demand:
+        cheap_days = _optimal_ff(model, None, test, repair, per_unit, consequence) * unit_days
+        cheap = _as_unit(cheap_days, unit)
+        cheap_at = numbers(cheap["days"])
+        out["cost_optimal"] = {"interval": cheap_days / DAYS_IN[normalize_unit(cheap["unit"])], "unit": cheap["unit"],
+                               "recommended": {"value": cheap["value"], "unit": cheap["unit"]},
+                               "at_recommended": cheap_at,
+                               "meets_target": cheap_at["mean_unavailability"] <= target + 1e-12}
     if current_interval not in (None, ""):
         cur = _number(current_interval, "task's interval now", positive=True)
         cur_days = cur * DAYS_IN[_time_unit(current_unit, "task's interval now")]
@@ -438,6 +500,11 @@ def failure_finding_interval(failure_rate=None, distribution_id: Optional[str] =
         out["summary"] = (f"Test every {_with_unit(nice['value'], nice['unit'])}: the device is failed when needed "
                           f"{_pct(at['mean_unavailability'])} of the time, within the {_pct(target)} target. "
                           f"The longest interval that meets it is {_with_unit(out['interval'], nice['unit'])}.")
+        c = out["cost_optimal"]
+        if c:
+            out["summary"] += (f" The cheapest is {_with_unit(c['recommended']['value'], c['unit'])} "
+                               f"(about ${fmt_num(c['at_recommended']['cost_rate'])} a year), which "
+                               + ("also meets the target." if c["meets_target"] else "misses the target."))
     else:
         out["summary"] = (f"Test every {_with_unit(nice['value'], nice['unit'])}: about ${fmt_num(at['cost_rate'])} a "
                           f"year, the device failed when needed {_pct(at['mean_unavailability'])} of the time.")

@@ -216,18 +216,20 @@ it in the function's `modes`. `products.add_sample` adds the sample
 quadcopter product, its design fully scored (on Products, not in the asset
 tree).
 
-How often to do a task: `maintenance rcm.interval_on_condition` (the P-F
-calculator: `pf_interval` with `pf_unit`, `onset_rate` failures a year,
-`inspection_cost`, `found_cost`, `failure_cost`, optional
-`detection_probability`) gives the cheapest interval between checks beside the
-rule of thumb of half the P-F interval; `maintenance rcm.interval_failure_finding`
-(a protective device's `failure_rate` a year, a `model_id`, or
-`distribution_id` + `params` + `model_unit`; `target_unavailability`, or the
-costs `test_cost`, `repair_cost`, `demand_rate`, `consequence_cost`) gives the
-longest test interval that meets the target, or the cheapest. Both take
-`current_interval` and `current_unit` for the task's numbers now, answer with
-`recommended` rounded down to hours, days, weeks, months or years, and are free
-on every plan. The fixed-interval one is `analyse optimal_replacement`. The
+How often to do a task: `maintenance rcm.interval_on_condition` needs only
+the P-F interval (`pf_interval` with `pf_unit`): it answers half the P-F
+interval, or the net P-F interval (less `act_time`, the time needed to act)
+when that's tighter. Costs are optional and never change it: with
+`inspection_cost`, `found_cost`, `failure_cost` and `onset_rate` (failures a
+year), `cost_optimal` adds the cheapest interval and whether the check pays.
+`maintenance rcm.interval_failure_finding` (a protective device's
+`failure_rate` a year, a `model_id`, or `distribution_id` + `params` +
+`model_unit`) gives the longest test interval that meets
+`target_unavailability`; the costs `test_cost`, `repair_cost`, `demand_rate`,
+`consequence_cost` are optional and add `cost_optimal` (alone, they give the
+cheapest). Both take `current_interval` and `current_unit` for the task's
+numbers now, answer with `recommended` rounded down to hours, days, weeks,
+months or years, and are free on every plan. The fixed-interval one is `analyse optimal_replacement`. The
 app's own routes are `POST /api/maintenance/rcm/interval/on-condition` and
 `/failure-finding`; a saved strategy analysis of kind `on_condition_interval`
 or `failure_finding_interval` stands as an on-condition or failure-finding
@@ -235,8 +237,7 @@ decision's evidence (contradicted when the task's interval is longer than the
 P-F interval, or than the longest that meets the target).
 
 ```bash
-reliafy maintenance rcm.interval_on_condition --pf-interval 10 --pf-unit weeks \
-    --onset-rate 0.5 --inspection-cost 20 --found-cost 200 --failure-cost 2000
+reliafy maintenance rcm.interval_on_condition --pf-interval 10 --pf-unit weeks --act-time 1
 reliafy maintenance rcm.interval_failure_finding --failure-rate 0.1 --target-unavailability 0.01
 ```
 

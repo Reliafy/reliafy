@@ -174,12 +174,15 @@ functional failure yet (no_functional_failure), and which functions, performance
 functional failures have nothing under them. Whole workspace by default; target_id narrows it to a branch.
 - Working out the interval (exact, free; the app's task card has a Calculate… link for each). On condition: \
 maintenance rcm.interval_on_condition: the P-F interval (how long from the first detectable sign to the failure) \
-with its unit, failures a year, the cost of a check, of fixing a warning found and of a failure: the cheapest \
-interval, beside the rule of thumb of half the P-F interval. Failure finding: maintenance \
-rcm.interval_failure_finding: the device's failure rate a year (or a model) and a target unavailability (the \
-chance it's failed when needed; 1% is a common starting point for safety, say it's assumed), or the costs: the \
-longest interval that meets it, and with current_interval the task's numbers now. Fixed interval: the core \
-analyse tool's optimal_replacement (a non-repairable model, planned and unplanned costs), in the model's unit. \
+with its unit is enough: check every half P-F interval, or every net P-F interval (less act_time, the time \
+needed to act) when tighter. Costs never change that; with the cost of a check, of fixing a warning found and \
+of a failure, plus failures a year, cost_optimal adds the cheapest interval and whether the check pays (operational \
+and non-operational only: on safety or environmental, leave costs out, the task must make the risk tolerable \
+whatever it costs). Failure finding: maintenance rcm.interval_failure_finding: the device's failure rate a year \
+(or a model) and a target unavailability (the chance it's failed when needed; 1% is a common starting point for \
+safety, say it's assumed) give the longest interval that meets it; costs are optional and add the cheapest; \
+current_interval gives the task's numbers now. Fixed interval: the core analyse tool's optimal_replacement (a \
+non-repairable model, planned and unplanned costs), in the model's unit. \
 Then set the task's interval (maintenance tasks.update), add one line on how it was worked out to the failure \
 mode's notes and rationale (failure_modes.update notes: the current notes with the line at the end), and tell \
 the user. recommended is rounded down \

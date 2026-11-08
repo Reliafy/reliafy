@@ -514,7 +514,10 @@ def test_maintenance_rcm_interval_calculators_over_rest(maint):
         "pf_interval": 30, "pf_unit": "days", "onset_rate": 365.25 / 400, "inspection_cost": 20, "found_cost": 300,
         "failure_cost": 5000})
     assert r.status_code == 200, r.text
-    assert r.json()["recommended"] == {"value": 4, "unit": "weeks"}
+    assert r.json()["recommended"] == {"value": 2, "unit": "weeks"}  # half the P-F interval
+    assert r.json()["cost_optimal"]["recommended"] == {"value": 4, "unit": "weeks"}
+    r = maint.post("/api/v1/maintenance/rcm.interval_on_condition", {"pf_interval": 30, "pf_unit": "days"})
+    assert r.status_code == 200 and r.json()["cost_optimal"] is None, r.text
     r = maint.post("/api/v1/maintenance/rcm.interval_failure_finding", {
         "failure_rate": 0.001, "target_unavailability": 0.001})
     assert r.status_code == 200 and r.json()["recommended"] == {"value": 2, "unit": "years"}, r.text

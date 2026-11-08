@@ -37,20 +37,42 @@ def test_nice_interval_rounds_down_into_a_scheduling_unit(days, value, unit):
 
 # ---- on condition (the P-F calculator) -----------------------------------------------
 
-def test_on_condition_worked_example():
-    """RePyability's example: a warning 30 days before failure, one failure in 400 days, a
-    check $20, a fix in time $300, a failure $5,000: the cheapest interval is the P-F interval."""
+def test_on_condition_from_the_pf_interval_alone():
+    """No costs, no onset rate: the P-F interval alone gives the answer, half of it."""
+    r = ri.on_condition_interval(30, "days")
+    assert r["basis"] == "half_pf" and r["recommended"] == {"value": 2, "unit": "weeks"}
+    assert r["interval"] * 7 == pytest.approx(15.0)
+    assert r["cost_optimal"] is None and "worth_it" not in r and r["onset_rate"] is None
+    assert r["at_recommended"]["detection_probability"] == pytest.approx(1.0)
+    assert r["summary"] == "Check every 2 weeks: half the P-F interval of 30 days."
+    assert "Costs only matter for whether the check pays for itself" in r["explanation"]
+
+
+def test_on_condition_net_pf_when_acting_takes_longer():
+    """Ten weeks' warning, eight needed to act (order the part, plan the shut): the net P-F, 2 weeks, is tighter."""
+    r = ri.on_condition_interval(10, "weeks", act_time=8)
+    assert r["basis"] == "net_pf" and r["recommended"] == {"value": 2, "unit": "weeks"}
+    assert "net P-F interval (2 weeks: 10 weeks less 8 weeks to act)" in r["summary"]
+    # Acting quickly: half the P-F interval stays the limit.
+    assert ri.on_condition_interval(10, "weeks", act_time=1)["basis"] == "half_pf"
+    with pytest.raises(IntervalError, match="shorter than the P-F interval"):
+        ri.on_condition_interval(10, "weeks", act_time=10)
+
+
+def test_on_condition_with_costs_adds_the_cost_optimal_interval():
+    """RePyability's example: a warning 30 days before failure, one failure in 400 days, a check
+    $20, a fix in time $300, a failure $5,000: the cheapest interval is the whole P-F interval,
+    but the answer stays half of it; the costs only add the cheapest and whether checking pays."""
     r = ri.on_condition_interval(30, "days", ONSET_400_DAYS, 20, 300, 5000)
-    assert r["recommended"] == {"value": 4, "unit": "weeks"}
-    assert r["interval"] * 7 == pytest.approx(30.0, rel=1e-6)
-    assert r["detection_probability_at_best"] == pytest.approx(1.0)
-    # The cost a year at the best: checks every 30 days plus the planned fixes.
-    assert r["cost_rate"] == pytest.approx(20 / 30 * 365.25 + ONSET_400_DAYS * 300, rel=1e-6)
+    assert r["recommended"] == {"value": 2, "unit": "weeks"}
+    c = r["cost_optimal"]
+    assert c["interval"] * 7 == pytest.approx(30.0, rel=1e-6) and c["recommended"] == {"value": 4, "unit": "weeks"}
+    assert c["cost_rate"] == pytest.approx(20 / 30 * 365.25 + ONSET_400_DAYS * 300, rel=1e-6)
+    assert c["worth_it"] is True and r["worth_it"] is True
     assert r["run_to_failure_cost_rate"] == pytest.approx(ONSET_400_DAYS * 5000)
-    assert r["worth_it"] is True
+    assert r["at_recommended"]["cost_rate"] == pytest.approx(20 / 14 * 365.25 + ONSET_400_DAYS * 300, rel=1e-6)
     assert "half P-F interval, 15 days" in r["rule_of_thumb"]["text"]
-    assert r["summary"].startswith("Check every 4 weeks")
-    assert r["explanation"].startswith("A failure gives a warning")
+    assert "the check pays for itself" in r["summary"] and "The cheapest interval is 4 weeks" in r["summary"]
 
 
 def test_on_condition_matches_repyability_called_directly():
@@ -58,7 +80,7 @@ def test_on_condition_matches_repyability_called_directly():
     if fn is None:
         pytest.skip("this RePyability doesn't have optimal_on_condition_interval yet (the port runs)")
     for pf, unit, onset, costs, p in [(10, "weeks", 0.5, (20, 200, 2000), 1.0), (6, "months", 2.0, (150, 400, 9000), 0.8)]:
-        mine = ri.on_condition_interval(pf, unit, onset, *costs, detection_probability=p)
+        mine = ri.on_condition_interval(pf, unit, onset, *costs, detection_probability=p)["cost_optimal"]
         theirs = fn(pf * ri.DAYS_IN[unit[:-1]], onset_rate=onset / 365.25, inspection_cost=costs[0],
                     found_cost=costs[1], failure_cost=costs[2], detection_probability=p)
         assert mine["interval"] * ri.DAYS_IN[mine["unit"][:-1]] == pytest.approx(theirs.interval, rel=1e-6)
@@ -71,18 +93,19 @@ def test_on_condition_port_gives_the_same_numbers(monkeypatch):
     live = ri.on_condition_interval(*args, current_interval=1, current_unit="months")
     monkeypatch.setattr(ri, "_repy_maintenance", None)
     port = ri.on_condition_interval(*args, current_interval=1, current_unit="months")
-    assert port["interval"] == pytest.approx(live["interval"], rel=1e-6)
+    assert port["cost_optimal"]["interval"] == pytest.approx(live["cost_optimal"]["interval"], rel=1e-6)
     assert port["current"]["cost_rate"] == pytest.approx(live["current"]["cost_rate"], rel=1e-9)
 
 
 def test_on_condition_current_interval_and_an_unworthy_check():
     r = ri.on_condition_interval(10, "weeks", 0.5, 20, 200, 2000, current_interval=1, current_unit="months")
-    assert r["current"]["detection_probability"] == pytest.approx(1.0)
+    assert r["current"]["detection_probability"] == pytest.approx(1.0) and r["current"]["within"] is True
     assert r["current"]["cost_rate"] == pytest.approx(20 * 12 + 0.5 * 200, rel=1e-9)
-    # Checks dearer than the failures they prevent: never pays.
+    assert ri.on_condition_interval(10, "weeks", current_interval=3, current_unit="months")["current"]["within"] is False
+    # Checks dearer than the failures they prevent: the interval still stands, it just doesn't pay.
     never = ri.on_condition_interval(1, "days", 0.01, 500, 10, 20)
-    assert never["recommended"] is None and never["worth_it"] is False
-    assert "never pays" in never["summary"]
+    assert never["recommended"] and never["worth_it"] is False and never["cost_optimal"] is None
+    assert "costs more than the failures it prevents" in never["summary"]
 
 
 @pytest.mark.parametrize("kwargs, words", [
@@ -92,6 +115,8 @@ def test_on_condition_current_interval_and_an_unworthy_check():
     ({"onset_rate": 0}, "more than 0"),
     ({"pf_interval": "ten"}, "must be a number"),
     ({"inspection_cost": None}, "Enter the cost of a check"),
+    ({"onset_rate": None}, "needs the failures a year"),
+    ({"pf_interval": None}, "Enter the P-F interval"),
 ])
 def test_on_condition_refusals_say_what_to_change(kwargs, words):
     base = {"pf_interval": 10, "pf_unit": "weeks", "onset_rate": 0.5, "inspection_cost": 20, "found_cost": 200,
@@ -121,6 +146,17 @@ def test_failure_finding_yours_against_the_longest_that_meets_the_target():
     assert r["current"]["meets_target"] is False
     assert r["recommended"] == {"value": 2, "unit": "months"} and r["at_recommended"]["mean_unavailability"] < 0.01
     assert "within the 1% target" in r["summary"]
+
+
+def test_failure_finding_target_alone_and_costs_add_the_cheapest():
+    alone = ri.failure_finding_interval(failure_rate=0.1, target_unavailability=0.01)
+    assert alone["cost_optimal"] is None and alone["at_recommended"]["cost_rate"] is None
+    priced = ri.failure_finding_interval(failure_rate=0.1, target_unavailability=0.01, test_cost=50, demand_rate=0.5,
+                                         consequence_cost=100_000)
+    assert priced["recommended"] == alone["recommended"]  # costs never move the target's interval
+    cheap = ri.failure_finding_interval(failure_rate=0.1, test_cost=50, demand_rate=0.5, consequence_cost=100_000)
+    assert priced["cost_optimal"]["interval"] == pytest.approx(cheap["interval"], rel=1e-9)
+    assert priced["cost_optimal"]["meets_target"] is True and "The cheapest is 7 weeks" in priced["summary"]
 
 
 def test_failure_finding_matches_repyability_called_directly():
@@ -193,7 +229,10 @@ def test_on_condition_route_and_its_refusal(api):
         "pf_interval": 10, "pf_unit": "weeks", "onset_rate": 0.5, "inspection_cost": 20, "found_cost": 200,
         "failure_cost": 2000})
     assert r.status_code == 200, r.text
-    assert r.json()["recommended"] == {"value": 2, "unit": "months"}
+    assert r.json()["recommended"] == {"value": 5, "unit": "weeks"}
+    assert r.json()["cost_optimal"]["recommended"] == {"value": 2, "unit": "months"}
+    alone = api.post(f"{M}/rcm/interval/on-condition", json={"pf_interval": 10, "pf_unit": "weeks"})
+    assert alone.status_code == 200 and alone.json()["recommended"] == {"value": 5, "unit": "weeks"}
     bad = api.post(f"{M}/rcm/interval/on-condition", json={
         "pf_interval": 10, "pf_unit": "weeks", "onset_rate": 0.5, "inspection_cost": 20, "found_cost": 200,
         "failure_cost": 100})
@@ -219,15 +258,14 @@ def test_failure_finding_route_with_a_saved_model(api):
 def test_a_saved_calculation_evidences_the_decision_and_the_notes_keep_the_rationale(api):
     mode_id, decision = _mode(api)
     assert decision["status"] == "unevidenced"
-    inputs = {"pf_interval": 10, "pf_unit": "weeks", "onset_rate": 0.5, "inspection_cost": 20, "found_cost": 200,
-              "failure_cost": 2000}
+    inputs = {"pf_interval": 10, "pf_unit": "weeks"}
     calc = api.post(f"{M}/rcm/interval/on-condition", json=inputs).json()
     rec = calc["recommended"]
-    # Use 2 months: the task's interval, the saved calculation in the same unit, linked as evidence.
+    # Use 5 weeks: the task's interval, the saved calculation in the same unit, linked as evidence.
     api.patch(f"{M}/tasks/{decision['task_id']}", json={"interval": rec["value"], "unit": rec["unit"]})
     saved = api.post("/api/strategy/analyses", json={"name": "Seal leaks: check interval", "kind": "on_condition_interval",
                                                      "inputs": {**inputs, "unit": rec["unit"]}}).json()
-    assert saved["headline"] == "Check every 2 months"
+    assert saved["headline"] == "Check every 5 weeks"
     assert saved["results"]["recommended"] == rec  # recomputed on the server, never the client's
     mode = api.get(f"{M}/positions/{_position_of(api, mode_id)}/rcm?scope=this").json()
     current = _decision_in(mode, mode_id)
@@ -236,15 +274,15 @@ def test_a_saved_calculation_evidences_the_decision_and_the_notes_keep_the_ratio
     r = api.put(f"{M}/failure-modes/{mode_id}/decision", json={"decision": body})
     assert r.status_code == 200, r.text
     d = r.json()["decision"]
-    assert d["status"] == "supported" and d["summary"].startswith("Check every 2 months")
+    assert d["status"] == "supported" and d["summary"].startswith("Check every 5 weeks")
     assert d["artifact_link_path"] == f"/strategy/analyses/{saved['id']}"
     # A task further apart than the P-F interval is contradicted by the same calculation.
-    api.patch(f"{M}/tasks/{decision['task_id']}", json={"interval": 4, "unit": "months"})
+    api.patch(f"{M}/tasks/{decision['task_id']}", json={"interval": 12, "unit": "weeks"})
     later = _decision_in(api.get(f"{M}/positions/{_position_of(api, mode_id)}/rcm?scope=this").json(), mode_id)
-    assert later["status"] == "contradicted" and "longer than the P-F interval" in later["summary"]
+    assert later["status"] == "contradicted" and "longer than the (net) P-F interval" in later["summary"]
     # The rationale paragraph appended to the mode's notes and rationale.
     api.patch(f"{M}/failure-modes/{mode_id}", json={"notes": "Seal weeps first."})
-    line = "Interval from the P-F calculator (9 Nov 2026): P-F 10 weeks, onset 0.5/year → 2 months."
+    line = "Interval from the P-F calculator (9 Nov 2026): P-F 10 weeks → 5 weeks (half the P-F interval)."
     r = api.patch(f"{M}/failure-modes/{mode_id}", json={"notes": f"Seal weeps first.\n\n{line}"})
     assert r.status_code == 200, r.text
     again = _decision_in(api.get(f"{M}/positions/{_position_of(api, mode_id)}/rcm?scope=this").json(), mode_id,

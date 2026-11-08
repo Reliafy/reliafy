@@ -28,7 +28,7 @@ KINDS = ("optimal_replacement", "compare_two", "failure_finding", "demonstration
 # The RCM interval calculators' inputs (backend/services/rcm_intervals.py), as saved.
 ON_CONDITION_INPUTS = (
     "pf_interval", "pf_unit", "onset_rate", "inspection_cost", "found_cost", "failure_cost",
-    "detection_probability", "unit", "current_interval", "current_unit",
+    "detection_probability", "unit", "current_interval", "current_unit", "act_time",
 )
 FAILURE_FINDING_INPUTS = (
     "failure_rate", "distribution_id", "params", "model_unit", "extras", "target_unavailability", "test_cost",

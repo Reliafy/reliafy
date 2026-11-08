@@ -760,22 +760,23 @@ ATTACHMENTS: Table = {
 # How often to do an RCM task: exact calculators, free on every plan. The fixed-interval
 # one is the analyse tool's optimal_replacement.
 RCM: Table = {
-    "interval_on_condition": ("pf_interval pf_unit onset_rate inspection_cost found_cost failure_cost",
-                              "detection_probability unit current_interval current_unit", """The P-F
-        calculator: the cheapest interval between checks for a warning sign that comes pf_interval (in pf_unit:
-        hours, days, weeks, months or years) before the failure. onset_rate: failures a year if nothing is done;
-        inspection_cost: one check; found_cost: fixing a warning found in time; failure_cost: a failure (more than
-        found_cost); detection_probability: the chance a check finds a warning that's there (default 1). Returns the
-        interval, recommended (rounded down to a unit people schedule in), the cost a year there and letting it fail,
-        the rule of thumb (half the P-F interval) and, with current_interval + current_unit, the task's numbers now.
-        unit: answer in this unit."""),
+    "interval_on_condition": ("pf_interval pf_unit", "act_time onset_rate inspection_cost found_cost failure_cost "
+                              "detection_probability unit current_interval current_unit", """How often to check for a
+        warning sign that comes pf_interval (in pf_unit: hours, days, weeks, months or years) before the failure. The
+        P-F interval alone gives it: half the P-F interval, or the net P-F interval (less act_time, the time needed to
+        act, in pf_unit) when tighter. Costs never change that: with all three (inspection_cost, found_cost: fixing a
+        warning in time, failure_cost) and onset_rate (failures a year if nothing is done), cost_optimal adds the
+        cheapest interval and whether the check pays for itself. On a safety or environmental failure leave costs
+        out: the task must make the risk tolerable whatever it costs. detection_probability: the chance a check finds
+        a warning that's there (default 1). recommended is rounded down; current_interval + current_unit give the
+        task's numbers now."""),
     "interval_failure_finding": ("", "failure_rate model_id distribution_id params model_unit target_unavailability "
                                  "test_cost repair_cost demand_rate consequence_cost unit current_interval current_unit",
                                  """How often to test a protective device whose failure is hidden. The device:
         failure_rate (a year), a saved non-repairable model_id, or distribution_id + params with model_unit (a time).
         With target_unavailability (the chance it's failed when needed, e.g. 0.01), the longest interval that meets
-        it; without, the cheapest from test_cost, repair_cost, demand_rate (demands a year) and consequence_cost (a
-        demand met by a failed device). Returns the interval, recommended (rounded down), the mean unavailability and
+        it; costs are optional: test_cost, repair_cost, demand_rate (demands a year) and consequence_cost (a demand
+        met by a failed device) add cost_optimal, the cheapest interval (alone, without a target, they give it). Returns the interval, recommended (rounded down), the mean unavailability and
         cost a year there and, with current_interval + current_unit, the task's numbers now and whether they meet
         the target."""),
 }
@@ -2431,6 +2432,7 @@ def register() -> None:
 
     @tool("maintenance_rcm", _READ, "How often to do an RCM task", RCM)
     def maintenance_rcm(action: _choice(RCM), ctx: Context, pf_interval: float | None = None,
+                        act_time: float | None = None,
                         pf_unit: str | None = None, onset_rate: float | None = None,
                         inspection_cost: float | None = None, found_cost: float | None = None,
                         failure_cost: float | None = None, detection_probability: float | None = None,
@@ -2455,7 +2457,7 @@ def register() -> None:
                 return rcm_intervals.on_condition_interval(
                     pf_interval, pf_unit, onset_rate, inspection_cost, found_cost, failure_cost,
                     detection_probability=detection_probability, unit=unit, current_interval=current_interval,
-                    current_unit=current_unit)
+                    current_unit=current_unit, act_time=act_time)
             extras = None
             if model_id:
                 if distribution_id or params:

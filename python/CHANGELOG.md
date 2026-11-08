@@ -2,6 +2,14 @@
 
 ## Unreleased (0.5.1)
 
+- **The P-F interval alone is enough**: `maintenance
+  rcm.interval_on_condition` needs only `pf_interval` and `pf_unit` and
+  answers half the P-F interval, or the net P-F interval (less the new
+  `act_time`) when tighter. The costs and `onset_rate` are optional; given,
+  `cost_optimal` holds the cheapest interval (the top-level `recommended` is
+  now always the P-F one). `rcm.interval_failure_finding` with a target and
+  the costs adds `cost_optimal` too. No client code changed.
+
 - **How often to do an RCM task**: two new `maintenance` actions, both exact
   and free. `rcm.interval_on_condition` (the P-F calculator) gives the
   cheapest interval between checks for a warning that comes `pf_interval`
