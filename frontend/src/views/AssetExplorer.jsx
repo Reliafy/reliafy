@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { VIEW_PARAMS } from "../measurementsTab.js";
+import {
+  MEAS_TABLE_COLS, MEAS_TREE_HEAD, MeasCell, MeasDialogs, MeasSide, measPhoneRow, measRowActions, retireMeasurement, useTreeMeasurements,
+} from "../components/MeasurementTable.jsx";
+import { graftMeasurements, isMeasRow, measKey, openForMeasurements, rollupText as measRollup } from "../explorerMeasurements.js";
+import { measurementsCsv } from "../measurementsTable.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   addSampleProduct, getFmeaExcelBlob, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
@@ -192,10 +197,15 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // worksheet's columns and its own graft; `fmeaOn` says which).
   const fmeaOn = tab === "fmea";
   const rcmOn = tab === "rcm" || fmeaOn;
+  // The Measurements tab is a tree-table too (Derryn, 9 Nov 2026: "line up with the
+  // tree, just like in the RCM table"): each position's measurement rows hang under
+  // it, with the table's columns beside them. `tableOn`: either table.
+  const measOn = tab === "measurements";
+  const tableOn = rcmOn || measOn;
   // RCM (and the FME(C)A) is by position: on its tab the tree is arranged by positions.
   // One tree on show (a product's design, an item's tree) opens by positions; its
   // Locations (?arrange=locations) are its own layout, never what's remembered here.
-  const mode = arrangementFor({ param: params.get("arrange"), remembered: saved.mode, rcm: rcmOn, scoped: !!root });
+  const mode = arrangementFor({ param: params.get("arrange"), remembered: saved.mode, rcm: tableOn, scoped: !!root });
   const notPlaced = mode === "positions" && params.get("place") === "none";
   const title = titleProp || EXPLORER_LABEL;
   // Inside a product's page (its own h1), the picked row's name is an h2.
@@ -263,6 +273,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // signals': panelMenu.js), and the RCM's column chooser opened from it.
   const [tabMenu, setTabMenu] = useState(null);
   const [colsOpen, setColsOpen] = useState(false);
+  // The Measurements tab: its columns (remembered), and a dialog its actions open.
+  const [measCols, setMeasColsState] = useState(() => {
+    try {
+      const got = JSON.parse(localStorage.getItem("reliafy.measurements.treecols") || "null");
+      if (Array.isArray(got) && got.length) return MEAS_TABLE_COLS.map((c) => c.id).filter((id) => got.includes(id));
+    } catch { /* storage blocked: the usual columns */ }
+    return MEAS_TABLE_COLS.map((c) => c.id);
+  });
+  const setMeasCols = (next) => {
+    setMeasColsState(next);
+    try { localStorage.setItem("reliafy.measurements.treecols", JSON.stringify(next)); } catch { /* not kept */ }
+  };
+  const [measModal, setMeasModal] = useState(null);
   const { full, toggle: toggleFull } = useFullScreen(frame, { returnFocus: fullBtn });
   const pending = useRef(params.get("sel") || location.state?.treeReveal || null);
 
@@ -353,7 +376,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     return () => clearTimeout(t);
   }, [toast]);
   const base = useMemo(() => buildDisplay(data, mode), [data, mode]);
-  const whole = useMemo(() => (rcmOn && rcm ? (fmeaOn ? graftFmea(base, rcm) : graftRcm(base, rcm)) : base), [base, rcmOn, fmeaOn, rcm]);
+  // The Measurements tab: every position's points, settings, channels and consumables.
+  const meas = useTreeMeasurements({ on: measOn && !!data, display: data ? base : null });
+  const whole = useMemo(() => (rcmOn && rcm ? (fmeaOn ? graftFmea(base, rcm) : graftRcm(base, rcm))
+    : measOn && meas.data ? graftMeasurements(base, meas.data, data?.today || new Date().toISOString().slice(0, 10), meas.fittedAt)
+      : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today]);
   const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
   // The modes picked that are still in the tree after a read.
   useEffect(() => {
@@ -410,11 +437,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // shown, even before the effect below reveals it: else the first row is shown
   // for a render and its panels ask for the wrong row's data.
   const want = pending.current != null && display.rows.has(pending.current) ? pending.current : null;
-  const focus = rcmOn && rcmFocus && display.rows.has(rcmFocus) ? rcmFocus
+  const focus = tableOn && rcmFocus && display.rows.has(rcmFocus) ? rcmFocus
     : want ?? (display.rows.has(selected[mode]) ? selected[mode] : list[0]?.key ?? null);
   const focusRow = focus != null ? display.rows.get(focus) : null;
   // The position the selection is on (a function, failure or mode: its position).
-  const selPos = isRcmRow(focusRow) ? positionOf(focusRow) : focus;
+  const selPos = isRcmRow(focusRow) || isMeasRow(focusRow) ? positionOf(focusRow) : focus;
 
   // A link on the page that names another row (?sel=: a task's row from the LSA tab's
   // Serves, a task's package): that row is revealed once it's in the tree, before the
@@ -478,6 +505,32 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
 
   // After a worksheet is imported onto a position: that position opens down to
   // its failure modes once the RCM is read again.
+  // Opening the Measurements tab opens the position picked, so its rows show
+  // (once each time the tab opens, once its measurements are in).
+  const openedMeas = useRef(false);
+  useLayoutEffect(() => {
+    if (!measOn) {
+      openedMeas.current = false;
+      return;
+    }
+    if (!meas.data || openedMeas.current || !display.rows.has(selected.positions)) return;
+    openedMeas.current = true;
+    const more = openForMeasurements(display, selected.positions);
+    setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...more]) }));
+  }, [measOn, meas.data, display, whole, selected.positions]);
+  // A link to a point, channel or consumable (?point=, ?channel=, ?consumable=):
+  // its row picked and its details open beside the table, once it's in the tree.
+  const viewParam = !measOn ? null : params.get("point") ? measKey(params.get("point"))
+    : params.get("channel") ? measKey(`channel:${params.get("channel")}`)
+      : params.get("consumable") ? measKey(`consumable:${params.get("consumable")}`) : null;
+  const viewShown = useRef(null);
+  useEffect(() => {
+    if (!viewParam || viewShown.current === viewParam || !display.rows.has(viewParam)) return;
+    viewShown.current = viewParam;
+    reveal(viewParam);
+    setPanel(true);
+  }, [viewParam, display]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const openAfter = useRef(null);
   useEffect(() => {
     const key = openAfter.current;
@@ -499,7 +552,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const setTab = (t) => {
     if (t === tab) return;
     setEditing(null);
-    const toTable = t === "rcm" || t === "fmea";
+    const toTable = t === "rcm" || t === "fmea" || t === "measurements";
     if (!toTable) {
       // Back to Summary: the rows below positions go; the selection is the position they were on.
       setRcmFocus(null);
@@ -573,7 +626,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (filter) setFopen((s) => new Set([...(s || filterOpen(filter)), ...up]));
     else setOpenBy((o) => ({ ...o, [mode]: new Set([...(o[mode] || defaultOpen), ...up]) }));
     const r = display.rows.get(key);
-    if (isRcmRow(r)) {
+    if (isRcmRow(r) || isMeasRow(r)) {
       setRcmFocus(key);
       setSelected((s) => ({ ...s, [mode]: positionOf(r) }));
     } else {
@@ -629,7 +682,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const r = display.rows.get(key);
     // A reference row (a failure below that causes one above) goes to the real row.
     if (r?.type === "cause" && opts.go) return reveal(r.ref.cause_id);
-    if (isRcmRow(r)) {
+    if (isRcmRow(r) || isMeasRow(r)) {
       setRcmFocus(key);
       setSelected((s) => ({ ...s, [mode]: positionOf(r) }));
       if (opts.go) setPanel(true);
@@ -639,7 +692,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setSelected((s) => ({ ...s, [mode]: key }));
     // On the FME(C)A tab a position's own details (its criticality matrix) are beside the table.
     if ((fmeaOn || rcmOn) && r?.type === "pos" && opts.go) setPanel(true);
-    if (phone && opts.go && !rcmOn) navigate(location.pathname + location.search, { state: { treeDetail: key } });
+    if (phone && opts.go && !tableOn) navigate(location.pathname + location.search, { state: { treeDetail: key } });
   };
 
   // Adding from a row's menu, the heading or the details: the new row is
@@ -737,7 +790,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const crumbGo = (key, select) => {
     const act = crumbAction(pinKey ? display : null, whole, mode, key);
     if (act === "select") return select(key);
-    if (act === "pin") return pinTo(key, { select: true, state: phone && !rcmOn ? { treeDetail: key } : undefined });
+    if (act === "pin") return pinTo(key, { select: true, state: phone && !tableOn ? { treeDetail: key } : undefined });
     return unpin({ select: key });
   };
   const above = pinKey ? (key) => !display.rows.has(key) : null;
@@ -745,7 +798,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     ? [r.key === pinKey ? { id: "unpin", label: "Show whole tree" } : { id: "pin", label: "Pin this branch" }] : []);
   // On the RCM tab a row can go five levels deep (down to the tasks): its menu offers them.
   const isolateItem = (r) => isolateItems(display.rows.get(r.key) || r, {
-    can: canIsolate(display.rows.get(r.key) || r, mode, canPin), levels: rcmOn && !fmeaOn ? levelsBelow(display, r.key) : 0,
+    can: canIsolate(display.rows.get(r.key) || r, mode, canPin), levels: tableOn && !fmeaOn ? levelsBelow(display, r.key) : 0,
   });
   // Isolate: the rest of the tree closed, this row opened `depth` levels
   // below it, picked and brought into view; said to screen readers.
@@ -965,10 +1018,26 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const viewOnly = viewOnlyReason(activeTeam);
   const designScope = isDesignScope(data, root);
   const kids = useMemo(() => liveKids(data?.positions), [data]);
+  // A measurement row's ⋯ (the Measurements tab).
+  const measAction = (r, id) => {
+    const row = r.ref.row;
+    if (id === "page" || id === "bands") pick(r.key, { go: true });
+    else if (id === "record") setMeasModal({ kind: "read", item: row.item });
+    else if (id === "use") setMeasModal({ kind: "use", item: row.item });
+    else if (id === "limits") setMeasModal({ kind: "limits", item: row.item });
+    else if (id === "move") setMeasModal({ kind: "move", item: row.item });
+    else if (id === "retire") retireMeasurement(confirm, row, (text) => { say(text); meas.load(); });
+  };
   const rowMenu = {
     // The moves a drag does: on a phone, or from the keyboard (no dragging there).
     actions: (r, { keyboard = false } = {}) => {
-      if (!rcmOn) return withPin(designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), [...isolateItem(r), ...pinItem(r)]);
+      if (!tableOn) return withPin(designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), [...isolateItem(r), ...pinItem(r)]);
+      // The Measurements tab: a measurement row's own (Open, Record…, Edit…, Move…, Retire…);
+      // a position's as on Summary, with isolating and pinning.
+      if (measOn) {
+        if (isMeasRow(r)) return measRowActions(r);
+        return withPin(designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), [...isolateItem(r), ...pinItem(r)]);
+      }
       if (!rcm) return [...isolateItem(r), ...pinItem(r)];
       // The FME(C)A tab: its own rows' actions (no moving: that's the RCM tab's).
       // Delete… stays last (pin and isolate go before it).
@@ -979,6 +1048,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       return withPin(own, [...isolateItem(r), ...isolateIncompleteItem(display.rows.get(r.key) || r, { can: canIsolate(display.rows.get(r.key) || r, mode, canPin) }), ...pinItem(r)]);
     },
     onAction: (r, id) => {
+      if (id.startsWith("meas-")) return measAction(r, id.slice(5));
       if (id === "tree-new") {
         setNewParent(r.key);
         setModal(r.type === "loc" ? "location" : "position");
@@ -1126,7 +1196,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // a field is being typed in. The details' own Esc is handled there.
   const collapseRef = useRef(null);
   collapseRef.current = collapseDetails;
-  const wideOn = rcmOn && !phone && panel && expanded; // the details across the table
+  const wideOn = tableOn && !phone && panel && expanded; // the details across the table
   useEffect(() => {
     if (!wideOn) return undefined;
     const onKey = (e) => {
@@ -1206,7 +1276,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // level, no Show only filters, no pinned branch (the search box and the
   // Positions / Locations switch are on show, so they stay as they are).
   const level = levelShown(levelBy, mode);
-  const chipsOn = CHIPS.filter((c) => chips.includes(c.id) && (!c.rcmOnly || rcmOn));
+  const chipsOn = CHIPS.filter((c) => chips.includes(c.id) && (!c.rcmOnly || tableOn));
   // A pin on the whole tree's one top row shows everything: not a change.
   const changed = changedFromUsual({
     level, chips: chipsOn, pinned: !!pinKey && !pinCoversAll(whole, pinKey),
@@ -1413,7 +1483,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const what = fmeaOn ? "FME(C)A" : "RCM";
   // The line under the tree's title shows only what needs saying: that the
   // RCM didn't load, or how many rows match the filter. No counts otherwise.
-  const statusText = !data ? "" : rcmOn && !filter
+  const statusText = !data ? "" : measOn && !filter ? (meas.error ? `The measurements didn't load: ${meas.error}` : "")
+    : rcmOn && !filter
     ? (rcmError ? `The ${what} didn't load: ${rcmError}` : "")
     : filter
     ? [`${n(filter.match.size, "match", "matches")}, shown with what they're inside`, showingOnly(chipsOn.map((c) => c.label))].filter(Boolean).join(" · ")
@@ -1456,7 +1527,20 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const cols = wideDetails ? [] : shownCols.map((id) => colMap[id]).filter(Boolean);
   const widths = {};
   for (const c of cols) widths[c.id] = prefsW[c.id] ?? c.width;
-  const table = rcmOn ? {
+  // The Measurements tab's table: the tree, then Kind, Latest, State, Trend,
+  // Next due and Record; a position's roll-up across them.
+  const mcols = wideDetails ? [] : MEAS_TABLE_COLS.filter((c) => measCols.includes(c.id));
+  const mwidths = Object.fromEntries(mcols.map((c) => [c.id, c.width]));
+  const measTable = {
+    cols: mcols, widths: mwidths, treeW: shownWidth, total: shownWidth + mcols.reduce((t, c) => t + c.width, 0), expanded: wideDetails,
+    tab: "measurements", what: "measurements", treeHead: MEAS_TREE_HEAD, readOnly: true,
+    canEditName: () => false, onEdit: () => {}, onCommit: () => {}, onCancel: () => {}, onGoto: (key) => reveal(key),
+    renderCell: (r, c) => (isMeasRow(r) ? <MeasCell r={r} col={c} onSaved={meas.patch} /> : null),
+    rollupOf: (r, isOpen) => (r.type === "pos" ? measRollup(r, isOpen) : null),
+    phoneRow: (r, isOpen) => measPhoneRow(r, r.type === "pos" ? measRollup(r, isOpen) : ""),
+    hint: null, drag: null,
+  };
+  const table = measOn ? measTable : rcmOn ? {
     cols, widths, treeW: shownWidth, total: shownWidth + cols.reduce((t, c) => t + widths[c.id], 0), expanded: wideDetails,
     foldInterval: !fmeaOn && !shownCols.includes("interval"),
     intervalW: rprefs.widths.interval ?? COLUMN.interval.width,
@@ -1498,7 +1582,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The panel's heading and tabs, in the two slim rows over the tree on both
   // tabs (a wide screen): the same elements on each, so nothing in them is
   // drawn afresh and the focus stays on the tab picked.
-  const summaryRow = !rcmOn && data && !nothing ? row : null;
+  const summaryRow = !tableOn && data && !nothing ? row : null;
   // The RCM and FME(C)A tabs' "…": the worksheet in and out, the column
   // chooser (it hangs under the heading's controls), and the FME(C)A's print
   // view and guide. Adding a function is the position's row menu (and the RCM
@@ -1523,7 +1607,41 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   ));
   // Another tab or position: the chooser closes (it was for that table).
   useEffect(() => setColsOpen(false), [tab, selPos, phone]);
-  const head = phone ? null : rcmOn ? posRow && posRow.type === "pos" && (
+  // The Measurements tab's "…": add one of each kind on the position picked,
+  // the columns, the CSV of everything under it; and the row picked's own
+  // (Add reading…, Edit limits…, Move…, from its details).
+  const exportMeas = (r) => {
+    const out = [];
+    const walk = (k) => {
+      const x = whole.rows.get(k);
+      if (!x) return;
+      if (isMeasRow(x)) out.push(x.ref.row);
+      for (const c of x.kids) walk(c);
+    };
+    walk(r.key);
+    saveText(measurementsCsv(out), exportFilename(r.ref.name, { what: "measurements" }));
+    say("Downloaded the measurements as CSV.", "ok", { fade: true });
+  };
+  const measTarget = posRow?.type === "pos" ? { kind: "position", id: posRow.key } : null;
+  const measMenu = measOn && measTarget ? [
+    { id: "m-point", label: "Add a measuring point…", onSelect: () => setMeasModal({ kind: "add", target: measTarget, preset: "condition" }) },
+    { id: "m-setting", label: "Add a setting…", onSelect: () => setMeasModal({ kind: "add", target: measTarget, preset: "setting" }) },
+    { id: "m-consumable", label: "Add a consumable…", onSelect: () => setMeasModal({ kind: "consumable", position: { id: posRow.key, name: posRow.ref.name || "(no name)" } }) },
+    { id: "m-channel", label: "Add a sensor channel…", onSelect: () => setMeasModal({ kind: "channel", target: measTarget }) },
+    !phone && { id: "m-columns", label: "Columns…", onSelect: () => setColsOpen(true) },
+    { id: "m-csv", label: "Export CSV", onSelect: () => exportMeas(posRow) },
+    ...(isMeasRow(focusRow) && panel ? tabMenu || [] : []),
+  ].filter(Boolean) : [];
+  const measColumns = measOn && colsOpen && !phone && (
+    <ColumnChooser open cols={measCols} usual={MEAS_TABLE_COLS.map((c) => c.id)} columns={MEAS_TABLE_COLS}
+                   onCols={(next) => setMeasCols(next)} onClose={() => setColsOpen(false)} returnFocus={moreButton} />
+  );
+  const head = phone ? null : measOn ? posRow && posRow.type === "pos" && (
+    <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
+                headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
+                meta={meas.data ? <span className="tt-rollup mt-rollup">{measRollup(posRow, false) || "Nothing measured here yet"}</span> : null}
+                menu={measMenu} popover={measColumns} />
+  ) : rcmOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
                 meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key, whole)} /></span> : null}
@@ -1534,7 +1652,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                 meta={rowKind(summaryRow) ? <span className="tt-kind">{rowKind(summaryRow)}</span> : null}
                 message={message?.fade ? msg : null} />
   );
-  const tabsRow = rcmOn ? (posRow?.type === "pos" ? posRow : null) : summaryRow;
+  const tabsRow = tableOn ? (posRow?.type === "pos" ? posRow : null) : summaryRow;
   const headTabs = !phone && tabsRow && <HeaderTabs row={tabsRow} tab={tab} onTab={setTab} />;
   const detailsRow = rcmOn && panel && isRcmRow(focusRow) && focusRow.type !== "cause" && focusRow.type !== "nofail" ? cellRow(focusRow) : null;
   // The FME(C)A tab with a position picked: its criticality matrix beside the table.
@@ -1649,7 +1767,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // the Summary's add row and footer.
   const summaryActionsOf = (r) => (r ? designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly })
     .map((a) => ({ ...a, onSelect: () => rowMenu.onAction(r, a.id) })) : []);
-  const summary = !rcmOn && (
+  const summary = !tableOn && (
     <section className="tx-detail" aria-label="Details"
              onKeyDown={(e) => {
                if (e.key === "Escape" && !phone && focus) document.getElementById(`tp-${focus}`)?.focus();
@@ -1664,7 +1782,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       )}
     </section>
   );
-  const side = rcmOn ? rcmSide : phone ? null : summary;
+  // The Measurements tab with a row picked: its details beside the table (a sheet on a phone).
+  const measRow = measOn && panel && isMeasRow(focusRow) ? focusRow : null;
+  const measSide = measRow ? (
+    <div className="rw tt-side">
+      {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
+      <MeasSide r={measRow} phone={phone} expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
+                onClose={closeDetails} headingRef={detailsHeading} onMenu={setTabMenu} onChanged={() => meas.load()}
+                today={data?.today} />
+    </div>
+  ) : null;
+  const side = rcmOn ? rcmSide : measOn ? measSide : phone ? null : summary;
 
   // The tree's quiet last row: a new position (or location) at the top level.
   // Inside a pinned branch, or one tree on show (a product's structure, an
@@ -1693,8 +1821,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   })();
 
   return (
-    <div ref={frame} className={"tx" + (phone ? " phone" : "") + (phone && detailKey && !rcmOn ? " show-detail" : "")
-      + (full ? " is-full" : "") + (rcmOn ? " tx-table" : "")}>
+    <div ref={frame} className={"tx" + (phone ? " phone" : "") + (phone && detailKey && !tableOn ? " show-detail" : "")
+      + (full ? " is-full" : "") + (tableOn ? " tx-table" : "")}>
       <TreePane
         title={title}
         treeLabel={treeLabel}
@@ -1738,7 +1866,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         scrollTo={scrollTo}
         onEnter={(key) => {
           const r = display.rows.get(key);
-          if (isRcmRow(r)) {
+          if (isRcmRow(r) || isMeasRow(r)) {
             setPanel(true);
             return setTimeout(() => detailsHeading.current?.focus(), 0);
           }
@@ -1756,13 +1884,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         phoneTabs={phoneTabs}
         // The row picked stays where it is on screen when the tab changes, and
         // when the RCM's rows first arrive.
-        layoutKey={`${tab}:${rcmOn && rcm ? "rcm" : ""}`}
+        layoutKey={`${tab}:${rcmOn && rcm ? "rcm" : measOn && meas.data ? "meas" : ""}`}
         anchorKey={selPos}
         branch={pinKey ? {
           key: pinKey, name: whole.rows.get(pinKey).ref.name || "(no name)", path: pinPath(whole, pinKey), onUnpin: () => unpin(),
         } : null}
         branchNote={pinNote}
-        arrangeLocked={rcmOn ? `${what} is by position, so the ${what} tab shows the positions tree` : null}
+        arrangeLocked={measOn ? "Measurements hang under their positions, so the Measurements tab shows the positions tree"
+          : rcmOn ? `${what} is by position, so the ${what} tab shows the positions tree` : null}
       />
       {phone && summary}
       <div className="sr-only" role="status" aria-live="polite">{spoken}</div>
@@ -1795,6 +1924,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           <button type="button" className="rcm-toast-x" onClick={() => setToast(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
+      <MeasDialogs modal={measModal} onClose={() => setMeasModal(null)} onSaid={(text) => say(text)}
+                   onDone={() => { setMeasModal(null); meas.load(); }} />
       {moving && (moving.src || moving.taskFrom) && (
         <RcmMoveModal whole={whole} src={moving.src || null} taskFrom={moving.taskFrom || null} check={checkMove}
                       onApply={applyMove} onClose={() => setMoving(null)} />

@@ -2297,6 +2297,20 @@ def _stock_adjusted(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, sid, {"quantity": round(node["quantity"] + p["delta"], 6), "moves": moves})
 
 
+def _consumable_used(s: GraphStore, org: str, p: dict) -> None:
+    """A consumable added at a position outside a work order's parts (salt into the
+    pool, acid, a bag of stabiliser): what, how much, when, at what cost, and the
+    store it came out of (whose stock.adjusted precedes this event). A use on a work
+    order points at it (work_order_id)."""
+    s.put_node(org, p["id"], "ConsumableUse", {
+        "name": p["name"], "part_id": p.get("part_id"), "qty": p["qty"], "unit": p.get("unit", ""),
+        "cost": p.get("cost"), "on": p["on"], "at": p.get("at"), "note": p.get("note", ""),
+        "work_order_id": p.get("work_order_id"), "from_location_id": p.get("from_location_id"), "removed": False})
+    s.put_edge(org, "USED_AT", p["id"], p["position_id"])
+    if p.get("part_id"):
+        s.put_edge(org, "OF", p["id"], p["part_id"])
+
+
 def _stock_reorder_set(s: GraphStore, org: str, p: dict) -> None:
     sid = stock_id(p["part_id"], p["location_id"])
     if s.node(org, sid) is None:
@@ -2661,6 +2675,8 @@ PROJECTORS = {
     "work_order.status": _work_order_status,
     "work_order.labour": _work_order_entry("Labour"),
     "work_order.part_used": _work_order_entry("PartUse"),
+    # A consumable added at a position (Nov 2026: the Measurements tab's consumable rows).
+    "consumable.used": _consumable_used,
     "work_order.cost": _work_order_entry("Cost"),
     "work_order.entry_removed": _flag("removed"),
     "work_order.check": _work_order_check,
@@ -11937,6 +11953,171 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
     MAX_POINTS_AT = 500
 
+    # ---- consumables used at a position (Nov 2026) ---------------------------------------
+    # Salt added to the pool is neither a reading nor a setting: it's a consumption. A
+    # consumable is a catalogue part (or, with none, a name) used at a position: each
+    # addition is a consumable.used event, taken out of stock at a store when the part has
+    # enough there (the existing stock.adjusted). A part used on a work order at the
+    # position (work_order.part_used) counts too. The Measurements tab lists one row per
+    # consumable listed on a position's parts list (role consumable) or used there.
+
+    MAX_CONSUMABLE_USES = 200
+
+    def _places_up(self, position_id: str) -> list[str]:
+        """The locations a position is at, nearest first: its own (or the nearest
+        parent's) and the places that contain it."""
+        node, seen = self.s.node(self.org, position_id), set()
+        loc = None
+        while node and node["id"] not in seen:
+            seen.add(node["id"])
+            at = self.s.out(self.org, node["id"], "LOCATED_AT")
+            if at:
+                loc = at[0]
+                break
+            up = [x for x in self.s.out(self.org, node["id"], "PART_OF") if x["label"] == "Position"]
+            node = up[0] if up else None
+        out = []
+        while loc and loc["id"] not in out:
+            out.append(loc["id"])
+            up = [x for x in self.s.out(self.org, loc["id"], "PART_OF") if x["label"] == "Location"]
+            loc = up[0] if up else None
+        return out
+
+    def _consumable_store(self, part_id: str, position_id: str, qty: float, location_id=None) -> str | None:
+        """Where a use comes out of stock: the store given, else one holding enough,
+        nearest the position first (its place, then the places containing it), then the
+        fullest. None when no store holds enough (the use is recorded without a stock
+        movement)."""
+        if location_id:
+            return location_id
+        held = {}
+        for st in self._stocks(part_id):
+            at = self.s.out(self.org, st["id"], "AT")
+            if at and not at[0].get("retired") and st.get("quantity", 0) >= qty:
+                held[at[0]["id"]] = st["quantity"]
+        if not held:
+            return None
+        for loc in self._places_up(position_id):
+            if loc in held:
+                return loc
+        return max(held, key=lambda k: held[k])
+
+    def record_consumable_use(self, position_id: str, qty, part_id=None, name="", unit=None, cost=None, on=None,
+                              note="", work_order_id=None, at=None, from_location_id=None) -> dict:
+        """A consumable added at a position: qty of a catalogue part (part_id) or of a
+        named one (name, with its unit), on a day (default today; at: a time of day),
+        with its cost (default qty × the part's unit cost) and a note. A catalogue part
+        comes out of stock at a store holding enough (nearest the position first); the
+        answer says which. work_order_id: the work order it was added on. Returns the
+        position's consumable row for it."""
+        position = self._get(position_id, "Position")
+        if position.get("retired"):
+            raise Invalid("That position has been retired.")
+        amount = _number(qty, "quantity", 0, MAX_AMOUNT)
+        if amount <= 0:
+            raise Invalid("The quantity must be more than 0.")
+        part = self._live_part(part_id) if part_id else None
+        label = part["name"] if part else _text(name, "consumable's name", required=True)[:200]
+        unit = (part.get("unit") if part and not unit else _text(unit, "unit")[:20]) or ""
+        if part and part.get("unit") and unit and unit.lower() != str(part["unit"]).lower():
+            raise Invalid(f"{part['name']} is counted in {part['unit']}: give the quantity in {part['unit']}.")
+        if cost in (None, "") and part and part.get("unit_cost") is not None:
+            cost = round(amount * part["unit_cost"], 2)
+        timed = {}
+        if at not in (None, ""):
+            day, stamp, _prec = _reading_time(at, None, self.tz, time_zones.now())
+            timed = {"at": stamp} if stamp else {}
+        else:
+            day = _day(on, today=self.today())
+        if day > self.today():
+            raise Invalid("A use can't be in the future.")
+        if work_order_id:
+            self._open_or_closed(work_order_id)
+        store = self._consumable_store(part["id"], position_id, amount, from_location_id) if part else None
+        if store:
+            self.adjust_stock(part["id"], store, -amount, f"used at {position['name']}"[:200], on=day,
+                              work_order_id=work_order_id)
+        use_id = new_id()
+        self._emit("consumable.used", {
+            "id": use_id, "position_id": position_id, "part_id": part["id"] if part else None, "name": label,
+            "qty": amount, "unit": unit, "cost": self._amount(cost, "cost"), "on": day, **timed,
+            "note": _text(note, "note"), "work_order_id": work_order_id or None, "from_location_id": store})
+        row = next((r for r in self._consumable_rows(position_id)
+                    if (r["part"] and part and r["part"]["id"] == part["id"]) or (not part and not r["part"]
+                                                                                  and r["name"].lower() == label.lower())),
+                   None)
+        return {"use_id": use_id, "from_location": store and self.s.node(self.org, store)["name"], "consumable": row}
+
+    def _consumable_rows(self, position_id: str) -> list[dict]:
+        """A position's consumables: each part listed as a consumable on its parts list,
+        and each part or name used there (consumable.used, or a work order's part used),
+        with its uses newest first, stock by store, and what the LSA of the position's
+        tasks says a dose is (lsa: [{task, qty, unit, interval, interval_unit}])."""
+        position = self.s.node(self.org, position_id)
+        rows: dict[str, dict] = {}
+
+        def row_for(part, name, unit=""):
+            key = f"part:{part['id']}" if part else f"name:{name.strip().lower()}"
+            if key not in rows:
+                rows[key] = {"key": f"{position_id}:{key}", "position": {"id": position_id, "name": position["name"]},
+                             "name": part["name"] if part else name.strip(),
+                             "unit": (part.get("unit") if part else unit) or unit or "",
+                             "part": part and {"id": part["id"], "part_number": part["part_number"], "name": part["name"],
+                                               "unit": part.get("unit") or "", "unit_cost": part.get("unit_cost")},
+                             "listing_id": None, "uses": []}
+            return rows[key]
+
+        for x in self._listings_at(position_id):
+            if x.get("role") == "consumable":
+                pt = self.s.out(self.org, x["id"], "LISTS")[0]
+                row_for(pt, pt["name"])["listing_id"] = x["id"]
+        for u in self.s.inn(self.org, position_id, "USED_AT"):
+            if u["label"] != "ConsumableUse" or u.get("removed"):
+                continue
+            pt = self.s.node(self.org, u["part_id"]) if u.get("part_id") else None
+            wo = self.s.node(self.org, u["work_order_id"]) if u.get("work_order_id") else None
+            store = self.s.node(self.org, u["from_location_id"]) if u.get("from_location_id") else None
+            row_for(pt, u["name"], u.get("unit", ""))["uses"].append({
+                "id": u["id"], "on": u["on"], "at": u.get("at"), "qty": u["qty"], "cost": u.get("cost"),
+                "note": u.get("note", ""), "work_order": wo and {"id": wo["id"], "number": wo["number"]},
+                "from_location": store and {"id": store["id"], "name": store["name"]}})
+        # A consumable part used on a work order at the position (its parts used).
+        for wo in self.s.inn(self.org, position_id, "ON"):
+            if wo["label"] != "WorkOrder" or wo.get("status") == "cancelled":
+                continue
+            for e in self.s.inn(self.org, wo["id"], "OF"):
+                if e["label"] != "PartUse" or e.get("removed") or not e.get("part_id"):
+                    continue
+                key = f"part:{e['part_id']}"
+                if key not in rows:
+                    continue
+                rows[key]["uses"].append({
+                    "id": e["id"], "on": wo.get("closed") or wo.get("opened") or "", "at": None, "qty": e["quantity"],
+                    "cost": None if e.get("unit_cost") is None else round(e["quantity"] * e["unit_cost"], 2),
+                    "note": e.get("note", ""), "work_order": {"id": wo["id"], "number": wo["number"]},
+                    "from_location": None})
+        tasks = self._tasks_on(position_id)
+        for r in rows.values():
+            r["uses"].sort(key=lambda u: (u["on"] or "", u["at"] or ""), reverse=True)
+            r["uses"] = r["uses"][:self.MAX_CONSUMABLE_USES]
+            if r["part"]:
+                r["part"]["stock"] = [{"location": s_["location"], "on_hand": s_["on_hand"]}
+                                      for s_ in self._stock_brief(r["part"]["id"])]
+            names = {r["name"].lower()} | ({r["part"]["name"].lower()} if r["part"] else set())
+            r["lsa"] = [{"task": {"id": t["id"], "name": t["name"]}, "qty": c.get("qty"), "unit": c.get("unit", ""),
+                         "interval": t.get("interval"), "interval_unit": t.get("unit")}
+                        for t in tasks for c in ((t.get("resources") or {}).get("consumables") or [])
+                        if str(c.get("name", "")).strip().lower() in names]
+        return sorted(rows.values(), key=lambda r: r["name"].lower())
+
+    def _stock_brief(self, part_id: str) -> list[dict]:
+        out = []
+        for st in self._stocks(part_id):
+            at = self.s.out(self.org, st["id"], "AT")
+            if at and not at[0].get("retired"):
+                out.append({"location": {"id": at[0]["id"], "name": at[0]["name"]}, "on_hand": st.get("quantity", 0)})
+        return sorted(out, key=lambda x: x["location"]["name"].lower())
+
     def points_at(self, position_ids=(), item_ids=()) -> dict:
         """The live measurement points on several positions and items at once (the
         Explorer's Measurements tab: a branch of the tree), each as ``point`` gives it
@@ -11944,7 +12125,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         Ids that aren't a position or an item here are skipped. At most
         MAX_POINTS_AT points; ``more`` says some were left out. ``channels``: the live
         signal channels (sensors that send snapshots) on the same positions and items,
-        each as ``channel_row`` gives it (the tab lists them beside the points)."""
+        each as ``channel_row`` gives it (the tab lists them beside the points).
+        ``consumables``: what's added at the positions (salt, acid), as _consumable_rows."""
         out, channels, seen = [], [], set()
         more = False
         for label, ids in (("Position", position_ids), ("Item", item_ids)):
@@ -11963,7 +12145,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                             continue
                         out.append(self.point(x["id"]))
         channels.sort(key=lambda c: c["name"].lower())
-        return {"points": out, "more": more, "channels": channels}
+        # The consumables used (or listed) at the positions: the tab's consumable rows.
+        consumables = [r for pid in position_ids if self.s.node(self.org, pid, "Position")
+                       for r in self._consumable_rows(pid)]
+        return {"points": out, "more": more, "channels": channels, "consumables": consumables}
 
     def item(self, id: str) -> dict:
         """An item: its details and nameplate, where it's fitted and where it is now

@@ -1076,3 +1076,17 @@ def test_a_delete_and_its_undo_through_mcp(env):
     assert preview["dry_run"] and preview["positions_inside"] == 1 and preview["items_unfitted"] == 1
     assert done["positions"] == 2 and len(done["items_unfitted"]) == 1
     assert back["positions_restored"] == 2 and back["items_refitted"] == 1
+
+
+def test_a_consumable_used_through_the_record_action(env):
+    """measurements.record with position_id (no point_id): salt added to the pool."""
+    async def flow(client):
+        pool = _ok(await _do(client, "maintenance", "positions.create", name="Pool"))
+        salt = _ok(await _do(client, "maintenance", "measurements.record", position_id=pool["id"], name="Pool salt",
+                             unit="kg", value=20, note="after rain"))
+        neither = await _do(client, "maintenance", "measurements.record", value=20)
+        return salt, neither
+
+    salt, neither = _session(env["token"], flow)
+    assert salt["consumable"]["name"] == "Pool salt" and salt["consumable"]["uses"][0]["qty"] == 20
+    assert neither.is_error and "position_id" in neither.content[0].text

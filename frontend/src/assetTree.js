@@ -16,6 +16,7 @@ import { filterRows } from "./outlineTree.js";
 import { RCM_CHIPS, isRcmRow, rcmRowText } from "./explorerRcm.js";
 import { CHIPS as FMEA_CHIPS } from "./fmeaWorksheet.js";
 import { NOFAIL_HINT } from "./rcmWorksheet.js";
+import { MEAS_CHIPS, isMeasRow } from "./explorerMeasurements.js";
 
 // The outline's own model (open to a level, flatten, pinned rows, the drawn
 // window, type-ahead), shared with the RCM worksheet.
@@ -278,6 +279,7 @@ function rollUp(rows, roots) {
 // class; for an item, its serial, class, make, model and part number too.
 export function rowText(r) {
   if (isRcmRow(r)) return rcmRowText(r);
+  if (isMeasRow(r)) return r.ref.search;
   const p = r.ref;
   return [p.name, p.tag, p.item?.name, p.item?.serial, p.serial, p.position_class, p.item_class?.name,
     p.manufacturer, p.model, p.part_number]
@@ -307,6 +309,8 @@ export const CHIPS = [
   // the FME(C)A tab's (on that tab only).
   ...RCM_CHIPS,
   ...FMEA_CHIPS,
+  // The Measurements tab's (on that tab only).
+  ...MEAS_CHIPS,
 ];
 
 // The chips the tree's ⋯ offers: a tab's own (the RCM's, the FME(C)A's) on
@@ -365,9 +369,9 @@ export function markersOf(r, { rcm = false } = {}) {
     const names = up.map((e) => `${e.text} (on ${e.position?.name || "another position"})`).join("; ");
     return [{ kind: "up", text: `↑ ${up.length}`, label: `Causes: ${names}`, effect: up[0].id }];
   }
-  if (isRcmRow(r)) return [];
+  if (isRcmRow(r) || isMeasRow(r)) return [];
   // Kids that are positions, locations or items (not the RCM tab's rows).
-  const parent = r.kids.length - (r.rcmKids || 0) > 0;
+  const parent = r.kids.length - (r.rcmKids || 0) - (r.measKids || 0) > 0;
   const s = parent ? r.sum : r.own;
   const where = (own) => (!parent ? "" : own ? " here and inside" : " inside");
   const out = [];

@@ -2998,6 +2998,7 @@ export async function listMeasurementPoints({ positionIds = [], itemIds = [] } =
   return {
     points: got.flatMap((g) => g.points || []), more: got.some((g) => g.more),
     channels: got.flatMap((g) => g.channels || []),
+    consumables: got.flatMap((g) => g.consumables || []),
   };
 }
 // A point's name, alarm limits (null clears one) or feed tag. Returns the point.
@@ -3018,6 +3019,12 @@ export function getMeasurementPoint(pointId) {
 // Stop measuring at a point: it leaves the lists; its readings stay in the history.
 export function retireMeasurementPoint(pointId, reason = "") {
   return postJson(`/api/maintenance/points/${encodeURIComponent(pointId)}/retire`, { reason });
+}
+// A consumable added at a position (salt into the pool): {qty, part_id | name and unit,
+// on | at, cost?, note?}. A catalogue part comes out of stock where it's held. Returns
+// {use_id, from_location, consumable: the position's row for it}.
+export function recordConsumableUse(positionId, body) {
+  return postJson(`/api/maintenance/positions/${encodeURIComponent(positionId)}/consumables`, body);
 }
 export function recordMeasurementReading(pointId, value, on, at) {
   return postJson(`/api/maintenance/points/${pointId}/readings`, at ? { value, at } : { value, on });

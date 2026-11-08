@@ -157,14 +157,14 @@ export function PointView({ id, onBack, onMenu = null, onChanged }) {
   if (error && !point) {
     return (
       <div className="td-tab-page mv-view">
-        <Back onBack={onBack} />
+        {onBack && <Back onBack={onBack} />}
         <div className={"card load-failed" + (isNotFound(error) ? "" : " error")} role={isNotFound(error) ? "status" : "alert"}>
           {isNotFound(error) ? "Measuring point not found. It may have been deleted, or the link may be mistyped." : `Couldn't load the point: ${error}`}
         </div>
       </div>
     );
   }
-  if (!point) return <div className="td-tab-page mv-view"><Back onBack={onBack} /><p className="lib-date">Loading…</p></div>;
+  if (!point) return <div className="td-tab-page mv-view">{onBack && <Back onBack={onBack} />}<p className="lib-date">Loading…</p></div>;
 
   const today = workspaceToday();
   const state = pageState(point, today);
@@ -180,7 +180,7 @@ export function PointView({ id, onBack, onMenu = null, onChanged }) {
 
   return (
     <div className="td-tab-page mv-view">
-      <Back onBack={onBack} />
+      {onBack && <Back onBack={onBack} />}
       <h3 className="mv-name">{point.name}</h3>
       <p className="lib-date mv-meta">{pointMeta(point)}</p>
       {moved && <p className="lib-date" role="status">{moved}</p>}
@@ -333,19 +333,19 @@ export function ChannelPane({ id, onBack, onMenu = null }) {
   if ((error && !all) || (all && !ch)) {
     return (
       <div className="td-tab-page mv-view">
-        <Back onBack={onBack} />
+        {onBack && <Back onBack={onBack} />}
         <div className={"card load-failed" + (error ? " error" : "")} role={error ? "alert" : "status"}>
           {error ? `Couldn't load the channel: ${error}` : "Sensor channel not found. It may have been deleted, or the link may be mistyped."}
         </div>
       </div>
     );
   }
-  if (!ch) return <div className="td-tab-page mv-view"><Back onBack={onBack} /><p className="lib-date">Loading…</p></div>;
+  if (!ch) return <div className="td-tab-page mv-view">{onBack && <Back onBack={onBack} />}<p className="lib-date">Loading…</p></div>;
   const meta = ["Sensor channel", ch.unit, ch.tag && `tag ${ch.tag}`, ch.axes?.length > 1 && `axes ${ch.axes.join(", ")}`]
     .filter(Boolean).join(" · ");
   return (
     <div className="td-tab-page mv-view">
-      <Back onBack={onBack} />
+      {onBack && <Back onBack={onBack} />}
       <h3 className="mv-name">{ch.name}</h3>
       <p className="lib-date mv-meta">{meta}</p>
       <div className="sg">

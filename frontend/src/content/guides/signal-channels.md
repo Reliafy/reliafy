@@ -19,26 +19,44 @@ without the spectrum.
 
 ## The Measurements tab
 
-Pick any row in **Assets → Explorer** and open the **Measurements** tab: it's a
-table of every measuring point, setting and sensor channel on that row and
-everything below it, one row each, worst first. The columns are the position,
-the point (with its tag), its kind (*Condition*, *Setting*, *Counter*, or
-*Fed* when a sensor or feed sends it), the latest value and when, its state
-(*OK*, *Needs attention*, *Due*, *No reading*; a setting shows when it was
-set), a small trend, and when the next reading is due. When the rows are on
-several positions they're grouped under each one; click a group to fold it.
-Search over every column, click a heading to sort (Shift-click for a second
-key), and choose the columns or export a CSV from the **…** menu.
+Pick a position in **Assets → Explorer** and open the **Measurements** tab. It
+reads like the RCM tab: the position tree is the first column, and under each
+position hang what's measured, set or added there, worst first: measuring
+points, counters, settings, sensor channels and consumables. Beside each row
+are its kind (*Condition*, *Setting*, *Counter*, *Fed*, *Consumable*), the
+latest value and when, its state (*OK*, *Needs attention*, *Due*, *No
+reading*; a setting shows when it was set, a consumable what was added in the
+last 90 days), a small trend, when the next reading is due, and a **Record**
+box. A position's row sums up its rows (*4 points · 1 needs attention*), and
+a closed one everything inside it. The filter box and **Needs attention**
+under the tree's **⋯** open the way down to the rows that match.
 
 - **Record a value in place:** type it in a row's **Record** box and press
   Enter. It's recorded now and the row updates (*✓ Saved*; for a setting
-  *✓ Set to 28 °C*). A setting's value outside its allowed range is refused.
-- **Add one:** the **…** menu has **Add a measuring point…**, **Add a
-  setting…** and **Add a sensor channel…**; an empty tab offers the same.
-- **A setting's history:** open a setting to see what it's been over time: a
-  step chart, a line such as *Set 3 times since 1 Apr 2026, between 45% and
-  60%*, and each change with who set it (a work order, or by hand) and how
-  long it held.
+  *✓ Set to 28 °C*; for a consumable *✓ Added 20 kg*). A setting's value
+  outside its allowed range is refused.
+- **See its history:** click a row. Its details open beside the table: a
+  point's chart and readings, a setting's changes, a channel's spectrum, a
+  consumable's additions. Expand them across the table, or close them.
+- **Add one:** the panel's **…** menu has **Add a measuring point…**, **Add a
+  setting…**, **Add a consumable…** and **Add a sensor channel…** for the
+  position picked, with **Columns…** and **Export CSV**.
+- **A setting's history** shows what it's been over time: a step chart, a
+  line such as *Set 3 times since 1 Apr 2026, between 45% and 60%*, and each
+  change with who set it (a work order, or by hand) and how long it held.
+
+### Consumables
+
+Salt added to a pool isn't a reading or a setting: it's used up. Add it as a
+**consumable** (a part from the parts register, or a new one by name and
+unit). Type the quantity in its **Record** box to log an addition today, or
+choose **Record use…** from its **⋯** for another date, the cost and a note.
+When the part is in stock at a store, the addition comes out of that stock
+(the nearest store holding enough); the state's tooltip says where. Its
+details show what's been added over time by month, every addition with its
+work order or *by hand*, the year's total, and, when a task's LSA lists the
+consumable, the dose it says beside what was really added. A part used on a
+work order at the position counts too.
 
 ## Channels are rows of Measurements
 
@@ -55,9 +73,9 @@ flow you read on your round. The row shows:
   yet*. **Needs attention** at the top of the tab lists only those rows (and the
   points past or near a limit, or due a reading);
 - a **trend** of its recent values;
-- a **⋯** menu: **Open** shows the channel in full in the tab (its spectrum,
-  bands and settings), with the tree still on the left, and **Edit bands…**
-  opens it at its watch bands. **← Measurements** goes back to the list.
+- a **⋯** menu: **Open** shows the channel's details beside the table (its
+  spectrum, bands and settings), with the tree still on the left; so does
+  clicking its row.
 
 A fitted item has no row of its own: its channels show on the position it's
 fitted to, and go with the item when it moves.
@@ -125,8 +143,9 @@ only the first part. Nothing is sent until you press **Add the snapshot**.
 
 ## 3. Read the spectrum
 
-Open the channel: click its name on the Measurements tab, or choose
-**Open** from its **⋯** menu. It opens in the tab, the tree still on the left.
+Open the channel: click its row on the Measurements tab, or choose
+**Open** from its **⋯** menu. Its details open beside the table; expand them
+across it for room to read the spectrum.
 
 ![A channel's page: the spectrum of the latest snapshot against a baseline, and a watched band's level over time](/guides/img/signals-01-spectrum.png)
 
@@ -161,17 +180,16 @@ that range from every snapshot, old and new, and draws it in **Level over time**
   (marked **Fed**) beside the channel itself and every other measuring point on
   the row and everything inside it, hand-read ones too, worst first. Give it
   alarm limits there and a snapshot past the limit opens an inspection.
-- **Open a measuring point in full.** Click a point's name in the Measurements
-  tab, or choose **Open** from its **⋯** menu. The tab then shows that point,
-  with the tree still on the left: the latest reading against its alarm
-  limits, a chart of the readings with the limits drawn in, the trend and the
-  date it should reach a limit, and every recent reading. **Add reading…**,
-  **Edit limits…** and **Move…** are in the panel's **…** menu; each reading's
-  **⋯** menu corrects or voids it. A voided reading stays listed, struck out,
-  and is left out of rates, due dates and alarms. **← Measurements** goes back
-  to the list.
+- **Open a measuring point.** Click its row in the Measurements tab, or
+  choose **Open** from its **⋯** menu. Its details open beside the table: the
+  latest reading against its alarm limits, a chart of the readings with the
+  limits drawn in, the trend and the date it should reach a limit, and every
+  recent reading. **Add reading…**, **Edit limits…** and **Move…** are in the
+  panel's **…** menu; each reading's **⋯** menu corrects or voids it. A voided
+  reading stays listed, struck out, and is left out of rates, due dates and
+  alarms.
 - **Move…** (in a point's **⋯** menu in the Measurements tab, or in the **⋯**
-  menu when the point is open) moves a hand-read or fed point to another position, for when it
+  menu while its details are open) moves a hand-read or fed point to another position, for when it
   was added to the wrong one. Its readings and any open alarm work order go
   with it, and tasks that counted it keep counting it. A band or level stays
   with its channel.

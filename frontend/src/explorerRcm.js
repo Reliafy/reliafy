@@ -289,6 +289,8 @@ function chainCounts(chain, modeById) {
 export function positionOf(r) {
   if (!r) return null;
   if (r.type === "pos") return r.key;
+  // A measurement row (the Measurements tab): the position it hangs under.
+  if (r.type === "meas") return r.ref.position_id;
   return isRcmRow(r) ? r.ref.position_id : null;
 }
 
