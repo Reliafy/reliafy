@@ -91,6 +91,9 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
 
     // Built items: on the product's Summary; Build an item checks first, then builds.
     const built = page.getByRole("region", { name: "Built items", exact: true });
+    // The count shows once the items have loaded. On a busy CI runner (four workers on one
+    // server) that request has taken over 10 s, so wait for it to finish first.
+    await expect(built.getByText("Loading…")).toHaveCount(0, { timeout: 45_000 });
     await expect(built.locator(".psec-count")).toHaveText(/^\d+$/);
     const before = Number(await built.locator(".psec-count").textContent());
     expect(before).toBeGreaterThanOrEqual(3);
