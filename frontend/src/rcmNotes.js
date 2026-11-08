@@ -1,3 +1,4 @@
+import { plainFirstLine } from "./basisMarkdown.js";
 // Notes and rationale on an RCM row: every function, performance standard,
 // functional failure and failure mode has its title and its notes, the long
 // description where the reason for it is written (why the standard is set
@@ -32,9 +33,9 @@ export const notesOf = (r) => (hasNotesField(r) ? String(r.ref?.notes ?? "").tri
 export const hasNotes = (r) => notesOf(r) !== "";
 
 // The mark's tooltip: the notes' first line with words in it, cut short.
+// Markdown markers (bold, headings, list marks, links) are taken out, so it reads as text.
 export function notesTip(r, max = 120) {
-  const line = notesOf(r).split(/\r?\n/).map((x) => x.trim()).find(Boolean) || "";
-  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+  return plainFirstLine(notesOf(r).replace(/\r\n?/g, "\n"), max);
 }
 
 // What would be saved from the text typed: { value } or { error }. Line
