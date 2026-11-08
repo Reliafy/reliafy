@@ -180,7 +180,7 @@ export function moreTasks(d) {
 // "Weekly pH check · every 1 week": one task's line, and the tooltip listing them all.
 // A task raised by an event says so: "Re-dose · on event: 120 mm on POOL-RAIN".
 export const taskLine = (t) => [t.text || t.name, everyText(t) || null].filter(Boolean).join(" · ");
-export const tasksTip = (d) => tasksOf(d).map((t) => taskLine(t) + (t.shared_with ? ` (shared with ${t.shared_with} other failure mode${t.shared_with === 1 ? "" : "s"})` : "")).join("\n");
+export const tasksTip = (d) => tasksOf(d).map((t) => taskLine(t) + (t.shared_with ? ` (serves ${t.shared_with + 1} failure modes here)` : "")).join("\n");
 
 // The display: rows {key, type, ref, at, parent, kids, depth, sum} keyed by
 // the node's id (a repeated id gets a suffix, so every row is drawn), and the
@@ -802,9 +802,12 @@ const d = (r) => r.ref.decision || null;
 
 // ---- a task row (the tree's fifth level, explorerRcm.js) ------------------------
 // Its kind ("On condition"), when it's done ("every 4 weeks", "on event: …"), and
-// its chips in words ("Shared with 2", "In: Weekly round").
+// its chips in words ("Serves 3 here", "In: Weekly round").
 export const taskKindText = (r) => OUTCOME_LABEL[r.ref.outcome] || "";
-export const taskSharedText = (t) => (t?.shared_with ? `Shared with ${t.shared_with.toLocaleString("en-AU")}` : "");
+// A task serving several failure modes (Derryn, 9 Nov 2026: "Serves N here", never "shared
+// with"): N counts every failure mode it serves, this one included.
+export const taskSharedText = (t) => (t?.shared_with ? `Serves ${(t.shared_with + 1).toLocaleString("en-AU")} here` : "");
+export const taskServesTip = (t) => (t?.shared_with ? `Serves ${(t.shared_with + 1).toLocaleString("en-AU")} failure modes on this position or inside it` : "");
 export function taskRowWords(r, { found = false } = {}) {
   const t = r.ref.task || {};
   const then = found && r.ref.on_found ? `${ROLE[r.ref.outcome]?.then || "Then, if found:"} ${r.ref.on_found}` : "";

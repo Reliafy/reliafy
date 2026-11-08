@@ -13,7 +13,7 @@
 //   the standard's Move to… does the same;
 // - a task, from its failure mode's Task cell, onto another failure mode;
 // - a task's own row is dragged to copy, never to move ("Link here", a +
-//   badge): onto a sibling failure mode, which then has it too (Shared with 1);
+//   badge): onto a sibling failure mode, which then has it too (Serves 2 here);
 //   onto a function it's refused quietly; the row menu's Link to another
 //   failure mode… does the same from the keyboard;
 // - a refusal the server knows (a same-named failure mode on the other
@@ -311,10 +311,10 @@ test("a task's row drags to copy: linked to a sibling failure mode, kept on its 
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/drag-task-link-1280.png` });
   await page.mouse.up();
   await expect(toast(page)).toContainText(`Linked the task “Grease bearings ${tag}” to “Seal leaks ${tag}” as well`);
-  // Both failure modes show it, each "Shared with 1"; it never left the bearing.
+  // Both failure modes show it, each "Serves 2 here"; it never left the bearing.
   await expect(trow(page, `^Task: Grease bearings ${tag}`)).toHaveCount(2);
-  await expect(trow(page, `^Task: Grease bearings ${tag}`).first()).toContainText("Shared with 1");
-  await expect(trow(page, `^Task: Grease bearings ${tag}`).nth(1)).toContainText("Shared with 1");
+  await expect(trow(page, `^Task: Grease bearings ${tag}`).first()).toContainText("Serves 2 here");
+  await expect(trow(page, `^Task: Grease bearings ${tag}`).nth(1)).toContainText("Serves 2 here");
   await expect.poll(async () => {
     const modes = (await rcmOf(request, p.a.id)).functions[0].failures[0].modes;
     return modes.map((m) => [m.text, (m.tasks || []).map((t) => t.id)]);
@@ -333,7 +333,7 @@ test("a task's row drags to copy: linked to a sibling failure mode, kept on its 
   await pick.getByRole("button", { name: "Link", exact: true }).click();
   await expect(pick).toHaveCount(0);
   await expect(trow(page, `^Task: Grease bearings ${tag}`)).toHaveCount(3);
-  await expect(trow(page, `^Task: Grease bearings ${tag}`).first()).toContainText("Shared with 2");
+  await expect(trow(page, `^Task: Grease bearings ${tag}`).first()).toContainText("Serves 3 here");
 });
 
 test("a refusal shows before the drop (no-drop cursor and the reason); dropping writes nothing; nothing moves while dragging", async ({ page, request }) => {

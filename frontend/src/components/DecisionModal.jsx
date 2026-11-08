@@ -262,7 +262,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
                 placeholder={outcome === "rtf" ? "Corrective action on failure (optional)" : "e.g. Replace brake pads"}
                 readOnly={!!sharedNote && outcome !== "rtf"}
                 aria-describedby={sharedNote && outcome !== "rtf" ? `${id}-shared` : undefined}
-                title={sharedNote && outcome !== "rtf" ? "Shared with other failure modes: change it on the task" : undefined}
+                title={sharedNote && outcome !== "rtf" ? "It serves other failure modes too: change it on the task" : undefined}
                 onChange={(e) => setTask(e.target.value)}
               />
             )}

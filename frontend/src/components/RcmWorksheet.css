@@ -1032,3 +1032,23 @@ select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus); }
   .rim-tl-chips:empty { display: none; }
   select.rim-kindchip, .rim-kindtext { height: 32px; line-height: 30px; }
 }
+/* A task's panel in the same "step | choice" grid (Derryn, 9 Nov 2026): one line per row,
+   quiet words in the muted colour, the edits where the words are. */
+.rim-tcell { gap: 4px; font-size: var(--fs-13); }
+.rim-tquiet { margin: 0; color: var(--muted); font-size: var(--fs-13); overflow-wrap: anywhere; }
+button.link.rim-tquietlink { align-self: flex-start; font-size: var(--fs-13); }
+.rim-tline { margin: 0; overflow-wrap: anywhere; }
+.rim-ivline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
+.rim-ivinline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.rim-ivinline .rim-every { display: inline-flex; align-items: center; gap: 6px; }
+.rim-eventform { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rim-eventform .rim-trigger { margin: 0; }
+.rim-counts:empty { display: none; }
+.rw-servelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; min-width: 0; }
+.rw-servelist li { display: flex; align-items: center; gap: 6px; min-height: 26px; border-bottom: 1px solid var(--line2); min-width: 0; }
+.rw-servelist li:last-child { border-bottom: 0; }
+.rw-servelist .rw-kgo { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.rw-servelist .rw-serves-rm { margin-left: auto; flex: none; }
+@media (max-width: 600px) {
+  .rw-servelist li { min-height: 36px; }
+}
