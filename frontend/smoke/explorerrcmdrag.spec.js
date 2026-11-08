@@ -72,9 +72,13 @@ async function openPlant(page, p, width = 1280) {
   await page.setViewportSize({ width, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}&pin=${p.top.id}&tab=rcm`);
   await expect(table(page)).toBeVisible();
+  // The tree and its RCM read first (a position's row says what it holds): "Open everything" opens
+  // the rows there are, so chosen before they're in it would leave the plant's rows closed.
+  await expect(trow(page, `^Pump A `).getByText(/to decide/)).toBeVisible();
   await page.getByRole("button", { name: "Tree options" }).click();
   await page.getByRole("menuitemradio", { name: "Open everything" }).click();
   await page.keyboard.press("Escape");
+  await expect(table(page).getByRole("row", { name: /^Failure mode: Impeller worn / }).first()).toBeVisible();
   await settled(page);
 }
 
