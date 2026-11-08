@@ -68,16 +68,21 @@ export function withPin(items, pin) {
 // submenu, "with 1 level open", "2 levels open", "3 levels open", "everything
 // open" (ids isolate:1, isolate:2, isolate:3, isolate:all); a row with nothing
 // inside it has just "Isolate" (it closes the rest; there's nothing to open).
-// `can`: whether this row can be isolated (treeIsolate.canIsolate).
-export function isolateItems(r, { can } = {}) {
+// `can`: whether this row can be isolated (treeIsolate.canIsolate). `levels`:
+// how many levels there are below it (treeIsolate.levelsBelow), given on the
+// RCM tab, where a row can go five deep (down to the tasks): "With 4 levels
+// open" and "With 5 levels open" are offered there when the rows go that deep.
+export function isolateItems(r, { can, levels = 0 } = {}) {
   if (!r || !can) return [];
   if (!r.kids?.length) return [{ id: "isolate:1", label: "Isolate" }];
+  const deeper = [4, 5].filter((n) => levels >= n).map((n) => ({ id: `isolate:${n}`, label: `With ${n} levels open` }));
   return [{
     id: "isolate", label: "Isolate",
     items: [
       { id: "isolate:1", label: "With 1 level open" },
       { id: "isolate:2", label: "With 2 levels open" },
       { id: "isolate:3", label: "With 3 levels open" },
+      ...deeper,
       { id: "isolate:all", label: "With everything open" },
     ],
   }];

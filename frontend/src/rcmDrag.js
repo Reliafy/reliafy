@@ -119,6 +119,8 @@ const hasList = (whole, fnKey) => (whole.rows.get(fnKey)?.ref.standards || []).l
 export function dropZones(whole, src, targetKey) {
   const t = whole.rows.get(targetKey);
   if (!t || !src) return { zones: [] };
+  // A task's row (under a failure mode) is never a place to drop: nothing is shown, nothing said.
+  if (t.type === "task") return { zones: [] };
   if (src.kind !== "task" && src.keys.some((k) => within(whole, targetKey, k))) return { zones: [] };
   const no = (reason) => ({ zones: [], reason });
   if (src.kind === "fn") {

@@ -59,7 +59,8 @@ evidence behind them.
 
 ![The RCM tab on the sample UAV product: its functions, failures and modes, each decision with its evidence check](/guides/img/rcm-01-explorer.png)
 
-The levels under a position are the ones classic RCM uses:
+The five levels under a position are the ones classic RCM uses, and the tasks
+that answer them:
 
 - **Function** — what the position must do: *Give the aircraft's position*
   (the GPS).
@@ -72,6 +73,14 @@ The levels under a position are the ones classic RCM uses:
   not tied to one performance standard yet, sits under a grey **No performance standard** row.
 - **Failure mode** — what causes that failure: *Antenna connector works
   loose*.
+- **Task** — what's done about it, one row for each task of the failure mode's
+  decision: *Check the connector torque*, its kind (*On condition*) in the
+  Decision column and how often (*every 50 hours*) in the Task column. A task
+  that serves several failure modes has a row under each of them, marked
+  **Shared with N**; one done on a work package's visits is marked **In:** and
+  the package's name. A check's row says quietly after its name what's done
+  when it finds something. Run to failure, accept and redesign have no task
+  rows: the failure mode's own row says the decision.
 
 The columns beside the tree are the worksheet: **Failure effects**,
 **Consequence**, **Decision**, **Task** and, once any decision has evidence
@@ -106,9 +115,12 @@ To find your way around a big tree:
 - The search box filters the tree and its RCM: descriptions, effects, tasks
   and notes, keeping the rows each match sits inside.
 - **Isolate** in any row's menu (a position, function, performance standard, functional
-  failure or failure mode) closes every other branch of the tree and opens
+  failure, failure mode or task) closes every other branch of the tree and opens
   that row **with 1 level open**, **2 levels open**, **3 levels open** or
-  **everything open** below it. The other rows stay on show, closed, so you
+  **everything open** below it. On the RCM tab, where a row can go five levels
+  deep, **4 levels open** and **5 levels open** are offered too where the rows
+  go that deep: from a position, **4 levels open** shows its failure modes'
+  tasks. The other rows stay on show, closed, so you
   can still see where you are; open and close rows by hand after as usual.
 - **Pin this branch** in a position's row menu shows that position and what's
   inside it on its own; **Show whole tree** brings the rest back.
@@ -188,20 +200,30 @@ fields, then the quieter things at the foot:
   on the chosen one clears it. With **No task is worth doing**, a second row
   offers what's done instead (**Run to failure**, **Accept**, **Redesign**, as
   allowed), and run to failure asks why. Until step 2 is answered the choices
-  wait, greyed out. Below them are the tasks as cards, each leading with what
-  it's for: an on-condition task reads *Check: Weekly water level check ·
-  every 1 week*, then **Then, if found:** what's done when the check finds it
-  (type it in the card; it's kept when you leave the box or press Enter). A
-  failure-finding task reads **Check it still works:** with **Then, if
-  failed:**; a fixed-interval task **Do:**; run to failure **When it fails:**
-  with what's done on failure; accept **Accepted:** and redesign **Change:**,
-  each with the first line of the notes and rationale. Each task card has
-  **Edit** and **Remove** at its right. A task kind with no task yet shows a
-  small form: the task's name and how often (and, for a check, what's done when
-  it finds it), or **Use an existing task…**. **Evidence**, open at the foot,
+  wait, greyed out. Below them is the list of the decision's tasks, one line
+  each (*Weekly water level check · On condition · every 1 week*); each name
+  is a link that picks the task's own row in the tree, where it's changed (see
+  the task, below). Run to failure shows **When it fails:** with what's done on
+  failure; accept **Accepted:** and redesign **Change:**, each with the first
+  line of the notes and rationale. A task kind with no task yet shows a small
+  form: the task's name and how often (and, for a check, what's done when it
+  finds it), or an existing task. **+ Add a task** adds another (see below);
+  the new task's row is picked once it's saved. **Evidence**, open at the foot,
   shows the evidence (**Link evidence…** opens the evidence picker). Why you
   decided goes in the failure mode's **Notes and rationale**, under its title:
   there's one place for it.
+- a task: its title is its name (click it to change it; a shared task's name
+  changes for every failure mode it serves). **Kind and interval** says its
+  kind and how often, with **Change** to set the interval in place and
+  **Calculate…** to work it out; **Edit when it's done…** opens its form, for
+  what raises it (its interval, or an event) and what a task by use counts.
+  **Then, if found** (**Then, if failed** for failure finding) is what's done
+  when the check finds something, kept when you leave the box or press Enter.
+  Then its **Instructions**, its **Evidence for this task**, the failure modes
+  it **Serves** (each a link), and **Logistics**: its labour hours, tools and
+  method from its LSA record, with **Open in LSA** for the whole record. At
+  its foot, **Retire the task** (when it serves only this failure mode) or
+  **Remove this task from the failure mode** (when it serves others too).
 
 Every row, whatever its level, opens its details with **Notes and rationale**,
 a section of its own directly below its title and status line and above
@@ -353,35 +375,39 @@ Sometimes one task isn't enough: an inspection catches the slow failures, and
 a replacement at a hard life catches the ones it can't see. And sometimes one
 act of work answers several failure modes: one monthly water sample covers
 five chemistry failure modes. Both are in the failure mode's Details, in its
-decision card (**3. Proactive task or default action**): one card per task, each with what
-it's for (**Check:**, **Do:**, …), its name and how often, and how many other failure modes share it.
+decision (**3. Proactive task or default action**), and in the tree: each task
+is a row under each failure mode it serves, with its kind, how often and how
+many other failure modes share it.
 
-- **+ Add another task**, the dashed row under the task cards, adds a task to
+- **+ Add a task**, the dashed row under the list of tasks, adds a task to
   the decision, making it a combination of tasks. It asks its kind in place
   first (*On condition*, *Fixed interval* or *Failure finding*, or a
-  *Redesign* beside the tasks), then its name and how often, then Enter. Its
-  instructions are its card's **Edit**, as for any other task. One kind can
-  come more than once (two fixed-interval tasks, each with its own interval);
-  failure finding is offered only on a hidden failure, and one redesign at
-  most. **Remove** on a task's card takes it off the decision. (**Add a task…** in the row's menu
-  opens the same row, or the decision dialog when there's no decision yet.)
-- **Use an existing task…** in the same form picks a task that is already
+  *Redesign* beside the tasks), then its name and how often, then Enter. The
+  new task's row is picked: write its instructions there, as for any other
+  task. One kind can come more than once (two fixed-interval tasks, each with
+  its own interval); failure finding is offered only on a hidden failure, and
+  one redesign at most. (**Add a task…** in the failure mode's row menu opens
+  the same row, or the decision dialog when there's no decision yet.)
+- **Existing task** in the same form picks a task that is already
   on the position, or on a position above it, so one task serves several
   failure modes. A task on a position can serve the failure modes on it and on
   the positions inside it, never the other way round.
 - Tasks linked before a failure mode had a decision show under **Tasks linked
   before the decision** until you decide.
 - Each task shows how many other failure modes share it. A shared task keeps
-  one interval for all of them: change it on the task (its card's **Edit**),
-  not in the decision dialog, which shows it read-only.
-- A task by use (hours, cycles, km) shows its **Measurement** when you edit it:
+  one interval for all of them: change it on the task (its row's **Kind and
+  interval**), not in the decision dialog, which shows it read-only.
+- A task by use (hours, cycles, km) shows its **Measurement** in its form
+  (**Edit when it's done…** in its details):
   what it counts, the latest reading and the reading when it was last done.
   **Change the measurement…** picks another in the same unit, on the position,
   above or below it, or on the item fitted there, and asks for the last-done
   reading on the new one (or works it out from the date, marked as an
   estimate).
-- **Remove** on the task's card takes it off the failure mode: a task that serves only this
-  mode is retired; one that serves others too is unlinked and stays. Choosing a
+- **Retire the task** at the foot of a task's details (or in its row's menu)
+  retires a task that serves only this failure mode; **Remove this task from
+  the failure mode** (also beside this failure mode under **Serves**) unlinks
+  one that serves others too, and it stays with them. Choosing a
   decision that schedules nothing (or clearing it) asks first, naming the
   tasks that would come off.
 
@@ -389,7 +415,8 @@ it's for (**Check:**, **Do:**, …), its name and how often, and how many other 
 
 Some work isn't done on a calendar: after 120 mm of rain in 24 hours, test and
 re-dose the pool; after a lightning strike, inspect the chlorinator. In the
-task's **Edit**, set **Trigger** to **When an event happens**, then
+task's details, choose **Edit when it's done…**, then **Raise it on an event
+instead…**, then
 choose what happens: **A reading passes a limit** (pick a measuring point and
 the limit, at or above 120 mm on the rain gauge) or **Someone logs an event**
 (type its name, *Lightning strike*). The decision stays as it is; the
@@ -418,8 +445,8 @@ analysis**.
 
 ## Working out the interval
 
-Each scheduled task's card has **Calculate…** beside its *every N* (also while
-you change the task with **Edit**). It opens the calculator the kind of task
+Each scheduled task's details have **Calculate…** beside its *every N*, under
+**Kind and interval** (also while you change the interval). It opens the calculator the kind of task
 calls for, says in a sentence or two what it works out, and starts from what
 the failure mode already has: its linked model or analysis, and the failures
 recorded at the position. Anything it assumed says so; change any input and

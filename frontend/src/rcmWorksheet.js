@@ -51,6 +51,9 @@ export const NOFAIL_HINT = "Add a performance standard and a functional failure 
 // A reference row under a functional failure: a lower functional failure that
 // causes it (a view of a row that lives on a position below, never edited here).
 LEVEL_OF.cause = { type: "cause", label: "Caused by", plural: "Causes below", child: null, depth: 0 };
+// The fifth level: a task of a failure mode's decision (one row per task, under
+// each failure mode it serves). Run to failure, accept and redesign have none.
+LEVEL_OF.task = { type: "task", label: "Task", plural: "Tasks", child: null, depth: 0 };
 
 export const OUTCOME_LABEL = {
   on_condition: "On condition",
@@ -525,6 +528,20 @@ export function decisionWithOnFound(d, at, text) {
   return out;
 }
 
+// A combination as the server takes it back with one member's own evidence set (`at`: its
+// index; `evidence` {type, id}, or null for none, so the decision's stands for it): every
+// member as it is otherwise (decisionBody), the decision's own evidence kept.
+export function decisionWithMemberEvidence(d, at, evidence) {
+  const out = decisionBody(d);
+  if (!isCombination(d) || !out.outcomes[at]) return out;
+  out.outcomes = out.outcomes.map((o, i) => {
+    if (i !== at) return o;
+    const { evidence: _old, ...rest } = o;
+    return evidence?.type && evidence?.id ? { ...rest, evidence: { type: evidence.type, id: evidence.id } } : rest;
+  });
+  return out;
+}
+
 // A decision as the server takes it back: the fields a decision is made of,
 // without the evidence check the server added. A combination goes back whole
 // (its members, the change applied to the first: the decision's own task), so
@@ -661,7 +678,7 @@ export const belowPending = (r) => {
 // What's inside a row, in words: "5 failure modes · 2 to decide · 3 with a task".
 export function insideWords(r) {
   const s = r.sum;
-  if (r.type === "mode") return "";
+  if (r.type === "mode" || r.type === "task") return "";
   if (r.type === "fail" && !s.modes && (r.ref.causes || []).length) return r.ref.explained_below ? "Explained below" : "No failure modes of its own";
   if (!s.modes) {
     // A function's failures sit under its standards in the Explorer's tree,
@@ -679,6 +696,7 @@ export function insideWords(r) {
 
 // The phone's second line: the main columns, in words.
 export function phoneLine(r) {
+  if (r.type === "task") return taskRowWords(r, { found: true });
   if (r.type === "std") return [limitWords(r.ref), insideWords(r)].filter(Boolean).join(" · ");
   if (r.type === "cause") {
     const s = r.sum;
@@ -723,7 +741,20 @@ const consRank = (m) => (categoryOf(m) ? CONS_RANK[categoryOf(m)] ?? null : isHi
 const OUT_RANK = { on_condition: 0, fixed_interval: 1, failure_finding: 2, rtf: 3, redesign: 4, accept: 5 };
 const STATUS_RANK = { contradicted: 0, stale: 1, inconclusive: 3, supported: 4, linked: 5 };
 const isMode = (r) => r.type === "mode";
+const isTask = (r) => r.type === "task";
 const d = (r) => r.ref.decision || null;
+
+// ---- a task row (the tree's fifth level, explorerRcm.js) ------------------------
+// Its kind ("On condition"), when it's done ("every 4 weeks", "on event: …"), and
+// its chips in words ("Shared with 2", "In: Weekly round").
+export const taskKindText = (r) => OUTCOME_LABEL[r.ref.outcome] || "";
+export const taskSharedText = (t) => (t?.shared_with ? `Shared with ${t.shared_with.toLocaleString("en-AU")}` : "");
+export function taskRowWords(r, { found = false } = {}) {
+  const t = r.ref.task || {};
+  const then = found && r.ref.on_found ? `${ROLE[r.ref.outcome]?.then || "Then, if found:"} ${r.ref.on_found}` : "";
+  return [found ? taskKindText(r) : null, everyText(t), taskSharedText(t), t.package ? `In: ${t.package.name}` : "", then]
+    .filter(Boolean).join(" · ");
+}
 
 // A function's performance standards are rows in the tree (each one's limit
 // in its details), not a column: a saved choice that still names the old
@@ -753,16 +784,16 @@ export const COLUMNS = [
   {
     id: "decision", label: "Decision", width: 150, min: 84, on: true,
     title: "The maintenance decision for the failure mode",
-    text: (r) => (isMode(r) ? decisionText(d(r)) || "To decide"
+    text: (r) => (isTask(r) ? taskKindText(r) : isMode(r) ? decisionText(d(r)) || "To decide"
       : [r.sum.modes ? (r.sum.undecided ? `${r.sum.undecided} to decide` : "All decided") : "", belowDecisionText(r)].filter(Boolean).join(" · ")),
-    sort: (r) => (isMode(r) ? (d(r) ? OUT_RANK[d(r).outcome] ?? 9 : -1) : -r.sum.undecided),
+    sort: (r) => (isTask(r) ? OUT_RANK[r.ref.outcome] ?? 9 : isMode(r) ? (d(r) ? OUT_RANK[d(r).outcome] ?? 9 : -1) : -r.sum.undecided),
   },
   {
     id: "task", label: "Task", width: 190, min: 110, on: true,
     title: "What is done (the decision's own task, and how many more), and for run-to-failure the action on failure",
-    text: (r) => (isMode(r) ? [d(r)?.task || tasksOf(r.ref)[0]?.text || "", moreTasks(r.ref)].filter(Boolean).join(" · ")
+    text: (r) => (isTask(r) ? taskRowWords(r) : isMode(r) ? [d(r)?.task || tasksOf(r.ref)[0]?.text || "", moreTasks(r.ref)].filter(Boolean).join(" · ")
       : [r.sum.tasks ? plural(r.sum.tasks, "task") : "", belowOf(r)?.tasks ? `${belowOf(r).tasks.toLocaleString("en-AU")} below` : ""].filter(Boolean).join(" · ")),
-    sort: (r) => (isMode(r) ? d(r)?.task || null : r.sum.tasks || null),
+    sort: (r) => (isTask(r) ? null : isMode(r) ? d(r)?.task || null : r.sum.tasks || null),
     edit: "text", can: (r) => isMode(r) && TASK_OUTCOMES.has(d(r)?.outcome), field: "task", onDecision: true,
   },
   {
@@ -810,8 +841,8 @@ export const COLUMNS = [
   {
     id: "modes", label: "Failure modes", width: 104, min: 100, on: false, align: "num", sum: true,
     title: "How many failure modes are inside",
-    text: (r) => (isMode(r) ? "" : String(r.sum.modes)),
-    sort: (r) => (isMode(r) ? null : r.sum.modes),
+    text: (r) => (isMode(r) || isTask(r) ? "" : String(r.sum.modes)),
+    sort: (r) => (isMode(r) || isTask(r) ? null : r.sum.modes),
   },
   {
     id: "undecided", label: "To decide", width: 90, min: 78, on: false, align: "num", sum: true,
@@ -821,7 +852,7 @@ export const COLUMNS = [
   },
 ];
 export const COLUMN = Object.fromEntries(COLUMNS.map((c) => [c.id, c]));
-export const NAME_COLUMN = { id: "name", label: "Function, performance standard, failure or mode", width: 270, min: 180 };
+export const NAME_COLUMN = { id: "name", label: "Function, performance standard, failure, mode or task", width: 270, min: 180 };
 export const DEFAULT_COLUMNS = COLUMNS.filter((c) => c.on).map((c) => c.id);
 
 // A parent row's consequences: the most serious kind inside it (all of them
@@ -882,7 +913,7 @@ export function chipCounts(display) {
 // detection method, action and owner).
 export function rowText(r) {
   const p = r.ref;
-  return [p.text, p.standard, p.effects, p.notes, p.decision?.task, p.decision?.on_found,
+  return [p.text, p.standard, p.effects, p.notes, p.decision?.task, p.decision?.on_found, p.on_found, p.instructions,
     p.cause, p.effect_local, p.effect_next, p.detection_method, p.action, p.action_owner,
     ...tasksOf(p).map((t) => t.name), ...(p.standards || []).map((st) => [st.parameter, st.when, st.source].filter(Boolean).join(" ")),
     // A standard's own row: its structured limit, condition and source too.

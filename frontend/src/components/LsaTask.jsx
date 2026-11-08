@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { getTaskLsa, listMaintenanceParts, updateMaintenanceTask } from "../api.js";
 import { cleanSection, kindText, modeLine, num, sectionDraft } from "../lsaTab.js";
 import { whenText } from "../rcmWorksheet.js";
+import { Link } from "react-router-dom";
+import { explorerPath } from "../assetTree.js";
+import { taskKey } from "../explorerRcm.js";
 
 // One task's LSA in the Explorer's LSA tab (?task=<id>, with a back link): the
 // task's name, kind, interval, position and the failure modes it serves, then
@@ -142,7 +145,13 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
       {data.modes.length > 0 ? (
         <div className="lsa-modes">
           <span className="lib-date">Serves:</span>
-          <ul>{data.modes.map((m) => <li key={m.id}><span>{m.text}</span>{modeLine(m) && <span className="lib-date"> · {modeLine(m)}</span>}</li>)}</ul>
+          {/* Each a link to the task's row under that failure mode on the RCM tab. */}
+          <ul>{data.modes.map((m) => (
+            <li key={m.id}>
+              <Link to={explorerPath("positions", { sel: taskKey(m.id, t.id), tab: "rcm" })} title="Show this task under the failure mode on the RCM tab">{m.text}</Link>
+              {modeLine(m) && <span className="lib-date"> · {modeLine(m)}</span>}
+            </li>
+          ))}</ul>
         </div>
       ) : <p className="lib-date">Serves no failure mode (a task added directly).</p>}
       <p className="lsa-total" aria-live="polite">

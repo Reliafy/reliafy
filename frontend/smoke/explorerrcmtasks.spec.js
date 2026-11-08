@@ -1,11 +1,17 @@
 // Several tasks for one failure mode, and one task for several, on the
-// Explorer's RCM tab (Assets › Explorer › RCM): a failure mode's decision card
-// (step 3, "Proactive task or default action", edited in place) lists its tasks as cards, one per member
-// task, each with plain Edit and Remove links; a dashed "+ Add another task" row asks its kind, then a
-// new task or an existing one ("New task · Existing task"), in place, in the same card shape; the row menu's Add a task… opens that row (the decision
-// dialog when there's no decision yet); a tap on "Which task is worth doing?" adopts a task linked before
-// the decision; the Task cell says "+1 task" without the row changing height; the decision dialog
-// (the row menu's Change the decision…) shows a shared task's interval read-only; at 400 px it all fits. Each test makes its own small plant through the API.
+// Explorer's RCM tab (Assets › Explorer › RCM). Each task is a row of the tree,
+// under every failure mode it serves (the fifth level); its own details change it:
+// its name, how often (Change, Calculate…), what's done when found, instructions,
+// its evidence, the failure modes it serves and its logistics, and Remove or Retire
+// at its foot. A failure mode's step 3 ("Proactive task or default action") lists its
+// tasks as plain links to their rows, with a dashed "+ Add a task" that asks its kind,
+// then a new task or an existing one ("New task · Existing task"), in place; the new
+// task's row is picked once saved. The row menu's Add a task… opens that row (the
+// decision dialog when there's no decision yet); a tap on "Which task is worth doing?"
+// adopts a task linked before the decision; the mode's Task cell says "+1 task"
+// without the row changing height; the decision dialog (the row menu's Change the
+// decision…) shows a shared task's interval read-only; at 400 px it all fits. Each
+// test makes its own small plant through the API.
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots of the details with
 // several tasks and of the table rows, at 1280 and 400 px (for the pull request).
@@ -41,19 +47,27 @@ const tasksOf = (page) => panel(page).getByRole("region", { name: "Proactive tas
 const chipsOf = (page) => panel(page).locator(".rw-chips-row");
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 // Step 3's dashed add row, and the form it opens in place.
-const addRow = (tasks) => tasks.getByRole("button", { name: "+ Add another task" });
-const addForm = (tasks) => tasks.getByRole("group", { name: "Add another task" });
-// A task card's own link: "Edit “‹task›”", "Remove “‹task›”", "Remove “‹task›” from this failure mode".
-const taskLink = (tasks, name, verb, tail = "") => tasks.getByRole("button", { name: `${verb} “${name}”${tail}`, exact: true });
-// The task cards (not the evidence lines under them).
-const cards = (tasks) => tasks.locator(".rim-cards > li");
-const names = (tasks) => tasks.locator(".rim-cards .rim-tname");
+const addRow = (tasks) => tasks.getByRole("button", { name: "+ Add a task" });
+const addForm = (tasks) => tasks.getByRole("group", { name: "Add a task" });
+// Step 3's list of the decision's tasks: one line each, the name a link to the task's row.
+const listOf = (tasks) => tasks.getByRole("list", { name: "The decision's tasks" });
+const lines = (tasks) => listOf(tasks).getByRole("listitem");
+const goTask = (tasks, name) => listOf(tasks).getByRole("button", { name, exact: true });
+// The task's own details (its row picked): the kind, the title, its sections.
+const kindOf = (page) => panel(page).locator(".rw-panel-kind");
+const titleOf = (page) => panel(page).locator(".rw-panel-title");
+const section = (page, name) => panel(page).getByRole("region", { name, exact: true });
 const settled = async (page) => {
   await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => {});
   await page.waitForTimeout(250);
 };
+// Back to the failure mode from a task's details: its name in Serves.
+const toMode = async (page, name) => {
+  await section(page, "Serves").getByRole("button", { name, exact: true }).click();
+  await expect(kindOf(page)).toHaveText("Failure mode");
+};
 
-test("a failure mode's decision lists its tasks; add another, use an existing one, edit, remove; the cell says +1 task", async ({ page, request, problems }) => {
+test("a failure mode's tasks are rows of the tree; add one, use an existing one, change it in its details, remove it; the cell says +1 task", async ({ page, request, problems }) => {
   const tag = `t${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -63,34 +77,52 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await acidRow.locator(".tp-nm").click();
   await settled(page);
   const heightBefore = (await acidRow.boundingBox()).height;
+  // The failure mode opens to its task: the fifth level of the tree.
+  await expect(acidRow).toHaveAttribute("aria-expanded", "false");
+  await acidRow.locator(".tp-chev").click();
+  const checkRow = trow(page, `^Task: Weekly pH check ${tag}`);
+  await expect(checkRow).toBeVisible();
+  await expect(checkRow.getByRole("gridcell").filter({ hasText: /^On condition$/ })).toHaveCount(1); // Decision: its kind
+  await expect(checkRow).toContainText("every 1 week"); // Task: how often
+  expect((await checkRow.boundingBox()).height).toBe(heightBefore);
 
-  // Its details (a double-click on its name): the decision in words with its task, one line.
+  // The mode's details (a double-click on its name): step 3 lists its task as a link; no cards.
   await acidRow.locator(".tp-nm").dblclick();
-  let dlg = panel(page);
-  await expect(dlg).toBeVisible();
+  await expect(panel(page)).toBeVisible();
   let tasks = tasksOf(page);
   await expect(chipsOf(page)).toContainText("On condition");
-  await expect(cards(tasks)).toHaveCount(1);
-  // Each card leads with what it's for (Derryn, 9 Nov 2026): a check, then what's done when it finds it.
-  await expect(names(tasks)).toHaveText([`Check: Weekly pH check ${tag} · every 1 week`]);
-  // The chosen chip's line names what the card holds; the worth-doing test is the chip's tooltip.
+  await expect(lines(tasks)).toHaveText([`Weekly pH check ${tag} · On condition · every 1 week`]);
+  await expect(tasks.locator(".rim-cards")).toHaveCount(0);
   await expect(tasks.locator(".task-choice")).toContainText("On condition: a check at an interval, then what's done when the check finds it.");
   await expect(tasks.getByRole("radio", { name: /On condition/ })).toHaveAttribute("title", /^First choice: /);
-  const found = tasks.getByRole("textbox", { name: "Then, if found:" });
-  await expect(found).toHaveAttribute("placeholder", "Say what's done when the check finds it");
-  await found.fill(`Dose acid by hand ${tag}`);
-  await found.press("Enter");
-  await expect(cards(tasks).first().getByRole("status")).toHaveText("✓ Saved");
-  await expect(tasks.getByRole("textbox", { name: "Then, if found:" })).toHaveValue(`Dose acid by hand ${tag}`);
-  await expect(tasks.getByRole("region", { name: "Tasks" })).toHaveCount(0);
-  // No ⋯ and no Change…: the choice is the chip row, the task's own links are on its card.
-  await expect(tasks.getByRole("button", { name: /^Actions for/ })).toHaveCount(0);
   await expect(tasks.getByRole("radiogroup", { name: "Which task is worth doing?" }).getByRole("radio", { name: /On condition/ }))
     .toHaveAttribute("aria-checked", "true");
 
-  // Add another task: in place, its kind first (every kind, on condition again too: one kind may come
-  // more than once; it starts on one the decision doesn't have), then its name
-  // and how often (no "what does it catch" hint: a safety consequence may combine tasks). No interval yet: it says so.
+  // The link picks the task's row: its own details, the way up ending at the failure mode.
+  await goTask(tasks, `Weekly pH check ${tag}`).click();
+  await expect(kindOf(page)).toHaveText("Task");
+  await expect(titleOf(page)).toHaveText(`Weekly pH check ${tag}`);
+  await expect(checkRow).toHaveAttribute("aria-selected", "true");
+  await expect(panel(page).getByRole("navigation", { name: "Inside" })).toContainText(`Acid under-dosed ${tag}`);
+  await expect(chipsOf(page)).toContainText("On condition");
+  await expect(chipsOf(page)).toContainText("every 1 week");
+  await expect(panel(page).locator(".psec-title")).toHaveText(["Kind and interval", "Then, if found", "Instructions", "Evidence for this task", "Serves", "Logistics"]);
+  // What's done when the check finds it: kept on Enter, and quietly after the row's name.
+  const found = section(page, "Then, if found").getByRole("textbox", { name: "Then, if found:" });
+  await expect(found).toHaveAttribute("placeholder", "Say what's done when the check finds it");
+  await found.fill(`Dose acid by hand ${tag}`);
+  await found.press("Enter");
+  await expect(section(page, "Then, if found").getByRole("status")).toHaveText("✓ Saved");
+  await expect(checkRow.locator(".tp-found")).toHaveText(`Then, if found: Dose acid by hand ${tag}`);
+  await expect(section(page, "Serves").getByRole("listitem")).toHaveCount(1);
+  await expect(section(page, "Logistics")).toContainText("No labour, tools or method set yet.");
+  await expect(section(page, "Logistics").getByRole("link", { name: "Open in LSA" })).toHaveAttribute("href", new RegExp(`tab=lsa&task=${p.own}`));
+
+  // Add a task (from the mode's step 3): in place, its kind first (every kind, on condition again too:
+  // one kind may come more than once; it starts on one the decision doesn't have), then its name and how
+  // often. No interval yet: it says so, and nothing is sent. Saved, its row is picked.
+  await toMode(page, `Acid under-dosed ${tag}`);
+  tasks = tasksOf(page);
   await addRow(tasks).click();
   let add = addForm(tasks);
   await expect(add).toBeVisible();
@@ -108,28 +140,40 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await add.getByRole("spinbutton", { name: "Interval" }).fill("24");
   await add.getByRole("combobox", { name: "Interval unit" }).selectOption("months");
   await add.getByRole("spinbutton", { name: "Interval" }).press("Enter");
-  await expect(add).toHaveCount(0);
   expect(writes).toBe(1);
-  await expect(dialog(page, "Add another task")).toHaveCount(0); // never a dialog
-  await expect(cards(tasks)).toHaveCount(2);
-  await expect(chipsOf(page)).toContainText("On condition + Fixed interval");
-  const item = (name) => cards(tasks).filter({ hasText: name });
-  await expect(item(`Replace the acid pump ${tag}`)).toContainText(`Do: Replace the acid pump ${tag}`);
-  // The check keeps what's done when it finds it.
-  await expect(tasks.getByRole("textbox", { name: "Then, if found:" })).toHaveValue(`Dose acid by hand ${tag}`);
-  await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 24 months");
-  // Its instructions: its card's Edit, as for any other task. Edit puts inputs where the words
-  // were (row 1), the other fields in row 3; no "Change the task" heading.
-  await taskLink(tasks, `Replace the acid pump ${tag}`, "Edit").click();
-  await expect(tasks.locator(".rim-card.editing .rim-r1 .rim-trole")).toHaveText("Do:");
-  await expect(tasks.locator(".rim-card.editing .rim-r1").getByRole("textbox", { name: "Task" })).toBeVisible();
-  await expect(tasks.getByRole("heading", { name: "Change the task" })).toHaveCount(0);
-  await tasks.getByRole("textbox", { name: "Instructions" }).fill("Swap the pump head.");
-  await tasks.getByRole("button", { name: "Save task" }).click();
-  await expect(item(`Replace the acid pump ${tag}`)).toContainText("Swap the pump head.");
+  await expect(dialog(page, "Add a task")).toHaveCount(0); // never a dialog
+  await expect(kindOf(page)).toHaveText("Task");
+  await expect(titleOf(page)).toHaveText(`Replace the acid pump ${tag}`);
+  await expect(chipsOf(page)).toContainText("Fixed interval");
+  await expect(chipsOf(page)).toContainText("every 24 months");
+  const pumpRow = trow(page, `^Task: Replace the acid pump ${tag}`);
+  await expect(pumpRow).toHaveAttribute("aria-selected", "true");
+  // A fixed-interval task has no "Then, if found".
+  await expect(section(page, "Then, if found")).toHaveCount(0);
+  // Its instructions, kept when you leave the field.
+  const inst = section(page, "Instructions").getByRole("textbox", { name: "Instructions" });
+  await inst.fill("Swap the pump head.");
+  await inst.blur();
+  await expect(section(page, "Instructions").getByRole("status")).toHaveText("✓ Saved");
+  // Change how often, in place.
+  await section(page, "Kind and interval").getByRole("button", { name: `Change how often “Replace the acid pump ${tag}” is done` }).click();
+  await section(page, "Kind and interval").getByRole("spinbutton", { name: "Interval" }).fill("36");
+  await section(page, "Kind and interval").getByRole("button", { name: "Save", exact: true }).click();
+  await expect(section(page, "Kind and interval")).toContainText("every 36 months");
+  // Its name, a click on the title: kept on Enter (the row follows).
+  await titleOf(page).getByRole("button").click();
+  const box = panel(page).getByRole("textbox", { name: "Task" });
+  await box.fill(`Replace the dosing pump ${tag}`);
+  await box.press("Enter");
+  await expect(titleOf(page)).toHaveText(`Replace the dosing pump ${tag}`);
+  await expect(trow(page, `^Task: Replace the dosing pump ${tag}`)).toBeVisible();
 
   // Use an existing task on the position: every kind still offered, starting on the one the decision
-  // doesn't have yet (failure finding), then the picker.
+  // doesn't have yet (failure finding), then the picker. Linked, its row is picked.
+  await toMode(page, `Acid under-dosed ${tag}`);
+  tasks = tasksOf(page);
+  await expect(chipsOf(page)).toContainText("On condition + Fixed interval");
+  await expect(lines(tasks)).toHaveText([`Weekly pH check ${tag} · On condition · every 1 week`, `Replace the dosing pump ${tag} · Fixed interval · every 36 months`]);
   await addRow(tasks).click();
   add = addForm(tasks);
   await expect(add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio"))
@@ -142,29 +186,20 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await expect(pick.locator("option")).toContainText([/Choose a task/, new RegExp(`Backwash the filter ${tag} · every 1 month`)]);
   await pick.selectOption({ label: await pick.locator("option").nth(1).textContent() });
   await add.getByRole("button", { name: "Link task" }).click();
-  await expect(add).toHaveCount(0);
-  await expect(cards(tasks)).toHaveCount(3);
-  await expect(item(`Backwash the filter ${tag}`)).toContainText("Check it still works: ");
-  await expect(item(`Backwash the filter ${tag}`).getByRole("textbox", { name: "Then, if failed:" })).toBeVisible();
-  // Another of any kind can still join (a second fixed-interval task, say): the add row stays.
-  await expect(addRow(tasks)).toBeVisible();
-  await expect(chipsOf(page)).toContainText("On condition + Fixed interval + Failure finding");
-
-  // Edit the second task: a plain change, kept.
-  await taskLink(tasks, `Replace the acid pump ${tag}`, "Edit").click();
-  await tasks.getByRole("spinbutton", { name: "Interval" }).fill("36");
-  await tasks.getByRole("button", { name: "Save task" }).click();
-  await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 36 months");
+  await expect(titleOf(page)).toHaveText(`Backwash the filter ${tag}`);
+  await expect(chipsOf(page)).toContainText("Failure finding");
+  await expect(section(page, "Then, if failed").getByRole("textbox", { name: "Then, if failed:" })).toBeVisible();
 
   // Remove the linked task: it serves only this mode, so it is retired (after asking), and its member
-  // comes off the decision with it; the other two keep their tasks.
-  await taskLink(tasks, `Backwash the filter ${tag}`, "Remove").click();
+  // comes off the decision with it; the failure mode is picked again, its other two tasks kept.
+  await panel(page).getByRole("button", { name: "Retire the task", exact: true }).click();
   const ask = page.getByRole("alertdialog", { name: "Remove this task?" });
   await expect(ask).toContainText("serves only this failure mode, so it is retired");
   await ask.getByRole("button", { name: "Retire the task" }).click();
-  await expect(item(`Backwash the filter ${tag}`)).toHaveCount(0);
-  await expect(cards(tasks).filter({ hasText: "no task now" })).toHaveCount(0);
-  await expect(cards(tasks)).toHaveCount(2);
+  await expect(kindOf(page)).toHaveText("Failure mode");
+  tasks = tasksOf(page);
+  await expect(lines(tasks)).toHaveCount(2);
+  await expect(trow(page, `^Task: Backwash the filter ${tag}`)).toHaveCount(0);
   await expect(chipsOf(page)).toContainText("On condition + Fixed interval");
 
   // A second task of one kind (Derryn, 9 Nov 2026): an annual fixed-interval deep clean beside the pump swap.
@@ -175,35 +210,38 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await add.getByRole("spinbutton", { name: "Interval" }).fill("12");
   await add.getByRole("combobox", { name: "Interval unit" }).selectOption("months");
   await add.getByRole("spinbutton", { name: "Interval" }).press("Enter");
-  await expect(add).toHaveCount(0);
-  await expect(cards(tasks)).toHaveCount(3);
-  await expect(item(`Deep clean ${tag}`)).toContainText("every 12 months");
-  await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 36 months");
-  await expect(chipsOf(page)).toContainText("On condition + 2 fixed interval");
-  // Removing it takes that one off; the pump swap (the same kind) stays as it was.
-  await taskLink(tasks, `Deep clean ${tag}`, "Remove").click();
+  await expect(titleOf(page)).toHaveText(`Deep clean ${tag}`);
+  // Its row menu: Open… and Retire the task… (it serves only this mode).
+  await trow(page, `^Task: Deep clean ${tag}`).locator(".tp-nm").click();
+  await page.keyboard.press("Shift+F10");
+  await expect(page.getByRole("menu").getByRole("menuitem").filter({ hasText: /Open…|Retire the task…/ })).toHaveCount(2);
+  await page.getByRole("menu").getByRole("menuitem", { name: "Retire the task…" }).click();
   await page.getByRole("alertdialog", { name: "Remove this task?" }).getByRole("button", { name: "Retire the task" }).click();
-  await expect(item(`Deep clean ${tag}`)).toHaveCount(0);
-  await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 36 months");
-  await expect(cards(tasks)).toHaveCount(2);
+  await expect(trow(page, `^Task: Deep clean ${tag}`)).toHaveCount(0);
   await panel(page).getByRole("button", { name: "Back to table" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  // Beside the table again: each task row's Decision and Task cells (its kind; how often).
+  const dosing = trow(page, `^Task: Replace the dosing pump ${tag}`);
+  await expect(dosing).toContainText("Fixed interval");
+  await expect(dosing).toContainText("every 36 months");
 
-  // The table: the decision's own task and "+1 task", the row no taller; the tooltip lists both.
+  // The table: the mode's own task and "+1 task", the row no taller; the tooltip lists both.
   await expect(acidRow).toContainText(`Weekly pH check ${tag}`);
   await expect(acidRow).toContainText("+1 task");
   expect((await acidRow.boundingBox()).height).toBe(heightBefore);
   const cell = acidRow.locator(".rw-task");
-  expect(await cell.getAttribute("title")).toContain(`Replace the acid pump ${tag} · every 36 months`);
+  expect(await cell.getAttribute("title")).toContain(`Replace the dosing pump ${tag} · every 36 months`);
 
   // The server agrees.
   const rcm = await (await request.get(`${M}/rcm`)).json();
   const mode = rcm.positions.find((x) => x.id === p.pool.id).functions[0].failures[0].modes.find((x) => x.id === p.acid.id);
-  expect(mode.decision.tasks.map((t) => [t.name, t.interval, t.unit])).toEqual([[`Weekly pH check ${tag}`, 1, "weeks"], [`Replace the acid pump ${tag}`, 36, "months"]]);
-  await expectHealthy(page, problems, { label: "rcm tasks dialog" });
+  expect(mode.decision.tasks.map((t) => [t.name, t.interval, t.unit, t.instructions])).toEqual([
+    [`Weekly pH check ${tag}`, 1, "weeks", ""], [`Replace the dosing pump ${tag}`, 36, "months", "Swap the pump head."]]);
+  expect(mode.decision.outcomes[0].on_found).toBe(`Dose acid by hand ${tag}`);
+  await expectHealthy(page, problems, { label: "rcm tasks rows" });
 });
 
-test("one task for several modes: adopted by a tap, read-only in the decision dialog, unlinked (not retired) on Remove", async ({ page, request, problems }) => {
+test("one task for several modes: a row under each, adopted by a tap, read-only in the decision dialog, unlinked (not retired) from Serves", async ({ page, request, problems }) => {
   const tag = `s${Date.now()}`;
   const p = await plant(request, tag);
   // The pool's weekly check also covers the chlorinator cell's salinity (a position inside the pool).
@@ -221,7 +259,7 @@ test("one task for several modes: adopted by a tap, read-only in the decision di
   await page.keyboard.press("Escape");
   await expect(decide).toHaveCount(0);
   // Its details: no decision yet (nothing chosen, the chips waiting for step 2, and why; no Decide…), the
-  // task linked before it as a card under its own heading, no add row.
+  // task linked before it listed under its own heading, no add row.
   await saltRow.locator(".tp-nm").dblclick();
   const dlg = panel(page);
   await expect(dlg).toBeVisible();
@@ -232,9 +270,10 @@ test("one task for several modes: adopted by a tap, read-only in the decision di
   await expect(tasks).toContainText("Answer step 2 first: what's worth doing depends on the consequence.");
   await expect(tasks.getByRole("button", { name: "Decide…" })).toHaveCount(0);
   await expect(tasks.getByRole("heading", { name: "Tasks linked before the decision" })).toBeVisible();
-  await expect(cards(tasks)).toHaveCount(1);
-  await expect(cards(tasks).first()).toContainText(/shared with 1 other failure mode/i);
-  await expect(tasks.getByRole("button", { name: /^\+ Add another task/ })).toHaveCount(0);
+  const before = tasks.getByRole("list", { name: "Tasks linked before the decision" }).getByRole("listitem");
+  await expect(before).toHaveCount(1);
+  await expect(before.first()).toContainText(/shared with 1 other failure mode/i);
+  await expect(tasks.getByRole("button", { name: /^\+ Add a task/ })).toHaveCount(0);
   // Step 2 answered (hidden, operational): failure finding is offered; one tap decides, adopting that task.
   await dlg.getByRole("radiogroup", { name: "Hidden failure?" }).getByRole("radio", { name: "Hidden" }).click();
   await dlg.getByRole("radiogroup", { name: "Consequence category" }).getByRole("radio", { name: "Operational", exact: true }).click();
@@ -243,8 +282,8 @@ test("one task for several modes: adopted by a tap, read-only in the decision di
   await expect(which.getByRole("radio", { name: /Failure finding/ })).toHaveAttribute("aria-checked", "true");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(chipsOf(page)).toContainText("Failure finding");
-  await expect(cards(tasks)).toHaveCount(1);
-  await expect(cards(tasks).first()).toContainText(`Weekly pH check ${tag} · every 1 week`);
+  await expect(lines(tasks)).toHaveCount(1);
+  await expect(lines(tasks).first()).toContainText(`Weekly pH check ${tag} · Failure finding · every 1 week`);
   await expect(tasks.getByRole("heading", { name: "Tasks linked before the decision" })).toHaveCount(0);
   // The row menu's Change the decision… (the panel never opens the dialog): the shared interval read-only, and why.
   await saltRow.locator(".tp-nm").click();
@@ -254,15 +293,25 @@ test("one task for several modes: adopted by a tap, read-only in the decision di
   await expect(decide.getByText(/also serves 1 other failure mode, so its name and interval are changed on the task/)).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(decide).toHaveCount(0);
-  // Remove: unlinked, not retired; the pool's mode keeps it.
-  await taskLink(tasks, `Weekly pH check ${tag}`, "Remove", " from this failure mode").click();
+  // Its row under the salinity mode: Serves lists both modes, each a link; the pool's is a level up.
+  await saltRow.locator(".tp-nm").dblclick();
+  await goTask(tasksOf(page), `Weekly pH check ${tag}`).click();
+  await expect(kindOf(page)).toHaveText("Task");
+  await expect(chipsOf(page)).toContainText("Shared with 1");
+  const serves = section(page, "Serves");
+  await expect(serves.getByRole("listitem")).toHaveCount(2);
+  await expect(serves).toContainText(`Salinity low ${tag}`);
+  await expect(serves).toContainText(`Acid under-dosed ${tag}`);
+  // Remove from this failure mode: unlinked, not retired; the pool's mode keeps it.
+  await serves.getByRole("button", { name: "Remove from this failure mode" }).click();
   const ask = page.getByRole("alertdialog", { name: "Remove this task?" });
   await expect(ask).toContainText("also serves 1 other failure mode, so it stays with them");
   await ask.getByRole("button", { name: "Remove from this failure mode" }).click();
-  // The decision alone now: the same card, with inputs where its name and interval go (row 1)
-  // and what's done when it's found (row 2); New task or Existing task at its top; no grey sentence.
-  await expect(cards(tasks)).toHaveCount(0);
-  const empty = tasks.getByRole("group", { name: "The decision's task" });
+  // Back on the salinity mode, alone now: the decision's task form in place (name and interval in row 1,
+  // what's done when it's found in row 2), New task or Existing task at its top.
+  await expect(kindOf(page)).toHaveText("Failure mode");
+  await expect(lines(tasksOf(page))).toHaveCount(0);
+  const empty = tasksOf(page).getByRole("group", { name: "The decision's task" });
   await expect(empty).not.toContainText("no task does it yet");
   await expect(empty.locator(".rim-r1 .rim-trole")).toHaveText("Check it still works:");
   await expect(empty.locator(".rim-r1").getByRole("textbox", { name: "Task" })).toBeVisible();
@@ -278,7 +327,7 @@ test("one task for several modes: adopted by a tap, read-only in the decision di
   await expectHealthy(page, problems, { label: "rcm shared task" });
 });
 
-test("at 400 px the decision's tasks and the Add another task form fit", async ({ page, request, problems }) => {
+test("at 400 px the decision's tasks, the Add a task form and a task's own sheet fit", async ({ page, request, problems }) => {
   const tag = `p${Date.now()}`;
   const p = await plant(request, tag);
   await postOk(request, `${M}/failure-modes/${p.acid.id}/tasks`, { name: `Replace the acid pump ${tag}`, interval: 24, unit: "months" });
@@ -291,7 +340,7 @@ test("at 400 px the decision's tasks and the Add another task form fit", async (
   const dlg = panel(page);
   await expect(dlg).toBeVisible();
   const tasks = tasksOf(page);
-  await expect(cards(tasks)).toHaveCount(2);
+  await expect(lines(tasks)).toHaveCount(2);
   const add = addForm(tasks);
   await expect(add.getByRole("textbox", { name: "Task" })).toBeVisible();
   await expect(add.getByRole("spinbutton", { name: "Interval" })).toBeVisible();
@@ -306,23 +355,38 @@ test("at 400 px the decision's tasks and the Add another task form fit", async (
   await page.keyboard.press("Escape"); // the form closes, the sheet stays
   await expect(add).toHaveCount(0);
   await expect(dlg).toBeVisible();
-  await expect(cards(tasks)).toHaveCount(2);
+  await expect(lines(tasks)).toHaveCount(2);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(await overflow(page)).toBe(0);
+  // A task from the list: its own details, as a sheet like the others, nothing sideways.
+  await goTask(tasks, `Weekly pH check ${tag}`).click();
+  await expect(kindOf(page)).toHaveText("Task");
+  await expect(panel(page)).toHaveClass(/sheet/);
+  await expect(section(page, "Kind and interval")).toContainText("every 1 week");
+  expect(await overflow(page)).toBe(0);
+  for (const name of ["Kind and interval", "Then, if found", "Serves", "Logistics"]) {
+    const b = await section(page, name).boundingBox();
+    expect(b.x + b.width).toBeLessThanOrEqual(400.5);
+  }
+  // Its row in the tree, with the kind and interval on its second line.
+  await expect(trow(page, `^Task: Weekly pH check ${tag}`).locator(".tt-l2")).toContainText("On condition · every 1 week");
   await expectHealthy(page, problems, { label: "rcm tasks phone" });
 });
 
-test("Calculate… on an on-condition card: the P-F interval alone, costs behind Show costs on a safety mode, Use writes the interval and the why", async ({ page, request, problems }) => {
+test("Calculate… in an on-condition task's details: the P-F interval alone, costs behind Show costs on a safety mode, Use writes the interval and the why", async ({ page, request, problems }) => {
   const tag = `c${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 800 });
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&tab=rcm`);
-  const row = trow(page, `^Failure mode: Acid under-dosed ${tag}`);
+  // The task's row, by its address (sel=T:<mode>:<task>).
+  await open(page, `/asset-register/explorer?arrange=positions&sel=T:${p.acid.id}:${p.own}&tab=rcm`);
+  const row = trow(page, `^Task: Weekly pH check ${tag}`);
   await expect(row).toBeVisible();
+  await expect(row).toHaveAttribute("aria-selected", "true");
   await row.locator(".tp-nm").dblclick();
-  const tasks = tasksOf(page);
-  await expect(names(tasks)).toHaveText([`Check: Weekly pH check ${tag} · every 1 week`]);
-  await tasks.getByRole("button", { name: `Calculate how often to do “Weekly pH check ${tag}”` }).click();
+  await expect(kindOf(page)).toHaveText("Task");
+  const kind = section(page, "Kind and interval");
+  await expect(kind).toContainText("every 1 week");
+  await kind.getByRole("button", { name: `Calculate how often to do “Weekly pH check ${tag}”` }).click();
   const calc = dialog(page, "Work out the check interval");
   await expect(calc).toBeVisible();
   // What it works out, in words, before any number.
@@ -348,15 +412,20 @@ test("Calculate… on an on-condition card: the P-F interval alone, costs behind
   await expect(calc.locator(".ivc-facts")).toContainText("Half the P-F interval");
   await calc.getByRole("button", { name: "Use 5 weeks" }).click();
   await expect(calc).toHaveCount(0);
-  await expect(names(tasks)).toHaveText([`Check: Weekly pH check ${tag} · every 5 weeks`]);
-  // The why at the end of the notes and rationale, and the calculation linked as the evidence.
-  await expect(panel(page)).toContainText("Interval from the P-F calculator (");
+  await expect(kind).toContainText("every 5 weeks");
+  // The calculation linked as the decision's evidence (the task's, a plain decision's one task).
+  await expect(section(page, "Evidence for this task")).toContainText("Supported");
   await expect.poll(async () => {
     const rcm = await (await request.get(`${M}/rcm`)).json();
     const mode = rcm.positions.find((x) => x.id === p.pool.id).functions[0].failures[0].modes.find((x) => x.id === p.acid.id);
     return [mode.notes?.includes("P-F 10 weeks, onset 0.5/year, inspection $20, found $200, failure $2,000 → 5 weeks (half the P-F interval)"),
       mode.decision.evidence?.type, mode.decision.status];
   }).toEqual([true, "strategy_analysis", "supported"]);
+  // The why at the end of the failure mode's notes and rationale.
+  await toMode(page, `Acid under-dosed ${tag}`);
+  await expect(panel(page)).toContainText("Interval from the P-F calculator (");
+  await panel(page).getByRole("button", { name: "Back to table" }).click();
+  await expect(row).toContainText("every 5 weeks");
   await expectHealthy(page, problems, { label: "rcm interval calculator" });
 });
 
@@ -374,6 +443,7 @@ test("screenshots of a failure mode with several tasks and the table rows (SMOKE
     await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&tab=rcm`);
     const row = trow(page, `^Failure mode: Acid under-dosed ${tag}`).first();
     await expect(row).toContainText("+1 task");
+    await row.locator(".tp-chev").click();
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${SHOTS}/rcm-tasks-rows-${w}.png` });
     if (w > 600) await row.locator(".tp-nm").dblclick();

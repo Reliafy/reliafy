@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
 import {
   NARROW_TABLE, TASK_WITH_INTERVAL, functionSummary, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, opensPanel, filterChoices, fitWidths, graftRcm, linkChoices, linkSectionTitle, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardKeys, tableCols,
-  taskWithInterval, usualCols, withTableCols,
+  taskWithInterval, usualCols, withTableCols, modeTaskRows, taskKey, taskServes,
 } from "./explorerRcm.js";
+import { isolateOpen, levelsBelow } from "./treeIsolate.js";
+import { isolateItems } from "./treeRowMenu.js";
+import { dropZones } from "./rcmDrag.js";
 import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, checkValue, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
 
 const DATA = {
@@ -680,4 +683,143 @@ test("functionSummary: a position's functions with standards, failures and decid
   assert.deepEqual([s[0].standards, s[0].standardTexts, s[0].failures, s[0].modes, s[0].decided], [2, ["50 L/s"], 1, 2, 1]);
   assert.deepEqual([s[1].text, s[1].standards, s[1].modes], ["(no text yet)", 1, 0]);
   assert.deepEqual(functionSummary(display, null), []);
+});
+
+// ---- tasks: the tree's fifth level -------------------------------------------------------
+
+const task = (id, name, extra = {}) => ({ id, name, text: name, interval: 4, unit: "weeks", shared_with: 0, ...extra });
+const TASKED = {
+  positions: [{
+    id: "pump",
+    functions: [
+      { id: "f1", text: "Pump water", failures: [
+        { id: "x1", text: "No flow", modes: [
+          // A combination: a weekly check (what's done when found said) and a yearly swap.
+          { ...mode("m1", "Bearing seizes", {
+            outcome: "on_condition", task_id: "t1", task: "Listen to the bearing", interval: 4, interval_unit: "weeks",
+            outcomes: [
+              { outcome: "on_condition", task_id: "t1", task: "Listen to the bearing", interval: 4, interval_unit: "weeks", on_found: "Grease it" },
+              { outcome: "fixed_interval", task_id: "t2", task: "Replace the bearing", interval: 1, interval_unit: "years" },
+            ],
+          }), tasks: [task("t1", "Listen to the bearing", { shared_with: 1, outcome: "on_condition" }),
+            task("t2", "Replace the bearing", { interval: 1, unit: "years", outcome: "fixed_interval", package: { id: "k1", name: "Yearly overhaul" } })] },
+          // Run to failure: no task rows.
+          mode("m2", "Seal leaks", { outcome: "rtf", task: "Replace the seal" }),
+        ] },
+        { id: "x2", text: "Low flow", modes: [
+          // The check above also serves this mode (one task, two modes).
+          { ...mode("m3", "Impeller worn", { outcome: "on_condition", task_id: "t1", task: "Listen to the bearing", interval: 4, interval_unit: "weeks", on_found: "Look at the impeller" }),
+            tasks: [task("t1", "Listen to the bearing", { shared_with: 1, outcome: "on_condition" })] },
+        ] },
+      ] },
+    ],
+    unassigned: [
+      // No decision yet: the task linked before it is a row too.
+      { ...mode("m4", "Coupling fails"), tasks: [task("t4", "Check the coupling")] },
+    ],
+  }],
+};
+
+test("tasks are the fifth level: one row per task under each failure mode, none for run to failure", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), TASKED);
+  assert.deepEqual(d.rows.get("m1").kids, [taskKey("m1", "t1"), taskKey("m1", "t2")]);
+  assert.deepEqual(d.rows.get("m2").kids, []); // run to failure: the mode's row says it
+  assert.deepEqual(d.rows.get("m4").kids, [taskKey("m4", "t4")]);
+  const t1 = d.rows.get(taskKey("m1", "t1"));
+  assert.equal(t1.type, "task");
+  assert.equal(t1.depth, d.rows.get("m1").depth + 1);
+  assert.equal(t1.parent, "m1");
+  assert.ok(isRcmRow(t1));
+  assert.equal(positionOf(t1), "pump");
+  assert.equal(t1.ref.text, "Listen to the bearing");
+  assert.equal(t1.ref.outcome, "on_condition");
+  assert.equal(t1.ref.on_found, "Grease it");
+  assert.deepEqual(t1.ref.found, { at: 0, text: "Grease it" });
+  assert.equal(d.rows.get(taskKey("m1", "t2")).ref.outcome, "fixed_interval");
+  assert.equal(d.rows.get(taskKey("m1", "t2")).ref.found, null);
+  assert.equal(d.rows.get(taskKey("m4", "t4")).ref.outcome, null);
+  // Counted once, on the modes: the task rows add nothing to the counts.
+  assert.equal(d.rows.get("pump").rsum.modes, 4);
+  assert.equal(d.rows.get("pump").rsum.tasks, 4); // run to failure's action counts too, as before
+  assert.equal(t1.rsum.modes, 0);
+  assert.equal(d.rows.get("x1").rsum.tasks, 2);
+});
+
+test("a shared task has a row under every failure mode it serves, keyed by mode and task", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), TASKED);
+  const a = d.rows.get(taskKey("m1", "t1"));
+  const b = d.rows.get(taskKey("m3", "t1"));
+  assert.ok(a && b && a.key !== b.key);
+  assert.equal(a.ref.task_id, b.ref.task_id);
+  // Each says what's done when it's found under its own mode.
+  assert.equal(b.ref.on_found, "Look at the impeller");
+  assert.deepEqual(taskServes(d, "t1").map((x) => x.mode.key), ["m1", "m3"]);
+  assert.deepEqual(taskServes(d, "t2").map((x) => x.mode.key), ["m1"]);
+});
+
+test("modeTaskRows: a combination's members in order, a plain decision's tasks, nothing for accept or redesign alone", () => {
+  assert.deepEqual(modeTaskRows(TASKED.positions[0].functions[0].failures[0].modes[0]).map((x) => [x.task.id, x.outcome]),
+    [["t1", "on_condition"], ["t2", "fixed_interval"]]);
+  assert.deepEqual(modeTaskRows({ ...mode("a", "A", { outcome: "accept" }), tasks: [] }), []);
+  assert.deepEqual(modeTaskRows({ ...mode("r", "R", { outcome: "redesign" }), tasks: [task("t9", "Old check")] }), []);
+  // A plain decision: its task takes the decision's kind when the task has none.
+  assert.deepEqual(modeTaskRows({ ...mode("p", "P", { outcome: "failure_finding", task_id: "t7", on_found: "Repair" }), tasks: [task("t7", "Test the trip")] })
+    .map((x) => [x.task.id, x.outcome, x.found?.text]), [["t7", "failure_finding", "Repair"]]);
+  // The decision's own task takes the decision's kind even when the task says the kind it was made as.
+  assert.deepEqual(modeTaskRows({ ...mode("q", "Q", { outcome: "failure_finding", task_id: "t8" }), tasks: [task("t8", "Test it", { outcome: "on_condition" })] })
+    .map((x) => [x.outcome, x.found]), [["failure_finding", { at: 0, text: "" }]]);
+  // Tasks with no id (an older read) have no row.
+  assert.deepEqual(modeTaskRows({ ...mode("o", "O", { outcome: "on_condition", task: "Look", interval: 1, interval_unit: "weeks" }) }), []);
+});
+
+test("a task row's cells, phone line, menu and search", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), TASKED);
+  const t1 = cellRow(d.rows.get(taskKey("m1", "t1")));
+  const t2 = cellRow(d.rows.get(taskKey("m1", "t2")));
+  assert.equal(COLUMN.decision.text(t1), "On condition");
+  assert.equal(COLUMN.task.text(t1), "every 4 weeks · Shared with 1");
+  assert.equal(COLUMN.task.text(t2), "every 1 year · In: Yearly overhaul");
+  assert.equal(COLUMN.interval.text(t1), "");
+  assert.equal(COLUMN.modes.text(t1), ""); // never "0": nothing is inside a task
+  assert.equal(COLUMN.consequence.text(t1), "");
+  assert.equal(TASK_WITH_INTERVAL.text(t1), "every 4 weeks · Shared with 1");
+  assert.equal(phoneLine(t1), "On condition · every 4 weeks · Shared with 1 · Then, if found: Grease it");
+  assert.equal(insideWords(t1), "");
+  assert.ok(opensItem(t1));
+  assert.deepEqual(rowActions(t1).map((a) => a.label), ["Open…", "Remove from this failure mode…"]);
+  assert.deepEqual(rowActions(t2).map((a) => a.label), ["Open…", "Retire the task…"]);
+  // The one search box finds a task by its name, its instructions and what's done when found.
+  const f = computeFilter(d, { query: "grease it" });
+  assert.ok(f.match.has(taskKey("m1", "t1")));
+});
+
+test("isolate opens a fourth and a fifth level on the RCM tab, down to the tasks; tasks are no drop target", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), TASKED);
+  // pump › f1 › x1 › m1 › task: four levels below the function, five below the position's functions' level.
+  assert.equal(levelsBelow(d, "f1"), 3);
+  assert.equal(levelsBelow(d, "m1"), 1);
+  assert.equal(levelsBelow(d, taskKey("m1", "t1")), 0);
+  assert.equal(levelsBelow(d, "pump"), 4);
+  assert.equal(levelsBelow(d, "plant"), 5);
+  const labels = (key) => isolateItems(d.rows.get(key), { can: true, levels: levelsBelow(d, key) })[0].items.map((i) => i.label);
+  assert.deepEqual(labels("f1"), ["With 1 level open", "With 2 levels open", "With 3 levels open", "With everything open"]);
+  assert.deepEqual(labels("pump"), ["With 1 level open", "With 2 levels open", "With 3 levels open", "With 4 levels open", "With everything open"]);
+  assert.deepEqual(labels("plant"), ["With 1 level open", "With 2 levels open", "With 3 levels open", "With 4 levels open", "With 5 levels open", "With everything open"]);
+  // Without `levels` (the Summary tab), the three as before.
+  assert.equal(isolateItems(d.rows.get("plant"), { can: true })[0].items.length, 4);
+  // With 4 levels open from the position: its failure modes open, so their tasks show.
+  const open = isolateOpen(d, new Set(), "pump", 4);
+  assert.ok(open.has("m1") && !open.has(taskKey("m1", "t1")));
+  const shown = flatten(d, open, null).list.map((x) => x.key);
+  assert.ok(shown.includes(taskKey("m1", "t2")));
+  // A task row is never a place to drop, and says nothing (quiet).
+  for (const src of [{ kind: "modes", keys: ["m3"] }, { kind: "fail", keys: ["x2"] }, { kind: "task", keys: ["m3"], task: { id: "t1" } }]) {
+    assert.deepEqual(dropZones(d, src, taskKey("m1", "t2")), { zones: [] });
+  }
+});
+
+test("opening the RCM tab on a position opens down to its failure modes, not their tasks", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), TASKED);
+  const o = openFor(d, "pump");
+  assert.ok(o.has("x1") && !o.has("m1"));
 });

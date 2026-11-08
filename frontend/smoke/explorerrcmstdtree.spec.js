@@ -80,7 +80,7 @@ test("standards are a level of the tree: a list's rows, the 'No standard' row, t
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&pin=${p.pool.id}&tab=rcm`);
-  await expect(table(page).getByRole("columnheader", { name: "Function, performance standard, failure or mode" })).toBeVisible();
+  await expect(table(page).getByRole("columnheader", { name: "Function, performance standard, failure, mode or task" })).toBeVisible();
   const fnRow = trow(page, `^Function: Keep the water balanced ${tag}`);
   const ph = trow(page, `^Performance standard: pH 7.2-7.8 ${tag}`);
   const ta = trow(page, `^Performance standard: Total alkalinity 80-120 ppm ${tag}`);
