@@ -284,7 +284,44 @@ test("at 400 px the decision's tasks and the Add another task form fit", async (
   await expectHealthy(page, problems, { label: "rcm tasks phone" });
 });
 
-;
+test("Calculate… on an on-condition card works out the interval, writes it on the task and adds the why to the notes", async ({ page, request, problems }) => {
+  const tag = `c${Date.now()}`;
+  const p = await plant(request, tag);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&tab=rcm`);
+  const row = trow(page, `^Failure mode: Acid under-dosed ${tag}`);
+  await expect(row).toBeVisible();
+  await row.locator(".tp-nm").dblclick();
+  const tasks = tasksOf(page);
+  await expect(names(tasks)).toHaveText([`Check: Weekly pH check ${tag} · every 1 week`]);
+  await tasks.getByRole("button", { name: `Calculate how often to do “Weekly pH check ${tag}”` }).click();
+  const calc = dialog(page, "Work out the check interval");
+  await expect(calc).toBeVisible();
+  // What it works out, in words, before any number.
+  await expect(calc.locator(".ivc-what")).toContainText("The time from that first sign to the failure is the P-F interval.");
+  await calc.getByRole("spinbutton", { name: "P-F interval" }).fill("10");
+  await calc.getByRole("combobox", { name: "P-F interval unit" }).selectOption("weeks");
+  await calc.getByRole("spinbutton", { name: "Failures a year, if nothing is done" }).fill("0.5");
+  await calc.getByRole("spinbutton", { name: "Cost of a check ($)" }).fill("20");
+  await calc.getByRole("spinbutton", { name: "Cost when found ($)" }).fill("200");
+  await calc.getByRole("spinbutton", { name: "Cost of a failure ($)" }).fill("2000");
+  await expect(calc.getByText("Assumed: every check finds a warning that's there.", { exact: false })).toBeVisible();
+  await calc.getByRole("button", { name: "Work it out" }).click();
+  await expect(calc.locator(".ivc-answer")).toContainText("Check every 2 months");
+  await expect(calc.locator(".ivc-facts")).toContainText("check at least every half P-F interval, 5 weeks");
+  await calc.getByRole("button", { name: "Use 2 months" }).click();
+  await expect(calc).toHaveCount(0);
+  await expect(names(tasks)).toHaveText([`Check: Weekly pH check ${tag} · every 2 months`]);
+  // The why at the end of the notes and rationale, and the calculation linked as the evidence.
+  await expect(panel(page)).toContainText("Interval from the P-F calculator (");
+  await expect.poll(async () => {
+    const rcm = await (await request.get(`${M}/rcm`)).json();
+    const mode = rcm.positions.find((x) => x.id === p.pool.id).functions[0].failures[0].modes.find((x) => x.id === p.acid.id);
+    return [mode.notes?.includes("P-F 10 weeks, onset 0.5/year, inspection $20, found $200, failure $2,000 → 2 months"),
+      mode.decision.evidence?.type, mode.decision.status];
+  }).toEqual([true, "strategy_analysis", "supported"]);
+  await expectHealthy(page, problems, { label: "rcm interval calculator" });
+});
 
 test("screenshots of a failure mode with several tasks and the table rows (SMOKE_SHOTS_DIR)", async ({ page, request }) => {
   test.skip(!SHOTS, "only when saving screenshots");

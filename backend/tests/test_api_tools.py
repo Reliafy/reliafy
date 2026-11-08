@@ -505,3 +505,18 @@ def test_maintenance_decide_with_hidden_over_rest(maint):
     spec = maint.client.get("/api/v1/openapi.json", headers=_auth(maint.token[A])).json()
     body = spec["paths"]["/api/v1/maintenance/failure_modes.decide"]["post"]["requestBody"]["content"]
     assert "hidden" in str(body) or "hidden" in str(spec["components"])
+
+
+def test_maintenance_rcm_interval_calculators_over_rest(maint):
+    """rcm.interval_on_condition and rcm.interval_failure_finding over REST: the action table makes both, with
+    the calculators' plain refusals."""
+    r = maint.post("/api/v1/maintenance/rcm.interval_on_condition", {
+        "pf_interval": 30, "pf_unit": "days", "onset_rate": 365.25 / 400, "inspection_cost": 20, "found_cost": 300,
+        "failure_cost": 5000})
+    assert r.status_code == 200, r.text
+    assert r.json()["recommended"] == {"value": 4, "unit": "weeks"}
+    r = maint.post("/api/v1/maintenance/rcm.interval_failure_finding", {
+        "failure_rate": 0.001, "target_unavailability": 0.001})
+    assert r.status_code == 200 and r.json()["recommended"] == {"value": 2, "unit": "years"}, r.text
+    r = maint.post("/api/v1/maintenance/rcm.interval_failure_finding", {"failure_rate": 0.1})
+    assert r.status_code >= 400 and "Give a target unavailability" in r.text

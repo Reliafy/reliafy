@@ -2674,6 +2674,17 @@ export function splitFunctionStandard(functionId, body = {}) {
 }
 // A failure mode's tasks (its decision's own first) and the tasks on its
 // position, or above it, that could serve it too.
+// How often to do a task: the interval calculators on an RCM task card (exact, free).
+export function rcmOnConditionInterval(body) {
+  return postJson("/api/maintenance/rcm/interval/on-condition", body);
+}
+export function rcmFailureFindingInterval(body) {
+  return postJson("/api/maintenance/rcm/interval/failure-finding", body);
+}
+// What those calculators start from for a failure mode (its evidence, its position's failures).
+export function getFailureModeIntervalInputs(id) {
+  return request(`/api/maintenance/failure-modes/${id}/interval-inputs`);
+}
 export function getFailureModeTasks(id) {
   return request(`/api/maintenance/failure-modes/${id}/tasks`);
 }

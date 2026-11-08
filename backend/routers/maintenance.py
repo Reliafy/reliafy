@@ -29,6 +29,7 @@ from backend.services import access as access_service
 from backend.services import time_zones
 from backend.services.access import AccessCtx, get_access
 from backend.errors import client_message
+from backend.services.strategy import StrategyError
 
 router = APIRouter(prefix="/api/maintenance")
 # The phone upload page and its posts: the link's token is the credential.
@@ -927,6 +928,83 @@ def rcm_options(user: dict = Depends(get_current_user)) -> dict:
     from backend.maintenance import fmea, rcm_decisions
 
     return {**rcm_decisions.options(), "fmea": fmea.options()}
+
+
+# ---- how often: the interval calculators on a failure mode's task card ---------------
+# Exact calculations, free on every plan (no Pro gate). The fixed-interval one is the
+# Strategy replacement calculator (POST /api/strategy/optimal-replacement).
+
+def _interval(fn, body: dict, names: tuple) -> JSONResponse:
+    from backend.services.rcm_intervals import IntervalError
+
+    unknown = sorted(set(body) - set(names))
+    if unknown:
+        return JSONResponse(status_code=422, content={"detail": f"Unknown input: {', '.join(unknown)}. "
+                                                                f"It takes {', '.join(names)}."})
+    try:
+        return JSONResponse(content=fn(**body))
+    except IntervalError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except StrategyError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+
+
+@router.post("/rcm/interval/on-condition")
+def rcm_interval_on_condition(body: dict = Body(...), user: dict = Depends(get_current_user)) -> JSONResponse:
+    """The P-F calculator: the cheapest interval between checks for a warning that comes a P-F interval
+    (pf_interval in pf_unit) before the failure, from the onset rate (failures a year), the cost of a check,
+    of fixing a warning found (found_cost) and of a failure, and the chance a check finds the warning
+    (detection_probability, default 1). With current_interval and current_unit, the numbers at the task's
+    interval now too; unit: the unit to answer in (default the one that reads best)."""
+    from backend.services import rcm_intervals
+    from backend.services.strategy_store import ON_CONDITION_INPUTS
+
+    return _interval(rcm_intervals.on_condition_interval, body, ON_CONDITION_INPUTS)
+
+
+@router.post("/rcm/interval/failure-finding")
+def rcm_interval_failure_finding(body: dict = Body(...), session=Depends(get_session),
+                                 ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """How often to test a protective device whose failure is hidden: the longest interval that keeps its
+    mean unavailability within target_unavailability, or without one the cheapest (test_cost, repair_cost,
+    demand_rate a year, consequence_cost). The device: failure_rate (a year), a saved model (model_id) or
+    distribution_id + params with model_unit. With current_interval and current_unit, the numbers at the
+    task's interval now too."""
+    from backend.services import models as models_service
+    from backend.services import rcm_intervals
+    from backend.services.strategy_store import FAILURE_FINDING_INPUTS
+
+    body = dict(body)
+    model_id = body.pop("model_id", None)
+    if model_id:
+        model = models_service.get_model(session, model_id, ctx.read_owners)
+        if model is None or model.id in ctx.hidden:
+            return JSONResponse(status_code=404, content={"detail": "Model not found."})
+        try:
+            given = rcm_intervals.model_inputs(model)
+        except rcm_intervals.IntervalError as exc:
+            return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+        body.update({"distribution_id": given["distribution_id"], "params": given["params"],
+                     "extras": given["extras"], "model_unit": body.get("model_unit") or given["unit"]})
+    return _interval(rcm_intervals.failure_finding_interval, body, FAILURE_FINDING_INPUTS)
+
+
+@router.get("/failure-modes/{mode_id}/interval-inputs")
+def failure_mode_interval_inputs(mode_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                                 m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """What the task card's interval calculators start from for this failure mode: its linked evidence
+    (a non-repairable model, a saved analysis, a degradation model) and its position's failure history,
+    each value with where it came from; null where the user has to type it."""
+    from backend.maintenance import rcm_decisions
+    from backend.services import rcm_intervals
+
+    def go():
+        mode = m.rcm_mode(mode_id)
+        _, position = m._live_mode(mode_id)
+        rows = m.life_data(position["id"]) if position else []
+        fetch = rcm_decisions.evidence_fetcher(session, ctx.read_owners, ctx.hidden)
+        return rcm_intervals.starting_inputs(mode, rows, fetch)
+    return _run(go)
 
 
 @router.post("/sample-product")

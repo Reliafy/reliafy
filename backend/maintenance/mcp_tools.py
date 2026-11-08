@@ -757,6 +757,30 @@ ATTACHMENTS: Table = {
     "clear_coordinates": ("target_id", "", "Take a position's, item's or location's coordinates off."),
 }
 
+# How often to do an RCM task: exact calculators, free on every plan. The fixed-interval
+# one is the analyse tool's optimal_replacement.
+RCM: Table = {
+    "interval_on_condition": ("pf_interval pf_unit onset_rate inspection_cost found_cost failure_cost",
+                              "detection_probability unit current_interval current_unit", """The P-F
+        calculator: the cheapest interval between checks for a warning sign that comes pf_interval (in pf_unit:
+        hours, days, weeks, months or years) before the failure. onset_rate: failures a year if nothing is done;
+        inspection_cost: one check; found_cost: fixing a warning found in time; failure_cost: a failure (more than
+        found_cost); detection_probability: the chance a check finds a warning that's there (default 1). Returns the
+        interval, recommended (rounded down to a unit people schedule in), the cost a year there and letting it fail,
+        the rule of thumb (half the P-F interval) and, with current_interval + current_unit, the task's numbers now.
+        unit: answer in this unit."""),
+    "interval_failure_finding": ("", "failure_rate model_id distribution_id params model_unit target_unavailability "
+                                 "test_cost repair_cost demand_rate consequence_cost unit current_interval current_unit",
+                                 """How often to test a protective device whose failure is hidden. The device:
+        failure_rate (a year), a saved non-repairable model_id, or distribution_id + params with model_unit (a time).
+        With target_unavailability (the chance it's failed when needed, e.g. 0.01), the longest interval that meets
+        it; without, the cheapest from test_cost, repair_cost, demand_rate (demands a year) and consequence_cost (a
+        demand met by a failed device). Returns the interval, recommended (rounded down), the mean unavailability and
+        cost a year there and, with current_interval + current_unit, the task's numbers now and whether they meet
+        the target."""),
+}
+
+
 WORKSPACE: Table = {
     "set_time_zone": ("time_zone", "", """Where the workspace is, so today, due dates and overdue follow its
         local calendar: an IANA name ('Australia/Brisbane', 'Europe/London'); '' clears it (UTC). Ask the user
@@ -862,7 +886,7 @@ TABLES: dict[str, tuple[str, Table]] = {
     "maintenance_reliability": ("action", RELIABILITY), "maintenance_topology": ("action", TOPOLOGY),
     "maintenance_item_classes": ("action", ITEM_CLASSES), "maintenance_manufacturers": ("action", MANUFACTURERS),
     "maintenance_attachments": ("action", ATTACHMENTS), "maintenance_workspace": ("action", WORKSPACE),
-    "maintenance_progression": ("action", PROGRESSION),
+    "maintenance_progression": ("action", PROGRESSION), "maintenance_rcm": ("action", RCM),
 }
 
 
@@ -2404,6 +2428,51 @@ def register() -> None:
         if action == "time_to_limit":
             return run(m.time_to_limit, point_id, process or "wiener", limit, since, 0.8 if confidence is None else confidence)
         return run(m.progression_series, point_id, since, unit_name)
+
+    @tool("maintenance_rcm", _READ, "How often to do an RCM task", RCM)
+    def maintenance_rcm(action: _choice(RCM), ctx: Context, pf_interval: float | None = None,
+                        pf_unit: str | None = None, onset_rate: float | None = None,
+                        inspection_cost: float | None = None, found_cost: float | None = None,
+                        failure_cost: float | None = None, detection_probability: float | None = None,
+                        failure_rate: float | None = None, model_id: str | None = None,
+                        distribution_id: str | None = None,
+                        params: Annotated[list[dict[str, Any]] | None, Field(description=(
+                            "SurPyval names, e.g. [{name: alpha, value: 20}, {name: beta, value: 1.5}]."))] = None,
+                        model_unit: str | None = None, target_unavailability: float | None = None,
+                        test_cost: float | None = None, repair_cost: float | None = None,
+                        demand_rate: float | None = None, consequence_cost: float | None = None,
+                        unit: str | None = None, current_interval: float | None = None,
+                        current_unit: str | None = None) -> dict[str, Any]:
+        """The interval calculators on an RCM task card: on condition (the P-F calculator) and failure finding."""
+        from backend.mcp_server import _owners
+        from backend.services import models as models_service
+        from backend.services import rcm_intervals
+        from backend.services.strategy import StrategyError
+
+        m_for(ctx)  # Maintenance users only, like the rest of the tool
+        try:
+            if action == "interval_on_condition":
+                return rcm_intervals.on_condition_interval(
+                    pf_interval, pf_unit, onset_rate, inspection_cost, found_cost, failure_cost,
+                    detection_probability=detection_probability, unit=unit, current_interval=current_interval,
+                    current_unit=current_unit)
+            extras = None
+            if model_id:
+                if distribution_id or params:
+                    raise ToolError("Give model_id or distribution_id + params, not both.")
+                model = models_service.get_model(_db(), model_id, _owners(_caller(ctx)["uid"]))
+                if model is None:
+                    raise ToolError("Model not found.")
+                given = rcm_intervals.model_inputs(model)
+                distribution_id, params, extras = given["distribution_id"], given["params"], given["extras"]
+                model_unit = model_unit or given["unit"]
+            return rcm_intervals.failure_finding_interval(
+                failure_rate=failure_rate, distribution_id=distribution_id, params=params, model_unit=model_unit,
+                extras=extras, target_unavailability=target_unavailability, test_cost=test_cost,
+                repair_cost=repair_cost, demand_rate=demand_rate, consequence_cost=consequence_cost, unit=unit,
+                current_interval=current_interval, current_unit=current_unit)
+        except StrategyError as exc:
+            raise ToolError(str(exc)) from None
 
     @tool("maintenance_workspace", _WRITE, "Workspace settings and history import", WORKSPACE)
     def maintenance_workspace(action: _choice(WORKSPACE), ctx: Context,

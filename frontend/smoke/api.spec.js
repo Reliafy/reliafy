@@ -10,6 +10,9 @@ import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
   ["GET", "/api/extensions"], // optional extensions' pages (an empty list without any)
+  // The interval calculators on an RCM task card.
+  ["POST", "/api/maintenance/rcm/interval/on-condition"],
+  ["POST", "/api/maintenance/rcm/interval/failure-finding"],
   // Reliability prediction: the parts count, the saved predictions, a product's parts list.
   ["POST", "/api/predictions/compute"],
   ["POST", "/api/predictions"],

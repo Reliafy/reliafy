@@ -5,9 +5,11 @@ import { saveErrorText } from "../confirm.js";
 import { DEFAULT_OUTCOMES, INTERVAL_UNITS, TASK_ORDER, modeAnswers, startUnit } from "../decisionCheck.js";
 import {
   FOUND_EMPTY, OUTCOME_LABEL, ROLE, addableOutcomes, decisionCardLines, decisionRows, decisionWithFirstTask, decisionWithMember,
-  decisionWithOnFound, decisionWithOutcome, everyText, findsSomething, isCombination, roleLine, tasksDropped, tasksOf,
+  decisionBody, decisionWithOnFound, decisionWithOutcome, everyText, findsSomething, isCombination, roleLine, tasksDropped, tasksOf,
 } from "../rcmWorksheet.js";
-import { getTaskTriggerPoints } from "../api.js";
+import { getTaskTriggerPoints, saveStrategyAnalysis } from "../api.js";
+import { appendNotes, calculatorFor, linksEvidence } from "../rcmIntervals.js";
+import IntervalCalculator from "./IntervalCalculator.jsx";
 import { asksInterval, pointLabel, triggerBody, triggerState, triggerWhy } from "../taskTrigger.js";
 import { secondTaskHint } from "../explorerRcm.js";
 import { explorerPath } from "../assetTree.js";
@@ -54,6 +56,13 @@ import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 //    existing task…": one on this position or above it). Run to failure shows
 //    what's done on failure (`own`). "+ Add another task" (dashed) only when
 //    the rules allow a combination and a task exists: its kind, then the form.
+//    Beside "every N unit" (shown and while changed), "Calculate…" opens the interval
+//    calculator its kind calls for (IntervalCalculator: the P-F calculator, the test
+//    interval, the replacement age; Derryn, 9 Nov 2026). Its "Use N unit" writes the
+//    interval on the task (changed in place: into the form, kept with Save task), adds
+//    one paragraph on how it was worked out to the failure mode's notes and rationale,
+//    and, when the decision has no evidence yet, saves the calculation as a strategy
+//    analysis linked as its evidence.
 // 3. "Evidence", open: the evidence line (`why`, built by Details: Link
 //    evidence… opens the evidence picker alone). The rationale is the failure
 //    mode's notes and rationale, under its title: one place (Derryn, 9 Nov 2026).
@@ -108,6 +117,7 @@ export default function RcmModeTasks({
   const [failed, setFailed] = useState(null);
   const [adding, setAdding] = useState(false);
   const [saved, setSaved] = useState(0);
+  const [calc, setCalc] = useState(null); // {task, kind, fill?}: the interval calculator open for a task
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
   // Another failure mode: everything starts again. The same one read again: the choice follows
@@ -192,6 +202,31 @@ export default function RcmModeTasks({
     }
   };
 
+  // "Use N unit" in the interval calculator: the evidence first (when the decision has none: the
+  // calculation saved as a strategy analysis), then the interval (on the task, or into the form
+  // while it's changed), then the paragraph at the end of the mode's notes and rationale.
+  const useInterval = async ({ value, unit, line, analysis }) => {
+    const { task, fill } = calc;
+    let linked = false;
+    if (d && linksEvidence(d)) {
+      const kept = await saveStrategyAnalysis(analysis.name, analysis.kind, analysis.inputs);
+      await decide(decisionBody(d, { evidence: { type: "strategy_analysis", id: kept.id } }));
+      linked = true;
+    }
+    if (fill) fill(value, unit);
+    else await ops.editTask(task.id, { interval: value, unit });
+    await ops.set(r, "notes", appendNotes(r.ref.notes, line));
+    if (!alive.current) return;
+    setCalc(null);
+    onSaid?.(`${fill ? "Put the interval in the form" : "Saved the interval"} and added how it was worked out to the notes${linked ? ", with the calculation as evidence" : ""}.`);
+  };
+  const calcLink = (t, kind, fill = null) => (t?.id && can && ops?.editTask && ops?.set && calculatorFor(kind) ? (
+    <button type="button" className="link rim-calc" disabled={busy} aria-label={`Calculate how often to do “${t.name}”`}
+            title="Work out the interval from the failure's numbers" onClick={() => setCalc({ task: t, kind, fill })}>
+      Calculate…
+    </button>
+  ) : null);
+
   const remove = async (t) => {
     const ok = await confirm({
       title: "Remove this task?", body: droppedWords([t]), confirmLabel: t.shared_with ? "Remove from this failure mode" : "Retire the task",
@@ -207,6 +242,7 @@ export default function RcmModeTasks({
       return (
         <li key={l.key} className="rim-line rim-card rim-one editing">
           <TaskEditCard key={t.id} r={r} task={t} lead={role.lead} busy={busy} failed={failed}
+                        calculate={(fill) => calcLink(t, l.outcome || t.outcome || d?.outcome, fill)}
                         found={l.found ? { label: ROLE[l.outcome].then, text: l.found.text } : null}
                         onCancel={() => { setEditing(null); setFailed(null); }} onSubmit={submitEdit(t, l)} />
         </li>
@@ -228,6 +264,7 @@ export default function RcmModeTasks({
       </>
     ) : null;
     const chips = t && (t.shared_with || t.package);
+    const calcHere = role.every ? calcLink(t, l.outcome || t?.outcome || d?.outcome) : null;
     return (
       <li key={l.key} className="rim-line rim-card rim-one">
         <div className="rim-r1">
@@ -238,6 +275,7 @@ export default function RcmModeTasks({
             {(name || empty) && role.every ? " · " : null}
             {role.every && <span className="rim-tevery">{role.every}</span>}
           </span>
+          {calcHere && <span className="rim-tcalc">{calcHere}</span>}
           {acts && <span className="rim-tacts">{acts}</span>}
         </div>
         {ownHere && <div className="rim-own">{own}</div>}
@@ -298,6 +336,9 @@ export default function RcmModeTasks({
           + Add another task
         </button>
       ))}
+      {calc && (
+        <IntervalCalculator r={r} task={calc.task} kind={calc.kind} onClose={() => setCalc(null)} onUse={useInterval} />
+      )}
       {d && why && (
         <div className="rim-whyopen" role="group" aria-labelledby={`rim-why-${r.key}`}>
           <h4 className="rim-before" id={`rim-why-${r.key}`}>Evidence</h4>
@@ -495,7 +536,7 @@ function NewTaskCard({ r, d, ops, kind: fixed = null, kinds = null, start = {}, 
 // (what it counts, with the last-done reading on a new one) and its instructions.
 // Saved once (the button says so until the server answers); a refusal shows here with
 // everything as typed.
-function TaskEditCard({ r, task, lead, busy, failed, found = null, onCancel, onSubmit }) {
+function TaskEditCard({ r, task, lead, busy, failed, found = null, calculate = null, onCancel, onSubmit }) {
   const d = r.ref.decision;
   const [name, setName] = useState(task?.name || "");
   const [interval, setInterval_] = useState(task?.interval != null ? String(task.interval) : "");
@@ -547,8 +588,11 @@ function TaskEditCard({ r, task, lead, busy, failed, found = null, onCancel, onS
         <TextInput ref={nameBox} className="rim-in-name" value={name} readOnly={busy} aria-label="Task"
                    placeholder="What to do, e.g. Replace the acid pump" onChange={(e) => setName(e.target.value)} />
         {timed ? (
-          <EveryInputs interval={interval} unit={unit} onInterval={setInterval_} onUnit={setUnit} busy={busy}
-                       invalid={interval.trim() !== "" && !(Number.isFinite(n) && n > 0)} />
+          <>
+            <EveryInputs interval={interval} unit={unit} onInterval={setInterval_} onUnit={setUnit} busy={busy}
+                         invalid={interval.trim() !== "" && !(Number.isFinite(n) && n > 0)} />
+            {calculate?.((value, u) => { setInterval_(String(value)); setUnit(u); })}
+          </>
         ) : <span className="rim-tevery">on an event (below)</span>}
       </Row1>
       {found && (
