@@ -84,28 +84,39 @@ test("the interval's unit starts at the decision's own, else the one chosen last
 
 // ---- a combination of tasks ------------------------------------------------------
 
-test("which outcomes combine: two or more scheduled, or redesign beside one; rtf and accept stand alone", () => {
+test("which outcomes combine: two or more scheduled tasks (one kind as often as needed), one redesign at most; rtf and accept stand alone", () => {
   assert.equal(combinationOk(["on_condition", "fixed_interval"]), true);
   assert.equal(combinationOk(["on_condition", "fixed_interval", "failure_finding"]), true);
   assert.equal(combinationOk(["redesign", "on_condition"]), true);
-  assert.equal(combinationOk(["redesign", "on_condition", "fixed_interval"]), false);
-  assert.equal(combinationOk(["on_condition", "on_condition"]), false);
+  assert.equal(combinationOk(["redesign", "on_condition", "fixed_interval"]), true);
+  // A weekly top-up and an annual deep clean, both fixed interval, beside a shop test (Derryn, 9 Nov 2026).
+  assert.equal(combinationOk(["fixed_interval", "fixed_interval", "on_condition"]), true);
+  assert.equal(combinationOk(["on_condition", "on_condition"]), true);
+  assert.equal(combinationOk(["redesign", "on_condition", "redesign"]), false);
+  assert.equal(combinationOk(["redesign", "redesign"]), false);
   assert.equal(combinationOk(["rtf", "on_condition"]), false);
   assert.equal(combinationOk(["accept", "fixed_interval"]), false);
   assert.equal(combinationOk(["rtf"]), true);
   assert.deepEqual(combineChoices("rtf"), []);
+  // Every kind each time, the first's own kind too; a redesign only while there's none.
   assert.deepEqual(combineChoices("on_condition"), [
-    { id: "fixed_interval", allowed: true }, { id: "failure_finding", allowed: true }, { id: "redesign", allowed: true }]);
-  // Once a second scheduled task is in, a redesign can't join; once a redesign is in, nothing else can.
-  assert.deepEqual(combineChoices("on_condition", ["fixed_interval"]).find((c) => c.id === "redesign").allowed, false);
-  assert.deepEqual(combineChoices("on_condition", ["redesign"]).filter((c) => c.allowed).map((c) => c.id), ["redesign"]);
-  assert.deepEqual(combineChoices("redesign").map((c) => c.id), ["on_condition", "fixed_interval", "failure_finding"]);
+    { id: "on_condition", allowed: true }, { id: "fixed_interval", allowed: true }, { id: "failure_finding", allowed: true },
+    { id: "redesign", allowed: true }]);
+  assert.deepEqual(combineChoices("on_condition", ["fixed_interval", "fixed_interval"]).filter((c) => c.allowed).map((c) => c.id),
+    ["on_condition", "fixed_interval", "failure_finding", "redesign"]);
+  assert.equal(combineChoices("on_condition", ["redesign"]).find((c) => c.id === "redesign").allowed, false);
+  assert.equal(combineChoices("redesign").find((c) => c.id === "redesign").allowed, false);
+  // The diagram still greys out failure finding on an evident failure.
+  const evident = combineChoices("fixed_interval", ["fixed_interval"], { hidden: false, consequence: "operational" });
+  assert.equal(evident.find((c) => c.id === "failure_finding").allowed, false);
+  assert.equal(evident.find((c) => c.id === "fixed_interval").allowed, true);
 });
 
-test("a changed first outcome keeps only the further tasks that still combine with it", () => {
+test("a changed first outcome keeps the further tasks that still combine with it", () => {
   const extras = [{ outcome: "fixed_interval" }, { outcome: "redesign" }];
-  assert.deepEqual(pruneExtras("on_condition", extras), [{ outcome: "fixed_interval" }]);
-  assert.deepEqual(pruneExtras("fixed_interval", extras), [{ outcome: "redesign" }]);
+  assert.deepEqual(pruneExtras("on_condition", extras), extras);
+  assert.deepEqual(pruneExtras("fixed_interval", extras), extras);
+  assert.deepEqual(pruneExtras("redesign", extras), [{ outcome: "fixed_interval" }]);
   assert.deepEqual(pruneExtras("rtf", extras), []);
 });
 
@@ -139,6 +150,9 @@ test("a further task goes back with its own evidence when it fits the task, or w
   assert.equal(extraBody({ ...row, evidence: dm }, "strategy_analysis").evidence, undefined);
   assert.deepEqual(extraBody({ ...row, evidence: dm, had: dm }, "strategy_analysis").evidence, { type: "degradation_model", id: "d1" });
   assert.deepEqual(extraBody({ outcome: "redesign", evidence: dm }, null), { outcome: "redesign" });
+  // A task it had goes back by its id: the server keeps that one (two of a kind are told apart by task).
+  assert.equal(extraBody({ ...row, taskId: "t7" }, "strategy_analysis").task_id, "t7");
+  assert.equal(extraBody(row, "strategy_analysis").task_id, undefined);
   assert.equal(analysisKindOf("fixed_interval"), "optimal_replacement");
   assert.equal(analysisKindOf("failure_finding"), "failure_finding");
   assert.equal(analysisKindOf("on_condition"), null);

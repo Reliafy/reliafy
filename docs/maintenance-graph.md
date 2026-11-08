@@ -391,6 +391,11 @@ the other way: a round at the pool covers the chlorinator's modes.
   before). The evidence check takes each scheduled member on its own (its
   evidence, else the decision's where it fits) and gives the whole one status;
   `partly` when some members have evidence and some don't.
+  Since Nov 2026 one kind may come more than once (two `fixed_interval`
+  members, each with its own task), and members are told apart by their
+  `task_id`, never by their outcome. The payload of `failure_mode.outcomes_set`
+  is the same list as ever, so there's no new event and every log replays as
+  it did; only the rule that refused a repeated outcome was lifted.
 - Retiring a mode retires its sole tasks and unlinks shared ones; restoring
   it brings its sole tasks back (`tasks_restored`), not the shared links.
   Merging a mode moves every link across. Moving a mode (or a function) takes

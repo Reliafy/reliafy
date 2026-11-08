@@ -57,15 +57,18 @@ SERIOUS = ("safety", "environmental")
 OUTCOMES = ("on_condition", "fixed_interval", "rtf", "failure_finding", "redesign", "accept")
 RTF_BASES = ("random", "uneconomic")
 # A combination of tasks (RCM II's words): where no one task is good enough on
-# its own, and only for a safety or environmental consequence, a decision
-# holds two or more outcomes, a regular inspection plus a fixed-time
-# replacement. Each member that schedules work gets a task of its own. A
-# redesign may sit beside one scheduled task, the interim measure until the
-# change is made; run-to-failure and accept stand alone.
+# its own, a decision holds several scheduled tasks, a regular inspection plus
+# a fixed-time replacement, or several of one kind (a weekly top-up and an
+# annual deep clean, both fixed interval: Derryn, 9 Nov 2026). Each member that
+# schedules work gets a task of its own, and members are told apart by their
+# task (task_id), never by their outcome. A redesign may sit beside the
+# scheduled tasks, the interim measure until the change is made (one
+# redesign); run-to-failure and accept stand alone.
 SCHEDULED = ("on_condition", "fixed_interval", "failure_finding")
 COMBINES = (
-    "A combination is two or more of on_condition, fixed_interval and failure_finding (no outcome twice), or "
-    "redesign beside one of them as the interim measure; rtf and accept stand alone."
+    "A combination is two or more tasks of on_condition, fixed_interval and failure_finding (one kind may come "
+    "more than once, each with its own task), optionally with one redesign beside them as the interim measure; "
+    "rtf and accept stand alone."
 )
 
 
@@ -103,10 +106,10 @@ def combination_ok(outcomes) -> bool:
     combinationOk is the same)."""
     if len(outcomes) < 2:
         return True
-    if len(set(outcomes)) != len(outcomes) or any(o not in (*SCHEDULED, "redesign") for o in outcomes):
+    if any(o not in (*SCHEDULED, "redesign") for o in outcomes) or outcomes.count("redesign") > 1:
         return False
     scheduled = sum(1 for o in outcomes if o in SCHEDULED)
-    return scheduled == 1 if "redesign" in outcomes else scheduled >= 2
+    return scheduled >= 1 if "redesign" in outcomes else scheduled >= 2
 
 
 # Evidence that's checked against the decision (a model or a saved analysis),
@@ -431,10 +434,11 @@ def _clean_members(raw) -> list[dict]:
     if len(members) < 2:
         return members
     said = [m["outcome"] for m in members]
-    scheduled = [o for o in said if o in SCHEDULED]
-    if len(set(said)) != len(said) or any(o in ("rtf", "accept") for o in said) or (
-            "redesign" in said and len(scheduled) != 1):
+    if not combination_ok(said):
         raise RcmValidationError(f"{' + '.join(said)} can't be combined. {COMBINES}")
+    ids = [m["task_id"] for m in members if m.get("task_id")]
+    if len(set(ids)) != len(ids):
+        raise RcmValidationError("Each task of a combination is its own: one task_id is named twice.")
     for m in members:
         if m["outcome"] in SCHEDULED and not m.get("interval") and not m.get("task_id"):
             raise RcmValidationError(f"Each task of a combination needs its interval (or the task_id of an existing "
@@ -671,9 +675,19 @@ def _takes(outcome: str, etype: str) -> bool:
     return etype == EXPECTED_EVIDENCE.get(outcome) or etype in ALSO_TAKES.get(outcome, ())
 
 
-def _tasks_words(outcomes: list[str]) -> str:
-    """"the fixed-interval task", "the on-condition and fixed-interval tasks"."""
-    words = [_MEMBER_WORD.get(o, o) for o in outcomes]
+def _member_words(m: dict, members: list[dict]) -> str:
+    """A member in words: its kind ("fixed interval"), with its task's name when
+    the combination has more than one of that kind ("fixed interval “Deep clean”")."""
+    word = _MEMBER_WORD.get(m["outcome"], m["outcome"])
+    same = sum(1 for x in members if x["outcome"] == m["outcome"])
+    name = str(m.get("task") or "").strip()
+    return f"{word} “{name}”" if same > 1 and name else word
+
+
+def _tasks_words(missing: list[dict], members: list[dict]) -> str:
+    """"the fixed interval task", "the on condition and fixed interval tasks",
+    "the fixed interval “Deep clean” task"."""
+    words = [_member_words(m, members) for m in missing]
     if len(words) == 1:
         return f"the {words[0]} task"
     return f"the {', '.join(words[:-1])} and {words[-1]} tasks"
@@ -735,7 +749,7 @@ def _resolve_combination(decision: dict, fetch) -> dict:
     counted = [m for m in members if m.get("status")]
 
     def word(m: dict) -> str:
-        return _MEMBER_WORD.get(m["outcome"], m["outcome"]).capitalize()
+        return _member_words(m, members).capitalize()
 
     out: dict = {"outcomes": members}
     for status in ("contradicted", "stale", "inconclusive"):
@@ -744,7 +758,7 @@ def _resolve_combination(decision: dict, fetch) -> dict:
             out |= {"status": status, "reason": f"{word(hit)} task: {hit.get('summary') or hit.get('reason') or ''}"}
             break
     else:
-        missing = [m["outcome"] for m in counted if m["status"] == "unevidenced"]
+        missing = [m for m in counted if m["status"] == "unevidenced"]
         evidenced = [m for m in counted if m["status"] in ("supported", "linked")]
         if not counted:
             out["status"] = None
@@ -754,7 +768,7 @@ def _resolve_combination(decision: dict, fetch) -> dict:
                           "expected_evidence": first.get("expected_evidence")}
         elif missing:
             out |= {"status": "partly",
-                    "reason": f"Partly evidenced: {_tasks_words(missing)} {'has' if len(missing) == 1 else 'have'} "
+                    "reason": f"Partly evidenced: {_tasks_words(missing, members)} {'has' if len(missing) == 1 else 'have'} "
                               "none."}
         else:
             out |= {"status": "supported" if all(m["status"] == "supported" for m in evidenced) else "linked",

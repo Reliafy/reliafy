@@ -232,7 +232,8 @@ test("Open… and Add a task… in the row menu expand the details; Enter shows 
   const tasks = panel(page).getByRole("region", { name: "Proactive task or default action" });
   const add = tasks.getByRole("group", { name: "Add another task" });
   await expect(add).toBeVisible();
-  await expect(add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio").first()).toBeFocused();
+  // Focus on its kind: the one it starts on (a kind the decision doesn't have yet; every kind is offered).
+  await expect(add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio", { checked: true })).toBeFocused();
   expect(await isExpanded(page)).toBe(true);
   await expect(tasks.locator(".rim-cards > li")).toHaveCount(2);
   await page.keyboard.press("Escape"); // the form closes, the panel stays

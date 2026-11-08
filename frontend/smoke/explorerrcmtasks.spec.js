@@ -88,13 +88,14 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await expect(tasks.getByRole("radiogroup", { name: "Which task is worth doing?" }).getByRole("radio", { name: /On condition/ }))
     .toHaveAttribute("aria-checked", "true");
 
-  // Add another task: in place, its kind first (on condition is taken), then its name
+  // Add another task: in place, its kind first (every kind, on condition again too: one kind may come
+  // more than once; it starts on one the decision doesn't have), then its name
   // and how often (no "what does it catch" hint: a safety consequence may combine tasks). No interval yet: it says so.
   await addRow(tasks).click();
   let add = addForm(tasks);
   await expect(add).toBeVisible();
   const kinds = add.getByRole("radiogroup", { name: "Kind of task" });
-  await expect(kinds.getByRole("radio")).toHaveText([/Fixed interval/, /Failure finding/, /Redesign/]);
+  await expect(kinds.getByRole("radio")).toHaveText([/On condition/, /Fixed interval/, /Failure finding/, /Redesign/]);
   await expect(kinds.getByRole("radio", { name: /Fixed interval/ })).toHaveAttribute("aria-checked", "true");
   await expect(add.getByText(/What does this catch that/)).toHaveCount(0);
   let writes = 0;
@@ -127,10 +128,14 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await tasks.getByRole("button", { name: "Save task" }).click();
   await expect(item(`Replace the acid pump ${tag}`)).toContainText("Swap the pump head.");
 
-  // Use an existing task on the position: the one kind left (failure finding), then the picker.
+  // Use an existing task on the position: every kind still offered, starting on the one the decision
+  // doesn't have yet (failure finding), then the picker.
   await addRow(tasks).click();
   add = addForm(tasks);
-  await expect(add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio")).toHaveText([/Failure finding/]);
+  await expect(add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio"))
+    .toHaveText([/On condition/, /Fixed interval/, /Failure finding/, /Redesign/]);
+  await expect(add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio", { name: /Failure finding/ }))
+    .toHaveAttribute("aria-checked", "true");
   await add.getByRole("radiogroup", { name: "New or existing task" }).getByRole("radio", { name: "Existing task" }).click();
   const pick = add.getByRole("combobox", { name: "Existing task" });
   await expect(pick).toBeVisible();
@@ -141,8 +146,9 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await expect(cards(tasks)).toHaveCount(3);
   await expect(item(`Backwash the filter ${tag}`)).toContainText("Check it still works: ");
   await expect(item(`Backwash the filter ${tag}`).getByRole("textbox", { name: "Then, if failed:" })).toBeVisible();
-  // No kind left to add: no add row.
-  await expect(addRow(tasks)).toHaveCount(0);
+  // Another of any kind can still join (a second fixed-interval task, say): the add row stays.
+  await expect(addRow(tasks)).toBeVisible();
+  await expect(chipsOf(page)).toContainText("On condition + Fixed interval + Failure finding");
 
   // Edit the second task: a plain change, kept.
   await taskLink(tasks, `Replace the acid pump ${tag}`, "Edit").click();
@@ -150,14 +156,36 @@ test("a failure mode's decision lists its tasks; add another, use an existing on
   await tasks.getByRole("button", { name: "Save task" }).click();
   await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 36 months");
 
-  // Remove the linked task: it serves only this mode, so it is retired (after asking); its member stays, with no task now.
+  // Remove the linked task: it serves only this mode, so it is retired (after asking), and its member
+  // comes off the decision with it; the other two keep their tasks.
   await taskLink(tasks, `Backwash the filter ${tag}`, "Remove").click();
   const ask = page.getByRole("alertdialog", { name: "Remove this task?" });
   await expect(ask).toContainText("serves only this failure mode, so it is retired");
   await ask.getByRole("button", { name: "Retire the task" }).click();
   await expect(item(`Backwash the filter ${tag}`)).toHaveCount(0);
-  await expect(cards(tasks).filter({ hasText: "Check it still works: no task now" })).toHaveCount(1);
+  await expect(cards(tasks).filter({ hasText: "no task now" })).toHaveCount(0);
+  await expect(cards(tasks)).toHaveCount(2);
+  await expect(chipsOf(page)).toContainText("On condition + Fixed interval");
+
+  // A second task of one kind (Derryn, 9 Nov 2026): an annual fixed-interval deep clean beside the pump swap.
+  await addRow(tasks).click();
+  add = addForm(tasks);
+  await add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio", { name: /Fixed interval/ }).click();
+  await add.getByRole("textbox", { name: "Task" }).fill(`Deep clean ${tag}`);
+  await add.getByRole("spinbutton", { name: "Interval" }).fill("12");
+  await add.getByRole("combobox", { name: "Interval unit" }).selectOption("months");
+  await add.getByRole("spinbutton", { name: "Interval" }).press("Enter");
+  await expect(add).toHaveCount(0);
   await expect(cards(tasks)).toHaveCount(3);
+  await expect(item(`Deep clean ${tag}`)).toContainText("every 12 months");
+  await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 36 months");
+  await expect(chipsOf(page)).toContainText("On condition + 2 fixed interval");
+  // Removing it takes that one off; the pump swap (the same kind) stays as it was.
+  await taskLink(tasks, `Deep clean ${tag}`, "Remove").click();
+  await page.getByRole("alertdialog", { name: "Remove this task?" }).getByRole("button", { name: "Retire the task" }).click();
+  await expect(item(`Deep clean ${tag}`)).toHaveCount(0);
+  await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 36 months");
+  await expect(cards(tasks)).toHaveCount(2);
   await panel(page).getByRole("button", { name: "Back to table" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 

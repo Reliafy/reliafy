@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { flatten, levelSet } from "./outlineTree.js";
 import {
-  addableOutcomes, cardLineText, decisionCardLines, decisionRows, decisionWithMember, memberEvidenceText,
+  addableOutcomes, cardLineText, decisionCardLines, decisionRows, decisionWithMember, decisionWithoutMember, memberEvidenceText,
   COLUMN, COLUMNS, DEFAULT_COLUMNS, FUNCTION_MAX, NAME_COLUMN, functionCount, buildRcmDisplay, checkValue, chipCounts, computeFilter,
   insideWords, intervalText, loadPrefs, savePrefs, siblingOrder, decisionBody, decisionText, hasTask, isCombination, memberEvidenceLine, memberLine, modeCounts, moreTasks, rowText, tasksOf,
   tasksTip } from "./rcmWorksheet.js";
@@ -187,10 +187,11 @@ test("a combination reads as its outcomes joined, one outcome as before", () => 
 });
 
 test("a combination goes back whole, a cell's change on its first task", () => {
+  // Each member by its task (task_id): two of one kind are told apart by their task.
   assert.deepEqual(decisionBody(COMBO), {
     outcomes: [
-      { outcome: "on_condition", task: "Vibration check", interval: 1, interval_unit: "months" },
-      { outcome: "fixed_interval", task: "Replace the bearing", interval: 24, interval_unit: "months" },
+      { outcome: "on_condition", task_id: "t1", task: "Vibration check", interval: 1, interval_unit: "months" },
+      { outcome: "fixed_interval", task_id: "t2", task: "Replace the bearing", interval: 24, interval_unit: "months" },
     ],
   });
   // The notes are the failure mode's (one place since Nov 2026): never sent with a decision.
@@ -295,8 +296,13 @@ test("the decision card's lines: the decision in words with its task, one line p
 });
 
 test("the tasks that can join a decision follow the combination rules", () => {
-  assert.deepEqual(addableOutcomes({ outcome: "on_condition", task_id: "t1" }), ["fixed_interval", "failure_finding", "redesign"]);
-  assert.deepEqual(addableOutcomes(COMBO), ["failure_finding"]);
+  assert.deepEqual(addableOutcomes({ outcome: "on_condition", task_id: "t1" }), ["on_condition", "fixed_interval", "failure_finding", "redesign"]);
+  // Each kind is offered again (one kind may come more than once); a redesign once.
+  assert.deepEqual(addableOutcomes(COMBO), ["on_condition", "fixed_interval", "failure_finding", "redesign"]);
+  assert.deepEqual(addableOutcomes({ ...COMBO, outcomes: [...COMBO.outcomes, { outcome: "redesign", task_id: null }] }),
+    ["on_condition", "fixed_interval", "failure_finding"]);
+  assert.deepEqual(addableOutcomes({ outcome: "fixed_interval", task_id: "t1" }, { hidden: false, consequence: "operational" }),
+    ["on_condition", "fixed_interval", "redesign"]);
   assert.deepEqual(addableOutcomes({ outcome: "redesign" }), ["on_condition", "fixed_interval", "failure_finding"]);
   assert.deepEqual(addableOutcomes({ outcome: "rtf" }), []);
   assert.deepEqual(addableOutcomes({ outcome: "accept" }), []);
@@ -401,4 +407,35 @@ test("each task card leads with what it's for, and a check says what's done when
     { outcome: "on_condition", task_id: "t1", on_found: "" }, { outcome: "fixed_interval", task_id: "t2" }] });
   assert.deepEqual(decisionWithOnFound({ outcome: "on_condition", task: "Look", interval: 1, interval_unit: "weeks" }, 0, "Fix"),
     { outcome: "on_condition", task: "Look", interval: 1, interval_unit: "weeks", on_found: "Fix" });
+});
+
+// Several tasks of one kind (Derryn, 9 Nov 2026): a weekly acid top-up and an annual deep clean,
+// both fixed interval, beside an on-condition shop test.
+const POOL = {
+  outcome: "fixed_interval", task: "Acid top-up", interval: 1, interval_unit: "weeks", task_id: "w",
+  outcomes: [
+    { outcome: "fixed_interval", task: "Acid top-up", interval: 1, interval_unit: "weeks", task_id: "w" },
+    { outcome: "fixed_interval", task: "Deep clean", interval: 12, interval_unit: "months", task_id: "a" },
+    { outcome: "on_condition", task: "Shop water test", interval: 1, interval_unit: "months", task_id: "s", on_found: "Adjust the dosing" },
+  ],
+};
+
+test("two members of one kind: counted in the chip, a line and a row each, told apart by their task", () => {
+  assert.equal(decisionText(POOL), "2 fixed interval + On condition");
+  assert.equal(decisionText({ ...POOL, outcomes: [POOL.outcomes[2], POOL.outcomes[0], POOL.outcomes[1]] }), "On condition + 2 fixed interval");
+  const tasks = [{ id: "w", name: "Acid top-up" }, { id: "a", name: "Deep clean" }, { id: "s", name: "Shop water test" }];
+  const rows = decisionRows(POOL, tasks);
+  assert.deepEqual(rows.map((r) => [r.key, r.outcome]), [["w", "fixed_interval"], ["a", "fixed_interval"], ["s", "on_condition"]]);
+  assert.deepEqual(decisionCardLines(POOL, tasks).map((l) => l.name), ["Acid top-up", "Deep clean", "Shop water test"]);
+  assert.deepEqual(decisionBody(POOL).outcomes.map((o) => o.task_id), ["w", "a", "s"]);
+});
+
+test("removing a member sends the others back by their task; one left is a plain decision", () => {
+  assert.deepEqual(decisionWithoutMember(POOL, "w"), {
+    outcomes: [{ outcome: "fixed_interval", task_id: "a" }, { outcome: "on_condition", task_id: "s", on_found: "Adjust the dosing" }],
+  });
+  const two = { ...POOL, outcomes: POOL.outcomes.slice(0, 2) };
+  assert.deepEqual(decisionWithoutMember(two, "a"), { outcomes: [{ outcome: "fixed_interval", task_id: "w" }] });
+  assert.equal(decisionWithoutMember(POOL, "elsewhere"), null);
+  assert.equal(decisionWithoutMember({ outcome: "fixed_interval", task_id: "w" }, "w"), null);
 });

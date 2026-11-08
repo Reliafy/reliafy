@@ -289,12 +289,13 @@ modes under one functional failure): maintenance apply, all or nothing, and its 
 inspection that catches the slow failures plus a replacement at a hard life) is one decision with several \
 outcomes: decide with decision.outcomes, e.g. {outcomes: [{outcome: 'on_condition', task: 'Vibration check', \
 interval: 1, interval_unit: 'months', on_found: 'Replace the bearing early'}, {outcome: 'fixed_interval', task: \
-'Replace the bearing', interval: 24, interval_unit: 'months'}]}. Members are two or more of on_condition, fixed_interval and \
-failure_finding (no outcome twice), or redesign beside one of them as the interim measure; rtf and accept stand \
-alone. Each scheduled member gets a task of its own (task_id adopts an existing one); the first is the decision's \
-own (outcome, task_id), and reads list them all in decision.outcomes. Sending one outcome again, or {}, ends the \
-combination and retires the tasks it no longer has. A combination is only for a safety or environmental \
-consequence where no single task makes the risk tolerable (decide refuses one on operational or non_operational). maintenance failure_modes.add_task adds a task outside the decision. One act of work for several modes (one monthly water sample for five chemistry modes): \
+'Replace the bearing', interval: 24, interval_unit: 'months'}]}. Members are two or more tasks of on_condition, \
+fixed_interval and failure_finding, one kind as often as needed (a weekly fixed_interval top-up and an annual \
+fixed_interval deep clean), optionally with one redesign beside them as the interim measure; rtf and accept stand \
+alone. Each scheduled member gets a task of its own (task_id adopts an existing one) and members are told apart by \
+their task: to change one, send every member back with its task_id (as read in decision.outcomes) and leave a \
+member out to take its task off. The first is the decision's own (outcome, task_id). Sending one outcome again, \
+or {}, ends the combination and retires the tasks it no longer has. maintenance failure_modes.add_task adds a task outside the decision. One act of work for several modes (one monthly water sample for five chemistry modes): \
 maintenance tasks.link task_id failure_mode_id, or decide with task_id so an existing task is the decision's. A \
 task on a position may serve modes on it or on positions inside it. The task owns its interval: while it \
 serves one mode alone, decide changes it; once shared, change it with maintenance tasks.update (for every mode \
@@ -307,9 +308,9 @@ then supported (or linked) for all, partly ("Partly evidenced: the fixed-interva
 or the worst member's (contradicted, stale, inconclusive), and decision.outcomes carries each member's own check. \
 Retiring a mode retires the tasks serving it alone and unlinks shared ones (unlink takes one off by \
 hand); moving a mode takes its own tasks with it, and a shared task stays, still serving the mode while the \
-new position is inside the task's. A worksheet row that repeats a failure mode with another scheduled outcome \
-(or a redesign) joins the decision as a combination, in row order; one with the same outcome adds another task; \
-a task named on several rows (or on the position already) is one task, linked.
+new position is inside the task's. A worksheet row that repeats a failure mode with another scheduled task (of \
+any kind) or a redesign joins the decision as a combination, in row order; a task named on several rows (or on \
+the position already) is one task, linked.
 - Failure modes without RCM: maintenance failure_modes.add on the position; a task links to one with \
 failure_mode_id (or several with failure_mode_ids).
 - Tasks done before they were tracked here: maintenance tasks.set_last_done, so the next due date counts from \

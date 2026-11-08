@@ -259,8 +259,7 @@ Reliafy follows the decision diagram of SAE JA1011 and RCM II (Moubray).
   failure finding task. For safety or environmental, a task is worth doing
   only if it makes the risk tolerable; cost isn't the test. For operational or
   non-operational, it must cost less over time than the failures it prevents.
-  Two tasks together (a combination) only for safety or environmental, when no
-  single task is good enough.
+  Several tasks together (a combination) when no single task is good enough.
 - **If no task is worth doing.** Evident and safety or environmental: redesign
   is compulsory, never run to failure. Evident and operational or
   non-operational: no scheduled maintenance (run to failure); a redesign may
@@ -324,15 +323,16 @@ no schedule (run-to-failure, redesign, accept) retires it.
 
 Sometimes no single task is good enough on its own. RCM II calls the answer a
 *combination of tasks*: a regular inspection plus a fixed-time replacement,
-say. It's only for a failure that could hurt someone or harm the environment. In the
-decision dialog, choose the first outcome, then pick another under **Add
-another task**: *On condition*, *Fixed interval replacement* or
-*Failure finding*. Each one you add asks for its own task name and interval,
-and each becomes its own scheduled task on the position. A **Redesign** can
-sit beside one task, the task done until the change is made. Run-to-failure
-and accept stand alone. The notes are once for the whole decision, and the
-**Decision** column reads *On condition + Fixed interval*. On an operational
-or non-operational consequence only a redesign can sit beside the task.
+say. One kind can come more than once: a weekly acid top-up and an annual deep
+clean are both fixed-interval tasks, beside an on-condition shop test. In the
+decision dialog, choose the first outcome, then pick under **Add another
+task**: *On condition*, *Fixed interval replacement* or *Failure finding*
+(failure finding only for a hidden failure). Each click adds a task with its
+own name and interval, and each becomes its own scheduled task on the
+position; **Remove** takes one back out. A **Redesign** can sit beside the
+tasks, the tasks done until the change is made. Run-to-failure and accept stand
+alone. The notes are once for the whole decision, and the **Decision** column
+reads *On condition + 2 fixed interval*.
 
 Each task of a combination needs its own evidence. The evidence you link in
 step 4 counts for every task it fits: a degradation model backs the
@@ -342,8 +342,8 @@ open **Evidence for this task** under the other task and link its own. Until
 every task has some, the check reads *Partly evidenced*, and the Evidence card
 names the task that has none.
 
-A worksheet import builds a combination too: a second row for the same
-failure mode with another scheduled outcome joins its decision, in row order.
+A worksheet import builds a combination too: a further row for the same
+failure mode with another task (of any kind) joins its decision, in row order.
 The export writes a combination the same way, one row per task, so a sheet you
 export imports back as the same decisions.
 
@@ -359,11 +359,11 @@ it's for (**Check:**, **Do:**, …), its name and how often, and how many other 
 - **+ Add another task**, the dashed row under the task cards, adds a task to
   the decision, making it a combination of tasks. It asks its kind in place
   first (*On condition*, *Fixed interval* or *Failure finding*, or a
-  *Redesign* beside one task), then its name and how often, then Enter. Its
-  instructions are its card's **Edit**, as for any other task. The row shows
-  only when the decision diagram allows another task: a second scheduled task
-  on a safety or environmental consequence, failure finding on a hidden
-  failure, or a redesign beside one task. (**Add a task…** in the row's menu
+  *Redesign* beside the tasks), then its name and how often, then Enter. Its
+  instructions are its card's **Edit**, as for any other task. One kind can
+  come more than once (two fixed-interval tasks, each with its own interval);
+  failure finding is offered only on a hidden failure, and one redesign at
+  most. **Remove** on a task's card takes it off the decision. (**Add a task…** in the row's menu
   opens the same row, or the decision dialog when there's no decision yet.)
 - **Use an existing task…** in the same form picks a task that is already
   on the position, or on a position above it, so one task serves several
