@@ -20,7 +20,7 @@ test("the diagram refuses run to failure on safety, failure finding on an eviden
   assert.match(doctrineRefusal(false, "safety", ["rtf"]), /^A safety consequence can't be run to failure/);
   assert.match(doctrineRefusal(true, "environmental", ["accept"]), /risk of the multiple failure tolerable/);
   assert.match(doctrineRefusal(false, "operational", ["failure_finding"]), /^Failure finding is for hidden failures only/);
-  assert.match(doctrineRefusal(true, "operational", ["on_condition", "fixed_interval"]), /only for safety or environmental/);
+  assert.equal(doctrineRefusal(true, "operational", ["on_condition", "fixed_interval"]), null); // a dose plus a test is allowed
   assert.equal(doctrineRefusal(true, "operational", ["rtf"]), null);
   assert.equal(doctrineRefusal(true, "safety", ["failure_finding"]), null);
   assert.equal(doctrineRefusal(false, "safety", ["on_condition", "fixed_interval"]), null);
@@ -51,8 +51,7 @@ test("Apply says why the diagram forbids a decision, and combinations are greyed
   assert.match(blocked.blockers[0], /can't be run to failure or accepted/);
   const choices = combineChoices("on_condition", [], { hidden: false, consequence: "operational" });
   const fi = choices.find((c) => c.id === "fixed_interval");
-  assert.equal(fi.allowed, false);
-  assert.match(fi.why, /only for safety or environmental/);
+  assert.equal(fi.allowed, true); // a combination is allowed on an operational consequence too
   assert.equal(choices.find((c) => c.id === "redesign").allowed, true);
 });
 

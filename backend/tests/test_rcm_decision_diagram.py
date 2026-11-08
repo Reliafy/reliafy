@@ -37,8 +37,6 @@ def _same_after_rebuild(m):
     (False, "environmental", {"outcome": "accept"}, "An environmental consequence can't be run to failure"),
     (True, "safety", {"outcome": "rtf", "rtf_basis": "random"}, "risk of the multiple failure tolerable"),
     (False, "operational", FF, "Failure finding is for hidden failures only"),
-    (False, "operational", COMBO, "A combination of tasks is only for safety or environmental"),
-    (True, "non_operational", COMBO, "A combination of tasks is only for safety or environmental"),
 ])
 def test_the_diagram_refuses(m, hidden, consequence, decision, words):
     mode = _mode(m)
