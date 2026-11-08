@@ -306,8 +306,8 @@ export function attachGroups({ positionClass = "", hasPrediction = false, viewOn
   const off = viewOnly ? { disabled: true, reason: viewOnly } : {};
   return [
     { id: "model-group-life", label: "Life model", items: [
-      { id: "model-attach-fit", label: "Fit from this position's history…", ...off },
-      { id: "model-attach-bayes", label: "Update a baseline with its history…", ...off },
+      // One dialog for every fit from history: this position's, the class's or both; plain or with a prior.
+      { id: "model-attach-fit-life", label: "Fit a life model…", ...off },
       { id: "model-attach-assign", label: "Assign a saved model…", ...off },
       { id: "model-attach-class", label: "From the class…", ...off,
         ...(positionClass || viewOnly ? {} : { disabled: true, reason: "This position has no class" }) },

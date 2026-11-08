@@ -679,12 +679,14 @@ RELIABILITY: Table = {
 # Life models on positions (the Explorer's Modelling tab, position_models.py). Read them with get.position (models).
 POSITION_MODELS: Table = {
     "link": ("position_id", "model_id model_type from_class fit distribution scope failure_mode_ids note "
-                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id", """Attach a life model to a position (a link: the model isn't
+                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior", """Attach a life model to a position (a link: the model isn't
         copied). One of: model_id (a saved model; model_type model default, recurrent_model, degradation_model,
         alt_model), from_class true (its position class's fitted model) or fit true (Pro: fit distribution, weibull
         default, to its own failure history, or its class's pooled history when its own is thin: scope auto,
         position or class; saved to Models). failure_mode_ids: the modes it's for (none: every failure there);
-        replace_link_id: the model on it this replaces. fit true with baseline or trust: a Bayesian update of a
+        replace_link_id: the model on it this replaces. fit true with data (position, class, both: the class's history
+        as the prior) and method (mle: plain, 95% confidence; bayes: with a prior {kind: class | model | params | b10,
+        ...}, 90% credible); trust weighs a prior (close, guide, start). fit true with baseline: a Bayesian update of a
         baseline (the class's model by default) with its history, for one or two failures (guide topic modelling).
         prediction {environment?, mission_time?, assign?: {part number: {record_id, quality_factor?} or
         {rate_per_million_hours} or {excluded: true}}}: a parts-count
@@ -2371,7 +2373,13 @@ def register() -> None:
                                "or part id: {record_id (a handbook record: list kind library), quality_factor?}, {rate_per_million_hours} (the "
                                "user's own rate, e.g. a battery) or {excluded: true} (not electronic: left out)}}."))]
                            = None, rbd_id: str | None = None, build_rbd: bool | None = None,
-                           use_link_id: str | None = None) -> dict[str, Any]:
+                           use_link_id: str | None = None,
+                           data: Literal["position", "class", "both"] | None = None,
+                           method: Literal["mle", "bayes"] | None = None,
+                           prior: Annotated[dict[str, Any] | None, Field(description=(
+                               "With fit and method bayes: {kind: class} (the class's pooled history as a power prior, "
+                               "weighed by trust), {kind: model, model_id}, {kind: params, distribution, params, unit} "
+                               "or {kind: b10, b10: {value, low, high}, shape: {low, high}, unit}."))] = None) -> dict[str, Any]:
         """The life models on a position (a functional location, or a position of a product's design): attach a
         saved model, the class's model or a new fit from its history; take one off. The guide's modelling topic
         says how they feed the RCM."""
@@ -2402,6 +2410,15 @@ def register() -> None:
         if fit:
             if _caller(ctx).get("mcp_plan", "pro") != "pro":
                 raise mcp_server.Refusal(mcp_server._pro_only_message("analyse.fit"), "pro_only")
+            if data or method or prior:
+                from backend.maintenance import fit_life
+
+                try:
+                    return run(fit_life.fit, m, _db(), reader.read_owners, reader.hidden, position_id, data or "position",
+                               method or "mle", prior, _d(distribution, "weibull"), failure_mode_ids, exclude or [],
+                               _d(trust, "guide"), None, True, None, note or "", replace_link_id)
+                except fitting.FitError as err:
+                    raise ToolError(f"The fit didn't work: {err}") from None
             if baseline or trust:
                 return run(pm.bayes_position, m, _db(), reader.read_owners, reader.hidden, position_id, baseline,
                            _d(trust, "guide"), exclude or [], None, True, None, note or "", replace_link_id)

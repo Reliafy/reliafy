@@ -458,7 +458,7 @@ export function ParamsModal({ position, onClose, onDone }) {
 }
 
 // The position's failure modes, read for the dialogs' "What is it for?" choice.
-function useModes(positionId) {
+export function useModes(positionId) {
   const [modes, setModes] = useState(null);
   useEffect(() => {
     let live = true;
@@ -469,7 +469,7 @@ function useModes(positionId) {
 }
 
 // "What is it for?": every failure of the position (none ticked), or the failure modes ticked.
-function ModesField({ modes, value, onChange }) {
+export function ModesField({ modes, value, onChange }) {
   if (modes === null) return <p className="rim-tquiet">Reading its failure modes…</p>;
   return (
     <Field label="What is it for?" as="fieldset" help="Leave all unticked for every failure of this position.">

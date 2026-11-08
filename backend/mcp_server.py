@@ -2305,7 +2305,9 @@ def bayes_update(
     baseline: Annotated[dict[str, Any], Field(description=(
         "What it starts from: {model_id} (a saved Weibull, exponential or lognormal model, or an earlier update), "
         "{distribution, params: [{name, value}], unit} (numbers from a data sheet or handbook) or "
-        "{b10: {value, low, high}, shape: {low, high}, unit} (a belief about the B10 life)."))],
+        "{b10: {value, low, high}, shape: {low, high}, unit} (a belief about the B10 life), or "
+        "{class_power_prior: true, position_id, distribution?} (Reliafy Maintenance: that position's class's pooled "
+        "history as a power prior, in days; x and c default to the position's own history)."))],
     x: Annotated[list[float], Field(max_length=10000, description="Ages, in the baseline's unit.")],
     c: Annotated[Optional[list[int]], Field(description="Per age: 0 failed, 1 still running (default all 0).")] = None,
     trust: Annotated[Optional[str], Field(description=(
@@ -2320,6 +2322,8 @@ def bayes_update(
     from backend.services import bayes_life
 
     user, db = _caller(ctx), _db()
+    if (baseline or {}).get("class_power_prior"):
+        return _bayes_class_prior(user, db, baseline, x, c, trust, age)
     try:
         base = bayes_life.baseline_from(db, _owners(user["uid"]), samples_service.hidden_sample_ids(db, user["uid"]),
                                         baseline)
@@ -2329,6 +2333,35 @@ def bayes_update(
     result.pop("rows", None)
     result.pop("curves", None)
     return {"data_notice": DATA_NOTICE, **result}
+
+
+def _bayes_class_prior(user, db, baseline: dict, x, c, trust, age) -> dict[str, Any]:
+    """analyse bayes_update with a position's class's pooled history as the power prior (Maintenance
+    users only): the data given, else the position's own history."""
+    from backend import config
+    from backend.maintenance import fit_life
+    from backend.maintenance.access import allowed
+    from backend.maintenance.service import Invalid, Maintenance, NotFound
+    from backend.routers.maintenance import get_store
+    from backend.services import bayes_life, time_zones
+
+    if not (config.MAINTENANCE_ENABLED and allowed(user)):
+        raise ToolError("class_power_prior needs Reliafy Maintenance, which isn't on for your account.")
+    m = Maintenance(get_store(), user["uid"], user["uid"], time_zone=time_zones.of_owner(db, user["uid"]))
+    owners, hidden = _owners(user["uid"]), samples_service.hidden_sample_ids(db, user["uid"])
+    try:
+        if x:
+            out = fit_life.given_with_class_prior(m, str(baseline.get("position_id") or ""), bayes_life.given_rows(x, c),
+                                                  baseline.get("distribution") or "weibull", trust or "guide", age)
+        else:
+            out = fit_life.fit(m, db, owners, hidden, str(baseline.get("position_id") or ""), "both", "bayes",
+                               {"kind": "class"}, baseline.get("distribution") or "weibull", None, (), trust or "guide",
+                               age)
+    except (Invalid, NotFound, bayes_life.BayesError) as err:
+        raise ToolError(str(err) or "Position not found.") from None
+    out.pop("rows", None)
+    out.pop("curves", None)
+    return {"data_notice": DATA_NOTICE, **out}
 
 
 def reliability_at(

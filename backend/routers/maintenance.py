@@ -1253,6 +1253,17 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
         pr = body["prediction"]
         return _run(pm.predict_position, m, session, ctx.read_owners, ctx.hidden, position_id, pr.get("environment"),
                     pr.get("mission_time"), pr.get("assign"), True, note, replace, ctx.write_owner)
+    if body.get("fit") and any(k in body for k in ("data", "method", "prior")):
+        # "Fit a life model…": which data (position, class, both) and which method (mle, bayes), fit_life.py.
+        from backend.maintenance import fit_life
+
+        try:
+            return _run(fit_life.fit, m, session, ctx.read_owners, ctx.hidden, position_id, body.get("data") or "position",
+                        body.get("method") or "mle", body.get("prior"), body.get("distribution") or "weibull", modes,
+                        body.get("exclude") or [], body.get("trust") or "guide", None, True, body.get("name"), note,
+                        replace, ctx.write_owner)
+        except fitting.FitError as err:
+            return _fit_failed(err)
     try:
         if body.get("fit"):
             return _run(pm.fit_position_model, m, session, position_id, body.get("distribution") or "weibull",
@@ -1306,6 +1317,29 @@ def preview_position_prediction(position_id: str, body: dict = Body(default={}),
 
     return _run(pm.predict_position, m, session, ctx.read_owners, ctx.hidden, position_id, body.get("environment"),
                 body.get("mission_time"), body.get("assign"))
+
+
+@router.post("/positions/{position_id}/fit-preview")
+def preview_position_fit(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                         ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """"Fit a life model…", previewed (nothing saved; a refusal comes back as {refused: words}): data (position, class, both), method (mle: a plain fit
+    with 95% confidence bounds; bayes: with a prior, 90% credible intervals), prior ({kind: class | model |
+    params | b10, ...}), distribution (weibull, exponential, lognormal; best for a plain fit), failure_mode_ids,
+    exclude (fitment ids to leave out), trust (close, guide, start), age. Save with POST /positions/{id}/models
+    {fit: true, data, method, prior, ...}."""
+    from backend import fitting
+    from backend.maintenance import fit_life
+
+    # A refusal is part of a preview ("one failure isn't enough for a plain fit"): said in words, not an error.
+    try:
+        return JSONResponse(content=fit_life.fit(
+            m, session, ctx.read_owners, ctx.hidden, position_id, body.get("data") or "position",
+            body.get("method") or "mle", body.get("prior"), body.get("distribution") or "weibull",
+            body.get("failure_mode_ids"), body.get("exclude") or [], body.get("trust") or "guide", body.get("age")))
+    except NotFound:
+        return JSONResponse(status_code=404, content={"detail": "Not found."})
+    except (Invalid, fitting.FitError) as err:
+        return JSONResponse(content={"refused": client_message(err)})
 
 
 @router.delete("/position-models/{link_id}")
