@@ -1,7 +1,7 @@
 // The Explorer's RCM tab: the asset tree and the RCM are one table. The tree
 // (assetTree.js, arranged by positions) is the first column; on this tab each
 // position's rows go on into its functions › performance standards ›
-// functional failures › failure modes, nested in the same tree (the same open
+// functional failures › failure modes › tasks, nested in the same tree (the same open
 // rows, the same selection), and every row has the RCM's columns beside it.
 // On the Summary tab the tree is the positions alone, as it always was.
 //
@@ -10,14 +10,14 @@
 // (right-click, ⋯ or Shift+F10), and the RCM chips.
 
 import {
-  COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, blank as rcmBlank, checkValue, intervalText, modeCounts, moreTasks,
-  isHidden, rowText as rcmText, tasksOf,
+  COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, blank as rcmBlank, checkValue, decisionCardLines, decisionRows, intervalText,
+  isCombination, modeCounts, moreTasks, isHidden, rowText as rcmText, tasksOf,
 } from "./rcmWorksheet.js";
 import { standardsShown } from "./rcmStandards.js";
 import { withPositionDelete } from "./rcmDelete.js";
 import { FIELDS as FMEA_FIELDS } from "./fmeaWorksheet.js";
 
-export const RCM_TYPES = new Set(["fn", "std", "nostd", "fail", "mode", "unassigned", "cause", "nofail"]);
+export const RCM_TYPES = new Set(["fn", "std", "nostd", "fail", "mode", "unassigned", "cause", "nofail", "task"]);
 export const isRcmRow = (r) => !!r && RCM_TYPES.has(r.type);
 
 const noStatus = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null, not_analysed: 0, positions: 0, empty: 0 });
@@ -54,6 +54,10 @@ const noStatus = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null, n
 // failure's chain rolled up in its cells (the failure modes reachable through
 // the links, each once). It is never counted into the failure's, function's or
 // position's own counts (rsum), so nothing is counted twice.
+//
+// Under each failure mode, its tasks (the fifth level, modeTaskRows): one row
+// per task of its decision (key `T:<mode>:<task>`), a shared task under every
+// mode it serves. They add nothing to the counts (the mode's own say it has a task).
 export function graftRcm(display, rcm) {
   const byPos = new Map((rcm?.positions || []).map((p) => [p.id, p]));
   const modeById = new Map();
@@ -83,6 +87,14 @@ export function graftRcm(display, rcm) {
     const modeRow = (m, parent, depth, ffId) => {
       const row = add(m.id, "mode", { ...m, position_id: r.key, functional_failure_id: ffId }, parent, depth);
       if (!row) return;
+      // Its tasks, one row each (never counted: the mode's own counts say it has a task).
+      for (const t of modeTaskRows(m)) {
+        add(taskKey(m.id, t.task.id), "task", {
+          id: taskKey(m.id, t.task.id), task_id: t.task.id, mode_id: m.id, mode_text: m.text || "", position_id: r.key,
+          text: t.task.name || t.task.text || "", name: t.task.name || "", instructions: t.task.instructions || "",
+          outcome: t.outcome, task: t.task, member: t.member, found: t.found, on_found: t.found?.text || "",
+        }, m.id, depth + 1);
+      }
       row.rsum = modeCounts(m);
       for (let up = parent; up != null && up !== r.key; up = rows.get(up).parent) {
         const u = rows.get(up);
@@ -174,6 +186,47 @@ export function graftRcm(display, rcm) {
 }
 
 export const causeKey = (effectId, causeId) => `L:${effectId}:${causeId}`;
+// A task's row under a failure mode it serves (a shared task has one under each).
+export const taskKey = (modeId, taskId) => `T:${modeId}:${taskId}`;
+
+// The task rows under a failure mode: one per task of its decision (a
+// combination's members in order, then any other task linked to it), or the
+// tasks linked before any decision. Run to failure, accept and redesign (alone)
+// have none: the mode's own row says the decision. Each {task, outcome, member,
+// found}: found {at, text} for a check (what's done when it finds it, and which
+// part of the decision holds it), else null.
+const SCHEDULED_KINDS = new Set(["on_condition", "fixed_interval", "failure_finding"]);
+export function modeTaskRows(m) {
+  const d = m?.decision || null;
+  const tasks = tasksOf(m);
+  if (d && !isCombination(d) && !SCHEDULED_KINDS.has(d.outcome)) return [];
+  const lines = d ? decisionCardLines(d, tasks) : decisionRows(null, tasks).map((row) => ({ ...row, found: null }));
+  const seen = new Set();
+  const out = [];
+  for (const l of lines) {
+    if (!l.task?.id || seen.has(l.task.id)) continue;
+    seen.add(l.task.id);
+    // A plain decision's own task is of the decision's kind (the task may still say the kind it was made as).
+    if (d && !isCombination(d) && l.task.id === d.task_id) {
+      const finds = d.outcome === "on_condition" || d.outcome === "failure_finding";
+      out.push({ task: l.task, outcome: d.outcome, member: null, found: finds ? { at: 0, text: d.on_found || "" } : null });
+      continue;
+    }
+    out.push({ task: l.task, outcome: l.outcome || l.task.outcome || null, member: l.member || null, found: l.found || null });
+  }
+  return out;
+}
+
+// Every row of a task in the tree (one under each failure mode it serves), with its mode's row.
+export function taskServes(whole, taskId) {
+  const out = [];
+  for (const row of whole.rows.values()) {
+    if (row.type !== "task" || row.ref.task_id !== taskId) continue;
+    const mode = whole.rows.get(row.ref.mode_id);
+    if (mode) out.push({ key: row.key, mode });
+  }
+  return out;
+}
 // A function's one standard text, shown as a row; and its "No standard" row.
 export const legacyKey = (fnId) => `S:${fnId}`;
 export const noStdKey = (fnId) => `N:${fnId}`;
@@ -294,6 +347,12 @@ export function rowActions(r, { canRename = true, moves = true, viewOnly = null 
       { id: "add-fail", label: "Add a functional failure…" },
       { id: "assign-fail", label: "Assign to a functional failure…" },
     ];
+  }
+  if (r.type === "task") {
+    // Its details have the rest; here what changes the tree: off this failure mode (a shared
+    // task stays with the others), or retired when this is the only one it serves.
+    const shared = !!r.ref.task?.shared_with;
+    return [...open, { id: "remove-task", label: shared ? "Remove from this failure mode…" : "Retire the task…", danger: true }];
   }
   if (r.type === "mode") {
     return [
@@ -620,7 +679,7 @@ export function unlinkEmptiesFailure(whole, effectId, causeId) {
 // A function, standard, functional failure or failure mode opens its details
 // across the table (the tree kept beside them): all of it in one place, each
 // field kept as you go.
-export const ITEM_KINDS = new Set(["fn", "std", "fail", "mode"]);
+export const ITEM_KINDS = new Set(["fn", "std", "fail", "mode", "task"]);
 export const opensItem = (r) => !!r && ITEM_KINDS.has(r.type);
 // A double-click on the table also opens a position's own panel (its operating
 // context and functions, or its criticality matrix), expanded like the rest.

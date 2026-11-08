@@ -199,6 +199,43 @@ test("the RCM tab: isolate a function; inside a pinned branch; the mouse menus h
   await expectHealthy(page, problems, { label: "isolate on the RCM tab", root: ".tx" });
 });
 
+test("the RCM tab goes five levels deep: a position's Isolate offers 4 levels, which opens its failure modes down to their tasks", async ({ page, request, problems }) => {
+  const tag = `d${Date.now()}`;
+  const p = await plant(request, tag);
+  const rcm = await (await request.get(`${M}/rcm`)).json();
+  const seal = rcm.positions.find((x) => x.id === p.pumpA.id).functions[0].failures[0].modes[0];
+  const res = await request.put(`${M}/failure-modes/${seal.id}/decision`, {
+    data: { consequence: "operational", decision: { outcome: "on_condition", task: `Check the seal ${tag}`, interval: 1, interval_unit: "months" } },
+  });
+  expect(res.ok()).toBeTruthy();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await open(page, `/asset-register/explorer?arrange=positions&tab=rcm&sel=${p.pumpA.id}&pin=${p.lineA.id}`);
+  const table = page.getByRole("treegrid", { name: /and their RCM/ });
+  const trow = (name) => table.getByRole("row", { name: new RegExp(name) });
+  const pumpRow = trow(`^Works pump A ${tag}`);
+  await expect(trow(`^Failure mode: Seal leaks ${tag}`)).toBeVisible();
+  // Its task is the fifth level, closed under the mode until asked for.
+  await expect(trow(`^Task: Check the seal ${tag}`)).toHaveCount(0);
+  await pumpRow.locator(".tt-tree").click({ button: "right" });
+  await page.getByRole("menu").first().getByRole("menuitem", { name: "Isolate", exact: true }).hover();
+  const sub = page.getByRole("menu", { name: "Isolate" });
+  await expect(sub.getByRole("menuitem")).toHaveText(["With 1 level open", "With 2 levels open", "With 3 levels open", "With 4 levels open", "With everything open"]);
+  await sub.getByRole("menuitem", { name: "With 4 levels open" }).click();
+  await expect(trow(`^Task: Check the seal ${tag}`)).toBeVisible();
+  await expect(trow(`^Failure mode: Seal leaks ${tag}`)).toHaveAttribute("aria-expanded", "true");
+  await expect(spoken(page)).toContainText("opened 4 levels");
+  // 3 levels: down to the failure modes, their tasks closed again.
+  await isolate(page, pumpRow.locator(".tt-tree"), "With 3 levels open");
+  await expect(trow(`^Failure mode: Seal leaks ${tag}`)).toHaveAttribute("aria-expanded", "false");
+  await expect(trow(`^Task: Check the seal ${tag}`)).toHaveCount(0);
+  // The function goes four deep (standards aside): no fifth level offered on it.
+  await trow(`^Function: Pump water ${tag}`).locator(".tt-tree").click({ button: "right" });
+  await page.getByRole("menu").first().getByRole("menuitem", { name: "Isolate", exact: true }).hover();
+  await expect(page.getByRole("menu", { name: "Isolate" }).getByRole("menuitem")).toHaveText(["With 1 level open", "With 2 levels open", "With 3 levels open", "With everything open"]);
+  await page.keyboard.press("Escape");
+  await expectHealthy(page, problems, { label: "isolate five levels", root: ".tx" });
+});
+
 test("at 400 px: Isolate opens in place in the ⋯ menu; the rest closes; the RCM menus keep the moves; nothing scrolls sideways", async ({ page, request, problems }) => {
   const tag = `w${Date.now()}`;
   const p = await plant(request, tag);

@@ -5,13 +5,13 @@ import { saveErrorText } from "../confirm.js";
 import { DEFAULT_OUTCOMES, INTERVAL_UNITS, TASK_ORDER, modeAnswers, startUnit } from "../decisionCheck.js";
 import {
   FOUND_EMPTY, OUTCOME_LABEL, ROLE, addableOutcomes, decisionCardLines, decisionRows, decisionWithFirstTask, decisionWithMember, decisionWithoutMember,
-  decisionBody, decisionWithOnFound, decisionWithOutcome, everyText, findsSomething, isCombination, roleLine, tasksDropped, tasksOf,
+  decisionBody, decisionWithOnFound, decisionWithOutcome, everyText, findsSomething, isCombination, onEventOnly, roleLine, tasksDropped, tasksOf,
 } from "../rcmWorksheet.js";
 import { getTaskTriggerPoints, saveStrategyAnalysis } from "../api.js";
 import { appendNotes, calculatorFor, linksEvidence } from "../rcmIntervals.js";
 import IntervalCalculator from "./IntervalCalculator.jsx";
 import { asksInterval, pointLabel, triggerBody, triggerState, triggerWhy } from "../taskTrigger.js";
-import { secondTaskHint } from "../explorerRcm.js";
+import { modeTaskRows, secondTaskHint, taskKey } from "../explorerRcm.js";
 import { explorerPath } from "../assetTree.js";
 import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 import TaskChoice from "./TaskChoice.jsx";
@@ -20,6 +20,8 @@ import ChoiceChips from "./ui/ChoiceChips.jsx";
 import Field, { SavedMark } from "./ui/Field.jsx";
 import InputGroup from "./ui/InputGroup.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
+import Section from "./ui/Section.jsx";
+import { PanelField } from "./PanelField.jsx";
 
 // Step 3 of a failure mode's details, "Proactive task or default action" (the
 // Explorer's RCM tab), edited in place like step 2 (Derryn, 9 Nov 2026: the
@@ -36,33 +38,18 @@ import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 //    shown but disabled, with why.
 //    Under the chosen chip, a short bridge says what the card below holds
 //    (TaskChoice `bridge`); the worth-doing test is each chip's tooltip.
-// 2. The tasks, as cards of one shape in every state (shown, changed with
-//    Edit, not made yet: inputs where the words go; Derryn, 10 Nov 2026), with
-//    a thin accent border on the left so they hang off the chip row. Each
-//    leads with what it's for, by its kind (Derryn,
-//    9 Nov 2026: "you have an on-condition task, but then you might have an
-//    inspection for that, and that needs to be much more clear"): "Check:" the
-//    task · every N, then "Then, if found:" what's done when the check finds it
-//    (on_found, edited in place: saved on leaving the field or Enter); a
-//    failure-finding task "Check it still works:" … "Then, if failed:"; a
-//    fixed-interval task "Do:"; run to failure "When it fails:" with what's done
-//    on failure (`own`); accept "Accepted:" and redesign "Change:" with the first
-//    line of the failure mode's notes and rationale. Then its chips
-//    (shared, its work package) and instructions, and plain Edit and Remove
-//    links at its right (Edit changes it in place: a shared task changes for
-//    every mode it serves; Remove unlinks a shared task, retires one serving
-//    this mode alone). A scheduled decision with no task yet shows the task
-//    form instead (a new task's name and how often, Enter saves; or "Use an
-//    existing task…": one on this position or above it). Run to failure shows
-//    what's done on failure (`own`). "+ Add another task" (dashed) only when
-//    the rules allow a combination and a task exists: its kind, then the form.
-//    Beside "every N unit" (shown and while changed), "Calculate…" opens the interval
-//    calculator its kind calls for (IntervalCalculator: the P-F calculator, the test
-//    interval, the replacement age; Derryn, 9 Nov 2026). Its "Use N unit" writes the
-//    interval on the task (changed in place: into the form, kept with Save task), adds
-//    one paragraph on how it was worked out to the failure mode's notes and rationale,
-//    and, when the decision has no evidence yet, saves the calculation as a strategy
-//    analysis linked as its evidence.
+// 2. The tasks: each task is a row of its own in the tree, under the failure mode
+//    (the tree's fifth level; Derryn, 9 Nov 2026: "I'm thinking that task actually
+//    becomes another level in the tree"), so here they're a plain list, one line
+//    each (name · kind · interval), each a link that picks the task's row; its
+//    details (RcmTaskSections, below) change it. What has no row stays here as a
+//    card: run to failure "When it fails:" with what's done on failure (`own`),
+//    accept "Accepted:" and redesign "Change:" with the first line of the failure
+//    mode's notes and rationale. A scheduled decision with no task yet shows the
+//    task form instead (a new task's name and how often, Enter saves; or an
+//    existing task: one on this position or above it). "+ Add a task" (dashed)
+//    only when the rules allow a combination and a task exists: its kind, then the
+//    form. A task saved from either form is picked in the tree once it's there.
 // 3. "Evidence", open: the evidence line (`why`, built by Details: Link
 //    evidence… opens the evidence picker alone). The rationale is the failure
 //    mode's notes and rationale, under its title: one place (Derryn, 9 Nov 2026).
@@ -77,8 +64,9 @@ import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 //   options   the server's RCM options (labels, hints, run-to-failure reasons)
 //   why       the evidence line (shown with a decision)
 //   own       run to failure's "What's done on failure" field
-//   addStart  a value that, when it changes, opens "Add another task" (the row menu's Add a task…)
+//   addStart  a value that, when it changes, opens "Add a task" (the row menu's Add a task…)
 //   onSaid    (text) a few words in the page's status line once something's done
+//   onPick    (key) picks a row in the tree (a task's row)
 
 const SCHEDULED = ["on_condition", "fixed_interval", "failure_finding"];
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
@@ -96,8 +84,61 @@ function droppedWords(going) {
     : `“${t.name}” serves only this failure mode, so it is retired. It stays in the history and can be restored.`)).join(" ");
 }
 
+// Takes a task off a failure mode, after asking: a combination's member comes off the
+// decision with its task (the others kept by their task); any other task is retired, or
+// unlinked when it serves other modes too. Resolves true once it's done.
+export async function removeTaskFromMode({ confirm, ops, mode, task, onSaid }) {
+  const d = mode.ref.decision || null;
+  const without = d ? decisionWithoutMember(d, task.id) : null;
+  const ok = await confirm({
+    title: "Remove this task?", body: droppedWords([task]), confirmLabel: task.shared_with ? "Remove from this failure mode" : "Retire the task",
+    pendingLabel: "Removing…", failedWhat: "remove it",
+    run: () => (without ? ops.decide(mode, { consequence: mode.ref.consequence || null, decision: without }) : ops.removeTask(mode, task)).then(() => true),
+  });
+  if (ok) onSaid?.(task.shared_with ? "Removed the task from this failure mode." : "Retired the task.");
+  return !!ok;
+}
+
+// The interval calculator for a failure mode's tasks: `link(task, kind, fill)` is the
+// "Calculate…" beside a task's interval (none where it can't be used), `dialog` the
+// calculator while it's open. Its "Use N unit" writes the interval on the task (or into
+// the form being changed: `fill`), adds one paragraph on how it was worked out to the
+// failure mode's notes and rationale, and, when the decision has no evidence yet, saves
+// the calculation as a strategy analysis linked as its evidence.
+function useIntervalCalc({ r, ops, can, busy = false, onSaid }) {
+  const d = r.ref.decision || null;
+  const [calc, setCalc] = useState(null); // {task, kind, fill?}
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => setCalc(null), [r.key]);
+  const decide = (decision) => ops.decide(r, { consequence: r.ref.consequence || null, decision });
+  const useInterval = async ({ value, unit, line, analysis }) => {
+    const { task, fill } = calc;
+    let linked = false;
+    if (d && linksEvidence(d)) {
+      const kept = await saveStrategyAnalysis(analysis.name, analysis.kind, analysis.inputs);
+      await decide(decisionBody(d, { evidence: { type: "strategy_analysis", id: kept.id } }));
+      linked = true;
+    }
+    if (fill) fill(value, unit);
+    else await ops.editTask(task.id, { interval: value, unit });
+    await ops.set(r, "notes", appendNotes(r.ref.notes, line));
+    if (!alive.current) return;
+    setCalc(null);
+    onSaid?.(`${fill ? "Put the interval in the form" : "Saved the interval"} and added how it was worked out to the notes${linked ? ", with the calculation as evidence" : ""}.`);
+  };
+  const link = (t, kind, fill = null) => (t?.id && can && ops?.editTask && ops?.set && calculatorFor(kind) ? (
+    <button type="button" className="link rim-calc" disabled={busy} aria-label={`Calculate how often to do “${t.name}”`}
+            title="Work out the interval from the failure's numbers" onClick={() => setCalc({ task: t, kind, fill })}>
+      Calculate…
+    </button>
+  ) : null);
+  const dialog = calc ? <IntervalCalculator r={r} task={calc.task} kind={calc.kind} onClose={() => setCalc(null)} onUse={useInterval} /> : null;
+  return { link, dialog };
+}
+
 export default function RcmModeTasks({
-  r, ops = null, readOnly = false, addStart = null, onSaid, options = null, why = null, own = null,
+  r, ops = null, readOnly = false, addStart = null, onSaid, options = null, why = null, own = null, onPick = null,
 }) {
   const confirm = useConfirm();
   const d = r.ref.decision || null;
@@ -111,13 +152,17 @@ export default function RcmModeTasks({
     : decisionRows(null, tasks).map((row) => ({
       key: row.key, kind: null, name: row.task.text || row.task.name, every: everyText(row.task) || null, task: row.task, member: null,
     }));
+  // A task with a row in the tree is a line linking to it; the rest (run to failure's action,
+  // accept, redesign, a task the tree has no row for) stay cards here.
+  const rowsHere = modeTaskRows(r.ref);
+  const listed = rowsHere.map((x) => ({ key: x.task.id, task: x.task, outcome: x.outcome }));
+  const carded = cards.filter((l) => !(l.task?.id && rowsHere.some((x) => x.task.id === l.task.id)));
   const [pick, setPick] = useState(() => fromDecision(d));
   const [editing, setEditing] = useState(null); // the task being changed in place
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const [adding, setAdding] = useState(false);
   const [saved, setSaved] = useState(0);
-  const [calc, setCalc] = useState(null); // {task, kind, fill?}: the interval calculator open for a task
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
   // Another failure mode: everything starts again. The same one read again: the choice follows
@@ -133,7 +178,7 @@ export default function RcmModeTasks({
   }, [r.key, d?.outcome, d?.rtf_basis]); // eslint-disable-line react-hooks/exhaustive-deps
   const addable = can && d ? addableOutcomes(d, r.ref) : [];
   const canAdd = addable.length > 0 && tasks.some((t) => t.id);
-  // The row menu's Add a task…: "Add another task" opened (when another task can join the decision).
+  // The row menu's Add a task…: "Add a task" opened (when another task can join the decision).
   const opened = useRef(null);
   useEffect(() => {
     if (addStart == null || addStart === opened.current) return;
@@ -202,41 +247,25 @@ export default function RcmModeTasks({
     }
   };
 
-  // "Use N unit" in the interval calculator: the evidence first (when the decision has none: the
-  // calculation saved as a strategy analysis), then the interval (on the task, or into the form
-  // while it's changed), then the paragraph at the end of the mode's notes and rationale.
-  const useInterval = async ({ value, unit, line, analysis }) => {
-    const { task, fill } = calc;
-    let linked = false;
-    if (d && linksEvidence(d)) {
-      const kept = await saveStrategyAnalysis(analysis.name, analysis.kind, analysis.inputs);
-      await decide(decisionBody(d, { evidence: { type: "strategy_analysis", id: kept.id } }));
-      linked = true;
-    }
-    if (fill) fill(value, unit);
-    else await ops.editTask(task.id, { interval: value, unit });
-    await ops.set(r, "notes", appendNotes(r.ref.notes, line));
-    if (!alive.current) return;
-    setCalc(null);
-    onSaid?.(`${fill ? "Put the interval in the form" : "Saved the interval"} and added how it was worked out to the notes${linked ? ", with the calculation as evidence" : ""}.`);
-  };
-  const calcLink = (t, kind, fill = null) => (t?.id && can && ops?.editTask && ops?.set && calculatorFor(kind) ? (
-    <button type="button" className="link rim-calc" disabled={busy} aria-label={`Calculate how often to do “${t.name}”`}
-            title="Work out the interval from the failure's numbers" onClick={() => setCalc({ task: t, kind, fill })}>
-      Calculate…
-    </button>
-  ) : null);
+  const { link: calcLink, dialog: calcDialog } = useIntervalCalc({ r, ops, can, busy, onSaid });
+  const remove = (t) => removeTaskFromMode({ confirm, ops, mode: r, task: t, onSaid });
 
-  // A combination's member comes off the decision with its task (the others kept by their
-  // task); any other task is retired, or unlinked when it serves other modes too.
-  const remove = async (t) => {
-    const without = decisionWithoutMember(d, t.id);
-    const ok = await confirm({
-      title: "Remove this task?", body: droppedWords([t]), confirmLabel: t.shared_with ? "Remove from this failure mode" : "Retire the task",
-      pendingLabel: "Removing…", failedWhat: "remove it",
-      run: () => (without ? decide(without) : ops.removeTask(r, t)).then(() => true),
-    });
-    if (ok) onSaid?.(t.shared_with ? "Removed the task from this failure mode." : "Retired the task.");
+  // The task rows under this failure mode in the tree: listed here as links to them.
+  const rowTasks = new Set(rowsHere.map((x) => x.task.id));
+  // A task saved from a form here: picked in the tree once the read brings it (a new id).
+  const pickNew = useRef(null);
+  const taskIds = tasks.map((t) => t.id).filter(Boolean).join(",");
+  useEffect(() => {
+    const before = pickNew.current;
+    if (!before) return;
+    const fresh = tasks.find((t) => t.id && !before.has(t.id) && rowTasks.has(t.id));
+    if (!fresh) return;
+    pickNew.current = null;
+    onPick?.(taskKey(r.key, fresh.id));
+  }, [taskIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  const watching = (save) => (member) => {
+    pickNew.current = new Set(tasks.map((t) => t.id).filter(Boolean));
+    return save(member).catch((e) => { pickNew.current = null; throw e; });
   };
 
   const card = (l) => {
@@ -317,32 +346,32 @@ export default function RcmModeTasks({
         <div className="rim-card rim-one editing" role="group" aria-label="The decision's task">
           <NewTaskCard key={`${r.key}:${d.outcome}`} r={r} d={d} ops={ops} kind={d.outcome}
                        start={{ name: d.task || "", interval: d.interval ?? "" }}
-                       onSave={(member) => decide(decisionWithFirstTask(d, member))}
+                       onSave={watching((member) => decide(decisionWithFirstTask(d, member)))}
                        onDone={(said) => { setSaved((n) => n + 1); onSaid?.(said); }} />
         </div>
       )}
-      {d && cards.length > 0 && <ul className="rim-lines rim-cards" aria-label="The decision's tasks">{cards.map(card)}</ul>}
+      {d && listed.length > 0 && <TaskList r={r} lines={listed} label="The decision's tasks" onPick={onPick} />}
+      {d && carded.length > 0 && <ul className="rim-lines rim-cards" aria-label="The decision's action">{carded.map(card)}</ul>}
       {!d && cards.length > 0 && (
         <>
           <h4 className="rim-before">Tasks linked before the decision</h4>
-          <ul className="rim-lines rim-cards" aria-label="Tasks linked before the decision">{cards.map(card)}</ul>
+          {listed.length > 0 && <TaskList r={r} lines={listed} label="Tasks linked before the decision" onPick={onPick} />}
+          {carded.length > 0 && <ul className="rim-lines rim-cards" aria-label="Other tasks linked before the decision">{carded.map(card)}</ul>}
         </>
       )}
       {canAdd && !editing && (adding ? (
-        <div className="rim-card rim-one rim-adding editing" role="group" aria-label="Add another task">
+        <div className="rim-card rim-one rim-adding editing" role="group" aria-label="Add a task">
           <NewTaskCard r={r} d={d} ops={ops} kinds={addable}
-                       onSave={(member) => decide(decisionWithMember(d, member))}
+                       onSave={watching((member) => decide(decisionWithMember(d, member)))}
                        onCancel={() => setAdding(false)}
                        onDone={(said) => { setAdding(false); onSaid?.(said); }} />
         </div>
       ) : (
         <button type="button" className="rim-addrow" disabled={busy} onClick={() => { setFailed(null); setAdding(true); }}>
-          + Add another task
+          + Add a task
         </button>
       ))}
-      {calc && (
-        <IntervalCalculator r={r} task={calc.task} kind={calc.kind} onClose={() => setCalc(null)} onUse={useInterval} />
-      )}
+      {calcDialog}
       {d && why && (
         <div className="rim-whyopen" role="group" aria-labelledby={`rim-why-${r.key}`}>
           <h4 className="rim-before" id={`rim-why-${r.key}`}>Evidence</h4>
@@ -373,10 +402,10 @@ function Row1({ lead, children, acts = null }) {
   );
 }
 
-function Row2({ lead, id, children }) {
+function Row2({ lead, id, children, hideLabel = false }) {
   return (
     <div className="rim-r2">
-      <label className="rim-trole" htmlFor={id}>{lead}</label>
+      <label className={hideLabel ? "sr-only" : "rim-trole"} htmlFor={id}>{lead}</label>
       {children}
     </div>
   );
@@ -681,7 +710,7 @@ function TaskEditCard({ r, task, lead, busy, failed, found = null, calculate = n
 // done when the check finds it, one line, kept when you leave it or press Enter, "✓ Saved"
 // once it is; greyed "Say what's done when the check finds it" while empty. Read-only:
 // the words, or that greyed line.
-function FoundLine({ label, value, can, onSave }) {
+function FoundLine({ label, value, can, onSave, hideLabel = false }) {
   const [draft, setDraft] = useState(value || "");
   const [saved, setSaved] = useState(0);
   const [error, setError] = useState(null);
@@ -692,7 +721,7 @@ function FoundLine({ label, value, can, onSave }) {
   if (!can && !busy) {
     return (
       <div className="rim-r2">
-        <span className="rim-trole">{label}</span> {value || <span className="rim-empty">{FOUND_EMPTY}</span>}
+        <span className={hideLabel ? "sr-only" : "rim-trole"}>{label}</span> {value || <span className="rim-empty">{FOUND_EMPTY}</span>}
       </div>
     );
   }
@@ -713,7 +742,7 @@ function FoundLine({ label, value, can, onSave }) {
     }
   };
   return (
-    <Row2 lead={label} id={id}>
+    <Row2 lead={label} id={id} hideLabel={hideLabel}>
       <TextInput id={id} value={draft} readOnly={busy} placeholder={FOUND_EMPTY} maxLength={500}
                  aria-invalid={error ? "true" : undefined}
                  onChange={(e) => { setDraft(e.target.value); sent.current = null; }} onBlur={commit}
@@ -742,5 +771,169 @@ function Instructions({ text }) {
         </button>
       )}
     </>
+  );
+}
+
+// Step 3's list of the decision's tasks: one line each, its name a link that picks its row
+// in the tree (where it's changed), then its kind and how often, quietly.
+function TaskList({ r, lines, label, onPick }) {
+  return (
+    <ul className="rim-tasklist" aria-label={label}>
+      {lines.map((l) => {
+        const t = l.task;
+        const meta = [l.outcome ? OUTCOME_LABEL[l.outcome] || l.outcome : null, every(t) || null].filter(Boolean).join(" · ");
+        return (
+          <li key={l.key}>
+            <svg className="rw-ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
+              <path d="M10.6 2.3a3.2 3.2 0 0 0-3.9 4.1L2.4 10.7a1.4 1.4 0 0 0 2 2l4.3-4.3a3.2 3.2 0 0 0 4.1-3.9l-1.9 1.9-1.8-.4-.4-1.8z" strokeWidth="1.3" strokeLinejoin="round" />
+            </svg>
+            <span className="rim-tl-body">
+              {onPick ? (
+                <button type="button" className="link rim-tgo" onClick={() => onPick(taskKey(r.key, t.id))} title="Show this task in the tree">
+                  {t.name || t.text}
+                </button>
+              ) : <span>{t.name || t.text}</span>}
+              {meta && <span className="rim-tmeta"> · {meta}</span>}
+              {t.shared_with ? <span className="rim-tmeta"> · shared with {plural(t.shared_with, "other failure mode")}</span> : null}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// ---- a task's own details (the tree's fifth level) ------------------------------------
+// The task row's panel (RcmWorksheet's Details for a task) has its title (the name, edited
+// in place there), then these sections, each kept as you go:
+// - Kind and interval: the kind in words, "every N unit" with Change (in place) and
+//   Calculate… (the interval calculator its kind calls for); "Edit when it's done…" opens
+//   the task's form (what raises it: its interval, or an event, with the form's "Raise it
+//   on an event instead…"; and what a task by use counts).
+// - Then, if found (a check; "Then, if failed" for failure finding): what's done when the
+//   check finds it, saved with the decision.
+// - Instructions.
+// The evidence, the failure modes it serves and its logistics are Details' own sections.
+//   r     the task's row; mode: its failure mode's row (the decision and the saves go through it)
+//   ops   the Explorer's ops (editTask, decide, set)
+export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
+  const t = r.ref.task || {};
+  const outcome = r.ref.outcome || null;
+  const d = mode?.ref.decision || null;
+  const can = !readOnly && !!ops?.editTask;
+  const [form, setForm] = useState(null); // null | "interval" | "all" (the task's whole form)
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(null);
+  const [saved, setSaved] = useState({});
+  const markSaved = (k) => setSaved((x) => ({ ...x, [k]: (x[k] || 0) + 1 }));
+  useEffect(() => { setForm(null); setFailed(null); setSaved({}); }, [r.key]);
+  const errorText = (e) => saveErrorText(e, { offline: navigator.onLine === false });
+  const { link: calcLink, dialog: calcDialog } = useIntervalCalc({ r: mode, ops, can, busy, onSaid });
+  const save = async (body, said, mark) => {
+    if (busy) return false;
+    setBusy(true);
+    setFailed(null);
+    try {
+      await ops.editTask(t.id, body);
+      setBusy(false);
+      setForm(null);
+      if (mark) markSaved(mark);
+      onSaid?.(said);
+      return true;
+    } catch (e) {
+      setBusy(false);
+      setFailed(errorText(e));
+      return false;
+    }
+  };
+  const when = every(t);
+  const eventOnly = onEventOnly(t);
+  const found = r.ref.found && findsSomething(outcome) ? r.ref.found : null;
+  const then = ROLE[outcome]?.then || "Then, if found:";
+  return (
+    <>
+      <Section title="Kind and interval" className="rw-tsec" aside={<SavedMark saved={saved.interval} />}>
+        {form === "all" ? (
+          <div className="rim-card rim-one editing">
+            <TaskEditCard key={t.id} r={mode} task={t} lead={ROLE[outcome]?.lead} busy={busy} failed={failed}
+                          calculate={(fill) => calcLink(t, outcome, fill)}
+                          onCancel={() => { setForm(null); setFailed(null); }}
+                          onSubmit={(body) => save(body, "Saved the task.", "interval")} />
+          </div>
+        ) : (
+          <>
+            <p className="rim-tkind">{OUTCOME_LABEL[outcome] || "Not in a decision yet"}</p>
+            {form === "interval" ? (
+              <IntervalForm task={t} d={d} busy={busy} failed={failed} calculate={(fill) => calcLink(t, outcome, fill)}
+                            onCancel={() => { setForm(null); setFailed(null); }}
+                            onSave={(interval, unit) => save({ interval, unit }, "Saved the interval.", "interval")} />
+            ) : (
+              <p className="rim-tevery-line">
+                <span className="rim-tevery">{when || "No interval yet"}</span>
+                {can && !eventOnly && (
+                  <> · <button type="button" className="link" onClick={() => { setFailed(null); setForm("interval"); }}
+                               aria-label={`Change how often “${t.name}” is done`}>Change</button></>
+                )}
+                {!eventOnly && calcLink(t, outcome) && <> · {calcLink(t, outcome)}</>}
+              </p>
+            )}
+            {can && form !== "interval" && (
+              <p className="rw-fhelp rim-trigger-swap">
+                <button type="button" className="link" onClick={() => { setFailed(null); setForm("all"); }}>
+                  Edit when it's done…
+                </button>
+                {" "}(what raises it: the interval, a reading past a limit or an event someone logs; what it counts)
+              </p>
+            )}
+          </>
+        )}
+      </Section>
+      {found && (
+        <Section title={then.replace(/:$/, "")} className="rw-tsec">
+          <FoundLine key={`${r.key}:found`} label={then} value={found.text} can={!readOnly && !!ops?.decide && !!d} hideLabel
+                     onSave={(text) => ops.decide(mode, { consequence: mode.ref.consequence || null, decision: decisionWithOnFound(d, found.at, text) })
+                       .then(() => onSaid?.("Saved what's done when it's found."))} />
+        </Section>
+      )}
+      <Section title="Instructions" className="rw-tsec" aside={<SavedMark saved={saved.instructions} />}>
+        <PanelField key={`${r.key}:instructions`} label="Instructions" labelHidden area readOnly={!can} value={t.instructions || ""}
+                    placeholder="How it's done: the steps, the limits, what to record"
+                    onCommit={(raw) => ops.editTask(t.id, { instructions: raw.trim() })
+                      .then(() => { markSaved("instructions"); onSaid?.("Saved the instructions."); return true; }, errorText)} />
+      </Section>
+      {calcDialog}
+    </>
+  );
+}
+
+// "every [N] [unit]" changed in place in a task's details: Enter or Save keeps it, Escape or
+// Cancel drops it; Calculate… beside it fills it in.
+function IntervalForm({ task, d, busy, failed, calculate, onCancel, onSave }) {
+  const [interval, setInterval_] = useState(task?.interval != null ? String(task.interval) : "");
+  const [unit, setUnit] = useState(task?.unit || startUnit(d || {}));
+  const [tried, setTried] = useState(false);
+  const why = intervalWhy(interval);
+  return (
+    <form className="rim-tform rim-ivform" aria-label="How often" onSubmit={(e) => {
+      e.preventDefault();
+      setTried(true);
+      if (!why) onSave(Number(interval), unit);
+    }} onKeyDown={(e) => {
+      if (e.key !== "Escape" || busy) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onCancel();
+    }}>
+      <div className="rim-ivrow">
+        <EveryInputs interval={interval} unit={unit} onInterval={setInterval_} onUnit={setUnit} busy={busy} invalid={tried && !!why} />
+        {calculate?.((value, u) => { setInterval_(String(value)); setUnit(u); })}
+      </div>
+      <div className="rim-ivacts">
+        <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
+        <button type="submit" className="sm" disabled={busy} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save"}</button>
+      </div>
+      {tried && why && !busy && <p className="rim-why">{why}</p>}
+      {failed && <p className="field-error" role="alert">{failed}</p>}
+    </form>
   );
 }

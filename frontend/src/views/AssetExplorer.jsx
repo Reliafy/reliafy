@@ -62,7 +62,8 @@ import {
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL, EXPLORER_PATH } from "../navigation.js";
 import { isolateItems, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
-import { canIsolate, depthWords, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen } from "../treeIsolate.js";
+import { canIsolate, depthWords, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen, levelsBelow } from "../treeIsolate.js";
+import { removeTaskFromMode } from "../components/RcmModeTasks.jsx";
 import { MoveModal, RenameModal } from "../components/TreeRowModals.jsx";
 import { DeleteRcmModal, DeleteTreeModal } from "../components/DeleteTree.jsx";
 import { DELETE_KIND, undoneText } from "../treeDelete.js";
@@ -104,6 +105,10 @@ const TOP = "\u0000top";
 // position's functions › functional failures › failure modes nested in it,
 // and every row has the RCM's columns beside it; the panel's heading sits over
 // it. Picking a function, failure or mode opens its details beside the table.
+// Under each failure mode, one row per task of its decision (the fifth level,
+// explorerRcm.js modeTaskRows): picked, its own details (kind and interval,
+// what's done when found, instructions, evidence, what it serves, logistics).
+// A task row is addressed like any row: ?tab=rcm&sel=T:<mode>:<task>.
 // Each row's menu (right-click, its ⋯ button, or Shift+F10) adds inside it (a
 // function on a position, a functional failure on a function, a failure mode
 // on a functional failure) and has the row's other actions; the tree grows. On the Summary tab the tree is the positions alone
@@ -384,6 +389,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const focusRow = focus != null ? display.rows.get(focus) : null;
   // The position the selection is on (a function, failure or mode: its position).
   const selPos = isRcmRow(focusRow) ? positionOf(focusRow) : focus;
+
+  // A link on the page that names another row (?sel=: a task's row from the LSA tab's
+  // Serves, a task's package): that row is revealed once it's in the tree, before the
+  // address is set back to the position picked (the effect below).
+  const selParam = params.get("sel");
+  const lastSel = useRef(selParam);
+  useEffect(() => {
+    if (selParam === lastSel.current) return;
+    lastSel.current = selParam;
+    if (!selParam || selParam === selPos || selParam === focus) return;
+    pending.current = selParam;
+    if (display.rows.has(selParam)) reveal(selParam);
+  }, [selParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // With a tab open beyond Summary, the address follows the row picked
   // (?sel=), once the tree is in, so a link opens on it with that tab.
@@ -699,7 +717,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const above = pinKey ? (key) => !display.rows.has(key) : null;
   const pinItem = (r) => (canPin(r, mode)
     ? [r.key === pinKey ? { id: "unpin", label: "Show whole tree" } : { id: "pin", label: "Pin this branch" }] : []);
-  const isolateItem = (r) => isolateItems(display.rows.get(r.key) || r, { can: canIsolate(display.rows.get(r.key) || r, mode, canPin) });
+  // On the RCM tab a row can go five levels deep (down to the tasks): its menu offers them.
+  const isolateItem = (r) => isolateItems(display.rows.get(r.key) || r, {
+    can: canIsolate(display.rows.get(r.key) || r, mode, canPin), levels: rcmOn && !fmeaOn ? levelsBelow(display, r.key) : 0,
+  });
   // Isolate: the rest of the tree closed, this row opened `depth` levels
   // below it, picked and brought into view; said to screen readers.
   // Isolate incomplete rows: the way to what's still to finish under this row
@@ -947,7 +968,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       else if (id === "open") openItem(r.key);
       // No decision yet: the task is its decision (Decide…); else another task joins it.
       else if (id === "add-task") { if (r.ref.decision) openItem(r.key, { add: "task" }); else setDeciding(r); }
-      else if (id === "link-cause") openLink(r, "cause");
+      // A task's row: off this failure mode (a shared task stays with the others), or retired.
+      else if (id === "remove-task") {
+        const m = whole.rows.get(r.ref.mode_id);
+        if (m) removeTaskFromMode({ confirm, ops, mode: m, task: r.ref.task, onSaid: say }).then((ok) => { if (ok) setRcmFocus(m.key); });
+      } else if (id === "link-cause") openLink(r, "cause");
       else if (id === "link-effect") openLink(r, "effect");
       else if (id === "go") reveal(r.ref.cause_id);
       else if (id === "unlink") unlinkPair(r.ref.effect_id, r.ref.cause_id);

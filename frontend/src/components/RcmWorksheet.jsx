@@ -19,12 +19,16 @@ import {
   CATEGORY_LABEL, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, EVIDENT_LABEL, consequenceText, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
   belowDecisionText, belowOf, decisionBody, belowPending, phoneLine, consequenceWords, checkCounts, decisionText, insideWords,
   intervalText, isCombination, memberEvidenceLine, moreTasks, nameOf, shownStatus, tasksOf, tasksTip, checkValue,
+  OUTCOME_LABEL, decisionWithMemberEvidence, everyText, memberEvidenceText, taskKindText, taskSharedText,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import { modeAnswers } from "../decisionCheck.js";
 import RcmFunctionStandards from "./RcmFunctionStandards.jsx";
 import { COMPARATORS, COMPARATOR_LABEL, limitReads, limitWords } from "../rcmStandards.js";
-import RcmModeTasks from "./RcmModeTasks.jsx";
+import RcmModeTasks, { RcmTaskSections, removeTaskFromMode } from "./RcmModeTasks.jsx";
+import { useConfirm } from "./ConfirmProvider.jsx";
+import { getTaskLsa } from "../api.js";
+import { explorerPath } from "../assetTree.js";
 import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
 import RcmNotes from "./RcmNotes.jsx";
@@ -32,7 +36,7 @@ import RcmFunctionPdfs from "./RcmFunctionPdfs.jsx";
 import { hasNotes, hasNotesField, notesTip } from "../rcmNotes.js";
 import { saveErrorText } from "../confirm.js";
 import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
-import { failureRows, failureStatusWords, failureSummary } from "../explorerRcm.js";
+import { failureRows, failureStatusWords, failureSummary, taskServes } from "../explorerRcm.js";
 import { AP_LABEL, AP_TONE } from "../fmea.js";
 import { apWords } from "../fmeaWorksheet.js";
 import { CriticalityGroup, FmeaGroup } from "./FmeaPanels.jsx";
@@ -105,6 +109,7 @@ export function NotesMark({ r }) {
 // onWorking(functionId): open a decision's linked function notes (evidence
 // type "working") in place (the Explorer); without it the link goes to their address.
 export function Cell({ col, r, query, onDecision, readOnly, linkChecks, onWorking = null }) {
+  if (r.type === "task") return <TaskCell col={col} r={r} />;
   const d = r.ref.decision;
   const mode = r.type === "mode";
   switch (col.id) {
@@ -220,6 +225,27 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks, onWorkin
       </span>;
     }
   }
+}
+
+// A task row's cells (the tree's fifth level): its kind in the Decision column; how
+// often, then "Shared with N" and "In: ‹package›" as chips, in the Task column.
+function TaskCell({ col, r }) {
+  const t = r.ref.task || {};
+  if (col.id === "decision") {
+    const kind = taskKindText(r);
+    return kind ? <span className="rw-txt" title={kind}>{kind}</span> : null;
+  }
+  if (col.id !== "task") return null;
+  const every = everyText(t);
+  const shared = taskSharedText(t);
+  if (!every && !shared && !t.package) return null;
+  return (
+    <span className="rw-txt rw-taskrow" title={col.text(r)}>
+      {every && <span className="rw-task-t">{every}</span>}
+      {shared && <Chip className="rw-tchip" title={`Also serves ${n(t.shared_with, "other failure mode")}`}>{shared}</Chip>}
+      {t.package && <Chip className="rw-tchip" title={`Done on the visits of the work package ${t.package.name}`}>In: {t.package.name}</Chip>}
+    </span>
+  );
 }
 
 // A cell being edited in place: Enter or leaving it keeps the change; Escape
@@ -414,6 +440,10 @@ export function Details({
   const level = LEVEL_OF[r.type];
   const d = r.ref.decision;
   const up = ancestorsOf(display, r.key).map((k) => display.rows.get(k)).filter(Boolean);
+  // A task's row: its failure mode's row holds the decision, and every save goes through it.
+  const isTask = r.type === "task";
+  const modeRow = isTask ? whole.rows.get(r.ref.mode_id) || null : null;
+  const confirm = useConfirm();
   const tasks = r.type === "mode" ? tasksOf(r.ref) : [];
   // "✓ Saved" by a field's label: a count per field that goes up on each save.
   const [saved, setSaved] = useState({});
@@ -457,6 +487,13 @@ export function Details({
     : (inTree.kids || []).map((k) => whole.rows.get(k)).filter((k) => k && (k.type === "fail" || k.type === "mode"));
   const where = display.rows.get(r.ref.position_id)?.ref.name || whole.rows.get(r.ref.position_id)?.ref.name;
   const said = (text) => onSaid?.(text);
+  // A task's name, kept on the task (a shared task's name changes for every mode it serves).
+  const saveTaskName = (raw) => {
+    const text = String(raw ?? "").trim();
+    if (!text) return "Every task needs a name.";
+    return ops.editTask(r.ref.task_id, { name: text }).then(() => { said("Saved the task."); return true; },
+      (e) => saveErrorText(e, { offline: navigator.onLine === false }));
+  };
   const canExpand = !phone && onExpand && onCollapse;
   const name = nameOf(r);
   const kindWord = level.label.toLowerCase();
@@ -475,7 +512,15 @@ export function Details({
   };
   // Everything under it goes too (the old single standard text is only cleared).
   const deleteLabel = r.type === "std" && r.ref?.legacy ? "Remove this performance standard" : `Delete this ${kindWord}`;
-  const headItems = readOnly ? [] : [
+  // A task comes off this failure mode (a shared one stays with the others), or is retired.
+  const shared = isTask && !!r.ref.task?.shared_with;
+  const removeTaskLabel = shared ? "Remove this task from the failure mode" : "Retire the task";
+  const removeTask = async () => {
+    if (!modeRow || !ops?.removeTask) return;
+    const ok = await removeTaskFromMode({ confirm, ops, mode: modeRow, task: r.ref.task, onSaid: said });
+    if (ok) onSelect?.(modeRow.key);
+  };
+  const headItems = readOnly ? [] : isTask ? (modeRow && ops?.removeTask ? [{ id: "remove-task", label: `${removeTaskLabel}…`, danger: true, onSelect: removeTask }] : []) : [
     ...(level.child ? [{ id: "add", label: `${addLabel}…`, onSelect: () => (insideList ? setOwnStart({ list: "inside", at: Date.now() }) : onAdd(r)) }] : []),
     // Move to… (the one picker every kind uses), and a failure mode's Move a task….
     ...(onMove && EDITABLE.has(r.type) && !(r.type === "std" && r.ref.legacy) ? [{ id: "move-to", label: "Move to…", onSelect: () => onMove(r) }] : []),
@@ -483,7 +528,13 @@ export function Details({
     ...(EDITABLE.has(r.type) ? [{ id: "delete", label: `${deleteLabel}…`, danger: true, onSelect: () => onDelete(r) }] : []),
   ];
   // The status chips under the title.
-  const chips = r.type === "mode"
+  const chips = isTask
+    ? [
+      taskKindText(r) ? { text: taskKindText(r), tone: "accent" } : { text: "Not in a decision yet", tone: "warning" },
+      everyText(r.ref.task) ? { text: everyText(r.ref.task), tone: "neutral" } : null,
+      taskSharedText(r.ref.task) ? { text: taskSharedText(r.ref.task), tone: "neutral" } : null,
+    ].filter(Boolean)
+    : r.type === "mode"
     ? [
       consequenceText(r.ref) ? { text: consequenceText(r.ref), tone: "neutral" } : null,
       d ? { text: [decisionText(d), d.interval && !isCombination(d) ? `every ${intervalText(d)}` : null].filter(Boolean).join(" · "), tone: "accent" }
@@ -525,18 +576,21 @@ export function Details({
     </>
   );
   // Link evidence… (step 3's Evidence): the evidence picker alone, in a small dialog.
-  const [linkingEvidence, setLinkingEvidence] = useState(false);
-  useEffect(() => setLinkingEvidence(false), [r.key]);
+  // {at}: a combination's member's own evidence (its index), or the decision's (at null).
+  const [linkingEvidence, setLinkingEvidence] = useState(null);
+  useEffect(() => setLinkingEvidence(null), [r.key]);
   // Step 3's open "Evidence": the evidence (Link evidence… when none), what it says and a
   // combination's members' own evidence. The rationale is the failure mode's notes and
   // rationale under its title: one place (Derryn, 9 Nov 2026).
-  const decisionWhy = r.type === "mode" && d && (
+  const evidenceOf = (m) => {
+    const d = m.ref.decision;
+    return (
     <>
       <div className="rw-evidence">
         <span className="rw-evlabel">Evidence</span>
         {d.status === "unevidenced" ? (
           <>
-            None linked{!readOnly && ops?.decide && <> · <button type="button" className="link" onClick={() => setLinkingEvidence(true)}
+            None linked{!readOnly && ops?.decide && <> · <button type="button" className="link" onClick={() => setLinkingEvidence({ at: null })}
                                                  title="Link the model, analysis, report or function notes behind this decision (optional)">Link evidence…</button></>}
           </>
         ) : (
@@ -549,7 +603,7 @@ export function Details({
                 ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
             {!d.status && !d.artifact_name && "None needed"}
             {!readOnly && ops?.decide && (
-              <> · <button type="button" className="link" onClick={() => setLinkingEvidence(true)}
+              <> · <button type="button" className="link" onClick={() => setLinkingEvidence({ at: null })}
                            title="Link other evidence, or none">Change evidence…</button></>
             )}
           </>
@@ -560,7 +614,33 @@ export function Details({
         <ul className="rw-members">{d.outcomes.filter((o) => o.status).map((o, i) => <li key={`${o.outcome}:${i}`}>{memberEvidenceLine(o)}</li>)}</ul>
       )}
     </>
-  );
+    );
+  };
+  const decisionWhy = r.type === "mode" && d && evidenceOf(r);
+  // A task's own evidence: a combination's member has its own (or the decision's stands for
+  // it); the one task of a plain decision has the decision's.
+  const taskEvidence = isTask && modeRow && (() => {
+    const md = modeRow.ref.decision;
+    if (!md) return <p className="rw-fhelp">Decide the failure mode first: evidence is linked to its decision.</p>;
+    if (!isCombination(md)) return evidenceOf(modeRow);
+    const at = md.outcomes.findIndex((o) => o.task_id === r.ref.task_id);
+    if (at < 0) return <p className="rw-fhelp">Linked to the failure mode outside its decision, so it has no evidence of its own.</p>;
+    const m = md.outcomes[at];
+    return (
+      <div className="rw-evidence">
+        <span className="rw-evlabel">Evidence</span>
+        {m.status && m.status !== "unevidenced" && <RcmStatusBadge status={m.status} kind={m.evidence_kind} />}
+        <span>{memberEvidenceText(m)}</span>
+        {!readOnly && ops?.decide && (
+          <> · <button type="button" className="link" onClick={() => setLinkingEvidence({ at })}
+                       title="Link the model, analysis, report or function notes behind this task (optional)">
+            {m.evidence ? "Change evidence…" : "Link evidence…"}
+          </button></>
+        )}
+      </div>
+    );
+  })();
+  const serves = isTask ? taskServes(whole, r.ref.task_id) : [];
   // Run to failure's action on failure, kept as you go in step 3 (a scheduled decision's task
   // is a task card, or the task form while it has none: RcmModeTasks).
   const ownBlock = r.type === "mode" && !readOnly && d?.outcome === "rtf" && COLUMN.task.can(r)
@@ -609,12 +689,12 @@ export function Details({
         </div>
         {up.length > 0 && <Crumbs up={up} onSelect={onSelect} />}
         <PanelTitle key={r.key} r={r} name={name} headingRef={headingRef} expanded={expanded}
-                    editable={EDITABLE.has(r.type) && !readOnly}
-                    label={r.type === "std" ? "Performance standard" : "Description"}
+                    editable={isTask ? !readOnly && !!ops?.editTask : EDITABLE.has(r.type) && !readOnly}
+                    label={r.type === "std" ? "Performance standard" : isTask ? "Task" : "Description"}
                     help={r.type === "fn" ? (ops ? "What this position must do" : "What the system must do") : r.type === "std" ? "One parameter and one limit, e.g. pH 7.2-7.8"
-                      : r.type === "fail" ? "How it fails to do it" : "What causes the failure"}
+                      : r.type === "fail" ? "How it fails to do it" : isTask ? "What's done, in a few words" : "What causes the failure"}
                     limit={r.type === "fn" ? { max: FUNCTION_MAX, nudge: FUNCTION_NUDGE } : null}
-                    onCommit={(raw) => keep("name", onCommit(r, "name", raw))} />
+                    onCommit={(raw) => keep("name", isTask ? saveTaskName(raw) : onCommit(r, "name", raw))} />
         {(chips.length > 0 || saved.name) && (
           <div className="rw-chips-row">
             {chips.map((c) => <Chip key={c.text} tone={c.tone}>{c.text}</Chip>)}
@@ -673,16 +753,50 @@ export function Details({
             {consequenceField}
           </Section>
         )}
-        {r.type === "mode" && linkingEvidence && d && (
-          <EvidenceDialog r={r} options={options} workings={workings} ops={ops} onClose={() => setLinkingEvidence(false)}
-                          onDone={() => { setLinkingEvidence(false); said("Saved the evidence."); }} />
+        {(r.type === "mode" || isTask) && linkingEvidence && (isTask ? modeRow?.ref.decision : d) && (
+          <EvidenceDialog r={isTask ? modeRow : r} at={linkingEvidence.at} options={options} workings={workings} ops={ops}
+                          onClose={() => setLinkingEvidence(null)}
+                          onDone={() => { setLinkingEvidence(null); said("Saved the evidence."); }} />
         )}
         {r.type === "mode" && (
           <Section title={fmea?.on ? "Proactive task or default action" : <Step n={3}>Proactive task or default action</Step>} label="Proactive task or default action" className="rw-step rw-decision">
             <RcmModeTasks key={`${r.key}:tasks`} r={r} ops={ops} readOnly={readOnly} addStart={startOf("task")} onSaid={said}
-                          options={options} why={decisionWhy} own={ownBlock} />
+                          options={options} why={decisionWhy} own={ownBlock} onPick={onSelect ? (k) => onSelect(k) : null} />
           </Section>
         )}
+        {/* A task (the tree's fifth level): what it is and how often, what's done when its check
+            finds it, its instructions, then its evidence, the failure modes it serves and what doing
+            it needs (its LSA record, changed on the LSA tab). */}
+        {isTask && modeRow && <RcmTaskSections key={`${r.key}:task`} r={r} mode={modeRow} ops={ops} readOnly={readOnly} onSaid={said} />}
+        {isTask && modeRow && (
+          <Section title="Evidence for this task" className="rw-tsec">{taskEvidence}</Section>
+        )}
+        {isTask && (
+          <Section title="Serves" count={serves.length} className="rw-tsec rw-serves">
+            <ul className="rw-klist">
+              {serves.map(({ key, mode }) => {
+                const here = mode.key === r.ref.mode_id;
+                return (
+                  <li key={key}>
+                    <LevelIcon type="mode" />
+                    <span className="rw-kbody">
+                      <button type="button" className="link rw-kgo" onClick={() => onSelect(mode.key)} title="Show the failure mode">
+                        {nameOf(mode) || "(failure mode)"}
+                      </button>
+                      <span className="rw-fhelp">
+                        {[here ? "this one" : null, mode.ref.decision ? decisionText(mode.ref.decision) : "To decide"].filter(Boolean).join(" · ")}
+                      </span>
+                    </span>
+                    {here && shared && !readOnly && ops?.removeTask && (
+                      <button type="button" className="link rw-serves-rm" onClick={removeTask}>Remove from this failure mode</button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </Section>
+        )}
+        {isTask && <TaskLogistics taskId={r.ref.task_id} positionId={r.ref.task?.position_id || r.ref.position_id} />}
         {/* 3. The quieter things, last. */}
         {/* Which standard a failure breaches is where it sits in the tree (moved by drag or Move
             to…); said here only when the way up doesn't show it (a pinned branch, say). */}
@@ -745,6 +859,11 @@ export function Details({
       </div>
 
       {/* Each button acts on its first click only: a double-click opens one dialog. */}
+      {!readOnly && isTask && modeRow && ops?.removeTask && (
+        <div className="rw-panel-acts">
+          <button type="button" className="ghost sm rw-del" onClick={(e) => { if (e.detail < 2) removeTask(); }}>{removeTaskLabel}</button>
+        </div>
+      )}
       {!readOnly && ((level.child && !insideList) || EDITABLE.has(r.type)) && (
         <div className="rw-panel-acts">
           {/* The add lives at the end of its list (above); here only where there's no list. */}
@@ -1034,23 +1153,28 @@ export function ColumnChooser({ cols, onCols, usual = DEFAULT_COLUMNS, columns =
 // expects (run to failure: its reason's) is offered as the Models kind; a
 // report or a function's notes go with any decision. Saved as the whole
 // decision with the new evidence (or none); a refusal shows here.
-function EvidenceDialog({ r, options, workings, ops, onClose, onDone }) {
+// `at`: a combination's member (its index), whose own evidence this links (a task's details).
+function EvidenceDialog({ r, at = null, options, workings, ops, onClose, onDone }) {
   const d = r.ref.decision;
-  const [value, setValue] = useState(d.evidence?.type && d.evidence?.id ? d.evidence : null);
+  const member = at != null && isCombination(d) ? d.outcomes[at] || null : null;
+  const start = member ? member.evidence : d.evidence;
+  const [value, setValue] = useState(start?.type && start?.id ? start : null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
-  const outcomeOpt = options?.outcomes?.find((o) => o.id === d.outcome);
-  const expected = d.outcome === "rtf"
+  const outcome = member ? member.outcome : d.outcome;
+  const outcomeOpt = options?.outcomes?.find((o) => o.id === outcome);
+  const expected = !member && d.outcome === "rtf"
     ? options?.rtf_bases?.find((b) => b.id === d.rtf_basis)?.expected_evidence || null
     : outcomeOpt?.expected_evidence || null;
-  const analysisKind = expected === "strategy_analysis" ? (d.outcome === "failure_finding" ? "failure_finding" : "optimal_replacement") : null;
+  const analysisKind = expected === "strategy_analysis" ? (outcome === "failure_finding" ? "failure_finding" : "optimal_replacement") : null;
   const save = async () => {
     if (busy) return;
     setBusy(true);
     setFailed(null);
     try {
+      const evidence = value ? { type: value.type, id: value.id } : null;
       await ops.decide(r, { consequence: r.ref.consequence || null,
-        decision: decisionBody(d, { evidence: value ? { type: value.type, id: value.id } : null }) });
+        decision: member ? decisionWithMemberEvidence(d, at, evidence) : decisionBody(d, { evidence }) });
       onDone();
     } catch (e) {
       setBusy(false);
@@ -1065,9 +1189,40 @@ function EvidenceDialog({ r, options, workings, ops, onClose, onDone }) {
                <button type="button" onClick={save} disabled={busy} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save"}</button>
              </>
            )}>
-      <p className="rw-fhelp">The model, analysis, report or function notes behind this decision (optional).</p>
+      <p className="rw-fhelp">The model, analysis, report or function notes behind this {member ? "task" : "decision"} (optional).</p>
       <EvidencePicker expectedType={expected} analysisKind={analysisKind} value={value} onChange={setValue} workings={workings} />
       {failed && <p className="field-error" role="alert">{failed}</p>}
     </Modal>
+  );
+}
+
+// A task's logistics in its details: a short summary of its LSA record (labour hours,
+// tools, method), read when the task is picked, and "Open in LSA" for the whole record.
+function TaskLogistics({ taskId, positionId }) {
+  const [state, setState] = useState({ id: null, data: null, error: null });
+  useEffect(() => {
+    let on = true;
+    getTaskLsa(taskId).then((data) => { if (on) setState({ id: taskId, data, error: null }); },
+      (e) => { if (on) setState({ id: taskId, data: null, error: e.message || "It didn't load." }); });
+    return () => { on = false; };
+  }, [taskId]);
+  const here = state.id === taskId;
+  const res = here ? state.data?.task?.resources || null : null;
+  const method = String(res?.method || "").split("\n").map((l) => l.trim()).find(Boolean) || "";
+  const tools = (res?.tools || []).length;
+  const parts = res ? [
+    res.labour_hours ? `${res.labour_hours.toLocaleString("en-AU", { maximumSignificantDigits: 4 })} labour hour${res.labour_hours === 1 ? "" : "s"}` : null,
+    tools ? n(tools, "tool") : null,
+    method ? `Method: ${method}` : null,
+  ].filter(Boolean) : [];
+  return (
+    <Section title="Logistics" className="rw-tsec rw-logistics">
+      <p className="rw-fhelp">
+        {!here ? "Reading…" : state.error ? `Couldn't read it: ${state.error}`
+          : parts.length ? parts.join(" · ") : "No labour, tools or method set yet."}
+        {" · "}
+        <Link to={explorerPath("positions", { sel: positionId, tab: "lsa", task: taskId })}>Open in LSA</Link>
+      </p>
+    </Section>
   );
 }

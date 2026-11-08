@@ -152,3 +152,37 @@ test("LSA: open a task, add a labour line and a tool, see them in the table and 
   await expect(bar.getByRole("group", { name: "To bring" })).toContainText("Photometer");
   await expectHealthy(page, problems, { label: "lsa task", root: ".tx" });
 });
+
+test("a task's LSA and its row on the RCM tab link to each other: Serves → the task's row, Open in LSA → back", async ({ page, request, problems }) => {
+  const tag = `k${Date.now()}`;
+  const post = (path, data) => postOk(request, path, data);
+  const pump = await post(`${M}/positions`, { name: `Package link pump ${tag}` });
+  const fn = await post(`${M}/positions/${pump.id}/functions`, { text: `Move water ${tag}` });
+  const ff = await post(`${M}/functions/${fn.id}/failures`, { text: `No flow ${tag}` });
+  const fm = await post(`${M}/positions/${pump.id}/failure-modes`, { text: `Impeller clogs ${tag}`, functional_failure_id: ff.id });
+  const res = await request.put(`${M}/failure-modes/${fm.id}/decision`, {
+    data: { consequence: "operational", decision: { outcome: "on_condition", task: `Look in the basket ${tag}`, interval: 1, interval_unit: "weeks" } },
+  });
+  expect(res.ok()).toBeTruthy();
+  const taskId = (await res.json()).decision.task_id;
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=lsa&task=${taskId}`);
+  const serves = panel(page).locator(".lsa-modes");
+  await expect(serves).toContainText(`Impeller clogs ${tag}`);
+  // The failure mode it serves: a link to the task's row under it on the RCM tab.
+  await serves.getByRole("link", { name: `Impeller clogs ${tag}` }).click();
+  await expect.poll(() => query(page).get("tab")).toBe("rcm");
+  const table = page.getByRole("treegrid", { name: /and their RCM/ });
+  const taskRow = table.getByRole("row", { name: new RegExp(`^Task: Look in the basket ${tag}`) });
+  await expect(taskRow).toBeVisible();
+  await expect(taskRow).toHaveAttribute("aria-selected", "true");
+  // Its details: Logistics, with Open in LSA back to the task's LSA.
+  await taskRow.locator(".tp-nm").dblclick();
+  const details = page.getByRole("complementary", { name: "Details" });
+  const logistics = details.getByRole("region", { name: "Logistics" });
+  await expect(logistics).toContainText("No labour, tools or method set yet.");
+  await logistics.getByRole("link", { name: "Open in LSA" }).click();
+  await expect.poll(() => [query(page).get("tab"), query(page).get("task")]).toEqual(["lsa", taskId]);
+  await expect(panel(page).getByRole("heading", { name: `Look in the basket ${tag}` })).toBeVisible();
+  await expectHealthy(page, problems, { label: "lsa and rcm task links", root: ".tx" });
+});

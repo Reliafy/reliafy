@@ -7,7 +7,7 @@ import useOutlineNav from "./useOutlineNav.js";
 import { ARRANGEMENTS, CHIPS, CHIP_MARK, PANE, TREE_ROW_MARKERS, clampWidth, markersOf, nextGutter } from "../assetTree.js";
 import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensPanel } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
-import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
+import { LEVEL_OF, NAME_COLUMN, ROLE } from "../rcmWorksheet.js";
 import { isDeleteKey } from "../treeDelete.js";
 
 // The asset tree as a second-level menu beside the site menu: the outline
@@ -64,7 +64,7 @@ const HEAD_H = 30;
 // The tree column's header on the RCM tab: what its rows are.
 // The table's vertical scrollbar (styled 12 px wide in AssetExplorer.css).
 const SCROLLBAR_W = 12;
-export const TREE_HEAD = "Function, performance standard, failure or mode";
+export const TREE_HEAD = "Function, performance standard, failure, mode or task";
 // The soft shadow on a side of the table with more to scroll to: its width,
 // and how far from the end it fades in.
 const SHADE_W = 16;
@@ -248,6 +248,12 @@ function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, onGoto, info =
         <Highlight text={label(r)} query={query} />
       </span>
       {r.type === "cause" && <span className="tp-on" title={causeTip(r)}>on {r.ref.on}</span>}
+      {/* A check's task: what's done when it finds it, quietly after its name (the rows are one line high). */}
+      {r.type === "task" && r.ref.on_found && !phone && (
+        <span className="tp-on tp-found" title={`${ROLE[r.ref.outcome]?.then || "Then, if found:"} ${r.ref.on_found}`}>
+          {ROLE[r.ref.outcome]?.then || "Then, if found:"} {r.ref.on_found}
+        </span>
+      )}
       {TREE_ROW_MARKERS && has && !open && inner > 0 && <span className="tp-cnt" title={`${inner} directly inside`}>{inner.toLocaleString("en-AU")}</span>}
       {info}
       <Markers r={r} rcm={rcm} onGoto={onGoto} />

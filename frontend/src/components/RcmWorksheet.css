@@ -889,3 +889,25 @@ span.rim-tname.rim-r1-body { display: block; }
 .rim-calc { font-size: var(--fs-13); white-space: nowrap; }
 .rim-tcalc { flex: none; margin-left: 8px; }
 @media (max-width: 480px) { .rim-calc { min-height: 36px; } }
+
+/* Tasks as the RCM tree's fifth level (Derryn, 9 Nov 2026). A task row's Task cell: how
+   often, then its chips, kept on the one line; the mode's step 3 lists its tasks as links. */
+.rw-taskrow { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; }
+.rw-taskrow .rw-task-t { flex: 0 1 auto; }
+.rw-taskrow .rw-tchip { flex: none; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-row.tt.tt-task .tp-nm { font-weight: 400; }
+.tt-task .tp-ic { color: var(--muted); }
+.rim-tasklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rim-tasklist li { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+.rim-tasklist li > .rw-ic { flex: none; margin-top: 3px; color: var(--muted); }
+.rim-tl-body { min-width: 0; overflow-wrap: anywhere; }
+.rim-tmeta { color: var(--muted); }
+.rim-tkind { margin: 0; font-weight: 600; }
+.rim-tevery-line { margin: 4px 0 0; overflow-wrap: anywhere; }
+.rim-ivform { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; min-width: 0; }
+.rim-ivrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.rim-ivacts { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.rw-serves .rw-serves-rm { margin-left: auto; flex: none; }
+@media (max-width: 600px) {
+  .rim-tasklist .rim-tgo, .rw-serves .rw-serves-rm { min-height: 36px; }
+}

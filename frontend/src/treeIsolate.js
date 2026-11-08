@@ -11,9 +11,9 @@
 
 // The RCM tab's rows that can be isolated as well as the tree's own: a
 // function, a performance standard (and the "No standard" row), a functional
-// failure and a failure mode. Not the "Not under a functional failure" heading
+// failure, a failure mode and a task. Not the "Not under a functional failure" heading
 // (it has no menu), nor a reference row (a cause that lives on another position).
-const RCM_TYPES = new Set(["fn", "std", "nostd", "fail", "mode"]);
+const RCM_TYPES = new Set(["fn", "std", "nostd", "fail", "mode", "task"]);
 
 // Can this row be isolated in this arrangement? Every row a branch can be
 // pinned at (canPin: positions, locations, items with something inside), and
@@ -24,6 +24,18 @@ export function canIsolate(row, mode, canPin) {
 }
 
 export const DEPTHS = [1, 2, 3, "all"];
+
+// How many levels can be opened below a row: 0 for a row with nothing inside,
+// 1 when only its own kids show, and so on (a position on the RCM tab goes down
+// through functions, standards, functional failures and failure modes to their
+// tasks). The isolate menu offers a fourth and a fifth level only where they exist.
+export function levelsBelow(display, key) {
+  const r = display?.rows.get(key);
+  if (!r || !r.kids.length) return 0;
+  let most = 0;
+  for (const k of r.kids) most = Math.max(most, levelsBelow(display, k));
+  return most + 1;
+}
 
 // "1 level", "2 levels", "every level".
 export const depthWords = (depth) => (depth === "all" ? "every level" : `${depth} level${depth === 1 ? "" : "s"}`);

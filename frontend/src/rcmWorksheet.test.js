@@ -5,7 +5,7 @@ import {
   addableOutcomes, cardLineText, decisionCardLines, decisionRows, decisionWithMember, decisionWithoutMember, memberEvidenceText,
   COLUMN, COLUMNS, DEFAULT_COLUMNS, FUNCTION_MAX, NAME_COLUMN, functionCount, buildRcmDisplay, checkValue, chipCounts, computeFilter,
   insideWords, intervalText, loadPrefs, savePrefs, siblingOrder, decisionBody, decisionText, hasTask, isCombination, memberEvidenceLine, memberLine, modeCounts, moreTasks, rowText, tasksOf,
-  tasksTip } from "./rcmWorksheet.js";
+  tasksTip, LEVEL_OF, decisionWithMemberEvidence, taskRowWords, taskKindText } from "./rcmWorksheet.js";
 
 // A house pool pump's RCM, as the server sends it back (decisions resolved).
 const RCM = [
@@ -438,4 +438,40 @@ test("removing a member sends the others back by their task; one left is a plain
   assert.deepEqual(decisionWithoutMember(two, "a"), { outcomes: [{ outcome: "fixed_interval", task_id: "w" }] });
   assert.equal(decisionWithoutMember(POOL, "elsewhere"), null);
   assert.equal(decisionWithoutMember({ outcome: "fixed_interval", task_id: "w" }, "w"), null);
+});
+
+// ---- a task row (the Explorer tree's fifth level) -------------------------------------
+
+test("a task is a level of its own, named in the tree's first column", () => {
+  assert.equal(LEVEL_OF.task.label, "Task");
+  assert.equal(LEVEL_OF.task.child, null);
+  assert.equal(NAME_COLUMN.label, "Function, performance standard, failure, mode or task");
+});
+
+test("a task row's words: its kind, how often, its chips, and what's done when found", () => {
+  const r = { type: "task", ref: { outcome: "failure_finding", on_found: "Repair the trip",
+    task: { id: "t", name: "Test the trip", interval: 6, unit: "months", shared_with: 2, package: { id: "k", name: "Half-yearly" } } } };
+  assert.equal(taskKindText(r), "Failure finding");
+  assert.equal(taskRowWords(r), "every 6 months · Shared with 2 · In: Half-yearly");
+  assert.equal(taskRowWords(r, { found: true }), "Failure finding · every 6 months · Shared with 2 · In: Half-yearly · Then, if failed: Repair the trip");
+  const ev = { type: "task", ref: { outcome: "on_condition", task: { id: "e", name: "Re-dose", interval: 1, unit: "weeks", trigger: { text: "120 mm on POOL-RAIN" } } } };
+  assert.equal(taskRowWords(ev), "on event: 120 mm on POOL-RAIN");
+});
+
+test("a combination's member gets its own evidence; the others and the decision's are kept", () => {
+  const d = {
+    outcome: "on_condition", evidence: { type: "report", id: "r1", name: "x" },
+    outcomes: [
+      { outcome: "on_condition", task_id: "t1", task: "Look", interval: 1, interval_unit: "weeks", on_found: "Fix" },
+      { outcome: "fixed_interval", task_id: "t2", task: "Swap", interval: 2, interval_unit: "years", evidence: { type: "model", id: "m0", status: "x" } },
+    ],
+  };
+  const set = decisionWithMemberEvidence(d, 0, { type: "model", id: "m1" });
+  assert.deepEqual(set.outcomes[0].evidence, { type: "model", id: "m1" });
+  assert.equal(set.outcomes[0].on_found, "Fix");
+  assert.deepEqual(set.outcomes[1].evidence, { type: "model", id: "m0" });
+  assert.deepEqual(set.evidence, { type: "report", id: "r1", name: "x" });
+  const cleared = decisionWithMemberEvidence(d, 1, null);
+  assert.equal("evidence" in cleared.outcomes[1], false);
+  assert.equal(cleared.outcomes[1].task_id, "t2");
 });
