@@ -106,12 +106,17 @@ SOURCE = {
     },
     "description": ("Base failure rates (λb) for electronic part types from the part stress models of the "
                     "U.S. military's reliability prediction handbook, with each section's environment factors "
-                    "(πE) for its 14 use environments, from ground, benign to cannon, launch."),
+                    "(πE) for its 14 use environments, from ground, benign to cannon, launch; and, from its "
+                    "parts count method (Appendix A), generic failure rates (λg) by environment with their "
+                    "quality factors (πQ) for microcircuits, laser diodes, motors, synchros and resolvers, "
+                    "circuit boards, quartz crystals and incandescent lamps."),
     "caveats": [
         "A handbook prediction model, not failures counted in service: never mix it with field data.",
-        "Reliafy uses the base failure rate × the environment factor only. The handbook's other factors "
-        "(temperature, electrical stress, quality and more) aren't applied: each record names them, and "
-        "real rates depend on them. Quality alone can move a rate by a factor of 10 or more.",
+        "Reliafy uses the base failure rate × the environment factor only (a parts-count record: the generic "
+        "rate for the environment × the quality factor). The handbook's other factors (temperature, electrical "
+        "stress, quality and more) aren't applied: each record names them, and real rates depend on them. "
+        "Quality alone can move a rate by a factor of 10 or more.",
+        "The handbook covers electronic parts only: it has no batteries and no mechanical parts.",
         "The models were last revised in 1995 and describe parts of that era; newer parts are often more "
         "reliable than the handbook predicts.",
         "The handbook is guidance for comparing designs early, not a measure of how your equipment will fail.",
@@ -597,6 +602,45 @@ GROUPS: list[dict] = [
                                             "it.",
         },
     },
+    {
+        "section": "5.6", "title": "Microcircuits, SAW devices", "equipment_type": "microcircuit",
+        "rates": ("N2", "5-10", 25), "env": ("N2", "5-10", 25), "retrieved": "2026-11-08",
+        "formula": "λp = 2.1 πQ πE",
+        "not_applied": [_f("πQ")],
+        "quality_range": (0.10, 1.0),
+        "env_values": (".5", "2.0", "4.0", "4.0", "6.0", "4.0", "5.0", "5.0", "8.0", "8.0", ".50", "5.0", "12", "220"),
+        "name": "{text}",
+        "part_names": {"Surface Acoustic Wave Devices": "Microcircuit, surface acoustic wave (SAW) device"},
+        "parts": [(None, None, "Surface Acoustic Wave Devices", "2.1", "saw device")],
+        "part_notes": {
+            "Surface Acoustic Wave Devices": "πQ is .10 for devices screened with 10 temperature cycles (−55 °C to "
+                                             "+125 °C) and end point electrical tests at the temperature extremes, "
+                                             "and 1.0 for none beyond best commercial practice.",
+        },
+    },
+    {
+        "section": "8.1", "title": "Lasers, helium and argon", "equipment_type": "electronic_other",
+        "rates": ("F", "8-2", 77), "env": ("F", "8-2", 77), "retrieved": "2026-11-08",
+        "formula": "λp = λMEDIA πE + λCOUPLING πE",
+        "not_applied": [],
+        "quality_range": None,
+        "env_values": (".30", "1.0", "4.0", "3.0", "4.0", "4.0", "6.0", "7.0", "9.0", "5.0", ".10", "3.0", "8.0", NA),
+        "name": "{text}",
+        "part_names": {"He/Ne": "Laser, helium neon (He/Ne)", "He/Cd": "Laser, helium cadmium (He/Cd)",
+                       "Argon": "Laser, argon"},
+        "parts": [
+            (None, None, "He/Ne", "84", "laser helium neon"),
+            (None, None, "He/Cd", "228", "laser helium cadmium"),
+            (None, None, "Argon", "463", "laser argon"),
+        ],
+        "notes": ["The rate is the lasing media rate λMEDIA plus the coupling rate λCOUPLING, both times πE: "
+                  "helium lasers 84 (He/Ne) or 228 (He/Cd) + 0 (the handbook calls helium coupling negligible), "
+                  "argon 457 + 6."],
+        "part_notes": {
+            "Argon": "The handbook notes that an argon laser's mirrors can be expected to deteriorate after about "
+                     "10,000 hours if in contact with the discharge region, when the tube is refilled periodically.",
+        },
+    },
 ]
 
 #: Numbers the OCR text of their page misreads, each checked by eye against
@@ -612,48 +656,70 @@ OCR_MISREADS: dict[tuple[str, str, str], str] = {
     ("N2", "11-1", ".50"): "'50' (SF)",
     ("N2", "14-1", "4.3"): "a garbled line (limit switch)",
     ("N2", "17-1", "11"): "nothing: the NU row's factor is missing from the text",
+    ("N2", "5-10", "12"): "'42' (ML)",
+    ("N2", "5-10", "2.1"): "nothing: the formula line (λp = 2.1 πQ πE) is missing from the text",
+    ("F", "8-2", "463"): "not printed as one number: argon's λMEDIA 457 + λCOUPLING 6, both on the page",
 }
 
 #: What isn't imported, and why. Each a (section, what, reason).
 SKIPPED: list[tuple[str, str, str]] = [
-    ("5.1-5.13", "Microcircuits (gate arrays, memories, VHSIC, GaAs, hybrids, SAW, bubble memories)",
+    ("5.1-5.5", "Microcircuits, part stress model (gate arrays, microprocessors, memories, VHSIC, GaAs)",
      "The model adds a die term and a package term (C1 πT + C2 πE), each from the device's complexity and "
-     "package: there is no one base failure rate per part type."),
+     "package. Imported instead: the parts-count generic rates (Appendix A) by complexity band."),
+    ("5.3", "Microcircuits, VHSIC/VHSIC-like and VLSI CMOS",
+     "Appendix A refers these to the section 5.3 model (die area, package, ESD rating): no generic rate."),
+    ("5.7", "Microcircuits, magnetic bubble memories",
+     "The rate is a formula of the number of chips, loops and dissipative elements, and the duty cycle."),
+    ("5.5", "Microcircuits, hybrids",
+     "The handbook gives no generic rate: each hybrid is unique, and its rate is the sum of the parts in it."),
     ("6.1", "Diodes, low frequency: power rectifier with high voltage stacks",
      "The base rate is per junction (.0050 per junction): it needs the number of junctions."),
     ("6.6-6.9", "Transistors, high frequency (low noise bipolar, high power bipolar, GaAs FET, Si FET)",
      "The base rate is a formula of frequency and output power (or a table of them), not one number per type."),
     ("6.12", "Optoelectronics, alphanumeric displays",
      "The base rate is a formula of the number of characters and whether a logic chip is included."),
-    ("6.13", "Optoelectronics, laser diodes",
-     "The base rate depends on the material and on optical power and current."),
+    ("6.13", "Optoelectronics, laser diodes, part stress model",
+     "The base rate depends on the material and on optical power and current. Imported instead: the "
+     "parts-count generic rates (Appendix A)."),
     ("7.1-7.3", "Tubes (including travelling wave tubes and magnetrons)",
      "Not imported in this release: the base rates depend on tube type, power and frequency, and few designs "
-     "use tubes now."),
-    ("8.1-8.4", "Lasers", "The base rates depend on the laser's construction, power and pumping."),
-    ("12.1", "Rotating devices, motors",
-     "A life model for bearings and windings (characteristic lives by temperature), with no environment "
-     "factor: not a constant base rate."),
-    ("12.2", "Rotating devices, synchros and resolvers",
-     "The base rate is a formula of the frame temperature."),
+     "use tubes now. Appendix A has no generic rates for tubes (it refers to section 7)."),
+    ("8.2-8.4", "Lasers, carbon dioxide (sealed and flowing) and solid state (Nd:YAG, ruby)",
+     "The rates are formulas of tube current, gas flow or the flashlamp's pulse energy and rate; Appendix A "
+     "has no generic rates for lasers (it refers to section 8)."),
+    ("12.1", "Rotating devices, motors, life model",
+     "A life model for bearings and windings (characteristic lives by temperature), not a constant base rate. "
+     "Imported instead: the parts-count generic rates (Appendix A, 10-year design life)."),
+    ("12.2", "Rotating devices, synchros and resolvers, part stress model",
+     "The base rate is a formula of the frame temperature. Imported instead: the parts-count generic rates "
+     "(Appendix A)."),
     ("13.1", "Relays, mechanical",
      "The base rate depends on the ambient temperature (.0059 at 25 °C to .031 at 125 °C for a 125 °C rated "
      "relay): no one number per type."),
-    ("16.1", "Interconnection assemblies with plated through holes",
+    ("16.1", "Interconnection assemblies with plated through holes, part stress model",
      "The base rate is per plated through hole, weighted by the number of circuit planes: it needs the board's "
-     "hole counts."),
-    ("16.2", "Interconnection assemblies, surface mount technology",
-     "A wear-out model in thermal cycles, not a constant base rate."),
-    ("19.1", "Quartz crystals", "The base rate is a formula of frequency (.013 f^0.23)."),
-    ("20.1", "Lamps, incandescent", "The base rate is a formula of rated voltage (.074 Vr^1.29)."),
+     "hole counts. Imported instead: the parts-count generic rate (Appendix A)."),
+    ("16.2", "Interconnection assemblies, surface mount technology, part stress model",
+     "A wear-out model in thermal cycles, not a constant base rate. Imported instead: the parts-count generic "
+     "rate (Appendix A)."),
+    ("19.1", "Quartz crystals, part stress model",
+     "The base rate is a formula of frequency (.013 f^0.23). Imported instead: the parts-count generic rate "
+     "(Appendix A, 50 MHz)."),
+    ("20.1", "Lamps, incandescent, part stress model",
+     "The base rate is a formula of rated voltage (.074 Vr^1.29). Imported instead: the parts-count generic "
+     "rates (Appendix A)."),
     ("23.1", "Fiber optic cables", "The rate is per kilometre of fibre, a unit the library doesn't convert."),
     ("23.1", "Microwave attenuators", "The handbook refers these to the resistor model (style RD)."),
     ("23.1", "Microwave fixed elements (directional couplers, fixed stubs and cavities)",
      "The handbook gives their rate as negligible, not a number."),
     ("23.1", "Terminations (thin or thick film loads in stripline and thin film circuits)",
      "Given as 0.030 × πE without saying which environment table applies."),
-    ("Appendix A", "Parts count method (generic failure rates by environment)",
-     "A different method, for early estimates: not imported in this release."),
+    ("Appendix A", "Parts count: discrete semiconductors, resistors, capacitors, inductive devices, elapsed time "
+                   "meters, relays, switches, connectors, connections, meters, filters and fuses",
+     "Not imported in this release: the library has these parts' part stress base rates and environment "
+     "factors instead."),
+    ("—", "Batteries and mechanical parts",
+     "MIL-HDBK-217F covers electronic parts only: it has no batteries and no mechanical parts."),
 ]
 
 
@@ -693,6 +759,9 @@ def number(printed: str) -> float:
 
 
 def _name(group: dict, text: str) -> str:
+    own = (group.get("part_names") or {}).get(text)
+    if own:
+        return own
     template = group["name"]
     if "{text}" not in template:
         return template
@@ -792,7 +861,7 @@ def record(group: dict, index: int, retrieved: str) -> dict:
             "title": TITLE, "publisher": PUBLISHER, "report": REPORT, "edition": SOURCE["edition"],
             "year": 1995 if doc == "N2" else 1991, "table": f"Section {section}, Base Failure Rate",
             "page": ", ".join(pages), "document": DOCUMENTS[doc]["part"],
-            "url": ASSIST_URL, "retrieved": retrieved,
+            "url": ASSIST_URL, "retrieved": group.get("retrieved") or retrieved,
         },
         "licence": {k: SOURCE["licence"][k] for k in ("id", "name", "attribution")},
         "notes": notes,
@@ -802,11 +871,392 @@ def record(group: dict, index: int, retrieved: str) -> dict:
     return rec
 
 
+# ---- the parts-count tables (Appendix A), typed from the page images ------------------------
+#
+# Appendix A's parts count method: λ = Σ N (λg πQ), with λg the generic failure rate of a part
+# type in each environment (the handbook's part stress model worked out at its default values,
+# environment included) and πQ its quality factor. The tables are printed sideways and their
+# OCR text is unreadable, so these numbers can't be checked against the text the way the part
+# stress tables are: each was typed from the page image and checked against a second,
+# independent reading of the same images, and where a row is one base rate times the section's
+# πE (quartz crystals, circuit boards) against that product too (``test_library`` keeps those
+# checks). Where the two readings differed (bipolar microprocessors up to 16 bits, CL: 5.8;
+# resolvers, AUF: 2.8), the cell was read again at higher magnification. Each group: section, title, the page (document, printed page, PDF page), the
+# equipment type, the quality table (a key of PC_QUALITY, or None where the handbook gives
+# none), the factors the generic rate holds at the handbook's defaults (``held``), notes, and
+# rows of (the row's words, the package or assumption printed with it, 14 rates as printed, in
+# ENV_ORDER; "*" where the handbook marks the part not normally used in that environment).
+
+PC_RETRIEVED = "2026-11-08"
+NOT_USED = "*"
+
+#: The quality factor tables Appendix A gives with its generic rates: each level (code, the
+#: handbook's words, πQ as printed) and the default a parts list without a grade takes (the
+#: lowest grade the handbook lists: commercial or unknown screening for microcircuits, non-MIL
+#: for the other parts), or None where the handbook names no such grade.
+PC_QUALITY: dict[str, dict] = {
+    "microcircuit": {
+        "page": ("N2", "A-4", 67), "table": "Appendix A, Quality Factors πQ (microcircuits)",
+        "levels": [
+            ("S", "Class S: procured to MIL-M-38510 class S, MIL-I-38535 class U, or hybrids to MIL-H-38534 "
+                  "class S (quality level K)", ".25"),
+            ("B", "Class B: procured to MIL-M-38510 class B, MIL-I-38535 class Q, or hybrids to MIL-H-38534 "
+                  "class B (quality level H)", "1.0"),
+            ("B-1", "Class B-1: fully compliant with MIL-STD-883 paragraph 1.2.1 and procured to a MIL drawing, "
+                    "DESC drawing or other government approved documentation (not hybrids)", "2.0"),
+            ("commercial", "Other commercial or unknown screening levels", "10"),
+        ],
+        "default": "commercial",
+        "note": "A custom screening programme has πQ = 2 + 87 ÷ the sum of its MIL-STD-883 tests' point "
+                "valuations (page A-4); the handbook's examples give 3.1 and 5.5.",
+    },
+    "laser_diode": {
+        "page": ("N2", "A-6", 69), "table": "Appendix A, Discrete Semiconductor Quality Factors πQ (laser diodes)",
+        "levels": [
+            ("hermetic", "Hermetic package", "1.0"),
+            ("nonhermetic_facet", "Nonhermetic with facet coating", "1.0"),
+            ("nonhermetic", "Nonhermetic without facet coating", "3.3"),
+        ],
+        "default": None,
+        "note": None,
+    },
+    "pth_board": {
+        "page": ("N2", "A-11", 74), "table": "Appendix A, πQ Factor for Use with Section 11-22 Devices",
+        "levels": [("mil", "MIL-SPEC", "1.0"), ("non_mil", "Non-MIL", "2.0")],
+        "default": "non_mil", "note": None,
+    },
+    "crystal": {
+        "page": ("N2", "A-11", 74), "table": "Appendix A, πQ Factor for Use with Section 11-22 Devices",
+        "levels": [("mil", "MIL-SPEC", "1.0"), ("non_mil", "Non-MIL", "2.1")],
+        "default": "non_mil", "note": None,
+    },
+}
+
+_MICRO_HELD = [
+    ("πT", "temperature", "the junction temperature printed for each environment (50 to 90 °C)"),
+    ("C1, C2", "die complexity and package", "the band's complexity and the package printed with it"),
+    ("πL", "learning", "1, a device in production 2 years or more (multiply by up to 2.0 for a newer one)"),
+]
+_MICRO_DEFAULTS = ("Appendix A's defaults: πT from the activation energy (Ea) shown, solder or weld seal DIPs and "
+                   "PGAs with the pins shown, πL = 1 (device in production 2 years or more).")
+
+
+def _micro(section: str, family: str, ea: str, page: tuple, rows: list, words: str) -> dict:
+    return {"section": section, "family": family, "title": f"Microcircuits, {family}", "page": page,
+            "table": "Appendix A, Generic Failure Rate λg for Microcircuits", "equipment_type": "microcircuit",
+            "quality": "microcircuit", "held": _MICRO_HELD, "name": f"Microcircuit, {words}, {{row}}",
+            "notes": [f"Activation energy Ea = {ea} eV. " + _MICRO_DEFAULTS], "rows": rows}
+
+
+_A2 = ("N2", "A-2", 65)
+_A3 = ("N2", "A-3", 66)
+
+PARTS_COUNT: list[dict] = [
+    _micro("5.1", "bipolar gate/logic arrays, digital", ".4", _A2, [
+        ("1 to 100 gates", "16 pin DIP", (".0036", ".012", ".024", ".024", ".035", ".025", ".030", ".032", ".049", ".047", ".0036", ".030", ".069", "1.2")),
+        ("101 to 1,000 gates", "24 pin DIP", (".0060", ".020", ".038", ".037", ".055", ".039", ".048", ".051", ".077", ".074", ".0060", ".046", ".11", "1.9")),
+        ("1,001 to 3,000 gates", "40 pin DIP", (".011", ".035", ".066", ".065", ".097", ".070", ".085", ".091", ".14", ".13", ".011", ".082", ".19", "3.3")),
+        ("3,001 to 10,000 gates", "128 pin PGA", (".033", ".12", ".22", ".22", ".33", ".23", ".28", ".30", ".46", ".44", ".033", ".28", ".65", "12")),
+        ("10,000 to 30,000 gates", "180 pin PGA", (".052", ".17", ".33", ".33", ".48", ".34", ".42", ".45", ".68", ".65", ".052", ".41", ".95", "17")),
+        ("30,000 to 60,000 gates", "224 pin PGA", (".075", ".23", ".44", ".43", ".63", ".46", ".56", ".61", ".90", ".85", ".075", ".53", "1.2", "21")),
+    ], "bipolar gate/logic array (digital)"),
+    _micro("5.1", "bipolar linear", ".65", _A2, [
+        ("1 to 100 transistors", "14 pin DIP", (".0095", ".024", ".039", ".034", ".049", ".057", ".062", ".12", ".13", ".076", ".0095", ".044", ".096", "1.1")),
+        ("101 to 300 transistors", "18 pin DIP", (".017", ".041", ".065", ".054", ".078", ".10", ".11", ".22", ".24", ".13", ".017", ".072", ".15", "1.4")),
+        ("301 to 1,000 transistors", "24 pin DIP", (".033", ".074", ".11", ".092", ".13", ".19", ".19", ".41", ".44", ".22", ".033", ".12", ".26", "2.0")),
+        ("1,001 to 10,000 transistors", "40 pin DIP", (".050", ".12", ".18", ".15", ".21", ".29", ".30", ".63", ".67", ".35", ".050", ".19", ".41", "3.4")),
+    ], "bipolar linear"),
+    _micro("5.1", "bipolar programmable logic arrays", ".4", _A2, [
+        ("up to 200 gates", "16 pin DIP", (".0061", ".016", ".029", ".027", ".040", ".032", ".037", ".044", ".061", ".054", ".0061", ".034", ".076", "1.2")),
+        ("201 to 1,000 gates", "24 pin DIP", (".011", ".028", ".048", ".045", ".065", ".054", ".063", ".077", ".10", ".089", ".011", ".057", ".12", "1.9")),
+        ("1,001 to 5,000 gates", "40 pin DIP", (".022", ".052", ".087", ".082", ".12", ".099", ".11", ".14", ".19", ".16", ".022", ".10", ".22", "3.3")),
+    ], "bipolar programmable logic array"),
+    _micro("5.1", "MOS gate/logic arrays, digital", ".35", _A2, [
+        ("1 to 100 gates", "16 pin DIP", (".0057", ".015", ".027", ".027", ".039", ".029", ".035", ".039", ".056", ".052", ".0057", ".033", ".074", "1.2")),
+        ("101 to 1,000 gates", "24 pin DIP", (".010", ".026", ".045", ".043", ".062", ".049", ".057", ".066", ".092", ".083", ".010", ".053", ".12", "1.9")),
+        ("1,001 to 3,000 gates", "40 pin DIP", (".019", ".047", ".080", ".077", ".11", ".088", ".10", ".12", ".17", ".15", ".019", ".095", ".21", "3.3")),
+        ("3,001 to 10,000 gates", "128 pin PGA", (".049", ".14", ".25", ".24", ".36", ".27", ".32", ".36", ".51", ".48", ".049", ".30", ".69", "12")),
+        ("10,001 to 30,000 gates", "180 pin PGA", (".084", ".22", ".39", ".37", ".54", ".42", ".49", ".56", ".79", ".72", ".084", ".46", "1.0", "17")),
+        ("30,000 to 60,000 gates", "224 pin PGA", (".13", ".31", ".53", ".51", ".73", ".59", ".69", ".82", "1.1", ".98", ".13", ".63", "1.4", "21")),
+    ], "MOS gate/logic array (digital)"),
+    _micro("5.1", "MOS linear", ".65", _A2, [
+        ("1 to 100 transistors", "14 pin DIP", (".0095", ".024", ".039", ".034", ".049", ".057", ".062", ".12", ".13", ".076", ".0095", ".044", ".096", "1.1")),
+        ("101 to 300 transistors", "18 pin DIP", (".017", ".041", ".065", ".054", ".078", ".10", ".11", ".22", ".24", ".13", ".017", ".072", ".15", "1.4")),
+        ("301 to 1,000 transistors", "24 pin DIP", (".033", ".074", ".11", ".092", ".13", ".19", ".19", ".41", ".44", ".22", ".033", ".12", ".26", "2.0")),
+        ("1,001 to 10,000 transistors", "40 pin DIP", (".05", ".12", ".18", ".15", ".21", ".29", ".30", ".63", ".67", ".35", ".05", ".19", ".41", "3.4")),
+    ], "MOS linear"),
+    _micro("5.1", "MOS floating gate programmable logic arrays", ".35", _A2, [
+        ("up to 500 gates", "24 pin DIP", (".0046", ".018", ".035", ".035", ".052", ".035", ".044", ".044", ".070", ".070", ".0046", ".044", ".10", "1.9")),
+        ("501 to 2,000 gates", "28 pin DIP", (".0056", ".021", ".042", ".042", ".062", ".042", ".052", ".053", ".084", ".083", ".0056", ".052", ".12", "2.3")),
+        ("2,001 to 5,000 gates", "28 pin DIP", (".0061", ".022", ".043", ".042", ".063", ".043", ".054", ".055", ".086", ".084", ".0061", ".053", ".13", "2.3")),
+        ("5,001 to 20,000 gates", "40 pin DIP", (".0095", ".033", ".064", ".063", ".094", ".065", ".080", ".083", ".13", ".13", ".0095", ".079", ".19", "3.3")),
+    ], "MOS floating gate programmable logic array"),
+    _micro("5.1", "microprocessors, bipolar", ".4", _A2, [
+        ("up to 8 bits", "40 pin DIP", (".028", ".061", ".098", ".091", ".13", ".12", ".13", ".17", ".22", ".18", ".028", ".11", ".24", "3.3")),
+        ("up to 16 bits", "64 pin PGA", (".052", ".11", ".18", ".16", ".23", ".21", ".24", ".32", ".39", ".31", ".052", ".20", ".41", "5.8")),
+        ("up to 32 bits", "128 pin PGA", (".11", ".23", ".36", ".33", ".47", ".44", ".49", ".65", ".81", ".65", ".11", ".42", ".86", "12")),
+    ], "microprocessor (bipolar)"),
+    _micro("5.1", "microprocessors, MOS", ".35", _A2, [
+        ("up to 8 bits", "40 pin DIP", (".048", ".089", ".13", ".12", ".16", ".16", ".17", ".24", ".28", ".22", ".048", ".15", ".28", "3.4")),
+        ("up to 16 bits", "64 pin PGA", (".093", ".17", ".24", ".22", ".29", ".30", ".32", ".45", ".52", ".40", ".093", ".27", ".50", "5.6")),
+        ("up to 32 bits", "128 pin PGA", (".19", ".34", ".49", ".45", ".60", ".61", ".66", ".90", "1.1", ".82", ".19", ".54", "1.0", "12")),
+    ], "microprocessor (MOS)"),
+    _micro("5.2", "MOS memories, ROM", ".6", _A3, [
+        ("up to 16K", "24 pin DIP", (".0047", ".018", ".036", ".035", ".053", ".037", ".045", ".048", ".074", ".071", ".0047", ".044", ".11", "1.9")),
+        ("16K to 64K", "28 pin DIP", (".0059", ".022", ".043", ".042", ".063", ".045", ".055", ".060", ".090", ".086", ".0059", ".053", ".13", "2.3")),
+        ("64K to 256K", "28 pin DIP", (".0067", ".023", ".045", ".044", ".066", ".048", ".059", ".068", ".099", ".089", ".0067", ".055", ".13", "2.3")),
+        ("256K to 1 MB", "40 pin DIP", (".011", ".036", ".068", ".066", ".098", ".075", ".090", ".11", ".15", ".14", ".011", ".083", ".20", "3.3")),
+    ], "memory, MOS ROM"),
+    _micro("5.2", "MOS memories, PROM, UVEPROM, EEPROM, EAPROM", ".6", _A3, [
+        ("up to 16K", "24 pin DIP", (".0049", ".018", ".036", ".036", ".053", ".037", ".046", ".049", ".075", ".072", ".0048", ".045", ".11", "1.9")),
+        ("16K to 64K", "28 pin DIP", (".0061", ".022", ".044", ".043", ".064", ".046", ".056", ".062", ".093", ".087", ".0062", ".054", ".13", "2.3")),
+        ("64K to 256K", "28 pin DIP", (".0072", ".024", ".046", ".045", ".067", ".051", ".061", ".073", ".10", ".092", ".0072", ".057", ".13", "2.3")),
+        ("256K to 1 MB", "40 pin DIP", (".012", ".038", ".071", ".068", ".10", ".080", ".095", ".12", ".16", ".14", ".012", ".086", ".20", "3.3")),
+    ], "memory, MOS PROM, UVEPROM, EEPROM or EAPROM"),
+    _micro("5.2", "MOS memories, DRAM", ".6", _A3, [
+        ("up to 16K", "18 pin DIP", (".0040", ".014", ".027", ".027", ".040", ".029", ".035", ".040", ".059", ".055", ".0040", ".034", ".080", "1.4")),
+        ("16K to 64K", "22 pin DIP", (".0055", ".019", ".036", ".034", ".051", ".039", ".047", ".056", ".079", ".070", ".0055", ".043", ".10", "1.7")),
+        ("64K to 256K", "24 pin DIP", (".0074", ".023", ".043", ".040", ".060", ".049", ".058", ".076", ".10", ".084", ".0074", ".051", ".12", "1.9")),
+        ("256K to 1 MB", "28 pin DIP", (".011", ".032", ".057", ".053", ".077", ".070", ".080", ".12", ".15", ".11", ".011", ".067", ".15", "2.3")),
+    ], "memory, MOS DRAM"),
+    _micro("5.2", "MOS memories, SRAM (MOS and BiMOS)", ".6", _A3, [
+        ("up to 16K", "18 pin DIP", (".0079", ".022", ".038", ".034", ".050", ".048", ".054", ".083", ".10", ".073", ".0079", ".044", ".098", "1.4")),
+        ("16K to 64K", "22 pin DIP", (".014", ".034", ".057", ".050", ".073", ".077", ".085", ".14", ".17", ".11", ".014", ".065", ".14", "1.8")),
+        ("64K to 256K", "24 pin DIP", (".023", ".053", ".084", ".071", ".10", ".12", ".13", ".25", ".27", ".16", ".023", ".092", ".19", "1.9")),
+        ("256K to 1 MB", "28 pin DIP", (".043", ".092", ".14", ".11", ".16", ".22", ".23", ".46", ".49", ".26", ".043", ".15", ".30", "2.3")),
+    ], "memory, MOS or BiMOS SRAM"),
+    _micro("5.2", "bipolar memories, ROM, PROM", ".6", _A3, [
+        ("up to 16K", "24 pin DIP", (".010", ".028", ".050", ".046", ".067", ".062", ".070", ".10", ".13", ".096", ".010", ".058", ".13", "1.9")),
+        ("16K to 64K", "28 pin DIP", (".017", ".043", ".071", ".063", ".091", ".095", ".11", ".18", ".21", ".14", ".017", ".081", ".18", "2.3")),
+        ("64K to 256K", "28 pin DIP", (".028", ".065", ".10", ".085", ".12", ".15", ".16", ".30", ".33", ".19", ".028", ".11", ".23", "2.3")),
+        ("256K to 1 MB", "40 pin DIP", (".053", ".12", ".18", ".15", ".21", ".27", ".29", ".56", ".61", ".33", ".053", ".19", ".39", "3.4")),
+    ], "memory, bipolar ROM or PROM"),
+    _micro("5.2", "bipolar memories, SRAM", ".6", _A3, [
+        ("up to 16K", "24 pin DIP", (".0075", ".023", ".043", ".041", ".060", ".050", ".058", ".077", ".10", ".084", ".0075", ".052", ".12", "1.9")),
+        ("16K to 64K", "28 pin DIP", (".012", ".033", ".058", ".054", ".079", ".072", ".083", ".12", ".15", ".11", ".012", ".069", ".15", "2.3")),
+        ("64K to 256K", "28 pin DIP", (".018", ".045", ".074", ".065", ".095", ".10", ".11", ".19", ".22", ".14", ".018", ".084", ".18", "2.3")),
+        ("256K to 1 MB", "40 pin DIP", (".033", ".079", ".13", ".11", ".16", ".18", ".20", ".35", ".39", ".24", ".033", ".14", ".30", "3.4")),
+    ], "memory, bipolar SRAM"),
+    _micro("5.4", "GaAs MMIC", "1.5", _A3, [
+        ("1 to 100 active elements", "8 pin DIP", (".0013", ".0052", ".010", ".010", ".016", ".011", ".013", ".015", ".022", ".021", ".0013", ".013", ".031", ".57")),
+        ("101 to 1,000 active elements", "16 pin DIP", (".0028", ".011", ".022", ".022", ".034", ".023", ".028", ".030", ".047", ".045", ".0028", ".028", ".068", "1.2")),
+    ], "GaAs MMIC"),
+    _micro("5.4", "GaAs digital", "1.4", _A3, [
+        ("1 to 1,000 active elements", "36 pin DIP", (".0066", ".026", ".052", ".052", ".078", ".054", ".067", ".078", ".12", ".11", ".0066", ".065", ".16", "2.9")),
+        ("1,001 to 10,000 active elements", "64 pin PGA", (".013", ".050", ".10", ".10", ".15", ".10", ".13", ".15", ".23", ".20", ".013", ".13", ".30", "5.5")),
+    ], "GaAs digital"),
+    {
+        "section": "6.13", "family": "laser diodes", "title": "Optoelectronics, laser diodes", "page": ("N2", "A-6", 69),
+        "table": "Appendix A, Generic Failure Rate λg for Discrete Semiconductors", "equipment_type": "semiconductor",
+        "quality": "laser_diode", "name": "Laser diode, {row}",
+        "held": [("πT", "temperature", "the junction temperature printed for each environment (50 to 90 °C)"),
+                 ("πI", "forward current", "a forward peak current of .5 A"),
+                 ("πA", "application", "pulsed, duty cycle .6"),
+                 ("πP", "power degradation", "1 (ratio of required to rated optical power .5)")],
+        "notes": ["Appendix A's defaults (page A-13): forward peak current .5 A, pulsed with a duty cycle of .6, "
+                  "required to rated optical power .5."],
+        "rows": [
+            ("GaAs/Al GaAs", None, ("5.1", "16", "78", "39", "120", "58", "86", "86", "110", "240", "2.6", "87", "350", "3600")),
+            ("In GaAs/In GaAsP", None, ("9.0", "28", "135", "69", "200", "100", "150", "150", "200", "400", "4.5", "150", "600", "6200")),
+        ],
+    },
+    {
+        "section": "12.1", "family": "motors", "title": "Rotating devices, motors", "page": ("N2", "A-9", 72),
+        "table": "Appendix A, Generic Failure Rate λg for Inductive, Electromechanical and Miscellaneous Parts",
+        "equipment_type": "rotating", "quality": None, "name": "Motor, {row}",
+        "held": [("αB", "bearing characteristic life", "the handbook's value at the ambient temperature printed for each environment"),
+                 ("αW", "winding characteristic life", "the handbook's value at the ambient temperature printed for each environment"),
+                 ("LC", "design life", "10 years (87,600 hours)")],
+        "notes": ["The handbook's motor model (section 12.1) is life based: it works out an average failure rate "
+                  "over the motor's design life from the bearings' and windings' characteristic lives at its "
+                  "temperature. That model isn't applied here: these are Appendix A's generic rates, which assume a "
+                  "10-year (87,600 hour) design life at the ambient temperature printed for each environment "
+                  "(30 to 70 °C).",
+                  "The handbook's motor models cover motors up to 1 horsepower. It gives no quality factor for "
+                  "rotating devices."],
+        "rows": [
+            ("general", None, ("6.9", "6.8", "8.3", "6.8", "8.3", "13", "13", "30", "30", "13", "6.9", NOT_USED, NOT_USED, NOT_USED)),
+            ("sensor", None, ("27", "27", "33", "27", "33", "52", "52", "1.2e+02", "1.2e+02", "52", "27", "33", "52", "27")),
+            ("servo", None, ("5.4", "5.4", "6.5", "5.4", "6.5", "10", "10", "23", "23", "10", "5.4", "6.5", "10", "5.4")),
+            ("stepper", None, ("1.2", "1.2", "1.4", "1.2", "1.4", "2.3", "2.3", "5.3", "5.3", "2.3", "1.2", "1.4", "2.3", "1.2")),
+        ],
+    },
+    {
+        "section": "12.2", "family": "synchros and resolvers", "title": "Rotating devices, synchros and resolvers",
+        "page": ("N2", "A-9", 72),
+        "table": "Appendix A, Generic Failure Rate λg for Inductive, Electromechanical and Miscellaneous Parts",
+        "equipment_type": "rotating", "quality": None, "name": "{row}",
+        "held": [("λb", "base rate (frame temperature)", "the ambient temperature printed for each environment"),
+                 ("πS", "size", "size 10 to 16"), ("πN", "number of brushes", "3 brushes")],
+        "notes": ["Appendix A's defaults: size 10 to 16, 3 brushes. The handbook gives no quality factor for "
+                  "rotating devices."],
+        "rows": [
+            ("Synchro", None, (".031", ".071", ".47", ".25", ".70", ".19", ".28", "1.1", "1.8", "1.2", ".016", ".54", "1.7", "24")),
+            ("Resolver", None, (".047", ".11", ".70", ".37", "1.0", ".28", ".43", "1.7", "2.8", "1.8", ".023", ".81", "2.6", NOT_USED)),
+        ],
+    },
+    {
+        "section": "16.1", "family": "plated through hole circuit boards", "title": "Interconnection assemblies with plated through holes",
+        "page": ("N2", "A-10", 73),
+        "table": "Appendix A, Generic Failure Rate λg for Inductive, Electromechanical and Miscellaneous Parts",
+        "equipment_type": "circuit_board", "quality": "pth_board",
+        "name": "Printed circuit board, plated through holes",
+        "held": [("N1, N2", "solder joints", "1,000 wave solder joints, no hand soldering"),
+                 ("πC", "complexity", "3 circuit planes")],
+        "notes": ["Appendix A's defaults: 1,000 wave solder joints, 3 circuit planes, no hand soldering. The "
+                  "handbook's model (section 16.1) counts the board's plated through holes; for a board far from "
+                  "these defaults, work it out from section 16.1."],
+        "rows": [("", None, (".022", ".045", ".16", ".11", ".29", ".11", ".18", ".36", ".62", ".42", ".011", ".22", ".60", "11"))],
+    },
+    {
+        "section": "16.2", "family": "surface mount technology circuit boards", "title": "Interconnection assemblies, surface mount technology",
+        "page": ("N2", "A-10", 73),
+        "table": "Appendix A, Generic Failure Rate λg for Inductive, Electromechanical and Miscellaneous Parts",
+        "equipment_type": "circuit_board", "quality": None,
+        "name": "Printed circuit board, surface mount technology",
+        "held": [("ΔT, CR", "thermal cycling", "the design and the default ΔT values of the handbook's section 16.2 example"),
+                 ("LC", "design life", "the section 16.2 example's")],
+        "notes": ["The handbook's surface mount model (section 16.2) is a wear-out model: the solder joints' "
+                  "cycles to failure under the board's thermal cycling. That model isn't applied here: these are "
+                  "Appendix A's generic rates for the design of its section 16.2 example with the default ΔT "
+                  "values. The handbook gives no quality factor for these boards."],
+        "rows": [("", None, (".0025", ".37", "1.8", "1.8", "42", "6.1", "6.1", "35", "35", "6.1", ".0025", "11", ".11", ".11"))],
+    },
+    {
+        "section": "19.1", "family": "quartz crystals", "title": "Quartz crystals", "page": ("N2", "A-10", 73),
+        "table": "Appendix A, Generic Failure Rate λg for Inductive, Electromechanical and Miscellaneous Parts",
+        "equipment_type": "electronic_other", "quality": "crystal", "specification": "MIL-C-3098",
+        "name": "Quartz crystal",
+        "held": [("λb", "base rate (frequency)", "50 MHz")],
+        "notes": ["Appendix A's default: a 50 MHz crystal. The handbook's base rate is .013 f^0.23 (f in MHz), "
+                  "so a crystal far from 50 MHz differs a little (10 MHz: about 30% lower)."],
+        "rows": [("", None, (".032", ".096", ".32", ".19", ".51", ".38", ".54", ".70", ".90", ".74", ".016", ".42", "1.0", "16"))],
+    },
+    {
+        "section": "20.1", "family": "lamps, incandescent", "title": "Lamps, incandescent", "page": ("N2", "A-10", 73),
+        "table": "Appendix A, Generic Failure Rate λg for Inductive, Electromechanical and Miscellaneous Parts",
+        "equipment_type": "electronic_other", "quality": None, "name": "Lamp, incandescent, {row}",
+        "held": [("λb", "base rate (rated voltage)", "a 28 volt rating"), ("πU", "utilisation", "a utilisation rate of .5")],
+        "notes": ["Appendix A's defaults: a utilisation rate of .5 and a 28 volt rating. The handbook gives no "
+                  "quality factor for lamps."],
+        "rows": [
+            ("AC", None, ("3.9", "7.8", "12", "12", "16", "16", "16", "19", "23", "19", "2.7", "16", "23", "100")),
+            ("DC", None, ("13", "26", "38", "38", "51", "51", "51", "64", "77", "64", "9.0", "51", "77", "350")),
+        ],
+    },
+]
+
+
+def _pc_quality(key: str | None) -> dict | None:
+    if not key:
+        return None
+    q = PC_QUALITY[key]
+    doc, page, _ = q["page"]
+    levels = [{"code": c, "name": n, "value": number(v)} for c, n, v in q["levels"]]
+    return {"symbol": "πQ", "table": q["table"], "page": page, "document": DOCUMENTS[doc]["part"],
+            "levels": levels, "default": q["default"], **({"note": q["note"]} if q.get("note") else {})}
+
+
+def parts_count_record(group: dict, index: int, retrieved: str) -> dict:
+    """The ``index``-th row of an Appendix A table as a library record: the generic failure rate
+    λg for each environment (``generic_rates``), the quality factor table, and the factors the
+    rate holds at the handbook's defaults. The record's own value (its distribution) is the
+    ground, benign (GB) rate, the first column: a parts count reads the rate for its
+    environment from ``generic_rates``."""
+    row, package, printed = group["rows"][index]
+    doc, page, _ = group["page"]
+    section = group["section"]
+    values = {e: number(v) for e, v in zip(ENV_ORDER, printed) if v != NOT_USED}
+    not_given = [e for e, v in zip(ENV_ORDER, printed) if v == NOT_USED]
+    ref = printed[0]
+    per_hour = float(f"{float(ref):g}e-6")
+    name = group["name"].format(row=row) if "{row}" in group["name"] else group["name"]
+    name = name[:1].upper() + name[1:]
+    quality = _pc_quality(group.get("quality"))
+    q_values = [lv["value"] for lv in quality["levels"]] if quality else []
+    q_default = next((lv["value"] for lv in quality["levels"] if lv["code"] == quality["default"]), None) \
+        if quality else None
+    held = [{"symbol": s, "name": n, "held_at": at} for s, n, at in group["held"]]
+    notes = ["Parts count (Appendix A): λ = λg × πQ, where λg is the handbook's generic failure rate for the "
+             "environment (its part stress model at default values, environment included)."]
+    notes += group.get("notes") or []
+    if package:
+        notes.append(f"Default package: {package}.")
+    if quality:
+        lv = "; ".join(f"{x['name']} {x['value']:g}" for x in quality["levels"])
+        notes.append(f"Quality factor πQ: {lv}."
+                     + (f" With no grade given, a parts count takes {q_default:g} ("
+                        f"{next(x['name'] for x in quality['levels'] if x['code'] == quality['default']).lower()})."
+                        if q_default is not None else ""))
+    if not_given:
+        notes.append(f"The handbook marks this part not normally used in {', '.join(not_given)}: no rate there.")
+    key = f"a {section} {group['family']} {row}".strip()
+    conditions = {"industry": "Military and aerospace electronics (handbook prediction)",
+                  "section": f"{section} {group['title']}", "method": "Parts count (Appendix A)"}
+    if package:
+        conditions["package"] = package
+    if group.get("specification"):
+        conditions["specification"] = group["specification"]
+    source_text = ", ".join(x for x in (group["family"], row) if x)
+    rec = {
+        "id": f"{SOURCE_ID}:{slug(key)}",
+        "version": DATA_VERSION,
+        "source": SOURCE_ID,
+        "source_code": f"A {section} {source_text}",
+        "name": name,
+        "label": f"{name}: generic failure rate (parts count)",
+        "equipment_type": group["equipment_type"],
+        "kind": "rate",
+        "basis": "prediction_model",
+        "failure_mode": {"code": "ALL", "name": "Any failure",
+                         "meaning": "The part stops doing its job, in any way: the handbook's rate covers every "
+                                    "failure mode together."},
+        "distribution": {"family": "point", "params": [{"name": "value", "value": per_hour}]},
+        "summary": {"mean": per_hour, "median": None, "p05": None, "p95": None, "error_factor": None},
+        "units": {"value": "per_hour", "time_basis": "operating", "as_given": "failures per million hours"},
+        "evidence": {"failures": None, "demands": None, "exposure": None, "exposure_unit": None, "components": None,
+                     "sites": None, "period": None, "data_source": "MIL-HDBK-217F parts count method (Appendix A)",
+                     "method": "Handbook prediction model (generic failure rates by environment)"},
+        "conditions": conditions,
+        "prediction": {
+            "method": "parts_count",
+            "formula": "λ = λg πQ (failures per million hours; λg for the environment)",
+            "per_million_hours": number(ref),
+            "reference_environment": "GB",
+            "applied": ["λg", "πQ"] if quality else ["λg"],
+            "not_applied": held,
+            "quality_factor_range": [min(q_values), max(q_values)] if quality else None,
+            "quality_factor_default": q_default,
+        },
+        "generic_rates": {"symbol": "λg", "table": group["table"], "page": page, "document": DOCUMENTS[doc]["part"],
+                          "values": values, "not_given": not_given},
+        "source_text": source_text,
+        "citation": {
+            "title": TITLE, "publisher": PUBLISHER, "report": REPORT, "edition": SOURCE["edition"],
+            "year": 1995 if doc == "N2" else 1991, "table": group["table"],
+            "page": page + (f", {quality['page']}" if quality and quality["page"] != page else ""),
+            "document": DOCUMENTS[doc]["part"], "url": ASSIST_URL, "retrieved": PC_RETRIEVED,
+        },
+        "licence": {k: SOURCE["licence"][k] for k in ("id", "name", "attribution")},
+        "notes": notes,
+    }
+    if quality:
+        rec["quality_factors"] = quality
+    return rec
+
+
 def records(retrieved: str) -> list[dict]:
     out, seen = [], set()
     for group in GROUPS:
         for i in range(len(group["parts"])):
             rec = record(group, i, retrieved)
+            if rec["id"] in seen:
+                raise ValueError(f"duplicate id {rec['id']}")
+            seen.add(rec["id"])
+            out.append(rec)
+    for group in PARTS_COUNT:
+        for i in range(len(group["rows"])):
+            rec = parts_count_record(group, i, retrieved)
             if rec["id"] in seen:
                 raise ValueError(f"duplicate id {rec['id']}")
             seen.add(rec["id"])
@@ -925,7 +1375,9 @@ def build(folder: str, retrieved: str) -> dict:
                    "sha256": {d["file"]: d["content_sha256"] for d in DOCUMENTS.values()},
                    "documents": list(DOCUMENTS.values()),
                    "table": "The part stress models' base failure rate (λb) and environment factor (πE) tables, "
-                            "sections 6 and 9 to 23"},
+                            "sections 5.6, 6, 8.1 and 9 to 23, and Appendix A's parts-count generic failure rates "
+                            "(λg) and quality factors (πQ) for microcircuits, laser diodes, rotating devices, "
+                            "circuit boards, quartz crystals and incandescent lamps"},
         "skipped": [{"code": s, "page": None, "what": what, "reason": reason} for s, what, reason in SKIPPED],
         "records": recs,
     }

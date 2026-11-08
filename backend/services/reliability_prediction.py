@@ -10,7 +10,18 @@ model: MIL-HDBK-217F). A line's failure rate is
 the handbook's base failure rate for that part type, its environment factor
 for where the equipment works (one environment for the whole prediction), a
 quality factor the user sets per line (1 unless they say otherwise) and the
-quantity. The system is every part in series with a constant rate: the rates
+quantity. A parts-count part type (the handbook's Appendix A: microcircuits,
+motors, circuit boards, crystals and so on) gives its generic rate for the
+environment instead, environment included: λ = λg × πQ × quantity, where πQ
+is the record's default grade (commercial or non-MIL, the lowest the handbook
+lists) unless the line gives one.
+
+Two kinds of line need no part type. A part the handbook has no type for
+(it has no batteries) can carry a rate the user gives,
+``rate_per_million_hours`` per part, shown as user-given. A part that isn't
+electronic (an airframe, a propeller) can be ``excluded``: it's listed as left
+out, and the result says so, so a bill of materials with mechanical lines
+still computes for its electronics. The system is every part in series with a constant rate: the rates
 add, MTBF = 1/λ and R(t) = exp(−λt) at the mission time.
 
 The handbook's other factors (temperature, electrical stress, construction,
@@ -58,7 +69,15 @@ APPLIED = [
     {"symbol": "πE", "name": "environment"},
     {"symbol": "πQ", "name": "quality"},
 ]
+#: Applied too, when a line uses one.
+GENERIC = {"symbol": "λg", "name": "generic failure rate for the environment (parts count, Appendix A)"}
+USER_GIVEN = {"symbol": "λ", "name": "a rate you gave (user-given, not from the handbook)"}
 METHOD = "Parts count: λ = Σ λb × πE × πQ × quantity over the lines (every part in series); R(t) = exp(−λt)."
+METHOD_GENERIC = ("Parts count: λ = Σ λb × πE × πQ × quantity over the lines, or λg × πQ × quantity for a "
+                  "part type with the handbook's generic rates (every part in series); R(t) = exp(−λt).")
+#: A rate a user gives, per million hours: above 0 and at most this.
+MAX_USER_RATE = 1e6
+EXCLUDED_NOTE = "Not an electronic part: left out."
 
 
 class PredictionError(ValueError):
@@ -135,10 +154,19 @@ def _split_path(text: str) -> list[str]:
     return [text]
 
 
+def _flag(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
 def normalise_lines(lines: Any) -> list[dict]:
     """The lines as the calculation (and a saved prediction) keeps them:
     name, reference, quantity, assembly (a path), record_id and
-    quality_factor, each checked. Raises :class:`PredictionError`."""
+    quality_factor (None: the part type's default), each checked; and, when
+    given, rate_per_million_hours (a rate the user gives, per part, for a
+    part with no handbook type) or excluded (not an electronic part: left
+    out). Raises :class:`PredictionError`."""
     if not isinstance(lines, list):
         raise PredictionError("lines must be a list of parts: [{name, quantity, record_id, ...}].")
     if not lines:
@@ -153,15 +181,27 @@ def normalise_lines(lines: Any) -> list[dict]:
         if not name:
             raise PredictionError(f"Line {i} needs a name (the part).")
         record_id = _text(raw.get("record_id"), "record id", NAME_LENGTH) or None
+        q = raw.get("quality_factor")
         line = {
             "name": name,
             "reference": _text(raw.get("reference"), "reference", TEXT_LENGTH),
             "quantity": _number(raw.get("quantity"), "quantity", name, 0, MAX_QUANTITY, default=1.0),
             "assembly": assembly_path(raw.get("assembly")),
             "record_id": record_id,
-            "quality_factor": _number(raw.get("quality_factor"), "quality_factor (πQ)", name, 0, 1e4,
-                                      default=DEFAULT_QUALITY_FACTOR),
+            "quality_factor": None if q is None or q == "" else _number(q, "quality_factor (πQ)", name, 0, 1e4),
         }
+        user_rate = raw.get("rate_per_million_hours")
+        if user_rate is not None and user_rate != "":
+            if record_id:
+                raise PredictionError(f"'{name}': give a handbook part type or a rate of your own, not both.")
+            line["rate_per_million_hours"] = _number(user_rate, "rate_per_million_hours", name, 0, MAX_USER_RATE)
+            if line["quality_factor"] is not None:
+                raise PredictionError(f"'{name}': a rate you give has no quality factor; leave quality_factor out.")
+        if _flag(raw.get("excluded")):
+            if record_id or "rate_per_million_hours" in line:
+                raise PredictionError(f"'{name}': a line left out (not an electronic part) can't also have a part "
+                                      "type or a rate.")
+            line["excluded"] = True
         if raw.get("notes"):
             line["notes"] = _text(raw.get("notes"), "notes", 500)
         out.append(line)
@@ -215,9 +255,46 @@ def _quality_range(rec: dict) -> tuple[list | None, bool]:
     return (list(rng) if rng else None), has
 
 
+def _quality(rec: dict, given: float | None) -> tuple[float, str, str | None]:
+    """The line's πQ: (value, where it came from: 'given', 'default' or 'none', the grade's
+    name when it's the record's default grade)."""
+    if given is not None:
+        return given, "given", None
+    q = rec.get("quality_factors") or {}
+    level = next((lv for lv in q.get("levels") or [] if lv["code"] == q.get("default")), None)
+    if level:
+        return float(level["value"]), "default", level["name"]
+    return DEFAULT_QUALITY_FACTOR, "none", None
+
+
+def _line_rate(rec: dict, code: str, line_name: str) -> tuple[float, float | None]:
+    """A line's rate per part before quality, per million hours, for the environment: (the
+    rate, πE or None). A part stress record: λb × πE (πE None when its model has none). A
+    parts-count record: its generic rate λg for the environment, environment included (πE
+    None)."""
+    if rec.get("generic_rates"):
+        _environment_factor(rec, code, line_name)  # raises for an environment it has no rate for
+        return float(rec["generic_rates"]["values"][code]), None
+    base = float(rec["prediction"]["per_million_hours"])
+    pi_e = _environment_factor(rec, code, line_name)
+    return base * (pi_e if pi_e is not None else 1.0), pi_e
+
+
 def _environment_factor(rec: dict, code: str, line_name: str) -> float | None:
     """The record's πE for the environment; None when the handbook's model for
-    this part has no environment factor (a few parts)."""
+    this part has no environment factor (a few parts). For a parts-count record
+    (generic rates by environment), the environment's rate over the record's
+    own value, so the value × it is the environment's generic rate. An
+    environment the handbook gives nothing for raises :class:`PredictionError`."""
+    if rec.get("generic_rates"):
+        from backend.library import convert
+
+        values = rec["generic_rates"]["values"]
+        if code not in values:
+            raise PredictionError(f"'{line_name}': the handbook gives no {code} "
+                                  f"({library_schema.ENVIRONMENTS[code][0].lower()}) rate for '{rec['name']}': it "
+                                  f"marks the part not normally used there. It has {convert.environment_choices(rec)}.")
+        return convert.generic_rate(rec, code)["factor"]
     factors = rec.get("environment_factors")
     if not factors:
         return None
@@ -278,7 +355,7 @@ def _group_row(path: list[str], under: list[dict], depth: int, name: str | None 
     rate = sum(ln["rate_per_million_hours"] or 0.0 for ln in under)
     return {
         "path": path, "name": name or path[-1], "label": _label(path), "depth": depth,
-        "lines": len(under), "assigned": sum(1 for ln in under if ln["record_id"]),
+        "lines": len(under), "assigned": sum(1 for ln in under if ln["assigned"]),
         "parts": _sig(sum(ln["quantity"] for ln in under)),
         "rate_per_million_hours": rate, "rate_per_hour": rate / PER_MILLION,
         "mtbf_hours": PER_MILLION / rate if rate > 0 else None,
@@ -306,45 +383,78 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
     warnings: list[str] = []
     out_lines: list[dict] = []
     not_applied: dict[str, dict] = {}
+    held: dict[str, dict] = {}
     records: dict[str, dict] = {}
     sources: dict[str, dict] = {}
+    used_generic = used_user = False
     for line in inputs["lines"]:
-        row = {**line, "assembly_label": _label(line["assembly"])}
-        if not line["record_id"]:
+        row = {**line, "assembly_label": _label(line["assembly"]), "excluded": bool(line.get("excluded")),
+               "user_given": False, "generic_rate": False}
+        if line.get("excluded") or (not line["record_id"] and "rate_per_million_hours" not in line):
             row.update({"assigned": False, "part_type": None, "category": None, "base_rate_per_million_hours": None,
                         "environment_factor": None, "quality_factor_range": None, "each_per_million_hours": None,
                         "rate_per_million_hours": None, "rate_per_hour": None, "share": None, "not_applied": [],
-                        "line_warnings": ["No handbook part type: left out of the total."]})
+                        "line_warnings": [EXCLUDED_NOTE if line.get("excluded")
+                                          else "No handbook part type: left out of the total."]})
+            out_lines.append(row)
+            continue
+        if not line["record_id"]:  # a rate the user gave, per part
+            used_user = True
+            each = line["rate_per_million_hours"]
+            rate = each * line["quantity"]
+            row.update({
+                "assigned": True, "user_given": True,
+                "part_type": "Rate you gave (user-given)", "part_type_label": "A rate you gave, not from the handbook",
+                "category": "Rates you gave", "equipment_type": None, "section": None,
+                "base_rate_per_million_hours": each, "environment_factor": None, "quality_factor": None,
+                "quality_factor_source": "none", "quality_factor_range": None,
+                "each_per_million_hours": each, "rate_per_million_hours": rate, "rate_per_hour": rate / PER_MILLION,
+                "failure_rate": rate, "failure_rate_unit": "per_million_hours", "share": None,
+                "applied": [USER_GIVEN["symbol"]], "not_applied": [],
+                "line_warnings": ["User-given rate: not from the handbook, and not changed by the environment."],
+            })
             out_lines.append(row)
             continue
         rec = _record(line["record_id"], line["name"])
         pred = rec["prediction"]
-        base = float(pred["per_million_hours"])
-        pi_e = _environment_factor(rec, code, line["name"])
+        generic = bool(rec.get("generic_rates"))
+        used_generic = used_generic or generic
+        base, pi_e = _line_rate(rec, code, line["name"])
         q_range, has_q = _quality_range(rec)
-        pi_q = line["quality_factor"]
+        pi_q, q_source, q_level = _quality(rec, line["quality_factor"])
         line_warnings: list[str] = []
         if not has_q and pi_q != DEFAULT_QUALITY_FACTOR:
             raise PredictionError(f"'{line['name']}': the handbook's model for '{rec['name']}' has no quality "
-                                  f"factor; leave quality_factor at 1.")
+                                  f"factor; leave quality_factor out (or at 1).")
         if q_range and not (q_range[0] <= pi_q <= q_range[1]):
             line_warnings.append(f"πQ {pi_q:g} is outside the handbook's {q_range[0]:g}–{q_range[1]:g} for "
                                  f"{rec['name']}.")
-        if pi_e is None:
+        if pi_e is None and not generic:
             line_warnings.append(f"The handbook gives no environment factor for {rec['name']}: λb × πQ only.")
-        each = base * (pi_e if pi_e is not None else 1.0) * pi_q
+        each = base * pi_q
         rate = each * line["quantity"]
-        left_out = [f for f in pred.get("not_applied") or [] if f.get("symbol") != "πQ"]
-        for f in left_out:  # the same symbol means different things in different sections (πC)
-            not_applied.setdefault(f"{f['symbol']} {f['name']}", f)
+        if generic:
+            left_out = []
+            for f in pred.get("not_applied") or []:
+                held.setdefault(f"{f['symbol']} {f['name']}", f)
+        else:
+            left_out = [f for f in pred.get("not_applied") or [] if f.get("symbol") != "πQ"]
+            for f in left_out:  # the same symbol means different things in different sections (πC)
+                not_applied.setdefault(f"{f['symbol']} {f['name']}", f)
+        if generic:
+            applied = ["λg"] + (["πQ"] if has_q else [])
+        else:
+            applied = [a["symbol"] for a in APPLIED if a["symbol"] != "πE" or pi_e is not None]
         row.update({
-            "assigned": True,
+            "assigned": True, "generic_rate": generic,
             "part_type": rec["name"], "part_type_label": rec["label"],
             "category": library_schema.EQUIPMENT_TYPES.get(rec["equipment_type"], rec["equipment_type"]),
             "equipment_type": rec["equipment_type"],
             "section": (rec.get("conditions") or {}).get("section") or rec.get("source_code"),
-            "base_rate_per_million_hours": base,
+            "base_rate_per_million_hours": base if generic else float(pred["per_million_hours"]),
             "environment_factor": pi_e,
+            "quality_factor": pi_q, "quality_factor_source": q_source,
+            **({"quality_level": q_level} if q_level else {}),
             "quality_factor_range": q_range,
             "each_per_million_hours": each,
             "rate_per_million_hours": rate, "rate_per_hour": rate / PER_MILLION,
@@ -352,8 +462,9 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
             # prediction weights its lines by these, matched by reference or name).
             "failure_rate": rate, "failure_rate_unit": "per_million_hours",
             "share": None,
-            "applied": [a["symbol"] for a in APPLIED if a["symbol"] != "πE" or pi_e is not None],
+            "applied": applied,
             "not_applied": left_out,
+            **({"held_at_defaults": pred.get("not_applied") or []} if generic else {}),
             "line_warnings": line_warnings,
         })
         warnings.extend(f"'{line['name']}': {w}" for w in line_warnings)
@@ -365,7 +476,8 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
         out_lines.append(row)
 
     assigned = [ln for ln in out_lines if ln["assigned"]]
-    unassigned = [ln for ln in out_lines if not ln["assigned"]]
+    excluded = [ln for ln in out_lines if ln["excluded"]]
+    unassigned = [ln for ln in out_lines if not ln["assigned"] and not ln["excluded"]]
     total = sum(ln["rate_per_million_hours"] for ln in assigned)
     for ln in assigned:
         ln["share"] = _share(ln["rate_per_million_hours"], total)
@@ -376,6 +488,15 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
                            f"type and {'are' if len(unassigned) != 1 else 'is'} left out of the total: {names}{more}.")
     if not assigned:
         warnings.insert(0, "No line has a handbook part type yet, so there is no total.")
+    left_out = None
+    if excluded:
+        names = ", ".join(f"{ln['name']} (×{ln['quantity']:g})" if ln["quantity"] != 1 else ln["name"]
+                          for ln in excluded)
+        left_out = (f"Left out as not electronic parts ({len(excluded)} {'lines' if len(excluded) != 1 else 'line'}): "
+                    f"{names}. The handbook covers electronic parts only, so the total is for the electronics.")
+    if used_user:
+        warnings.append("Some lines use a rate you gave, not the handbook's: the result is only as good as those "
+                        "rates.")
 
     by_category: dict[str, dict] = {}
     for ln in assigned:
@@ -385,8 +506,10 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
         c["parts"] += ln["quantity"]
     mtbf = PER_MILLION / total if total > 0 else None
     reliability = math.exp(-total / PER_MILLION * t) if total > 0 else None
+    applied_list = [dict(a) for a in APPLIED] + ([dict(GENERIC)] if used_generic else []) + (
+        [dict(USER_GIVEN)] if used_user else [])
     return {
-        "method": METHOD,
+        "method": METHOD_GENERIC if used_generic else METHOD,
         "environment": {"code": code, "name": env_name, "covers": env_covers},
         "mission_time_hours": t,
         "failure_rate_per_million_hours": total,
@@ -395,10 +518,13 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
         "reliability_at_mission": reliability,
         "unreliability_at_mission": (1 - reliability) if reliability is not None else None,
         "counts": {"lines": len(out_lines), "assigned": len(assigned), "unassigned": len(unassigned),
+                   "excluded": len(excluded),
                    "parts": _sig(sum(ln["quantity"] for ln in out_lines)),
                    "parts_assigned": _sig(sum(ln["quantity"] for ln in assigned))},
         "lines": out_lines,
         "unassigned": [{k: ln[k] for k in ("name", "reference", "quantity", "assembly")} for ln in unassigned],
+        "excluded": [{k: ln[k] for k in ("name", "reference", "quantity", "assembly")} for ln in excluded],
+        "left_out_note": left_out,
         "assemblies": _assembly_rows(out_lines),
         "pareto": {
             "by_line": _pareto([(ln["name"], ln["rate_per_million_hours"],
@@ -408,11 +534,15 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
                                     for name, c in by_category.items()], total),
         },
         "factors": {
-            "applied": [dict(a) for a in APPLIED],
+            "applied": applied_list,
             "not_applied": [{"symbol": f["symbol"], "name": f["name"]} for f in not_applied.values()],
+            "held_at_defaults": [{"symbol": f["symbol"], "name": f["name"], "held_at": f.get("held_at")}
+                                 for f in held.values()],
             "quality_factor_default": DEFAULT_QUALITY_FACTOR,
-            "note": ("Each line's rate is λb × πE × πQ × quantity. The handbook's other factors aren't applied; "
-                     "real rates depend on them, and quality alone can move a rate by a factor of 10 or more."),
+            "note": ("Each line's rate is λb × πE × πQ × quantity (a parts-count part type: λg × πQ × quantity, "
+                     "its generic rate holding the handbook's other factors at their defaults). The handbook's other "
+                     "factors aren't applied; real rates depend on them, and quality alone can move a rate by a "
+                     "factor of 10 or more."),
         },
         "records": records,
         "sources": list(sources.values()),
@@ -451,8 +581,7 @@ def lines_from_structure(structure: dict) -> tuple[list[dict], list[str]]:
             else:
                 lines.append({"name": label, "reference": child.get("part_number") or "",
                               "quantity": child.get("total") if child.get("total") is not None else 1,
-                              "assembly": list(path), "record_id": None,
-                              "quality_factor": DEFAULT_QUALITY_FACTOR})
+                              "assembly": list(path), "record_id": None, "quality_factor": None})
 
     walk(structure.get("tree") or {}, [])
     return lines, warnings

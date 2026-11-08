@@ -45,12 +45,20 @@ test("lines to and from the server", () => {
     { name: "C1", quantity: 10, assembly: "", record_id: null, quality_factor: "2.5" },
     { name: "", quantity: 1 },
     { name: "Q1", quantity: 1, record_id: "r2", quality_factor: "1" },
+    { name: "Battery", quantity: 1, record_id: null, user_rate: "20" },
+    { name: "Airframe", quantity: 1, record_id: "r3", excluded: true },
   ]);
+  // A quality factor goes only with a part type, and as typed (1 too: blank means the type's default grade).
   assert.deepEqual(sent, [
     { name: "D1", quantity: 2, assembly: "Power › BMS", record_id: "r1" },
-    { name: "C1", quantity: 10, quality_factor: 2.5 },
-    { name: "Q1", quantity: 1, record_id: "r2" },
+    { name: "C1", quantity: 10 },
+    { name: "Q1", quantity: 1, record_id: "r2", quality_factor: 1 },
+    { name: "Battery", quantity: 1, rate_per_million_hours: 20 },
+    { name: "Airframe", quantity: 1, excluded: true },
   ]);
+  const rated = lineFromServer({ name: "Battery", quantity: 1, rate_per_million_hours: 20 });
+  assert.equal(rated.user_rate, 20);
+  assert.equal(lineFromServer({ name: "Prop", quantity: 4, excluded: true }).excluded, true);
   const back = lineFromServer({ name: "D1", quantity: 4, assembly: ["Power", "BMS"], record_id: "r1",
     part_type: "Diode", quality_factor: 1, reference: "D-1" });
   assert.equal(back.assembly, "Power › BMS");
@@ -68,7 +76,13 @@ test("what stops a calculation", () => {
   assert.equal(linesProblem([{ name: "D", quantity: 0, record_id: "r" }]), "D: the quantity must be more than 0.");
   assert.equal(linesProblem([{ name: "D", quantity: 1, record_id: "r", quality_factor: "-1" }]),
     "D: the quality factor must be more than 0.");
-  assert.equal(linesProblem([{ name: "D", quantity: 1 }]), "Give at least one part a handbook part type.");
+  assert.equal(linesProblem([{ name: "D", quantity: 1 }]),
+    "Give at least one part a handbook part type (or a rate of your own).");
+  assert.equal(linesProblem([{ name: "D", quantity: 1, record_id: "r", excluded: true }]),
+    "Give at least one part a handbook part type (or a rate of your own).");
+  assert.equal(linesProblem([{ name: "B", quantity: 1, user_rate: "0" }]),
+    "B: a rate you give must be more than 0 per million hours.");
+  assert.equal(linesProblem([{ name: "B", quantity: 1, user_rate: "12" }, { name: "A", quantity: 1, excluded: true }]), null);
   assert.equal(linesProblem([{ name: "D", quantity: 1, record_id: "r" }, { name: "M", quantity: 4 }]), null);
 });
 
@@ -134,4 +148,14 @@ test("the CSV of the lines", () => {
   assert.equal(rows[2], "Motor,,,4,,,,,,,,");
   assert.equal(csvFileName("Survey quadcopter (sample)"), "survey-quadcopter-sample-parts-count.csv");
   assert.equal(csvFileName(""), "prediction-parts-count.csv");
+});
+
+test("the factors in words name what a parts-count rate holds at the handbook's defaults", () => {
+  const text = factorsText({
+    applied: [{ symbol: "λb" }, { symbol: "πE" }, { symbol: "πQ" }, { symbol: "λg" }],
+    not_applied: [{ symbol: "πT", name: "temperature" }],
+    held_at_defaults: [{ symbol: "πL", name: "learning", held_at: "1" }],
+  });
+  assert.equal(text, "Applied: λb, πE, πQ, λg. Not applied: πT (temperature). "
+    + "Held at the handbook's defaults in the generic rates: πL (learning).");
 });

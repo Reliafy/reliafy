@@ -12,7 +12,7 @@ import { TextArea, TextInput } from "../components/ui/Controls.jsx";
 import InputGroup, { Addon } from "../components/ui/InputGroup.jsx";
 import Select from "../components/Select.jsx";
 import Chip from "../components/ui/Chip.jsx";
-import PartTypePicker from "../components/PartTypePicker.jsx";
+import PartTypeCell from "../components/PartTypeCell.jsx";
 import PredictionResult from "../components/PredictionResult.jsx";
 import { TrashIcon } from "../components/LibRows.jsx";
 import { ShowMe } from "../components/SectionPage.jsx";
@@ -20,7 +20,8 @@ import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { itemName } from "../components/LibRows.jsx";
 import {
   DEFAULT_ENVIRONMENT, DEFAULT_MISSION_HOURS, PREDICTIONS_GUIDE, PREDICTIONS_LABEL, PREDICTIONS_PATH, blankLine,
-  lineFromServer, linesForServer, linesFromSaved, linesProblem, parsePartsList, predictionPath,
+  defaultQuality, lineFromServer, linesForServer, linesFromSaved, linesProblem, parsePartsList, predictionPath,
+  qualityHint,
 } from "../predictions.js";
 import { productPath } from "../products.js";
 import "./Predictions.css";
@@ -179,7 +180,8 @@ export default function ReliabilityPredictionNew() {
   const envOptions = envs.map((e) => ({ value: e.code, label: `${e.code} · ${e.name}`, hint: e.covers }));
   const envCovers = envs.find((e) => e.code === environment)?.covers;
   const typed = lines.filter((l) => String(l.name || "").trim());
-  const assigned = typed.filter((l) => l.record_id).length;
+  const assigned = typed.filter((l) => !l.excluded && (l.record_id || String(l.user_rate ?? "").trim() !== "")).length;
+  const leftOut = typed.filter((l) => l.excluded).length;
   const canSave = Boolean(results && !stale && name.trim() && !problem);
 
   if (loadError) {
@@ -198,7 +200,7 @@ export default function ReliabilityPredictionNew() {
         crumbs={[{ label: PREDICTIONS_LABEL, to: PREDICTIONS_PATH }]}
         title={editing ? `Edit ${editing.name}` : "New prediction"}
         badges={editing ? null : (fromId ? <Chip>Copy</Chip> : null)}
-        meta={<>A parts count: each line's handbook base rate × the environment factor × a quality factor × its quantity, added up. <ShowMe help={HELP} /></>}
+        meta={<>A parts count: each line's handbook rate for the environment × a quality factor × its quantity, added up. <ShowMe help={HELP} /></>}
         primary={<button onClick={save} disabled={!canSave || saving}>{saving ? "Saving…" : editing ? "Save changes" : "Save prediction"}</button>}
       />
 
@@ -263,7 +265,7 @@ export default function ReliabilityPredictionNew() {
                   <th>Assembly</th>
                   <th className="num">Qty</th>
                   <th>Handbook part type</th>
-                  <th className="num" title="πQ: the handbook's factor for the part's quality grade. 1 unless you set it; each part type's range shows on the box.">Quality factor</th>
+                  <th className="num" title="πQ: the handbook's factor for the part's quality grade. Left blank, the part type's default (1, or the lowest grade for a parts-count type such as a commercial microcircuit); each part type's grades show on the box.">Quality factor</th>
                   <th><span className="sr-only">Remove</span></th>
                 </tr>
               </thead>
@@ -277,13 +279,18 @@ export default function ReliabilityPredictionNew() {
                     <td><input type="text" value={l.assembly} aria-label={`Assembly of part ${i + 1}`} placeholder="optional" onChange={(e) => setLine(i, { assembly: e.target.value })} /></td>
                     <td className="num"><input type="number" inputMode="decimal" min="0" step="any" value={l.quantity} aria-label={`Quantity of part ${i + 1}`} onChange={(e) => setLine(i, { quantity: e.target.value })} /></td>
                     <td>
-                      <PartTypePicker value={l.record} label={`Handbook part type of part ${i + 1}`}
-                                      onChange={(rec) => setLine(i, { record: rec, record_id: rec ? rec.id : null })} />
+                      <PartTypeCell name={`part ${i + 1}`} record={l.record} rate={l.user_rate} rateMode={l.rate_mode} excluded={l.excluded}
+                                    onChange={(c) => setLine(i, {
+                                      ...("record" in c ? { record: c.record, record_id: c.record ? c.record.id : null } : {}),
+                                      ...("rate" in c ? { user_rate: c.rate } : {}),
+                                      ...("rateMode" in c ? { rate_mode: c.rateMode } : {}),
+                                      ...("excluded" in c ? { excluded: c.excluded } : {}),
+                                    })} />
                     </td>
                     <td className="num">
-                      <input type="number" inputMode="decimal" min="0" step="any" value={l.quality_factor} placeholder="1" aria-label={`Quality factor of part ${i + 1}`}
-                             title={l.record?.quality_factor_range ? `Quality factor πQ, the handbook's range for this part: ${l.record.quality_factor_range[0]}–${l.record.quality_factor_range[1]}` : "Quality factor πQ: 1 unless you set it"}
-                             disabled={!l.record_id} onChange={(e) => setLine(i, { quality_factor: e.target.value })} />
+                      <input type="number" inputMode="decimal" min="0" step="any" value={l.quality_factor} placeholder={defaultQuality(l.record)} aria-label={`Quality factor of part ${i + 1}`}
+                             title={qualityHint(l.record)}
+                             disabled={!l.record_id || l.excluded} onChange={(e) => setLine(i, { quality_factor: e.target.value })} />
                     </td>
                     <td className="lib-actions">
                       <div className="lib-acts">
@@ -296,8 +303,9 @@ export default function ReliabilityPredictionNew() {
             </table>
           </div>
           <p className="hint pred-count">
-            {typed.length} {typed.length === 1 ? "line" : "lines"}, {assigned} with a part type.
-            {" "}Parts the handbook has no type for (mechanical parts, microcircuits) stay in the list and are left out of the total.
+            {typed.length} {typed.length === 1 ? "line" : "lines"}, {assigned} with a part type or a rate{leftOut ? `, ${leftOut} not electronic` : ""}.
+            {" "}The handbook covers electronic parts only: tick “Not electronic” for mechanical parts (airframe, propellers) to leave them out,
+            and give a part it doesn’t have (a battery) a rate of your own. Lines with neither stay in the list and are left out of the total.
           </p>
         </section>
       </div>
@@ -322,6 +330,6 @@ export default function ReliabilityPredictionNew() {
 
 // What a result was computed for, so a changed input marks it stale.
 function keyOf(serverLines, environment, missionTime, editLines) {
-  const records = (editLines || []).map((l) => l.record_id || "");
+  const records = (editLines || []).map((l) => (l.excluded ? "excluded" : l.record_id || ""));
   return JSON.stringify([serverLines, environment, Number(missionTime), records]);
 }

@@ -450,7 +450,8 @@ the position is set where the model is used (an RBD block, a calculation), not o
 position's failure rate from its parts list and those of the positions inside it (a product design's bill of \
 materials where they list none): each part needs a handbook part type (assign {part number: {record_id, \
 quality_factor?}}, a record from list kind library; parts without one are left out, and its last prediction's \
-are reused). The environment is set once (default: the position's last, else the nearest above). It's saved as \
+are reused). A part the handbook has no type for (a battery) takes {rate_per_million_hours} the user gives; a \
+mechanical part (airframe, propeller) takes {excluded: true}: left out, and the result names it. The environment is set once (default: the position's last, else the nearest above). It's saved as \
 a prediction and an exponential model at its rate (role prediction), replacing an earlier one; preview it in \
 the app. It compares designs early; it never says how the item will fail in service.
 - An RBD: every position can have a life model, an RBD or a prediction. models.link with build_rbd true makes \

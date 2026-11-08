@@ -28,9 +28,39 @@ export const DEFAULT_MISSION_HOURS = 1000;
 export const DEFAULT_QUALITY_FACTOR = 1;
 
 // A blank line as the builder keeps it (record: the chosen library record's
-// brief, for the label; record_id is what's sent).
+// brief, for the label; record_id is what's sent). A line with no handbook part
+// type can carry a rate of the user's own (user_rate, per million hours: the
+// handbook has no batteries) or be excluded (not an electronic part: left out).
 export function blankLine(over = {}) {
-  return { name: "", reference: "", quantity: 1, assembly: "", record_id: null, record: null, quality_factor: "", ...over };
+  return {
+    name: "", reference: "", quantity: 1, assembly: "", record_id: null, record: null, quality_factor: "",
+    user_rate: "", excluded: false, ...over,
+  };
+}
+
+// What the "no match" note of the part-type search says: the handbook's gaps and what to do instead.
+export const NO_PART_TYPE_HINT = "MIL-HDBK-217F covers electronic parts only: it has no batteries and no mechanical "
+  + "parts. Give a battery a rate of your own, and tick “Not electronic” for a mechanical part to leave it out.";
+
+// The quality factor a part type takes when the line gives none, for the box's placeholder: its
+// default grade (a parts-count type: commercial or non-MIL), else 1; "default" when the record
+// came from a saved prediction without its grades (the server applies the same default).
+export function defaultQuality(record) {
+  if (record && !("quality_factor_default" in record)) return "default";
+  return String(record?.quality_factor_default ?? DEFAULT_QUALITY_FACTOR);
+}
+
+// The quality grades of a part type, in words for a hint: "Class S 0.25; Class B 1; …".
+export function qualityHint(record) {
+  const levels = record?.quality_factors?.levels;
+  if (levels?.length) {
+    return `Quality factor πQ: ${levels.map((l) => `${l.name.split(":")[0]} ${l.value}`).join("; ")}.`
+      + (record.quality_factor_default != null ? ` Left blank, ${record.quality_factor_default}.` : "");
+  }
+  if (record?.quality_factor_range) {
+    return `Quality factor πQ, the handbook's range for this part: ${record.quality_factor_range[0]}–${record.quality_factor_range[1]}`;
+  }
+  return "Quality factor πQ: 1 unless you set it";
 }
 
 // A line from a product's parts list (the server gives assembly as a path).
@@ -43,6 +73,8 @@ export function lineFromServer(line) {
     record_id: line.record_id || null,
     record: line.record_id ? { id: line.record_id, name: line.part_type || line.record_id } : null,
     quality_factor: line.quality_factor != null && line.quality_factor !== DEFAULT_QUALITY_FACTOR ? line.quality_factor : "",
+    user_rate: line.rate_per_million_hours != null ? line.rate_per_million_hours : "",
+    excluded: Boolean(line.excluded),
   });
 }
 
@@ -54,7 +86,8 @@ export function linesFromSaved(doc) {
 }
 
 // The lines as the server takes them: the blank rows dropped, the quantity a
-// number, the quality factor only when set.
+// number, the quality factor only when set (left blank, the part type's default
+// grade), a rate of the user's own or "excluded" instead of a part type.
 export function linesForServer(lines) {
   return lines
     .filter((l) => String(l.name || "").trim())
@@ -62,9 +95,17 @@ export function linesForServer(lines) {
       const out = { name: String(l.name).trim(), quantity: Number(l.quantity) || 1 };
       if (String(l.reference || "").trim()) out.reference = String(l.reference).trim();
       if (String(l.assembly || "").trim()) out.assembly = String(l.assembly).trim();
+      if (l.excluded) {
+        out.excluded = true;
+        return out;
+      }
       if (l.record_id) out.record_id = l.record_id;
+      else if (String(l.user_rate ?? "").trim() !== "") {
+        out.rate_per_million_hours = Number(l.user_rate);
+        return out;
+      }
       const q = String(l.quality_factor ?? "").trim();
-      if (q !== "" && Number(q) !== DEFAULT_QUALITY_FACTOR) out.quality_factor = Number(q);
+      if (q !== "" && l.record_id) out.quality_factor = Number(q);
       return out;
     });
 }
@@ -77,7 +118,11 @@ export function linesProblem(lines) {
   if (bad) return `${bad.name}: the quantity must be more than 0.`;
   const q = kept.find((l) => String(l.quality_factor ?? "").trim() !== "" && !(Number(l.quality_factor) > 0));
   if (q) return `${q.name}: the quality factor must be more than 0.`;
-  if (!kept.some((l) => l.record_id)) return "Give at least one part a handbook part type.";
+  const r = kept.find((l) => !l.excluded && !l.record_id && String(l.user_rate ?? "").trim() !== "" && !(Number(l.user_rate) > 0));
+  if (r) return `${r.name}: a rate you give must be more than 0 per million hours.`;
+  if (!kept.some((l) => !l.excluded && (l.record_id || String(l.user_rate ?? "").trim() !== ""))) {
+    return "Give at least one part a handbook part type (or a rate of your own).";
+  }
   return null;
 }
 
@@ -170,7 +215,9 @@ export function factorsText(factors) {
   if (!factors) return "";
   const applied = (factors.applied || []).map((f) => f.symbol).join(", ");
   const left = (factors.not_applied || []).map((f) => `${f.symbol} (${f.name})`).join(", ");
-  return `Applied: ${applied}.${left ? ` Not applied: ${left}.` : " That's the whole handbook model for these parts."}`;
+  const held = (factors.held_at_defaults || []).map((f) => `${f.symbol} (${f.name})`).join(", ");
+  return `Applied: ${applied}.${left ? ` Not applied: ${left}.` : " That's the whole handbook model for these parts."}`
+    + (held ? ` Held at the handbook's defaults in the generic rates: ${held}.` : "");
 }
 
 // The Pareto bars: the top n lines, the rest as "Other" (a line is named with
@@ -192,10 +239,11 @@ export function paretoBars(byLine, n = 10) {
 
 // The lines as a CSV (Download as CSV).
 export function linesCsv(results) {
-  const head = ["Part", "Reference", "Assembly", "Quantity", "Handbook part type", "Record", "λb per 10^6 h",
+  const head = ["Part", "Reference", "Assembly", "Quantity", "Handbook part type", "Record", "λb or λg per 10^6 h",
     "πE", "πQ", "Rate per 10^6 h", "Rate per hour", "Share"];
   const rows = (results?.lines || []).map((l) => [
-    l.name, l.reference || "", l.assembly_label || "", l.quantity, l.part_type || "", l.record_id || "",
+    l.name, l.reference || "", l.assembly_label || "", l.quantity,
+    l.excluded ? "Not electronic: left out" : (l.part_type || ""), l.record_id || "",
     l.base_rate_per_million_hours ?? "", l.environment_factor ?? "", l.assigned ? l.quality_factor : "",
     l.rate_per_million_hours ?? "", l.rate_per_hour ?? "", l.share ?? "",
   ]);

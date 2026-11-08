@@ -88,7 +88,7 @@ def _environment_words(rec: dict) -> str:
     """A handbook record's environments, by symbol and name, so a search
     for 'naval' or 'missile launch' finds the parts that have a factor for
     it."""
-    values = (rec.get("environment_factors") or {}).get("values") or {}
+    values = (rec.get("environment_factors") or rec.get("generic_rates") or {}).get("values") or {}
     return " ".join(f"{code} {schema.ENVIRONMENTS[code][0]}" for code in values)
 
 
@@ -157,9 +157,14 @@ def brief(rec: dict) -> dict:
         "citation": f"{rec['citation'].get('report') or rec['citation']['title']}, "
                     f"{rec['citation']['table']}, p. {rec['citation']['page']}",
         **({"environment_factors": rec["environment_factors"]["values"]} if rec.get("environment_factors") else {}),
+        # A parts-count part type: its generic rate per environment (per million hours), and its quality grades.
+        **({"generic_rates": rec["generic_rates"]["values"], "method": "parts_count"} if rec.get("generic_rates") else {}),
+        **({"quality_factors": {"levels": rec["quality_factors"]["levels"],
+                                "default": rec["quality_factors"].get("default")}} if rec.get("quality_factors") else {}),
         # A handbook part type: its base rate as printed and the handbook's πQ range (a parts count's inputs).
         **({"per_million_hours": rec["prediction"].get("per_million_hours"),
-            "quality_factor_range": rec["prediction"].get("quality_factor_range")} if rec.get("prediction") else {}),
+            "quality_factor_range": rec["prediction"].get("quality_factor_range"),
+            "quality_factor_default": rec["prediction"].get("quality_factor_default")} if rec.get("prediction") else {}),
     }
 
 
@@ -244,6 +249,12 @@ def detail(record_id: str, environment: Optional[str] = None) -> dict:
             {"code": code, "name": schema.ENVIRONMENTS[code][0], "factor": values[code],
              "failure_rate_per_hour": schema.param_dict(rec["distribution"])["value"] * values[code]}
             for code in schema.ENVIRONMENTS if code in values]
+    generic = (rec.get("generic_rates") or {}).get("values")
+    if generic:  # a parts-count record: λg per environment, before the quality factor
+        out["environments"] = [
+            {"code": code, "name": schema.ENVIRONMENTS[code][0], "generic_rate_per_million_hours": generic[code],
+             "failure_rate_per_hour": generic[code] / 1e6}
+            for code in schema.ENVIRONMENTS if code in generic]
     return out
 
 

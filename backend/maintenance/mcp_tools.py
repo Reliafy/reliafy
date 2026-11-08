@@ -686,7 +686,8 @@ POSITION_MODELS: Table = {
         position or class; saved to Models). failure_mode_ids: the modes it's for (none: every failure there);
         replace_link_id: the model on it this replaces. fit true with baseline or trust: a Bayesian update of a
         baseline (the class's model by default) with its history, for one or two failures (guide topic modelling).
-        prediction {environment?, mission_time?, assign?: {part number: {record_id, quality_factor?}}}: a parts-count
+        prediction {environment?, mission_time?, assign?: {part number: {record_id, quality_factor?} or
+        {rate_per_million_hours} or {excluded: true}}}: a parts-count
         prediction from its parts list (and inside it), saved as an exponential model. rbd_id: link an RBD; build_rbd true:
         a new RBD from the positions inside (each block its model in use, else a flagged placeholder; with
         replace_link_id, rebuilt). use_link_id: make that row its model in use. The RCM offers these first."""),
@@ -2367,7 +2368,8 @@ def register() -> None:
                            prediction: Annotated[dict[str, Any] | None, Field(description=(
                                "A parts-count prediction: {environment? (handbook symbol, e.g. GF; default the "
                                "position's last, else the nearest above), mission_time? (hours), assign? {part number "
-                               "or part id: {record_id (a handbook record: list kind library), quality_factor?}}}."))]
+                               "or part id: {record_id (a handbook record: list kind library), quality_factor?}, {rate_per_million_hours} (the "
+                               "user's own rate, e.g. a battery) or {excluded: true} (not electronic: left out)}}."))]
                            = None, rbd_id: str | None = None, build_rbd: bool | None = None,
                            use_link_id: str | None = None) -> dict[str, Any]:
         """The life models on a position (a functional location, or a position of a product's design): attach a

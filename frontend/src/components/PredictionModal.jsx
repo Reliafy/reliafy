@@ -3,16 +3,18 @@ import { getPredictionEnvironments, linkPositionModel, previewPositionPrediction
 import Modal from "./Modal.jsx";
 import Field from "./ui/Field.jsx";
 import { Select, TextInput } from "./ui/Controls.jsx";
-import PartTypePicker from "./PartTypePicker.jsx";
+import PartTypeCell from "./PartTypeCell.jsx";
 import { saveErrorText } from "../confirm.js";
-import { fmtHours, fmtPerMillion } from "../predictions.js";
+import { defaultQuality, fmtHours, fmtPerMillion, qualityHint } from "../predictions.js";
 import { predictionAssign } from "../explorerModels.js";
 
 // "Add a prediction…" on the Modelling tab (Derryn, 9 Nov 2026: reliability prediction "by
 // the parts/component method; this is the only place that should go"): a parts count of the
 // position from its parts list and those of the positions inside it (a product design's bill
 // of materials where they list none). Set the environment once; give each part a handbook part
-// type (and a quality factor where the handbook has one); the result updates as you go. Saved,
+// type (and a quality factor where the handbook has one), a rate of the user's own for a part the
+// handbook doesn't have (a battery), or tick "Not electronic" for a mechanical part (an airframe,
+// a propeller) to leave it out; the result updates as you go and names what was left out. Saved,
 // it's a prediction on the Predictions page and an exponential model at its rate, attached here.
 //
 //   position  {id, name}      link  the position's prediction row, when refreshing it
@@ -22,7 +24,7 @@ export default function PredictionModal({ position, link = null, onClose, onDone
   const [envs, setEnvs] = useState([]);
   const [environment, setEnvironment] = useState(link?.source?.environment || "");
   const [mission, setMission] = useState(link?.source?.mission_time ? String(link.source.mission_time) : "");
-  const [lines, setLines] = useState(null); // [{part_id, reference, name, quantity, assembly, record, quality_factor}]
+  const [lines, setLines] = useState(null); // [{part_id, reference, name, quantity, assembly, record, quality_factor, rate_per_million_hours, excluded}]
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -99,7 +101,7 @@ export default function PredictionModal({ position, link = null, onClose, onDone
       {lines && (
         <div className="maint-scroll">
           <table className="ml-params ml-lines">
-            <thead><tr><th>Part</th><th className="num">Qty</th><th>Handbook part type</th><th className="num">Quality factor</th><th className="num">Per 10⁶ h</th></tr></thead>
+            <thead><tr><th>Part</th><th className="num">Qty</th><th>Handbook part type</th><th className="num" title="πQ: left blank, the part type's default grade (1, or the lowest grade for a parts-count type such as a commercial microcircuit)">Quality factor</th><th className="num">Per 10⁶ h</th></tr></thead>
             <tbody>
               {lines.map((l, i) => {
                 const r = (result?.lines || [])[i];
@@ -107,8 +109,18 @@ export default function PredictionModal({ position, link = null, onClose, onDone
                   <tr key={`${l.reference}:${i}`}>
                     <td>{l.name}{l.reference ? <span className="rw-sum"> {l.reference}</span> : null}{l.assembly?.length ? <span className="rw-sum"> · {l.assembly.join(" › ")}</span> : null}</td>
                     <td className="num">{l.quantity}</td>
-                    <td><PartTypePicker value={l.record} label={`Handbook part type of ${l.name}`} onChange={(record) => setLine(i, { record })} /></td>
-                    <td className="num"><TextInput inputMode="decimal" aria-label={`Quality factor of ${l.name}`} value={String(l.quality_factor ?? 1)}
+                    <td>
+                      <PartTypeCell name={l.name} record={l.record} rate={l.rate_per_million_hours ?? ""} rateMode={l.rate_mode} excluded={l.excluded}
+                                    onChange={(c) => setLine(i, {
+                                      ...("record" in c ? { record: c.record, record_id: c.record ? c.record.id : null } : {}),
+                                      ...("rate" in c ? { rate_per_million_hours: c.rate } : {}),
+                                      ...("rateMode" in c ? { rate_mode: c.rateMode } : {}),
+                                      ...("excluded" in c ? { excluded: c.excluded } : {}),
+                                    })} />
+                    </td>
+                    <td className="num"><TextInput inputMode="decimal" aria-label={`Quality factor of ${l.name}`} value={l.quality_factor == null ? "" : String(l.quality_factor)}
+                                                   placeholder={defaultQuality(l.record)} title={qualityHint(l.record)}
+                                                   disabled={!(l.record?.id || l.record_id) || l.excluded}
                                                    onChange={(e) => setLine(i, { quality_factor: e.target.value })} /></td>
                     <td className="num">{r?.rate_per_million_hours != null ? fmtPerMillion(r.rate_per_million_hours) : "—"}</td>
                   </tr>
@@ -121,8 +133,9 @@ export default function PredictionModal({ position, link = null, onClose, onDone
       {result && (
         <p className="ml-lead" role="status">
           {rate
-            ? <>Predicted <b>{fmtPerMillion(rate)} failures per million hours</b>: an MTBF of about {fmtHours(result.mtbf_hours)} hours ({counts.assigned} of {counts.lines} parts with a part type).</>
-            : <>Give the parts their handbook part types to see the predicted failure rate.</>}
+            ? <>Predicted <b>{fmtPerMillion(rate)} failures per million hours</b>: an MTBF of about {fmtHours(result.mtbf_hours)} hours ({counts.assigned} of {counts.lines} parts with a part type or a rate{counts.excluded ? `; ${counts.excluded} not electronic, left out` : ""}).</>
+            : <>Give the parts their handbook part types to see the predicted failure rate. The handbook covers electronic parts only: tick “Not electronic” for mechanical parts.</>}
+          {result.left_out_note ? <span className="rw-sum"> {result.left_out_note}</span> : null}
         </p>
       )}
     </Modal>

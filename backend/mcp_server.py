@@ -8551,17 +8551,24 @@ class PredictionLine(BaseModel):
     name: str = Field(max_length=prediction_service.NAME_LENGTH, description="The part, as the parts list names it.")
     record_id: Optional[str] = Field(None, max_length=prediction_service.NAME_LENGTH, description=(
         "Its handbook part type: a library record id (list kind library, source mil-hdbk-217f-n2, e.g. query "
-        "'capacitor ceramic'). Omit for a part the handbook has no type for (mechanical parts, microcircuits): "
-        "it's listed and left out of the total."))
+        "'capacitor ceramic', 'microprocessor MOS', 'motor'). Omit for a part the handbook has no type for: it's "
+        "listed and left out of the total."))
     quantity: float = Field(1, gt=0, le=prediction_service.MAX_QUANTITY, description="How many in the system.")
     quality_factor: Optional[float] = Field(None, gt=0, description=(
-        "πQ for this line (default 1). The record's prediction.quality_factor_range is the handbook's range; "
+        "πQ for this line (default: the record's prediction.quality_factor_default, else 1). The record's "
+        "prediction.quality_factor_range is the handbook's range; "
         "outside it the result warns."))
     assembly: Optional[Union[str, list[str]]] = Field(None, description=(
         "The sub-assembly it's in: a name, a path such as 'Power › BMS board', or a list of names. The result "
         "gives the rate per assembly too."))
     reference: Optional[str] = Field(None, max_length=prediction_service.TEXT_LENGTH,
                                      description="A part number or reference designator.")
+    rate_per_million_hours: Optional[float] = Field(None, gt=0, le=prediction_service.MAX_USER_RATE, description=(
+        "Instead of record_id, for a part the handbook has no type for (it has no batteries): a failure rate per "
+        "part, per million hours, that the user gives. Shown as user-given. Never invent one."))
+    excluded: Optional[bool] = Field(None, description=(
+        "True for a part that isn't electronic (airframe, propeller): left out of the total, and the result "
+        "names it."))
 
 
 _Environment = Annotated[Optional[str], Field(None, max_length=8, description=(
