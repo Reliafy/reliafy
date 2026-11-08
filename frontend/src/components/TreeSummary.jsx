@@ -9,7 +9,7 @@ import OperatingContextCard from "./OperatingContextCard.jsx";
 import { byName, insideWords, statusWords } from "../assetTree.js";
 import { safeHref } from "../maintenanceFields.js";
 import { taskDueText } from "../taskTrigger.js";
-import { nextVisit } from "../packagesTab.js";
+import { annualLsa, annualText, nextVisit } from "../lsaTab.js";
 import { explorerPath } from "../assetTree.js";
 
 // The Explorer's Summary tab (#UI, the RCM details panel's patterns): one
@@ -136,6 +136,8 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
     count = tasks.length + wos.length;
     // In a work package: the next visit that does any of its tasks.
     const visit = nextVisit(data.tasks || []);
+    // Its tasks' LSA over a year (hours × 365.25 ÷ interval; event and by-use tasks left out, and said).
+    const annual = annualText(annualLsa(tasks));
     if (!count) {
       body = <p className="td-quiet">No tasks or open work on this position itself.{r.kids.length ? " What's inside it has its own: see Directly inside." : ""}</p>;
     } else {
@@ -162,7 +164,12 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
           )}
           {visit && (
             <p className="td-quiet td-next-visit">
-              Next visit: <Link to={explorerPath("positions", { sel: r.key, tab: "packages", package: visit.id })}>{visit.name}</Link> on {fmtDate(visit.on)}
+              Next visit: <Link to={explorerPath("positions", { sel: r.key, tab: "lsa", package: visit.id })}>{visit.name}</Link> on {fmtDate(visit.on)}
+            </p>
+          )}
+          {annual && (
+            <p className="td-quiet td-annual" title="Each task's labour hours × 365.25 ÷ its interval in days, added up. Tasks raised by an event or counted by use have no yearly count.">
+              <Link to={explorerPath("positions", { sel: r.key, tab: "lsa" })}>{annual}</Link>
             </p>
           )}
           {tasks.length > 0 && (

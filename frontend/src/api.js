@@ -3258,7 +3258,7 @@ export function getProductMaintainabilityLines(productId) {
   return request(`/api/maintainability/products/${encodeURIComponent(productId)}/lines`);
 }
 
-// Work packages (Reliafy Maintenance; the Explorer's Packages tab): tasks done
+// Work packages (Reliafy Maintenance; the Explorer's LSA tab): tasks done
 // together on one visit, one work order per visit. A scope ({position_id} or
 // {location_id}) lists those there or inside it, or holding a task there.
 const qs = (params = {}) => {
@@ -3295,7 +3295,12 @@ export function removePackageTask(id, taskId) {
 export function changePackage(id, change, body = {}) {
   return postJson(`/api/maintenance/packages/${encodeURIComponent(id)}/${change}`, body);
 }
-// Every task on a position or place and below it, one row each (the Packages tab's table).
+// Every task on a position or place and below it, one row each (the LSA tab's table).
 export function getTaskTable(scope = {}) {
   return request(`/api/maintenance/task-table${qs(scope)}`);
+}
+// One task's LSA page: the task with its resources (what doing it needs), the
+// failure modes it serves, and the points, channels and parts its lines can pick from.
+export function getTaskLsa(id) {
+  return request(`/api/maintenance/tasks/${encodeURIComponent(id)}/lsa`);
 }

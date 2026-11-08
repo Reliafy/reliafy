@@ -1088,12 +1088,47 @@ visits is a layer on it (checked with the same rule as a layer being made); one
 that doesn't (monthly on a fortnightly package) is a top of its own. A layer's
 create names its top as `parent_id: "@<ref>"`, so the drafts run as one
 `maintenance apply`, or through the app's `create_packages` (all or nothing,
-rehearsed first on a scratch copy of the graph). The Explorer's Packages tab
+rehearsed first on a scratch copy of the graph). The Explorer's LSA tab
 uses both, and `packages(position_id | location_id)` for its list.
 
 Not built yet: tolerance in hours, packages by use, shutdown packages, review
 flags when a member changes after packaging, planned hours, and turning rounds
 into packages.
+
+## LSA: task resources
+
+The RCM says what is done and why; the logistic support analysis (LSA) says
+how. Each task carries its LSA record: what doing it needs.
+
+- **One event, the whole record.** `task.resources_set {id, resources}` sets
+  the task node's `resources`: `labour` [{trade, people, hours}] (hours per
+  person), `tools` [{name, qty?, note?, point_id?}], `spares` [{part_id?,
+  name, qty}], `consumables` [{name, qty, unit, cost?}] (cost for that
+  quantity), `access` {downtime_hours?, permits, isolation?,
+  access_equipment?}, `method` (short text: the how, apart from the
+  instructions) and `duration_hours` (elapsed). A key missing or null is none;
+  `resources: null` clears the lot. `Maintenance.set_task_resources` merges by
+  section (a section sent replaces that one) and emits the whole result, so a
+  replay never needs the record before it. `task.added` keeps its shape.
+- **Which sensor does the monitoring lives here.** A tool line's `point_id`
+  names the measuring point or signal channel the instrument reads; the RCM
+  decision stays about what and why.
+- **Spares link the parts register** by `part_id` (the same `Part` ids as
+  parts lists and stock); a line with no part is free text. Reads add the part
+  number and unit cost.
+- **Read on every task** as `resources`, with `labour_hours` (people × hours,
+  summed), `people`, `materials_cost` (spares at their part's unit cost plus
+  consumables' costs, where known) and `cost_estimate` (labour at a trade rate:
+  blank, since the workspace keeps no trade rates; never invented).
+- **Rollups.** `Maintenance.lsa_rollup(tasks)` adds a set up: labour hours by
+  trade (a line with no trade takes its task's), tools once each (the most any
+  task needs), spares and consumables summed, permits. A package's read and
+  each row of `packages()` carry it as `rollup`; the Explorer's LSA tab shows it
+  for the tasks ticked, and a position's Summary gives annual labour (hours ×
+  365.25 ÷ the interval in days; tasks raised by an event or by use are left
+  out and counted).
+- **Copies.** Copying a position copies its tasks' records, less the tools'
+  `point_id` (the copy has no points yet).
 
 ## Making Neo4j the primary store later
 

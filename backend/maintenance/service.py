@@ -1434,6 +1434,17 @@ def _task_trigger_set(s: GraphStore, org: str, p: dict) -> None:
         s.put_edge(org, "WATCHES", p["id"], trigger["point_id"])
 
 
+def _task_resources_set(s: GraphStore, org: str, p: dict) -> None:
+    """task.resources_set (Nov 2026): the task's logistic support record (LSA), what
+    doing it needs: labour [{trade, people, hours}], tools [{name, qty, note,
+    point_id}], spares [{part_id, name, qty}], consumables [{name, qty, unit,
+    cost}], access {downtime_hours, permits, isolation, access_equipment}, method
+    and duration_hours. The payload is the whole record: a key missing or null is
+    none, and resources null clears the lot."""
+    record = {k: v for k, v in (p.get("resources") or {}).items() if v not in (None, "", [], {})}
+    s.patch_node(org, p["id"], {"resources": record or None})
+
+
 def _position_event_logged(s: GraphStore, org: str, p: dict) -> None:
     """position.event_logged (Nov 2026): something happened at a position (a storm,
     a lightning strike, an overflow), kept as its history. The work orders it
@@ -2552,6 +2563,8 @@ PROJECTORS = {
     "task.unlinked": _task_unlinked,
     # Raised by an event as well as (or instead of) its interval, and the events logged.
     "task.trigger_set": _task_trigger_set,
+    # What each task needs to be done (LSA): labour, tools, spares, consumables, access, method.
+    "task.resources_set": _task_resources_set,
     "position.event_logged": _position_event_logged,
     "work_order.opened": _work_order_opened,
     "action.recorded": _action_recorded,
@@ -3052,6 +3065,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                   | ({"failure_mode_ids": linked} if len(linked) > 1 else {}))
                 copied_tasks.append((mitigates, tid))
                 task_copies[task["id"]] = tid
+                # Its LSA record too, less the measuring points a tool reads (the copy has none yet).
+                if task.get("resources"):
+                    record = dict(task["resources"])
+                    if record.get("tools"):
+                        record["tools"] = [{k: v for k, v in x.items() if k != "point_id"} for x in record["tools"]]
+                    self._emit("task.resources_set", {"id": tid, "resources": record})
                 # The decision's own task, where this task was one: the copy's.
                 for fm in modes:
                     if fm.get("task_id") == task["id"] and fm["id"] in mode_ids:
@@ -6037,6 +6056,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                               if p["label"] == "Proposal" and p.get("status") == "pending"), None),
             # What raises it besides (or instead of) the interval: null when only the interval does.
             "trigger": self._trigger_view(task.get("trigger")), "on_event": on_event,
+            # What doing it needs (its LSA record: labour, tools, spares, consumables, access, method).
+            "resources": self._resources_view(task),
         }
         if on_event and not open_wo:
             out["status"] = "Waiting for the event"
@@ -9168,7 +9189,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         scope = self._package_scope(position_id, location_id)
         if scope is not None:
             found = [p for p in found if self._package_touches(self._package_chain(p)[-1], scope)]
-        rows = [self._package_brief(p) for p in found]
+        rows = [self._package_brief(p) | {"rollup": self._package_rollup(p)} for p in found]
         rows = [r for r in rows if (status in ("all", r["status"])) or (not status and r["status"] != "retired")]
         rows.sort(key=lambda r: ((r["parent"] or {}).get("name", r["name"]).lower(), r["parent"] is not None,
                                  r["name"].lower(), r["id"]))
@@ -9177,11 +9198,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
     def task_table(self, position_id=None, location_id=None, limit: int = 5000) -> dict:
         """Every live task on a position or location and everything inside it (the
-        Explorer's Packages tab: a table to search, sort and package from), one row
+        Explorer's LSA tab: a table to search, sort and package from), one row
         each: where it is, the failure modes it prevents (each with its function ›
         functional failure), its kind (the decision's outcome), interval or trigger,
-        trade, next due, its package (if any) and whether it can join one (an item's
-        task, a task by use and a round can't: ``why_not``)."""
+        trade, next due, its package (if any), whether it can join one (an item's
+        task, a task by use and a round can't: ``why_not``) and what it needs
+        (``resources``: its LSA record)."""
         scope = self._package_scope(position_id, location_id)
         if scope is None:
             raise Invalid("Give position_id or location_id.")
@@ -9228,7 +9250,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                          "trigger": self._trigger_view(task.get("trigger")) if task.get("trigger") else None,
                          "on_event": _on_event_only(task), "trade": task.get("trade", ""),
                          "next_due": view["next_due"], "overdue": bool(view["overdue"]), "package": pkg,
-                         "why_not": why_not})
+                         "why_not": why_not, "resources": view["resources"]})
         rows.sort(key=lambda r: (r["subject"]["name"].lower(), r["name"].lower(), r["id"]))
         return {"scope": self._subject_brief(scope), "tasks": rows[:limit], "total": len(rows),
                 "truncated": len(rows) > limit}
@@ -9292,6 +9314,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             row["suppresses"] = [{"id": sid, "name": names.get(sid) or (self.s.node(self.org, sid) or {}).get("name")}
                                  for sid in row["suppresses"]]
         out["tasks"] = rows
+        # What the visit needs to bring: its live tasks' LSA records added up.
+        out["rollup"] = self._package_rollup(pkg)
         root = self._package_chain(pkg)[-1]
         out["work_orders"] = [self._wo_brief(w) for w in sorted(
             (w for w in self.s.inn(self.org, root["id"], "RAISED_FROM") if w["label"] == "WorkOrder"),
@@ -9865,6 +9889,278 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if checked != (task.get("trigger") or None):
             self._emit("task.trigger_set", {"id": task_id, "trigger": checked})
         return self._task_view(self._get(task_id, "Task"))
+
+    # ---- LSA: what each task needs to be done (task.resources_set, Nov 2026) -------------
+    #
+    # The RCM says what is done and why; the logistic support analysis (LSA) says how:
+    # who does it and for how long, the tools and instruments (which measuring point
+    # or channel is read lives here, not on the RCM decision), the spares and
+    # consumables to bring, access and downtime, and the method.
+
+    RESOURCE_KEYS = ("labour", "tools", "spares", "consumables", "access", "method", "duration_hours")
+    MAX_RESOURCE_LINES = 50
+
+    def _resource_lines(self, value, what: str) -> list:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise Invalid(f"{what} must be a list of lines.")
+        if len(value) > self.MAX_RESOURCE_LINES:
+            raise Invalid(f"At most {self.MAX_RESOURCE_LINES} {what} lines.")
+        for line in value:
+            if not isinstance(line, dict):
+                raise Invalid(f"Each {what} line must be an object, e.g. {self._RESOURCE_EXAMPLES[what]}.")
+        return value
+
+    _RESOURCE_EXAMPLES = {
+        "labour": "{trade: 'Fitter', people: 1, hours: 0.5}", "tools": "{name: 'Torque wrench', qty: 1}",
+        "spares": "{part_id: '<id>', qty: 2} or {name: 'O-ring 40 mm', qty: 2}",
+        "consumables": "{name: 'Grease', qty: 0.2, unit: 'kg', cost: 4}",
+    }
+
+    def _checked_resource(self, key: str, value):
+        """One section of a task's LSA record, checked; None when it's empty."""
+        if value is None:
+            return None
+        if key == "labour":
+            out = []
+            for line in self._resource_lines(value, "labour"):
+                people = _number(line.get("people", 1) if line.get("people") not in (None, "") else 1,
+                                 "number of people", 1, 1000)
+                if people != int(people):
+                    raise Invalid("The number of people must be a whole number.")
+                if line.get("hours") in (None, ""):
+                    raise Invalid("Each labour line needs hours (per person), e.g. "
+                                  + self._RESOURCE_EXAMPLES["labour"] + ".")
+                out.append({"trade": _text(line.get("trade"), "trade"), "people": int(people),
+                            "hours": _number(line.get("hours"), "labour hours", 0, 10000)})
+            return out or None
+        if key == "tools":
+            out = []
+            for line in self._resource_lines(value, "tools"):
+                row = {"name": _text(line.get("name"), "tool's name", required=True)}
+                if line.get("qty") not in (None, ""):
+                    row["qty"] = _number(line["qty"], "tool quantity", 0, MAX_AMOUNT)
+                if _text(line.get("note"), "note"):
+                    row["note"] = _text(line.get("note"), "note")
+                if line.get("point_id") not in (None, ""):
+                    point = self.s.node(self.org, str(line["point_id"]))
+                    if point is None or point["label"] not in ("MeasurementPoint", "SignalChannel") \
+                            or point.get("retired"):
+                        raise Invalid("A tool's point_id must be a live measuring point or signal channel.")
+                    row["point_id"] = point["id"]
+                out.append(row)
+            return out or None
+        if key == "spares":
+            out = []
+            for line in self._resource_lines(value, "spares"):
+                row = {}
+                if line.get("part_id") not in (None, ""):
+                    part = self._get(str(line["part_id"]), "Part")
+                    row["part_id"] = part["id"]
+                    row["name"] = _text(line.get("name"), "spare's name") or part["name"]
+                else:
+                    row["name"] = _text(line.get("name"), "spare's name (or part_id)", required=True)
+                row["qty"] = _number(line.get("qty", 1) if line.get("qty") not in (None, "") else 1,
+                                     "spare quantity", 0, MAX_AMOUNT)
+                out.append(row)
+            return out or None
+        if key == "consumables":
+            out = []
+            for line in self._resource_lines(value, "consumables"):
+                if line.get("qty") in (None, ""):
+                    raise Invalid("Each consumable needs a qty, e.g. " + self._RESOURCE_EXAMPLES["consumables"] + ".")
+                row = {"name": _text(line.get("name"), "consumable's name", required=True),
+                       "qty": _number(line["qty"], "consumable quantity", 0, MAX_AMOUNT),
+                       "unit": _text(line.get("unit"), "unit")[:20]}
+                if line.get("cost") not in (None, ""):
+                    row["cost"] = self._amount(line["cost"], "consumable cost")
+                out.append(row)
+            return out or None
+        if key == "access":
+            if not isinstance(value, dict):
+                raise Invalid("access must be an object: {downtime_hours?, permits: [..], isolation?, "
+                              "access_equipment?}.")
+            unknown = set(value) - {"downtime_hours", "permits", "isolation", "access_equipment"}
+            if unknown:
+                raise Invalid(f"access doesn't take {', '.join(sorted(unknown))}: it takes downtime_hours, permits, "
+                              "isolation and access_equipment.")
+            permits = value.get("permits") or []
+            if not isinstance(permits, list) or len(permits) > 20:
+                raise Invalid("permits must be a list of names (at most 20), e.g. ['Hot work', 'Confined space'].")
+            out = {"permits": [x for x in (_text(p, "permit") for p in permits) if x],
+                   "isolation": _text(value.get("isolation"), "isolation"),
+                   "access_equipment": _text(value.get("access_equipment"), "access equipment")}
+            if value.get("downtime_hours") not in (None, ""):
+                out["downtime_hours"] = _number(value["downtime_hours"], "downtime hours", 0, 100000)
+            out = {k: v for k, v in out.items() if v not in ("", [], None)}
+            return out or None
+        if key == "method":
+            return _text(value, "method", max_len=500) or None
+        return _number(value, "duration hours", 0, 100000) if value not in ("",) else None
+
+    def set_task_resources(self, task_id: str, resources) -> dict:
+        """What doing the task needs (its LSA record): each section given replaces that
+        section (null clears it), the others are kept; resources null clears the lot.
+        Sections: labour [{trade, people, hours}] (hours per person), tools [{name,
+        qty?, note?, point_id?}] (point_id: the measuring point or signal channel the
+        instrument reads), spares [{part_id? (the parts register), name, qty}],
+        consumables [{name, qty, unit, cost?}] (cost: for that quantity), access
+        {downtime_hours?, permits, isolation?, access_equipment?}, method (how it's
+        done, short) and duration_hours (elapsed)."""
+        task = self._get(task_id, "Task")
+        if task.get("retired"):
+            raise Invalid("That task has been retired.")
+        current = dict(task.get("resources") or {})
+        if resources is None:
+            record = {}
+        elif not isinstance(resources, dict):
+            raise Invalid("resources must be an object with any of: " + ", ".join(self.RESOURCE_KEYS) + ".")
+        else:
+            unknown = set(resources) - set(self.RESOURCE_KEYS)
+            if unknown:
+                raise Invalid(f"resources doesn't take {', '.join(sorted(unknown))}: it takes "
+                              + ", ".join(self.RESOURCE_KEYS) + ".")
+            record = dict(current)
+            for key in self.RESOURCE_KEYS:
+                if key in resources:
+                    checked = self._checked_resource(key, resources[key])
+                    if checked is None:
+                        record.pop(key, None)
+                    else:
+                        record[key] = checked
+        if record != current:
+            self._emit("task.resources_set", {"id": task_id, "resources": record or None})
+        return self._task_view(self._get(task_id, "Task"))
+
+    def _resources_view(self, task: dict) -> dict:
+        """A task's LSA record as read: every section (empty when not set), part and
+        point names looked up, and the totals: labour_hours (people × hours, summed),
+        people, materials_cost (spares at their part's unit cost plus consumables'
+        costs, where known) and cost_estimate (labour at a trade rate: blank, as the
+        workspace keeps no trade rates)."""
+        r = task.get("resources") or {}
+        spares = []
+        for line in r.get("spares") or []:
+            row = dict(line)
+            part = self.s.node(self.org, line["part_id"], "Part") if line.get("part_id") else None
+            if part:
+                row["part_number"] = part.get("part_number")
+                if part.get("unit_cost") is not None:
+                    row["unit_cost"] = part["unit_cost"]
+            spares.append(row)
+        tools = []
+        for line in r.get("tools") or []:
+            row = dict(line)
+            point = self.s.node(self.org, line["point_id"]) if line.get("point_id") else None
+            if point:
+                row["point"] = {"id": point["id"], "name": point.get("name"), "unit": point.get("unit", ""),
+                                "kind": "channel" if point["label"] == "SignalChannel" else "point"}
+            tools.append(row)
+        labour = [dict(x) for x in r.get("labour") or []]
+        costs = [s.get("unit_cost") * s["qty"] for s in spares if s.get("unit_cost") is not None] \
+            + [c["cost"] for c in r.get("consumables") or [] if c.get("cost") is not None]
+        return {"labour": labour, "tools": tools, "spares": spares,
+                "consumables": [dict(x) for x in r.get("consumables") or []],
+                "access": dict(r.get("access") or {}), "method": r.get("method", ""),
+                "duration_hours": r.get("duration_hours"),
+                "labour_hours": round(sum(x["people"] * x["hours"] for x in labour), 2),
+                "people": sum(x["people"] for x in labour),
+                "materials_cost": round(sum(costs), 2) if costs else None, "cost_estimate": None}
+
+    @staticmethod
+    def lsa_rollup(tasks: list[dict]) -> dict:
+        """What a set of tasks needs together (a visit's, a package's), from each
+        task's read (with ``resources``): labour hours by trade (a line with no trade
+        takes its task's), the tools (each once, the most any task needs), the
+        spares to stage and the consumables (quantities added up), and the permits."""
+        labour, tools, spares, consumables, permits = {}, {}, {}, {}, []
+        for t in tasks:
+            r = t.get("resources") or {}
+            for x in r.get("labour") or []:
+                trade = x.get("trade") or t.get("trade") or ""
+                row = labour.setdefault(trade.lower(), {"trade": trade, "hours": 0.0, "people": 0})
+                row["hours"] += x["people"] * x["hours"]
+                row["people"] = max(row["people"], x["people"])
+            for x in r.get("tools") or []:
+                row = tools.setdefault(x["name"].lower(), {"name": x["name"], "qty": None})
+                if x.get("qty") is not None:
+                    row["qty"] = max(row["qty"] or 0, x["qty"])
+            for x in r.get("spares") or []:
+                key = x.get("part_id") or x["name"].lower()
+                row = spares.setdefault(key, {"part_id": x.get("part_id"), "part_number": x.get("part_number"),
+                                              "name": x["name"], "qty": 0.0})
+                row["qty"] += x["qty"]
+            for x in r.get("consumables") or []:
+                key = (x["name"].lower(), (x.get("unit") or "").lower())
+                row = consumables.setdefault(key, {"name": x["name"], "unit": x.get("unit", ""), "qty": 0.0,
+                                                   "cost": None})
+                row["qty"] += x["qty"]
+                if x.get("cost") is not None:
+                    row["cost"] = (row["cost"] or 0) + x["cost"]
+            for p in (r.get("access") or {}).get("permits") or []:
+                if p.lower() not in (q.lower() for q in permits):
+                    permits.append(p)
+        tidy = lambda v: round(v, 2)  # noqa: E731
+        return {"tasks": len(tasks),
+                "labour_hours": tidy(sum(x["hours"] for x in labour.values())),
+                "labour": sorted(({**x, "hours": tidy(x["hours"])} for x in labour.values()),
+                                 key=lambda x: (-x["hours"], x["trade"].lower())),
+                "tools": sorted(tools.values(), key=lambda x: x["name"].lower()),
+                "spares": sorted(({**x, "qty": tidy(x["qty"])} for x in spares.values()),
+                                 key=lambda x: x["name"].lower()),
+                "consumables": sorted(({**x, "qty": tidy(x["qty"]), "cost": None if x["cost"] is None
+                                        else tidy(x["cost"])} for x in consumables.values()),
+                                      key=lambda x: x["name"].lower()),
+                "permits": permits}
+
+    def _package_rollup(self, pkg: dict) -> dict:
+        """What a package's live tasks need together (lsa_rollup)."""
+        tasks = []
+        for member in pkg.get("members") or []:
+            task = self.s.node(self.org, member["task_id"], "Task")
+            if task and not task.get("retired"):
+                tasks.append({"trade": task.get("trade", ""), "resources": self._resources_view(task)})
+        return self.lsa_rollup(tasks)
+
+    def task_lsa(self, task_id: str) -> dict:
+        """One task's LSA page: the task (with its resources), the failure modes it
+        serves (each with its function › functional failure), and what its lines can
+        pick from: the measuring points and signal channels on what it's on and inside
+        it (for a tool line's point_id), and the parts on those positions' parts lists."""
+        task = self._get(task_id, "Task")
+        view = self._task_view(task)
+        index = self._rcm_index()
+        modes = []
+        for fm in sorted(self.s.out(self.org, task["id"], "MITIGATES"), key=lambda m: (m.get("text") or "", m["id"])):
+            ff_id = index["ff_of"].get(fm["id"])
+            fn_id = index["ff_fn"].get(ff_id) if ff_id else index["direct_of"].get(fm["id"])
+            fn, ff = index["fn"].get(fn_id) if fn_id else None, index["ff"].get(ff_id) if ff_id else None
+            modes.append({"id": fm["id"], "text": fm["text"], "function": fn and fn.get("text"),
+                          "failure": ff and ff.get("text")})
+        subject = _subject(self.s, self.org, task)
+        ids = []
+        if subject and subject["label"] in ("Position", "Location"):
+            ids = [p["id"] for p in self.s.nodes(self.org, "Position")
+                   if not p.get("retired") and self._in_area(subject, p)][:200]
+        elif subject:
+            ids = [subject["id"]]
+        points = []
+        for nid in ids:
+            on = self.s.node(self.org, nid)
+            for x in self.s.inn(self.org, nid, "ON"):
+                if x["label"] in ("MeasurementPoint", "SignalChannel") and not x.get("retired"):
+                    points.append({"id": x["id"], "name": x.get("name", ""), "unit": x.get("unit", ""),
+                                   "kind": "channel" if x["label"] == "SignalChannel" else "point",
+                                   "on": on.get("name") if on else None})
+        points.sort(key=lambda p: (p["on"] or "", p["name"].lower()))
+        parts, seen = [], set()
+        for pid in (ids if subject and subject["label"] != "Item" else []):
+            for listing in self._parts_list(pid):
+                if listing["part"]["id"] not in seen:
+                    seen.add(listing["part"]["id"])
+                    parts.append({**listing["part"], "role": listing["role"], "quantity": listing["quantity"]})
+        return {"task": view, "modes": modes, "points": points, "parts": parts}
 
     def _raise_for_trigger(self, task: dict, day: str, why: str) -> dict | None:
         """The task's work order, opened on ``day`` with what raised it in its notes;
