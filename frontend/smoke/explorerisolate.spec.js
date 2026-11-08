@@ -204,6 +204,9 @@ test("at 400 px: Isolate opens in place in the ⋯ menu; the rest closes; the RC
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}&pin=${p.top.id}`);
+  // The pinned-branch bar sits above the tree and arrives with the tree's read:
+  // measure the tree's top only once it's there (CI once measured 170, then 236).
+  await expect(page.getByText(/^Pinned:/)).toBeVisible();
   const treeTop = (await page.locator(".tp-scroll").boundingBox()).y;
   await row(page, `Works line B ${tag}`).locator(".tp-chev").click();
   await expect(row(page, `Works pump B ${tag}`)).toBeVisible();
