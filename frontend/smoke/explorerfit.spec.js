@@ -83,7 +83,7 @@ test("at 1280x720 the RCM table fits: no column cut off, the interval in the Tas
   await expect(basket).toBeVisible();
   // The usual columns under 1400 px: no Interval, no Evidence check; every header whole.
   expect((await headers(page)).map((h) => h.name)).toEqual([
-    "Function, performance standard, failure, mode or task", "Failure effects", "Consequence", "Decision", "Task",
+    "Function, standard, failure, mode or task", "Failure effects", "Consequence", "Decision", "Task",
   ]);
   expect((await headers(page)).filter((h) => h.clipped)).toEqual([]);
   await expect(basket.getByRole("gridcell").nth(3)).toHaveText("Empty the pump basket · every 12 months");

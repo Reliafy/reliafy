@@ -445,7 +445,7 @@ test("removing a member sends the others back by their task; one left is a plain
 test("a task is a level of its own, named in the tree's first column", () => {
   assert.equal(LEVEL_OF.task.label, "Task");
   assert.equal(LEVEL_OF.task.child, null);
-  assert.equal(NAME_COLUMN.label, "Function, performance standard, failure, mode or task");
+  assert.equal(NAME_COLUMN.label, "Function, standard, failure, mode or task");
 });
 
 test("a task row's words: its kind, how often, its chips, and what's done when found", () => {

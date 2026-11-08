@@ -852,7 +852,7 @@ export const COLUMNS = [
   },
 ];
 export const COLUMN = Object.fromEntries(COLUMNS.map((c) => [c.id, c]));
-export const NAME_COLUMN = { id: "name", label: "Function, performance standard, failure, mode or task", width: 270, min: 180 };
+export const NAME_COLUMN = { id: "name", label: "Function, standard, failure, mode or task", width: 270, min: 180 };
 export const DEFAULT_COLUMNS = COLUMNS.filter((c) => c.on).map((c) => c.id);
 
 // A parent row's consequences: the most serious kind inside it (all of them
