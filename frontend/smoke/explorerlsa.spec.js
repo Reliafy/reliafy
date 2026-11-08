@@ -87,6 +87,19 @@ test("LSA: search and sort the tasks below, tick two and package them", async ({
   await expectHealthy(page, problems, { label: "packages", root: ".tx" });
 });
 
+test("LSA: Next due follows a task's first due date (start)", async ({ page, request, problems }) => {
+  const tag = `s${Date.now()}`;
+  const pool = await postOk(request, `${M}/positions`, { name: `Start pool ${tag}` });
+  const year = new Date().getFullYear() + 1;
+  await postOk(request, `${M}/positions/${pool.id}/tasks`,
+    { name: `Raise the acid dose for summer ${tag}`, interval: 12, unit: "months", start: `${year}-10-01` });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${pool.id}&tab=lsa`);
+  await expect(rows(page)).toHaveCount(1);
+  await expect(rows(page).first()).toContainText(new RegExp(`Oct.*${year}|${year}.*Oct`));
+  await expectHealthy(page, problems, { label: "lsa start", root: ".tx" });
+});
+
 test("LSA at 400 px: the table scrolls in its card, the bar shows, nothing scrolls sideways", async ({ page, request }) => {
   const tag = `m${Date.now()}`;
   const p = await plant(request, tag);

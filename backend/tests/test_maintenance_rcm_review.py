@@ -135,7 +135,9 @@ def test_review_words_for_each_rule():
 def test_a_second_task_joins_the_decision_or_is_refused_in_decides_words(m):
     ids = _uav(m)
     bearing = ids["m1_bearing"]
-    m.add_mode_task(bearing, "Replace the bearing", 500, "hours", "fixed_interval", instructions="Press it out.")
+    joined = m.add_mode_task(bearing, "Replace the bearing", 6, "months", "fixed_interval", instructions="Press it out.",
+                             start="2027-01-15")
+    assert m.s.node(ORG, joined["id"])["first_due"] == "2027-01-15"  # its start kept as it joins
     d = m.rcm_mode(bearing)["decision"]
     assert [o["outcome"] for o in d["outcomes"]] == ["on_condition", "fixed_interval"]
     assert d["outcomes"][0]["task"] == "Listen to the bearing" and d["outcomes"][1]["task"] == "Replace the bearing"

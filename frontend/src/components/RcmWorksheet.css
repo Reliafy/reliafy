@@ -1039,6 +1039,10 @@ select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus); }
 button.link.rim-tquietlink { align-self: flex-start; font-size: var(--fs-13); }
 .rim-tline { margin: 0; overflow-wrap: anywhere; }
 .rim-ivline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
+/* When a calendar task falls due: "First due 1 Oct 2027 · Change…", and its date box in place. */
+.rim-tdue { margin: 0; }
+.rim-tdueform { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font-size: var(--fs-13); }
+.rim-tdueform > .ctl { flex: 0 1 11rem; min-width: 0; }
 .rim-ivinline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
 .rim-ivinline .rim-every { display: inline-flex; align-items: center; gap: 6px; }
 .rim-eventform { display: flex; flex-direction: column; gap: 6px; min-width: 0; }

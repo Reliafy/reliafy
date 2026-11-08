@@ -296,6 +296,18 @@ trade, tools, spares, consumables: what a visit brings). The app's routes are
 `GET /api/maintenance/tasks/{id}/lsa` (the task, the failure modes it serves,
 and the points, channels and parts its lines can pick from).
 
+When a calendar task first falls due is its `start`: `tasks.create`,
+`tasks.update` and `failure_modes.add_task` take `start` (a date like
+`2027-10-01`), and the task falls due then and every interval after (a
+12-monthly summer task made in November can first fall due next October).
+Left out, it falls due one interval from today (or from `last_done`);
+`tasks.update start ''` clears a date set. Task reads carry `next_due` and
+`first_due` (the date set, while it stands: until the task is done on or
+after the day it was set). The app's routes take `start` too:
+`POST /api/maintenance/positions/{id}/tasks`,
+`POST /api/maintenance/failure-modes/{id}/tasks` and
+`PATCH /api/maintenance/tasks/{id}` (null clears it).
+
 Everything in the tree can be taken out of use and brought back (`retire` /
 `restore` on positions, locations, items, parts, manufacturers, measurement
 points, tasks, failure modes, classes, conditions, groups, connections and
