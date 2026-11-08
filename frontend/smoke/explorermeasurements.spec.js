@@ -224,3 +224,50 @@ test("consumables: a row, a use typed in place out of stock, its additions besid
   await expect(page.locator(".tp-row", { hasText: `Acid ${tag}` }).locator(".ms-chip")).toHaveText("Never added");
   await expectHealthy(page, problems, { label: "consumables in the Measurements tab" });
 });
+
+// As an RCM row: a click opens the details beside the table, a double-click on
+// the name (or Open in the row's ⋯, or Enter) spreads them across it with the
+// tree kept, selecting no text; Esc puts them beside it again. The same for a
+// setting, a channel and a consumable.
+test("a double-click on a measurement row's name spreads its details across the table, as on the RCM tab", async ({ page, request, problems }) => {
+  const tag = `d${Date.now()}`;
+  const p = await plant(request, tag);
+  const setting = await postOk(request, `${M}/positions/${p.pump.id}/points`, { name: `Dose ${tag}`, kind: "setting", unit: "%" });
+  await postOk(request, `${M}/points/${setting.id}/readings`, { value: 40, on: ago(5) });
+  await postOk(request, `${M}/positions/${p.pump.id}/consumables`, { name: `Salt ${tag}`, unit: "kg", qty: 20, on: ago(3) });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=measurements`);
+  const heads = page.getByRole("treegrid", { name: /and their measurements/ }).getByRole("columnheader");
+  const columns = await heads.count();
+  const spread = () => side(page).evaluate((el) => el.classList.contains("is-expanded"));
+  const selected = () => page.evaluate(() => String(window.getSelection?.() || ""));
+  const bearing = row(page, `M:${p.point.id}`);
+  // A click: beside the table.
+  await bearing.locator(".tp-nm").click();
+  await expect(side(page).getByRole("heading", { name: `Bearing ${tag}` })).toBeVisible();
+  expect(await spread()).toBe(false);
+  for (const [key, name] of [[`M:${p.point.id}`, `Bearing ${tag}`], [`M:${setting.id}`, `Dose ${tag}`],
+    [`M:channel:${p.channel.id}`, `Plug ${tag}`], [`M:consumable:${p.pump.id}:name:salt ${tag}`, `Salt ${tag}`]]) {
+    await row(page, key).locator(".tp-nm").dblclick();
+    await expect(side(page).getByRole("heading", { name, level: 2 })).toBeFocused();
+    expect(await spread(), `${name}: spread`).toBe(true);
+    await expect(heads).toHaveCount(1);
+    expect(await selected(), `${name}: no text selected`).toBe("");
+    // Esc: beside the table again, the focus on the row.
+    await page.keyboard.press("Escape");
+    expect(await spread()).toBe(false);
+    await expect(heads).toHaveCount(columns);
+    await expect(row(page, key)).toBeFocused();
+  }
+  // Open in the row's ⋯ spreads them too; Enter on the row as well.
+  await bearing.locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menu").last().getByRole("menuitem", { name: "Open" }).click();
+  expect(await spread()).toBe(true);
+  await page.keyboard.press("Escape");
+  await bearing.focus();
+  await page.keyboard.press("Enter");
+  await expect(side(page).getByRole("heading", { name: `Bearing ${tag}`, level: 2 })).toBeFocused();
+  expect(await spread()).toBe(true);
+  await page.keyboard.press("Escape");
+  await expectHealthy(page, problems, { label: "Measurements rows spread as RCM rows" });
+});

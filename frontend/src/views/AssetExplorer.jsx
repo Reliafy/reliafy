@@ -1019,9 +1019,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const designScope = isDesignScope(data, root);
   const kids = useMemo(() => liveKids(data?.positions), [data]);
   // A measurement row's ⋯ (the Measurements tab).
+  // A measurement row's details spread across the table, the tree kept (as an
+  // RCM row's double-click, its Open and Enter do): a double-click on its name,
+  // Open in its ⋯, or Enter on it. Esc (or Back to table) puts them beside it again.
+  const openMeas = (key) => {
+    pick(key, { go: true });
+    if (!phone) setExpanded(true);
+    setTimeout(() => detailsHeading.current?.focus(), 0);
+  };
   const measAction = (r, id) => {
     const row = r.ref.row;
-    if (id === "page" || id === "bands") pick(r.key, { go: true });
+    if (id === "page" || id === "bands") openMeas(r.key);
     else if (id === "record") setMeasModal({ kind: "read", item: row.item });
     else if (id === "use") setMeasModal({ kind: "use", item: row.item });
     else if (id === "limits") setMeasModal({ kind: "limits", item: row.item });
@@ -1536,6 +1544,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     tab: "measurements", what: "measurements", treeHead: MEAS_TREE_HEAD, readOnly: true,
     canEditName: () => false, onEdit: () => {}, onCommit: () => {}, onCancel: () => {}, onGoto: (key) => reveal(key),
     renderCell: (r, c) => (isMeasRow(r) ? <MeasCell r={r} col={c} onSaved={meas.patch} /> : null),
+    onOpen: (key) => (isMeasRow(display.rows.get(key)) ? openMeas(key) : undefined),
     rollupOf: (r, isOpen) => (r.type === "pos" ? measRollup(r, isOpen) : null),
     phoneRow: (r, isOpen) => measPhoneRow(r, r.type === "pos" ? measRollup(r, isOpen) : ""),
     hint: null, drag: null,
@@ -1866,7 +1875,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         scrollTo={scrollTo}
         onEnter={(key) => {
           const r = display.rows.get(key);
-          if (isRcmRow(r) || isMeasRow(r)) {
+          if (isMeasRow(r)) return openMeas(key);
+          if (isRcmRow(r)) {
             setPanel(true);
             return setTimeout(() => detailsHeading.current?.focus(), 0);
           }
