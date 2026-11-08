@@ -56,7 +56,7 @@ import { NewLocationModal } from "./MaintenanceLists.jsx";
 import { ImportModal, NewPositionModal } from "./MaintenanceHome.jsx";
 import { DEFAULT_LEVEL, changedFromUsual, levelShown, showingOnly } from "../treeControls.js";
 import {
-  ARRANGEMENTS, CHIPS, ancestorsOf, arrangementFor, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
+  ARRANGEMENTS, CHIPS, PANE, ancestorsOf, arrangementFor, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath, fitTreeWidth,
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
 import { keepLevel } from "../outlineTree.js";
@@ -228,6 +228,13 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const [openBy, setOpenBy] = useState(saved.open);
   const [selected, setSelected] = useState(saved.selected);
   const [width, setWidth] = useState(() => clampWidth(saved.width, window.innerWidth));
+  // A width the user dragged to (kept); until then the RCM tab fits its tree column (fitWidth below).
+  const [widthSet, setWidthSet] = useState(() => !!saved.widthSet);
+  // The edge dragged (or ← →): kept; double-clicked (back to the usual width): fitted again.
+  const onWidth = useCallback((w) => {
+    setWidth(w);
+    setWidthSet(w !== PANE.initial);
+  }, []);
   const [collapsed, setCollapsed] = useState(saved.collapsed);
   const [query, setQuery] = useState("");
   const [chips, setChips] = useState([]);
@@ -381,6 +388,13 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // each function in that order; the tree itself stays as it is.
   const order = useMemo(() => (fmeaOn && fsort ? fmeaOrder(display, fsort) : null), [fmeaOn, fsort, display]);
   const { list, index } = useMemo(() => flatten(display, open, filter, order), [display, open, filter, order]);
+  // The tree column on the RCM and FME(C)A tabs (a wide screen): fitted to the rows on show
+  // until the user drags it (the review, Nov 2026: at 1600 px names were cut to a few letters).
+  const fitWidth = useMemo(() => (rcmOn && !phone && !widthSet ? fitTreeWidth(list.map((v) => {
+    const r = display.rows.get(v.key);
+    return { depth: v.depth, text: (isRcmRow(r) ? r?.ref?.text : r?.ref?.name) || "" };
+  }), window.innerWidth) : null), [rcmOn, phone, widthSet, list, display]);
+  const shownWidth = fitWidth ?? width;
   // A row asked for (?sel=, a link, a new row) that's in the tree is the one
   // shown, even before the effect below reveals it: else the first row is shown
   // for a render and its panels ask for the wrong row's data.
@@ -520,12 +534,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
 
   // Remembered on this device, a moment after each change, and on the way out.
   const latest = useRef(null);
-  latest.current = { mode, open: openBy, selected, width, collapsed };
+  latest.current = { mode, open: openBy, selected, width, widthSet, collapsed };
   useEffect(() => {
     if (root) return undefined; // one tree on show: not what the whole Explorer remembers
     const t = setTimeout(() => saveTreeState(workspace, latest.current), 200);
     return () => clearTimeout(t);
-  }, [workspace, mode, openBy, selected, width, collapsed, root]);
+  }, [workspace, mode, openBy, selected, width, widthSet, collapsed, root]);
   useEffect(() => {
     if (root) return undefined;
     const flush = () => saveTreeState(workspace, latest.current);
@@ -1418,7 +1432,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const widths = {};
   for (const c of cols) widths[c.id] = prefsW[c.id] ?? c.width;
   const table = rcmOn ? {
-    cols, widths, treeW: width, total: width + cols.reduce((t, c) => t + widths[c.id], 0), expanded: wideDetails,
+    cols, widths, treeW: shownWidth, total: shownWidth + cols.reduce((t, c) => t + widths[c.id], 0), expanded: wideDetails,
     foldInterval: !fmeaOn && !shownCols.includes("interval"),
     intervalW: rprefs.widths.interval ?? COLUMN.interval.width,
     // Which tab's table this is: its chips, its tree column's heading, its
@@ -1487,7 +1501,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const head = phone ? null : rcmOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
-                meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key)} /></span> : null}
+                meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key, whole)} /></span> : null}
                 menu={rcmMenu} popover={columns} />
   ) : summaryRow && (
     <SlimHeader display={whole} row={summaryRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
@@ -1679,8 +1693,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           setOpenSet(new Set());
         }}
         phone={phone}
-        width={width}
-        onWidth={setWidth}
+        width={rcmOn ? shownWidth : width}
+        onWidth={onWidth}
         collapsed={collapsed}
         onCollapse={setCollapsed}
         addRow={addRow}
@@ -1857,8 +1871,13 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
 }
 
 // A position's own evidence checks, for its heading on the RCM tab.
-function rollupOf(rcm, positionId) {
-  return (rcm.positions || []).find((p) => p.id === positionId)?.rollup || null;
+// The position's evidence counts for the header: the server's rollup (it and what's inside
+// it), else (a position with no RCM of its own, so not in the read) its row's in the tree.
+function rollupOf(rcm, positionId, whole = null) {
+  const server = (rcm.positions || []).find((p) => p.id === positionId)?.rollup;
+  if (server) return server;
+  const s = whole?.rows?.get(positionId)?.rsum;
+  return s ? { supported: s.supported || 0, contradicted: s.contradicted || 0, inconclusive: s.unsure || 0, stale: s.stale || 0 } : null;
 }
 
 // Is the window narrower than NARROW_TABLE (fewer usual columns in the RCM

@@ -110,7 +110,7 @@ def test_on_condition_current_interval_and_an_unworthy_check():
 
 @pytest.mark.parametrize("kwargs, words", [
     ({"failure_cost": 100, "found_cost": 200}, "more than the cost of fixing a warning"),
-    ({"pf_unit": "cycles"}, "needs a time unit"),
+    ({"pf_unit": "cycles"}, "need the P-F interval in a time unit"),  # by use: no costs
     ({"detection_probability": 1.5}, "at most 1"),
     ({"onset_rate": 0}, "more than 0"),
     ({"pf_interval": "ten"}, "must be a number"),
@@ -192,7 +192,8 @@ def test_failure_finding_with_a_wearing_device_and_the_port(monkeypatch):
     ({"target_unavailability": 0.01, "consequence_cost": 10}, "needs the demand rate"),
     ({"target_unavailability": 0.01, "failure_rate": None}, "Enter the device's failure rate"),
     ({"target_unavailability": 0.01, "failure_rate": None, "distribution_id": "weibull",
-      "params": [{"name": "alpha", "value": 5}, {"name": "beta", "value": 2}], "model_unit": "cycles"}, "time unit"),
+      "params": [{"name": "alpha", "value": 5}, {"name": "beta", "value": 2}], "model_unit": "cycles",
+      "test_cost": 5}, "model in a time unit"),
 ])
 def test_failure_finding_refusals_say_what_to_change(kwargs, words):
     with pytest.raises(IntervalError, match=words):
@@ -250,7 +251,8 @@ def test_failure_finding_route_with_a_saved_model(api):
     assert r.json()["device"]["source"] == "model" and r.json()["recommended"]
     cycles = api.post(f"{M}/rcm/interval/failure-finding", json={
         "model_id": "sample-model-bearings-weibull", "model_unit": "cycles", "target_unavailability": 0.01})
-    assert cycles.status_code == 422 and "time unit" in cycles.json()["detail"]
+    # A model in a unit of use answers in it (Nov 2026: tasks by use, flight hours and cycles).
+    assert cycles.status_code == 200 and cycles.json()["recommended"]["unit"] == "cycles", cycles.text
     assert api.post(f"{M}/rcm/interval/failure-finding", json={"model_id": "nope", "target_unavailability": 0.01}
                     ).status_code == 404
 
@@ -351,3 +353,24 @@ def test_mcp_rcm_actions(api):
         assert mcp_tools.scope_of("maintenance_rcm.interval_on_condition") == "read"
     finally:
         mcp_tools.unregister()
+
+
+# ---- a unit of use (cycles, flight hours): the calculators answer in it -----------------
+
+def test_on_condition_in_a_unit_of_use():
+    r = ri.on_condition_interval(500, "flight hours", act_time=300, current_interval=250, current_unit="flight hours")
+    assert r["by_use"] and r["recommended"] == {"value": 200, "unit": "flight hours"} and r["basis"] == "net_pf"
+    assert r["summary"].startswith("Check every 200 flight hours") and r["current"]["within"] is False
+    with pytest.raises(IntervalError, match="answered in the P-F interval's unit"):
+        ri.on_condition_interval(500, "cycles", unit="months")
+
+
+def test_failure_finding_in_a_unit_of_use():
+    weibull = [{"name": "alpha", "value": 4000}, {"name": "beta", "value": 1.2}]
+    r = ri.failure_finding_interval(distribution_id="weibull", params=weibull, model_unit="cycles",
+                                    target_unavailability=0.01, current_interval=50, current_unit="cycles")
+    assert r["by_use"] and r["recommended"]["unit"] == "cycles" and r["at_recommended"]["mean_unavailability"] <= 0.01
+    assert r["current"]["meets_target"] is True and r["cost_rate"] is None
+    with pytest.raises(IntervalError, match="give a target unavailability"):
+        ri.failure_finding_interval(distribution_id="weibull", params=weibull, model_unit="cycles", test_cost=5,
+                                    consequence_cost=100, demand_rate=1)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import RowMenu from "./RowMenu.jsx";
 import TreeControlsMenu from "./TreeControlsMenu.jsx";
 import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
@@ -7,7 +7,7 @@ import useOutlineNav from "./useOutlineNav.js";
 import { ARRANGEMENTS, CHIPS, CHIP_MARK, PANE, TREE_ROW_MARKERS, clampWidth, markersOf, nextGutter } from "../assetTree.js";
 import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensPanel } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
-import { LEVEL_OF, NAME_COLUMN, ROLE } from "../rcmWorksheet.js";
+import { LEVEL_OF, NAME_COLUMN, ROLE, decidedWords } from "../rcmWorksheet.js";
 import { isDeleteKey } from "../treeDelete.js";
 
 // The asset tree as a second-level menu beside the site menu: the outline
@@ -218,12 +218,12 @@ function ArrangeIcon({ value }) {
 export const NO_FUNCTIONS = "No functions yet. Right-click the position (or press its ⋯) and choose Add function.";
 const NO_FUNCTIONS_PHONE = "No functions yet. Tap ⋯ to add one.";
 
-// A position's second line on a phone, on the RCM tab: its own failure modes.
+// A position's second line on a phone, on the RCM tab: its failure modes and those inside it.
 function posLine(r, hint) {
   if (hint) return NO_FUNCTIONS_PHONE;
   const s = r.rsum;
   if (!s?.modes) return r.ref.not_analysed ? "Not analysed yet" : "";
-  const state = s.undecided ? `${s.undecided} to decide` : r.ref.not_analysed ? "not analysed yet" : "all decided";
+  const state = s.undecided || s.review ? decidedWords(s) : r.ref.not_analysed ? "not analysed yet" : "all decided";
   return `${s.modes.toLocaleString("en-AU")} failure mode${s.modes === 1 ? "" : "s"} · ${state}`;
 }
 
@@ -285,13 +285,16 @@ function dropClass(drag, key) {
   return o.state === "no" ? " drop-no" : ` drop-${o.zone || "into"}${o.copy ? " drop-copy" : ""}`;
 }
 
-function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen, rowW, pinRoot }) {
+function Row({ v, r, top, height, open, focused, dim, pinned, underPin = false, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen, rowW, pinRoot }) {
   const has = r.kids.length > 0;
   const drag = table && !phone ? table.drag : null;
   const movable = !!drag && !pinned && drag.canDrag(r);
   const cls = "tp-row" + (focused ? " focus" : "") + (dim ? " dim" : "") + (pinned ? " pin" : "") + (heading(r) ? " grp" : "")
     + (table ? ` tt tt-${r.type}` : "") + (menuOpen ? " menu-open" : "") + (drag?.picked?.has(r.key) ? " picked" : "")
-    + (movable ? " movable" : "") + dropClass(drag, r.key) + (drag?.dragging?.has(r.key) ? " dragged" : "");
+    + (movable ? " movable" : "") + dropClass(drag, r.key) + (drag?.dragging?.has(r.key) ? " dragged" : "")
+    // A row whose pinned copy is on show at the top: hidden under it, so no half of it peeks
+    // out below the pins as a ghost (kept when it has the focus, for the keyboard).
+    + (underPin && !focused ? " under-pin" : "");
   const common = {
     className: cls,
     role: pinned ? undefined : table ? "row" : "treeitem",
@@ -467,6 +470,7 @@ export default function TreePane({
     measureKey: `${railed}${phone}${!!table}${!!side}`, rowId: (key) => `tp-${key}`,
     nameOf: (r) => label(r),
   });
+  const pinnedKeys = useMemo(() => new Set(pins), [pins]);
 
   // A row's menu (rowMenu: {actions(r, {keyboard}) → [{id, label}], onAction(r, id)}):
   // {key, at, keyboard} while it's open. Opening it picks the row; closing
@@ -786,7 +790,7 @@ export default function TreePane({
               const r = display.rows.get(v.key);
               return (
                 <Row key={v.key} v={v} r={r} top={i * H} height={H} open={open.has(v.key)} focused={v.key === focus}
-                     dim={dim(v.key)} onPick={onPick} {...rowProps} {...menuProps(v.key)} pinRoot={pinRootOf(v.key)} />
+                     dim={dim(v.key)} underPin={pinnedKeys.has(v.key)} onPick={onPick} {...rowProps} {...menuProps(v.key)} pinRoot={pinRootOf(v.key)} />
               );
             })}
           </div>

@@ -154,8 +154,8 @@ less over time than the failures it prevents. If none is: evident safety or envi
 compulsory; evident operational or non_operational, no scheduled maintenance (rtf or accept), a redesign may pay; \
 hidden safety or environmental, failure_finding, else redesign compulsory; hidden operational or \
 non_operational, failure_finding if it pays, else no scheduled maintenance. decide refuses rtf and accept on \
-safety or environmental, failure_finding on an evident failure, and a combination of tasks except on safety or \
-environmental.
+safety or environmental, and failure_finding on an evident failure. A combination of tasks is allowed on any \
+consequence; on operational or non_operational each task must pay for itself over time (say why in the notes).
 - The decision vocabulary. outcome: on_condition (monitor a signal and act before it \
 fails), fixed_interval (replace or restore on a schedule), failure_finding (check a hidden function), rtf \
 (rtf_basis random: failures don't depend on age; uneconomic: prevention doesn't pay), redesign, accept. \
@@ -166,7 +166,9 @@ a report (type report: a saved report's id) or a function's notes and rationale,
 performance standard is written (type working: the function's id; it needs notes written): linked, not checked, so its status is linked \
 (evidence_kind report or working), or stale once it has gone. decide replaces the whole \
 decision: to add evidence, send the current one with it. A decision saved before the rules (or imported) that \
-they'd refuse is kept, and its read carries advice to relay, as does a hidden mode with no category yet. A decision that schedules a task (fixed_interval, \
+they'd refuse is kept, and its read carries advice to relay, as does a hidden mode with no category yet; one \
+that breaks the rules (no consequence answered, refused by the rules, or rtf / accept / a lone redesign with tasks \
+serving it) also has needs_review true and doesn't count as decided in a rollup (list.rcm_gaps needs_review). A decision that schedules a task (fixed_interval, \
 failure_finding, on_condition with an interval) gets a task on the position; one that doesn't (rtf, redesign, \
 accept) gets none. A decision's task text over 200 characters gives the task a shortened name, with the full \
 text in its instructions. An interval_unit of use (hours, cycles, km) makes a task by use, counting a counter in that unit (maintenance get.task_measurement says which).
@@ -186,9 +188,12 @@ whatever it costs). Failure finding: maintenance rcm.interval_failure_finding: t
 safety, say it's assumed) give the longest interval that meets it; costs are optional and add the cheapest; \
 current_interval gives the task's numbers now. Fixed interval: the core analyse tool's optimal_replacement (a \
 non-repairable model, planned and unplanned costs), in the model's unit. \
-Then set the task's interval (maintenance tasks.update), add one line on how it was worked out to the failure \
-mode's notes and rationale (failure_modes.update notes: the current notes with the line at the end), and tell \
-the user. recommended is rounded down \
+Then use it: save_evidence true with failure_mode_id (task_id optional) on rcm.interval_on_condition or \
+rcm.interval_failure_finding sets the task's interval, adds one line on how it was worked out to the mode's notes \
+and rationale and saves the calculation as the decision's evidence (where it has none), as the app's Use does; \
+for the fixed interval, set the task's interval (maintenance tasks.update) and add the line yourself. Tell the \
+user. Both calculators also work in a unit of use (cycles, flight hours) when the P-F interval or the model is in \
+one, without costs. recommended is rounded down \
 to a unit people schedule in; quote the cost a year and the unavailability with it.
 - Scoring the same modes as an FME(C)A (the Explorer's FME(C)A tab; the RCM tab shows the same records): \
 maintenance failure_modes.score (failure_mode_id; severity, occurrence, detection, whole numbers 1-10; cause, \
@@ -296,7 +301,9 @@ fixed_interval deep clean), optionally with one redesign beside them as the inte
 alone. Each scheduled member gets a task of its own (task_id adopts an existing one) and members are told apart by \
 their task: to change one, send every member back with its task_id (as read in decision.outcomes) and leave a \
 member out to take its task off. The first is the decision's own (outcome, task_id). Sending one outcome again, \
-or {}, ends the combination and retires the tasks it no longer has. maintenance failure_modes.add_task adds a task outside the decision. One act of work for several modes (one monthly water sample for five chemistry modes): \
+or {}, ends the combination and retires the tasks it no longer has. maintenance failure_modes.add_task adds one \
+more member to the decision (checked as decide checks it, refused in the same words: rtf and accept stand alone); \
+on a mode not decided yet it links the task until the decision. One act of work for several modes (one monthly water sample for five chemistry modes): \
 maintenance tasks.link task_id failure_mode_id, or decide with task_id so an existing task is the decision's. A \
 task on a position may serve modes on it or on positions inside it. The task owns its interval: while it \
 serves one mode alone, decide changes it; once shared, change it with maintenance tasks.update (for every mode \

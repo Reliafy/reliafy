@@ -205,6 +205,9 @@ def on_condition_interval(pf_interval=None, pf_unit=None, onset_rate=None, inspe
     one that reads best). ``current_interval`` (in ``current_unit``): the task's
     interval now, to compare."""
     pf = _number(pf_interval, "P-F interval", positive=True)
+    if is_use_unit(pf_unit):
+        return _on_condition_by_use(pf, pf_unit, act_time, detection_probability, onset_rate, inspection_cost,
+                                    found_cost, failure_cost, unit, current_interval, current_unit)
     pf_key = _time_unit(pf_unit, "P-F interval")
     act = _number(act_time, "time needed to act", allow_none=True) or 0.0
     if act >= pf:
@@ -299,6 +302,121 @@ def on_condition_interval(pf_interval=None, pf_unit=None, onset_rate=None, inspe
             now["cost_rate"] = _on_condition_numbers(pf_days, cur_days, p, onset / DAYS_A_YEAR, inspection, found,
                                                      failed)["cost_rate"] * DAYS_A_YEAR
         out["current"] = now
+    return out
+
+
+def is_use_unit(unit) -> bool:
+    """Whether a unit is one of use (cycles, km, flight hours, bather-hours: anything
+    but a calendar time and blank): the P-F and failure-finding calculators then work
+    in it as given, since no rate a year is needed to halve a P-F interval or to
+    hold a device's unavailability to a target."""
+    key = normalize_unit(unit)
+    return bool(key) and key not in DAYS_IN
+
+
+def _same_use_unit(unit, use_unit, label: str) -> None:
+    if unit and normalize_unit(unit) != normalize_unit(use_unit):
+        raise IntervalError(f"An interval by use is answered in the {label}'s unit ({unit_in_text(use_unit)}), "
+                            f"not {unit_in_text(unit)}.")
+
+
+def _on_condition_by_use(pf, pf_unit, act_time, detection_probability, onset_rate, inspection_cost, found_cost,
+                         failure_cost, unit, current_interval, current_unit) -> dict:
+    """on_condition_interval with the P-F interval in a unit of use (cycles, flight
+    hours): the same rule (half the P-F interval, or the net P-F interval when
+    tighter), answered in that unit. The costs need failures a year, so they're
+    for a P-F interval in a time unit."""
+    word = unit_in_text(pf_unit)
+    if _given(inspection_cost, found_cost, failure_cost) or onset_rate not in (None, ""):
+        raise IntervalError(f"The costs and the failures a year need the P-F interval in a time unit (hours, days, "
+                            f"weeks, months or years): leave them out for an interval in {word}.")
+    _same_use_unit(unit, pf_unit, "P-F interval")
+    act = _number(act_time, "time needed to act", allow_none=True) or 0.0
+    if act >= pf:
+        raise IntervalError("The time needed to act must be shorter than the P-F interval: otherwise no check can "
+                            "find the warning in time.")
+    p = _number(detection_probability if detection_probability not in (None, "") else 1.0,
+                "chance a check finds the warning", positive=True)
+    if p > 1:
+        raise IntervalError("The chance a check finds the warning is at most 1 (100%).")
+    half, net = pf / 2, pf - act
+    by_net = net < half
+    rule = net if by_net else half
+    value = _floor_value(rule)
+    at = 1.0 - _miss_fixed(pf, value, p)
+    why = (f"the net P-F interval ({_with_unit(net, word)}: {_with_unit(pf, word)} less {_with_unit(act, word)} to act)"
+           if by_net else f"half the P-F interval of {_with_unit(pf, word)}")
+    out = {
+        "kind": "on_condition_interval", "by_use": True,
+        "pf_interval": pf, "pf_unit": word, "act_time": act or None, "detection_probability": p, "onset_rate": None,
+        "basis": "net_pf" if by_net else "half_pf",
+        "unit": word, "interval": rule,
+        "recommended": {"value": value, "unit": word},
+        "at_recommended": {"detection_probability": at, "failures_per_year": None},
+        "rule_of_thumb": {"value": half, "unit": word,
+                          "text": f"Rule of thumb: check at least every half P-F interval, {_with_unit(half, word)}."},
+        "explanation": ("A failure gives a warning a while before it happens: the P-F interval, here in use "
+                        f"({word}). Checks at least every half P-F interval find the warning with time to act; when "
+                        "acting takes longer, the net P-F interval is the limit."),
+        "cost_optimal": None,
+        "summary": f"Check every {_with_unit(value, word)}: {why}.",
+    }
+    if p < 1:
+        out["summary"] += f" A check that finds {p:.0%} of warnings finds {at:.0%} of them in time at that interval."
+    if current_interval not in (None, ""):
+        cur = _number(current_interval, "task's interval now", positive=True)
+        if normalize_unit(current_unit) == normalize_unit(pf_unit):
+            out["current"] = {"value": cur, "unit": current_unit, "detection_probability": 1.0 - _miss_fixed(pf, cur, p),
+                              "within": cur <= rule * 1.0001}
+    return out
+
+
+def _ff_by_use(distribution_id, params, model_unit, extras, target, test, repair, demand, consequence, unit,
+               current_interval, current_unit) -> dict:
+    """failure_finding_interval for a device modelled in a unit of use (cycles,
+    flight hours): the longest interval within the target, in that unit. Costs
+    and demands are a year, so they need a model in a time unit."""
+    word = unit_in_text(model_unit)
+    if target is None:
+        raise IntervalError(f"For a device modelled in {word}, give a target unavailability (1% is 0.01): the cheapest "
+                            "interval needs costs a year, so a model in a time unit.")
+    if test > 0 or repair > 0 or consequence > 0 or demand:
+        raise IntervalError(f"The costs and the demand rate are a year, so they need the device's model in a time unit: "
+                            f"leave them out for an interval in {word}.")
+    _same_use_unit(unit, model_unit, "device's model")
+    model, name = _model_from_params(distribution_id, params or [], extras)
+    mean = float(np.ravel(model.mean())[0])
+    if not (math.isfinite(mean) and mean > 0):
+        raise IntervalError("The device's model has no finite mean life: some never fail, so failure finding "
+                            "can't be worked out from it.")
+    tau = _optimal_ff(model, target, 0.0, 0.0, None, 0.0)
+    value = _floor_value(tau)
+
+    def numbers(t: float) -> dict:
+        r = _ff_numbers(model, t, 0.0, 0.0, None, 0.0)
+        return {"mean_unavailability": r["mean_unavailability"], "multiple_failures_per_year": None, "cost_rate": None}
+
+    best, at = numbers(tau), numbers(value)
+    out = {
+        "kind": "failure_finding_interval", "by_use": True, "basis": "target",
+        "device": {"source": "model", "distribution": name, "unit": word, "mean_life": mean, "rate": None},
+        "target_unavailability": target, "test_cost": 0.0, "repair_cost": 0.0, "demand_rate": None,
+        "consequence_cost": 0.0, "unit": word, "interval": tau,
+        "recommended": {"value": value, "unit": word},
+        "mean_unavailability": best["mean_unavailability"], "cost_rate": None, "multiple_failures_per_year": None,
+        "at_recommended": at, "cost_optimal": None,
+        "explanation": ("A protective device can fail without anyone knowing; only a test shows it. The longer between "
+                        "tests, the likelier it's already failed when it's needed. This finds the longest interval, in "
+                        f"the model's unit ({word}), that keeps that chance within the target."),
+        "summary": (f"Test every {_with_unit(value, word)}: the device is failed when needed "
+                    f"{_pct(at['mean_unavailability'])} of the time, within the {_pct(target)} target. "
+                    f"The longest interval that meets it is {_with_unit(tau, word)}."),
+    }
+    if current_interval not in (None, "") and normalize_unit(current_unit) == normalize_unit(model_unit):
+        cur = _number(current_interval, "task's interval now", positive=True)
+        now = numbers(cur)
+        out["current"] = {"value": cur, "unit": current_unit, **now,
+                          "meets_target": now["mean_unavailability"] <= target + 1e-12}
     return out
 
 
@@ -438,6 +556,9 @@ def failure_finding_interval(failure_rate=None, distribution_id: Optional[str] =
     repair = _number(repair_cost or 0, "cost of a repair")
     demand = _number(demand_rate, "demand rate (demands a year)", allow_none=True)
     consequence = _number(consequence_cost or 0, "cost of a demand met by a failed device")
+    if distribution_id and is_use_unit(model_unit):
+        return _ff_by_use(distribution_id, params, model_unit, extras, target, test, repair, demand, consequence,
+                          unit, current_interval, current_unit)
     if consequence > 0 and not demand:
         raise IntervalError("A cost of a demand met by a failed device needs the demand rate: how often a year "
                             "the device is needed.")

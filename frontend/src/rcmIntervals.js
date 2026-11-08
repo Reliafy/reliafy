@@ -126,3 +126,34 @@ export const ANALYSIS_KIND = { pf: "on_condition_interval", ff: "failure_finding
 
 // Whether a used calculation should also become the decision's evidence: only when it has none.
 export const linksEvidence = (decision) => !(decision?.evidence?.type && decision?.evidence?.id);
+
+// ---- units of use (cycles, flight hours, km) ------------------------------------------
+// The P-F and failure-finding calculators also work in a unit of use: a P-F interval in
+// cycles halves in cycles, and a device modelled in flight hours meets its target in flight
+// hours. The costs and demands are a year, so they need calendar time.
+export const isUseUnit = (unit) => {
+  const u = taskUnit(unit);
+  return !!u && !TIME_UNITS.includes(u);
+};
+
+// The P-F interval's units in the dialog: the calendar ones, and the task's own when it's done by use.
+export function pfUnits(task) {
+  const own = taskUnit(task?.unit);
+  return isUseUnit(own) ? [...TIME_UNITS, own] : TIME_UNITS;
+}
+
+// Which unit the answer comes in, in words, under the dialog's inputs.
+export function answerUnitWords(key, form) {
+  if (key === "pf") {
+    return isUseUnit(form?.pf_unit)
+      ? `The answer is in ${taskUnit(form.pf_unit)}, the P-F interval's unit (costs need calendar time, so they're left out).`
+      : "The answer is in calendar time (hours to years), whichever reads best.";
+  }
+  if (key === "ff") {
+    const unit = form?.device === "model" ? form?.model?.unit : null;
+    return isUseUnit(unit)
+      ? `The answer is in ${taskUnit(unit)}, the model's unit (a target only: costs and demands need calendar time).`
+      : `The answer is in calendar time${unit ? `, from the model's ${taskUnit(unit)}` : ""}.`;
+  }
+  return null;
+}

@@ -10,7 +10,7 @@
 // (right-click, ⋯ or Shift+F10), and the RCM chips.
 
 import {
-  COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, blank as rcmBlank, checkValue, decisionCardLines, decisionRows, intervalText,
+  COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, blank as rcmBlank, checkValue, decidedWords, decisionCardLines, decisionRows, intervalText,
   isCombination, modeCounts, moreTasks, isHidden, rowText as rcmText, tasksOf,
 } from "./rcmWorksheet.js";
 import { standardsShown } from "./rcmStandards.js";
@@ -29,7 +29,8 @@ const noStatus = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null, n
 // no functional failure (an "unassigned" row), then the positions inside it.
 // Adding is from each row's menu (rowActions: a position's Add function),
 // not from rows in the tree. The display given is left as it is; position
-// rows gain `rsum` (their own failure modes' counts) and `rcmKids` (how many
+// rows gain `rsum` (the counts of their failure modes and those of every position
+// inside them, rollUpPositions), `ownSum` (their own alone) and `rcmKids` (how many
 // of their kids are RCM rows).
 //
 // The standards are a level of the tree, the way classic RCM reads it: each
@@ -182,7 +183,28 @@ export function graftRcm(display, rcm) {
     r.rcmKids = keys.length;
     r.rsum = rsum;
   }
+  rollUpPositions(rows);
   return out;
+}
+
+// Each position row's counts take in every position inside it (the review, Nov 2026: a
+// closed Propulsion row says its motors' bearings are contradicted, a closed Airframe row
+// that its landing gear has a mode to decide), as the server's rollup does; `ownSum` keeps
+// its own failure modes' alone. A position's own counts go up to each position above it.
+export function rollUpPositions(rows) {
+  const pos = [...rows.values()].filter((r) => r.type === "pos");
+  for (const r of pos) r.ownSum = { ...(r.rsum || rcmBlank()) };
+  for (const r of pos) {
+    const own = r.ownSum;
+    if (!own.modes) continue;
+    const seen = new Set([r.key]);
+    for (let up = rows.get(r.parent); up && up.type === "pos" && !seen.has(up.key); up = rows.get(up.parent)) {
+      seen.add(up.key);
+      if (!up.rsum) up.rsum = rcmBlank();
+      for (const k of Object.keys(own)) up.rsum[k] = (up.rsum[k] || 0) + own[k];
+    }
+  }
+  return rows;
 }
 
 export const causeKey = (effectId, causeId) => `L:${effectId}:${causeId}`;
@@ -270,8 +292,8 @@ export function positionOf(r) {
   return isRcmRow(r) ? r.ref.position_id : null;
 }
 
-// A row as the RCM's cells read it: a position row's counts are its own
-// failure modes' (rsum), not the tree's status totals.
+// A row as the RCM's cells read it: a position row's counts are its failure
+// modes' and those of the positions inside it (rsum), not the tree's status totals.
 export const cellRow = (r) => ({ ...r, sum: r.rsum || rcmBlank() });
 
 // What the one search box matches on an RCM row: its description, standard,
@@ -513,13 +535,13 @@ export function taskWithInterval(r) {
 }
 
 // A second task for a mode whose consequence is only a cost (operational or
-// non-operational) should earn its place: the RCM decision diagram allows a
-// combination only on safety and environmental consequences.
+// non-operational) should earn its place: on a cost consequence each task of a
+// combination must pay for itself over time.
 export function secondTaskHint(r) {
   const tasks = tasksOf(r?.ref);
   if (!tasks.length || !["operational", "non_operational"].includes(r.ref.consequence)) return null;
   const first = tasks[0].name || tasks[0].text || "the first task";
-  return `What does this catch that “${first}” doesn't? Say why in the decision notes.`;
+  return `What does this catch that “${first}” doesn't? Say why in the notes and rationale.`;
 }
 
 // The Task column with its interval (for the table when the Interval column
@@ -653,7 +675,7 @@ export function linkSectionTitle(g, before, where) {
 export function failureSummary(x) {
   const s = x.rsum || rcmBlank();
   const n = s.modes;
-  const own = n ? `${n} failure mode${n === 1 ? "" : "s"} · ${s.undecided ? `${s.undecided} to decide` : "all decided"}` : "";
+  const own = n ? `${n} failure mode${n === 1 ? "" : "s"} · ${decidedWords(s)}` : "";
   if (own) return own;
   return x.ref.explained_below ? "explained below" : "no failure modes yet";
 }
@@ -771,4 +793,18 @@ export function functionSummary(display, posRow) {
     });
   }
   return out;
+}
+
+// A failure mode's failure reports in its panel (ModeFailureReports.jsx): the words and
+// where Open goes, or null with none. `found` {total, first}: the first report, newest.
+export function modeReportsLink(found, positionId) {
+  const n = found?.total || 0;
+  if (!n) return null;
+  const one = n === 1 && found.first?.id;
+  const where = found.first?.position?.id || positionId;
+  return {
+    words: `${n.toLocaleString("en-AU")} failure report${n === 1 ? "" : "s"}`,
+    query: one ? { sel: where, tab: "reports", report: found.first.id } : { sel: positionId, tab: "reports" },
+    title: one ? "Open the failure report" : "Open the failure reports at this position",
+  };
 }

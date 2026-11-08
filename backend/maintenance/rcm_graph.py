@@ -12,11 +12,17 @@ from backend.maintenance import rcm_decisions
 
 
 def resolve(db, worksheet: dict, owner_id, hidden=frozenset()) -> dict:
-    """``worksheet`` (Maintenance.rcm_worksheet) with each decision's evidence
-    status, and a rollup per position and for the whole of it (as a study's)."""
+    """``worksheet`` (Maintenance.rcm_worksheet or rcm_all) with each decision's
+    evidence status, and a rollup per position and for the whole of it (as a
+    study's). A position's rollup counts its own failure modes and those of every
+    position inside it (a closed row on the RCM tab still says what's inside);
+    its ``own`` holds its own modes' counts alone. Each rollup also has
+    undecided, needs_review (decided against the rules) and state (the status
+    chip: empty, to_decide, needs_review or all_decided)."""
     fetch = rcm_decisions.evidence_fetcher(db, owner_id, hidden)
     total = rcm_decisions.blank_rollup()
     positions = []
+    owns = []
     for p in worksheet["positions"]:
         rollup = rcm_decisions.blank_rollup()
 
@@ -26,9 +32,11 @@ def resolve(db, worksheet: dict, owner_id, hidden=frozenset()) -> dict:
             if not decision:
                 return mode
             rollup["decided"] += 1
+            if mode.get("needs_review"):
+                rollup["needs_review"] += 1
             resolved = rcm_decisions.resolve_decision(decision, fetch)
             status = resolved.get("status")
-            if status in rollup:
+            if status in rollup and status not in ("modes", "decided", "needs_review"):
                 rollup[status] += 1
             return {**mode, "decision": {**decision, **resolved}}
 
@@ -39,8 +47,42 @@ def resolve(db, worksheet: dict, owner_id, hidden=frozenset()) -> dict:
         unassigned = [mode_out(m) for m in p["unassigned"]]
         for k, v in rollup.items():
             total[k] += v
-        positions.append({**p, "functions": functions, "unassigned": unassigned, "rollup": rollup})
-    return {**worksheet, "positions": positions, "rollup": total}
+        owns.append(rollup)
+        positions.append({**p, "functions": functions, "unassigned": unassigned})
+    whole = [dict(r) for r in owns]
+    at = {p["id"]: i for i, p in enumerate(positions)}
+    for i, p in enumerate(positions):
+        for j in _listed_above(positions, i, worksheet.get("parents"), at):
+            for k, v in owns[i].items():
+                whole[j][k] += v
+    for i, p in enumerate(positions):
+        p["rollup"] = {**rcm_decisions.finish_rollup(whole[i]), "own": rcm_decisions.finish_rollup(owns[i])}
+    return {**worksheet, "positions": positions, "rollup": rcm_decisions.finish_rollup(total)}
+
+
+def _listed_above(positions: list[dict], i: int, parents, at: dict) -> list[int]:
+    """The indexes of the listed positions above positions[i]: from ``parents``
+    (rcm_all's {id: parent}), else from the depths of a worksheet read depth
+    first (each position's parent is the last one before it a level up)."""
+    out = []
+    if parents is not None:
+        seen = set()
+        up = parents.get(positions[i]["id"])
+        while up is not None and up not in seen:
+            seen.add(up)
+            if up in at:
+                out.append(at[up])
+            up = parents.get(up)
+        return out
+    depth = positions[i].get("depth") or 0
+    for j in range(i - 1, -1, -1):
+        d = positions[j].get("depth") or 0
+        if d < depth:
+            out.append(j)
+            depth = d
+            if d == 0:
+                break
+    return out
 
 
 def mode_status(db, mode: dict, owner_id, hidden=frozenset()) -> dict:
@@ -70,15 +112,16 @@ def gaps(sheet: dict, limit: int = GAPS_LIMIT) -> dict:
     with no decision (undecided), with no task (no_task: every live mode with
     none, with its outcome, so a run-to-failure one shows as such), hidden
     ones with no failure-finding task, decisions whose evidence needs a look
-    (contradicted, inconclusive or gone); failure modes directly under a
+    (contradicted, inconclusive or gone), decisions that break the decision
+    rules (needs_review, with the advice saying why); failure modes directly under a
     function with no functional failure yet (no_functional_failure: an FMEA
     row the RCM hasn't finished); functions with no functional failure,
     performance standards no functional failure breaches, and functional
     failures with no failure modes and nothing linked below. At most
     ``limit`` rows a list (counts are always whole)."""
     lists: dict[str, list] = {k: [] for k in (
-        "undecided", "no_task", "hidden_without_failure_finding", "evidence_to_check", "no_functional_failure",
-        "functions_without_failure", "standards_without_failure", "functional_failures_empty")}
+        "undecided", "no_task", "hidden_without_failure_finding", "evidence_to_check", "needs_review",
+        "no_functional_failure", "functions_without_failure", "standards_without_failure", "functional_failures_empty")}
 
     def mode_row(mode, pos, ff, fn=None):
         d = mode.get("decision") or {}
@@ -97,6 +140,8 @@ def gaps(sheet: dict, limit: int = GAPS_LIMIT) -> dict:
                 row | {"tasks": [{"id": t["id"], "name": t["name"], "outcome": t.get("outcome")} for t in tasks]})
         if d.get("status") in _CHECK:
             lists["evidence_to_check"].append(row | {"status": d["status"], "reason": d.get("reason") or d.get("summary")})
+        if mode.get("needs_review"):
+            lists["needs_review"].append(row | {"advice": mode.get("advice")})
 
     for p in sheet.get("positions") or []:
         pos = {"id": p["id"], "name": p["name"]}

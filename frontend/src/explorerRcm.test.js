@@ -287,13 +287,23 @@ test("a reference row under a higher failure per cause, after its own modes, wit
   assert.equal(positionOf(ref), "plant"); // the position the failure it explains is on
 });
 
-test("positions, functions and failures count their own failure modes: a chain below is not added in", () => {
+test("functions and failures count their own failure modes, positions theirs and those inside them: a chain below is not added in", () => {
   const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
-  assert.equal(d.rows.get("plant").rsum.modes, 1);
+  // Each position's own (ownSum); a functional failure's own (rsum), its chain beside it.
+  assert.equal(d.rows.get("plant").ownSum.modes, 1);
   assert.equal(d.rows.get("pf").rsum.modes, 1);
   assert.equal(d.rows.get("px").rsum.modes, 1);
   assert.equal(d.rows.get("py").rsum.modes, 0);
-  assert.equal(d.rows.get("pump").rsum.modes, 3);
+  assert.equal(d.rows.get("pump").ownSum.modes, 3);
+  // A position's rsum: its own and every position inside it, each failure mode once.
+  const inside = (key) => {
+    let n = d.rows.get(key).ownSum.modes;
+    for (const k of d.rows.get(key).kids) if (d.rows.get(k).type === "pos") n += inside(k);
+    return n;
+  };
+  assert.equal(d.rows.get("plant").rsum.modes, inside("plant"));
+  assert.ok(d.rows.get("plant").rsum.modes > 1);
+  assert.equal(d.rows.get("pump").rsum.modes, inside("pump"));
 });
 
 test("the Decision and Task cells say what is below, and the panel and phone lines match", () => {

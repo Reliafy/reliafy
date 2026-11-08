@@ -350,8 +350,8 @@ FAILURE_MODES: Table = {
         notes). A decision the RCM decision diagram forbids for the mode is
         refused (guide topic plan). Returns it with the evidence check and any advice to relay."""),
     "add_task": ("failure_mode_id name interval", "unit outcome instructions start", """Another task for the mode
-        (an inspection plus a hard-time replacement); its decision's stays first. start: the date it first
-        falls due."""),
+        (an inspection plus a hard-time replacement): it joins the decision, checked and refused as decide is; its
+        decision's stays first. start: the date it first falls due."""),
     "assign": ("failure_mode_id", "functional_failure_id function_id", "Put it under one of its position's "
                "functional failures, or (function_id) directly under a function (both left out: under none)."),
     "retire": ("failure_mode_id", "cascade dry_run", "Delete it, with its tasks (a shared one is unlinked; "
@@ -772,7 +772,8 @@ ATTACHMENTS: Table = {
 # one is the analyse tool's optimal_replacement.
 RCM: Table = {
     "interval_on_condition": ("pf_interval pf_unit", "act_time onset_rate inspection_cost found_cost failure_cost "
-                              "detection_probability unit current_interval current_unit", """How often to check for a
+                              "detection_probability unit current_interval current_unit failure_mode_id task_id "
+                              "save_evidence", """How often to check for a
         warning sign that comes pf_interval (in pf_unit: hours, days, weeks, months or years) before the failure. The
         P-F interval alone gives it: half the P-F interval, or the net P-F interval (less act_time, the time needed to
         act, in pf_unit) when tighter. Costs never change that: with all three (inspection_cost, found_cost: fixing a
@@ -780,16 +781,21 @@ RCM: Table = {
         cheapest interval and whether the check pays for itself. On a safety or environmental failure leave costs
         out: the task must make the risk tolerable whatever it costs. detection_probability: the chance a check finds
         a warning that's there (default 1). recommended is rounded down; current_interval + current_unit give the
-        task's numbers now."""),
+        task's numbers now. pf_unit may be a unit of use (cycles, flight hours): the answer is then in it, without
+        costs. save_evidence true, with failure_mode_id (task_id: which task, else its first on-condition one): also
+        sets the task's interval to recommended, adds a line to the mode's notes and saves the calculation as its
+        evidence (saved)."""),
     "interval_failure_finding": ("", "failure_rate model_id distribution_id params model_unit target_unavailability "
-                                 "test_cost repair_cost demand_rate consequence_cost unit current_interval current_unit",
+                                 "test_cost repair_cost demand_rate consequence_cost unit current_interval current_unit "
+                                 "failure_mode_id task_id save_evidence",
                                  """How often to test a protective device whose failure is hidden. The device:
         failure_rate (a year), a saved non-repairable model_id, or distribution_id + params with model_unit (a time).
         With target_unavailability (the chance it's failed when needed, e.g. 0.01), the longest interval that meets
         it; costs are optional: test_cost, repair_cost, demand_rate (demands a year) and consequence_cost (a demand
         met by a failed device) add cost_optimal, the cheapest interval (alone, without a target, they give it). Returns the interval, recommended (rounded down), the mean unavailability and
         cost a year there and, with current_interval + current_unit, the task's numbers now and whether they meet
-        the target."""),
+        the target. A model in a unit of use (cycles, flight hours) answers in it, with a target and no costs.
+        save_evidence true, with failure_mode_id (task_id optional): as interval_on_condition's."""),
 }
 
 
@@ -901,6 +907,92 @@ TABLES: dict[str, tuple[str, Table]] = {
     "maintenance_progression": ("action", PROGRESSION), "maintenance_rcm": ("action", RCM),
 }
 
+
+
+# ---- a calculated interval used, as the task card's "Use" does --------------------------
+
+_CALCULATOR = {"interval_on_condition": ("on_condition", "on_condition_interval", "P-F calculator", "check interval"),
+               "interval_failure_finding": ("failure_finding", "failure_finding_interval",
+                                            "failure-finding calculator", "test interval")}
+
+
+def rcm_apply_interval(m, failure_mode_id: str, task_id, action: str, inputs: dict, out: dict, owner_id) -> dict:
+    """What maintenance rcm.interval_* with save_evidence does with its answer, as
+    the app's "Use N" (RcmModeTasks.jsx useInterval): the task (task_id, else the
+    mode's first task of the calculator's kind) takes the recommended interval;
+    one line on how it was worked out goes at the end of the mode's notes and
+    rationale; the calculation is saved as a strategy analysis and linked as
+    evidence where the decision has none (a combination: on the task's member,
+    when it has none of its own). Inside a maintenance apply batch's dry pass
+    nothing is saved outside the graph (the analysis is only named)."""
+    from backend.maintenance.service import Invalid
+    from backend.services import strategy_store
+
+    outcome, kind, calculator, word = _CALCULATOR[action]
+    mode = m.rcm_mode(failure_mode_id)
+    tasks = mode.get("tasks") or []
+    decision = mode.get("decision") or {}
+    if task_id:
+        task = next((t for t in tasks if t["id"] == task_id), None)
+        if task is None:
+            raise Invalid("That task doesn't serve this failure mode (task_id: one of the mode's tasks).")
+    else:
+        kind_of = {o.get("task_id"): o["outcome"] for o in decision.get("outcomes") or [] if o.get("task_id")}
+        if decision.get("task_id") and not decision.get("outcomes"):
+            kind_of[decision["task_id"]] = decision.get("outcome")
+        task = next((t for t in tasks if (kind_of.get(t["id"]) or t.get("outcome")) == outcome), None)
+        if task is None:
+            raise Invalid(f"This failure mode has no {outcome.replace('_', ' ')} task to take the interval: decide it "
+                          "(failure_modes.decide) or add one (failure_modes.add_task) first, or name task_id.")
+    rec = out.get("recommended") or {}
+    if not rec.get("value"):
+        raise Invalid("The calculation gave no interval to use.")
+    m.update_task(task["id"], interval=rec["value"], unit=rec["unit"])
+    from datetime import date
+
+    on = date.fromisoformat(str(m.today())[:10])
+    when = f"{on.day} {on.strftime('%b %Y')}"
+    line = f"Interval from the {calculator} ({when}): {out.get('summary') or ''}".strip()
+    notes = str(mode.get("notes") or "").rstrip()
+    m.update_failure_mode(failure_mode_id, notes=f"{notes}\n\n{line}" if notes else line)
+    text = str(mode.get("text") or "Failure mode").strip()
+    name = f"{text}: {word}" if len(text) + len(word) + 2 <= 120 else f"{text[:120 - len(word) - 3]}…: {word}"
+    if apply_mod.DRY.get():
+        analysis_id = None
+    else:
+        analysis_id = strategy_store.save_analysis(_db_handle(), name, kind, inputs, owner_id).id
+    linked = False
+    if analysis_id:
+        evidence = {"type": "strategy_analysis", "id": analysis_id}
+        members = decision.get("outcomes") or []
+        body, adopt = None, None
+        if members:
+            mine = next((o for o in members if o.get("task_id") == task["id"]), None)
+            if mine is not None and not mine.get("evidence") and not decision.get("evidence"):
+                body = {"outcome": members[0]["outcome"], "evidence": None,
+                        "outcomes": [{"outcome": o["outcome"]} | ({"task_id": o["task_id"]} if o.get("task_id") else {})
+                                     | ({"evidence": evidence} if o is mine else
+                                        {"evidence": o["evidence"]} if o.get("evidence") else {})
+                                     for o in members]}
+        elif decision.get("outcome") and not decision.get("evidence") and decision.get("task_id") == task["id"]:
+            body = {"outcome": decision["outcome"], "evidence": evidence}
+            adopt = task["id"]  # the decision's own task, named so decide keeps it
+        if body is not None:
+            if decision.get("rtf_basis"):
+                body["rtf_basis"] = decision["rtf_basis"]
+            try:
+                m.decide_failure_mode(failure_mode_id, decision=body, task_id=adopt)
+                linked = True
+            except Invalid:
+                linked = False  # a decision the rules now refuse keeps its evidence as it was
+    return {"task_id": task["id"], "interval": rec["value"], "unit": rec["unit"], "notes_added": line,
+            "analysis": {"id": analysis_id, "name": name, "kind": kind}, "evidence_linked": linked}
+
+
+def _db_handle():
+    from backend.mcp_server import _db
+
+    return _db()
 
 def register() -> None:
     """Add the maintenance tools to the MCP server (idempotent)."""
@@ -2477,37 +2569,56 @@ def register() -> None:
                         test_cost: float | None = None, repair_cost: float | None = None,
                         demand_rate: float | None = None, consequence_cost: float | None = None,
                         unit: str | None = None, current_interval: float | None = None,
-                        current_unit: str | None = None) -> dict[str, Any]:
-        """The interval calculators on an RCM task card: on condition (the P-F calculator) and failure finding."""
+                        current_unit: str | None = None, failure_mode_id: str | None = None,
+                        task_id: str | None = None, save_evidence: bool | None = None) -> dict[str, Any]:
+        """The interval calculators on an RCM task card: on condition (the P-F calculator) and failure finding.
+        save_evidence (with failure_mode_id; task_id: which of its tasks, else its first of the kind): use the
+        answer as the app's "Use" does (rcm_apply_interval)."""
         from backend.mcp_server import _owners
         from backend.services import models as models_service
         from backend.services import rcm_intervals
         from backend.services.strategy import StrategyError
 
-        m_for(ctx)  # Maintenance users only, like the rest of the tool
+        m = m_for(ctx)  # Maintenance users only, like the rest of the tool
+        if save_evidence and not failure_mode_id:
+            raise ToolError("save_evidence needs failure_mode_id: the failure mode whose task takes the interval.")
         try:
             if action == "interval_on_condition":
-                return rcm_intervals.on_condition_interval(
-                    pf_interval, pf_unit, onset_rate, inspection_cost, found_cost, failure_cost,
-                    detection_probability=detection_probability, unit=unit, current_interval=current_interval,
-                    current_unit=current_unit, act_time=act_time)
-            extras = None
-            if model_id:
-                if distribution_id or params:
-                    raise ToolError("Give model_id or distribution_id + params, not both.")
-                model = models_service.get_model(_db(), model_id, _owners(_caller(ctx)["uid"]))
-                if model is None:
-                    raise ToolError("Model not found.")
-                given = rcm_intervals.model_inputs(model)
-                distribution_id, params, extras = given["distribution_id"], given["params"], given["extras"]
-                model_unit = model_unit or given["unit"]
-            return rcm_intervals.failure_finding_interval(
-                failure_rate=failure_rate, distribution_id=distribution_id, params=params, model_unit=model_unit,
-                extras=extras, target_unavailability=target_unavailability, test_cost=test_cost,
-                repair_cost=repair_cost, demand_rate=demand_rate, consequence_cost=consequence_cost, unit=unit,
-                current_interval=current_interval, current_unit=current_unit)
+                inputs = {k: v for k, v in {
+                    "pf_interval": pf_interval, "pf_unit": pf_unit, "onset_rate": onset_rate,
+                    "inspection_cost": inspection_cost, "found_cost": found_cost, "failure_cost": failure_cost,
+                    "detection_probability": detection_probability, "unit": unit,
+                    "current_interval": current_interval, "current_unit": current_unit, "act_time": act_time,
+                }.items() if v is not None}
+                out = rcm_intervals.on_condition_interval(**inputs)
+            else:
+                extras = None
+                if model_id:
+                    if distribution_id or params:
+                        raise ToolError("Give model_id or distribution_id + params, not both.")
+                    model = models_service.get_model(_db(), model_id, _owners(_caller(ctx)["uid"]))
+                    if model is None:
+                        raise ToolError("Model not found.")
+                    given = rcm_intervals.model_inputs(model)
+                    distribution_id, params, extras = given["distribution_id"], given["params"], given["extras"]
+                    model_unit = model_unit or given["unit"]
+                inputs = {k: v for k, v in {
+                    "failure_rate": failure_rate, "distribution_id": distribution_id, "params": params,
+                    "model_unit": model_unit, "extras": extras, "target_unavailability": target_unavailability,
+                    "test_cost": test_cost, "repair_cost": repair_cost, "demand_rate": demand_rate,
+                    "consequence_cost": consequence_cost, "unit": unit, "current_interval": current_interval,
+                    "current_unit": current_unit,
+                }.items() if v is not None}
+                out = rcm_intervals.failure_finding_interval(**inputs)
         except StrategyError as exc:
             raise ToolError(str(exc)) from None
+        if not save_evidence:
+            return out
+        from backend.mcp_server import _require_scope
+
+        _require_scope(ctx, "write")  # the call writes: a read-only token can't
+        return {**out, "saved": run(rcm_apply_interval, m, failure_mode_id, task_id, action, inputs, out,
+                                    _caller(ctx)["uid"])}
 
     @tool("maintenance_workspace", _WRITE, "Workspace settings and history import", WORKSPACE)
     def maintenance_workspace(action: _choice(WORKSPACE), ctx: Context,

@@ -11,7 +11,7 @@ import {
 import { savedModelRef } from "../modelNext.js";
 import { modeAnswers } from "../decisionCheck.js";
 import {
-  ANALYSIS_KIND, TIME_UNITS, analysisName, calculatorFor, money, num, pct, rationale, roundDown, taskUnit, withUnit,
+  ANALYSIS_KIND, TIME_UNITS, analysisName, answerUnitWords, calculatorFor, isUseUnit, money, num, pct, pfUnits, rationale, roundDown, taskUnit, withUnit,
 } from "../rcmIntervals.js";
 
 // "Calculate…" on an RCM task card (RcmModeTasks): how often to do the task, worked out
@@ -109,12 +109,13 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
     if (calc.key === "pf") {
       return {
         pf_interval: n(form.pf_interval), pf_unit: form.pf_unit, act_time: n(form.act_time),
-        ...(priced() ? {
+        ...(priced() && !isUseUnit(form.pf_unit) ? {
           onset_rate: n(form.onset_rate), inspection_cost: n(form.inspection_cost), found_cost: n(form.found_cost),
           failure_cost: n(form.failure_cost),
         } : {}),
         detection_probability: blank(form.detection_probability) ? 1 : n(form.detection_probability) / 100,
-        ...(task?.interval && TIME_UNITS.includes(taskUnit(task.unit)) ? { current_interval: task.interval, current_unit: taskUnit(task.unit) } : {}),
+        ...(task?.interval && (TIME_UNITS.includes(taskUnit(task.unit)) || taskUnit(task.unit) === taskUnit(form.pf_unit))
+          ? { current_interval: task.interval, current_unit: taskUnit(task.unit) } : {}),
       };
     }
     if (calc.key === "ff") {
@@ -223,7 +224,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
               <InputGroup label="P-F interval">
                 <TextInput type="number" inputMode="decimal" min="0" step="any" value={form.pf_interval} onChange={set("pf_interval")} aria-label="P-F interval" placeholder="e.g. 10" />
                 <Select value={form.pf_unit} onChange={set("pf_unit")} aria-label="P-F interval unit">
-                  {TIME_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                  {pfUnits(task).map((u) => <option key={u} value={u}>{u}{isUseUnit(u) ? " (use)" : ""}</option>)}
                 </Select>
               </InputGroup>
             </Field>
@@ -231,9 +232,11 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
                    help="From finding the warning to the fix being done (ordering the part, planning the shutdown), in the P-F interval's unit. When the P-F interval less this is shorter than half of it, that's the limit.">
               <TextInput type="number" inputMode="decimal" min="0" step="any" value={form.act_time} onChange={set("act_time")} aria-label="Time needed to act" placeholder="0" />
             </Field>
-            <CostsToggle safety={safety} show={showCosts} onShow={() => { setShowCosts(true); setResult(null); }}
-                         words="Costs only matter for whether the check pays for itself, not for the P-F interval; add them to see the cost-optimal interval." />
-            {showCosts && (
+            {!isUseUnit(form.pf_unit) && (
+              <CostsToggle safety={safety} show={showCosts} onShow={() => { setShowCosts(true); setResult(null); }}
+                           words="Costs only matter for whether the check pays for itself, not for the P-F interval; add them to see the cost-optimal interval." />
+            )}
+            {showCosts && !isUseUnit(form.pf_unit) && (
               <>
                 <Field label="Failures a year, if nothing is done" optional help={from.onset_rate || "How often the warning (and so the failure) starts, e.g. 0.5 for once in two years. Needed with the costs."}>
                   <TextInput type="number" inputMode="decimal" min="0" step="any" value={form.onset_rate} onChange={set("onset_rate")} placeholder="e.g. 0.5" />
@@ -315,6 +318,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
             </div>
           </>
         )}
+        {answerUnitWords(calc.key, form) && <p className="ivc-unit lib-date">{answerUnitWords(calc.key, form)}</p>}
         <div className="ivc-go">
           <button type="submit" className="secondary" disabled={busy}>{busy && !result ? "Working it out…" : result ? "Work it out again" : "Work it out"}</button>
         </div>
@@ -336,7 +340,7 @@ const WHAT = {
 
 function startForm(key, task) {
   if (key === "pf") {
-    return { pf_interval: "", pf_unit: "weeks", act_time: "", onset_rate: "", inspection_cost: "", found_cost: "", failure_cost: "", detection_probability: "100" };
+    return { pf_interval: "", pf_unit: isUseUnit(task?.unit) ? taskUnit(task.unit) : "weeks", act_time: "", onset_rate: "", inspection_cost: "", found_cost: "", failure_cost: "", detection_probability: "100" };
   }
   if (key === "ff") {
     return { device: "rate", model: null, failure_rate: "", target: "1", targetAssumed: true, test_cost: "", repair_cost: "", demand_rate: "", consequence_cost: "" };
