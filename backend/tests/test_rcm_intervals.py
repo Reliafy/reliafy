@@ -345,5 +345,9 @@ def test_mcp_rcm_actions(api):
     from backend.maintenance import mcp_tools
 
     mcp_tools.register()
-    assert {"rcm.interval_on_condition", "rcm.interval_failure_finding"} <= set(mcp_tools.TOOL_TABLES["maintenance"][1])
-    assert mcp_tools.scope_of("maintenance_rcm.interval_on_condition") == "read"
+    try:
+        assert {"rcm.interval_on_condition", "rcm.interval_failure_finding"} <= set(
+            mcp_tools.TOOL_TABLES["maintenance"][1])
+        assert mcp_tools.scope_of("maintenance_rcm.interval_on_condition") == "read"
+    finally:
+        mcp_tools.unregister()
