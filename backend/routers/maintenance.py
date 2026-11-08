@@ -951,11 +951,12 @@ def _interval(fn, body: dict, names: tuple) -> JSONResponse:
 
 @router.post("/rcm/interval/on-condition")
 def rcm_interval_on_condition(body: dict = Body(...), user: dict = Depends(get_current_user)) -> JSONResponse:
-    """The P-F calculator: the cheapest interval between checks for a warning that comes a P-F interval
-    (pf_interval in pf_unit) before the failure, from the onset rate (failures a year), the cost of a check,
-    of fixing a warning found (found_cost) and of a failure, and the chance a check finds the warning
-    (detection_probability, default 1). With current_interval and current_unit, the numbers at the task's
-    interval now too; unit: the unit to answer in (default the one that reads best)."""
+    """How often to check for a warning that comes a P-F interval (pf_interval in pf_unit) before the
+    failure: from the P-F interval alone, half of it, or the net P-F interval (less act_time, the time needed
+    to act) when tighter. Costs are optional: with the cost of a check, of fixing a warning found (found_cost)
+    and of a failure, and the onset rate (failures a year), cost_optimal adds the cheapest interval and whether
+    the check pays. detection_probability: the chance a check finds the warning (default 1). With
+    current_interval and current_unit, the task's numbers now too; unit: the unit to answer in."""
     from backend.services import rcm_intervals
     from backend.services.strategy_store import ON_CONDITION_INPUTS
 

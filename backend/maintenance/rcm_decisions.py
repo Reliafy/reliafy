@@ -915,8 +915,9 @@ def _check_on_condition_interval(decision: dict, analysis) -> dict:
     pf_days = None
     factor = DAYS_IN.get(normalize_unit(r.get("pf_unit")))
     if factor and r.get("pf_interval"):
-        pf_days = float(r["pf_interval"]) * factor
-    return _interval_summary(r, decision, pf_days, "the P-F interval: checks that far apart miss warnings")
+        # The net P-F interval: the warning less the time needed to act on it.
+        pf_days = (float(r["pf_interval"]) - float(r.get("act_time") or 0)) * factor
+    return _interval_summary(r, decision, pf_days, "the (net) P-F interval: checks that far apart miss warnings")
 
 
 def _check_randomness(model) -> dict:

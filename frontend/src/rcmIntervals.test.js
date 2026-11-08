@@ -28,15 +28,22 @@ test("units and numbers read as people write them", () => {
   assert.equal(roundDown(0), null);
 });
 
-test("the P-F rationale says what went in and what came out", () => {
-  const line = rationale("pf",
+test("the P-F rationale names only the inputs given", () => {
+  const alone = rationale("pf", { pf_interval: 10, pf_unit: "weeks", detection_probability: 1 },
+    { basis: "half_pf", at_recommended: {} }, { value: 5, unit: "weeks" }, DAY);
+  assert.equal(alone, "Interval from the P-F calculator (9 Nov 2026): P-F 10 weeks → 5 weeks (half the P-F interval).");
+  const net = rationale("pf", { pf_interval: 10, pf_unit: "weeks", act_time: 8 },
+    { basis: "net_pf", at_recommended: {} }, { value: 2, unit: "weeks" }, DAY);
+  assert.equal(net, "Interval from the P-F calculator (9 Nov 2026): P-F 10 weeks, time to act 8 weeks → 2 weeks (the net P-F interval).");
+  const priced = rationale("pf",
     { pf_interval: 10, pf_unit: "weeks", onset_rate: 0.5, inspection_cost: 20, found_cost: 200, failure_cost: 2000, detection_probability: 1 },
-    { at_recommended: { cost_rate: 220 }, run_to_failure_cost_rate: 1000 }, { value: 2, unit: "months" }, DAY);
-  assert.equal(line, "Interval from the P-F calculator (9 Nov 2026): P-F 10 weeks, onset 0.5/year, inspection $20, found $200, "
-    + "failure $2,000 → 2 months; cost rate $220/year (letting it fail: $1,000/year; rule of thumb: half the P-F interval).");
-  const doubtful = rationale("pf", { pf_interval: 3, pf_unit: "days", onset_rate: 1, inspection_cost: 5, found_cost: 1, failure_cost: 9, detection_probability: 0.8 },
-    { at_recommended: { cost_rate: 1 }, run_to_failure_cost_rate: 9 }, { value: 1, unit: "days" }, DAY);
-  assert.match(doubtful, /detection 80% → 1 day;/);
+    { basis: "half_pf", at_recommended: { cost_rate: 308 }, run_to_failure_cost_rate: 1000, cost_optimal: { at_recommended: { cost_rate: 220 } } },
+    { value: 2, unit: "months", cheapest: true }, DAY);
+  assert.equal(priced, "Interval from the P-F calculator (9 Nov 2026): P-F 10 weeks, onset 0.5/year, inspection $20, found $200, "
+    + "failure $2,000 → 2 months (the cheapest interval); cost rate $220/year (letting it fail: $1,000/year).");
+  const doubtful = rationale("pf", { pf_interval: 3, pf_unit: "days", detection_probability: 0.8 },
+    { basis: "half_pf", at_recommended: {} }, { value: 36, unit: "hours" }, DAY);
+  assert.match(doubtful, /P-F 3 days, detection 80% → 36 hours/);
 });
 
 test("the failure-finding rationale names an assumed target", () => {

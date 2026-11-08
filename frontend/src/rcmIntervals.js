@@ -66,14 +66,23 @@ export function rationale(key, inputs, result, use, date = new Date()) {
   const to = withUnit(use.value, use.unit);
   const when = dateText(date);
   if (key === "pf") {
-    const parts = [
-      `P-F ${withUnit(inputs.pf_interval, inputs.pf_unit)}`, `onset ${num(inputs.onset_rate)}/year`,
-      `inspection ${money(inputs.inspection_cost)}`, `found ${money(inputs.found_cost)}`, `failure ${money(inputs.failure_cost)}`,
-    ];
+    // Only the inputs given: the P-F interval alone, or with the time to act and the costs.
+    const parts = [`P-F ${withUnit(inputs.pf_interval, inputs.pf_unit)}`];
+    if (Number(inputs.act_time) > 0) parts.push(`time to act ${withUnit(inputs.act_time, inputs.pf_unit)}`);
     if (Number(inputs.detection_probability ?? 1) !== 1) parts.push(`detection ${pct(inputs.detection_probability)}`);
-    const at = result.at_recommended || {};
-    return `Interval from the P-F calculator (${when}): ${parts.join(", ")} → ${to}; cost rate ${money(at.cost_rate)}/year `
-      + `(letting it fail: ${money(result.run_to_failure_cost_rate)}/year; rule of thumb: half the P-F interval).`;
+    const priced = result.run_to_failure_cost_rate != null;
+    if (priced) {
+      parts.push(`onset ${num(inputs.onset_rate)}/year`, `inspection ${money(inputs.inspection_cost)}`,
+        `found ${money(inputs.found_cost)}`, `failure ${money(inputs.failure_cost)}`);
+    }
+    const why = use.cheapest ? "the cheapest interval"
+      : result.basis === "net_pf" ? "the net P-F interval" : "half the P-F interval";
+    let tail = "";
+    if (priced) {
+      const cost = use.cheapest ? result.cost_optimal?.at_recommended?.cost_rate : result.at_recommended?.cost_rate;
+      tail = `; cost rate ${money(cost)}/year (letting it fail: ${money(result.run_to_failure_cost_rate)}/year)`;
+    }
+    return `Interval from the P-F calculator (${when}): ${parts.join(", ")} → ${to} (${why})${tail}.`;
   }
   if (key === "ff") {
     const dev = result.device || {};

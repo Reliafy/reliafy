@@ -427,17 +427,22 @@ press **Work it out** again.
 
 - **On condition: the P-F calculator.** A failure often gives a warning first
   (a noise, a leak, a rise in temperature). The time from that first sign to
-  the failure is the P-F interval. Give it, how many failures a year to expect
-  if nothing is done, and what a check, a fix in time and a failure cost. It
-  finds the check interval with the lowest cost a year, and shows the rule of
-  thumb (check at least every half P-F interval) beside it.
+  the failure is the P-F interval, and it's all the calculator needs: check at
+  least every half P-F interval. If acting on a warning takes a while (ordering
+  the part, planning the shutdown), give the **time needed to act**: when the
+  P-F interval less that time (the net P-F interval) is shorter, that's the
+  limit. Costs only matter for whether the check pays for itself, not for the
+  P-F interval: add how many failures a year to expect and what a check, a fix
+  in time and a failure cost to see the cheapest interval too. On a safety or
+  environmental failure the costs are tucked behind **Show costs**: the task
+  must make the risk tolerable whatever it costs.
 - **Failure finding: the test interval.** Give the protective device's failure
   rate (or pick its model) and the target: the most it may be failed when it's
   needed. 1% is filled in as a common starting point for safety, marked
   *assumed*. It finds the longest test interval that meets the target and
-  shows yours beside it, for example *1 month → 0.4% unavailability*. Clear the
-  target and give the test cost, the demand rate and what a demand on a failed
-  device costs to find the cheapest interval instead.
+  shows yours beside it, for example *1 month → 0.42% unavailability*. Costs
+  are optional: the test cost, the demand rate and what a demand on a failed
+  device costs add the cheapest interval (clear the target to use that alone).
 - **Fixed interval: the replacement age.** The same calculation as
   [optimal replacement](/guides/optimal-replacement-interval), from a
   non-repairable model and the planned and unplanned costs, in the model's
