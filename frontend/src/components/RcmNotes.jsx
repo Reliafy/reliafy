@@ -55,7 +55,10 @@ function MarkdownClamp({ text, openToken }) {
   );
 }
 
-export default function RcmNotes({ r, readOnly = false, onSave, openToken = null, children = null }) {
+// `bare`: a failure mode's Rationale row at the foot of its steps grid (Derryn, 9 Nov 2026):
+// the same notes, region and actions, without the section heading (the grid's left column
+// names the row); `lead` (its "Based on:" evidence line) comes first.
+export default function RcmNotes({ r, readOnly = false, onSave, openToken = null, children = null, bare = false, lead = null }) {
   const text = notesOf(r);
   const fn = r.type === "fn";
   const limit = notesLimit(r);
@@ -144,6 +147,24 @@ export default function RcmNotes({ r, readOnly = false, onSave, openToken = null
     body = <MarkdownClamp text={text} openToken={fn ? openToken : null} />;
   }
 
+  if (bare) {
+    const act = editing || readOnly ? null : text
+      ? <button ref={startBtn} type="button" className="link sm rw-notes-act" aria-label="Edit the notes and rationale" onClick={start}>Edit</button>
+      : <button ref={startBtn} type="button" className="link sm rw-notes-act" title={notesPrompt(r)} onClick={start}>+ Add notes</button>;
+    return (
+      <section className="td-ctx rw-notes bare" aria-label="Notes and rationale">
+        {lead}
+        {body}
+        {(act || note) && (
+          <div className="rw-notes-foot">
+            {act}
+            {note && <span className="field-saved td-ctx-note" role="status">{note}</span>}
+          </div>
+        )}
+        {children}
+      </section>
+    );
+  }
   return (
     <Section title="Notes and rationale" className="td-ctx rw-notes"
              aside={note && <span className="field-saved td-ctx-note" role="status">{note}</span>}

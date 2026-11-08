@@ -91,11 +91,15 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(panel(page)).toBeVisible();
   let tasks = tasksOf(page);
   await expect(chipsOf(page)).toContainText("On condition");
-  await expect(lines(tasks)).toHaveText([`Weekly pH check ${tag} · On condition · every 1 week`]);
+  // Step 3 is a yes or no; the task carries its own kind, a small chip with the worth-doing test as its tooltip.
+  await expect(lines(tasks)).toHaveCount(1);
+  await expect(lines(tasks).first()).toContainText(`Weekly pH check ${tag}`);
+  await expect(lines(tasks).first()).toContainText("every 1 week");
+  const kindChip = tasks.getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` });
+  await expect(kindChip).toHaveValue("on_condition");
+  await expect(kindChip).toHaveAttribute("title", /^First choice: /);
   await expect(tasks.locator(".rim-cards")).toHaveCount(0);
-  await expect(tasks.locator(".task-choice")).toContainText("On condition: a check at an interval, then what's done when the check finds it.");
-  await expect(tasks.getByRole("radio", { name: /On condition/ })).toHaveAttribute("title", /^First choice: /);
-  await expect(tasks.getByRole("radiogroup", { name: "Which task is worth doing?" }).getByRole("radio", { name: /On condition/ }))
+  await expect(tasks.getByRole("radiogroup", { name: "Which task is worth doing?" }).getByRole("radio", { name: /Task\(s\) worth doing/ }))
     .toHaveAttribute("aria-checked", "true");
 
   // The link picks the task's row: its own details, the way up ending at the failure mode.
@@ -107,6 +111,8 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(chipsOf(page)).toContainText("On condition");
   await expect(chipsOf(page)).toContainText("every 1 week");
   await expect(panel(page).locator(".psec-title")).toHaveText(["Kind and interval", "Then, if found", "Instructions", "Evidence for this task", "Serves", "Logistics"]);
+  // Its kind is a small chip here too, changed on the task.
+  await expect(section(page, "Kind and interval").getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` })).toHaveValue("on_condition");
   // What's done when the check finds it: kept on Enter, and quietly after the row's name.
   const found = section(page, "Then, if found").getByRole("textbox", { name: "Then, if found:" });
   await expect(found).toHaveAttribute("placeholder", "Say what's done when the check finds it");
@@ -173,7 +179,13 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await toMode(page, `Acid under-dosed ${tag}`);
   tasks = tasksOf(page);
   await expect(chipsOf(page)).toContainText("On condition + Fixed interval");
-  await expect(lines(tasks)).toHaveText([`Weekly pH check ${tag} · On condition · every 1 week`, `Replace the dosing pump ${tag} · Fixed interval · every 36 months`]);
+  await expect(lines(tasks)).toHaveCount(2);
+  await expect(lines(tasks).nth(0)).toContainText(`Weekly pH check ${tag}`);
+  await expect(lines(tasks).nth(0)).toContainText("every 1 week");
+  await expect(lines(tasks).nth(1)).toContainText(`Replace the dosing pump ${tag}`);
+  await expect(lines(tasks).nth(1)).toContainText("every 36 months");
+  await expect(tasks.getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` })).toHaveValue("on_condition");
+  await expect(tasks.getByRole("combobox", { name: `Kind of “Replace the dosing pump ${tag}”` })).toHaveValue("fixed_interval");
   await addRow(tasks).click();
   add = addForm(tasks);
   await expect(add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio"))
@@ -266,7 +278,7 @@ test("one task for several modes: a row under each, adopted by a tap, read-only 
   const tasks = tasksOf(page);
   const which = tasks.getByRole("radiogroup", { name: "Which task is worth doing?" });
   await expect(which.getByRole("radio", { checked: true })).toHaveCount(0);
-  await expect(which.getByRole("radio", { name: /On condition/ })).toBeDisabled();
+  await expect(which.getByRole("radio", { name: /Task\(s\) worth doing/ })).toBeDisabled();
   await expect(tasks).toContainText("Answer step 2 first: what's worth doing depends on the consequence.");
   await expect(tasks.getByRole("button", { name: "Decide…" })).toHaveCount(0);
   await expect(tasks.getByRole("heading", { name: "Tasks linked before the decision" })).toBeVisible();
@@ -274,16 +286,22 @@ test("one task for several modes: a row under each, adopted by a tap, read-only 
   await expect(before).toHaveCount(1);
   await expect(before.first()).toContainText(/shared with 1 other failure mode/i);
   await expect(tasks.getByRole("button", { name: /^\+ Add a task/ })).toHaveCount(0);
-  // Step 2 answered (hidden, operational): failure finding is offered; one tap decides, adopting that task.
+  // Step 2 answered (hidden, operational): one tap on "Task(s) worth doing" decides, adopting that task
+  // as the kind it is (on condition); its kind chip then makes it failure finding (offered: it's hidden).
   await dlg.getByRole("radiogroup", { name: "Hidden failure?" }).getByRole("radio", { name: "Hidden" }).click();
   await dlg.getByRole("radiogroup", { name: "Consequence category" }).getByRole("radio", { name: "Operational", exact: true }).click();
-  await expect(which.getByRole("radio", { name: /Failure finding/ })).toBeEnabled();
-  await which.getByRole("radio", { name: /Failure finding/ }).click();
-  await expect(which.getByRole("radio", { name: /Failure finding/ })).toHaveAttribute("aria-checked", "true");
+  await expect(which.getByRole("radio", { name: /Task\(s\) worth doing/ })).toBeEnabled();
+  await which.getByRole("radio", { name: /Task\(s\) worth doing/ }).click();
+  await expect(which.getByRole("radio", { name: /Task\(s\) worth doing/ })).toHaveAttribute("aria-checked", "true");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(chipsOf(page)).toContainText("On condition");
+  const sharedKind = tasks.getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` });
+  await expect(sharedKind.locator("option")).toHaveText(["On condition", "Fixed interval", "Failure finding"]);
+  await sharedKind.selectOption("failure_finding");
   await expect(chipsOf(page)).toContainText("Failure finding");
   await expect(lines(tasks)).toHaveCount(1);
-  await expect(lines(tasks).first()).toContainText(`Weekly pH check ${tag} · Failure finding · every 1 week`);
+  await expect(lines(tasks).first()).toContainText(`Weekly pH check ${tag}`);
+  await expect(tasks.getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` })).toHaveValue("failure_finding");
   await expect(tasks.getByRole("heading", { name: "Tasks linked before the decision" })).toHaveCount(0);
   // The row menu's Change the decision… (the panel never opens the dialog): the shared interval read-only, and why.
   await saltRow.locator(".tp-nm").click();

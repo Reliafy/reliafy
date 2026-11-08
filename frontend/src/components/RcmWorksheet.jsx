@@ -636,8 +636,37 @@ export function Details({
     </>
     );
   };
-  // In the steps grid the row's label says "Evidence".
-  const decisionWhy = r.type === "mode" && d && evidenceOf(r, { bare: true });
+  // A failure mode's Rationale row (Derryn, 9 Nov 2026): its first line "Based on:" the
+  // evidence as citations (the linked model, analysis, report or function notes, with Link… /
+  // Change…), the evidence's status at its right; a combination's members' own evidence and
+  // what the evidence shows under it. Per-task evidence stays on the task's own panel.
+  const basedOn = r.type === "mode" && d && (
+    <div className="rw-basedon-wrap">
+      <div className="rw-basedon rw-evidence" role="group" aria-label="Evidence">
+        <span className="rw-basedon-lead">Based on:</span>
+        <span className="rw-basedon-cites">
+          {d.artifact_name ? (d.evidence_kind === "working" && d.working && onSelect
+            ? <button type="button" className="link" onClick={() => onSelect(d.working.id, { notes: true })}
+                      title="Open the function's notes and rationale">{d.artifact_name}</button>
+            : d.artifact_link_path ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)
+            : <span className="rw-basedon-none">{d.status === "unevidenced" ? "nothing linked yet" : "judgement (none needed)"}</span>}
+          {!readOnly && ops?.decide && (
+            <> · <button type="button" className="link" aria-label={d.status === "unevidenced" ? "Link evidence…" : "Change evidence…"}
+                         title={d.status === "unevidenced" ? "Link the model, analysis, report or function notes behind this decision (optional)" : "Link other evidence, or none"}
+                         onClick={() => setLinkingEvidence({ at: null })}>{d.status === "unevidenced" ? "Link…" : "Change…"}</button></>
+          )}
+        </span>
+        <span className="rw-basedon-status">
+          {d.status === "unevidenced" ? <Chip>None linked</Chip>
+            : d.status ? <RcmStatusBadge status={d.status} kind={d.evidence_kind} /> : null}
+        </span>
+      </div>
+      {d.status !== "unevidenced" && (d.summary || d.reason) ? <p className="rw-dwhy">{d.summary || d.reason}</p> : null}
+      {isCombination(d) && d.outcomes.some((o) => o.status) && (
+        <ul className="rw-members">{d.outcomes.filter((o) => o.status).map((o, i) => <li key={`${o.outcome}:${i}`}>{memberEvidenceLine(o)}</li>)}</ul>
+      )}
+    </div>
+  );
   // A task's own evidence: a combination's member has its own (or the decision's stands for
   // it); the one task of a plain decision has the decision's.
   const taskEvidence = isTask && modeRow && (() => {
@@ -725,7 +754,7 @@ export function Details({
         )}
         {/* Notes and rationale come first among the sections, directly below the chips, the
             same section at every level: a failure mode's are its notes. */}
-        {hasNotesField(r) && (
+        {hasNotesField(r) && r.type !== "mode" && (
           <RcmNotes key={`${r.key}:notes`} r={r} readOnly={readOnly} onSave={(value) => keep("notes", onCommit(r, "notes", value))}
                     openToken={r.type === "fn" ? ops?.notesView?.token(r) ?? null : null}>
             {/* A function's notes hold the working behind its standards: its PDFs close the section. */}
@@ -784,8 +813,19 @@ export function Details({
         {r.type === "mode" && (
           <section className={"rw-sgwrap" + (fmea?.on ? " rw-steps-first" : "")} aria-label="Proactive task or default action">
             <RcmModeTasks key={`${r.key}:tasks`} r={r} ops={ops} readOnly={readOnly} addStart={startOf("task")} onSaid={said}
-                          options={options} why={decisionWhy} own={ownBlock} onPick={onSelect ? (k) => onSelect(k) : null}
+                          options={options} own={ownBlock} onPick={onSelect ? (k) => onSelect(k) : null}
                           n={fmea?.on ? null : 3} />
+          </section>
+        )}
+        {/* The foot of a failure mode's grid: its rationale, based on its evidence (Derryn,
+            9 Nov 2026), in place of the notes over the steps and the separate Evidence row. */}
+        {r.type === "mode" && (
+          <section className="rw-sg rw-rationale" aria-label="Rationale">
+            <StepLabel>Rationale</StepLabel>
+            <div className="rw-sc">
+              <RcmNotes key={`${r.key}:notes`} r={r} readOnly={readOnly} bare lead={basedOn}
+                        onSave={(value) => keep("notes", onCommit(r, "notes", value))} />
+            </div>
           </section>
         )}
         {/* A task (the tree's fifth level): what it is and how often, what's done when its check

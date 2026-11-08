@@ -475,3 +475,32 @@ test("a combination's member gets its own evidence; the others and the decision'
   assert.equal("evidence" in cleared.outcomes[1], false);
   assert.equal(cleared.outcomes[1].task_id, "t2");
 });
+
+test("step 3 as a yes/no: a first task of its own kind, and each task's kind changed on it", async () => {
+  const { decisionWithNewFirst, decisionWithKind, isMemberTask } = await import("./rcmWorksheet.js");
+  // A first task replaces a decision with none, of the kind it was made as.
+  assert.deepEqual(decisionWithNewFirst({ outcome: "rtf", rtf_basis: "random", evidence: { type: "model", id: "m1" } },
+    { outcome: "fixed_interval", task: "Replace", interval: 24, interval_unit: "months" }),
+  { outcome: "fixed_interval", task: "Replace", interval: 24, interval_unit: "months" });
+  assert.deepEqual(decisionWithNewFirst({ outcome: "accept", evidence: { type: "report", id: "r1", name: "x" } },
+    { outcome: "on_condition", task_id: "t1", on_found: "Fix it" }),
+  { outcomes: [{ outcome: "on_condition", task_id: "t1", on_found: "Fix it" }], evidence: { type: "report", id: "r1" } });
+  assert.deepEqual(decisionWithNewFirst(null, { outcome: "on_condition", task: "Look", interval: 1, interval_unit: "weeks" }),
+    { outcome: "on_condition", task: "Look", interval: 1, interval_unit: "weeks" });
+  // A plain decision's own task: its kind is the decision's outcome, the task kept by id.
+  const plain = { outcome: "on_condition", task_id: "t1", evidence: { type: "degradation_model", id: "d1" } };
+  assert.ok(isMemberTask(plain, "t1") && !isMemberTask(plain, "t9") && !isMemberTask(null, "t1"));
+  assert.deepEqual(decisionWithKind(plain, [{ id: "t1" }], "t1", "fixed_interval"), { outcomes: [{ outcome: "fixed_interval", task_id: "t1" }] });
+  assert.equal(decisionWithKind(plain, [{ id: "t1" }], "t1", "on_condition"), null);
+  assert.equal(decisionWithKind(plain, [{ id: "t1" }], "t9", "fixed_interval"), null); // not the decision's: changed on the task
+  // A combination: only that member's kind changes; its model and its check's response go, the rest stay.
+  const combo = { outcome: "on_condition", task_id: "t1", evidence: { type: "report", id: "r1" }, outcomes: [
+    { outcome: "on_condition", task_id: "t1", on_found: "Plan it", evidence: { type: "degradation_model", id: "d1" } },
+    { outcome: "on_condition", task_id: "t2", on_found: "Top up", evidence: { type: "working", id: "f1" } }] };
+  assert.deepEqual(decisionWithKind(combo, [], "t1", "fixed_interval"), { outcomes: [
+    { outcome: "fixed_interval", task_id: "t1" },
+    { outcome: "on_condition", task_id: "t2", evidence: { type: "working", id: "f1" }, on_found: "Top up" }],
+  evidence: { type: "report", id: "r1" } });
+  assert.deepEqual(decisionWithKind(combo, [], "t2", "failure_finding").outcomes[1],
+    { outcome: "failure_finding", task_id: "t2", evidence: { type: "working", id: "f1" }, on_found: "" });
+});

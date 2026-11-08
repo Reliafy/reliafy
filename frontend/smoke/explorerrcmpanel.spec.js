@@ -149,13 +149,26 @@ test("a click shows the details beside the table; a double-click on the name spr
     const m = (await rcmOf(request, p)).functions[0].failures[0].modes.find((x) => x.id === p.mode.id);
     return [m.text, m.effects, m.hidden, m.consequence];
   }).toEqual([`Bearing seizes early ${tag}`, "Pump stops; no flow to the tank", true, "operational"]);
-  // Step 3, no decision: the chip row with nothing chosen, open now step 2 is answered (failure finding
-  // offered: the failure is hidden); no Decide…, no tasks listed, no add row, no ⋯.
+  // Step 3, no decision: a yes or no with nothing chosen, open now step 2 is answered; no Decide…,
+  // no tasks listed, no add row, no ⋯. "Task(s) worth doing" opens the first task's row, its kind
+  // first (failure finding offered: the failure is hidden); nothing is saved until the task is.
   const todo = panel(page).getByRole("region", { name: "Proactive task or default action" });
   const which = todo.getByRole("radiogroup", { name: "Which task is worth doing?" });
-  await expect(which.getByRole("radio")).toHaveText([/On condition/, /Fixed interval/, /Failure finding/, /No task is worth doing/]);
+  await expect(which.getByRole("radio")).toHaveText([/Task\(s\) worth doing/, /No task is worth doing/]);
   await expect(which.getByRole("radio", { checked: true })).toHaveCount(0);
-  await expect(which.getByRole("radio", { name: /On condition/ })).toBeEnabled();
+  await expect(which.getByRole("radio", { name: /Task\(s\) worth doing/ })).toBeEnabled();
+  let firstPuts = 0;
+  const countPut = (q) => { if (q.method() === "PUT" && q.url().includes(`/failure-modes/${p.mode.id}/decision`)) firstPuts += 1; };
+  page.on("request", countPut);
+  await which.getByRole("radio", { name: /Task\(s\) worth doing/ }).click();
+  const firstTask = todo.getByRole("group", { name: "The decision's task" });
+  await expect(firstTask.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio"))
+    .toHaveText([/On condition/, /Fixed interval/, /Failure finding/]);
+  await page.waitForTimeout(300);
+  expect(firstPuts).toBe(0);
+  page.off("request", countPut);
+  await firstTask.getByRole("button", { name: "Cancel" }).click(); // taken back: as it was
+  await expect(which.getByRole("radio", { checked: true })).toHaveCount(0);
   await expect(todo.getByRole("button", { name: "Decide…" })).toHaveCount(0);
   await expect(todo.locator(".rim-cards > li")).toHaveCount(0);
   await expect(todo.getByRole("list", { name: "The decision's tasks" })).toHaveCount(0);
@@ -378,14 +391,19 @@ test("one order at every level: its notes under the title and chips, what's insi
     await expect(panel(page).getByRole("region", { name: "Failure modes" })).toContainText("1 of its 2 failure modes still needs a decision.");
     await show(`^Failure mode: Seal leaks ${tag}`);
     await expect(panel(page).getByRole("heading", { level: 2, name: `Seal leaks ${tag}` })).toBeVisible();
-    // The FME(C)A's groups (scores, criticality) are on its own tab, not this one; the mode's
-    // notes and rationale (the same section at every level) are above all of it, below the chips.
-    // Then its three steps, each a region, together one grid: what happens, how bad, what we do.
-    expect(await blocks(page)).toEqual(["Failure effects", "Failure consequences", "Proactive task or default action"]);
-    expect(await notesFirst(page)).toBe(true);
-    await notesQuiet(page);
+    // The FME(C)A's groups (scores, criticality) are on its own tab, not this one. Its three steps,
+    // each a region, then its rationale, together one grid: what happens, how bad, what we do, why.
+    // On a failure mode the notes and rationale are the grid's foot (Derryn, 9 Nov 2026), "Based
+    // on:" its evidence first; no separate Evidence row.
+    expect(await blocks(page)).toEqual(["Failure effects", "Failure consequences", "Proactive task or default action", "Rationale"]);
+    expect(await notesFirst(page)).toBe(false);
+    const rationale = panel(page).getByRole("region", { name: "Rationale" });
+    const modeNotes = rationale.getByRole("region", { name: "Notes and rationale" });
+    await expect(modeNotes.getByRole("group", { name: "Evidence" })).toContainText("Based on:");
+    await expect(modeNotes.getByRole("group", { name: "Evidence" })).toContainText("None linked");
+    await expect(modeNotes.getByRole("button", { name: "+ Add notes" })).toBeVisible();
     // One grid, "step | choice": a row per question, the step's name on the left (Derryn, 9 Nov 2026).
-    await expect(panel(page).locator(".rw-sl")).toHaveText(["1 · Failure effects", "2 · Hidden failure?", "Consequence", "3 · Task worth doing?", "Tasks", "Evidence"]);
+    await expect(panel(page).locator(".rw-sl")).toHaveText(["1 · Failure effects", "2 · Hidden failure?", "Consequence", "3 · Task worth doing?", "Tasks", "Rationale"]);
     await expect(panel(page).locator(".psec-title", { hasText: /Failure effects|Failure consequences|Proactive task/ })).toHaveCount(0);
     // Step 1 is the effects box alone: the step's title is its label (the box's name, not shown again).
     await expect(panel(page).getByRole("region", { name: "Failure effects" }).getByRole("textbox", { name: /^Failure effects/ })).toBeVisible();
@@ -400,21 +418,26 @@ test("one order at every level: its notes under the title and chips, what's insi
     // mode's notes and rationale are the one place. No ⋯, no Change….
     const todo = panel(page).getByRole("region", { name: "Proactive task or default action" });
     await expect(todo.locator(".rim-step")).toHaveCount(1);
-    await expect(todo.getByRole("radiogroup", { name: "Which task is worth doing?" }).getByRole("radio", { name: /On condition/ }))
+    await expect(todo.getByRole("radiogroup", { name: "Which task is worth doing?" }).getByRole("radio", { name: /Task\(s\) worth doing/ }))
       .toHaveAttribute("aria-checked", "true");
-    await expect(todo.getByRole("list", { name: "The decision's tasks" }).getByRole("listitem"))
-      .toHaveText([`Check the seal ${tag} · On condition · every 1 month`, `Replace the seal ${tag} · Fixed interval · every 24 months`]);
+    // Each task with its own kind, a small chip that changes it.
+    const taskLines = todo.getByRole("list", { name: "The decision's tasks" }).getByRole("listitem");
+    await expect(taskLines).toHaveCount(2);
+    await expect(taskLines.nth(0)).toContainText(`Check the seal ${tag}`);
+    await expect(taskLines.nth(0)).toContainText("every 1 month");
+    await expect(todo.getByRole("combobox", { name: `Kind of “Check the seal ${tag}”` })).toHaveValue("on_condition");
+    await expect(todo.getByRole("combobox", { name: `Kind of “Replace the seal ${tag}”` })).toHaveValue("fixed_interval");
     await expect(todo.locator(".rim-cards")).toHaveCount(0);
     await expect(todo.getByRole("textbox", { name: "Then, if found:" })).toHaveCount(0); // in the task's own details
-    await expect(todo.locator(".task-choice")).toContainText("On condition: a check at an interval");
+    await expect(todo.locator(".task-choice")).not.toContainText("On condition: a check at an interval"); // no bridge line
     await expect(todo.getByRole("button", { name: /^Edit “|^Remove “/ })).toHaveCount(0);
     await expect(todo.getByRole("button", { name: /^Change…$|^Actions for/ })).toHaveCount(0);
     await expect(todo.getByRole("button", { name: "+ Add a task" })).toBeVisible();
     await expect(todo.getByRole("textbox", { name: /^Decision notes/ })).toHaveCount(0);
-    await expect(todo.getByRole("group", { name: "Evidence" })).toContainText("None linked");
+    await expect(todo.getByRole("group", { name: "Evidence" })).toHaveCount(0); // in the Rationale row
     expect(await todo.evaluate((el) => {
       const at = (sel) => [...el.querySelectorAll("*")].indexOf(el.querySelector(sel));
-      return [at(".task-choice"), at(".rim-tasklist"), at(".rim-addrow"), at(".rim-whyopen")].every((v, i, a) => v >= 0 && (i === 0 || v > a[i - 1]));
+      return [at(".task-choice"), at(".rim-tasklist"), at(".rim-addrow")].every((v, i, a) => v >= 0 && (i === 0 || v > a[i - 1]));
     })).toBe(true);
     const labels = await panel(page).locator(".rw-pbody .field-label").allInnerTexts();
     const at = (t) => labels.findIndex((x) => x.startsWith(t));
@@ -495,11 +518,11 @@ test("fields, chips, ⋯ and refusals: kept where you typed, the reason beside i
   const which = step3.getByRole("radiogroup", { name: "Which task is worth doing?" });
   let decisionPuts = 0;
   page.on("request", (q) => { if (q.method() === "PUT" && q.url().includes(`/failure-modes/${p.seal.id}/decision`)) decisionPuts += 1; });
-  await which.getByRole("radio", { name: /On condition/ }).focus();
+  await which.getByRole("radio", { name: /Task\(s\) worth doing/ }).focus();
   await page.keyboard.press("ArrowRight");
-  await expect(which.getByRole("radio", { name: /Fixed interval/ })).toBeFocused();
-  await expect(which.getByRole("radio", { name: /Fixed interval/ })).toHaveAttribute("aria-checked", "false");
-  await expect(which.getByRole("radio", { name: /On condition/ })).toHaveAttribute("aria-checked", "true");
+  await expect(which.getByRole("radio", { name: /No task is worth doing/ })).toBeFocused();
+  await expect(which.getByRole("radio", { name: /No task is worth doing/ })).toHaveAttribute("aria-checked", "false");
+  await expect(which.getByRole("radio", { name: /Task\(s\) worth doing/ })).toHaveAttribute("aria-checked", "true");
   await page.waitForTimeout(300);
   expect(decisionPuts).toBe(0);
   await expect(step3.getByRole("list", { name: "The decision's tasks" }).getByRole("button", { name: `Replace the seal ${tag}`, exact: true })).toBeVisible();
