@@ -1246,7 +1246,7 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
         from backend.maintenance import library_models
 
         return _run(library_models.attach, m, session, ctx.write_owner, position_id, body["library_record_id"], modes, note,
-                    replace, owners=ctx.read_owners)
+                    replace, owners=ctx.read_owners, length_ft=body.get("length_ft"))
     if body.get("use_link_id"):
         # Which of the position's rows is the model in use.
         return _run(m.use_position_model, position_id, str(body["use_link_id"]))

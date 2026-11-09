@@ -45,8 +45,9 @@ def test_a_rate_record_becomes_a_cited_exponential_model(m, db):
     assert link["role"] == "library" and link["source"]["library"]["record_id"] == RATE
     doc = db.models.find_one({"_id": link["model_id"]})
     r = doc["results"]
-    assert doc["distribution_id"] == "exponential" and r["params"][0]["value"] == pytest.approx(1.75e-07)
-    assert r["params"][0]["ci"] == [1.5e-08, 4.86e-07] and "source's 5–95% uncertainty" in r["ci_note"]
+    assert doc["distribution_id"] == "exponential" and r["params"][0]["value"] == pytest.approx(1.75e-07, rel=0.01)
+    assert r["params"][0]["ci"] == pytest.approx([1.5e-08, 4.86e-07], rel=0.01) and "across plants" in r["ci_note"]
+    assert r["rate_uncertainty"]["shape"] == 1.26
     assert r["library"]["citation"] == "INL/EXT-21-65055, Table 1, p. 6" and doc["spec"]["library_record_id"] == RATE
     [row] = pm.describe(m, db, OWNERS, set(), m.position_models(pump))
     assert row["source_text"] == ("Library: NRC/INL 2020, Air-operated valve fails to control "

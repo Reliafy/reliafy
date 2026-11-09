@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { rateSpread } from "../rateSpread.js";
 import Plot from "./Plot.jsx";
 import ProbabilityPlot from "./ProbabilityPlot.jsx";
 import SurvivalPlot from "./SurvivalPlot.jsx";
@@ -253,6 +254,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
           ciLabel={intervalLevel(result).label}
           ciNote={result.method === "library" || intervalLevel(result).credible ? result.ci_note : null}
           credible={intervalLevel(result).credible}
+          spread={rateSpread(result)}
         />
       );
       break;

@@ -24,6 +24,10 @@ blocks, the units of one parallel block, or a block inside a sub-system:
 drawing them independently would understate the uncertainty, which is about
 the one population's parameters.
 
+A saved model from a library rate record (NRC/INL) has no fit to draw from:
+its source gives the failure rate as a gamma (or lognormal) across plants, and
+each draw takes its rate from that (``rate_draws``); the block says so.
+
 Saved models persist their fitted surpyval model (with its covariance), so no
 refit is needed; older saved models without it are refitted once from their
 dataset by the existing refit-on-demand path and cached. Blocks with
@@ -69,15 +73,37 @@ _LOADSHARE = "load-sharing group — kept at its fitted load-life model"
 _STALE = ("its parameters differ from the saved model's current fit — "
           "re-pick the model to refresh them")
 _UNREADABLE = "the saved model's fit couldn't be loaded"
+# A library model's spread: the rate drawn from the source's distribution across plants.
+SOURCE_SPREAD = ("failure rate drawn from the source's spread across plants (a library record's gamma), "
+                 "not a fit's confidence")
 
 
 class _SavedDraws:
     """The draws of one saved fitted model, shared by every block using it."""
 
-    def __init__(self, model_id: str, live, params: list):
+    def __init__(self, model_id: str, live, params: list, from_source: bool = False):
         self.model_id = model_id
         self.live = live
         self.params = params  # n_draws parameter vectors (dist param order)
+        self.from_source = from_source  # drawn from a library record's spread, not a fit
+
+
+def rate_draws(rate: dict, n: int, rng) -> Optional[np.ndarray]:
+    """``n`` failure rates drawn from a library model's rate distribution
+    (``rate_uncertainty``: a gamma with shape and rate, or a lognormal with mu
+    and sigma of the log rate), in the model's time unit; None for any other."""
+    try:
+        if rate.get("distribution") == "gamma":
+            shape, beta = float(rate["shape"]), float(rate["rate"])
+            if shape > 0 and beta > 0:
+                return rng.gamma(shape, 1.0 / beta, n)
+        if rate.get("distribution") == "lognormal":
+            sigma = float(rate["sigma"])
+            if sigma > 0:
+                return np.exp(rng.normal(float(rate["mu"]), sigma, n))
+    except (KeyError, TypeError, ValueError):
+        return None
+    return None
 
 
 class _Collector:
@@ -108,6 +134,14 @@ class _Collector:
         live = (entry or {}).get("model")
         if live is None or not hasattr(getattr(live, "dist", None), "from_params"):
             return _UNREADABLE
+        rate = (entry or {}).get("rate_uncertainty")
+        if rate and getattr(live.dist, "name", None) == "Exponential":
+            # A library model (NRC/INL): the source gives the failure rate as a distribution across
+            # plants; each draw takes a rate from it, not from a fit's covariance.
+            rng = np.random.default_rng([self.seed, zlib.crc32(model_id.encode())])
+            draws = rate_draws(rate, self.n_draws, rng)
+            if draws is not None:
+                return _SavedDraws(model_id, live, [[float(v)] for v in draws], from_source=True)
         from backend.fitting import _covariance_of
 
         if _covariance_of(live) is None:
@@ -313,6 +347,8 @@ def _draw_graph(
                  "models": sorted({(data[slot].get("name") or "saved model")
                                    for slot in swaps}),
                  "model_ids": sorted({s.model_id for s in swaps.values()})}
+        if any(s.from_source for s in swaps.values()):
+            entry["from_source"] = SOURCE_SPREAD
         if reasons:  # e.g. a standby spare with hand-entered parameters
             entry["partly_fixed"] = reasons[0]
         collector.uncertain.append(entry)

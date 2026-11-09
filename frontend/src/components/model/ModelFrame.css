@@ -359,3 +359,7 @@ html.print-layout .app.model-frame { height: auto !important; overflow: visible 
 .model-checks td:first-child { white-space: normal; }
 .model-checks td:last-child, .model-checks th:last-child { text-align: left; white-space: nowrap; }
 .compare-guidance { margin-top: 6px; }
+
+/* A library model's failure rate and its spread across plants, in words first. */
+.mf-note.model-chars-spread { color: var(--ink); font-size: var(--fs-14); }
+.calc-spread-words { margin: -4px 0 8px; }

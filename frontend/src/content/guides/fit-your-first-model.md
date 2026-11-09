@@ -198,8 +198,12 @@ Open a source to filter its records by equipment type, failure mode and kind,
 and a record to see its distribution written out and plotted.
 
 A record's **Use as a model…** saves a failure rate as an exponential model
-at its mean rate per hour, with the source's 5–95% range as the interval (the
-spread between plants, not a fit's confidence bound), cited on the model.
+at its mean rate per hour, cited on the model. It keeps the source's gamma on
+that rate: the rate varies from plant to plant, and times to failure are
+exponential at a given rate. So the model's Model characteristics and
+Calculator show each value with its 5–95% range across plants (the spread
+between plants, not a fit's confidence bound), and an RBD's band draws the
+block's rate from it. A pipe's rate is per foot: give the pipe's length.
 **Use as a prior…** fits one of your datasets with the record as the prior:
 on an exponential the record's gamma is the prior exactly; on a Weibull or
 lognormal it becomes a prior on the mean life, with the shape between bounds

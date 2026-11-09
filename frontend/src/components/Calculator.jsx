@@ -13,6 +13,7 @@ import { boundWords, timeAtValue } from "../lifeResults.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
 import { unitInText } from "./unitText.js";
+import { SPREAD_LABEL, spreadCurves, spreadRangeText, spreadTime, spreadWords } from "../rateSpread.js";
 
 // The calculator's inputs (covariate combinations, active function, evaluation
 // time, conditional age) live in the parent (ResultView) so they survive tab
@@ -216,7 +217,7 @@ function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, lab
 // chart fills the tab's height (the model page's frame).
 export default function Calculator({ functions, unit, params, state, setState, nextIdRef, name = null,
                                      paramLabel = null, fill = false, ciLabel = "95%", ciNote = null,
-                                     credible = false }) {
+                                     credible = false, spread = null }) {
   const { meta, evaluate_path: evaluatePath } = functions;
   const tLabel = unit ? `t (${unit})` : "t";
   const covariates = functions.covariates || [];
@@ -411,7 +412,11 @@ export default function Calculator({ functions, unit, params, state, setState, n
 
   // Confidence band of each series for the active function (raw scale only —
   // it isn't conditionalised, so it's hidden when a survived-age is set).
+  // A library model (NRC/INL): no fit to bound, but its rate's spread across plants gives a band
+  // (exp(-λ95 t) to exp(-λ5 t) on reliability), worked out here from the rate's 5% and 95%.
+  const spreadBand = spread && !confidencePath && cond === 0 ? spreadCurves(spread, active, x) : null;
   const bandOf = (s) => {
+    if (spreadBand) return s === series[0] ? spreadBand : null;
     const b = bands[s.id]?.data;
     return ci.bound !== "none" && b && b.on === active && cond === 0 ? b : null;
   };
@@ -419,14 +424,14 @@ export default function Calculator({ functions, unit, params, state, setState, n
 
   // Chart: the active function for every series, plus a marker at t.
   const traces = [];
-  banded.forEach((s, i) => {
+  (spreadBand ? series.slice(0, 1) : banded).forEach((s, i) => {
     const b = bandOf(s);
     if (!b) return;
     // Two-sided: a shaded band under the fitted line (added next). One-sided:
     // the bound alone, dashed. Several combinations: each in its own colour,
     // named only in the hover-free legend of one.
     const color = COLORS[i % COLORS.length];
-    const bandName = multi ? undefined
+    const bandName = multi ? undefined : b.spread ? SPREAD_LABEL
       : b.bound === "two-sided" ? `${ciLevel}% confidence band` : `${ciLevel}% ${b.bound} bound`;
     if (b.lower && b.upper) {
       traces.push(...bandPair(b.x, b.lower, b.upper, {
@@ -516,6 +521,10 @@ export default function Calculator({ functions, unit, params, state, setState, n
           {!multi && (
             <span className="calc-answer-value">
               <b>{tarTimes[0] != null ? fmtTime(tarTimes[0]) : "—"}</b>
+              {spread && !lifePath && rValid && (() => {
+                const r = spreadTime(spread, rNum / 100);
+                return r ? <span className="calc-answer-ci"> — {spreadRangeText(r.lower, r.upper, fmtTime)}</span> : null;
+              })()}
               {ci.bound !== "none" && tarPoint && (() => {
                 const words = boundWords(ciLevel, tar.data.bound, tarPoint.lower, tarPoint.upper, fmtTime);
                 return words ? <span className="calc-answer-ci"> — {words}</span> : null;
@@ -537,6 +546,10 @@ export default function Calculator({ functions, unit, params, state, setState, n
               // In words (#292): "we're 90% sure it's at least 38%".
               const lo = band.lower ? interp(band.x, band.lower, Number(t)) : null;
               const hi = band.upper ? interp(band.x, band.upper, Number(t)) : null;
+              if (band.spread) {
+                return lo != null && hi != null
+                  ? <span className="calc-answer-ci"> — {spreadRangeText(lo, hi, (v) => fmtFn(active, v))}</span> : null;
+              }
               const words = boundWords(ciLevel, band.bound, lo, hi, (v) => fmtFn(active, v));
               return words ? <span className="calc-answer-ci"> — {words}</span> : null;
             })()}
@@ -544,6 +557,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
         )}
       </div>
       )}
+      {spread && <p className="muted-line calc-spread-words">{spreadWords(spread)}</p>}
       {timeMode && lifePath && tar.key === tarKey && tar.error && (
         <p className="hint" style={{ margin: "0 0 0.4rem" }}>Couldn't compute the time: {tar.error}</p>
       )}
@@ -716,6 +730,9 @@ export default function Calculator({ functions, unit, params, state, setState, n
                   </>
                 )}
                 {/* A Bayesian update's bounds are credible intervals: say so beside the level. */}
+                {spread && !confidencePath && (
+                  <p className="calc-note">Shaded: {SPREAD_LABEL.toLowerCase()}, not a confidence band.</p>
+                )}
                 {(!confidencePath || credible) && functions.bands_note && (
                   <p className="calc-note">{functions.bands_note}</p>
                 )}

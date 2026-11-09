@@ -3399,10 +3399,11 @@ export function getLibraryRecord(recordId) {
   return request(`/api/library/records/${encodeURIComponent(recordId)}`);
 }
 // A record saved as a model in the user's models (a rate → an exponential, cited).
-export function createModelFromLibrary(recordId, name) {
+// A rate per foot of pipe takes the pipe's length in feet.
+export function createModelFromLibrary(recordId, name, lengthFt = null) {
   return request("/api/models/from-library", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ record_id: recordId, ...(name ? { name } : {}) }),
+    body: JSON.stringify({ record_id: recordId, ...(name ? { name } : {}), ...(lengthFt != null ? { length_ft: lengthFt } : {}) }),
   });
 }
 // The records behind the user's latest models from the library.
