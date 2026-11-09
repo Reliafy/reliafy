@@ -1,5 +1,9 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { searchLibrary } from "../api.js";
+import { portalHost } from "../fullScreen.js";
+import { listPlace } from "../listPlace.js";
+import "../views/Predictions.css";
 import { NO_PART_TYPE_HINT, fmtPerMillion } from "../predictions.js";
 
 // The handbook source a parts count draws on (backend/services/reliability_prediction.py).
@@ -34,6 +38,24 @@ export default function PartTypePicker({ value, onChange, onUseRate = null, labe
   const [error, setError] = useState(null);
   const box = useRef(null);
   const input = useRef(null);
+  const list = useRef(null);
+  const [place, setPlace] = useState(null);
+  const placeList = useCallback(() => {
+    const r = input.current?.getBoundingClientRect();
+    if (r) setPlace(listPlace(r, { width: window.innerWidth, height: window.innerHeight }));
+  }, []);
+  // Placed as it opens, and again as the page, the table or the window moves under it.
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    placeList();
+    const again = (e) => { if (!list.current?.contains(e.target)) placeList(); };
+    window.addEventListener("scroll", again, true);
+    window.addEventListener("resize", placeList);
+    return () => {
+      window.removeEventListener("scroll", again, true);
+      window.removeEventListener("resize", placeList);
+    };
+  }, [open, placeList]);
   const id = useId();
 
   // The search, a moment after typing stops (at once for the opening list).
@@ -64,7 +86,7 @@ export default function PartTypePicker({ value, onChange, onUseRate = null, labe
   useEffect(() => {
     if (!open) return undefined;
     const onDown = (e) => {
-      if (box.current && !box.current.contains(e.target)) setOpen(false);
+      if (box.current && !box.current.contains(e.target) && !list.current?.contains(e.target)) setOpen(false);
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
@@ -135,8 +157,8 @@ export default function PartTypePicker({ value, onChange, onUseRate = null, labe
         onFocus={() => setOpen(true)}
         onKeyDown={onKey}
       />
-      {open && (
-        <ul className="ptp-list" id={listId} role="listbox" aria-label={`${label} matches`}>
+      {open && place && createPortal(
+        <ul className="ptp-list" id={listId} role="listbox" aria-label={`${label} matches`} ref={list} style={place}>
           {error && <li className="ptp-note" role="presentation">{error}</li>}
           {!error && !rows.length && (
             <li className="ptp-note" role="presentation">
@@ -176,7 +198,8 @@ export default function PartTypePicker({ value, onChange, onUseRate = null, labe
               {" "}(a part the handbook doesn’t have, such as a battery)
             </li>
           )}
-        </ul>
+        </ul>,
+        portalHost(),
       )}
     </div>
   );

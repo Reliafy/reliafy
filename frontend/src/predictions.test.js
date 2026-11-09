@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   csvFileName, factorsText, fmtHours, fmtPerHour, fmtPerMillion, fmtReliability, lineFromServer, linesCsv,
   linesForServer, linesFromSaved, linesProblem, newPredictionPath, paretoBars, parsePartsList, predictionPath,
-  summaryText,
+  partTypeMode, summaryText,
 } from "./predictions.js";
 
 test("addresses", () => {
@@ -158,4 +158,13 @@ test("the factors in words name what a parts-count rate holds at the handbook's 
   });
   assert.equal(text, "Applied: λb, πE, πQ, λg. Not applied: πT (temperature). "
     + "Held at the handbook's defaults in the generic rates: πL (learning).");
+});
+
+test("which of the three a parts-list line uses", () => {
+  assert.equal(partTypeMode({ excluded: true, record: { id: "r" } }), "excluded");
+  assert.equal(partTypeMode({ record: { id: "r" }, rate: "3" }), "type");
+  assert.equal(partTypeMode({ rate: "3" }), "rate");
+  assert.equal(partTypeMode({ rateMode: true }), "rate");
+  assert.equal(partTypeMode({ rate: " " }), "type");
+  assert.equal(partTypeMode(), "type");
 });

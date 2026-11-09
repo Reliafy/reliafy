@@ -71,9 +71,11 @@
   color: var(--muted); font-size: var(--fs-14); line-height: 1; padding: 0; cursor: pointer;
 }
 .ptp-clear:hover { color: var(--ink); border-color: var(--ink); }
+/* In a portal, fixed to the screen where PartTypePicker's listPlace says (its left, width, top or
+   bottom and max height), so a scrolling table or a pane can't cut it off. */
 .ptp-list {
-  position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px 0; list-style: none;
-  max-height: 18rem; overflow-y: auto; min-width: 22rem; max-width: calc(100vw - 2rem);
+  position: fixed; z-index: 1100; margin: 0; padding: 4px 0; list-style: none; box-sizing: border-box;
+  max-height: 18rem; overflow-y: auto;
   background: var(--surf); border: 1px solid var(--line); border-radius: var(--r-sm); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 .ptp-item { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; cursor: pointer; }

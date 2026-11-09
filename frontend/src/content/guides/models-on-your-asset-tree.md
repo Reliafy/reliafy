@@ -106,8 +106,11 @@ type (and a quality factor where the handbook has one): each part's rate is
 its base rate times the factors, and the rates add up as if every part were
 needed. The handbook covers electronic parts only: tick **Not electronic** on
 a mechanical part (an airframe, a propeller) to leave it out, and give a part
-it doesn't have (a battery) a rate of your own. The result is a failure rate
-and an MTBF, with each part's share, and it names what was left out.
+it doesn't have (a battery) a rate of your own. It opens in the table area
+beside the tree, the parts table across it, and the result beside the parts
+updates as you go: the failure rate per million hours, the MTBF, the chance of
+getting through the mission time with no failure (when you give one), and the
+parts left out. **×** or Esc goes back to the table.
 
 Saved, it's a row of kind **Prediction**, an exponential model at the
 predicted rate, so the RCM, the calculators and RBDs can use it, and it's on
