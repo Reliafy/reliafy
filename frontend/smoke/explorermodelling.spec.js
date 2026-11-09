@@ -18,7 +18,7 @@ const sideways = (page) => page.evaluate(() => document.documentElement.scrollWi
 // it, open the group, pick the item.
 // Saving a fit refits it on the server (a fit with a prior on SurPyval's grid, then the save and
 // the link): on a shared CI runner that can take longer than an expect's 10 s. Wait for the save's
-// own answer, then check it worked and the dialog closed.
+// own answer, then check it worked and the fit pane closed.
 async function saveFit(page, dialog, positionId) {
   const saved = page.waitForResponse((r) => r.url().includes(`/api/maintenance/positions/${positionId}/models`)
     && r.request().method() === "POST", { timeout: 60_000 });
@@ -109,7 +109,7 @@ test("update a baseline with a position's one failure, and save it as the positi
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
   await headPick(page, "Life model", "Fit a life model…");
-  const dialog = page.getByRole("dialog", { name: "Fit a life model" });
+  const dialog = page.getByRole("region", { name: "Fit a life model" });
   await dialog.getByRole("radio", { name: "With a prior" }).click();
   await dialog.getByRole("combobox", { name: "Prior", exact: true }).selectOption("model");
   const option = await dialog.locator("option", { hasText: "Bearing life — Weibull" }).first().getAttribute("value");
@@ -224,7 +224,7 @@ test("a Bayesian update from numbers I know, on a position whose class has no mo
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
   await headPick(page, "Life model", "Fit a life model…");
-  const dialog = page.getByRole("dialog", { name: "Fit a life model" });
+  const dialog = page.getByRole("region", { name: "Fit a life model" });
   // A plain fit to one failure is refused, in words; with a prior, the class has nothing besides this pump.
   await expect(dialog.getByRole("alert")).toContainText("a plain Weibull fit needs at least 2");
   // The refusal offers the way out: fit with a prior.
@@ -315,7 +315,7 @@ test("Fit a life model… through each Data choice on a class of two positions",
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${b.id}&tab=models`);
   await headPick(page, "Life model", "Fit a life model…");
-  const dialog = page.getByRole("dialog", { name: "Fit a life model" });
+  const dialog = page.getByRole("region", { name: "Fit a life model" });
   await expect(dialog.getByRole("status")).toContainText("A plain fit (maximum likelihood) to 2 failures and 1 suspension in this position's history");
   await expect(dialog.locator(".fit2-numbers thead")).toContainText("95% confidence bounds");
   await dialog.getByRole("combobox", { name: "Data" }).selectOption("class");
@@ -331,7 +331,7 @@ test("Fit a life model… through each Data choice on a class of two positions",
   await expectHealthy(page, problems, { label: "Fit a life model" });
 });
 
-test("the Fit dialog at 400 px: inputs, then the result, nothing sideways, Save in reach", async ({ page, request }) => {
+test("the fit at 400 px takes the screen: inputs, then the result, nothing sideways, Save in reach, Back", async ({ page, request }) => {
   const tag = `w${Date.now()}`;
   const ago = (d) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
   const pump = await postOk(request, `${M}/positions`, { name: `Narrow pump ${tag}` });
@@ -346,14 +346,22 @@ test("the Fit dialog at 400 px: inputs, then the result, nothing sideways, Save 
   await row(page, pump.id).locator(".tp-nm").click({ button: "right" });
   await page.getByRole("menuitem", { name: "Life model", exact: true }).click();
   await page.getByRole("group", { name: "Life model" }).getByRole("menuitem", { name: "Fit a life model…" }).click();
-  const dialog = page.getByRole("dialog", { name: "Fit a life model" });
+  const dialog = page.getByRole("region", { name: "Fit a life model" });
   await expect(dialog.getByRole("status")).toContainText("A plain fit (maximum likelihood) to 3 failures");
+  await expect(page.getByRole("dialog", { name: "Fit a life model" })).toHaveCount(0);
+  const paneBox = await dialog.boundingBox();
+  expect(Math.round(paneBox.width)).toBe(400);  // the whole screen, as the Explorer's other panels on a phone
   const inBox = await dialog.locator(".fit2-in").boundingBox();
   const outBox = await dialog.locator(".fit2-out").boundingBox();
   expect(outBox.y).toBeGreaterThan(inBox.y);  // stacked: inputs first
   expect(await sideways(page)).toBeLessThanOrEqual(400);
+  expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
   await dialog.getByRole("button", { name: "Save as this position's model" }).scrollIntoViewIfNeeded();
   await expect(dialog.getByRole("button", { name: "Save as this position's model" })).toBeEnabled();
+  // Back: the tree again.
+  await dialog.getByRole("button", { name: "Back to the table" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(row(page, pump.id)).toBeVisible();
 });
 
 // A prior around a value, between two bounds: alpha about 400 (90% between 300 and 600), beta just
@@ -365,10 +373,49 @@ test("Fit a life model… with a prior around a value, between two bounds", asyn
   await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `A1 ${tag}` }, on: ago(700) });
   await postOk(request, `${M}/positions/${pump.id}/remove`, { on: ago(350), reason: "failure" });
   await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `A2 ${tag}` }, on: ago(350) });
+  const other = await postOk(request, `${M}/positions`, { name: `Around neighbour ${tag}` });
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
   await headPick(page, "Life model", "Fit a life model…");
-  const dialog = page.getByRole("dialog", { name: "Fit a life model" });
+  const dialog = page.getByRole("region", { name: "Fit a life model" });
+  // In the table area, not a dialog: the tree beside it, the heading naming the position, the address saying so.
+  await expect(dialog).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Fit a life model" })).toHaveCount(0);
+  await expect(page.locator(".tt-main .tt-side .fit-pane")).toBeVisible();
+  await expect(dialog.locator(".fit-pane-title")).toHaveText(`Fit a life model · Around pump ${tag}`);
+  await expect(row(page, pump.id)).toBeVisible();
+  await expect(row(page, other.id)).toBeVisible();
+  await expect(row(page, pump.id)).toHaveAttribute("aria-selected", "true");
+  await expect(page).toHaveURL(new RegExp(`[?&]fit=${pump.id}`));
+  const treeBox = await page.locator(".tp-scroll").boundingBox();
+  const paneBox = await dialog.boundingBox();
+  expect(paneBox.x).toBeGreaterThanOrEqual(treeBox.x + treeBox.width - 2);  // beside the tree
+  expect(paneBox.width).toBeGreaterThan(700);  // the table's room, both columns side by side
+  const inBox = await dialog.locator(".fit2-in").boundingBox();
+  const outBox = await dialog.locator(".fit2-out").boundingBox();
+  expect(outBox.x).toBeGreaterThan(inBox.x);
+  // Escape: the table again, the row still picked and focused, the address back as it was.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(row(page, pump.id)).toHaveAttribute("aria-selected", "true");
+  await expect(row(page, pump.id)).toBeFocused();
+  await expect(page).not.toHaveURL(/[?&]fit=/);
+  // ×: the same. Nothing changed, so picking another row just closes it.
+  await headPick(page, "Life model", "Fit a life model…");
+  await dialog.getByRole("button", { name: "Close fit a life model" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(row(page, pump.id)).toBeFocused();
+  await headPick(page, "Life model", "Fit a life model…");
+  await row(page, other.id).locator(".tp-nm").click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("alertdialog", { name: "Discard this fit?" })).toHaveCount(0);
+  await row(page, pump.id).locator(".tp-nm").click();
+  // A reload keeps it open (the choices fresh).
+  await headPick(page, "Life model", "Fit a life model…");
+  await dialog.getByRole("radio", { name: "With a prior" }).click();
+  await page.reload();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: "Plain fit" })).toHaveAttribute("aria-checked", "true");
   await expect(dialog.getByRole("combobox", { name: "Data" }).locator("option").first()).toHaveText("This position's history (1 failure, 1 suspension)");
   await dialog.getByRole("radio", { name: "With a prior" }).click();
   await dialog.getByRole("combobox", { name: "Prior", exact: true }).selectOption("around");
@@ -386,7 +433,19 @@ test("Fit a life model… with a prior around a value, between two bounds", asyn
   await rows.getByLabel("Shape (beta) and").fill("1");
   await expect(dialog).toContainText("For Shape (beta), the low bound must be below the high one.");
   await rows.getByLabel("Shape (beta) and").fill("4");
+  // Changed: picking another row asks first; keeping it leaves everything as typed.
+  await row(page, other.id).locator(".tp-nm").click();
+  const discard = page.getByRole("alertdialog", { name: "Discard this fit?" });
+  await expect(discard).toBeVisible();
+  await discard.getByRole("button", { name: "Keep fitting" }).click();
+  await expect(dialog).toBeVisible();
+  await expect(rows.getByLabel("Characteristic life (alpha) about")).toHaveValue("400");
+  await expect(row(page, pump.id)).toHaveAttribute("aria-selected", "true");
   await saveFit(page, dialog, pump.id);
+  // Saved: the table again, the new model row under the pump picked.
+  const picked = page.locator(`.tp-row[aria-selected="true"][data-key^="L:"]`);
+  await expect(picked).toHaveCount(1);
+  await expect(picked.locator(".mt-c-kind")).toContainText("Bayesian");
   await expectHealthy(page, problems, { label: "a prior around a value" });
 });
 
@@ -415,4 +474,27 @@ test("the library record picker at 400 px", async ({ page, request, problems }) 
   await expect(page.getByRole("dialog", { name: "From the data library" }).getByRole("group", { name: "The library record" }))
     .toContainText("Motor-driven pump");
   await expectHealthy(page, problems, { label: "the library record picker at 400 px" });
+});
+
+// The product page's Modelling tab is the same Explorer: the fit fills its table area too, the
+// address keeping the page's own ?view=, and Escape returns to the table.
+test("a product's Modelling tab: Fit a life model… in the table area", async ({ page, request, problems }) => {
+  const tag = `pp${Date.now()}`;
+  const product = await postOk(request, `${M}/products`, { name: `Fit drone ${tag}`, part_number: `FD-${tag}` });
+  const motor = await postOk(request, `${M}/positions`, { name: `Fit motor ${tag}`, parent_id: product.id });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/products/${product.id}?view=models&sel=${motor.id}`);
+  await headPick(page, "Life model", "Fit a life model…");
+  const pane = page.getByRole("region", { name: "Fit a life model" });
+  await expect(pane.locator(".fit-pane-title")).toHaveText(`Fit a life model · Fit motor ${tag}`);
+  await expect(page.getByRole("dialog", { name: "Fit a life model" })).toHaveCount(0);
+  await expect(row(page, motor.id)).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/products/${product.id}\\?.*view=models.*fit=${motor.id}`));
+  await page.reload();
+  await expect(pane).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(pane).toHaveCount(0);
+  await expect(row(page, motor.id)).toHaveAttribute("aria-selected", "true");
+  await expect(page).not.toHaveURL(/[?&]fit=/);
+  await expectHealthy(page, problems, { label: "a product's fit pane" });
 });

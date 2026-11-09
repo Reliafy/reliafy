@@ -87,3 +87,31 @@ test("refusalWords names the distribution as the app does; dataOptions counts po
   const opts = dataOptions({ cls: { positions: 1, failures: 0, suspensions: 1 } });
   assert.match(opts[1].label, /\(1 position, /);
 });
+
+test("the fit opens as its opener asked, and counts as changed only when a choice is", async () => {
+  const { fitChanged, fitTitle, initialFit } = await import("./fitDialog.js");
+  const plain = initialFit();
+  assert.equal(plain.data, "position");
+  assert.equal(plain.method, "mle");
+  assert.equal(plain.distribution, "weibull");
+  // A library record as the prior opens on the exponential (the exact update).
+  const lib = initialFit({ method: "bayes", priorKind: "library", recordId: "r1" });
+  assert.equal(lib.distribution, "exponential");
+  assert.equal(lib.recordId, "r1");
+  // A refit keeps the row's failure modes.
+  assert.deepEqual(initialFit({}, { failure_modes: [{ id: "m1" }, { id: "m2" }] }).modes, ["m1", "m2"]);
+
+  assert.equal(fitChanged(plain, initialFit()), false);
+  assert.equal(fitChanged(plain, { ...plain, method: "bayes" }), true);
+  assert.equal(fitChanged(plain, { ...plain, exclude: new Set(["f1"]) }), true);
+  assert.equal(fitChanged(plain, { ...plain, params: { alpha: "400" } }), true);
+  // Typed and cleared again, or only asked about an age: nothing to lose.
+  assert.equal(fitChanged(plain, { ...plain, params: { alpha: "" } }), false);
+  assert.equal(fitChanged(plain, { ...plain, around: { alpha: { about: "", lo: "" } } }), false);
+  assert.equal(fitChanged(plain, { ...plain, age: "1000" }), false);
+  // The same failure modes picked in another order are the same.
+  assert.equal(fitChanged({ ...plain, modes: ["a", "b"] }, { ...plain, modes: ["b", "a"] }), false);
+
+  assert.equal(fitTitle(), "Fit a life model");
+  assert.equal(fitTitle({ id: "l1" }), "Refit the life model");
+});

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getLibraryRecord, getLibrarySources, linkPositionModel, listModels, previewPositionFit } from "../api.js";
-import Modal from "./Modal.jsx";
 import Plot from "./Plot.jsx";
 import ProbabilityPlot from "./ProbabilityPlot.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
@@ -12,22 +11,27 @@ import { saveErrorText } from "../confirm.js";
 import { TRUST_CHOICES } from "../bayesUpdate.js";
 import {
   AROUND_PARAMS, METHOD_CHOICES, METHOD_LINE, bodyOf, countsWords, dataOptions, effective, forWords, historyRow, previewKey,
-  libraryPriorWords, priorChoices, problem, refusalSwitch, refusalWords, showsTrust,
+  fitChanged, fitTitle, initialFit, libraryPriorWords, priorChoices, problem, refusalSwitch, refusalWords, showsTrust,
 } from "../fitDialog.js";
 import { fmt } from "../explorerModels.js";
+import { CloseIcon } from "./icons.jsx";
 import LibraryRecordPicker, { PickedRecord } from "./LibraryRecordPicker.jsx";
 import { rowFromDetail } from "../libraryPicker.js";
 import "./RcmWorksheet.css";
-import "./FitModal.css";
+import "./FitLifeModel.css";
 
-// "Fit a life model…" (Life model ›): a wide dialog, inputs on the left as a step | choice grid
-// (Data with the history under it, Method, Prior, Distribution, For), the result on the right
-// (what came out, the curve, the numbers, reliability at an age, how it was computed, Save).
-// Both panes scroll on their own; at 400 px they stack, inputs first, Save at the foot. Every
-// change asks again a moment later (fitDialog.previewKey: the request and what's missing).
+// "Fit a life model…" (Life model ›) fills the Explorer's table area, the tree kept beside it
+// (Derryn, 9 Nov 2026: "It shouldn't be a modal itself, only the select life model from the
+// library"). FitPane is that area: a heading ("Fit a life model · <position>") with a close, and
+// FitLifeModel under it: inputs on the left as a step | choice grid (Data with the history under
+// it, Method, Prior, Distribution, For), the result on the right (what came out, the curve, the
+// numbers, reliability at an age, how it was computed, Save). Both columns scroll on their own;
+// when the area is narrow they stack, inputs first, Save at the foot. Every change asks again a
+// moment later (fitDialog.previewKey: the request and what's missing). Only the library record
+// picker is a dialog, over the pane.
 //
 //   position  {id, name, position_class}
-//   start     {data?, method?, priorKind?, modelId?}   link: a row it replaces (Refit…)
+//   start     {data?, method?, priorKind?, modelId?, recordId?}   link: a row it replaces (Refit…)
 
 const PARAM_NAMES = { weibull: ["alpha", "beta"], exponential: ["failure_rate"], lognormal: ["mu", "sigma"] };
 const PARAM_WORDS = { alpha: "Characteristic life (alpha)", beta: "Shape (beta)", failure_rate: "Failure rate", mu: "mu", sigma: "sigma" };
@@ -77,15 +81,49 @@ function ForPicker({ modes, value, onChange }) {
   );
 }
 
-export default function FitModal({ position, start = {}, link = null, onClose, onDone }) {
+// The fit in the table area. `onDirty(changed)`: whether anything has been changed since it
+// opened (selecting another row asks "Discard this fit?" only then). `onSaving(busy)`: while
+// it saves, it can't be closed. `headingRef`: its heading,
+// focused when it opens. `phone`: it takes the screen, with Back.
+export function FitPane({ position, start = {}, link = null, phone = false, headingRef = null, onClose, onDone, onDirty, onSaving }) {
+  const [saving, setSavingState] = useState(false);
+  const setSaving = (v) => { setSavingState(v); onSaving?.(v); };
+  const title = fitTitle(link);
+  return (
+    <section className={"rw-panel fit-pane is-expanded" + (phone ? " fit-pane-phone" : "")} aria-label={title}>
+      <div className="rw-panel-head fit-pane-head">
+        {phone && (
+          <button type="button" className="ghost sm fit-pane-back" onClick={onClose} disabled={saving}
+                  aria-label="Back to the table">‹ Back</button>
+        )}
+        <h2 className="fit-pane-title" tabIndex={-1} ref={headingRef}>
+          {title} <span className="fit-pane-pos">· {position.name}</span>
+        </h2>
+        {!phone && (
+          <div className="rw-panel-btns">
+            <button type="button" className="ghost sm rw-x" onClick={onClose} disabled={saving}
+                    aria-label={`Close ${title.toLowerCase()}`} title="Back to the table (Esc)"><CloseIcon /></button>
+          </div>
+        )}
+      </div>
+      <FitLifeModel position={position} start={start} link={link} onClose={onClose} onDone={onDone} onDirty={onDirty} onSaving={setSaving} />
+    </section>
+  );
+}
+
+export default function FitLifeModel({ position, start = {}, link = null, onClose, onDone, onDirty, onSaving }) {
   const modes = useModes(position.id);
-  const [state, setState] = useState(() => ({
-    data: start.data || "position", method: start.method || "mle", priorKind: start.priorKind || "class",
-    modelId: start.modelId || null, distribution: start.priorKind === "library" ? "exponential" : "weibull", trust: "guide", unit: "hours",
-    params: {}, b10: {}, shape: {}, around: {}, recordId: start.recordId || null, libShape: {},
-    modes: (link?.failure_modes || []).map((f) => f.id), exclude: new Set(), age: "",
-  }));
+  const [opened] = useState(() => initialFit(start, link));
+  const [state, setState] = useState(opened);
   const set = (k, v) => setState((s) => ({ ...s, [k]: v }));
+  const changed = fitChanged(opened, state);
+  useEffect(() => { onDirty?.(changed); }, [changed]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The picker closed: focus back on what opens it ("Change…", or "Pick a library record…").
+  const pickArea = useRef(null);
+  const closePicker = () => {
+    setPicking(false);
+    setTimeout(() => pickArea.current?.querySelector(".lib-picked-acts button, .lib-picked-pick")?.focus({ preventScroll: true }), 0);
+  };
   const [models, setModels] = useState(null);
   // The library record picked as the prior (its kind and bounds shape the words beside the picker).
   const [record, setRecord] = useState(null);
@@ -133,6 +171,7 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
   // A plain fit opens on its probability plot; one with a prior on the reliability curve.
   useEffect(() => setChart(eff.method === "mle" ? "paper" : "sf"), [eff.method]);
 
+  useEffect(() => { onSaving?.(saving); }, [saving]); // eslint-disable-line react-hooks/exhaustive-deps
   const save = async () => {
     setSaving(true);
     setFailed(null);
@@ -166,7 +205,7 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
     ...(d?.curves?.hf ? [{ value: "hf", label: "Hazard" }] : [])];
   const shownChart = charts.some((c) => c.value === chart) ? chart : "sf";
   return (
-    <Modal title={link ? "Refit the life model" : "Fit a life model"} onClose={onClose} locked={saving} trapFocus className="ml-fit2">
+    <>
       <div className="fit2">
         <section className="fit2-in" aria-label="What to fit">
           <div className="rw-sg rw-steps-first fit2-grid">
@@ -222,7 +261,9 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
                 )}
                 {eff.priorKind === "library" && (
                   <>
-                    <PickedRecord record={state.recordId ? record || { id: state.recordId } : null} onPick={() => setPicking(true)} />
+                    <div ref={pickArea} className="fit2-pick">
+                      <PickedRecord record={state.recordId ? record || { id: state.recordId } : null} onPick={() => setPicking(true)} />
+                    </div>
                     {state.recordId && <p className="fit2-sum">{libraryPriorWords(state.distribution, record)}</p>}
                     {record?.kind !== "life" && (state.distribution === "weibull" || state.distribution === "lognormal") && (
                       <div className="fit2-pair">
@@ -369,9 +410,9 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
         </section>
       </div>
       {picking && (
-        <LibraryRecordPicker use="prior" selectedId={state.recordId} onClose={() => setPicking(false)}
-                             onPick={(r) => { set("recordId", r.id); setRecord(r); setPicking(false); }} />
+        <LibraryRecordPicker use="prior" selectedId={state.recordId} onClose={closePicker}
+                             onPick={(r) => { set("recordId", r.id); setRecord(r); closePicker(); }} />
       )}
-    </Modal>
+    </>
   );
 }

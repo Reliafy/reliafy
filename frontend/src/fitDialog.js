@@ -182,3 +182,42 @@ export function libraryPriorWords(distribution, record = null) {
   }
   return "On an exponential the record's distribution is the prior exactly (conjugate: worked out in closed form).";
 }
+
+// The form as it opens: `start` (what the opener chose for it: Refit…, a library record from
+// Use as a prior…) and `link`, the row a refit replaces (its failure modes kept).
+export function initialFit(start = {}, link = null) {
+  return {
+    data: start.data || "position", method: start.method || "mle", priorKind: start.priorKind || "class",
+    modelId: start.modelId || null, distribution: start.priorKind === "library" ? "exponential" : "weibull", trust: "guide", unit: "hours",
+    params: {}, b10: {}, shape: {}, around: {}, recordId: start.recordId || null, libShape: {},
+    modes: (link?.failure_modes || []).map((f) => f.id), exclude: new Set(), age: "",
+  };
+}
+
+// The fit's own choices, in a form that compares: blanks dropped (a number typed and cleared
+// again is no change), sets and lists sorted. The age asked about is a question, not the fit.
+function settled(v) {
+  if (v instanceof Set) return settled([...v]);
+  if (Array.isArray(v)) return [...v].map(settled).sort();
+  if (v && typeof v === "object") {
+    const out = {};
+    for (const k of Object.keys(v).sort()) {
+      const x = settled(v[k]);
+      if (x === "" || x == null || (typeof x === "object" && !Array.isArray(x) && !Object.keys(x).length)) continue;
+      out[k] = x;
+    }
+    return out;
+  }
+  return typeof v === "string" ? v.trim() : v;
+}
+
+// Has anything in the fit been changed since it opened? Leaving it for another row asks
+// "Discard this fit?" only then.
+export function fitChanged(opened, now) {
+  const { age: _a, ...a } = opened || {};
+  const { age: _b, ...b } = now || {};
+  return JSON.stringify(settled(a)) !== JSON.stringify(settled(b));
+}
+
+// The pane's heading: what it does, then the position it's for.
+export const fitTitle = (link = null) => (link ? "Refit the life model" : "Fit a life model");

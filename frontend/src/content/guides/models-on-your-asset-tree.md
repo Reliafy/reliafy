@@ -52,10 +52,12 @@ The heading's **…** (and a position's **⋯**) has three groups, **Life
 model**, **RBD** and **Prediction**; point at one (or press →) to see its
 items. Under **Life model**:
 
-- **Fit a life model…** fits a life distribution to history. Choose the
+- **Fit a life model…** fits a life distribution to history. It opens in
+  the table's place, the tree still beside it; **×** or Esc takes you back
+  to the table. Choose the
   **data**: this position's own history (each item's days in service, ended
   by a failure or still running), its class's pooled history (every position
-  of the class: the dialog says how many, with their failures and
+  of the class: it says how many, with their failures and
   suspensions), or **both**: this position's history, with the class's other
   positions' history as a prior. Choose the **method**: a plain fit (the
   numbers that make the data most likely, with 95% confidence bounds) or
