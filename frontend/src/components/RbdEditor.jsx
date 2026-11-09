@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import useMenuDismiss from "./useMenuDismiss.js";
+import { Link } from "react-router-dom";
+import { CloseIcon } from "./icons.jsx";
 import ReactFlow, {
   Background,
   Controls,
@@ -351,7 +353,7 @@ function ValidationStatus({ validation, stale, validating, onValidate }) {
 // Shared samples are stored with a "(sample)" suffix; the header says so with a chip.
 export const SAMPLE_SUFFIX = /\s*\(sample\)\s*$/i;
 
-function Builder({ rbdId, imported, embedded = false, onSaved, onMeta, onTab, onDirty, addModel = null, onModelAdded, onLoadError }) {
+function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMeta, onTab, onDirty, addModel = null, onModelAdded, onLoadError }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [menu, setMenu] = useState(null); // { kind, x, y, flow?, id? }
@@ -1702,7 +1704,14 @@ function Builder({ rbdId, imported, embedded = false, onSaved, onMeta, onTab, on
           >
             Safety function…{repairable && policies.safety_function ? " ✓" : ""}
           </button>
+          {pane?.fullPath && (
+            <Link className="ovm-item" to={pane.fullPath} onClick={(e) => pane.onOpenFull?.(e, pane.fullPath)}>Open full page</Link>
+          )}
         </ToolbarMenu>
+        {pane?.onClose && (
+          <button type="button" className="ghost sm rw-x rbd-pane-x" onClick={pane.onClose}
+                  aria-label={pane.closeLabel || "Close"} title="Back to the table (Esc)"><CloseIcon /></button>
+        )}
       </div>
       {/* In full screen, Exit is the toolbar's last button, always on show.
           (The way in is on the canvas's corner: the toolbar is full.) */}

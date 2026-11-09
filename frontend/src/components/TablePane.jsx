@@ -11,8 +11,19 @@ import "./TablePane.css";
 //   busy     saving: it can't be closed      headingRef  focused when it opens
 //   actions  more in the heading, before × ("Open full page")
 //   closeLabel  ×'s name, when "Close <title>" doesn't read ("Close the RBD")
+//   bare     no heading row on a wide screen: the work puts × and its actions in its own toolbar
+//            (the RBD builder; Derryn, 9 Nov 2026: the heading "takes up too much room"). The
+//            heading stays for screen readers and focus. A phone keeps the row, for ‹ Back.
 export default function TablePane({ title, subject, phone = false, busy = false, headingRef = null, onClose, className = "", actions = null,
-  closeLabel = null, children }) {
+  closeLabel = null, bare = false, children }) {
+  if (bare && !phone) {
+    return (
+      <section className={"rw-panel table-pane is-expanded table-pane-bare" + (className ? ` ${className}` : "")} aria-label={title}>
+        <h2 className="sr-only" tabIndex={-1} ref={headingRef}>{title} · {subject}</h2>
+        {children}
+      </section>
+    );
+  }
   return (
     <section className={"rw-panel table-pane is-expanded" + (className ? ` ${className}` : "") + (phone ? " table-pane-phone" : "")}
              aria-label={title}>
