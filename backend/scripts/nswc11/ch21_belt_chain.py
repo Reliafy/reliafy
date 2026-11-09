@@ -104,8 +104,9 @@ RECORDS = [
                 warn(min=-20, max=200, why="Figure 21.7 covers −20 to 200 °F", page="21-13"),
                 warn(min=-20, max=140, why="standard belts work from −20 to 140 °F; outside it the belt needs "
                                            "special materials", page="21-11"),
-            ], default=40, default_basis="neutral", symbol="T_O", page="21-13",
-                help="Up to 40 °F the factor is 1. Include heat from slip, tight bends and poor ventilation."),
+            ], default=85, default_basis="handbook", symbol="T_O", page="21-3",
+                help="Published belt ratings are often based on 85 °F (p. 21-3), where the factor is 1.76; it is 1 "
+                     "only at 40 °F and below. Include heat from slip, tight bends and poor ventilation."),
             num("PD", "Driven pulley pitch diameter", "in", [
                 positive("a pulley has a diameter"),
                 warn(min=2.5, max=8.5, why="Figure 21.8 covers 2.5 to 8.5 in", page="21-14"),

@@ -267,7 +267,12 @@ RECORDS = [
         "Closed ends (ground or not): total coils minus two (p. 4-9).",
         "Section 4.3.7: a conical, barrel or hourglass spring is split into increments, each rated, and their "
         "rates added. With an S10 life from the maker, use that (times 4.55 for an average life) with these "
-        "factors instead (p. 4-5).",
+        "factors instead (p. 4-5); the library has no separate record for that route yet. "
+        "The handbook's Table 1-1 example (p. 1-12: seal 1.20, spring 1.04, poppet 0.35 per million hours) uses "
+        "Chapter 1's physical equations (for the spring, Eq. 4-5: 23.8 × (S_G/T_S)³ = 1.04); this record uses the "
+        "chapter's factor model, Eq. 4-6, normalised to a 190,000 psi wire and a cycle rate, which isn't "
+        "algebraically the same: for Table 1-1's spring it gives 1.11 (C_Y 0.466, C_CS 0.1, every geometry "
+        "factor 1).",
     ),
     _helical(
         "spring-extension", "Spring, helical extension", "4.4.2 Extension spring", "4-6", "4-13",

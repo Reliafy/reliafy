@@ -29,19 +29,30 @@ def test_gear_base_rate_is_one_failure_per_design_life_at_design_speed():
     out = lam("gear", **GEAR)
     assert out["modes"][0]["base"]["value"] == pytest.approx(1800 * 60 / 1e8 * 1e6)  # 1080
     f = factors(out)
-    # At the design speed C_GS = 1 + 1 = 2 (Eq. 8-3); at half the design load C_GP = 1 (Eq. 8-6);
-    # misalignment 0.006 rad, specified lubricant, 160 °F, uniform service: all 1.
-    assert f == pytest.approx({"C_GS": 2.0, "C_GP": 1.0, "C_GA": 1.0, "C_GL": 1.0, "C_GT": 1.0, "C_GV": 1.0})
-    # 1800 rpm is 108,000 revolutions an hour: 10^8 revolutions last 926 h, so 1,080 per million hours.
-    assert out["total"] == pytest.approx(2160.0)
+    # Reliafy's reading (readings.GEAR_NORMALISED_AT_DESIGN, p. 8-8): each factor ÷ its design-point value.
+    # At the design speed C_GS = (1 + 1) / 2 = 1; at half the design load C_GP = 0.5^4.69 = 0.0388 (Eq. 8-6
+    # ÷ 25.8); misalignment 0.006 rad, specified lubricant, 160 °F, uniform service: all 1.
+    assert f == pytest.approx({"C_GS": 1.0, "C_GP": 0.5 ** 4.69, "C_GA": 1.0, "C_GL": 1.0, "C_GT": 1.0, "C_GV": 1.0})
+    assert out["total"] == pytest.approx(1080 * 0.5 ** 4.69)
     assert out["unit"] == "per_million_hours"
+
+
+def test_gear_at_its_design_point_gets_its_base_rate():
+    # p. 8-8: the factors adjust "for any difference" from the design. As printed (Eqs. 8-3, 8-6) the gear at
+    # its own design speed and load came out 2.0 × 25.8 = 51.6 × its base: 55,755 per million hours. Normalised,
+    # 1800 rpm is 108,000 revolutions an hour: 10^8 revolutions last 926 h, so 1,080 per million hours.
+    out = lam("gear", V_o=1800, V_d=1800, L_O=1000, L_D=1000)
+    assert factors(out)["C_GS"] == pytest.approx(1.0) and factors(out)["C_GP"] == pytest.approx(1.0)
+    assert out["total"] == pytest.approx(1080.0)
+    assert round(1080 * 2.0 * 2 ** 4.69) == 55755  # the literal reading, for the record
+    assert "Reliafy's reading" in rec("gear")["notes"] and "p. 8-8" in rec("gear")["notes"]
 
 
 def test_gear_factors_follow_equations_8_3_to_8_9():
     out = lam("gear", V_o=900, V_d=1800, L_O=1000, L_D=1000, A_E=0.012, nu_ratio=1.5, T_AT=300)
     f = factors(out)
-    assert f["C_GS"] == pytest.approx(1 + 0.5 ** 0.7)
-    assert f["C_GP"] == pytest.approx(2 ** 4.69)  # 25.8 at the design load
+    assert f["C_GS"] == pytest.approx((1 + 0.5 ** 0.7) / 2)
+    assert f["C_GP"] == pytest.approx(1.0)  # 25.8 at the design load as printed, ÷ 25.8
     assert f["C_GA"] == pytest.approx(2 ** 2.36)
     assert f["C_GL"] == pytest.approx(1.5 ** 0.54)
     assert f["C_GT"] == pytest.approx(760 / 620)
@@ -64,8 +75,12 @@ def test_agma_service_factor_table(prime, driven, printed):
 
 
 def test_known_rate_gear_takes_the_makers_rate():
-    out = lam("gear-known-rate", lambda_GB=3.0, **GEAR)
-    assert out["total"] == pytest.approx(6.0)
+    # The maker's rate is at the design conditions (p. 8-9 footnote): at them the gear keeps it (was × 51.6).
+    out = lam("gear-known-rate", lambda_GB=10.0, V_o=1800, V_d=1800, L_O=1000, L_D=1000)
+    assert out["total"] == pytest.approx(10.0)
+    # At 1.2 × the design load: (1.2)^4.69 = 2.35 × the maker's rate.
+    out = lam("gear-known-rate", lambda_GB=10.0, V_o=1800, V_d=1800, L_O=1200, L_D=1000)
+    assert out["total"] == pytest.approx(10.0 * 1.2 ** 4.69)
 
 
 def test_gear_limits_refuse_and_warn_with_the_page():
@@ -82,9 +97,11 @@ def test_spline_life_and_rate_follow_equations_8_11_to_8_13():
     out = lam("spline", **vals)
     phi = 4.85e3 * 300 * 2.0 ** 3 / 10000
     theta = 7.08e-10 * (phi * 2.0 / 2.0) ** 4.56 * 0.006 ** -2.36
-    assert out["modes"][0]["base"]["value"] == pytest.approx(1e6 / theta)
-    assert out["total"] == pytest.approx(1e6 / theta * 2.0)  # C_GS = 2 at the design speed; others 1
-    assert out["unit"] == "per_million_cycles"
+    # Eq. 8-11 is per million revolutions; × 60 × 1800 revolutions an hour gives per million hours, so a
+    # prediction needs no separate cycles an hour.
+    assert out["modes"][0]["base"]["value"] == pytest.approx(1e6 / theta * 60 * 1800)
+    assert out["total"] == pytest.approx(1e6 / theta * 60 * 1800)  # C_GS = 1 at the design speed (normalised)
+    assert out["unit"] == "per_million_hours"
     f = factors(out)
     assert set(f) == {"C_GS", "C_GL", "C_GT", "C_GV"}
 

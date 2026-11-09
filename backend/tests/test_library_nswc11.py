@@ -238,3 +238,116 @@ def test_a_rate_per_cycle_needs_the_cycles_an_hour():
     assert out["lines"][0]["needs_conditions"] and "an hour" in out["lines"][0]["line_warnings"][0]
     out = rp.compute([{"name": "Part", "record_id": per_cycle["id"], "cycles_per_hour": 30}])
     assert out["failure_rate_per_million_hours"] == pytest.approx(each * 30)
+
+
+# ---- assemblies: one unit, shared conditions, parts that may be left out ------------------------
+
+def _per_cycle_part():
+    rec = _model()
+    rec = {**rec, "id": "t:c", "covariate_model": {**rec["covariate_model"], "rate_unit": "per_million_cycles"}}
+    return rec
+
+
+def _assembly(**mode_over):
+    mode = {"key": "part", "name": "Part", "uses": "t:c", **mode_over}
+    return {"id": "t:a", "name": "Assembly", "kind": "covariate_model", "covariate_model": {
+        "equation": "1-3", "page": "1-3", "formula": "λ = λ_part · cph + 0.5", "words": "w",
+        "rate_unit": "per_million_hours",
+        "inputs": [{"name": "cph", "kind": "number", "label": "Cycles an hour", "unit": "per hour", "role": "use",
+                    "limits": [{"min": 0, "exclusive": True, "severity": "refuse"}]},
+                   {"name": "load", "kind": "number", "label": "Load", "unit": "lbf", "role": "use",
+                    "limits": [{"min": 0, "severity": "refuse"}]},
+                   {"name": "fitted", "kind": "choice", "label": "Fitted", "default": "yes", "default_basis": "typical",
+                    "role": "design", "choices": [{"code": "yes", "label": "Yes"}, {"code": "no", "label": "No"}]}],
+        "modes": [mode, {"key": "casing", "name": "Casing", "base": {"symbol": "λC", "value": 0.5, "page": "1-3"}}]}}
+
+
+def test_mixed_units_are_refused_unless_converted():
+    # Rates are never added in mixed units (NSWC-11 pp. 12-10, 12-16): a note no longer lets a per-cycle part
+    # into a per-hour assembly, only a scale (its cycles an hour) does.
+    resolve = {"t:c": _per_cycle_part()}.__getitem__
+    words = covariate.problems(_assembly(note="the handbook adds them as written"), resolve)
+    assert any("never added in mixed units" in w for w in words)
+    assert covariate.problems(_assembly(scale="cph", scale_label="cycles an hour"), resolve) == []
+    # A per-hour part in a per-cycle assembly is refused outright.
+    hourly = {**_model(), "id": "t:c"}
+    whole = _assembly()
+    whole["covariate_model"]["rate_unit"] = "per_million_cycles"
+    assert any("mixed units" in w for w in covariate.problems(whole, {"t:c": hourly}.__getitem__))
+
+
+def test_a_per_cycle_part_is_scaled_by_its_cycles_an_hour():
+    resolve = {"t:c": _per_cycle_part()}.__getitem__
+    out = covariate.evaluate(_assembly(scale="cph", scale_label="cycles an hour"), {"cph": 60, "load": 1, "part.x": 3}, resolve)
+    part = out["modes"][0]
+    assert part["parts"]["total"] == 18 and part["scale"] == 60 and part["rate"] == 18 * 60
+    assert out["total"] == 18 * 60 + 0.5 and out["unit"] == "per_million_hours"
+
+
+def test_a_shared_condition_is_entered_once_and_passed_down():
+    resolve = {"t:c": _per_cycle_part()}.__getitem__
+    rec = _assembly(scale="cph", scale_label="cycles an hour", bind={"x": "load / 10"})
+    assert covariate.problems(rec, resolve) == []
+    assert [i["key"] for i in covariate.inputs(rec, resolve)] == ["cph", "load", "fitted", "part.k"]
+    out = covariate.evaluate(rec, {"cph": 2, "load": 30}, resolve)
+    assert out["modes"][0]["parts"]["inputs"]["x"] == 3 and out["total"] == 18 * 2 + 0.5
+    # The part's own limits still apply to the value passed down (x over 10 warns, x = 0 refuses).
+    assert covariate.evaluate(rec, {"cph": 2, "load": 120}, resolve)["warnings"]
+    with pytest.raises(covariate.CovariateError, match="must be more than 0"):
+        covariate.evaluate(rec, {"cph": 2, "load": 0}, resolve)
+    # Missing on the assembly: said once, not again under the part.
+    with pytest.raises(covariate.CovariateError) as err:
+        covariate.evaluate(rec, {"cph": 2}, resolve)
+    assert err.value.missing == ["load"]
+    with pytest.raises(covariate.CovariateError, match="Unknown input"):
+        covariate.evaluate(rec, {"cph": 2, "load": 30, "part.x": 3}, resolve)
+    assert any("doesn't read" in w for w in covariate.problems(_assembly(scale="cph", scale_label="c", bind={"zz": "load"}),
+                                                               resolve))
+
+
+def test_a_part_left_out_by_when_needs_nothing():
+    resolve = {"t:c": _per_cycle_part()}.__getitem__
+    rec = _assembly(scale="cph", scale_label="cycles an hour", when="fitted == 'yes'")
+    assert covariate.evaluate(rec, {"cph": 2, "load": 1, "fitted": "no"}, resolve)["total"] == 0.5
+    with pytest.raises(covariate.CovariateError) as err:
+        covariate.evaluate(rec, {"cph": 2, "load": 1}, resolve)
+    assert err.value.missing == ["part.x"]
+
+
+def test_an_input_asked_for_only_when_a_choice_needs_it():
+    rec = _model()
+    rec["covariate_model"]["inputs"].append({"name": "y", "kind": "number", "label": "Extra", "unit": "in",
+                                             "role": "design", "when": "k == 'b'",
+                                             "limits": [{"min": 0, "exclusive": True, "severity": "refuse"}]})
+    assert covariate.problems(rec) == []
+    assert covariate.evaluate(rec, {"x": 3})["total"] == 18  # k = 'a': y isn't needed
+    with pytest.raises(covariate.CovariateError) as err:
+        covariate.evaluate(rec, {"x": 3, "k": "b"})
+    assert "y" in err.value.missing
+    rec["covariate_model"]["inputs"][-1]["when"] = "zz == 1"
+    assert any("only inputs listed before it" in p for p in covariate.problems(rec))
+
+
+def test_no_library_assembly_mixes_units():
+    # Every assembly is per million hours or adds parts in its own unit; a per-cycle part always has a scale.
+    for r in _records():
+        m = covariate.model_of(r)
+        for mode in m.get("modes") or []:
+            if mode.get("uses"):
+                sub = library.get(mode["uses"])
+                if covariate.rate_unit(sub) != covariate.rate_unit(r):
+                    assert covariate.rate_unit(r) == "per_million_hours" and mode.get("scale"), (r["id"], mode["key"])
+
+
+def test_a_prediction_line_of_an_assembly_is_not_multiplied_again():
+    # The valve assembly is per million hours (its poppet converted inside it), so a prediction takes it as it is
+    # and asks for no cycles an hour.
+    cond = {"ops_per_hour": 60, "P1": 3000, "P2": 15, "T_O": 100, "source": "piston_pump", "FR": 10,
+            "poppet.Q_f": 0.06, "poppet.f": 35, "poppet.S_S": 4045, "poppet.D_S": 1.69, "poppet.L_W": 0.85,
+            "poppet.F_L": 0.5, "seal.Q_f": 0.06, "seal.D_SL": 0.34, "seal.M": 500, "seal.C": 910, "seal.f": 35,
+            "seal.T_R": 250, "spring.G_M": 11.5e6, "spring.D_W": 0.085, "spring.D_C": 0.58, "spring.N_a": 14,
+            "spring.T_S": 245e3, "spring.L1": 3.35, "spring.L2": 2.28, "solenoid.T_R": 130, "solenoid.T_O": 70}
+    alone = library.evaluate(f"{NSWC}:valve-assembly", cond)["result"]["total"]
+    out = rp.compute([{"name": "Valve", "record_id": f"{NSWC}:valve-assembly", "conditions": cond}])
+    assert out["lines"][0]["assigned"] and out["failure_rate_per_million_hours"] == pytest.approx(alone)
+    assert round(alone, 2) == 10.20

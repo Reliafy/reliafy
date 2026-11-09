@@ -70,3 +70,13 @@ def test_limits():
     assert "p. 9-17" in words and "p. 9-15" in words and "p. 9-14" in words
     with pytest.raises(covariate.CovariateError, match="needed"):
         lam("actuator-side-load", W_S=200, L=1.5, **{k: v for k, v in STEEL.items() if k != "wear"})
+
+
+def test_ninth_power_life_warns_when_far_from_the_handbooks_test_lives():
+    # p. 9-11 and Figure 9.2 (p. 9-10): real actuators wore out at 70,000 to 170,000 cycles. Eq. 9-4 as printed
+    # gives about 10¹⁷ cycles for an ordinary steel actuator with a 50 lbf side load: the result says so loudly.
+    out = lam("actuator-side-load", W_S=50, L=2, **{**STEEL, "D1": 3.0, "D2": 2.998, "F_Y": 50000, "wear": "gouging"})
+    n_o = next(d["value"] for d in out["derived"] if d["name"] == "N_O")
+    assert n_o > 1e15 and out["total"] < 1e-9
+    assert any("p. 9-11" in w and "isn't credible" in w for w in out["warnings"])
+    assert "12 orders of magnitude" in RECORDS["nswc-11:actuator-side-load"]["notes"]

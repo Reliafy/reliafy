@@ -25,7 +25,11 @@ def test_belt_drive_is_eq_21_7():
     # Eq. 21-7, p. 21-11: 40 · C_BL · C_t · C_PD · C_BT · C_BV · C_SV + λ_P
     out = lam("belt-drive", **BELT)
     c_bl = 0.3 + (1 / 1.1) ** 4.2
-    assert out["total"] == pytest.approx(40 * c_bl * 1.0 * 2.0 * 0.93 * 1.0 * 1.1 + 1.5)
+    # The belt temperature defaults to 85 °F, the rating temperature (p. 21-3): C_t = 2^(45/55) = 1.763.
+    c_t = 2 ** ((85 - 40) / 55)
+    assert factors(out, "belt")["C_t"] == pytest.approx(c_t) and round(c_t, 2) == 1.76
+    assert out["total"] == pytest.approx(40 * c_bl * c_t * 2.0 * 0.93 * 1.0 * 1.1 + 1.5)
+    assert lam("belt-drive", **BELT, T_O=40)["total"] == pytest.approx(40 * c_bl * 1.0 * 2.0 * 0.93 * 1.0 * 1.1 + 1.5)
     assert out["unit"] == "per_million_hours"
 
 

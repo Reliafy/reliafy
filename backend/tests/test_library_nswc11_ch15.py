@@ -16,7 +16,7 @@ OWN = {r["id"]: r for r in (build_nswc11._record(x) for x in ch15.RECORDS)}
 
 STUBS = {"nswc-11:seal-dynamic": ("per_million_hours", 1.0), "nswc-11:spring-compression": ("per_million_hours", 2.0),
          "nswc-11:actuator-side-load": ("per_million_cycles", 4.0),
-         "nswc-11:valve-assembly": ("per_million_operations", 8.0)}
+         "nswc-11:valve-assembly": ("per_million_hours", 8.0)}  # Chapter 6's assembly is per hour
 
 
 def _stub(rid, unit, rate):
@@ -112,14 +112,19 @@ def test_checks_warn_on_yield_and_unused_joints():
         lam("accumulator-cylinder-wall", **{**THIN, "s_Fy": 0})
 
 
-def test_accumulators_sum_their_parts_as_written():
-    # Eq. 15-1 (p. 15-5): seals + springs + piston/cylinder + valve + wall, rates added as the handbook writes them.
+def test_accumulators_sum_their_parts_per_hour():
+    # Eq. 15-1 (p. 15-5): seals + springs + piston/cylinder + valve + wall, every term per million hours. The
+    # piston's wear (Chapter 9, per million cycles) × the accumulator's cycles an hour (pp. 12-10, 12-16).
     wall = lam("accumulator-cylinder-wall", **THIN)["total"]
     wall_values = {f"wall.{k}": v for k, v in THIN.items()}
-    out = lam("accumulator-spring-loaded", n_SE=2, n_SP=1, **wall_values)
-    assert out["total"] == pytest.approx(2 * 1.0 + 2.0 + 4.0 + 8.0 + wall)
-    gas = lam("accumulator-gas-charged", n_SE=2, **wall_values)
-    assert gas["total"] == pytest.approx(2 * 1.0 + 4.0 + 8.0 + wall)
+    out = lam("accumulator-spring-loaded", cycles_per_hour=12, n_SE=2, n_SP=1, **wall_values)
+    assert out["unit"] == "per_million_hours"
+    assert out["total"] == pytest.approx(2 * 1.0 + 2.0 + 4.0 * 12 + 8.0 + wall)
+    gas = lam("accumulator-gas-charged", cycles_per_hour=12, n_SE=2, n_VA=2, **wall_values)
+    assert gas["total"] == pytest.approx(2 * 1.0 + 4.0 * 12 + 2 * 8.0 + wall)  # inlet and outlet valves
     assert "springs" not in {m["key"] for m in gas["modes"]}
+    # Before the fix the per-cycle piston was added as it is (4.0, whatever the cycling).
+    keys = {i["key"] for i in covariate.inputs(OWN["nswc-11:accumulator-spring-loaded"], library.get)}
+    assert "cycles_per_hour" in keys and not {"valve.ops_per_hour", "springs.cycle_rate"} & keys
     for rid in ("nswc-11:accumulator-spring-loaded", "nswc-11:accumulator-gas-charged"):
-        assert covariate.problems(OWN[rid], resolve) == []
+        assert covariate.problems(OWN[rid], library.get) == []  # against the real parts it binds

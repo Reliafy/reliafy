@@ -77,10 +77,21 @@ def test_contaminant_and_gasket_size_factors():
     # Table 3-4, p. 3-38: C_N = (C_o/10)³ · FR · N10; Figure 3.13, p. 3-32: C_DL = 0.45 L/w + 0.32.
     f = factors(lam("seal-static", **{**STATIC, "source": "gear_pump", "C_o": 20, "FR": 5}))
     assert f["C_N"] == pytest.approx(8 * 5 * 0.019)
-    f = factors(lam("seal-static", **{**STATIC, "shape": "gasket", "D_SL": 0, "L": 40, "w": 4}))
+    # The note on the record: C_N is usually well below 1 (a 10 gpm piston pump, 10 µm filter: 0.17).
+    f = factors(lam("seal-static", **{**STATIC, "source": "piston_pump"}))
+    assert f["C_N"] == pytest.approx(0.17)
+    assert "usually well below 1" in rec("seal-static")["notes"]
+    gasket = {k: v for k, v in STATIC.items() if k != "D_SL"}
+    f = factors(lam("seal-static", **{**gasket, "shape": "gasket", "L": 40, "w": 4}))
     assert f["C_DL"] == pytest.approx(0.45 * 10 + 0.32)
-    with pytest.raises(covariate.CovariateError, match="gasket needs"):
-        lam("seal-static", **{**STATIC, "shape": "gasket"})
+    # No placeholder zeros: a gasket's L and w (and a circular seal's D_SL) are listed as missing, and a
+    # gasket doesn't need D_SL at all.
+    with pytest.raises(covariate.CovariateError) as exc:
+        lam("seal-static", **{**gasket, "shape": "gasket"})
+    assert set(exc.value.missing) == {"L", "w"}
+    with pytest.raises(covariate.CovariateError) as exc:
+        lam("seal-static", **gasket)
+    assert exc.value.missing == ["D_SL"]
 
 
 def test_dynamic_seal_switches_factors_at_800_rpm():
@@ -90,8 +101,10 @@ def test_dynamic_seal_switches_factors_at_800_rpm():
     assert {"C_P", "C_DL", "C_H"} <= set(f) and "C_PV" not in f
     assert f["C_F"] == pytest.approx(2 ** (10 / 38))  # Figure 3.17, p. 3-36
     assert slow["modes"][0]["base"]["value"] == 22.8
-    with pytest.raises(covariate.CovariateError, match="design PV"):
-        lam("seal-dynamic", n=1800, V_lin=0, **common)
+    # Without a design PV from the maker, C_PV is left out (p. 3-23: "where a PV design factor is available").
+    no_pv = lam("seal-dynamic", n=1800, V_lin=0, **common)
+    assert not {"C_P", "C_DL", "C_H", "C_PV"} & set(factors(no_pv))
+    assert any("design PV" in w and "p. 3-23" in w for w in no_pv["warnings"])
     fast = lam("seal-dynamic", n=1800, V_lin=0, PV_DS=200000, **common)
     f = factors(fast)
     assert not {"C_P", "C_DL", "C_H"} & set(f)

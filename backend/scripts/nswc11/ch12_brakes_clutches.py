@@ -39,7 +39,7 @@ Checked against the rendered pages 12-9 to 12-20:
 """
 
 from backend.scripts.nswc11.common import (
-    base, choice, derived, factor, mode, non_negative, num, positive, record, refuse, table, uses,
+    base, check, choice, derived, factor, mode, non_negative, num, positive, record, refuse, table, uses,
 )
 
 _LINING_FAILURE_MODES = [
@@ -108,7 +108,7 @@ def _ct(coeffs: dict) -> str:
     for code, (a, b, c) in reversed(list(coeffs.items())):
         term = f"({a} - {b} * X + {c} * X ** 2)"
         out = term if out is None else f"{term} if lining_type == '{code}' else {out}"
-    return out
+    return f"1.0 if lining_type == 'other' else {out}"
 
 
 def _lining_type(page: str, clutch: bool) -> dict:
@@ -116,7 +116,10 @@ def _lining_type(page: str, clutch: bool) -> dict:
         ("sintered_metallic", "Sintered metallic" + ("" if clutch else " (truck linings)")),
         ("resin_asbestos", "Resin-asbestos (automotive, moderate-duty industrial)"),
         ("carbon_carbon", "Carbon-carbon"),
-        ("resin_asbestos_truck", "Resin-asbestos (truck linings)")], page=page)
+        ("resin_asbestos_truck", "Resin-asbestos (truck linings)"),
+        ("other", "Another lining (no curve: C_T = 1)")], page=page,
+        help="The handbook's four temperature curves (they aren't tied to the wear coefficient's material): pick "
+             "the one that matches the lining, or 'another lining' for none of them.")
 
 
 def _temperature(page: str) -> dict:
@@ -191,6 +194,11 @@ def _clutch_factors() -> list[dict]:
 
 
 _X = derived("X", "590 + ambient temperature", "590 + T", "", "X", "12-13")
+_CNP_CHECK = check("N_P == 1", "C_NP multiplies the rate by the number of disks, as printed (p. 12-19), though p. 12-18 "
+                   "says multiple plates increase the reliability; with a maker's rate for the whole disk pack, set "
+                   "the number of disks to 1", "12-19")
+_T_CHECK = check("-40 <= T <= 200", "The temperature curves have no stated range; outside about −40 to 200 °F they're "
+                 "extrapolated", "12-13")
 _KO = derived("k_o", "Wear coefficient", _select("material", K_O), "1/psi", "k_o", "12-20")
 
 _KNOWN_RATE_HELP = ("From the lining's maker. If it's per application, multiply by the applications per hour "
@@ -203,16 +211,32 @@ def _known(name: str) -> dict:
 
 
 def _parts(friction_slug: str, friction_name: str) -> list[dict]:
+    sym = "λ_FR" if "brake" in friction_slug else "λ_CF"
     return [
-        uses("actuators", "Actuators", "actuator-axial-load", symbol="λ_AC", count="AC_cycles_per_hour",
+        uses("actuators", "Actuators", "actuator-axial-load", symbol="λ_AC", scale="AC_cycles_per_hour",
+             scale_label="actuator cycles an hour (all actuators)",
              note="Chapter 9 gives actuators in failures per million cycles; the handbook multiplies by cycles per "
                   "hour (pp. 12-10, 12-16), so this part is its rate × the actuator cycles per hour (all actuators "
                   "together)."),
         uses("springs", "Springs", "spring-compression", symbol="λ_SP", count="n_SP"),
-        uses("friction", friction_name, friction_slug, symbol="λ_FR" if "brake" in friction_slug else "λ_CF"),
+        uses("friction", friction_name + " (from its wear)", friction_slug, symbol=sym, when="lining == 'wear'"),
+        uses("friction_maker", friction_name + " (from the maker's rate)", friction_slug + "-known-rate", symbol=sym,
+             when="lining == 'maker'"),
         uses("bearings", "Bearings", "bearing-rolling-load-rating", symbol="λ_BE", count="n_BE"),
         uses("seals", "Seals", "seal-dynamic", symbol="λ_SE", count="n_SE"),
     ]
+
+
+def _lining(brake: bool) -> dict:
+    choices = [("wear", "From its wear (the lining's wear coefficient, load and speed)"),
+               ("maker", "From the maker's base failure rate")]
+    if brake:
+        choices.append(("none", "None: a magnetic particle, hysteresis or eddy-current brake (no friction lining)"))
+    return choice("lining", "Friction material rated", choices, default="wear", default_basis="typical",
+                  page="12-7" if brake else "12-16",
+                  help="Which friction material model the assembly adds" + (
+                      "; magnetic particle, hysteresis and eddy-current brakes brake without friction (p. 12-7)."
+                      if brake else "."))
 
 
 def _counts() -> list[dict]:
@@ -237,6 +261,7 @@ RECORDS = [
         "times the applications an hour. That is scaled by the brake type, heavy dust and the ambient temperature.",
         inputs=[*_wear_inputs("t_b", "t_b", "Braking time per application", "12-10", "Brake"),
                 *_BRAKE_FACTOR_INPUTS],
+        checks=[_T_CHECK],
         derived=[_KO, _X,
                  derived("W_p", "Lining wear per application", "k_o * P * v_s * t_b / A", "in", "W_p", "12-11",
                          "12-4"),
@@ -255,6 +280,7 @@ RECORDS = [
         "When the lining's maker gives its base failure rate, a brake lining's rate is that, scaled by the brake "
         "type, heavy dust and the ambient temperature.",
         inputs=[_known("λ_FR,B"), *_BRAKE_FACTOR_INPUTS],
+        checks=[_T_CHECK],
         derived=[_X],
         modes=[mode("lining", "Friction material (wear)",
                     base("λ_FR,B", "Base failure rate (from the maker)", "12-11", expr="lambda_B"),
@@ -271,6 +297,7 @@ RECORDS = [
         "times the engagements an hour. That is scaled by the number of disks and the ambient temperature.",
         inputs=[*_wear_inputs("t_a", "t_a", "Clutch actuation (slip) time per engagement", "12-17", "Clutch"),
                 *_CLUTCH_FACTOR_INPUTS],
+        checks=[_CNP_CHECK, _T_CHECK],
         derived=[_KO, _X,
                  derived("W_p", "Lining wear per engagement", "k_o * P * v_s * t_a / A", "in", "W_p", "12-18",
                          "12-14"),
@@ -289,6 +316,7 @@ RECORDS = [
         "When the clutch's maker gives its friction material's base failure rate, the rate is that, scaled by the "
         "number of disks and the ambient temperature.",
         inputs=[_known("λ_CF,B"), *_CLUTCH_FACTOR_INPUTS],
+        checks=[_CNP_CHECK, _T_CHECK],
         derived=[_X],
         modes=[mode("lining", "Friction material (wear)",
                     base("λ_CF,B", "Base failure rate (from the maker)", "12-18", expr="lambda_B"),
@@ -300,7 +328,7 @@ RECORDS = [
         "λ_BR = λ_AC + λ_SP + λ_FR + λ_BE + λ_SE + λ_HO, λ_HO = 3.0",
         "A brake's failure rate is the sum of its parts: actuators, springs, the friction lining, bearings, seals and "
         "the housing (3.0 failures per million hours).",
-        inputs=_counts(),
+        inputs=[_lining(True), *_counts()],
         modes=[*_parts("brake-friction-material", "Friction lining"),
                mode("housing", "Housing", base("λ_HO", "Brake housing failure rate", "12-9", value=3.0),
                     symbol="λ_HO")],
@@ -312,8 +340,8 @@ RECORDS = [
         "λ_CL = λ_AC + λ_BE + λ_CF + λ_SE + λ_SP",
         "A clutch's failure rate is the sum of its parts: actuators, bearings, the friction material, seals and "
         "springs.",
-        inputs=[{**c, "page": "12-15"} if c["name"] != "AC_cycles_per_hour" else {**c, "page": "12-16"}
-                for c in _counts()],
+        inputs=[_lining(False), *[{**c, "page": "12-15"} if c["name"] != "AC_cycles_per_hour" else {**c, "page": "12-16"}
+                                  for c in _counts()]],
         modes=_parts("clutch-friction-material", "Friction material"),
         failure_modes=_CLUTCH_FAILURE_MODES,
     ),

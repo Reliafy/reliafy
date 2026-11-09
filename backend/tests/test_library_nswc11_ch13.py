@@ -11,7 +11,7 @@ from backend.scripts.build_nswc11 import _record
 from backend.scripts.nswc11 import ch13_compressors as ch13
 
 RECORDS = {f"nswc-11:{r['slug']}": _record(r) for r in ch13.RECORDS}
-DIAPHRAGM = dict(F=20, a=2.0, b=0.8, h=0.1, IRHD="50")
+DIAPHRAGM = dict(F=20, a=2.0, b=0.8, h=0.1, IRHD="50", S_fig=300)
 
 
 def stub(rid, rate, unit="per_million_hours"):
@@ -19,11 +19,12 @@ def stub(rid, rate, unit="per_million_hours"):
         "rate_unit": unit, "inputs": [], "modes": [{"key": "m", "name": "m", "base": {"value": rate, "page": "x"}}]}}
 
 
-STUBS = {"nswc-11:bearing-rolling-load-rating": stub("b", 2.0), "nswc-11:valve-assembly": stub("v", 0.5,
-         "per_million_operations"), "nswc-11:seal-mechanical": stub("s", 3.0),
-         "nswc-11:shaft": stub("sh", 1e-4, "per_million_cycles")}
+# The valve assembly and the shaft are per million hours (Chapter 6's assembly converts its own poppet;
+# the shaft by Reliafy's reading, readings.SHAFT_PER_HOUR).
+STUBS = {"nswc-11:bearing-rolling-load-rating": stub("b", 2.0), "nswc-11:valve-assembly": stub("v", 0.5),
+         "nswc-11:seal-mechanical": stub("s", 3.0), "nswc-11:shaft": stub("sh", 1e-4)}
 RESOLVE = {**RECORDS, **STUBS}.__getitem__
-PARTS = dict(n_BE=2, VA_ops_per_hour=4, n_SE=1, SH_cycles_per_hour=60 * 1800)
+PARTS = dict(n_BE=2, n_VA=4, n_SE=1)
 
 
 def lam(slug, **values):
@@ -46,8 +47,9 @@ def test_records_have_no_problems():
                                              ("screw", 12.0), ("lobe", 12.0), ("liquid_ring", 12.0)])
 def test_fluid_driver_table_13_4_and_assembly_sum(driver, printed):
     out = lam("compressor", driver=driver, **PARTS)
-    # Eq. 13-1: λ_FD·C_SF + casing 0.010 + bearings + valves (per operation × ops/h) + seals + shaft (× cycles/h).
-    assert out["total"] == pytest.approx(printed + 0.010 + 2 * 2.0 + 0.5 * 4 + 3.0 + 1e-4 * 108000)
+    # Eq. 13-1: λ_FD·C_SF + casing 0.010 + bearings + valves (4 × each valve's rate per hour) + seals + shaft,
+    # every term per million hours (p. 13-10).
+    assert out["total"] == pytest.approx(printed + 0.010 + 2 * 2.0 + 4 * 0.5 + 3.0 + 1e-4)
     assert out["unit"] == "per_million_hours"
 
 
@@ -82,9 +84,32 @@ def test_diaphragm_strain_from_eq_13_6_and_table_13_2():
     s = 100 * d["sigma_r"] / 310
     assert d["S"] == pytest.approx(s)
     f = factors(out)
-    assert f["C_P"] == pytest.approx(1.0 if s <= 75 else (s / 75) ** 1.8)
+    # C_P takes the strain read off Figure 13.3 (p. 13-17), not σ_r/E: here 300 % → (300/75)^1.8 = 12.1.
+    assert f["C_P"] == pytest.approx(4 ** 1.8)
+    # C_AC takes σ_r/E (Table 13-2), the route p. 13-18 gives for it.
     assert f["C_AC"] == pytest.approx((s / 10) ** 1.1)
-    assert out["total"] == pytest.approx(0.58 * f["C_P"] * f["C_AC"])
+    assert out["total"] == pytest.approx(0.58 * 4 ** 1.8 * (s / 10) ** 1.1)
+
+
+def test_diaphragm_load_factor_uses_figure_13_3_not_sigma_over_e():
+    # The review's example: a 47 IRHD diaphragm at about 800 psi. Figure 13.3's 47 IRHD curve reads about 445 %
+    # there, so C_P = (445/75)^1.8 = 24.7; the σ/E route (E 256 to 310 psi) would give 258 to 312 %, C_P 9 to 13.
+    f = factors(lam("compressor-diaphragm", **{**DIAPHRAGM, "S_fig": 445}))
+    assert f["C_P"] == pytest.approx((445 / 75) ** 1.8) and round(f["C_P"], 1) == 24.7
+    # Below 75 % from the figure, C_P is 1 whatever σ/E says.
+    assert factors(lam("compressor-diaphragm", **{**DIAPHRAGM, "S_fig": 60, "F": 2000}))["C_P"] == 1.0
+    with pytest.raises(covariate.CovariateError) as exc:
+        lam("compressor-diaphragm", **{k: v for k, v in DIAPHRAGM.items() if k != "S_fig"})
+    assert exc.value.missing == ["S_fig"]
+
+
+def test_ozone_factor_held_at_100_percent_strain():
+    # Figure 13.7 stops at 100 % strain: beyond it C_AC is held (with a warning), not extrapolated.
+    out = lam("compressor-diaphragm", **{**DIAPHRAGM, "F": 2000})
+    s = next(x["value"] for x in out["derived"] if x["name"] == "S")
+    assert s > 100
+    assert factors(out)["C_AC"] == pytest.approx(10 ** 1.1)
+    assert any("p. 13-23" in w for w in out["warnings"])
 
 
 def test_eq_13_4_read_literally_would_be_negative():
@@ -104,10 +129,10 @@ def test_figures_13_6_and_13_7_ends():
 def test_ozone_coating_and_temperature():
     base = lam("compressor-diaphragm", **DIAPHRAGM)
     s = next(x["value"] for x in base["derived"] if x["name"] == "S")
-    f = factors(lam("compressor-diaphragm", ozone="high", coating="yes", T=250, C_LC=0.3, **DIAPHRAGM))
+    f = factors(lam("compressor-diaphragm", **{**DIAPHRAGM, "ozone": "high", "coating": "yes", "T": 250, "C_LC": 0.3}))
     assert f["C_AC"] == pytest.approx((s / 10) ** 2 / 3)
     assert (f["C_T"], f["C_LC"]) == (6.7, 0.3)
-    assert factors(lam("compressor-diaphragm", T=212, **DIAPHRAGM))["C_T"] == 1.0
+    assert factors(lam("compressor-diaphragm", **{**DIAPHRAGM, "T": 212}))["C_T"] == 1.0
 
 
 def test_limits():
@@ -115,5 +140,8 @@ def test_limits():
         lam("compressor-diaphragm", **{**DIAPHRAGM, "b": 2.5})
     words = " ".join(lam("compressor-diaphragm", **{**DIAPHRAGM, "b": 0.05, "h": 0.5, "F": 2000})["warnings"])
     assert "p. 13-15" in words
+    # Counts of 0 drop a part: the compressor warns.
+    words = " ".join(lam("compressor", driver="screw", n_BE=0, n_VA=0, n_SE=0)["warnings"])
+    assert "No shaft bearings" in words and "No seals" in words
     with pytest.raises(covariate.CovariateError, match="needed"):
         lam("compressor", driver="screw")

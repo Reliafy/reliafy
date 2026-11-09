@@ -24,7 +24,31 @@ def resolve(rid):
 
 
 def lam(slug, **values):
+    if slug in ("electric-motor", "electric-motor-geared"):
+        values.setdefault("n", 1800)  # the motor's speed, passed to its bearings
     return covariate.evaluate(resolve(f"nswc-11:{slug}"), values, resolve)
+
+
+def test_insulation_class_and_measured_rise_adjust_t_o():
+    # Table 14-2 (p. 14-9) and note 1 (p. 14-11): a Class F motor (allowable rise 110 °C) measured at a
+    # Class B rise (85 °C) has 25 °C to spare: T_O is lowered by 25, so C_T = 2^(−2.5) at a 40 °C ambient.
+    f, _ = factors(lam("electric-motor-winding", supply="single_phase", T_O=40, ins_class="F", rise=85))
+    assert f["C_T"] == pytest.approx(2 ** -2.5)
+    # The page's example: a Class F motor measured at 100 °C instead of 110 → T_O 10 °C lower.
+    f, _ = factors(lam("electric-motor-winding", supply="single_phase", T_O=50, ins_class="F", rise=100))
+    assert f["C_T"] == pytest.approx(1.0)
+    # Without a class the rise isn't asked for.
+    with pytest.raises(covariate.CovariateError) as exc:
+        lam("electric-motor-winding", supply="single_phase", ins_class="B")
+    assert exc.value.missing == ["rise"]
+
+
+def test_motor_speed_is_entered_once_and_v_u_warning_wording():
+    keys = {i["key"] for i in covariate.inputs(library.get("nswc-11:electric-motor"), library.get)}
+    assert "n" in keys and "bearings.n" not in keys
+    out = lam("electric-motor-winding", supply="three_phase", V_U=2)
+    words = " ".join(out["warnings"])
+    assert "recommends at most 1 %" in words and "handbook's range is 0 to 3 %" in words
 
 
 def factors(out, key="windings"):

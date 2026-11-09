@@ -106,3 +106,28 @@ def test_limits():
         lam("brake-friction-material", **WEAR)
     with pytest.raises(covariate.CovariateError, match="at least one disk"):
         lam("clutch-friction-material-known-rate", lambda_B=1, lining_type="carbon_carbon", N_P=0)
+
+
+def test_assembly_lining_from_the_makers_rate_or_none():
+    # The assemblies can rate the friction material from its maker's rate, and a magnetic particle, hysteresis
+    # or eddy-current brake has no friction lining (p. 12-7): the lining adds nothing and needs no inputs.
+    stubs = {**STUBS, "nswc-11:brake-friction-material-known-rate": stub("x", 4.0),
+             "nswc-11:clutch-friction-material-known-rate": stub("y", 6.0)}
+    resolve = {**RECORDS, **stubs}.__getitem__
+    parts = dict(AC_cycles_per_hour=10, n_SP=2, n_BE=4, n_SE=3)
+    others = 2 * 10 + 3 * 2 + 11 * 4 + 13 * 3
+    assert lam("brake-assembly", resolve, lining="maker", **parts)["total"] == pytest.approx(others + 4 + 3.0)
+    assert lam("brake-assembly", resolve, lining="none", **parts)["total"] == pytest.approx(others + 3.0)
+    assert lam("clutch-assembly", resolve, lining="maker", **parts)["total"] == pytest.approx(others + 6)
+    assert "none" not in {c["code"] for c in next(i for i in RECORDS["nswc-11:clutch-assembly"]["covariate_model"]
+                                                  ["inputs"] if i["name"] == "lining")["choices"]}
+
+
+def test_clutch_disk_count_cautions_and_other_lining_curve():
+    out = lam("clutch-friction-material-known-rate", lambda_B=1, lining_type="other", N_P=3, T=70)
+    assert factors(out)["C_T"] == 1.0 and factors(out)["C_NP"] == 3
+    assert any("p. 12-19" in w and "increase the reliability" in w for w in out["warnings"])
+    one = lam("clutch-friction-material-known-rate", lambda_B=1, lining_type="other", N_P=1, T=70)
+    assert one["warnings"] == []
+    hot = lam("brake-friction-material-known-rate", lambda_B=1, lining_type="carbon_carbon", T=300)
+    assert any("p. 12-13" in w for w in hot["warnings"])

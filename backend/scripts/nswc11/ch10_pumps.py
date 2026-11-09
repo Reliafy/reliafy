@@ -4,8 +4,12 @@ assembly, Eq. 10-2.
 Checked against the rendered pages 10-10 to 10-19:
 - Eq. 10-2 (p. 10-10): λ_P = λ_SE + λ_SH + λ_BE + λ_CA + λ_FD, every term in
   failures per million operating hours. The shaft's own model (Chapter 20) is
-  per million cycles; the handbook adds it here as is, and so does the model
-  (said in the mode's note).
+  per million cycles; Eq. 10-2 lists it per million hours. Reliafy's reading
+  (readings.SHAFT_PER_HOUR): the shaft is per million hours everywhere, so it is
+  added as is; with that switch off it is per million cycles and multiplied by
+  the pump's revolutions an hour.
+- One pump speed and one filter size are entered on the assembly and passed to
+  the seals, the bearings and the fluid driver (Derryn: one component, no copies).
 - λ_SE (Section 10.4) is "all pump seals": O-rings and gaskets (Chapter 3) and
   the mechanical seals. The assembly includes the mechanical seals (× their
   number); static seals and gaskets, each with its own conditions, are left to
@@ -29,6 +33,7 @@ Checked against the rendered pages 10-10 to 10-19:
 from backend.scripts.nswc11.common import (
     base, check, choice, derived, factor, mode, non_negative, num, positive, record, table, uses, warn,
 )
+from backend.scripts.nswc11 import readings
 
 _FAILURE_MODES = [
     "Cavitation: low suction head or NPSH erodes the impeller, rotor or casing, with noise and vibration",
@@ -72,6 +77,21 @@ _C_PF = (
     "if casing == 'modified_volute' else "
     "1.03 - 0.30 * q + 0.04 * q ** 2 if casing == 'double_volute' else 0.80 + 1.1 * q"
 )
+
+SHAFT_READING = (
+    "Reliafy's reading (p. 10-10 against p. 20-5): Eq. 10-2 lists the shaft per million hours while Chapter 20 "
+    "gives it per million cycles; the shaft is taken per million hours and added as it is (converting by "
+    "revolutions would give a shaft life of hours)." if readings.SHAFT_PER_HOUR else
+    "The shaft (Chapter 20, per million cycles) is multiplied by the pump's revolutions an hour (60 × rpm) before "
+    "it is added (pp. 12-10, 12-16).")
+
+
+def _shaft() -> dict:
+    if readings.SHAFT_PER_HOUR:
+        return uses("shaft", "Shaft", "shaft", symbol="λ_SH", note=SHAFT_READING)
+    return uses("shaft", "Shaft", "shaft", symbol="λ_SH", scale="60 * n", scale_label="revolutions an hour",
+                note=SHAFT_READING)
+
 
 RECORDS = [
     record(
@@ -149,23 +169,29 @@ RECORDS = [
         "A pump's failure rate is the sum of its parts: its mechanical seals, its shaft, its bearings, its casing "
         "(a small fixed rate) and its fluid driver, each from its own model.",
         inputs=[
+            num("n", "Pump speed", "rpm", [positive("the pump must run")], symbol="V_O", page="10-15",
+                help="Passed to the seals, the bearings and the fluid driver (one speed for the whole pump)."),
+            num("filter_um", "System filter size", "µm", [positive("a filter size is more than zero")], default=10,
+                default_basis="handbook", symbol="C_o, F_AC", page="10-15",
+                help="Passed to the seals' contaminant factor (10 µm is the handbook's standard filter, p. 3-38) "
+                     "and the fluid driver's (Eq. 10-5: 0.6 + 0.05 × µm, so 1.1 at 10 µm)."),
             num("n_SE", "Number of mechanical seals", "", [positive("a pump has at least one seal")],
                 symbol="n_SE", page="10-11"),
             num("n_BE", "Number of bearings", "", [positive("a pump has at least one bearing")], symbol="n_BE",
                 page="10-12", help="All alike: the bearing model's rate × this number."),
         ],
         modes=[
-            uses("seals", "Mechanical seals", "seal-mechanical", symbol="λ_SE", count="n_SE"),
-            uses("shaft", "Shaft", "shaft", symbol="λ_SH",
-                 note="The shaft's model (Chapter 20) is in failures per million cycles; Eq. 10-2 adds it to the "
-                      "per-hour rates as it is, and so does this model."),
-            uses("bearings", "Bearings", "bearing-rolling-load-rating", symbol="λ_BE", count="n_BE"),
+            uses("seals", "Mechanical seals", "seal-mechanical", symbol="λ_SE", count="n_SE",
+                 bind={"n": "n", "C_o": "filter_um"}),
+            _shaft(),
+            uses("bearings", "Bearings", "bearing-rolling-load-rating", symbol="λ_BE", count="n_BE", bind={"n": "n"}),
             mode("casing", "Casing", base("λ_CA", "Casing failure rate", "10-13", value=0.01), symbol="λ_CA"),
-            uses("fluid_driver", "Fluid driver", "pump-fluid-driver", symbol="λ_FD"),
+            uses("fluid_driver", "Fluid driver", "pump-fluid-driver", symbol="λ_FD",
+                 bind={"V_O": "n", "F_AC": "filter_um"}),
         ],
         failure_modes=_FAILURE_MODES,
-        notes="λ_SE here is the mechanical seals; the handbook's λ_SE also counts the pump's O-rings and gaskets "
-              "(Chapter 3), which are added as their own records (p. 10-11). The shaft's per-cycle rate is added "
-              "as the handbook does (p. 10-10).",
+        notes="λ_SE here is the mechanical seals; the handbook's λ_SE also counts \"all pump seals\", O-rings and "
+              "gaskets included (Chapter 3, p. 10-11), which are added as their own records. All bearings share one "
+              "set of inputs. " + SHAFT_READING,
     ),
 ]

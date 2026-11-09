@@ -236,6 +236,18 @@ def _balance() -> dict:
                help="The mechanical seal model assumes a balanced seal (p. 3-27).")
 
 
+#: Why the library's seal, spring and poppet differ from Chapter 1's worked valve (Table 1-1, p. 1-12).
+TABLE_1_1_NOTE = (
+    "The handbook's Table 1-1 example (p. 1-12: seal 1.20, spring 1.04, poppet 0.35 per million hours) uses "
+    "Chapter 1's physical equations (the leakage form, Eq. 3-5 here, with K1 = 3.27×10⁻⁴); this record uses the "
+    "chapter's factor model, Eq. 3-7, normalised to field failure data, which isn't algebraically the same: for "
+    "Table 1-1's seal it gives about 1.5 before C_T and C_N, which Table 1-1 doesn't have. Table 1-1 was also last "
+    "revised before this chapter (p. vii).")
+CN_NOTE = (
+    "The contaminant factor C_N = (C_o/10)³ · FR · N10 (Table 3-4) is usually well below 1 (0.17 for a 10 gpm "
+    "piston pump and a 10 µm filter, 0.004 for a sliding valve) and is the largest lever in the model; Table 1-1's "
+    "worked example leaves it out.")
+
 _STATIC_MODES = [
     "Leakage from wear: contaminants, misalignment, vibration, poor surface finish",
     "Leakage from distortion: extreme temperature, eccentricity, extrusion, compression set, over-torqued bolts",
@@ -281,13 +293,12 @@ RECORDS = [
                         "gasket (Figure 3.13)."),
             *_pressure(),
             _leakage(),
-            num("D_SL", "Inner diameter of the seal (circular seals)", "in", [non_negative("a diameter can't be negative")],
-                default=0, default_basis="neutral", symbol="D_SL", page="3-31",
-                help="Circular seals only; leave at 0 for a gasket."),
-            num("L", "Total linear length of the gasket (gaskets)", "in", [non_negative("a length can't be negative")],
-                default=0, default_basis="neutral", symbol="L", page="3-32", help="Gaskets only; leave at 0 for a seal."),
-            num("w", "Minimum width of the gasket (gaskets)", "in", [non_negative("a width can't be negative")],
-                default=0, default_basis="neutral", symbol="w", page="3-32", help="Gaskets only; leave at 0 for a seal."),
+            num("D_SL", "Inner diameter of the seal (circular seals)", "in", [positive("a seal has a diameter")],
+                symbol="D_SL", page="3-31", help="Circular seals only.", when="shape == 'circular'"),
+            num("L", "Total linear length of the gasket (gaskets)", "in", [positive("a gasket has a length")],
+                symbol="L", page="3-32", help="Gaskets only.", when="shape == 'gasket'"),
+            num("w", "Minimum width of the gasket (gaskets)", "in", [positive("a gasket has a width")],
+                symbol="w", page="3-32", help="Gaskets only.", when="shape == 'gasket'"),
             *_hardness(),
             num("f", "Surface finish of the seat (the harder surface)", "μin RMS", [
                 non_negative("a surface finish can't be negative"),
@@ -328,7 +339,8 @@ RECORDS = [
                         _cnu(), _ct(), _cn(),
                     ], symbol="λ_SE")],
         notes=("Surface finish and hardness change with time in service (p. 3-7): evaluate at several ages for a "
-               "rate over the product's life. Between Table 3-3's 50 °F steps C_ν is interpolated linearly."),
+               "rate over the product's life. Between Table 3-3's 50 °F steps C_ν is interpolated linearly. "
+               + TABLE_1_1_NOTE + " " + CN_NOTE),
         failure_modes=_STATIC_MODES,
     ),
     record(
@@ -361,7 +373,8 @@ RECORDS = [
             _balance(),
             num("PV_DS", "Design PV of the seal (from its maker; fast seals)", "psi·ft/min",
                 [non_negative("a PV can't be negative")], default=0, default_basis="neutral", symbol="PV_DS",
-                page="3-24", help="Needed at or above 800 rpm or 600 ft/min; leave at 0 for a slow seal."),
+                page="3-24", help="Used at or above 800 rpm or 600 ft/min when the maker gives one; 0 when there's "
+                                  "none (C_PV is then left out, p. 3-23)."),
         ],
         derived=[
             *_shared_derived(), _M_C,
@@ -373,8 +386,9 @@ RECORDS = [
         ],
         checks=[
             *_shared_checks(),
-            check("PV_DS > 0", "A seal at or above 800 rpm or 600 ft/min needs its design PV (PV_DS) for C_PV",
-                  "3-24", severity="refuse", when="fast == 1"),
+            check("PV_DS > 0", "No design PV from the maker: the PV factor C_PV is left out (1.0), as the handbook "
+                  "applies it only \"where a PV design factor is available from the manufacturer\"", "3-23",
+                  when="fast == 1"),
             check("0.5 <= D_SL <= 10", "Figure 3.12 covers seal inner diameters from 0.5 to 10 in", "3-31",
                   when="fast == 0"),
             check("P_S <= 10000", "Figure 3.10 covers pressures up to 10,000 psi", "3-29", when="fast == 0"),
@@ -388,10 +402,11 @@ RECORDS = [
                         {**_ch(), "when": "fast == 0"},
                         _cf_dynamic(), _cnu(), _ct(), _cn(),
                         factor("C_PV", "Pressure × velocity", "3-24", expr="PV_OP / PV_DS", equation="3-15",
-                               when="fast == 1", words="running above its design PV"),
+                               when="fast == 1 and PV_DS > 0", words="running above its design PV"),
                     ], symbol="λ_SE")],
         notes=("One diameter serves both the size factor (Figure 3.12's inner diameter) and Eq. 3-13's seal "
-               "diameter. Between Table 3-3's 50 °F steps C_ν is interpolated linearly."),
+               "diameter. Between Table 3-3's 50 °F steps C_ν is interpolated linearly. Without a design PV from "
+               "the maker, a fast seal's C_PV is left out (p. 3-23). " + CN_NOTE),
         failure_modes=_DYNAMIC_MODES,
     ),
     record(
@@ -437,7 +452,7 @@ RECORDS = [
                      factor("C_PV", "Pressure × velocity", "3-24", expr="PV_OP / PV_DS", equation="3-15",
                             words="running above its design PV")],
                     symbol="λ_SE")],
-        notes="Between Table 3-3's 50 °F steps C_ν is interpolated linearly.",
+        notes="Between Table 3-3's 50 °F steps C_ν is interpolated linearly. " + CN_NOTE,
         failure_modes=_MECHANICAL_MODES,
     ),
 ]

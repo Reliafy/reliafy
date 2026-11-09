@@ -71,3 +71,13 @@ def test_service_factor_the_handbook_leaves_blank_is_refused():
         lam("bearing-rolling-load-rating", L_S=5000, F_R=1000, n=1800, bearing_type="roller",
             service="precision_gearing")
     assert math.isfinite(lam("bearing-rolling-load-rating", L_S=5000, F_R=1000, n=1800)["total"])
+
+
+def test_known_l10_says_which_load_its_life_is_at_and_no_low_temperature_warning():
+    rec_ = rec("bearing-rolling-known-l10")
+    l_s = next(i for i in rec_["covariate_model"]["inputs"] if i["name"] == "L_S")
+    assert l_s["label"] == "Load the L10 life was quoted at" and "enter L_A = L_S" in l_s["help"]
+    # A catalogue life at the service load: L_A = L_S gives C_Y = 1, so the rate is 10⁶/L10h × C_R × C_C.
+    out = lam("bearing-rolling-known-l10", L10h=50000, L_A=500, L_S=500, T_O=40)
+    assert out["total"] == pytest.approx(1e6 / 50000 * 0.223 / math.log(2) ** (2 / 3) * 1.8, rel=1e-3)
+    assert out["warnings"] == []  # 40 °C is ordinary: C_t is 1 below 183 °C (Figure 7.5), no warning

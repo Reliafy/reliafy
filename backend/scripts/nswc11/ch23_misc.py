@@ -35,6 +35,7 @@ records cite the section (e.g. "§23.3.2") as their equation.
 """
 
 from backend.scripts.nswc11.common import base, choice, factor, mode, num, positive, record, table, uses
+from backend.scripts.nswc11 import readings
 
 
 def _typical(slug: str, name: str, equipment: str, section: str, page: str, symbol: str, rate: float,
@@ -172,12 +173,20 @@ RECORDS = [
               "Damaged pin (shock, vibration)", "Damaged keyway (excessive axial load)"]),
     _typical("pillow-block", "Pillow block", "bearing", "23.10.2 Pillow block failure rate", "23-14", "λ_PB", 5.0,
              "A pillow block (a bearing in its housing) has a typical failure rate of 5.0 failures per million "
-             "revolutions.",
+             + ("hours (the handbook prints \"per million revolutions\": Reliafy's reading, see the note)."
+                if readings.PILLOW_BLOCK_PER_HOUR else "revolutions."),
              ["Worn bearing race (side loading, misalignment)",
               "Bearing seizure (lost lubricant, excessive speed, heat)", "Loss of lubricant (seal leakage)",
               "Damaged housing (shock, vibration)", "Loose shaft coupling (loose set screw)"],
-             rate_unit="per_million_cycles",
-             notes="The handbook gives this per million revolutions: one revolution is one cycle here."),
+             rate_unit="per_million_hours" if readings.PILLOW_BLOCK_PER_HOUR else "per_million_cycles",
+             notes=("Reliafy's reading (p. 23-14): the handbook prints 5.0 failures per million revolutions, which at "
+                    "1,800 rpm is 540,000 per million hours, a life of about 2 hours, against L10 lives of thousands "
+                    "of hours for the same bearings (Chapter 7). It is taken as 5.0 per million hours, in line with "
+                    "the handbook's other bearing-class rates. For a rate from the bearing's own life, use the "
+                    "pillow block from its L10 life."
+                    if readings.PILLOW_BLOCK_PER_HOUR else
+                    "The handbook gives this per million revolutions: one revolution is one cycle here. Converted "
+                    "by revolutions an hour it gives lives of hours; see the L10 record.")),
     record(
         "pillow-block-from-l10", "Pillow block (from its bearing's L10 life)", "bearing", 23,
         "23.10 Pillow block", "§23.10", "23-13", "λ_PB = λ_BE (Chapter 7, Eq. 7-5)",

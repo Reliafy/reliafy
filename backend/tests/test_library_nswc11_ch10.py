@@ -14,7 +14,7 @@ def stub(slug, rate, unit="per_million_hours"):
         "rate_unit": unit, "inputs": [], "modes": [{"key": "x", "name": slug, "base": {"value": rate, "page": "-"}}]}}
 
 
-STUBS = {r["id"]: r for r in (stub("seal-mechanical", 3.0), stub("shaft", 0.05, "per_million_cycles"),
+STUBS = {r["id"]: r for r in (stub("seal-mechanical", 3.0), stub("shaft", 0.05),
                               stub("bearing-rolling-load-rating", 2.0))}
 
 
@@ -78,13 +78,22 @@ def test_driver_and_casing_must_agree_and_flow_warns_outside_the_table():
 
 
 def test_pump_assembly_is_the_sum_of_its_parts():
-    # Eq. 10-2 (p. 10-10): seals + shaft + bearings + casing (0.01) + fluid driver; the shaft's per-cycle
-    # rate is added as it is, as the handbook does.
-    values = {"n_SE": 2, "n_BE": 3, **{f"fluid_driver.{k}": v for k, v in FD.items()}}
+    # Eq. 10-2 (p. 10-10): seals + shaft + bearings + casing (0.01) + fluid driver, all per million hours. The
+    # shaft is per million hours too (Reliafy's reading, readings.SHAFT_PER_HOUR: p. 10-10 lists it so), added
+    # as it is. One pump speed and one filter size go to the fluid driver (and the seals and bearings).
+    driver_inputs = {k: v for k, v in FD.items() if k != "V_O"}
+    values = {"n": 1800, "filter_um": 10, "n_SE": 2, "n_BE": 3, **{f"fluid_driver.{k}": v for k, v in driver_inputs.items()}}
     out = covariate.evaluate(library.get("nswc-11:pump"), values, resolve)
     rates = {m["key"]: m["rate"] for m in out["modes"]}
-    driver = fd(**FD)["total"]
+    driver = fd(**FD, F_AC=10)["total"]  # V_O = the pump's 1800 rpm, F_AC = its 10 µm filter (C_C = 1.1)
+    assert factors(fd(**FD, F_AC=10))["C_C"] == pytest.approx(1.1)
     assert rates == pytest.approx({"seals": 6.0, "shaft": 0.05, "bearings": 6.0, "casing": 0.01,
                                    "fluid_driver": driver})
     assert out["total"] == pytest.approx(12.06 + driver)
-    assert "per million cycles" in next(m for m in out["modes"] if m["key"] == "shaft")["note"]
+    assert "Reliafy's reading" in next(m for m in out["modes"] if m["key"] == "shaft")["note"]
+
+
+def test_pump_enters_its_speed_and_filter_once():
+    keys = {i["key"] for i in covariate.inputs(library.get("nswc-11:pump"), library.get)}
+    assert {"n", "filter_um"} <= keys
+    assert not {"seals.n", "seals.C_o", "bearings.n", "fluid_driver.V_O", "fluid_driver.F_AC"} & keys
