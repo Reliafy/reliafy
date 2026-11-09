@@ -634,8 +634,10 @@ test("the library record picker at 400 px", async ({ page, request, problems }) 
   expect(await picker.locator(".lib-pick-list").evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
   await first.click();
   await expect(picker).toHaveCount(0);
-  await expect(page.getByRole("dialog", { name: "From the data library" }).getByRole("group", { name: "The library record" }))
-    .toContainText("Motor-driven pump");
+  // A published record goes on to Fix covariates (its covariates fixed here or set in the RBD), at 400 px too.
+  const pane = page.getByRole("region", { name: "Fix covariates" });
+  await expect(pane).toContainText("Motor-driven pump");
+  expect(await sideways(page)).toBeLessThanOrEqual(400);
   await expectHealthy(page, problems, { label: "the library record picker at 400 px" });
 });
 

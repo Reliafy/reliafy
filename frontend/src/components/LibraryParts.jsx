@@ -1,16 +1,18 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  addModelToLibrary, createLibrary, createModelFromLibrary, fitDatasetWithPrior, getDataset, getLibrarySources, listDatasets,
-  listMyLibraries, searchLibrary, updateLibrary,
+  addModelToLibrary, createLibrary, createModelFromLibrary, fitDatasetWithPrior, getDataset, getLibraryComponent, getLibraryRecord, getLibrarySources,
+  listDatasets, listMyLibraries, searchLibrary, updateLibrary,
 } from "../api.js";
+import CovariateCalculator from "./CovariateCalculator.jsx";
+import { covariatesToSave, missingInputs } from "../covariate.js";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import Modal from "./Modal.jsx";
 import Field from "./ui/Field.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { saveErrorText } from "../confirm.js";
 import {
-  familyName, isLife, lifeWords, pickerDetail, pickerSources, rangeText, recordPath, sig, sourcePath,
+  familyName, isComponentId, isLife, lifeWords, pickerDetail, pickerSources, rangeText, recordPath, sig, sourcePath,
 } from "../libraryModels.js";
 
 // The library's shared pieces: a look-up (search across the sources, each hit a link to its record),
@@ -57,36 +59,76 @@ export function LibraryLookup({ label = "Records" }) {
   );
 }
 
-// Use as a model…: the record saved to the user's models (a rate → an exponential, cited).
+// The record's covariates (a pipe's length, the clock, the demands a year, a handbook part's
+// environment...), read from its page: {inputs, values, setValues, ready, missing}. One state for the
+// dialogs that use a record (Use as a model…, Use as a prior…, the Fit dialog's record prior).
+export function useRecordCovariates(recordId, start = null) {
+  const [inputs, setInputs] = useState(null);
+  const [values, setValues] = useState({});
+  useEffect(() => {
+    let live = true;
+    if (!recordId) { setInputs(null); return undefined; }
+    setInputs(null);
+    (isComponentId(recordId) ? getLibraryComponent(recordId) : getLibraryRecord(recordId)).then((d) => {
+      if (!live) return;
+      const ins = (isComponentId(recordId) ? d.inputs : d.covariates) || [];
+      setInputs(ins);
+      setValues(Object.fromEntries(ins.map((i) => [i.key, start?.[i.key] != null ? String(start[i.key]) : ""])));
+    }, () => live && setInputs([]));
+    return () => { live = false; };
+  }, [recordId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const missing = inputs ? missingInputs(inputs, values) : [];
+  return { inputs, values, setValues, ready: inputs !== null, missing, toSave: covariatesToSave(inputs || [], values) };
+}
+
+// A record's covariates with its rate under them, in a dialog: the shared calculator, or nothing when
+// the record has none.
+export function RecordCovariatesField({ recordId, cov, idPrefix = "rc" }) {
+  if (!cov.ready) return <p className="rim-tquiet">Reading its covariates…</p>;
+  if (!cov.inputs.length) return null;
+  return (
+    <div className="lib-cov" role="group" aria-label="Its covariates">
+      <p className="rw-fhelp">What it needs before it gives a rate. Left blank, a covariate takes its default; one with no default is needed.</p>
+      <CovariateCalculator recordId={recordId} inputs={cov.inputs} values={cov.values} onChange={cov.setValues} idPrefix={idPrefix} stacked />
+    </div>
+  );
+}
+
+// Use as a model…: the record saved to the user's models (a rate → an exponential, cited), under its
+// covariates (every one it needs: to fix some at a position and set the rest in an RBD, attach it
+// from the Explorer's Life model › From the data library… instead).
 export function UseAsModelDialog({ record, onClose }) {
   const navigate = useNavigate();
   const [name, setName] = useState(`${record.label} (${record.source})`);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
-  // A pipe's rate is per foot: the model is for the length given.
-  const perFoot = /per foot/i.test(String(record.units || ""));
-  const [feet, setFeet] = useState("");
-  const feetNum = Number(feet);
-  const feetOk = !perFoot || (feet.trim() !== "" && Number.isFinite(feetNum) && feetNum > 0);
+  const cov = useRecordCovariates(isLife(record) ? null : record.id);
   const save = async () => {
     setBusy(true);
     try {
-      const model = await createModelFromLibrary(record.id, name.trim(), perFoot ? feetNum : null);
+      const model = await createModelFromLibrary(record.id, name.trim(), null, cov.toSave);
       navigate(`/models/m/${model.id}`);
     } catch (e) {
       setBusy(false);
       setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
     }
   };
+  const blocked = !isLife(record) && (!cov.ready || cov.missing.length > 0);
   return (
-    <Modal title="Use as a model" onClose={onClose} locked={busy} trapFocus
+    <Modal title="Use as a model" onClose={onClose} locked={busy} trapFocus className="cov-modal"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-               <button type="button" onClick={save} disabled={busy || !name.trim() || !feetOk} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save the model"}</button>
+               <button type="button" onClick={save} disabled={busy || !name.trim() || blocked} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save the model"}</button>
              </>
            )}>
-      {isLife(record) ? (
+      {isComponentId(record.id) ? (
+        <p className="rw-fhelp">
+          Saves an exponential model at the component’s constant rate over the period below: its failure modes as
+          competing risks, −ln(R) ÷ the calendar hours. The modes’ 5–95% range across plants is the interval. The
+          component and the covariates are named on the model.
+        </p>
+      ) : isLife(record) ? (
         <p className="rw-fhelp">
           Saves a {familyName(record.family || record.distribution?.family)} model with the record’s parameters
           {record.params ? ` (${lifeWords({ family: record.family, params: record.params, level: record.level }, record.units)})` : ""},
@@ -94,17 +136,14 @@ export function UseAsModelDialog({ record, onClose }) {
         </p>
       ) : (
         <p className="rw-fhelp">
-          Saves an exponential model at the record’s mean rate ({sig(record.mean)} {record.units}). The model keeps
-          the source’s {String(record.distribution || "").startsWith("lognormal") ? "lognormal" : "gamma"} on that rate
-          (how it varies from plant to plant), so its page shows the 5–95% range across plants ({rangeText(record)})
-          on the reliability and the mean life: the source’s spread, not a fit’s confidence. The record is cited on the model.
+          Saves an exponential model at the record’s mean rate ({sig(record.mean)} {record.units}) under the covariates
+          below. Where the source gives a spread (a gamma or lognormal across plants), the model keeps it, so its page
+          shows the 5–95% range ({rangeText(record)}, scaled by the covariates): the source’s spread, not a fit’s
+          confidence. The record and the covariates are named on the model.
         </p>
       )}
-      {perFoot && (
-        <Field label="Pipe length (feet)" help="The source’s rate is per foot of pipe: the model is for this length.">
-          <TextInput type="number" inputMode="decimal" min="0" step="any" value={feet} onChange={(e) => setFeet(e.target.value)} />
-        </Field>
-      )}
+      {!isLife(record) && <RecordCovariatesField recordId={record.id} cov={cov} idPrefix="use" />}
+      {cov.missing.length > 0 && <p className="field-error">Give {cov.missing.map((i) => i.label).join(", ")}.</p>}
       <Field label="Name"><TextInput value={name} onChange={(e) => setName(e.target.value)} /></Field>
       {failed && <p className="field-error" role="alert">{failed}</p>}
     </Modal>
@@ -139,17 +178,20 @@ export function UseAsPriorDialog({ record, onClose }) {
       setCensorCol(cols[1] || "");
     }, () => setColumns([]));
   }, [datasetId]);
+  const cov = useRecordCovariates(life ? null : record.id);
   const body = { dataset_id: datasetId, time_column: timeCol, censor_column: censorCol || null, unit, distribution,
-    prior: { kind: "library", record_id: record.id } };
+    prior: { kind: "library", record_id: record.id, ...(Object.keys(cov.toSave).length ? { covariates: cov.toSave } : {}) } };
+  const covSig = JSON.stringify(cov.toSave);
   useEffect(() => {
     if (target !== "dataset" || !datasetId || !timeCol) { setResult(null); return undefined; }
     let live = true;
     const t = setTimeout(() => fitDatasetWithPrior(body).then((d) => live && setResult(d), (e) => live && setResult({ refused: e.message })), 300);
     return () => { live = false; clearTimeout(t); };
-  }, [target, datasetId, timeCol, censorCol, unit, distribution]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [target, datasetId, timeCol, censorCol, unit, distribution, covSig]); // eslint-disable-line react-hooks/exhaustive-deps
   const go = async () => {
     if (target === "position") {
-      navigate(`/asset-register/explorer?arrange=positions&tab=models&fit_prior=${encodeURIComponent(record.id)}`);
+      const c = Object.keys(cov.toSave).length ? `&fit_prior_cov=${encodeURIComponent(JSON.stringify(cov.toSave))}` : "";
+      navigate(`/asset-register/explorer?arrange=positions&tab=models&fit_prior=${encodeURIComponent(record.id)}${c}`);
       return;
     }
     setBusy(true);
@@ -162,11 +204,11 @@ export function UseAsPriorDialog({ record, onClose }) {
     }
   };
   return (
-    <Modal title="Use as a prior" onClose={onClose} locked={busy} trapFocus
+    <Modal title="Use as a prior" onClose={onClose} locked={busy} trapFocus className="cov-modal"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-               <button type="button" onClick={go} disabled={busy || (target === "dataset" && !result?.can_save)} aria-busy={busy || undefined}>
+               <button type="button" onClick={go} disabled={busy || cov.missing.length > 0 || (target === "dataset" && !result?.can_save)} aria-busy={busy || undefined}>
                  {target === "position" ? "Pick the position…" : busy ? "Saving…" : "Save as a model"}
                </button>
              </>
@@ -174,8 +216,9 @@ export function UseAsPriorDialog({ record, onClose }) {
       <p className="rw-fhelp">
         {life
           ? `The record’s ${familyName(family)} is the prior (each parameter about its value${record.params?.some((p) => p.ci) ? ", between its bounds" : ", within about 30%"}); your own failures and running units move it.`
-          : "The record’s distribution is the prior; your own failures and running units move it."}
+          : "The record’s distribution is the prior, under its covariates; your own failures and running units move it."}
       </p>
+      {!life && <RecordCovariatesField recordId={record.id} cov={cov} idPrefix="prior" />}
       <Field label="Fit">
         <Select aria-label="Fit" value={target} onChange={(e) => setTarget(e.target.value)}>
           {maintenance && <option value="position">A position’s history (in the Explorer)</option>}

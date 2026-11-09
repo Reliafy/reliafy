@@ -55,6 +55,7 @@ from typing import Any, Optional
 
 from backend.db import from_doc, to_doc
 from backend.library import schema as library_schema
+from backend.library import record_covariates
 from backend.library import service as library_service
 from backend.schema import ReliabilityPrediction
 from backend.services import access
@@ -233,6 +234,31 @@ def normalise_lines(lines: Any) -> list[dict]:
                 raise PredictionError(f"'{name}': a line left out (not an electronic part) can't also have a part "
                                       "type or a rate.")
             line["excluded"] = True
+        for k in ("environment", "quality"):  # a saved line's own covariates, read back as they were kept
+            if raw.get(k) not in (None, "") and record_id:
+                raw = {**raw, "covariates": {**(raw.get("covariates") or {}), k: raw[k]}}
+        covs = raw.get("covariates")
+        if covs not in (None, {}, ""):
+            # The line's covariates, the one mechanism's names (backend/library/record_covariates.py):
+            # a handbook part's environment (this line's own, over the prediction's) and quality grade
+            # or πQ; an NSWC-11 part's conditions and cycles an hour. Kept in the fields below.
+            if not isinstance(covs, dict):
+                raise PredictionError(f"'{name}': covariates must be an object of covariate to value.")
+            if not record_id:
+                raise PredictionError(f"'{name}': covariates go with a handbook part type (record_id).")
+            covs = {k: v for k, v in covs.items() if v is not None and v != ""}
+            if "environment" in covs:
+                line["environment"] = environment_code(covs.pop("environment"))
+            if "quality" in covs:
+                line["quality"] = _text(covs.pop("quality"), "quality grade", TEXT_LENGTH)
+            if "quality_factor" in covs:
+                if line["quality_factor"] is not None:
+                    raise PredictionError(f"'{name}': give quality_factor once.")
+                line["quality_factor"] = _number(covs.pop("quality_factor"), "quality_factor (πQ)", name, 0, 1e4)
+            if "cycles_per_hour" in covs and raw.get("cycles_per_hour") in (None, ""):
+                raw = {**raw, "cycles_per_hour": covs.pop("cycles_per_hour")}
+            if covs:
+                raw = {**raw, "conditions": {**(raw.get("conditions") or {}), **covs}}
         conditions = raw.get("conditions")
         if conditions not in (None, {}, ""):
             if not record_id:
@@ -325,18 +351,6 @@ def _quality_range(rec: dict) -> tuple[list | None, bool]:
     rng = pred.get("quality_factor_range")
     has = bool(rng) or any(f.get("symbol") == "πQ" for f in pred.get("not_applied") or [])
     return (list(rng) if rng else None), has
-
-
-def _quality(rec: dict, given: float | None) -> tuple[float, str, str | None]:
-    """The line's πQ: (value, where it came from: 'given', 'default' or 'none', the grade's
-    name when it's the record's default grade)."""
-    if given is not None:
-        return given, "given", None
-    q = rec.get("quality_factors") or {}
-    level = next((lv for lv in q.get("levels") or [] if lv["code"] == q.get("default")), None)
-    if level:
-        return float(level["value"]), "default", level["name"]
-    return DEFAULT_QUALITY_FACTOR, "none", None
 
 
 def _line_rate(rec: dict, code: str, line_name: str) -> tuple[float, float | None]:
@@ -572,9 +586,27 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
         pred = rec["prediction"]
         generic = bool(rec.get("generic_rates"))
         used_generic = used_generic or generic
-        base, pi_e = _line_rate(rec, code, line["name"])
+        # The line's covariates (backend/library/record_covariates.py): its environment (its own, else
+        # the prediction's), its quality grade or πQ. The factors are the one mechanism's; the
+        # arithmetic is the parts count's own, so saved predictions give the same numbers.
+        line_code = line.get("environment") or code
+        base, pi_e = _line_rate(rec, line_code, line["name"])
         q_range, has_q = _quality_range(rec)
-        pi_q, q_source, q_level = _quality(rec, line["quality_factor"])
+        if line.get("quality"):
+            levels = [lv["code"] for lv in (rec.get("quality_factors") or {}).get("levels") or []]
+            if not levels:
+                raise PredictionError(f"'{line['name']}': '{rec['name']}' has no quality grades; give quality_factor "
+                                      "(πQ) as a number.")
+            if line["quality"] not in levels:
+                raise PredictionError(f"'{line['name']}': the quality grade is one of {', '.join(levels)}.")
+        hf = record_covariates.handbook_factors(rec, {"quality": line.get("quality"),
+                                                      "quality_factor": line["quality_factor"]})
+        pi_q, q_source, q_level = hf["pi_q"], hf["quality_source"], hf["quality_level"]
+        row["covariates"] = {"environment": line_code, **({"quality": hf["quality_code"]} if hf["quality_code"] else {}),
+                             **({"quality_factor": pi_q} if q_source == "given" and not hf["quality_code"] else {})}
+        row["covariates_from"] = {"environment": "line" if line.get("environment") else "prediction",
+                                  **({"quality": "given" if line.get("quality") else "default"}
+                                     if hf["quality_code"] else {})}
         line_warnings: list[str] = []
         if not has_q and pi_q != DEFAULT_QUALITY_FACTOR:
             raise PredictionError(f"'{line['name']}': the handbook's model for '{rec['name']}' has no quality "

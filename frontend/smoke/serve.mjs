@@ -30,6 +30,9 @@ Object.assign(env, {
   // Several workers edit the one workspace at once: past the usual 600 changes
   // a minute the server would refuse them ("Too many changes in the last minute").
   MAINTENANCE_WRITES_PER_MINUTE: "100000",
+  // The same for the data library's public reads (120 a minute an address): every library page,
+  // record and component is opened from one address.
+  LIBRARY_READS_PER_MINUTE: "100000",
   MPLBACKEND: "Agg",
   PYTHONUNBUFFERED: "1",
 });

@@ -679,13 +679,13 @@ RELIABILITY: Table = {
 # Life models on positions (the Explorer's Modelling tab, position_models.py). Read them with get.position (models).
 POSITION_MODELS: Table = {
     "link": ("position_id", "model_id model_type from_class fit distribution scope failure_mode_ids note "
-                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior library_record_id bind", """Attach a life model to a position (a link: the model isn't
+                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior library_record_id covariates bind", """Attach a life model to a position (a link: the model isn't
         copied). One of: model_id (a saved model; model_type model default, recurrent_model, degradation_model,
         alt_model), from_class true (its position class's fitted model) or fit true (Pro: fit distribution, weibull
         default, to its own failure history, or its class's pooled history when its own is thin: scope auto,
         position or class; saved to Models). failure_mode_ids: the modes it's for (none: every failure there);
-        replace_link_id: the model on it this replaces. library_record_id: a data library rate record (list kind library)
-        as an exponential model, cited. fit true with data (position, class, both: the class's history
+        replace_link_id: the model on it this replaces. library_record_id: a data library record (list kind library)
+        as an exponential model, cited, with every one of its covariates given (pipe length, clock, demands a year...). fit true with data (position, class, both: the class's history
         as the prior) and method (mle: plain, 95% confidence; bayes: with a prior {kind: class | model | params | b10,
         ...}, 90% credible); trust weighs a prior (close, guide, start). fit true with baseline: a Bayesian update of a
         baseline (the class's model by default) with its history, for one or two failures (guide topic modelling).
@@ -693,8 +693,8 @@ POSITION_MODELS: Table = {
         {rate_per_million_hours} or {excluded: true}}}: a parts-count
         prediction from its parts list (and inside it), saved as an exponential model. rbd_id: link an RBD; build_rbd true:
         a new RBD from the positions inside (each block its model in use, else a flagged placeholder; with
-        replace_link_id, rebuilt). use_link_id: make that row its model in use. bind {source nswc|alt|ph, ref, fixed?,
-        roles?}: a covariate model with some, all or none of its covariates fixed here (guide topic modelling). The RCM
+        replace_link_id, rebuilt). use_link_id: make that row its model in use. bind {source nswc|library|component|alt|ph, ref,
+        fixed?, roles?}: a covariate model or library record with some, all or none of its covariates fixed here (guide topic modelling). The RCM
         offers these first."""),
     "unlink": ("link_id", "", "Take a model off its position (the model stays in Models)."),
 }
@@ -2385,10 +2385,14 @@ def register() -> None:
                                "With fit and method bayes: {kind: class} (the class's pooled history as a power prior, "
                                "weighed by trust), {kind: model, model_id}, {kind: params, distribution, params, unit} "
                                "or {kind: b10, b10: {value, low, high}, shape: {low, high}, unit}, or {kind: library, "
-                               "record_id, shape?: [low, high]} (a data library rate record)."))] = None,
+                               "record_id, covariates?, shape?: [low, high]} (a data library record and its covariates)."))] = None,
                            library_record_id: str | None = None,
+                           covariates: Annotated[dict[str, Any] | None, Field(description=(
+                               "With library_record_id: its covariates by key (get kind library_record lists them), "
+                               "every one it needs; to fix some and set the rest in an RBD, use bind."))] = None,
                            bind: Annotated[dict[str, Any] | None, Field(description=(
-                               "{source: nswc (an NSWC-11 record), alt or ph (a saved model), ref, fixed: {input: value} "
+                               "{source: nswc (an NSWC-11 record), library (any other library record), component "
+                               "(an NRC/INL component), alt or ph (a saved model), ref, fixed: {input: value} "
                                "(some, all or none), roles?: {input: design|use|environment}}. What isn't fixed is set "
                                "on an RBD block or the diagram's Use and Environment values."))] = None) -> dict[str, Any]:
         """The life models on a position (a functional location, or a position of a product's design): attach a
@@ -2417,7 +2421,7 @@ def register() -> None:
             from backend.maintenance import library_models
 
             return run(library_models.attach, m, _db(), m.org, position_id, library_record_id, failure_mode_ids,
-                       note or "", replace_link_id, owners=reader.read_owners)
+                       note or "", replace_link_id, owners=reader.read_owners, covariates=covariates)
         if build_rbd:
             return run(pm.build_rbd, m, _db(), reader.read_owners, reader.hidden, position_id, None, replace_link_id,
                        note or "")

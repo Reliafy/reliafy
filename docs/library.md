@@ -282,7 +282,8 @@ a generic estimate, so a block never presents it as the user's own data.
   cold-standby spare's start-success probability; with `demands_per_year`, an
   equivalent rate in calendar time.
 - `life_to_model(record)`: a Weibull record as a Weibull.
-- `to_block_model(record, **options)`: whichever of these fits the record.
+- `to_block_model(record, covariates, **options)`: whichever of these fits the
+  record, under its covariates (the old arguments are aliases).
 
 A combination that can't convert (a rate as a per-demand probability, a
 calendar rate as running hours without the hours a year, a handbook rate
@@ -290,6 +291,60 @@ without an environment or in one the handbook gives no factor for) raises
 `ConversionError`, saying what to give or use instead. `get kind library_record` (and
 `GET /api/library/records/{id}`) takes `environment` too; without it, a
 handbook record's `environments` lists the rate in each.
+
+## A record's covariates (`record_covariates.py`)
+
+Every input a record needs before it gives a rate is a covariate of the
+record, declared in one place and handled by the same mechanism as NSWC-11's
+conditions and the accelerated life and proportional-hazards models' stresses:
+one input component in the app, fixed at a position or set on an RBD block (or
+the diagram's Use and Environment values), and the same keys over the API.
+
+| Library | Records | Covariates |
+|---|---|---|
+| MIL-HDBK-217F N2 | 236 | `environment` (environment; 230 records: a choice of the handbook's environments, each with its πE or generic rate; no default); `quality` (design; 65 parts-count records: the grade, the handbook's lowest by default, or "not applied" where it names none); `quality_factor` (design; 134 part-stress records: πQ as a number, 1 by default, which doesn't apply it) |
+| NRC/INL 2020 | 207 per hour (158 calendar, 49 running) | `clock` (use: calendar or operating, the record's own by default) and `running_hours_per_year` (use, 0 to 8,760, asked for only when the clock changes) |
+| NRC/INL 2020 | 89 per demand | `demands_per_year` (use; no default): the probability × demands a year ÷ 8,760 is its rate per calendar hour |
+| NRC/INL 2020 | 4 per foot | `length_ft` (design; no default), and the clock as above |
+| NSWC-11 | 69 | its own inputs (each with its role from the handbook's table), plus `cycles_per_hour` (use) for the 8 per cycle or operation |
+
+`evaluate(record, covariates, time_unit)` gives the rate on the clock the
+covariates say, its 5–95% range and the record's distribution on the rate
+scaled by them, or `RecordCovariateError` naming every covariate still missing
+(one with no default is never guessed). `from_legacy` maps the old arguments
+(`length_ft`, `operating_hours_per_year`, `time_basis`, `environment`,
+`demands_per_year`, `conditions`, `cycles_per_hour`, `quality_factor`) onto
+covariates, so callers and saved data keep working: a model saved with only a
+`length_ft` shows it as a fixed covariate when it's read, and a saved parts
+count gives the same numbers (its environment once, its quality factor per
+line).
+
+## Components (`components.py`)
+
+NRC/INL split a component into failure modes by what sets them off: per demand
+(fails to start, open or close), per hour of running (fails to run; in its
+first hour and after it), per calendar hour (leaks, spurious operation,
+plugging; exposure in reactor-year hours, INL/EXT-21-65055 §1.2.1). A
+component is one equipment type in one of the report's pooling groups (normally
+standby, normally running, a system such as service water, a rating, a
+service): its records grouped by name and qualifier, a generic mode joining
+every group with no mode of its own in the same family, and the irregular ones
+named by hand (`ALTERNATIVES`, `LABELS`). FTOC pools fails to open and fails
+to close over the same demands (Table 1), so where it's given FTO and FTC are
+listed, not added; a sensor's FTOP has both a demand and a calendar
+contribution (A-7.3.2), so both are added. A group with one mode left is the
+record itself, not a component.
+
+Over a period with D demands, H running hours and T calendar hours, the modes
+are independent competing risks:
+
+    R = Π (1 − q)^D × exp(−[λ≤1h × h1 + λ>1h × (H − h1) + λrun × H + λcal × T]),  h1 = min(H, max(D, 1) × 1 h)
+
+P(fails) = 1 − R. For small numbers it's the plain sum the NRC's risk models
+use for a mission (FTS + FTR≤1H × 1 h + FTR>1H × (t − 1 h) + leaks × t), shown
+beside it. As a constant rate for an RBD block or a saved model: −ln R ÷ T per
+calendar hour. The 5–95% range comes from the modes' own distributions (4,000
+independent draws, a fixed seed).
 
 ## Plans
 

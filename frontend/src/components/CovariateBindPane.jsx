@@ -3,14 +3,16 @@ import { getBindingInputs, linkPositionModel } from "../api.js";
 import TablePane from "./TablePane.jsx";
 import CovariateInputs from "./CovariateInputs.jsx";
 import { saveErrorText } from "../confirm.js";
-import { bindSummary, bindingToSave, initialFix, initialValues } from "../covariate.js";
+import { LIBRARY_SOURCES, bindSummary, bindingToSave, initialFix, initialValues } from "../covariate.js";
 import "./CovariateCalculator.css";
 
 // A covariate model at a position, in the Explorer's table area (Derryn, 9 Nov 2026: "the user can
 // choose to fix some, all, or none of the covariates. These could be design parameters or they
 // could be use or environmental. If they are use or env one can set them in the RBD"; and "make it
 // the same for ALT"): an NSWC-11 covariate model, an accelerated life model or a proportional-
-// hazards model. Each covariate, grouped Design / Use / Environment, has "Fix at this position" and
+// hazards model, or any data library record or component (Derryn, 9 Nov 2026: every input a
+// record needs is a covariate of the record: a pipe's length, the clock, the demands a year, a
+// handbook part's environment and quality, a component's demands and hours). Each covariate, grouped Design / Use / Environment, has "Fix at this position" and
 // a value. Design inputs start ticked for an NSWC-11 model; an ALT's stresses and a PH model's
 // covariates start open, and the user says what each one is. Saved, the model is linked here with
 // the fixed values; the open ones are set on each RBD block (or the diagram's Use and Environment
@@ -53,7 +55,8 @@ export default function CovariateBindPane({ position, binding, name = "", link =
       setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
     }
   };
-  const words = { nswc: "an NSWC-11 covariate model", alt: "an accelerated life model", ph: "a proportional-hazards model" }[binding.source];
+  const words = { nswc: "an NSWC-11 covariate model", library: "a data library record", component: "a data library component (its failure modes together)",
+    alt: "an accelerated life model", ph: "a proportional-hazards model" }[binding.source];
   return (
     <TablePane title="Fix covariates" subject={position.name} phone={phone} busy={saving} headingRef={headingRef} onClose={onClose}
                className="bind-pane">
@@ -69,9 +72,10 @@ export default function CovariateBindPane({ position, binding, name = "", link =
           <CovariateInputs inputs={shown} values={values} idPrefix="bind"
                            onChange={(v) => { setValues(v); touch(); }}
                            fix={{ fixed: fix, onFix: (k, on) => { setFix((f) => ({ ...f, [k]: on })); touch(); } }}
-                           onRole={binding.source === "nswc" ? null : (k, r) => { setRoles((x) => ({ ...x, [k]: r })); touch(); }} />
+                           onRole={LIBRARY_SOURCES.includes(binding.source) ? null : (k, r) => { setRoles((x) => ({ ...x, [k]: r })); touch(); }} />
         )}
-        {inputs && <p className="bind-sum" role="status">{bindSummary(binding.source, shown, fix)}</p>}
+        {inputs && inputs.length === 0 && <p className="rim-tquiet">It needs no covariates: it’s saved as a constant-rate model here.</p>}
+        {inputs && inputs.length > 0 && <p className="bind-sum" role="status">{bindSummary(binding.source, shown, fix, values)}</p>}
         {out.missing.length > 0 && <p className="field-error">Give a value for {out.missing.join(", ")}, or untick it.</p>}
         {failed && <p className="field-error" role="alert">{failed}</p>}
         <div className="bind-foot">

@@ -64,11 +64,12 @@ test("the result in the panel's words", () => {
 });
 
 test("a change from the shared part-type controls as the line's fields", () => {
-  assert.deepEqual(lineChange({ record: { id: "r1", name: "Cap" } }), { record: { id: "r1", name: "Cap" }, record_id: "r1" });
-  assert.deepEqual(lineChange({ record: null, rateMode: true }), { record: null, record_id: null, rate_mode: true });
+  // A new part type clears the last one's own environment and grade.
+  assert.deepEqual(lineChange({ record: { id: "r1", name: "Cap" } }), { record: { id: "r1", name: "Cap" }, record_id: "r1", environment: "", quality: "" });
+  assert.deepEqual(lineChange({ record: null, rateMode: true }), { record: null, record_id: null, rate_mode: true, environment: "", quality: "" });
   assert.deepEqual(lineChange({ rate: "0.5", rateMode: true }), { rate_per_million_hours: "0.5", rate_mode: true });
   assert.deepEqual(lineChange({ excluded: true, record: null, rate: "", rateMode: false }),
-    { excluded: true, record: null, record_id: null, rate_per_million_hours: "", rate_mode: false });
+    { excluded: true, record: null, record_id: null, rate_per_million_hours: "", rate_mode: false, environment: "", quality: "" });
   assert.deepEqual(lineChange({}), {});
 });
 

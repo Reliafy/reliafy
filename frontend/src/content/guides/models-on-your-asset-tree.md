@@ -71,12 +71,18 @@ items. Under **Life model**:
 - **From the class…** links the model fitted to the position's class.
 - **Enter parameters…** saves a model from numbers you have (a data sheet, a
   handbook) and attaches it.
-- **From the data library…** attaches a published failure rate (Models ›
-  Library): an exponential at the record's mean rate per hour, with the
-  source's 5–95% range as its interval. The row's source reads, for example,
-  "Library: NRC/INL 2020, Motor-operated valve spurious operation
-  (INL/EXT-21-65055, Table 1, p. 6)", and the record stays cited. A probability per demand can't be a
-  life model, and the dialog says why.
+- **From the data library…** attaches a published record (Models ›
+  Library). Every input a record needs before it gives a rate is one of its
+  **covariates**, and they open in **Fix covariates** beside the tree: a
+  pipe's length, the clock (calendar hours or hours of running, and the
+  running hours a year to change it), the demands a year for a probability
+  per demand, a handbook part's environment and quality grade. Fix them all
+  and it's an exponential at the record's rate under them, with the source's
+  5–95% range as its interval; leave some open and they're set in an RBD
+  built from the tree. The row's source reads, for example, "Library: NRC/INL
+  2020, Motor-operated valve spurious operation (INL/EXT-21-65055, Table 1,
+  p. 6)", and the record stays cited. A library life model of your own is
+  attached as it is.
 
 A row's **⋯** has **Refit…** (a fitted model), **Replace with…** and
 **Unlink…**. Unlinking takes it off the position; the model stays in Models.
@@ -97,11 +103,12 @@ an RBD block or a calculation.
 ## Predict the failure rate from the parts list
 
 Reliability predictions live here, on the position they're for.
-**Covariate models at a position.** An NSWC-11 covariate model (from **Life
-model › From the data library…**), an accelerated life model or a
-proportional-hazards model opens **Fix covariates** beside the tree. Each
-covariate is grouped Design, Use or Environment, with **Fix at this position**
-and a value. Design inputs start ticked for an NSWC-11 model; an accelerated
+**Covariate models at a position.** A data library record or an NSWC-11
+covariate model (from **Life model › From the data library…**), an
+accelerated life model or a proportional-hazards model opens **Fix
+covariates** beside the tree. Each covariate is grouped Design, Use or
+Environment, with **Fix at this position** and a value. Design inputs start
+ticked for a library record (a pipe's length, a part's quality grade); an accelerated
 life model's stresses and a covariate model's covariates start open, and you
 say what each one is. What you leave open is set where the model is used: in
 an RBD built from the tree, on each block, or once for the whole diagram under
@@ -176,8 +183,11 @@ for the class's history as the prior) and the position's own failures and
 running units move that prior.
 
 1. Choose the **prior**: the class's history, a saved model, a library
-   record, numbers you know, or a B10 you believe. A **library record**'s
-   gamma on the rate is the prior exactly for an exponential (the update is
+   record, numbers you know, or a B10 you believe. A **library record** shows
+   its covariates under it (a pipe's length, the clock and running hours, the
+   demands a year): the prior is the record's under them, so a 200 ft pipe's
+   prior is 200 times a foot's. Its gamma on the rate is the prior exactly for
+   an exponential (the update is
    then exact, in closed form); for a Weibull or lognormal the rate becomes a
    prior on the mean life, with the shape between bounds you set (0.5 to 5
    unless you change them).

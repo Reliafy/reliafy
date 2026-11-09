@@ -8654,41 +8654,52 @@ def library_search(
                     "(NSWC-11 mechanical parts: a base rate × condition factors).")] = None,
     page: Annotated[int, Field(ge=1)] = 1,
     page_size: Annotated[int, Field(ge=1, le=library_service.MAX_PAGE_SIZE)] = library_service.DEFAULT_PAGE_SIZE,
+    components: Annotated[Optional[bool], Field(description=(
+        "True: components instead of records (NRC/INL: an equipment type in one pooling group, e.g. motor-driven "
+        "pump, normally standby, with its failure modes together; get kind library_record with a component id "
+        "gives its modes and how they combine)."))] = None,
 ) -> dict[str, Any]:
     """Rates, per-demand probabilities and life models by component and failure mode: the published sources and the
     user's own libraries (list kind libraries) together."""
+    if components:
+        return library_service.components(source, query)
     return library_service.search(query, source=source, equipment_type=equipment_type, kind=kind, page=page,
                                   page_size=page_size, mine=_my_libraries(ctx))
 
 
 def library_get(
-    ctx: Context, record_id: str,
+    ctx: Context, record_id: Annotated[str, Field(description=(
+        "A record id, or a component id (list kind library with components true)."))],
+    covariates: Annotated[Optional[dict[str, Any]], Field(description=(
+        "The record's covariates by key (the answer's covariates lists them: units, defaults, limits, choices): a "
+        "pipe's length_ft, clock and running_hours_per_year, demands_per_year, a handbook part's environment and "
+        "quality, an NSWC-11 model's conditions and cycles_per_hour; a component's demands, running_hours and "
+        "calendar_hours over a period. The answer adds evaluation: the rate (or the chance of failing over the "
+        "period), or what's missing. Missing ones take their default; never guess one with none: ask the user."))]
+    = None,
     environment: Annotated[Optional[str], Field(
-        description="For a handbook rate (MIL-HDBK-217F): where the part works, e.g. GB (ground, benign), GF "
-                    "(ground, fixed), NS (naval, sheltered); the record lists them.")] = None,
-    conditions: Annotated[Optional[dict[str, Any]], Field(description=(
-        "For a covariate model (NSWC-11): its inputs by key (the record's covariate.inputs: units, defaults, "
-        "limits), e.g. {\"L_S\": 5000, \"F_R\": 1000, \"n\": 1800}; the answer adds evaluation: the rate per "
-        "mode and in total, or the problems (a missing input, a limit and its page). Missing ones take the "
-        "handbook's default. Never guess conditions: ask the user."))] = None,
+        description="The old name of covariates.environment (a handbook part's, e.g. GF).")] = None,
+    conditions: Annotated[Optional[dict[str, Any]], Field(description="The old name of covariates.")] = None,
 ) -> dict[str, Any]:
-    """One record in full: citation, licence, the block model to use (a user library's record: its library and the
-    model it was taken from)."""
+    """One record (or component) in full: citation, licence, its covariates, the block model to use (a user library's
+    record: its library and the model it was taken from)."""
     mine = _my_libraries(ctx)
-    if conditions is not None:
-        try:
-            out = library_service.detail(record_id)
-            return {**out, "evaluation": library_service.evaluate(record_id, conditions)}
-        except library_service.LibraryNotFound as exc:
-            raise ToolError(str(exc)) from None
-        except ValueError as exc:
-            raise ToolError(str(exc)) from None
+    given = covariates if covariates is not None else conditions
     try:
+        if library_service.components_is(record_id):
+            out = library_service.component_detail(record_id)
+            return {**out, "evaluation": library_service.evaluate(record_id, given)} if given is not None else out
+        if given is not None:
+            given = {**({"environment": environment} if environment else {}), **given}
+            out = library_service.detail(record_id, mine=mine)
+            return {**out, "evaluation": library_service.evaluate(record_id, given, mine=mine)}
         link = None
         if mine and record_id.split(":", 1)[0] in mine["sources"]:
             link = user_library.model_link(_db(), library_service.get(record_id, mine), _owners(_caller(ctx)["uid"]))
         return library_service.detail(record_id, environment=environment, mine=mine, model_link=link)
     except library_service.LibraryNotFound as exc:
+        raise ToolError(str(exc)) from None
+    except ValueError as exc:
         raise ToolError(str(exc)) from None
 
 
@@ -8832,6 +8843,10 @@ class PredictionLine(BaseModel):
         "With an nswc-11 record_id: its inputs by key (get kind library_record lists them with units, defaults "
         "and limits). Missing ones take the handbook's default; a line still missing one is listed and left out "
         "of the total with what it needs. Ask the user; never guess."))
+    covariates: Optional[dict[str, Any]] = Field(None, description=(
+        "The line's covariates by key (get kind library_record lists them): a MIL-HDBK-217F part's environment "
+        "(this line's own, over the prediction's) and quality (its grade); an nswc-11 part's conditions and "
+        "cycles_per_hour. Never guess one: ask the user."))
     cycles_per_hour: Optional[float] = Field(None, gt=0, le=prediction_service.MAX_CYCLES_PER_HOUR, description=(
         "With an nswc-11 record whose rate is per million cycles or operations: how many it makes an hour."))
     quantity: float = Field(1, gt=0, le=prediction_service.MAX_QUANTITY, description="How many in the system.")

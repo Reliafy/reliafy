@@ -456,8 +456,9 @@ def _model(model, where: str, resolve_saved_model) -> dict:
         # A covariate model with some covariates left open at its position (covariate_binding.py):
         # the binding as given; the block's and the diagram's values fill the rest at calculation.
         b = model.get("binding")
-        if not isinstance(b, dict) or b.get("source") not in ("nswc", "alt", "ph") or not b.get("ref"):
-            raise GraphError(f"{where}: a bound model needs binding {{source: nswc, alt or ph, ref, fixed}}.")
+        if not isinstance(b, dict) or b.get("source") not in ("nswc", "library", "component", "alt", "ph") or not b.get("ref"):
+            raise GraphError(f"{where}: a bound model needs binding {{source: nswc, library, component, alt or ph, ref, "
+                             "fixed}}.")
         out = {"kind": "bound", "binding": {"source": b["source"], "ref": str(b["ref"]),
                                             "fixed": dict(b.get("fixed") or {}), "roles": dict(b.get("roles") or {})}}
         for key in ("name", "position"):

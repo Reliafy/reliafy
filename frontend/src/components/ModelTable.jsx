@@ -424,8 +424,9 @@ export function ParamsModal({ position, onClose, onDone }) {
   );
 }
 
-// Life model › From the data library…: a record attached as the position's model (a rate per hour
-// becomes an exponential with the source's 5–95% range, cited). The record comes from "Pick a library
+// Life model › From the data library…: a record attached as the position's model. A published record
+// goes on to the fix-covariates pane (its covariates fixed here, the rest set in the RBD); a life
+// record from a library of your own is attached as it is. The record comes from "Pick a library
 // record" (a modal over this one, opened at once), which lists only the records that can be a model.
 export function LibraryAttachModal({ position, onClose, onDone, onBind = null }) {
   const [rec, setRec] = useState(null);
@@ -459,8 +460,9 @@ export function LibraryAttachModal({ position, onClose, onDone, onBind = null })
         <LibraryRecordPicker use={onBind ? "attach" : "model"} selectedId={rec?.id} onClose={() => setPicking(false)}
                              onPick={(r) => {
                                setPicking(false);
-                               // A covariate model (NSWC-11): its covariates are fixed at the position next.
-                               if (r.kind === "covariate_model" && onBind) onBind(r);
+                               // A record with covariates (every published one but a life model): which are
+                               // fixed at the position, and which are set in the RBD, next.
+                               if (r.kind !== "life" && onBind) onBind(r);
                                else setRec(r);
                              }} />
       )}

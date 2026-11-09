@@ -20,7 +20,7 @@ import {
   parseMissionParam, phaseKey, positionMissionActions, rollupText as missionRollup, withNewPhase, withoutPhase,
 } from "../explorerMissions.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
-import { bindingFromParam, bindingParam } from "../covariate.js";
+import { bindingForRecord, bindingFromParam, bindingParam } from "../covariate.js";
 import { PANE_PARAMS, TABLE_PANES, paneFromQuery, setPaneQuery } from "../tablePane.js";
 import { fitPreset, priorFrom } from "../fitDialog.js";
 import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, graftModels, inUseWords, isModelRow, modelKey, openForModels, rollupText as modelRollup, lifeModelOf,
@@ -1921,8 +1921,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   useEffect(() => {
     if (!fitPrior || !data || !modelsOn) return;
     if (posRow?.type !== "pos") { say("Pick the position to fit, then Life model › Fit a life model… (the record is chosen for you).", "ok"); return; }
+    // ?fit_prior_cov=<JSON>: the record's covariates given on the Library page.
+    let covariates = {};
+    try { covariates = JSON.parse(params.get("fit_prior_cov") || "{}") || {}; } catch { covariates = {}; }
     openFit({ id: posRow.key, name: posRow.ref.name || "(no name)", position_class: posRow.ref.position_class || "" },
-      { start: { method: "bayes", priorKind: "library", recordId: fitPrior }, query: (q) => q.delete("fit_prior") });
+      { start: { method: "bayes", priorKind: "library", recordId: fitPrior, covariates },
+        query: (q) => { q.delete("fit_prior"); q.delete("fit_prior_cov"); } });
   }, [fitPrior, data, modelsOn, posRow?.key]); // eslint-disable-line react-hooks/exhaustive-deps
   // The heading's Full screen: the tree pane's 30 × 30 icon button (its name
   // and the F key in the tooltip), on a phone too (no key there).
@@ -2490,10 +2494,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <LibraryAttachModal position={modelModal.position} onClose={() => setModelModal(null)}
                             onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }}
                             onBind={(rec) => {
-                              // A covariate model (NSWC-11): which covariates are fixed here, in the table area.
+                              // A record with covariates (NSWC-11's conditions, a pipe's length, the clock,
+                              // the demands a year, a handbook part's environment...): which are fixed
+                              // here, in the table area; the rest are set in the RBD.
                               const p = modelModal.position;
                               setModelModal(null);
-                              openBind(p, { source: "nswc", ref: rec.id }, { name: rec.label });
+                              openBind(p, bindingForRecord(rec), { name: rec.label });
                             }} />
       )}
       {modelModal?.kind === "to-library" && modelModal.link && (

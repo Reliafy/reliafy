@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { deleteLibrary, getLibraryRecord, getLibrarySources, removeLibraryRecord, searchLibrary } from "../api.js";
+import { deleteLibrary, getLibraryComponent, getLibraryComponents, getLibraryRecord, getLibrarySources, removeLibraryRecord, searchLibrary } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import Plot from "../components/Plot.jsx";
 import { Select, TextInput } from "../components/ui/Controls.jsx";
@@ -11,14 +11,15 @@ import { ShowMe } from "../components/SectionPage.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { ACCENT } from "../plotTheme.js";
 import CovariateCalculator from "../components/CovariateCalculator.jsx";
-import { isCovariate, modeRows, modelShape, modelWords, unitShort } from "../covariate.js";
+import { TRIGGER_WORDS, isCovariate, modeRows, modelShape, modelWords, unitShort } from "../covariate.js";
 import {
   BASIS_LABEL as BASIS, KIND_LABEL as KIND, LIBRARY_PATH, curve, distributionWords, evidenceWords, isLife, lifeCurve, lifeWords,
-  asGivenWords, rangeText, recordIdOf, recordPath, sig, sourcePath, unitsMeaning, whyNot,
+  asGivenWords, componentIdOf, componentPath, rangeText, recordIdOf, recordPath, sig, sourcePath, unitsMeaning, whyNot,
 } from "../libraryModels.js";
 import "./LibraryPages.css";
 
-// The reliability data library under Models, three levels (Derryn, 9 Nov 2026): the libraries
+// The reliability data library under Models, three levels (and an NRC/INL source's components:
+// an equipment type in one pooling group, its failure modes together, each with its own page) (Derryn, 9 Nov 2026): the libraries
 // (each source: what it covers, how many records, its basis and licence, the reference), one
 // library's records (filters, sort, and each record's Use as a model… / Use as a prior…), and one
 // record (its distribution written out and plotted, its units, basis, full reference and notes).
@@ -142,6 +143,15 @@ export function LibrarySource() {
   const [mode, setMode] = useState("");
   const [kind, setKind] = useState("");
   const [sort, setSort] = useState("name");
+  // "By component" (NRC/INL): the source's components, when it has any.
+  const [comps, setComps] = useState(null);
+  const [view, setView] = useState("records");
+  useEffect(() => {
+    let live = true;
+    setComps(null);
+    getLibraryComponents(sourceId).then((d) => live && setComps(d.components || []), () => live && setComps([]));
+    return () => { live = false; };
+  }, [sourceId]);
   useEffect(() => {
     let live = true;
     (async () => {
@@ -211,6 +221,13 @@ export function LibrarySource() {
             or do the same on a position’s life model in the Explorer’s Modelling tab.</p>
         </div>
       )}
+      {comps?.length > 0 && (
+        <div className="lib-view" role="group" aria-label="Show">
+          <button type="button" className={view === "records" ? "" : "secondary"} aria-pressed={view === "records"} onClick={() => setView("records")}>Records</button>
+          <button type="button" className={view === "components" ? "" : "secondary"} aria-pressed={view === "components"} onClick={() => setView("components")}>By component</button>
+        </div>
+      )}
+      {view === "components" && comps?.length > 0 ? <ComponentTable comps={comps} q={q} setQ={setQ} /> : (
       <section className="card">
         <div className="lib-filters">
           <TextInput type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, equipment, failure mode" aria-label="Search this library" />
@@ -249,7 +266,118 @@ export function LibrarySource() {
           </div>
         )}
       </section>
+      )}
       {editing && <LibraryFormDialog library={source} onClose={() => setEditing(false)} onDone={() => { setEditing(false); reload(); }} />}
+    </div>
+  );
+}
+
+// "By component": an NRC/INL source's components, one row each: the component (an equipment type in
+// one of the report's pooling groups), its failure modes and what sets them off.
+function ComponentTable({ comps, q, setQ }) {
+  const t = q.trim().toLowerCase();
+  const shown = comps.filter((c) => !t || `${c.label} ${c.mode_names.join(" ")} ${c.equipment_type}`.toLowerCase().includes(t));
+  return (
+    <section className="card" aria-label="Components">
+      <p className="rw-fhelp">Each component brings its failure modes together: those per demand (fails to start, open or close),
+        per hour of running (fails to run) and per calendar hour (leaks, spurious operation). Open one for its chance of failing
+        over a period, with the demands and hours you give.</p>
+      <div className="lib-filters">
+        <TextInput type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Component or failure mode" aria-label="Search the components" />
+      </div>
+      <div className="maint-scroll lib-scroll">
+        <table className="lib-table">
+          <thead><tr><th>Component</th><th>Failure modes</th><th>Set off by</th></tr></thead>
+          <tbody>
+            {shown.map((c) => (
+              <tr key={c.id}>
+                <td><Link to={componentPath(c.id)}>{c.label}</Link></td>
+                <td>{c.mode_names.join(", ")}{c.alternatives ? <span className="rim-tquiet"> (+{c.alternatives} not added)</span> : null}</td>
+                <td>{c.triggers.map((x) => TRIGGER_WORDS[x] || x).join("; ")}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="rim-tquiet">{shown.length} of {comps.length} components.</p>
+      </div>
+    </section>
+  );
+}
+
+// /models/library/:source/components/:component: a component's failure modes (each a record, with
+// what sets it off and whether it's added), how they combine in words, and Try it: its chance of
+// failing over a period of demands, running hours and calendar hours, in the shared calculator.
+export function LibraryComponent() {
+  const { source: sourceId, component } = useParams();
+  const { sources } = useSources();
+  const source = (sources || []).find((s) => s.id === sourceId);
+  const id = componentIdOf(sourceId, component);
+  const [d, setD] = useState(null);
+  const [error, setError] = useState(null);
+  const [missing, setMissing] = useState(false);
+  const [values, setValues] = useState({ demands: "12", running_hours: "24" });
+  const [using, setUsing] = useState(false);
+  useEffect(() => {
+    setD(null);
+    setMissing(false);
+    getLibraryComponent(id).then(setD, (e) => (e.status === 404 ? setMissing(true) : setError(e.message)));
+  }, [id]);
+  if (missing) {
+    return (
+      <div className="app">
+        <PageHeader crumbs={crumbsFor(source || { id: sourceId })} title="Component not found" />
+        <div className="card" role="alert"><p>We couldn't find this component. <Link to={sourcePath(sourceId)}>See the library</Link>.</p></div>
+      </div>
+    );
+  }
+  const counted = (d?.modes || []).filter((m) => m.counted);
+  const alts = (d?.modes || []).filter((m) => !m.counted);
+  return (
+    <div className="app">
+      <PageHeader crumbs={crumbsFor(source || { id: sourceId }, true)} title={d?.label || "Component"}
+                  meta={d ? `${counted.length} failure modes · ${source?.short_name || sourceId}` : null}
+                  primary={d ? <button type="button" onClick={() => setUsing(true)}>Use as a model…</button> : null} />
+      {error && <div className="card error" role="alert">{error}</div>}
+      {!d && !error && <div className="card empty">Loading…</div>}
+      {d && (
+        <div className="lib-record">
+          <section className="card">
+            <h2 className="lib-h">How its modes combine</h2>
+            <p>{d.how}</p>
+            <p className="rim-tquiet">From {d.citation}. Industry averages, not this equipment’s own data.</p>
+          </section>
+          <section className="card">
+            <h2 className="lib-h">Try it</h2>
+            <p className="rw-fhelp">The demands, running hours and calendar hours over the period you have in mind (a year is 8,760 hours; a 24-hour mission with one start is 1 demand and 24 running hours).</p>
+            <CovariateCalculator recordId={id} inputs={d.inputs} values={values} onChange={setValues} idPrefix="comp" />
+          </section>
+          <section className="card">
+            <h2 className="lib-h">Its failure modes</h2>
+            <div className="maint-scroll lib-scroll">
+              <table className="lib-table">
+                <thead><tr><th>Failure mode</th><th>Set off by</th><th className="num">Mean</th><th>Units</th><th className="num">5–95%</th></tr></thead>
+                <tbody>
+                  {counted.map((m) => (
+                    <tr key={m.record_id}>
+                      <td><Link to={recordPath(m.record_id)}>{m.mode}</Link> <span className="rim-tquiet">{m.code}</span></td>
+                      <td>{TRIGGER_WORDS[m.trigger] || m.trigger_words}</td>
+                      <td className="num">{sig(m.record.mean)}</td><td>{m.record.units}</td><td className="num">{rangeText(m.record)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {alts.length > 0 && (
+              <>
+                <h3 className="lib-h3">Listed, not added</h3>
+                <ul>{alts.map((m) => <li key={m.record_id}><Link to={recordPath(m.record_id)}>{m.mode}</Link> ({m.code}): {m.not_added}.</li>)}</ul>
+              </>
+            )}
+          </section>
+          {(d.caveats || []).length > 0 && <section className="card"><h2 className="lib-h">Caveats</h2><ul>{d.caveats.map((c) => <li key={c}>{c}</li>)}</ul></section>}
+        </div>
+      )}
+      {using && d && <UseAsModelDialog record={{ id, label: d.label, source: source?.short_name || sourceId, kind: "component" }} onClose={() => setUsing(false)} />}
     </div>
   );
 }
@@ -286,6 +414,19 @@ function CovariateTable({ rows, total, shown }) {
       </table>
       <p className="rim-tquiet">{rows.length} parts and failure modes in {shown} of {total} components.</p>
     </div>
+  );
+}
+
+// A record's covariates (a pipe's length, the clock and running hours, the demands a year, a handbook
+// part's environment and quality) with its rate under them: the shared calculator.
+function RecordTry({ rec, inputs }) {
+  const [values, setValues] = useState({});
+  return (
+    <section className="card">
+      <h2 className="lib-h">Try it</h2>
+      <p className="rw-fhelp">What it needs before it gives a rate (its covariates). The same inputs appear wherever it’s used: Use as a model…, a prior in a fit, a position, an RBD block.</p>
+      <CovariateCalculator recordId={rec.id} inputs={inputs} values={values} onChange={setValues} idPrefix="try" />
+    </section>
   );
 }
 
@@ -456,6 +597,7 @@ export function LibraryRecord() {
                   rate (times to failure are exponential at a plant’s rate; the {rec.distribution.family} is how that rate
                   varies from plant to plant). The model’s page shows the 5–95% range across plants beside each value.
                   {/per foot/i.test(valueUnits) ? " Give the pipe’s length: the model is for that length." : ""}
+                  {" "}Its covariates (below) say what else it needs.
                 </dd></>
               )}
               {life && evidenceWords(rec.evidence) && <><dt>Evidence</dt><dd>{evidenceWords(rec.evidence)}</dd></>}
@@ -476,6 +618,14 @@ export function LibraryRecord() {
                           title: { text: rec.kind === "per_demand" ? "Probability per demand" : "Failure rate (per hour)" } },
                       yaxis: { title: { text: "Density" }, rangemode: "tozero", exponentformat: "SI", showexponent: "all" } }}
                     download={`${rec.label} — distribution`} />
+            </section>
+          )}
+          {(d.covariates || []).length > 0 && <RecordTry rec={rec} inputs={d.covariates} />}
+          {(d.components || []).length > 0 && (
+            <section className="card">
+              <h2 className="lib-h">Part of {d.components.length === 1 ? "a component" : "these components"}</h2>
+              <p className="rw-fhelp">With the component’s other failure modes, for its chance of failing over a period.</p>
+              <ul>{d.components.map((c) => <li key={c.id}><Link to={componentPath(c.id)}>{c.label}</Link> ({c.modes} failure modes)</li>)}</ul>
             </section>
           )}
           <section className="card">

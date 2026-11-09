@@ -186,6 +186,14 @@ demand), and the evidence (failures, demands or hours).
 - In an RBD block: a rate is an exponential (failure_rate = the mean, x 24 per day, x 8,760 per year). A \
 per-demand probability p is a cold-standby spare's startProb (1 - p), or a proof-tested item's failure on test. \
 Converting a calendar rate to hours of running needs the hours a year it runs: ask the user, never guess.
+- Every input a record needs is a covariate (get kind library_record lists covariates: key, unit, role, default, \
+limits): a pipe's length_ft; clock (calendar or operating) and running_hours_per_year to change a rate's clock; \
+demands_per_year to make a per-demand probability a rate; a handbook part's environment and quality. Pass \
+covariates to evaluate; one with no default is listed as missing: ask the user, never guess.
+- Components (list kind library with components true; NRC/INL): an equipment type in one pooling group (motor-driven \
+pump, normally standby) with its failure modes. get kind library_record with its id and covariates {demands, \
+running_hours, calendar_hours} gives P(fails over the period): the modes as competing risks, 1 − Π(1 − q)^demands × \
+exp(−Σ λ × hours), plus the plain rare-event sum and a constant rate per calendar hour.
 - Handbook records (basis prediction_model, MIL-HDBK-217F: electronic parts) are a base failure rate per part \
 type, not counted failures, and never mixed with field data. The rate depends on where the part works: get kind \
 library_record with environment (GB ground, benign; GF ground, fixed; GM ground, mobile; NS naval, sheltered; AIC \
@@ -198,7 +206,7 @@ factors for the conditions. get kind library_record lists covariate.inputs (unit
 limits with the handbook's page); give conditions to evaluate: the rate per mode and in total (per million hours, \
 or cycles or operations), or the problems (an input missing or past a limit). Ask the user for the conditions; \
 never guess. Outside a warn limit it still computes: relay the warning. It's never a block model on its own; \
-use it in a prediction. Always say that CDNSWC and the Navy did not take part in or approve Reliafy, and that \
+use it in a prediction, or fix its covariates at a position. Always say that CDNSWC and the Navy did not take part in or approve Reliafy, and that \
 the handbook is a research result, not an official DoD document.
 - These are generic estimates (NRC/INL: U.S. nuclear power plants; MIL-HDBK-217F: a 1995 prediction handbook), \
 never the user's own data: say so, cite the record (licence.attribution), put the source in the block's label \

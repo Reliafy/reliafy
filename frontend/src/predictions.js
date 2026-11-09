@@ -87,7 +87,25 @@ export function lineFromServer(line) {
     excluded: Boolean(line.excluded),
     conditions: line.conditions || {},
     cycles_per_hour: line.cycles_per_hour ?? "",
+    environment: line.environment || "",
+    quality: line.quality || "",
   });
+}
+
+// A handbook (MIL-HDBK-217F) line's own covariates, as the server keeps them: its environment (over
+// the prediction's) and quality grade, only when set.
+export function handbookCovariates(l = {}) {
+  return {
+    ...(String(l.environment || "").trim() ? { environment: String(l.environment).trim() } : {}),
+    ...(String(l.quality || "").trim() ? { quality: String(l.quality).trim() } : {}),
+  };
+}
+
+// The button for a handbook line's own covariates: "Grade and environment…" for a part type with
+// quality grades, else "Environment…"; "(set)" when the line has its own.
+export function handbookConditionsLabel(l = {}) {
+  const set = Object.keys(handbookCovariates(l)).length > 0;
+  return `${l.record?.quality_factors ? "Grade and environment" : "Environment"}${set ? " (set)" : ""}…`;
 }
 
 // A saved prediction's lines, as the builder edits them (the results carry
@@ -120,6 +138,7 @@ export function linesForServer(lines) {
       }
       const q = String(l.quality_factor ?? "").trim();
       if (q !== "" && l.record_id) out.quality_factor = Number(q);
+      if (l.record_id) Object.assign(out, handbookCovariates(l));
       return out;
     });
 }
