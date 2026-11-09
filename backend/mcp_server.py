@@ -2760,6 +2760,8 @@ def _alt_bounds_summary(b: Optional[dict]) -> Optional[dict]:
         "b10": b.get("b_lives", {}).get("b10"),
         "b1": b.get("b_lives", {}).get("b1"),
         "mission": b.get("mission"),
+        # The life at the use stress with its range ({value, ci, note?}), as the app's card shows it.
+        "characteristic_life": b.get("characteristic_life"),
         "reliability_band": [{"t": xs[i], "lower": lo[i], "upper": hi[i]} for i in range(0, len(xs), step)],
         "parameter_intervals": [{"name": c["name"], "value": c["value"], "kind": c["kind"], "ci": c["ci"]}
                                 for c in b.get("coefficients") or []],

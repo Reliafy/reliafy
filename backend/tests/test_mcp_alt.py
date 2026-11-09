@@ -51,6 +51,10 @@ def test_fit_alt_model_inline_inspection_data_matches_the_app(env):
     assert ev["bounds"]["method"] == "wald" and ev["bounds"]["b10"]["lower"] < ev["metrics"]["b10"]
     assert ev["bounds"]["mission"]["lower"] <= ev["metrics"]["mission_reliability"]
     assert len(ev["bounds"]["reliability_band"]) <= 21
+    # The life at the use stress carries its range, the same one the app's evaluate route gives.
+    life = ev["bounds"]["characteristic_life"]
+    assert life["ci"][0] < life["value"] < life["ci"][1]
+    assert life["value"] == pytest.approx(ev["metrics"]["characteristic_life"])
     msg = _err(_call(env.token[A], "analyse", {"action": "alt_use_level", "model_id": out["model_id"],
                                                           "use_stress": USE,
                                                      "bounds_method": "bootstrap"}))
@@ -73,6 +77,8 @@ def test_fit_alt_model_from_a_dataset_and_bounds_by_method(env):
         kw = {"n_boot": alt.DEFAULT_N_BOOT, "random_state": alt.BOOTSTRAP_SEED} if method == "bootstrap" else {}
         ref = m.quantile_cb(0.1, [USE], alpha_ci=0.1, bound="lower", method=method, **kw)
         assert ev["bounds"]["b10"]["lower"] == pytest.approx(float(np.ravel(ref)[0]), rel=1e-6), method
+        life = ev["bounds"]["characteristic_life"]
+        assert life["ci"][0] < life["value"] < life["ci"][1], method
         assert ev["acceleration_factor"] > 1
     # Another user can't read it.
     assert "not found" in _err(_call(env.token[B], "analyse", {"action": "alt_use_level",
