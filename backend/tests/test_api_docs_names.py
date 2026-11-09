@@ -10,7 +10,7 @@ import re
 import pytest
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
-DOCS = ["python/README.md", "docs/api.md", "frontend/src/content/guides/use-the-api-and-cli.md"]
+DOCS = ["python/README.md", "docs/api.md", "docs/library.md", "frontend/src/content/guides/use-the-api-and-cli.md"]
 
 CALL = re.compile(r"""\.call\(\s*["']([\w.]+)["']\s*(?:,\s*["']([\w.]+)["'])?""")
 REST = re.compile(r"/api/v1((?:/[\w.\-{}]+)+)")

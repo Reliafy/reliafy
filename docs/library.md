@@ -8,9 +8,10 @@ and under what licence, so it can be cited.
 - Code: `backend/library/` (`schema.py`, `service.py`, `convert.py`), data in
   `backend/library/data/<source>.json`, one importer per source in
   `backend/scripts/import_<source>.py`.
-- Reads: `GET /api/library/*` (public), the MCP `library` tool, `POST
-  /api/v1/library/{search,get,sources}` and `reliafy library …` (see
-  [api.md](api.md#the-reliability-data-library)).
+- Reads: `GET /api/library/*` (public), the MCP `list` and `get` tools (kinds
+  `library`, `library_record`, `library_sources`), `POST /api/v1/list/library`,
+  `/api/v1/get/library_record` and `/api/v1/list/library_sources`, and
+  `reliafy list library …` (see [api.md](api.md#the-reliability-data-library)).
 - Tests: `backend/tests/test_library.py`.
 
 ## What may go in

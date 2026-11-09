@@ -13,7 +13,7 @@
   library_create --name "Site pumps"`, `reliafy change library_add_model
   --library-id … --model-id …`.
 
-## Unreleased (0.5.1)
+## 0.5.1 (not published on its own; part of 0.5.2)
 
 - **Data library records as models and priors**: `maintenance models.link`
   takes `library_record_id` (a published failure rate attached as an

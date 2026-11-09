@@ -958,10 +958,10 @@ function Files({ base }) {
         method="PUT"
         path="/api/uploads/{upload_id}?t=…"
         desc="Send a file to the single-use link from change upload_create (at most 30 MB; the link’s t is the credential, no other sign-in). Then import it by its upload_id: change dataset_upload, change import_rbd, change import_excel or change rbd_upload_outage_log. Reliafy Maintenance users can also send a PDF (purpose document, at most 20 MB) and keep it on an item or position with maintenance attachments.add_document."
-        example={`curl -X POST ${base}/api/v1/uploads/create -H "Authorization: Bearer $RELIAFY_TOKEN" \\
+        example={`curl -X POST ${base}/api/v1/change/upload_create -H "Authorization: Bearer $RELIAFY_TOKEN" \\
   -H "Content-Type: application/json" -d '{"purpose": "rbd_import", "filename": "plant.xml"}'   # → url, upload_id
 curl -X PUT --data-binary @plant.xml "UPLOAD_URL"
-curl -X POST ${base}/api/v1/uploads/import_rbd -H "Authorization: Bearer $RELIAFY_TOKEN" \\
+curl -X POST ${base}/api/v1/change/import_rbd -H "Authorization: Bearer $RELIAFY_TOKEN" \\
   -H "Content-Type: application/json" -d '{"upload_id": "UPLOAD_ID"}'
 
 reliafy import rbd plant.xml          # the same three steps
