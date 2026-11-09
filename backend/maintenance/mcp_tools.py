@@ -2404,7 +2404,7 @@ def register() -> None:
             from backend.maintenance import library_models
 
             return run(library_models.attach, m, _db(), m.org, position_id, library_record_id, failure_mode_ids,
-                       note or "", replace_link_id)
+                       note or "", replace_link_id, owners=reader.read_owners)
         if build_rbd:
             return run(pm.build_rbd, m, _db(), reader.read_owners, reader.hidden, position_id, None, replace_link_id,
                        note or "")

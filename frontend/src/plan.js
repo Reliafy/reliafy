@@ -38,6 +38,7 @@ export const FREE_CAPS = Object.freeze({
   fault_trees: 1,
   reliability_predictions: 1,
   maintainability_predictions: 1,
+  libraries: 1,
 });
 
 // Each capped kind: [key, label on the Billing page, one, many] — ``one`` and
@@ -53,6 +54,7 @@ export const CAPPED_KINDS = [
   ["fault_trees", "Fault trees", "fault tree", "fault trees"],
   ["reliability_predictions", "Reliability predictions", "reliability prediction", "reliability predictions"],
   ["maintainability_predictions", "Maintainability predictions", "maintainability prediction", "maintainability predictions"],
+  ["libraries", "Data libraries", "data library", "data libraries"],
 ];
 
 // "1 RBD", "3 datasets": a count with the kind's noun.
@@ -73,7 +75,7 @@ export function freeStorageLines(caps = FREE_CAPS) {
   const lines = [
     `Save ${joinAnd([p("datasets"), p("models")])}`,
     joinAnd([p("rbds"), p("fault_trees"), p("outage_logs")]),
-    joinAnd([p("reliability_predictions"), p("maintainability_predictions")]),
+    joinAnd([p("reliability_predictions"), p("maintainability_predictions"), p("libraries")]),
     `Degradation tracking: ${joinAnd([p("degradation_models"), p("tracked_items")])}`,
     p("fleets"),
   ];

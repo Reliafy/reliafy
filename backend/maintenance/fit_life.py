@@ -161,7 +161,7 @@ def fit(m, db, owners, hidden, position_id: str, data: str = "position", method:
     if method == "bayes" and prior.get("kind") == "library":
         from backend.maintenance import library_models
 
-        base = library_models.prior_base(prior, distribution)
+        base = library_models.prior_base(prior, distribution, db, owners)
         unit, distribution = base["unit"], base["distribution"]
     elif method == "bayes" and prior.get("kind") == "around":
         base = around_prior(prior, distribution)

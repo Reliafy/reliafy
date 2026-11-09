@@ -111,6 +111,7 @@ from backend import recurrent_models
 from backend import storage
 from backend.fitting import FitError
 from backend.library import service as library_service
+from backend.library import user as user_library
 from backend.mcp_actions import Table, check, choice
 from backend.mcp_actions import describe as describe_actions
 from backend.services import access as access_service
@@ -393,7 +394,7 @@ _USER_ERRORS = (
 TEXT_RESULT_TOOLS = {"list.models", "get.model", "list.datasets", "get.dataset", "list.rbds", "get.rbd",
                      "list.fault_trees", "get.fault_tree", "analyse.fault_tree",
                      "get.upload", "list.workspace_changes", "list.fleets", "list.share_links",
-                     "list.library", "get.library_record",
+                     "list.library", "get.library_record", "list.libraries", "get.library",
                      "list.predictions", "get.prediction", "analyse.prediction",
                      "list.maintainability_predictions", "get.maintainability_prediction"}
 DATA_NOTICE = ("Names, notes, descriptions, labels, column headers and values in this result were written by "
@@ -847,15 +848,15 @@ ONE_OF = {
     ("analyse", "growth_projection"): "model_id or x", ("change", "model_fit_recurrent"): "times or dataset_id",
     ("change", "import_rbd"): "upload_id or content", ("change", "model_fit"): "name, data or dataset_id",
     ("change", "model_fit_alt"): "name, data + stresses or dataset_id",
-    ("analyse", "optimal_replacement"): "model_id or distribution_id + params, planned_cost, unplanned_cost",
-    ("analyse", "failure_finding_interval"): "model_id or distribution_id + params, target_availability",
-    ("analyse", "calendar_replacement"): "model_id or distribution_id + params, shuts, failure_cost",
-    ("analyse", "next_replacement"): "model_id or distribution_id + params, age, shuts, failure_cost",
+    ("analyse", "optimal_replacement"): "model_id or params, planned_cost, unplanned_cost",
+    ("analyse", "failure_finding_interval"): "model_id or params, target_availability",
+    ("analyse", "calendar_replacement"): "model_id or params, shuts, failure_cost",
+    ("analyse", "next_replacement"): "model_id or params, age, shuts, failure_cost",
     ("analyse", "prediction"): "lines or product_id",
     ("change", "prediction_save"): "name, lines or product_id",
 }
 #: Kept short: tools/list is capped at 8,000 characters (test_mcp_tools.py); it appears on every tool.
-ARGS_HELP = "The action's args: guide(action='<tool>.<action>')."
+ARGS_HELP = "Args: see guide(action='<tool>.<action>')."
 
 
 def _pointer(tool: str, value: str) -> str:
@@ -8550,9 +8551,10 @@ def library_search(
     page: Annotated[int, Field(ge=1)] = 1,
     page_size: Annotated[int, Field(ge=1, le=library_service.MAX_PAGE_SIZE)] = library_service.DEFAULT_PAGE_SIZE,
 ) -> dict[str, Any]:
-    """Rates and per-demand probabilities by component and failure mode."""
+    """Rates, per-demand probabilities and life models by component and failure mode: the published sources and the
+    user's own libraries (list kind libraries) together."""
     return library_service.search(query, source=source, equipment_type=equipment_type, kind=kind, page=page,
-                                  page_size=page_size)
+                                  page_size=page_size, mine=_my_libraries(ctx))
 
 
 def library_get(
@@ -8561,16 +8563,139 @@ def library_get(
         description="For a handbook rate (MIL-HDBK-217F): where the part works, e.g. GB (ground, benign), GF "
                     "(ground, fixed), NS (naval, sheltered); the record lists them.")] = None,
 ) -> dict[str, Any]:
-    """One record in full: citation, licence, the block model to use."""
+    """One record in full: citation, licence, the block model to use (a user library's record: its library and the
+    model it was taken from)."""
+    mine = _my_libraries(ctx)
     try:
-        return library_service.detail(record_id, environment=environment)
+        link = None
+        if mine and record_id.split(":", 1)[0] in mine["sources"]:
+            link = user_library.model_link(_db(), library_service.get(record_id, mine), _owners(_caller(ctx)["uid"]))
+        return library_service.detail(record_id, environment=environment, mine=mine, model_link=link)
     except library_service.LibraryNotFound as exc:
         raise ToolError(str(exc)) from None
 
 
 def library_sources(ctx: Context) -> dict[str, Any]:
-    """The sources, their licences and contents."""
-    return library_service.sources()
+    """The sources, their licences and contents; the user's own libraries first."""
+    return library_service.sources(_my_libraries(ctx))
+
+
+def _my_libraries(ctx: Context) -> Optional[dict]:
+    """The caller's own libraries, merged into the library reads (None when signed out)."""
+    try:
+        user = _caller(ctx)
+    except ToolError:
+        return None
+    return user_library.mine(_db(), _owners(user["uid"]))
+
+
+# ---- A user's own data libraries (backend/library/user.py) --------------------------------
+
+_LibraryId = Annotated[str, Field(max_length=64, description="A library id (list kind libraries).")]
+_LibraryName = Annotated[str, Field(min_length=1, max_length=user_library.MAX_NAME, description="The library's name.")]
+_LibraryDescription = Annotated[Optional[str], Field(max_length=user_library.MAX_DESCRIPTION,
+                                                     description="One line on what it holds.")]
+_LibraryNotes = Annotated[Optional[str], Field(max_length=user_library.MAX_NOTES,
+                                               description="Notes or licence text shown with every record.")]
+
+
+def _library_call(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except user_library.LibraryError as exc:
+        raise ToolError(str(exc)) from None
+    except user_library.LibraryNotFound:
+        raise ToolError("Library not found: list kind libraries gives the user's own.") from None
+
+
+def _library_brief(lib: dict) -> dict:
+    return {**lib, "url": _url(f"/models/library/{lib['id']}")}
+
+
+def _library_record_brief(rec: dict) -> dict:
+    return {**library_service.brief(rec, {"sources": {rec["source"]: {"mine": True, "short_name": ""}}, "records": []}),
+            "url": _url(f"/models/library/{rec['source']}/{rec['id'].split(':', 1)[1]}")}
+
+
+def list_libraries(ctx: Context) -> dict[str, Any]:
+    """The user's own data libraries: id, name, description, how many records."""
+    user, db = _caller(ctx), _db()
+    return {"libraries": [_library_brief(lib) for lib in user_library.list_libraries(db, user["uid"])]}
+
+
+def get_library(ctx: Context, library_id: _LibraryId) -> dict[str, Any]:
+    """One of the user's libraries with its records (each a saved life model's snapshot: distribution, parameters
+    and bounds, unit, mean life, B10; get kind library_record gives one in full)."""
+    user, db = _caller(ctx), _db()
+    lib = user_library.get_library(db, library_id, _owners(user["uid"]))
+    if lib is None:
+        raise ToolError("Library not found: list kind libraries gives the user's own.")
+    records = user_library.records_of(db, lib["_id"])
+    return {**_library_brief(user_library.brief(lib, len(records))),
+            "records": [_library_record_brief(r) for r in records]}
+
+
+def create_library(ctx: Context, name: _LibraryName, description: _LibraryDescription = None,
+                   notes: _LibraryNotes = None) -> dict[str, Any]:
+    """A new, empty data library of the user's own (one saved item toward the Free plan's limit); change
+    library_add_model fills it."""
+    user, db = _caller(ctx), _db()
+    _cap(db, user, user_library.COLLECTION, "data libraries")
+    lib = _library_call(user_library.create, db, user["uid"], name, description or "", notes or "")
+    return {"saved": True, "library_id": lib["id"], **_library_brief(lib)}
+
+
+def update_library(ctx: Context, library_id: _LibraryId, name: Annotated[Optional[str], Field(
+        min_length=1, max_length=user_library.MAX_NAME, description="A new name.")] = None,
+                   description: _LibraryDescription = None, notes: _LibraryNotes = None) -> dict[str, Any]:
+    """Rename one of the user's libraries, or change its description or notes."""
+    user, db = _caller(ctx), _db()
+    lib = _library_call(user_library.update, db, library_id, user["uid"], name=name, description=description, notes=notes)
+    return {"saved": True, "library_id": lib["id"], **_library_brief(lib)}
+
+
+def delete_library(ctx: Context, library_id: _LibraryId) -> dict[str, Any]:
+    """Permanently delete one of the user's libraries and its records (the models they came from stay). Only on
+    the user's explicit request, confirmed by name."""
+    user, db = _caller(ctx), _db()
+    removed = _library_call(user_library.delete, db, library_id, user["uid"])
+    return {"deleted": True, "library_id": library_id, "records_removed": removed}
+
+
+def library_add_model(
+    ctx: Context, library_id: _LibraryId,
+    model_id: Annotated[str, Field(max_length=64, description="One of the user's saved non-repairable life models "
+                                                              "(Weibull, exponential, lognormal, normal or gamma).")],
+    label: Annotated[Optional[str], Field(max_length=user_library.MAX_LABEL,
+                                          description="The record's name (default: the model's).")] = None,
+    equipment_type: Annotated[Optional[str], Field(description="e.g. pump, valve (list kind library_sources lists "
+                                                               "them); other if none fits.")] = None,
+    failure_mode: Annotated[Optional[str], Field(max_length=user_library.MAX_LABEL,
+                                                 description="The failure mode the model is for, in words.")] = None,
+    notes: _LibraryNotes = None,
+) -> dict[str, Any]:
+    """Add a saved life model to one of the user's libraries as a record: a snapshot of the model now (distribution,
+    parameters with their bounds, unit, sample sizes, how it was fitted), with the model linked. A later refit
+    doesn't change the record."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    model = models_service.get_model(db, model_id, _owners(uid))
+    if model is None:
+        raise ToolError("Model not found: list kind models gives the user's own.")
+    rec = _library_call(user_library.add_model, db, library_id, uid, model, label=label,
+                        equipment_type=equipment_type or "other", failure_mode=failure_mode or "", notes=notes or "")
+    return {"saved": True, "library_id": library_id, "record_id": rec["id"], "record": _library_record_brief(rec)}
+
+
+def library_remove_record(ctx: Context, library_id: _LibraryId,
+                          record_id: Annotated[str, Field(max_length=120, description="The record's id (get kind library).")]
+                          ) -> dict[str, Any]:
+    """Take a record out of one of the user's libraries (the model it came from stays)."""
+    user, db = _caller(ctx), _db()
+    out = _library_call(user_library.remove_record, db, record_id, user["uid"])
+    if out["library_id"] != library_id:
+        raise ToolError("That record isn't in that library.")
+    return out
 
 
 
@@ -9004,6 +9129,7 @@ _A = {  # new tool -> {action: the function it runs}
         "upload": _act(inspect_upload, id="upload_id"),
         "account": _act(get_account),
         "library_record": _act(library_get, id="record_id"),
+        "library": _act(get_library, id="library_id"),
         "prediction": _act(get_reliability_prediction, id="prediction_id"),
         "upgrade_link": _act(upgrade_link),
         "maintainability_prediction": _act(get_maintainability_prediction, id="prediction_id"),
@@ -9020,6 +9146,7 @@ _A = {  # new tool -> {action: the function it runs}
         "workspace_changes": _act(workspace_changes),
         "library": _act(library_search, record_kind="kind"),
         "library_sources": _act(library_sources),
+        "libraries": _act(list_libraries),
         "predictions": _act(list_reliability_predictions),
         "maintainability_predictions": _act(list_maintainability_predictions),
     },
@@ -9096,6 +9223,11 @@ _A = {  # new tool -> {action: the function it runs}
         "maintainability_save": _act(save_maintainability_prediction),
         "maintainability_update": _act(update_maintainability_prediction),
         "maintainability_delete": _act(delete_maintainability_prediction),
+        "library_create": _act(create_library),
+        "library_update": _act(update_library),
+        "library_delete": _act(delete_library),
+        "library_add_model": _act(library_add_model),
+        "library_remove_record": _act(library_remove_record),
     },
     "report_problem": {
         "report": _act(report_problem_report),
@@ -9105,16 +9237,16 @@ _A = {  # new tool -> {action: the function it runs}
     },
 }
 
-_action_tool("get", _READ, "Read one saved item", "kind",
-             "One saved item by kind and id; the account (plan, calls left); the upgrade link.", _A["get"],
+_action_tool("get", _READ, "Read one item", "kind",
+             "One item by kind and id; the account (plan, calls left); the upgrade link.", _A["get"],
              docs={"id": "The item's id (a job's job_id, an upload's upload_id, a library record's id, a maintainability "
                          "prediction's id)."})
-_action_tool("list", _READ, "List saved items", "kind",
-             "The user's items of one kind (with shared samples), what changed, the failure-data library.",
+_action_tool("list", _READ, "List items", "kind",
+             "The user's items of one kind (with samples), what changed, the data library.",
              _A["list"])
-_action_tool("analyse", _READ, "Analyse and calculate", "action",
+_action_tool("analyse", _READ, "Analyse", "action",
              "Every calculation, saving nothing: life data, test plans, repairable systems, intervals, fleet "
-             "forecasts, RBDs, fault trees (a long one answers with a job_id: get kind job).", _A["analyse"], docs={
+             "forecasts, RBDs, fault trees.", _A["analyse"], docs={
     "model_id": ("A saved model id (list kind models): non-repairable for reliability_at, check_life_requirement, "
                  "optimal_replacement and failure_finding_interval; ALT for alt_use_level; joint for "
                  "predict_joint; recurrent for next_failure, growth_projection and optimal_overhaul."),
@@ -9129,9 +9261,9 @@ _action_tool("analyse", _READ, "Analyse and calculate", "action",
     "unit": "The time unit, e.g. 'hours', 'cycles' (maintainability: minutes or hours, the repair times' unit).",
     "rbd_id": "The diagram's id (list kind rbds).",
 })
-_action_tool("change", _WRITE, "Save and change items", "action",
-             "Every write: models, datasets, RBDs, fault trees, files in, share links, fleet alerts. Delete, "
-             "share or overwrite only when the user asks.",
+_action_tool("change", _WRITE, "Change items", "action",
+             "Every write: models, datasets, RBDs, fault trees, libraries, files in, shares, alerts. Delete, "
+             "share or overwrite only when asked.",
              _A["change"], docs={
     "dataset_id": ("A saved dataset (list kind datasets) instead of inline data; model_save: the dataset the "
                    "parameters were fitted to, kept as a reference."),
@@ -9143,7 +9275,7 @@ _action_tool("change", _WRITE, "Save and change items", "action",
     "label": "Who or what the link is for, e.g. 'for the client'. Shown only to the user.",
 })
 _action_tool("report_problem", _REPORT, "Report a problem", "action",
-             "Tell Reliafy's developers when a tool got in your way; check later whether it's fixed.",
+             "Tell Reliafy's developers a tool got in your way; check later if it's fixed.",
              _A["report_problem"])
 
 
@@ -9240,8 +9372,8 @@ def guide(ctx: Context, topic: Annotated[Optional[_GuideTopic], Field(descriptio
     return out
 
 
-guide.__doc__ = ("How-tos by topic (conventions, which actions to use), and any action's full argument schema "
-                 "(action='analyse.fit'). Read the topic before a task you haven't done here yet.")
+guide.__doc__ = ("How-tos by topic (conventions, which actions), and any action's full argument schema "
+                 "(action='analyse.fit'). Read the topic before a task new to you.")
 _tool("guide", _READ, "How to use Reliafy")(guide)
 LISTED_SCHEMAS["guide"] = {"type": "object", "properties": {
     "topic": {"type": "string", "enum": list(mcp_guide.TOPICS)},

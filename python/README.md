@@ -170,6 +170,9 @@ reliafy apply ops.json --run                     # maintenance changes in one ca
 reliafy list kind library --query "check valve" --kind rate   # published failure data
 reliafy get kind library_record --id nrc-inl-2020:ckv-fto
 reliafy get kind library_record --id mil-hdbk-217f-n2:9-1-rc-11 --environment GF   # a handbook rate, ground fixed
+reliafy change library_create --name "Site pumps" --description "Our fleet's fitted models"   # a library of your own
+reliafy change library_add_model --library-id LIBRARY_ID --model-id MODEL_ID --failure-mode "Bearing wear"
+reliafy list kind libraries
 reliafy analyse prediction --environment GF --mission-time 1000 \
   --lines '[{"name": "Ceramic capacitors", "record_id": "mil-hdbk-217f-n2:10-1-ck-11015", "quantity": 48}]'   # a parts count
 reliafy change prediction_save --name "Controller box" --environment GF --lines @parts.json   # ... saved

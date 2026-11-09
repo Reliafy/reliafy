@@ -5,6 +5,11 @@ one per source, built by an importer under ``backend/scripts``), read once
 per process. Nothing here touches the database: the library is the same for
 everyone, public, and changes only with a release.
 
+A user's own libraries (:mod:`backend.library.user`) are merged beside the
+published sources by the caller passing ``mine`` (their sources and records)
+to :func:`search`, :func:`get`, :func:`detail` and :func:`sources`; their
+records rank the same way and come first on a tie.
+
 Search ranks a record by where the words of the query appear: the component's
 name and the source's own code count most, then the failure mode, the
 equipment type, the conditions, and the source's description least. Every
@@ -63,18 +68,7 @@ def _library() -> dict[str, Any]:
     if not records:  # e.g. an ignore file kept the data out of the build
         logger.warning("The reliability data library has no records (looked in %s).", DATA_DIR)
     by_id = {r["id"]: r for r in records}
-    index = []
-    for r in records:
-        cond = r.get("conditions") or {}
-        index.append({
-            "code": _words(r.get("source_code", "").replace("-", " ")) | {r.get("source_code", "").lower()},
-            "name": _words(r["name"]),
-            "mode": _words(f"{r['failure_mode']['name']} {r['failure_mode']['code']}"),
-            "equipment": _words(f"{schema.EQUIPMENT_TYPES[r['equipment_type']]} {r['equipment_type']}"),
-            "conditions": _words(" ".join(str(v) for k, v in cond.items() if k != "industry")
-                                 + " " + _environment_words(r)),
-            "text": _words(r.get("source_text", "")),
-        })
+    index = [_index_entry(r) for r in records]
     for src in sources.values():
         mine = [r for r in records if r["source"] == src["id"]]
         src["records"] = len(mine)
@@ -82,6 +76,20 @@ def _library() -> dict[str, Any]:
         src["equipment_types"] = _count(mine, "equipment_type")
         src["components"] = len({r["name"] for r in mine})
     return {"sources": sources, "records": records, "by_id": by_id, "index": index}
+
+
+def _index_entry(r: dict) -> dict[str, set[str]]:
+    """The words of one record by field, as search scores them."""
+    cond = r.get("conditions") or {}
+    return {
+        "code": _words(r.get("source_code", "").replace("-", " ")) | {r.get("source_code", "").lower()},
+        "name": _words(r["name"]),
+        "mode": _words(f"{r['failure_mode']['name']} {r['failure_mode']['code']}"),
+        "equipment": _words(f"{schema.EQUIPMENT_TYPES.get(r['equipment_type'], '')} {r['equipment_type']}"),
+        "conditions": _words(" ".join(str(v) for k, v in cond.items() if k != "industry")
+                             + " " + _environment_words(r)),
+        "text": _words(r.get("source_text", "")),
+    }
 
 
 def _environment_words(rec: dict) -> str:
@@ -122,6 +130,8 @@ def _check_choice(name: str, value: Optional[str], allowed) -> None:
 def units_text(rec: dict) -> str:
     """The value's unit in words: 'per hour (calendar)', 'per demand'."""
     u = rec.get("units") or {}
+    if rec.get("kind") == "life":
+        return str(u.get("as_given") or u.get("value") or "")
     text = {"per_hour": "per hour", "per_hour_per_foot": "per hour per foot of pipe",
             "per_demand": "per demand"}.get(u.get("value"), u.get("value") or "")
     if u.get("time_basis") == "calendar":
@@ -143,9 +153,23 @@ def distribution_text(rec: dict) -> str:
     return f"{d['family']}({args})"
 
 
-def brief(rec: dict) -> dict:
+def _source_of(rec: dict, mine: Optional[dict] = None) -> dict:
+    """The record's source: a published one, or one of the caller's libraries."""
+    if mine and rec["source"] in mine["sources"]:
+        return mine["sources"][rec["source"]]
+    return _library()["sources"].get(rec["source"], {})
+
+
+def _citation_text(rec: dict) -> Optional[str]:
+    c = rec.get("citation")
+    if not c:
+        return None
+    return f"{c.get('report') or c['title']}, {c['table']}, p. {c['page']}"
+
+
+def brief(rec: dict, mine: Optional[dict] = None) -> dict:
     """A record as a search result row."""
-    src = _library()["sources"].get(rec["source"], {})
+    src = _source_of(rec, mine)
     s = rec.get("summary") or {}
     return {
         "id": rec["id"], "label": rec["label"], "name": rec["name"],
@@ -154,8 +178,11 @@ def brief(rec: dict) -> dict:
         "mean": s.get("mean"), "p05": s.get("p05"), "p95": s.get("p95"),
         "units": units_text(rec), "distribution": distribution_text(rec),
         "basis": rec["basis"], "source": src.get("short_name", rec["source"]),
-        "citation": f"{rec['citation'].get('report') or rec['citation']['title']}, "
-                    f"{rec['citation']['table']}, p. {rec['citation']['page']}",
+        "citation": _citation_text(rec),
+        # A user library's record: its library, the model it was taken from and its family's parameters.
+        **({"mine": True, "library_id": rec["source"], "model": rec.get("model"), "b10": s.get("b10"),
+            "family": rec["distribution"]["family"], "params": rec["distribution"]["params"],
+            "evidence": rec.get("evidence")} if src.get("mine") else {}),
         **({"environment_factors": rec["environment_factors"]["values"]} if rec.get("environment_factors") else {}),
         # A parts-count part type: its generic rate per environment (per million hours), and its quality grades.
         **({"generic_rates": rec["generic_rates"]["values"], "method": "parts_count"} if rec.get("generic_rates") else {}),
@@ -176,9 +203,12 @@ USES = {"model": "a life model", "prior": "a prior on a life model"}
 
 
 def usable_as(rec: dict, use: str) -> bool:
-    """Whether the record can be ``use`` ("model" or "prior") on its own."""
+    """Whether the record can be ``use`` ("model" or "prior") on its own. A
+    life record (a life distribution, or a saved model's snapshot) always can."""
     if rec.get("basis") == "prediction_model":
         return False
+    if rec.get("kind") == "life":
+        return True
     return rec.get("kind") == "rate" and str((rec.get("units") or {}).get("value") or "").startswith("per_hour")
 
 
@@ -196,15 +226,18 @@ def left_out_by(records: list, use: str) -> dict:
 
 def search(query: Optional[str] = None, source: Optional[str] = None, equipment_type: Optional[str] = None,
            kind: Optional[str] = None, page: int = 1, page_size: int = DEFAULT_PAGE_SIZE,
-           use: Optional[str] = None) -> dict:
+           use: Optional[str] = None, mine: Optional[dict] = None) -> dict:
     """A page of the records matching ``query`` and the filters, best first,
     with the total and the counts by equipment type, kind and source (of the
     query's matches, before the filters narrow them, so a filter shows what
     choosing it would give). ``use`` ("model" or "prior") keeps only the
     records that can be that on their own (:func:`usable_as`), and
-    ``left_out`` says how many the other filters matched but it hid, by why."""
+    ``left_out`` says how many the other filters matched but it hid, by why.
+    ``mine`` (:func:`backend.library.user.mine`): the caller's own libraries,
+    searched beside the published sources (first on a tie)."""
     lib = _library()
-    _check_choice("source", source, lib["sources"])
+    own = mine or {"sources": {}, "records": []}
+    _check_choice("source", source, {**own["sources"], **lib["sources"]})
     _check_choice("equipment_type", equipment_type, schema.EQUIPMENT_TYPES)
     _check_choice("kind", kind, schema.KINDS)
     _check_choice("use", use, USES)
@@ -219,7 +252,8 @@ def search(query: Optional[str] = None, source: Optional[str] = None, equipment_
     whole = text.lower() if "-" in text and " " not in text else ""  # a full code, e.g. MDP-FTS-NS
 
     matched: list[tuple[int, int, dict]] = []
-    for i, (rec, entry) in enumerate(zip(lib["records"], lib["index"])):
+    pairs = [(rec, _index_entry(rec)) for rec in own["records"]] + list(zip(lib["records"], lib["index"]))
+    for i, (rec, entry) in enumerate(pairs):
         score = _score(entry, tokens, whole) if tokens else 1
         if score:
             matched.append((score, i, rec))
@@ -236,7 +270,7 @@ def search(query: Optional[str] = None, source: Optional[str] = None, equipment_
     hits.sort(key=lambda m: (-m[0], m[1]))
     total = len(hits)
     start = (page - 1) * page_size
-    rows = [brief(m[2]) for m in hits[start:start + page_size]]
+    rows = [brief(m[2], own) for m in hits[start:start + page_size]]
     return {
         "query": text or None,
         "filters": {k: v for k, v in (("source", source), ("equipment_type", equipment_type), ("kind", kind), ("use", use)) if v},
@@ -248,23 +282,29 @@ def search(query: Optional[str] = None, source: Optional[str] = None, equipment_
     }
 
 
-def get(record_id: str) -> dict:
-    """One record in full."""
-    rec = _library()["by_id"].get(str(record_id or "").strip())
+def get(record_id: str, mine: Optional[dict] = None) -> dict:
+    """One record in full (a published one, or one of the caller's own)."""
+    wanted = str(record_id or "").strip()
+    rec = _library()["by_id"].get(wanted)
+    if rec is None and mine:
+        rec = next((r for r in mine["records"] if r["id"] == wanted), None)
     if rec is None:
         raise LibraryNotFound(f"Library record '{record_id}' not found. Search the library for ids.")
     return rec
 
 
-def detail(record_id: str, environment: Optional[str] = None) -> dict:
+def detail(record_id: str, environment: Optional[str] = None, mine: Optional[dict] = None,
+           model_link: Optional[dict] = None) -> dict:
     """A record with what a block would use: the default conversion (see
     :mod:`backend.library.convert`), or why it needs more input. A handbook
     record with environment factors converts for ``environment`` (e.g.
     'GF'); without one, ``environments`` lists the rate in each, so the
-    caller can choose. A bad ``environment`` raises ValueError."""
+    caller can choose. A bad ``environment`` raises ValueError. A user
+    library's record carries its ``library`` and ``model_link`` (the model it
+    was taken from, if the caller can still open it)."""
     from backend.library import convert
 
-    rec = get(record_id)
+    rec = get(record_id, mine)
     if environment is not None:
         try:
             model = convert.to_block_model(rec, environment=environment)
@@ -275,8 +315,11 @@ def detail(record_id: str, environment: Optional[str] = None) -> dict:
             model = convert.to_block_model(rec)
         except convert.ConversionError as exc:
             model = {"needs": client_message(exc)}
-    src = _library()["sources"].get(rec["source"], {})
+    src = _source_of(rec, mine)
     out = {"record": rec, "units": units_text(rec), "block_model": model, "caveats": src.get("caveats") or []}
+    if src.get("mine"):
+        out["library"] = {k: src.get(k) for k in ("id", "name", "description", "notes", "read_only", "records")}
+        out["model_link"] = model_link
     values = (rec.get("environment_factors") or {}).get("values")
     if values:
         out["environments"] = [
@@ -292,10 +335,15 @@ def detail(record_id: str, environment: Optional[str] = None) -> dict:
     return out
 
 
-def sources() -> dict:
-    """The sources with their licences and what each holds."""
+def sources(mine: Optional[dict] = None) -> dict:
+    """The sources with their licences and what each holds: the caller's own
+    libraries first (``mine``), then the published ones."""
     lib = _library()
     out = []
+    for s in (mine or {}).get("sources", {}).values():
+        out.append({k: s.get(k) for k in (
+            "id", "name", "short_name", "description", "notes", "basis", "licence", "records", "components", "kinds",
+            "equipment_types", "mine", "read_only", "created_at", "updated_at", "owner_id")})
     for s in lib["sources"].values():
         out.append({k: s.get(k) for k in (
             "id", "name", "short_name", "publisher", "title", "report", "edition", "year", "url", "home",
@@ -303,7 +351,7 @@ def sources() -> dict:
             "equipment_types", "skipped", "data_version")})
     return {
         "sources": out,
-        "total_records": len(lib["records"]),
+        "total_records": len(lib["records"]) + len((mine or {}).get("records", [])),
         "equipment_types": schema.EQUIPMENT_TYPES,
         "kinds": schema.KINDS,
         "bases": schema.BASES,

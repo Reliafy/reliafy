@@ -86,6 +86,8 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
   }));
   const set = (k, v) => setState((s) => ({ ...s, [k]: v }));
   const [models, setModels] = useState(null);
+  // The library record picked as the prior (its kind and bounds shape the words beside the picker).
+  const [record, setRecord] = useState(null);
   const [preview, setPreview] = useState({ data: null, refused: null, busy: false });
   const [chart, setChart] = useState("sf");
   const [saving, setSaving] = useState(false);
@@ -204,9 +206,9 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
                 )}
                 {eff.priorKind === "library" && (
                   <>
-                    <LibraryPicker value={state.recordId} onPick={(r) => set("recordId", r.id)} use="prior" label="Library records" />
-                    <p className="fit2-sum">{libraryPriorWords(state.distribution)}</p>
-                    {(state.distribution === "weibull" || state.distribution === "lognormal") && (
+                    <LibraryPicker value={state.recordId} onPick={(r) => { set("recordId", r.id); setRecord(r); }} use="prior" label="Library records" />
+                    <p className="fit2-sum">{libraryPriorWords(state.distribution, record)}</p>
+                    {record?.kind !== "life" && (state.distribution === "weibull" || state.distribution === "lognormal") && (
                       <div className="fit2-pair">
                         <TextInput inputMode="decimal" aria-label="Shape between" placeholder="Shape between (0.5)" value={state.libShape.lo || ""}
                                    onChange={(e) => set("libShape", { ...state.libShape, lo: e.target.value })} />

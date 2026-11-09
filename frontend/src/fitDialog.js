@@ -162,7 +162,12 @@ export function historyRow(r, unit = "") {
 export const refusalSwitch = (method) => (method === "mle" ? { to: "bayes", label: "Fit with a prior instead" } : null);
 
 // What a library record as the prior means for the distribution chosen, in one line.
-export function libraryPriorWords(distribution) {
+export function libraryPriorWords(distribution, record = null) {
+  if (record?.kind === "life") {
+    const bounded = (record.params || []).some((p) => Array.isArray(p.ci));
+    return `A snapshot of a saved ${record.family || ""} model: the fit is in its family and unit, each parameter about its value`
+      + (bounded ? ", between the record's bounds." : ", within about 30% (the record has no bounds).");
+  }
   if (distribution === "weibull" || distribution === "lognormal") {
     return "The record gives a failure rate: for this distribution it's a prior on the mean life (one over the rate), "
       + `with the ${distribution === "weibull" ? "shape" : "spread"} between the bounds below (0.5 to 5 if left empty).`;

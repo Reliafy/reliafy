@@ -27,7 +27,7 @@ SCHEMA_VERSION = 1
 KINDS = {
     "rate": "A failure rate: failures per unit of exposure (usually per hour).",
     "per_demand": "A probability of failure on demand (each start, opening or trip).",
-    "life": "A life distribution in time (e.g. Weibull beta and eta).",
+    "life": "A life distribution in time (e.g. Weibull beta and eta), or a saved parametric life model.",
 }
 
 #: Where the numbers come from. Never mixed: a record has one basis.
@@ -35,14 +35,15 @@ BASES = {
     "field_data": "Counted from equipment in service (operating experience).",
     "prediction_model": "A handbook prediction model (base rates and factors), not observed failures.",
     "certificate": "A manufacturer's or test house's certified figure.",
+    "fitted": "A life model fitted in Reliafy and added to a user's own library (a snapshot of the saved model).",
 }
 
 #: The unit of the value, by kind. ``per_hour_per_foot`` is a pipe's rate per
-#: foot of length.
+#: foot of length. A life's unit is any time or usage unit (hours, cycles,
+#: kilometres: whatever the model was fitted in), checked as non-empty text.
 VALUE_UNITS = {
     "rate": {"per_hour", "per_hour_per_foot"},
     "per_demand": {"per_demand"},
-    "life": {"hours", "cycles"},
 }
 
 #: For a rate per hour: hours of running, or calendar hours (whether the
@@ -52,23 +53,28 @@ TIME_BASES = {"operating", "calendar"}
 #: Distribution families and their parameter names (SurPyval's where SurPyval
 #: has the family). gamma: alpha is the shape and beta the rate, so the mean
 #: is alpha / beta (SurPyval's Gamma and the NRC's convention). beta: the
-#: mean is a / (a + b). lognormal: mu and sigma of the log. point: one value
-#: with no spread (handbook prediction models).
+#: mean is a / (a + b). lognormal: mu and sigma of the log. normal: mu and
+#: sigma. point: one value with no spread (handbook prediction models).
 FAMILIES: dict[str, tuple[str, ...]] = {
     "gamma": ("alpha", "beta"),
     "beta": ("alpha", "beta"),
     "lognormal": ("mu", "sigma"),
+    "normal": ("mu", "sigma"),
     "point": ("value",),
     "exponential": ("failure_rate",),
     "weibull": ("alpha", "beta"),
 }
 
-#: Which families describe which kind of number.
+#: Which families describe which kind of number. A life is a parametric life
+#: distribution in time (the families the app's non-repairable fit offers);
+#: the same family names mean a spread on a rate when the kind is ``rate``.
 FAMILIES_BY_KIND = {
     "rate": {"gamma", "lognormal", "point", "exponential"},
     "per_demand": {"beta", "lognormal", "point"},
-    "life": {"weibull"},
+    "life": {"weibull", "exponential", "lognormal", "normal", "gamma"},
 }
+#: Parameters that may be any real number (the others must be positive).
+REAL_PARAMS = {("lognormal", "mu"), ("normal", "mu")}
 
 #: Licences whose data may be republished. A source under any other licence
 #: (or none) is listed as a link only and never has records.
@@ -115,6 +121,7 @@ EQUIPMENT_TYPES = {
     "switch": "Switches (electronic)",
     "connector": "Connectors, sockets and connections",
     "electronic_other": "Other electronic parts (crystals, lamps, lasers, filters, microwave parts)",
+    "other": "Other equipment",
 }
 
 #: The use environments of MIL-HDBK-217F (its Table 3-2), by the handbook's
@@ -170,6 +177,35 @@ def mean_of(family: str, params: dict[str, float]) -> float:
     if family == "weibull":
         return params["alpha"] * float(gamma_fn(1 + 1 / params["beta"]))
     raise ValueError(f"Unknown distribution family '{family}'.")
+
+
+def life_mean_of(family: str, params: dict[str, float]) -> float | None:
+    """The mean life a life record's parameters imply (None where it isn't
+    finite, so nothing shows a 'mean life' that is infinite)."""
+    if family == "exponential":
+        return 1 / params["failure_rate"]
+    if family == "normal":
+        return params["mu"]
+    mean = mean_of(family, params)
+    return mean if math.isfinite(mean) else None
+
+
+def life_quantile_of(family: str, params: dict[str, float], q: float) -> float | None:
+    """The time by which a fraction ``q`` of a life record's population has
+    failed (q = 0.1 is the B10 life)."""
+    if family == "exponential":
+        return float(stats.expon(scale=1 / params["failure_rate"]).ppf(q))
+    if family == "normal":
+        return float(stats.norm(loc=params["mu"], scale=params["sigma"]).ppf(q))
+    return quantile_of(family, params, q)
+
+
+def life_summary(family: str, params: dict[str, float]) -> dict:
+    """A life record's summary: mean, median, b10 and the 5th and 95th
+    percentile lives, each None where undefined."""
+    return {"mean": life_mean_of(family, params), "median": life_quantile_of(family, params, 0.5),
+            "b10": life_quantile_of(family, params, 0.1), "p05": life_quantile_of(family, params, 0.05),
+            "p95": life_quantile_of(family, params, 0.95)}
 
 
 def quantile_of(family: str, params: dict[str, float], q: float) -> float | None:
@@ -228,6 +264,8 @@ def problems(rec: dict) -> list[str]:
     units = rec.get("units") or {}
     if kind in VALUE_UNITS and units.get("value") not in VALUE_UNITS[kind]:
         bad(f"unknown units {units.get('value')!r} for a {kind}")
+    if kind == "life" and not (isinstance(units.get("value"), str) and units["value"].strip()):
+        bad("a life needs units.value, the unit its times are in")
     if kind == "rate" and units.get("time_basis") not in TIME_BASES:
         bad("a rate needs units.time_basis (operating or calendar)")
 
@@ -244,7 +282,7 @@ def problems(rec: dict) -> list[str]:
         return out
     params = param_dict(dist)
     for name, value in params.items():
-        if family == "lognormal" and name == "mu":
+        if (family, name) in REAL_PARAMS:
             ok = isinstance(value, (int, float)) and math.isfinite(value)
         else:
             ok = _finite_positive(value)
@@ -261,6 +299,9 @@ def problems(rec: dict) -> list[str]:
 
     summary = rec.get("summary") or {}
     mean = summary.get("mean")
+    if kind == "life":
+        _life_summary_problems(family, params, summary, bad)
+        return out
     if not _finite_positive(mean):
         bad("summary.mean must be a positive number")
         return out
@@ -278,6 +319,22 @@ def problems(rec: dict) -> list[str]:
         if not _finite_positive(stated) or abs(implied_q - stated) > QUANTILE_TOLERANCE * stated:
             bad(f"{key} {stated!r} disagrees with its parameters' {implied_q:.4g}")
     return out
+
+
+def _life_summary_problems(family: str, params: dict[str, float], summary: dict, bad) -> None:
+    """A life record's stated mean, median, b10 and percentiles must be the ones its parameters
+    imply (within the rounding tolerance); a mean that isn't finite is left out."""
+    implied = life_summary(family, params)
+    for key in ("mean", "median", "b10", "p05", "p95"):
+        stated, want = summary.get(key), implied.get(key)
+        if want is None:
+            if stated is not None:
+                bad(f"{key} is undefined for these parameters, so it must be left out")
+            continue
+        if stated is None:
+            continue
+        if not isinstance(stated, (int, float)) or not math.isfinite(stated) or abs(want - stated) > QUANTILE_TOLERANCE * abs(want):
+            bad(f"{key} {stated!r} disagrees with its parameters' {want:.4g}")
 
 
 def _rates_problems(block: Any, what: str, bad, each: str) -> dict | None:

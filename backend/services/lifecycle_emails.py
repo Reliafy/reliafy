@@ -46,7 +46,8 @@ UTM_MEDIUM = "lifecycle"
 # Collections whose documents mean "saved something of their own" (samples
 # belong to SAMPLE_OWNER, so they never count).
 _SAVED = ("models", "rbds", "datasets", "degradation_models",
-          "strategy_analyses", "fleets", "reliability_predictions", "maintainability_predictions")
+          "strategy_analyses", "fleets", "reliability_predictions", "maintainability_predictions",
+          "libraries")
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@([^@\s]+\.[^@\s]+)$")
 

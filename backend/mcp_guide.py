@@ -190,6 +190,15 @@ other factors (temperature, stress, quality: prediction.not_applied) aren't appl
 never the user's own data: say so, cite the record (licence.attribution), put the source in the block's label \
 and suggest replacing it with their own data.
 - Library lookups are never counted against the Free plan's tool calls.
+- Build the user's own library: change library_create (name, description, notes or licence text shown with every \
+record), then change library_add_model (library_id, model_id, failure_mode, equipment_type) for each saved Weibull, \
+exponential, lognormal, normal or gamma model. A model is in no library until it's added; adding keeps a snapshot \
+(distribution, parameters with their bounds, unit, sample sizes, how it was fitted) with model_id as a link, so a \
+later refit doesn't change the record. list kind libraries and get kind library read them; their records appear in \
+list kind library and get kind library_record like published ones (source: the library's id; kind life), usable as \
+a model or a prior (the prior is in the record's family: each parameter about its value, between its bounds). One \
+library is one saved item toward the Free storage limit, whatever it holds. Only on the user's request: \
+library_remove_record and library_delete (the models stay).
 """),
     "prediction": ("Reliability prediction: a parts count from handbook base rates, before there's failure data.", """\
 A reliability prediction (analyse prediction; change prediction_save / prediction_update / prediction_delete; get kind \

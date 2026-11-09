@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased (0.5.2)
+
+- **Libraries of your own**: `list kind libraries`, `get kind library`
+  (`id`) and the `change` actions `library_create`, `library_update`,
+  `library_delete`, `library_add_model` (a saved Weibull, exponential,
+  lognormal, normal or gamma model snapshotted as a record of kind `life`,
+  the model linked) and `library_remove_record`. Your records appear in
+  `list kind library` and `get kind library_record` beside the published
+  ones, usable as a model or a prior. Over REST `POST
+  /api/v1/change/library_*`; on the command line `reliafy change
+  library_create --name "Site pumps"`, `reliafy change library_add_model
+  --library-id … --model-id …`.
+
 ## Unreleased (0.5.1)
 
 - **Data library records as models and priors**: `maintenance models.link`
