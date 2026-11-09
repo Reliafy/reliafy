@@ -10,7 +10,6 @@ import {
   unlinkModel, useTreeModels,
 } from "../components/ModelTable.jsx";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
-import BayesUpdateModal from "../components/BayesUpdateModal.jsx";
 import { FitPane } from "../components/FitLifeModel.jsx";
 import PredictionPane from "../components/PredictionPane.jsx";
 import RbdPane from "../components/RbdPane.jsx";
@@ -23,6 +22,7 @@ import {
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
 import { bindingFromParam, bindingParam } from "../covariate.js";
 import { PANE_PARAMS, TABLE_PANES, paneFromQuery, setPaneQuery } from "../tablePane.js";
+import { fitPreset, priorFrom } from "../fitDialog.js";
 import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, graftModels, inUseWords, isModelRow, modelKey, openForModels, rollupText as modelRollup, lifeModelOf,
   opensInPane, bindingOf,
 } from "../explorerModels.js";
@@ -795,13 +795,13 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   useEffect(() => {
     if (paneAt && data && !panePosition) setQuery_((q) => { for (const k of PANE_PARAMS) q.delete(k); });
   }, [paneAt?.id, data, !!panePosition]); // eslint-disable-line react-hooks/exhaustive-deps
-  const openPane = (kind, position, { start = {}, link = null, query = null, rbd = null, built = null } = {}) => {
+  const openPane = (kind, position, { start = {}, link = null, query = null, rbd = null, built = null, from = null } = {}) => {
     paneDirty.current = false;
     setPaneSeed((s) => ({ kind, id: position.id, start, link, built, n: (s?.n || 0) + 1 }));
     setPanel(false);
     if (selPos !== position.id && display.rows.has(position.id)) reveal(position.id);
     setQuery_((q) => {
-      setPaneQuery(q, kind, position.id, { rbd });
+      setPaneQuery(q, kind, position.id, { rbd, from });
       query?.(q);
     });
     setTimeout(() => paneHeading.current?.focus({ preventScroll: true }), 0);
@@ -1269,9 +1269,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     }
     else if (id === "model-bayes") {
       const withClass = { ...position, position_class: whole.rows.get(r.ref.position_id)?.ref.position_class || "" };
-      // A Bayesian row takes its new failures (its own prior kept); a plain model can be the prior of a new fit.
-      if (link.role === "bayesian") setModelModal({ kind: "bayes", position: withClass, start: { modelId: link.model_id, link } });
-      else openFit(withClass, { start: { method: "bayes", priorKind: "model", modelId: link.model_id } });
+      // The fit pane with this row's model as the prior: a Bayesian row takes its new failures (its own prior kept).
+      openFit(withClass, { ...priorFrom(link), from: link.id });
     }
     else if (id === "model-replace") setModelModal({ kind: "assign", position, link });
     else if (id === "model-unlink") unlinkModel(confirm, link, (text) => { say(text); setPanel(false); setRcmFocus(null); pmodels.load(); });
@@ -2222,6 +2221,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     },
   } : null;
   const predictLink = seed ? seed.link : panePosition ? predictionOf(panePosition.id) : null;
+  const fitAt = panePosition ? fitPreset(seed, paneAt.from, pmodels.links) : null;
   const paneSide = !panePosition ? null : paneKind === "rbd" ? (
     <div className="rw tt-side">
       <RbdPane key={`${paneAt.rbd}:${seed?.n || 0}`} rbdId={paneAt.rbd} position={panePosition} built={seed?.built || null}
@@ -2264,11 +2264,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <PredictionPane key={`${panePosition.id}:${seed?.n || 0}:${predictLink?.id || ""}`} link={predictLink} {...paneProps} />
       </div>
     ) : null
-  ) : (
+  ) : fitAt ? (
     <div className="rw tt-side">
-      <FitPane key={`${panePosition.id}:${seed?.n || 0}`} start={seed?.start || {}} link={seed?.link || null} {...paneProps} />
+      <FitPane key={`${panePosition.id}:${seed?.n || 0}`} {...fitAt} {...paneProps} />
     </div>
-  );
+  ) : null;
   const side = rcmOn ? rcmSide : measOn ? measSide : modelsOn ? paneSide || modelSide : missionsOn ? paneSide : phone ? null : summary;
 
   // The tree's quiet last row: a new position (or location) at the top level.
@@ -2409,10 +2409,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           <button type="button" className="rcm-toast-x" onClick={() => setToast(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
-      {modelModal?.kind === "bayes" && (
-        <BayesUpdateModal position={modelModal.position} start={modelModal.start || null} onClose={() => setModelModal(null)}
-                          onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
-      )}
       {modelModal?.kind === "library" && (
         <LibraryAttachModal position={modelModal.position} onClose={() => setModelModal(null)}
                             onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }}
@@ -2442,7 +2438,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                         openRbd(position, made.model_id);
                       }} />
       )}
-      <ModelDialogs modal={["bayes", "rbd-link", "params", "library", "to-library"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
+      <ModelDialogs modal={["rbd-link", "params", "library", "to-library"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
                     onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       <MeasDialogs modal={measModal} onClose={() => setMeasModal(null)} onSaid={(text) => say(text)}
                    onDone={() => { setMeasModal(null); meas.load(); }} />

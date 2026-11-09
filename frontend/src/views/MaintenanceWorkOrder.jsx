@@ -11,6 +11,8 @@ import { FailureModePicker, Field, FormModal, NotesCard, fmtDate, today } from "
 import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import WorkOrderReadings from "../components/WorkOrderReadings.jsx";
+import PackageLines from "../components/PackageLines.jsx";
+import { closeBlocker, closePayload, unanswered } from "../packageLines.js";
 import { mergeValues, progressText, readingRows, readingsToSend } from "../workOrderReadings.js";
 import { partChoices, stockText } from "../maintenanceSpares.js";
 import { actionKinds, closeActionKind, defaultCloseKind, itemAtText, subjectPath } from "../maintenanceSubjects.js";
@@ -107,7 +109,7 @@ export default function MaintenanceWorkOrder() {
           </div>
         </section>
       )}
-      {(wo.instructions || wo.checklist.length > 0) && (
+      {wo.package ? <PackageLines wo={wo} onChanged={setWo} /> : (wo.instructions || wo.checklist.length > 0) && (
         <section className="card">
           <div className="maint-head"><h2>Instructions</h2></div>
           {wo.instructions && <p style={{ whiteSpace: "pre-wrap" }}>{wo.instructions}</p>}
@@ -170,7 +172,12 @@ function CloseForm({ wo, onClosed, readings }) {
   // A replacement can only be recorded at a position (an item's: where it's fitted now).
   const atPosition = wo.can_replace !== false;
   // Starts from the task's kind: a check is "Checked, nothing done", a fixed-interval task a replacement.
-  const [actions, setActions] = useState([{ kind: defaultCloseKind(wo) }]);
+  // A work package's work order: its lines say what was done (a problem is recorded at its line's
+  // position), so it starts with no action of its own.
+  const lines = wo.package ? wo.lines || [] : null;
+  const [actions, setActions] = useState(lines ? [] : [{ kind: defaultCloseKind(wo) }]);
+  const blocker = lines && closeBlocker(lines);
+  const left = lines ? unanswered(lines) : [];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -195,7 +202,7 @@ function CloseForm({ wo, onClosed, readings }) {
         new_item: a.kind === "replace" && a.new_name ? { name: a.new_name, serial: a.new_serial || "" } : null,
         ...(a.kind === "replace" && a.part_id ? { part_id: a.part_id, from_location_id: a.from || null } : {}),
       }));
-      onClosed(await closeWorkOrder(wo.id, { actions: body, on, notes, readings }));
+      onClosed(await closeWorkOrder(wo.id, closePayload({ actions: body, on, notes, readings, lines })));
     } catch (e) {
       setError(e.message);
       setBusy(false);
@@ -206,7 +213,7 @@ function CloseForm({ wo, onClosed, readings }) {
     <section className="card">
       <div className="maint-head"><h2>Close it</h2></div>
       {error && <div className="card error">{error}</div>}
-      {atPosition && (
+      {atPosition && !lines && (
         <p className="lib-date">
           Fitted now{wo.position && wo.subject?.kind !== "position" ? ` at ${wo.position.name}` : ""}:{" "}
           {wo.fitted ? <strong>{wo.fitted.item?.name}</strong> : "nothing"}
@@ -274,7 +281,7 @@ function CloseForm({ wo, onClosed, readings }) {
         </div>
       ))}
       <div className="maint-row">
-        <button className="secondary" onClick={() => setActions((as) => [...as, { kind: "repair" }])}>Add another action</button>
+        <button className="secondary" onClick={() => setActions((as) => [...as, { kind: "repair" }])}>{actions.length ? "Add another action" : "Add an action"}</button>
       </div>
       <div className="rcm-form">
         <Field label="Done on"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
@@ -284,11 +291,14 @@ function CloseForm({ wo, onClosed, readings }) {
         <Field label="Closing notes (optional; the notes above are kept)"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
       <div className="maint-row">
-        <button onClick={submit} disabled={busy || !actions.every((a) => a.kind === "checked" || failureModeReady(a.mode))}>
-          {busy ? "Closing…" : "Close work order"}
+        <button onClick={submit} disabled={busy || !!blocker || !actions.every((a) => a.kind === "checked" || failureModeReady(a.mode))}>
+          {busy ? "Closing…" : blocker || "Close work order"}
         </button>
         {wo.subject && <Link to={subjectPath(wo.subject)} className="lib-date">Back to {wo.subject.name}</Link>}
       </div>
+      {left.length > 0 && (
+        <p className="lib-date">Still to answer under Lines: {left.slice(0, 5).join("; ")}{left.length > 5 ? ` and ${left.length - 5} more` : ""}.</p>
+      )}
     </section>
   );
 }

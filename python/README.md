@@ -18,11 +18,10 @@ Pure standard library: no dependencies. You bring SurPyval to do your own fits.
 
 ## Which server
 
-Version 0.3 calls Reliafy's tools API (`POST /api/v1/{tool}/{action}`). It's
-on reliafy.com from the release that adds it; a self-hosted server needs a
-build that includes it (`GET /api/v1/tools` answers). Against an older server,
-the new calls stop with a clear message (`reliafy.ServerTooOld`), and
-everything from 0.2 (`reliafy.push`, `reliafy.models.*`, `reliafy.data.*`,
+The client calls Reliafy's tools API (`POST /api/v1/{tool}/{action}`), which
+reliafy.com serves; a self-hosted server needs a build that includes it
+(`GET /api/v1/tools` answers). Against an older server, the tool calls stop
+with a clear message (`reliafy.ServerTooOld`), and everything from 0.2 (`reliafy.push`, `reliafy.models.*`, `reliafy.data.*`,
 `reliafy.strategy.*`, `reliafy.fleet.*`) keeps working.
 
 ## Quick start
@@ -62,15 +61,15 @@ from reliafy import Client
 
 rf = Client()                                   # token from RELIAFY_TOKEN or `reliafy login`
 rf.call("list", "models")
-rf.call("life_data_analysis", "fit", data=[120, 340, 510, 700], censored=[0, 0, 1, 0])
-rf.call("strategy", "optimal_replacement", distribution_id="weibull",
+rf.call("analyse", "fit", data=[120, 340, 510, 700], censored=[0, 0, 1, 0])
+rf.call("analyse", "optimal_replacement", distribution_id="weibull",
         params=[{"name": "alpha", "value": 1200}, {"name": "beta", "value": 2.5}],
         planned_cost=200, unplanned_cost=1500)
 rf.call("analyse", "maintainability", unit="minutes", lines=[   # Mct, M_max, availability from a parts list
     {"name": "Motor", "quantity": 4, "failure_rate": 180, "elements": {"isolation": 10, "replace": 15}, "maximum": 60},
     {"name": "Flight controller", "failure_rate": 90, "mttr": 80}])
 rf.call("guide", topic="life_data")             # a tool without actions
-rf.call("rbd_analysis", "analyze", rbd_id="…", wait=True)   # waits for a long job
+rf.call("analyse", "rbd", rbd_id="…", wait=True)          # waits for a long job
 
 rf.tools()                                      # what you may call
 rf.spec()                                       # the OpenAPI spec
@@ -80,8 +79,8 @@ Published failure data from Reliafy's reliability data library, each record
 cited with its licence:
 
 ```python
-found = rf.call("library", "search", query="motor-driven pump fails to start")
-record = rf.call("library", "get", id=found["results"][0]["id"])
+found = rf.call("list", "library", query="motor-driven pump fails to start")
+record = rf.call("get", "library_record", id=found["results"][0]["id"])
 record["block_model"]                           # the model an RBD block would use
 ```
 
@@ -167,16 +166,16 @@ reliafy maintenance products.build --product-id PRODUCT_ID --serial 0007        
 reliafy maintenance products.build --product-id PRODUCT_ID --serial 0007 --dry-run false   # build the item
 reliafy maintenance get.design_rollup --id DESIGN_POSITION_ID   # one design position across every item built
 reliafy apply ops.json --run                     # maintenance changes in one call (dry run without --run)
-reliafy list kind library --query "check valve" --kind rate   # published failure data
-reliafy get kind library_record --id nrc-inl-2020:ckv-fto
-reliafy get kind library_record --id mil-hdbk-217f-n2:9-1-rc-11 --environment GF   # a handbook rate, ground fixed
+reliafy list library --query "check valve" --record-kind rate   # published failure data
+reliafy get library_record --id nrc-inl-2020:ckv-fto
+reliafy get library_record --id mil-hdbk-217f-n2:9-1-rc-11 --environment GF   # a handbook rate, ground fixed
 reliafy change library_create --name "Site pumps" --description "Our fleet's fitted models"   # a library of your own
 reliafy change library_add_model --library-id LIBRARY_ID --model-id MODEL_ID --failure-mode "Bearing wear"
-reliafy list kind libraries
+reliafy list libraries
 reliafy analyse prediction --environment GF --mission-time 1000 \
   --lines '[{"name": "Ceramic capacitors", "record_id": "mil-hdbk-217f-n2:10-1-ck-11015", "quantity": 48}]'   # a parts count
 reliafy change prediction_save --name "Controller box" --environment GF --lines @parts.json   # ... saved
-reliafy list kind predictions
+reliafy list predictions
 ```
 
 Values are read as their argument's type: text, numbers, `true`/`false`, JSON

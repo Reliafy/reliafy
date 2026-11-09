@@ -300,10 +300,11 @@ def test_the_sample_reads_honestly(client):
     r = client.post("/api/fault-trees/analyse", json={"tree": sample["tree"], "t": 100.0}).json()
     assert r["placeholders"] == [] and r["unit"] == "Hours"
     # Any one arm down brings a quadcopter down: each motor and speed
-    # controller is a cut set of its own; the IMUs only two at a time.
+    # controller is a cut set of its own; the two IMUs only together (1-of-2).
     singles = {c["events"][0] for c in r["cut_sets"]["listed"] if c["order"] == 1}
     assert {f"motor{i}" for i in range(1, 5)} | {f"esc{i}" for i in range(1, 5)} <= singles
-    assert {"imu_a", "imu_b", "imu_c"}.isdisjoint(singles)
+    assert {"imu_1", "imu_2"}.isdisjoint(singles)
+    assert {("imu_1", "imu_2")} <= {tuple(sorted(c["events"])) for c in r["cut_sets"]["listed"] if c["order"] == 2}
     assert 0.0 < r["top_event_probability"] < 0.2
     # A sample is hidden, not deleted.
     assert client.delete("/api/fault-trees/sample-fault-tree-quadcopter").json() == {"ok": True}

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.5.2)
+## 0.5.2 (10 Nov 2026)
 
 - **Missions on an RBD**: `change rbd_mission` adds, changes or deletes a
   named phased mission (`rbd_id`, `mission_id` to change one, `name`,
@@ -24,7 +24,7 @@
   library_create --name "Site pumps"`, `reliafy change library_add_model
   --library-id … --model-id …`.
 
-## Unreleased (0.5.1)
+## 0.5.1 (not published on its own; part of 0.5.2)
 
 - **Data library records as models and priors**: `maintenance models.link`
   takes `library_record_id` (a published failure rate attached as an

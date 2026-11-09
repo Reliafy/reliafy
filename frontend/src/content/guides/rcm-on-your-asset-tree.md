@@ -44,16 +44,19 @@ it. The 33 positions (the airframe with its four arms, centre frame and
 landing gear; four motors, speed controllers and propellers; flight control
 with its two IMUs, GPS and compass; the battery pack and its BMS; comms; the
 gimbal and its camera) carry 47 functions with 63 performance standards, 79
-functional failures and 83 failure modes, each with its consequence and, all
+functional failures and 84 failure modes, each with its consequence and, all
 but two, its decision. The decisions use the whole logic: on-condition checks,
 scheduled discards (the propellers at 130 hours, the battery at 300 cycles)
 and restorations (the arm bolts re-torqued), failure-finding tests for the
 hidden protective functions, redesigns, run-to-failure and accepted risks.
 Read together, their tasks are the aircraft's maintenance programme: a
 pre-flight check before every flight, a flight log review every 10 hours, the
-25-hour, 100-hour and annual inspections and the failsafe function tests, each
-a shared task on the product with the modes' checks as its checklist, plus the
-parts' own limits. The higher positions' failures are explained by those below
+25-hour, 100-hour and annual inspections, the monthly failsafe function tests
+and a battery storage check every three months, each a shared task on the
+product with the modes' checks as its checklist, plus the parts' own limits.
+The tasks that wear with use go by flight hours or flights; the ones whose
+failures come with time (a configuration change, a pack draining in storage)
+go by the calendar. The higher positions' failures are explained by those below
 them (see *Working top down or bottom up*, below), and some decisions link the
 evidence behind them.
 
