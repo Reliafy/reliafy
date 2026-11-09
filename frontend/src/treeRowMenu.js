@@ -1,7 +1,7 @@
 // The Explorer's row menu on the Summary tab (right-click a row, its ⋯
 // button, or Shift+F10): changing the tree itself. New position (or location)
 // inside, Add failure report… (a position: a report sits at a position),
-// Rename, Move to… and Delete…, beside Isolate › and Pin this branch. The RCM
+// Rename, Move to… and Delete…, beside Focus › and Pin this branch. The RCM
 // tab's rows keep their own menu (explorerRcm.js rowActions).
 //
 // A position can be renamed, moved (PATCH parent_id) and deleted; a location
@@ -74,10 +74,10 @@ export function withPin(items, pin) {
 // open" and "With 5 levels open" are offered there when the rows go that deep.
 export function isolateItems(r, { can, levels = 0 } = {}) {
   if (!r || !can) return [];
-  if (!r.kids?.length) return [{ id: "isolate:1", label: "Isolate" }];
+  if (!r.kids?.length) return [{ id: "isolate:1", label: "Focus" }];
   const deeper = [4, 5].filter((n) => levels >= n).map((n) => ({ id: `isolate:${n}`, label: `With ${n} levels open` }));
   return [{
-    id: "isolate", label: "Isolate",
+    id: "isolate", label: "Focus",
     items: [
       { id: "isolate:1", label: "With 1 level open" },
       { id: "isolate:2", label: "With 2 levels open" },

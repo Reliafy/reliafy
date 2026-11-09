@@ -1,4 +1,4 @@
-// "Isolate" in the Explorer's tree (a row's menu: Isolate › with 1 level open,
+// "Isolate" in the Explorer's tree (a row's menu: Focus › with 1 level open,
 // 2 levels open, 3 levels open, or everything open): a one-off change to what's
 // open, not a view. Every other branch of the tree closes (its rows stay on
 // show, closed), the rows above the chosen one stay open so it's still in
@@ -62,7 +62,7 @@ export function isolateOpen(display, open, key, depth) {
   return next;
 }
 
-// ---- "Isolate incomplete rows" (the RCM tab's rows menu) -------------------------
+// ---- "Focus on incomplete rows" (the RCM tab's rows menu) -------------------------
 // Opens the way to the RCM work still to finish under a row, and closes the
 // rest: a function with no functional failure, a functional failure with no
 // failure mode or cause, a failure mode still without a decision, and the two
@@ -109,5 +109,5 @@ export function isolateIncompleteOpen(display, open, key) {
 // the thing to finish).
 export function isolateIncompleteItem(r, { can } = {}) {
   if (!r || !can || !r.kids?.length) return [];
-  return [{ id: "isolate-incomplete", label: "Isolate incomplete rows" }];
+  return [{ id: "isolate-incomplete", label: "Focus on incomplete rows" }];
 }

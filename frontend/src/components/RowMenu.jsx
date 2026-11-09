@@ -19,7 +19,7 @@ import useMenuDismiss from "./useMenuDismiss.js";
 // found and its reason read: under its label, and to a screen reader as its
 // description) but does nothing.
 //
-// An item with `items` is a submenu ("Isolate ›"). On a wide screen it opens
+// An item with `items` is a submenu ("Focus ›"). On a wide screen it opens
 // beside the menu (pointing at it, or → / Enter / Space; ← or Esc goes back to
 // it); on a phone it opens in place, under its item, so nothing goes off the
 // narrow screen. A submenu's item with `checked` (true or false) is a radio,

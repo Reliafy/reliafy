@@ -192,7 +192,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
 
 // The one quadcopter example is the sample product: its functional structure's
 // FME(C)A tab works as on the Explorer (scored rows, the row menus of a design,
-// Isolate incomplete rows, the print view and back), at both widths.
+// Focus on incomplete rows, the print view and back), at both widths.
 for (const [width, height] of [[1440, 900], [400, 860]]) {
   test(`the sample UAV product's FME(C)A at ${width} px`, async ({ page, request, problems }) => {
     test.setTimeout(120000);
@@ -221,14 +221,14 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await top.locator(".tt-tree").click({ button: "right" });
     const menu = page.getByRole("menu", { name: /^Actions for Survey quadcopter/ });
     // As on the Explorer's FME(C)A tab: Add function, the worksheet in and out, Print view, Isolate, Pin, Delete… last.
-    await expect(menu.getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Print view", "Isolate", "Pin this branch", "Delete…"]);
+    await expect(menu.getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Print view", "Focus", "Pin this branch", "Delete…"]);
     await page.keyboard.press("Escape");
-    // The RCM tab: Isolate incomplete rows on the design (the landing-gear and thermal-runaway modes have
+    // The RCM tab: Focus on incomplete rows on the design (the landing-gear and thermal-runaway modes have
     // no decision, on purpose).
     await page.getByRole("tab", { name: "RCM" }).click();
     const rcm = page.getByRole("treegrid", { name: /and their RCM/ });
     await rcm.getByRole("row", { name: /^Survey quadcopter \(sample/ }).first().locator(".tt-tree").click({ button: "right" });
-    await menu.getByRole("menuitem", { name: "Isolate incomplete rows" }).click();
+    await menu.getByRole("menuitem", { name: "Focus on incomplete rows" }).click();
     await expect(page.locator(".sr-only[role='status']")).toContainText(/Collapsed the rest of the tree: \d+ incomplete rows? under Survey quadcopter/);
     await expect(rcm.getByRole("row", { name: /^Failure mode: / }).first()).toBeVisible();
     await shot(page, `${width}-product-rcm-incomplete`);

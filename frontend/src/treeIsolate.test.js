@@ -96,6 +96,6 @@ test("isolate incomplete rows: the way to what's unfinished opens, the rest clos
   assert.ok(open.has("pumpA") && open.has("pumpB") && open.has("f3") && open.has("ff3"));
   assert.ok(!open.has("f1") && !open.has("ff1"));
   assert.deepEqual(incompleteRows(d, "pumpA").map((r) => r.key), ["f2"]);
-  assert.deepEqual(isolateIncompleteItem(d.rows.get("plant"), { can: true }), [{ id: "isolate-incomplete", label: "Isolate incomplete rows" }]);
+  assert.deepEqual(isolateIncompleteItem(d.rows.get("plant"), { can: true }), [{ id: "isolate-incomplete", label: "Focus on incomplete rows" }]);
   assert.deepEqual(isolateIncompleteItem(d.rows.get("m3"), { can: true }), []);
 });

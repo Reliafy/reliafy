@@ -117,7 +117,7 @@ To find your way around a big tree:
   in that row's menu.
 - The search box filters the tree and its RCM: descriptions, effects, tasks
   and notes, keeping the rows each match sits inside.
-- **Isolate** in any row's menu (a position, function, performance standard, functional
+- **Focus** in any row's menu (a position, function, performance standard, functional
   failure, failure mode or task) closes every other branch of the tree and opens
   that row **with 1 level open**, **2 levels open**, **3 levels open** or
   **everything open** below it. On the RCM tab, where a row can go five levels

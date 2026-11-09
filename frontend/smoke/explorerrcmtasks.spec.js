@@ -497,7 +497,8 @@ test("a task's first due date: set on Add a task (behind a link), shown and chan
   await expect(iv.locator(".rim-tdue")).toContainText("Next due");
   // A task by the calendar without a date set says its next due date too.
   await page.setViewportSize({ width: 400, height: 860 });
-  expect(await overflow(page)).toBe(0);
+  // Measured once the layout has settled at the new width (the drawer and the panel move in).
+  await expect.poll(() => overflow(page)).toBe(0);
   await expectHealthy(page, problems, { label: "task first due" });
 });
 

@@ -226,7 +226,7 @@ test("a Bayesian update from numbers I know, on a position whose class has no mo
   await headPick(page, "Life model", "Fit a life model…");
   const dialog = page.getByRole("dialog", { name: "Fit a life model" });
   // A plain fit to one failure is refused, in words; with a prior, the class has nothing besides this pump.
-  await expect(dialog.getByRole("alert")).toContainText("a plain weibull fit needs at least 2");
+  await expect(dialog.getByRole("alert")).toContainText("a plain Weibull fit needs at least 2");
   // The refusal offers the way out: fit with a prior.
   await dialog.getByRole("button", { name: "Fit with a prior instead" }).click();
   await expect(dialog.getByRole("radio", { name: "With a prior" })).toHaveAttribute("aria-checked", "true");
@@ -257,7 +257,7 @@ test("a position's row menu on the Modelling tab is two levels, and Enter parame
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
   await row(page, pump.id).locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu", { name: new RegExp(`^Actions for Menu pump ${tag}`) });
-  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Life model", "RBD", "Prediction", "Rename…", "Isolate", "Pin this branch"]);
+  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Life model", "RBD", "Prediction", "Rename…", "Focus", "Pin this branch"]);
   await expect(menu.getByRole("separator")).toHaveCount(1);
   for (const gone of ["New position inside", "Add failure report…", "Log an event…", "Move to…", "Delete…"]) {
     await expect(menu.getByRole("menuitem", { name: gone })).toHaveCount(0);
