@@ -237,3 +237,23 @@ def test_a_bad_binding_is_refused_at_the_position(m, db):
     _, a, _ = _system(m)
     with pytest.raises(Invalid, match="Unknown input"):
         cp.bind(m, db, ORG, OWNERS, a, {"source": "nswc", "ref": BEARING, "fixed": {"zzz": 1}})
+
+
+def test_an_assembly_is_per_hour_and_never_multiplied_again():
+    # NSWC-11 assemblies are per million hours, their per-cycle parts converted inside them (pp. 12-10, 12-16):
+    # a bound block takes the assembly's rate as it is, and adds no cycles an hour of its own. A gear coupling
+    # has its own "cycles_per_hour" input, which it must still read.
+    ref = "nswc-11:coupling-gear"
+    keys = [i["key"] for i in cb.inputs_of({"source": "nswc", "ref": ref})]
+    assert keys.count("cycles_per_hour") == 1
+    values = {"lambda_CP_B": 2.0, "cycles_per_hour": 10, "n_GR": 1, "n_SE": 1,
+              "gears.V_o": 1800, "gears.V_d": 1800, "gears.L_O": 1000, "gears.L_D": 1000,
+              "seals.P1": 100, "seals.Q_f": 0.06, "seals.D_SL": 2, "seals.n": 100, "seals.V_lin": 0, "seals.M": 500,
+              "seals.C": 910, "seals.f": 15, "seals.T_R": 250, "seals.T_O": 100, "seals.source": "piston_pump",
+              "seals.FR": 10}
+    per_million = library.evaluate(ref, values)["result"]["total"]
+    model = cb.concrete({"source": "nswc", "ref": ref}, values)
+    assert model["params"][0]["value"] == pytest.approx(per_million / 1e6)
+    # The gear at its design point gives its base rate (Reliafy's reading, p. 8-8): 1,080 per million hours.
+    gears = next(m for m in library.evaluate(ref, values)["result"]["modes"] if m["key"] == "gears")
+    assert gears["rate"] == pytest.approx(1080.0)

@@ -284,7 +284,9 @@ def concrete(binding: dict, values: dict, diagram_unit: str = "hours") -> dict:
         from backend.library import service as library
 
         rec = _nswc(binding["ref"])
-        conds = {k: v for k, v in values.items() if k != "cycles_per_hour"}
+        # A per-cycle record's cycles an hour is the binding's own input; a per-hour assembly (an accumulator,
+        # a coupling) may have an input of that name itself, which it reads.
+        conds = {k: v for k, v in values.items() if k != "cycles_per_hour" or not covariate.per_cycle(rec)}
         try:
             got = covariate.evaluate(rec, conds, library.resolve)
         except covariate.CovariateError as exc:
