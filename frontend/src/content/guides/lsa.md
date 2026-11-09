@@ -39,9 +39,9 @@ inside it, set out like the RCM table, one row per task:
 - **Task**, **Kind** (on condition, fixed interval or failure finding; a task
   raised by an event says which), **Interval**, **Trade** and **Next due**;
 - **Package** — the package it's done in, or blank when it's done on its own;
-- **Hours** (labour hours: people × hours, added up), **People**, **Tools**,
-  **Spares** and **Consumables** (how many lines; hover for their names) and
-  **Method**.
+- **Labour** (hours by trade: people × hours, added up), **People**, **Tools**,
+  **Spares** and **Consumables** (the first names and how many more; hover for
+  the full list) and **Method**.
 
 Pick a higher row in the tree to see more of it. Choose which columns show
 from the panel's **More actions (…)** › **Columns…**.
@@ -92,8 +92,8 @@ task shown). A bar at the foot of the table says how many you've ticked:
 
 - **Package selected…** makes a new package with them. Give it a name, how
   often it visits (it starts at the ticked tasks' commonest interval), the
-  day of the week, the trade and how many days after the visit still count as
-  on time.
+  day of the week (Monday to start with), the trade and how many days after
+  the visit still count as on time (1 to start with).
 - **Add to a package…** puts them in a package already on this part of the
   tree, on every visit or every Nth one.
 - **Clear** unticks them.
@@ -109,8 +109,8 @@ package stay where they are.
 To let Reliafy draft the packages for you, choose **Package the tasks…** from
 **More actions (…)**. It groups every task here that isn't in a package by
 how often it's due and by trade: the weekly ones visit on the day you pick,
-and monthly and longer ones become layers on those visits (the first Saturday
-of the month). Untick or rename the drafts, then **Make** them, all together
+and monthly and longer ones become layers on those visits (the first of that
+day in the month). Untick or rename the drafts, then **Make** them, all together
 or none.
 
 ## Look after a package

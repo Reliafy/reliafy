@@ -9679,8 +9679,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         each: where it is, the failure modes it prevents (each with its function ›
         functional failure), its kind (the decision's outcome), interval or trigger,
         trade, next due, its package (if any), whether it can join one (an item's
-        task, a task by use and a round can't: ``why_not``) and what it needs
-        (``resources``: its LSA record)."""
+        task, a task by use and a round can't: ``why_not``), what it needs
+        (``resources``: its LSA record) and its ``instructions``."""
         scope = self._package_scope(position_id, location_id)
         if scope is None:
             raise Invalid("Give position_id or location_id.")
@@ -9730,7 +9730,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                          "trigger": self._trigger_view(task.get("trigger")) if task.get("trigger") else None,
                          "on_event": _on_event_only(task), "trade": task.get("trade", ""),
                          "next_due": view["next_due"], "overdue": bool(view["overdue"]), "package": pkg,
-                         "why_not": why_not, "resources": view["resources"]})
+                         "why_not": why_not, "resources": view["resources"],
+                         "instructions": task.get("instructions") or ""})
         rows.sort(key=lambda r: (r["subject"]["name"].lower(), r["name"].lower(), r["id"]))
         # A product's design (or one of its design locations): its programme, packaged on the built items.
         return {"scope": self._subject_brief(scope), "tasks": rows[:limit], "total": len(rows),

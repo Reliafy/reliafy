@@ -117,6 +117,10 @@ export function nextVisit(tasks = []) {
 }
 
 export const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+// What a new package starts with (both shown, and changed, in its dialog):
+// visits on a Monday, on time up to 1 day after the visit date.
+export const DEFAULT_VISIT_DAY = "monday";
+export const DEFAULT_TOLERANCE_DAYS = 1;
 export const dayName = (d) => d[0].toUpperCase() + d.slice(1);
 
 // ---- the tab's table of tasks --------------------------------------------------------
@@ -134,11 +138,11 @@ export const TASK_COLUMNS = [
   { id: "trade", label: "Trade", width: 110 },
   { id: "due", label: "Next due", width: 110 },
   { id: "package", label: "Package", width: 200, title: "The work package it's done in; blank when it's done on its own" },
-  { id: "hours", label: "Hours", width: 74, num: true, title: "Labour hours: each line's people × hours, added up" },
+  { id: "hours", label: "Labour", width: 150, title: "Hours by trade: each line's people × hours (hover for the lines)" },
   { id: "people", label: "People", width: 74, num: true, title: "How many people the work needs" },
-  { id: "tools", label: "Tools", width: 70, num: true, title: "Tools and instruments (hover for their names)" },
-  { id: "spares", label: "Spares", width: 74, num: true, title: "Spare part lines to bring" },
-  { id: "consumables", label: "Consumables", width: 112, num: true, title: "Consumable lines to bring" },
+  { id: "tools", label: "Tools", width: 170, title: "Tools and instruments (hover for the full list)" },
+  { id: "spares", label: "Spares", width: 170, title: "Spare parts to bring (hover for the full list)" },
+  { id: "consumables", label: "Consumables", width: 170, title: "Consumables to bring (hover for the full list)" },
   { id: "method", label: "Method", width: 180, title: "How it's done" },
 ];
 export const DEFAULT_TASK_COLUMNS = TASK_COLUMNS.map((c) => c.id);
@@ -170,15 +174,35 @@ export function cellText(t, col) {
     case "trade": return t.trade || "";
     case "due": return t.next_due || "";
     case "package": return t.package?.name || "";
-    case "hours": return t.resources?.labour_hours ? num(t.resources.labour_hours) : "";
+    case "hours": return t.resources?.labour_hours ? labourText(t) : "";
     case "people": return t.resources?.people ? String(t.resources.people) : "";
-    case "tools": case "spares": case "consumables": {
-      const n = (t.resources?.[COUNTED[col]] || []).length;
-      return n ? String(n) : "";
-    }
+    case "tools": case "spares": case "consumables":
+      return shortList((t.resources?.[COUNTED[col]] || []).map((x) => x.name || x.part_number));
     case "method": return t.resources?.method || "";
     default: return "";
   }
+}
+
+// The first names and how many more: "Torque wrench, Multimeter +1".
+export function shortList(names, show = 2) {
+  const list = names.filter(Boolean);
+  const more = list.length - show;
+  return list.slice(0, show).join(", ") + (more > 0 ? ` +${more}` : "");
+}
+
+// A task's labour by trade (a line with no trade takes the task's), each
+// trade's people × hours added up: "Fitter 2 h, Electrician 1 h +1"; "1.5 h"
+// when no trade is set.
+export function labourText(t) {
+  const by = new Map();
+  for (const x of t.resources?.labour || []) {
+    const trade = x.trade || t.trade || "";
+    const row = by.get(trade.toLowerCase()) || { trade, hours: 0 };
+    row.hours += (x.people || 1) * (x.hours || 0);
+    by.set(trade.toLowerCase(), row);
+  }
+  if (!by.size) return t.resources?.labour_hours ? `${num(t.resources.labour_hours)} h` : "";
+  return shortList([...by.values()].map((x) => `${x.trade ? `${x.trade} ` : ""}${num(x.hours)} h`));
 }
 
 // A number as people read it: up to 2 decimals, no trailing zeros.
@@ -195,8 +219,9 @@ export function lineText(kind, x) {
   return "";
 }
 
-// The names behind a counted column, for its hover: "Photometer, Brush".
+// The full list behind a column of names, for its hover: one line each.
 export function countTitle(t, col) {
+  if (col === "hours") return (t.resources?.labour || []).map((x) => lineText("labour", { ...x, trade: x.trade || t.trade })).join("\n");
   const kind = COUNTED[col];
   return kind ? (t.resources?.[kind] || []).map((x) => lineText(kind, x)).join("\n") : "";
 }
@@ -207,7 +232,6 @@ function sortValue(t, col) {
   if (col === "interval") return t.on_event || t.interval == null ? null : t.interval * (DAYS[t.unit] ?? 1);
   if (col === "hours") return t.resources?.labour_hours || null;
   if (col === "people") return t.resources?.people || null;
-  if (COUNTED[col]) return (t.resources?.[COUNTED[col]] || []).length || null;
   const v = cellText(t, col);
   return v === "" ? null : v.toLowerCase();
 }
@@ -400,12 +424,12 @@ export function annualText(a) {
 // (not counted) and the labour lines in full.
 export function lsaCsv(tasks) {
   const cols = TASK_COLUMNS.filter((c) => c.id !== "tools" && c.id !== "spares" && c.id !== "consumables");
-  const head = [...cols.map((c) => c.label), "Labour", "Tools", "Spares", "Consumables", "Duration (h)", "Downtime (h)", "Permits", "Instructions"];
+  const head = [...cols.map((c) => (c.id === "hours" ? "Labour (h)" : c.label)), "Labour", "Tools", "Spares", "Consumables", "Duration (h)", "Downtime (h)", "Permits", "Instructions"];
   const rows = tasks.map((t) => {
     const r = t.resources || {};
     const names = (kind) => (r[kind] || []).map((x) => lineText(kind, x)).join("; ");
     return [
-      ...cols.map((c) => (c.num ? (cellText(t, c.id) === "" ? "" : Number(cellText(t, c.id))) : cellText(t, c.id))),
+      ...cols.map((c) => (c.id === "hours" ? r.labour_hours || "" : c.num ? (cellText(t, c.id) === "" ? "" : Number(cellText(t, c.id))) : cellText(t, c.id))),
       names("labour"), names("tools"), names("spares"), names("consumables"),
       r.duration_hours ?? "", r.access?.downtime_hours ?? "", (r.access?.permits || []).join("; "), t.instructions || "",
     ];
