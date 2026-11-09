@@ -5,7 +5,7 @@ import { positionOf } from "./explorerRcm.js";
 import {
   MODEL_CHIPS, MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, attachedFor, b10Text, boundsLabel, countsText, inUseWords, fmt, graftModels, headline, isModelRow, meanText, modelKey,
   openForModels, predictionAssign, predictionWords, rollupText, rowActions, usedText, withBounds,
-  isLifeModelLink, lifeModelOf,
+  isLifeModelLink, lifeModelOf, builtRbdLink,
   opensInPane,
 } from "./explorerModels.js";
 
@@ -200,6 +200,21 @@ test("the Modelling tab's position menu: three groups, two levels", () => {
     "From the class…", "Enter parameters…", "Add to a library…"]);
   assert.deepEqual(g[1].items.map((x) => x.label), ["Build from what's inside…", "Link an existing RBD…"]);
   assert.deepEqual(g[2].items.map((x) => x.id), ["model-attach-predict", "model-refresh-predict"]);
+  // A position that already has an RBD built from what's inside: the menu opens it, and a rebuild
+  // is its own item. Building is never offered twice.
+  const had = attachGroups({ builtRbd: true })[1].items;
+  assert.deepEqual(had.map((x) => x.label), ["Open the RBD", "Rebuild from what's inside…", "Link an existing RBD…"]);
+  assert.deepEqual(had.map((x) => x.id), ["model-attach-rbd-open", "model-attach-rbd-rebuild", "model-attach-rbd-link"]);
+  assert.ok(attachGroups({ builtRbd: true, viewOnly: "View only" })[1].items.find((x) => x.id === "model-attach-rbd-rebuild").disabled);
+  // Which row that is: an RBD built from the tree on this position (the one in use first); a linked
+  // diagram, a life model and another position's RBD are not it.
+  const rbds = [link("b1", "pump", { model_id: "r1", model_type: "rbd", source: { built_from: 2 } }),
+    link("b2", "pump", { model_id: "r2", model_type: "rbd", source: { built_from: 3 }, in_use: true }),
+    link("b3", "pump", { model_id: "r3", model_type: "rbd" }), link("b4", "fan", { model_id: "r4", model_type: "rbd", source: { built_from: 1 } })];
+  assert.equal(builtRbdLink(rbds, "pump").model_id, "r2");
+  assert.equal(builtRbdLink([rbds[0], rbds[2]], "pump").model_id, "r1");
+  assert.equal(builtRbdLink([rbds[2], rbds[3], link("p0", "pump", { model_id: "m0", model: WEIBULL })], "pump"), null);
+  assert.equal(builtRbdLink(null, "pump"), null);
   const bare = attachGroups();
   assert.equal(bare[0].items.find((x) => x.id === "model-attach-class").reason, "This position has no class");
   // Add to a library… needs a life model on the position (the one in use, else its first).

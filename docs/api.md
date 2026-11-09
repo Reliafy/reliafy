@@ -286,9 +286,13 @@ An RBD row: `rbd_id` links an existing diagram; `build_rbd: true` makes a new
 one from the positions one level inside (each block the child's model in use,
 or its own RBD as a sub-system; a flagged placeholder where it has none), wired
 by their connections and redundancy groups, in series where there are none,
-saved under Design › Systems as "<position> (from the tree)"; with
-`replace_link_id` (its RBD row) it's rebuilt into the same diagram, adding new
-positions and keeping edits. `use_link_id` makes one of the position's rows
+saved under Design › Systems as "<position> (from the tree)". A position has
+one built diagram: `build_rbd` where it already has one saves nothing and
+answers with that row and `existing: true`. With `replace_link_id` (its RBD
+row) it's rebuilt into the same diagram, adding new positions and keeping
+edits. `POST /api/rbds/validate` (and `GET /api/rbds/{id}/validate`) also
+answer `series_hints`: which of the `warnings` are the "like blocks wired in
+series" hints (one per run of like blocks), where there are any. `use_link_id` makes one of the position's rows
 its model in use (by default its own life model, else its RBD, else its
 prediction): what its roll-up reports, what the RCM offers first and what a
 parent's RBD block takes. `GET /api/maintenance/position-models/{id}?age=`

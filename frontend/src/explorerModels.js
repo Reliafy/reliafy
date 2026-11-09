@@ -344,8 +344,11 @@ export function predictionWords(source = {}) {
 // (Derryn, 9 Nov 2026: "two levels with logical groups"): Life model ›, RBD ›, Prediction ›.
 // Ids start "model-attach-" (the kind of dialog after it) or "model-refresh-predict".
 // `positionClass`: its class (From the class… needs one); `hasPrediction`: Refresh is offered;
-// `hasLifeModel`: the position has a life model to add to one of the user's data libraries.
-export function attachGroups({ positionClass = "", hasPrediction = false, hasLifeModel = false, viewOnly = null } = {}) {
+// `hasLifeModel`: the position has a life model to add to one of the user's data libraries;
+// `builtRbd`: it already has an RBD built from what's inside (builtRbdLink), so the RBD group
+// opens that one and offers Rebuild instead of Build: a position has one built diagram, however
+// often the menu is used.
+export function attachGroups({ positionClass = "", hasPrediction = false, hasLifeModel = false, builtRbd = false, viewOnly = null } = {}) {
   const off = viewOnly ? { disabled: true, reason: viewOnly } : {};
   return [
     { id: "model-group-life", label: "Life model", items: [
@@ -361,7 +364,10 @@ export function attachGroups({ positionClass = "", hasPrediction = false, hasLif
         ...(hasLifeModel || viewOnly ? {} : { disabled: true, reason: "This position has no life model yet" }) },
     ] },
     { id: "model-group-rbd", label: "RBD", items: [
-      { id: "model-attach-rbd-build", label: "Build from what's inside…", ...off },
+      ...(builtRbd
+        ? [{ id: "model-attach-rbd-open", label: "Open the RBD" },
+           { id: "model-attach-rbd-rebuild", label: "Rebuild from what's inside…", ...off }]
+        : [{ id: "model-attach-rbd-build", label: "Build from what's inside…", ...off }]),
       { id: "model-attach-rbd-link", label: "Link an existing RBD…", ...off },
     ] },
     { id: "model-group-prediction", label: "Prediction", items: [
@@ -369,6 +375,13 @@ export function attachGroups({ positionClass = "", hasPrediction = false, hasLif
       ...(hasPrediction ? [{ id: "model-refresh-predict", label: "Refresh the prediction…", ...off }] : []),
     ] },
   ];
+}
+
+// Of a position's model rows, its RBD built from what's inside (the one in use first), or null.
+// The same pick as the backend's (position_models.built_rbd_link), which never builds a second.
+export function builtRbdLink(links, positionId) {
+  const built = (links || []).filter((l) => l.position_id === positionId && l.model_type === "rbd" && l.source?.built_from != null);
+  return built.find((l) => l.in_use) || built[0] || null;
 }
 
 // The position items that make sense on the Modelling tab, after the groups: Rename… only

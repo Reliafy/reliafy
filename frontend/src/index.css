@@ -3773,6 +3773,18 @@ h1 .chip,
   color: var(--warn);
 }
 
+/* Several "like blocks in series" hints, folded into one line (rbdWarnings.js). */
+.rbd-check-fold {
+  margin: 0.35rem 0 0;
+  font-size: var(--fs-14);
+}
+.rbd-check-fold > summary {
+  cursor: pointer;
+}
+.rbd-check-fold > summary:hover {
+  text-decoration: underline;
+}
+
 .rbd-section-head {
   font-size: var(--fs-14);
   font-weight: 600;

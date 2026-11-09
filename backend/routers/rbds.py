@@ -744,7 +744,8 @@ def validate_graph(
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Check whether an (unsaved) graph is a valid, analytically solvable RBD."""
-    return JSONResponse(content=rbds_service.validate_graph(session, graph, ctx.read_owners))
+    check = rbds_service.validate_graph(session, graph, ctx.read_owners)
+    return JSONResponse(content=rbds_service.with_series_hints(check, graph))
 
 
 @router.get("/rbds/{rbd_id}/validate")
@@ -755,6 +756,5 @@ def validate_rbd(
     rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
     if rbd is None:
         return JSONResponse(status_code=404, content={"detail": "RBD not found."})
-    return JSONResponse(
-        content=rbds_service.validate_graph(session, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id])
-    )
+    check = rbds_service.validate_graph(session, rbd.graph or {}, [*ctx.read_owners, rbd.owner_id])
+    return JSONResponse(content=rbds_service.with_series_hints(check, rbd.graph or {}))

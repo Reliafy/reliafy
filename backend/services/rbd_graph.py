@@ -51,6 +51,7 @@ from backend.services import rbd_repeats
 
 COL_GAP = 280
 ROW_GAP = 150
+BAND_GAP = 260  # between the bands of a folded layout (wrap_layout): a row and the turn of its wire
 
 NODE_TYPES = ("input", "output", "component", "series", "parallel", "knode", "standby", "subsystem")
 
@@ -253,6 +254,25 @@ def layout_graph(nodes: list[dict], edges: list[dict]) -> list[dict]:
         for i, n in enumerate(members):
             out.append({**n, "position": {"x": r * COL_GAP, "y": (i - (m - 1) / 2) * ROW_GAP}})
     return out
+
+
+def wrap_layout(nodes: list[dict], cols: int = 5) -> list[dict]:
+    """A left-to-right layout (see :func:`layout_graph`) longer than ``cols`` columns, folded into
+    bands of at most ``cols`` read like lines of text, so a long chain fits a screen instead of
+    running off one side. A diagram that already fits, or one not laid out, comes back as it is."""
+    if not nodes or any(not isinstance(n.get("position"), dict) for n in nodes):
+        return nodes
+    col = {n["id"]: round(n["position"]["x"] / COL_GAP) for n in nodes}
+    first, last = min(col.values()), max(col.values())
+    count = last - first + 1
+    if count <= cols:
+        return nodes
+    per = -(-count // (-(-count // cols)))  # the same number of columns in every band but the last
+    ys = [n["position"]["y"] for n in nodes]
+    band_gap = (max(ys) - min(ys)) + BAND_GAP
+    return [{**n, "position": {"x": ((col[n["id"]] - first) % per) * COL_GAP,
+                               "y": n["position"]["y"] + ((col[n["id"]] - first) // per) * band_gap}}
+            for n in nodes]
 
 
 def _params(raw, where: str) -> list[dict]:

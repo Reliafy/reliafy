@@ -23,7 +23,7 @@ import CovariateBindPane from "../components/CovariateBindPane.jsx";
 import { bindingForRecord, bindingFromParam, bindingParam } from "../covariate.js";
 import { PANE_PARAMS, TABLE_PANES, paneFromQuery, setPaneQuery } from "../tablePane.js";
 import { fitPreset, priorFrom } from "../fitDialog.js";
-import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, graftModels, inUseWords, isModelRow, modelKey, openForModels, rollupText as modelRollup, lifeModelOf,
+import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, builtRbdLink, graftModels, inUseWords, isModelRow, modelKey, openForModels, rollupText as modelRollup, lifeModelOf,
   opensInPane, bindingOf,
 } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
@@ -836,10 +836,15 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     });
   // Build from what's inside… (and Rebuild, `link` its RBD row): the backend derives the diagram
   // from the positions inside (rbd_derive: placeholders flagged, never a made-up figure), saves it
-  // and links it here; it then opens in the table area, what it made said over it.
+  // and links it here; it then opens in the table area. A position has one built diagram: where
+  // it has one already, Build opens that one (here when its rows are read, else by the backend,
+  // which answers `existing`), so using the menu again never leaves a second. The Modelling and
+  // Missions tabs both build through here.
   const building = useRef(false);
   const buildRbd = async (position, link = null) => {
     if (building.current) return;
+    const had = link ? null : builtRbdLink(pmodels.links, position.id);
+    if (had) return openRbd(position, had.model_id);
     const kidsNow = insideOf(position.id);
     if (!kidsNow.length) {
       say(`There are no positions inside ${position.name} to make blocks from.`, "error");
@@ -850,7 +855,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     say(`${link ? "Rebuilding" : "Building"} an RBD from what's inside ${position.name}…`);
     try {
       const made = await linkPositionModel(position.id, { build_rbd: true, ...(link ? { replace_link_id: link.id } : {}) });
-      say(`${link ? "Rebuilt" : "Built"} ${made.name}.`);
+      say(made.existing ? `Opened ${made.name}: ${position.name} already has an RBD built from what's inside.`
+        : `${link ? "Rebuilt" : "Built"} ${made.name}.`);
       pmodels.load();
       if (missionsOn) pmissions.load();
       paneDirty.current = false;
@@ -860,6 +866,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     } finally {
       building.current = false;
     }
+  };
+  // Rebuild from what's inside…: the diagram opens in the table area with the question over it
+  // (RbdPane: what a rebuild does, Rebuild or Cancel), so nothing changes on the menu click alone.
+  const askRebuild = async (position, link) => {
+    if (!link || !(await leavePane())) return;
+    openPane("rbd", position, { rbd: link.model_id, link, start: { rebuild: true } });
   };
   // Back to the table, the row picked as it was (focus on it); `focusRow`: false when another row is being picked.
   const closePane = ({ focusRow = true } = {}) => {
@@ -1231,7 +1243,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The Modelling tab's attach groups for a position (explorerModels.attachGroups), and what each item opens.
   const predictionOf = (pid) => (pmodels.links || []).find((l) => l.position_id === pid && l.role === "prediction") || null;
   const modelGroups = (pid, positionClass) => attachGroups({ positionClass: positionClass || "", hasPrediction: !!predictionOf(pid),
-    hasLifeModel: !!lifeModelOf(pmodels.links, pid), viewOnly });
+    hasLifeModel: !!lifeModelOf(pmodels.links, pid), builtRbd: !!builtRbdLink(pmodels.links, pid), viewOnly });
   const attachAt = (pid, id) => {
     const rr = whole.rows.get(pid);
     const position = { id: pid, name: rr?.ref.name || "(no name)", position_class: rr?.ref.position_class || "" };
@@ -1239,6 +1251,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (id === "model-attach-predict") return openPredict(position);
     if (id === "model-refresh-predict") return openPredict(position, predictionOf(pid));
     if (id === "model-attach-rbd-build") return buildRbd(position);
+    if (id === "model-attach-rbd-open") return openRbd(position, builtRbdLink(pmodels.links, pid)?.model_id);
+    if (id === "model-attach-rbd-rebuild") return askRebuild(position, builtRbdLink(pmodels.links, pid));
     // Add to a library…: the position's life model in use (else its first) snapshotted into a data library.
     if (id === "model-attach-to-library") return setModelModal({ kind: "to-library", position, link: lifeModelOf(pmodels.links, pid) });
     return setModelModal({ kind: id.slice(13), position });
@@ -1269,7 +1283,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     else if (id === "model-predict") openPredict(position, link);
     else if (id === "model-bind") openBind(position, bindingOf(link), { link, name: link.model?.name || link.name });
     else if (id === "model-to-library") setModelModal({ kind: "to-library", position, link });
-    else if (id === "model-rebuild") buildRbd(position, link);
+    else if (id === "model-rebuild") askRebuild(position, link);
     else if (id === "model-use") {
       linkPositionModel(position.id, { use_link_id: link.id }).then(() => {
         say(`${link.model?.name || link.name} is now ${position.name}'s model in use.`);
@@ -2305,6 +2319,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const paneSide = !panePosition ? null : paneKind === "rbd" ? (
     <div className="rw tt-side">
       <RbdPane key={`${paneAt.rbd}:${seed?.n || 0}`} rbdId={paneAt.rbd} position={panePosition} built={seed?.built || null}
+               onRebuild={seed?.start?.rebuild && seed.link && !viewOnly ? () => buildRbd(panePosition, seed.link) : null}
                phone={phone} headingRef={paneHeading} onClose={closeRbd}
                onDirty={(d) => { paneDirty.current = d; }}
                onSaved={(id) => {

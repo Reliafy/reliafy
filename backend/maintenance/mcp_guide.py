@@ -479,6 +479,7 @@ the app. It compares designs early; it never says how the item will fail in serv
 a new RBD whose blocks are the positions one level inside, each taking its model in use (a saved model, or its \
 own RBD as a sub-system); one with none gets a placeholder flagged placeholder=true (never invented data: say \
 which and ask for their models). Wired by connections and redundancy groups, in series where there are none. \
+A position has one built RBD: build_rbd where it has one makes nothing and returns that row (existing=true). \
 build_rbd with replace_link_id (its RBD row) rebuilds into the same diagram, adding new positions and keeping \
 edits. rbd_id links an existing RBD as it is. The row reports the system MTBF and B10 (exact analysis; analyse \
 rbd for more).

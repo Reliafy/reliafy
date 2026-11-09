@@ -153,17 +153,30 @@ positions one level down, each taking its model in use (a position with its
 own RBD comes in as a sub-system). They're wired by their connections and
 redundancy groups, in series where there are none. A position with no model
 gets a placeholder, flagged: the row warns until each has a model. The diagram
-opens in the RBD builder, filling the table area beside the tree, with a note
-of what it made; edit its blocks and connections there and **Save**, just as on
-the diagram's own page. **×** or Esc goes back to the table (it asks first if
-there are changes you haven't saved). **RBD › Link an existing RBD…** links one
-you've already drawn, and opens it the same way.
+opens in the RBD builder, filling the table area beside the tree, with the
+whole diagram in view (a long chain is folded into rows); edit its blocks and
+connections there and **Save**, just as on the diagram's own page. **×** or Esc
+goes back to the table (it asks first if there are changes you haven't saved).
+**RBD › Link an existing RBD…** links one you've already drawn, and opens it
+the same way.
+
+A position has one diagram built this way. Once it has one, the menu reads
+**RBD › Open the RBD**, which opens it, so using the menu again never makes a
+second diagram.
+
+Blocks built from the tree are in series unless the tree says otherwise, so
+the Calculator may note that like blocks ("Motor 1" to "Motor 4") are in
+series. Several such notes fold into one line; open it to see each group, and
+make a group redundant in the builder only if the system can run without one
+of them.
 
 The RBD row shows the system's MTBF and B10, and its panel lists every block
 with its model and the position it came from; type an age to see the
 system's reliability there. Double-click the row (or **Open in the pane**) to
 edit the diagram beside the tree; **Open full page** opens it on its own page.
-**Rebuild from what's inside…** adds positions added since, keeping your edits.
+**Rebuild from what's inside…** (on the row, or under **RBD ›**) opens the
+diagram and asks first; **Rebuild** then adds the positions inside that have
+no block yet, keeping your edits.
 
 ## The model in use
 
