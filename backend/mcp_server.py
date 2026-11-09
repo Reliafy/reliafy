@@ -3755,6 +3755,9 @@ def create_rbd(
         "Non-repairable only: a phased mission — the phases in order, each with a duration, the blocks it doesn't "
         "need and per-phase knode counts. analyse rbd then adds phased_mission (mission reliability, each "
         "phase's failure probability, the riskiest phase)."))] = None,
+    conditions: Annotated[Optional[list[dict]], Field(description=(
+        "The diagram's Use and Environment values, [{name, role (use or environment), unit, value}]: blocks "
+        "with covariates left open at their positions take these unless they set their own."))] = None,
     network: Annotated[Optional[NetworkTerminals], Field(description=(
         "Graph form, non-repairable: read the diagram as an UNDIRECTED network — blocks are nodes that fail, "
         "edges are links that work both ways and never fail; analyse rbd gives the two terminals' connection "
@@ -3782,12 +3785,15 @@ def create_rbd(
         graph = _stage_graph(db, uid, stages, repairable)
         graph["unit"] = unit
         graph.update(settings)
+        if conditions:
+            graph["conditions"] = rbd_graph._conditions(conditions)
         rbd_graph._carry_mission(mission, graph)
     else:
         graph = rbd_graph.normalize_graph(
             {"nodes": [n.model_dump(exclude_none=True) for n in nodes],
              "edges": [e.model_dump() for e in edges or []],
-             "unit": unit, "repairable": repairable, **settings, **mission},
+             "unit": unit, "repairable": repairable, **settings, **mission,
+             **({"conditions": conditions} if conditions else {})},
             resolve_saved_model=lambda mid: models_service.get_model(db, mid, owners),
         )
     if production is not None:
@@ -3967,6 +3973,9 @@ class SetOp(_Op):
         "Replaces the maintenance groups' options ({} clears them)."))
     safety_function: Optional[bool] = None
     target_sil: Optional[int] = Field(None, ge=0, le=4, description="0 clears it.")
+    conditions: Optional[list[dict]] = Field(None, description=(
+        "The diagram's Use and Environment values: a list of {name, role (use or environment), unit, value}. "
+        "Blocks with covariates left open at their positions take these unless they set their own."))
     costs: Optional[DiagramCosts] = Field(None, description=(
         "Repairable: the diagram's own costs — downtime_rate, horizon, discount_rate; fields left out are kept, "
         "0 clears one. A block's costs (repair, replace, downtime, acquisition) are update_node costs."))
