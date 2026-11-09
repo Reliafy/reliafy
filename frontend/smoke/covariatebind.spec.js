@@ -33,7 +33,7 @@ test("covariates: fix some at a position from the library, set the rest in the R
   const picker = page.getByRole("dialog", { name: "Pick a library record" });
   await picker.getByRole("combobox", { name: "Library", exact: true }).selectOption("nswc-11");
   await picker.getByRole("combobox", { name: "Search the data library" }).fill("bearing load rating");
-  await picker.getByRole("listbox").getByRole("option", { name: new RegExp(BEARING.replace(/[()]/g, "\\$&")) }).first().click();
+  await picker.getByRole("listbox").getByRole("option", { name: BEARING }).first().click();
   const pane = page.getByRole("region", { name: "Fix covariates" });
   await expect(pane).toBeVisible();
   await expect(page).toHaveURL(/[?&]bind=nswc/);

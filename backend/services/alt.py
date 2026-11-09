@@ -95,7 +95,7 @@ def list_models(db, owner_id, hidden=frozenset(), shared=frozenset()) -> list[Al
 def get_model(db, model_id: str, owner_id=None) -> AltModelDoc | None:
     if not isinstance(model_id, str):
         return None
-    query = {"_id": model_id}
+    query = {"_id": str(model_id)}
     if owner_id is not None:
         query["owner_id"] = {"$in": access.owner_in(owner_id)}
     return from_doc(AltModelDoc, db.alt_models.find_one(query))
