@@ -22,6 +22,15 @@ export const TABLE_PANES = {
       confirmLabel: "Discard the prediction", cancelLabel: "Keep predicting",
     },
   },
+  // A covariate model with some covariates fixed at a position (?bind=<source>:<ref>&on=<position>).
+  bind: {
+    param: "bind",
+    on: "on",
+    discard: {
+      title: "Discard these covariates?", body: "What you've fixed at this position isn't saved.",
+      confirmLabel: "Discard them", cancelLabel: "Keep fixing",
+    },
+  },
   rbd: {
     param: "rbd",
     on: "on",
@@ -47,7 +56,7 @@ export function paneFromQuery(params) {
 }
 
 // Every pane's address parameters, for clearing them all.
-export const PANE_PARAMS = Object.values(TABLE_PANES).flatMap((p) => (p.on ? [p.param, p.on] : [p.param]));
+export const PANE_PARAMS = [...new Set(Object.values(TABLE_PANES).flatMap((p) => (p.on ? [p.param, p.on] : [p.param])))];
 
 // Put the pane `kind` for `positionId` in the address `q` (URLSearchParams), any other pane's
 // taken out; an RBD's `rbd`, the diagram.

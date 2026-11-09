@@ -71,12 +71,21 @@ The Free plan keeps **1 saved reliability prediction** (the shared sample
 doesn't count); calculating without saving has no limit. To save another,
 delete the one you have or [upgrade to Pro](/billing), which removes the limit.
 
-The handbook covers electronic parts only. It has no batteries and no
-mechanical parts, so:
+MIL-HDBK-217F covers electronic parts. For a mechanical part (a bearing, a
+seal, a pump, a spring, a gear), the search also lists the Navy's NSWC-11
+handbook, under its own heading:
 
-- Tick **Not electronic** on a mechanical part (an airframe, a propeller, a
-  gimbal's mechanics). It's left out of the total, and the result lists what
-  was left out, so the total is for the electronics.
+- Pick an NSWC-11 part type, then open **Conditions…** on the line. Each input
+  shows its unit, its default and the handbook's limits; the rate updates as
+  you type, and a value outside the limits says which one and on what page. A
+  part whose rate is per million cycles also needs how many cycles it makes an
+  hour. A line missing a condition is left out of the total until it has it,
+  and the result says so.
+- The result's method names the lines that used each handbook. CDNSWC and the
+  Navy did not take part in or approve Reliafy, and the result says so. See
+  each part's model in words under [Models › Library](/models/library/nswc-11).
+- Tick **Not electronic** on a part neither handbook has (an airframe). It's
+  left out of the total, and the result lists what was left out.
 - For a part the handbook doesn't have, such as a battery, choose **Give a rate
   of your own instead** in the part-type search and type its failure rate per
   million hours, from the maker's data or your own records. The line is marked

@@ -3398,6 +3398,25 @@ export function getLibrarySources() {
 export function getLibraryRecord(recordId) {
   return request(`/api/library/records/${encodeURIComponent(recordId)}`);
 }
+// A covariate model's inputs (NSWC-11, ALT or PH; the same shape for each): {binding, inputs, open}.
+export function getBindingInputs(binding) {
+  return request("/api/rbds/binding-inputs", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ binding }),
+  });
+}
+// A diagram's blocks with covariates left open at their positions: each one's open inputs, the
+// value each takes and where it came from, and what's missing.
+export function getBoundBlocks(graph) {
+  return request("/api/rbds/bound-blocks", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph }),
+  });
+}
+// A covariate model's rate (NSWC-11) under some conditions: {ok, result, warnings} or {ok: false, problems}.
+export function evaluateLibraryRecord(recordId, values) {
+  return request(`/api/library/records/${encodeURIComponent(recordId)}/evaluate`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values }),
+  });
+}
 // A record saved as a model in the user's models (a rate → an exponential, cited).
 // A rate per foot of pipe takes the pipe's length in feet.
 export function createModelFromLibrary(recordId, name, lengthFt = null) {

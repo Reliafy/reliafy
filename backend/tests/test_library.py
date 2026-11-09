@@ -33,11 +33,20 @@ def _all() -> list[dict]:
     return service._library()["records"]
 
 
+NSWC = "nswc-11"
+
+
+def n_nswc() -> int:
+    """NSWC-11's covariate models (test_library_nswc11.py checks them): handbook prediction models too."""
+    return sum(r["source"] == NSWC for r in _all())
+
+
 # ---- the shipped data ---------------------------------------------------------------------
 
 def test_every_record_may_ship():
     records = _all()
-    assert len(records) == N_NRC + N_MIL
+    # NSWC-11's covariate models are checked in test_library_nswc11.py (with the records they use).
+    assert len([r for r in records if r["source"] != "nswc-11"]) == N_NRC + N_MIL
     assert sum(r["source"] == NRC for r in records) == N_NRC and sum(r["source"] == MIL for r in records) == N_MIL
     assert [p for r in records for p in schema.problems(r)] == []
     assert len({r["id"] for r in records}) == len(records)
@@ -45,6 +54,8 @@ def test_every_record_may_ship():
         assert r["source"] in service._library()["sources"]
         assert r["licence"]["id"] in schema.LICENCES and r["licence"]["attribution"].strip()
         assert r["citation"]["url"].startswith("https://") and r["citation"]["retrieved"]
+        if r["kind"] == "covariate_model":
+            continue
         assert r["basis"] in schema.BASES and r["units"]["value"] in schema.VALUE_UNITS[r["kind"]]
 
 
@@ -198,7 +209,7 @@ def test_search_ranks_and_counts():
     # The full code finds its record; every word must match; plurals and stop words don't matter.
     assert [r["id"] for r in service.search("MDP-FTS-NS")["results"]] == [f"{NRC}:mdp-fts-ns"]
     assert service.search("xyzzy")["total"] == 0
-    assert service.search("pumps")["total"] == service.search("pump")["total"] == 41
+    assert service.search("pumps", source=NRC)["total"] == service.search("pump", source=NRC)["total"] == 41
     assert service.search("leak of the check valve")["total"] == 4
     leaks = service.search("leak", equipment_type="valve")
     assert leaks["total"] > 0 and all(r["equipment_type"] == "valve" for r in leaks["results"])
@@ -217,7 +228,7 @@ def test_search_for_a_use_keeps_only_the_records_that_can_be_it():
     out = service.search(use="prior", page_size=100)
     assert out["filters"] == {"use": "prior"} and out["total"] == 211
     assert all(r["kind"] == "rate" and r["basis"] == "field_data" for r in out["results"])
-    assert out["left_out"] == {"prediction_model": N_MIL, "per_demand": 89}
+    assert out["left_out"] == {"prediction_model": N_MIL + n_nswc(), "per_demand": 89}
     # A source with no usable records: nothing shown, and the line says why.
     mil = service.search(source=MIL, use="model")
     assert mil["total"] == 0 and mil["left_out"] == {"prediction_model": N_MIL}
@@ -240,7 +251,8 @@ def test_search_pages():
     seen = [r["id"] for p in range(1, 10) for r in service.search(kind="per_demand", page=p, page_size=10)["results"]]
     assert len(seen) == len(set(seen)) == 89
     browse = service.search(page_size=service.MAX_PAGE_SIZE)
-    assert browse["total"] == N_NRC + N_MIL and browse["counts"]["source"] == {MIL: N_MIL, NRC: N_NRC}
+    assert browse["total"] == N_NRC + N_MIL + n_nswc()
+    assert browse["counts"]["source"] == {MIL: N_MIL, NRC: N_NRC, NSWC: n_nswc()}
     assert service.search(source=NRC)["results"][0]["id"] == f"{NRC}:aov-fto"
 
 
@@ -265,7 +277,7 @@ def test_get_and_sources():
         service.get("nope")
     src = service.sources()
     nrc = next(s for s in src["sources"] if s["id"] == NRC)
-    assert nrc["records"] == N_NRC and src["total_records"] == N_NRC + N_MIL and nrc["components"] >= 70
+    assert nrc["records"] == N_NRC and src["total_records"] == N_NRC + N_MIL + n_nswc() and nrc["components"] >= 70
     assert nrc["kinds"] == {"per_demand": 89, "rate": 211} and nrc["skipped"] == 3
     assert nrc["licence"]["id"] == "us-government-work" and "republished by Reliafy" in nrc["licence"]["attribution"]
 
@@ -370,12 +382,12 @@ def test_public_routes_need_no_sign_in(client):
     assert body["total"] == 5 and len(body["results"]) == 2 and body["pages"] == 3
     assert client.get("/api/library/search", params={"kind": "weekly"}).status_code == 422
     r = client.get("/api/library/search", params={"use": "prior", "page_size": 1})
-    assert r.status_code == 200 and r.json()["left_out"]["prediction_model"] == N_MIL
+    assert r.status_code == 200 and r.json()["left_out"]["prediction_model"] == N_MIL + n_nswc()
     assert client.get("/api/library/search", params={"use": "dinner"}).status_code == 422
     r = client.get(f"/api/library/records/{NRC}:mdp-fts-ns")
     assert r.status_code == 200 and r.json()["record"]["licence"]["id"] == "us-government-work"
     assert client.get("/api/library/records/nope").status_code == 404
-    assert client.get("/api/library/sources").json()["total_records"] == N_NRC + N_MIL
+    assert client.get("/api/library/sources").json()["total_records"] == N_NRC + N_MIL + n_nswc()
 
 
 def test_search_by_failure_mode_with_facets(client):
@@ -425,7 +437,7 @@ def test_the_library_tool_over_mcp_and_rest(env):
     one = _ok(_call(token, "get", {"kind": "library_record", "id": found["results"][0]["id"]}))
     assert one["data_notice"] and one["record"]["licence"]["attribution"]
     assert one["block_model"]["model"]["distribution_id"] == "exponential"
-    assert _ok(_call(token, "list", {"kind": "library_sources"}))["total_records"] == N_NRC + N_MIL
+    assert _ok(_call(token, "list", {"kind": "library_sources"}))["total_records"] == N_NRC + N_MIL + n_nswc()
     assert "not found" in _err(_call(token, "get", {"kind": "library_record", "id": "nope"}))
     assert "Unknown equipment_type" in _err(_call(token, "list", {"kind": "library",
                                                                      "equipment_type": "spaceship"}))

@@ -427,7 +427,7 @@ export function ParamsModal({ position, onClose, onDone }) {
 // Life model › From the data library…: a record attached as the position's model (a rate per hour
 // becomes an exponential with the source's 5–95% range, cited). The record comes from "Pick a library
 // record" (a modal over this one, opened at once), which lists only the records that can be a model.
-export function LibraryAttachModal({ position, onClose, onDone }) {
+export function LibraryAttachModal({ position, onClose, onDone, onBind = null }) {
   const [rec, setRec] = useState(null);
   const [picking, setPicking] = useState(false);
   // Opened once this dialog is up, so the picker stacks above it (Escape closes the picker first).
@@ -456,8 +456,13 @@ export function LibraryAttachModal({ position, onClose, onDone }) {
       <PickedRecord record={rec} onPick={() => setPicking(true)} />
       {failed && <p className="field-error" role="alert">{failed}</p>}
       {picking && (
-        <LibraryRecordPicker use="model" selectedId={rec?.id} onClose={() => setPicking(false)}
-                             onPick={(r) => { setRec(r); setPicking(false); }} />
+        <LibraryRecordPicker use={onBind ? "attach" : "model"} selectedId={rec?.id} onClose={() => setPicking(false)}
+                             onPick={(r) => {
+                               setPicking(false);
+                               // A covariate model (NSWC-11): its covariates are fixed at the position next.
+                               if (r.kind === "covariate_model" && onBind) onBind(r);
+                               else setRec(r);
+                             }} />
       )}
     </Modal>
   );

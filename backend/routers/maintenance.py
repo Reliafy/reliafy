@@ -1247,6 +1247,12 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
 
         return _run(library_models.attach, m, session, ctx.write_owner, position_id, body["library_record_id"], modes, note,
                     replace, owners=ctx.read_owners, length_ft=body.get("length_ft"))
+    if isinstance(body.get("bind"), dict):
+        # A covariate model (NSWC-11, ALT or PH) with some, all or none of its covariates fixed here.
+        from backend.maintenance import covariate_positions
+
+        return _run(covariate_positions.bind, m, session, ctx.write_owner, ctx.read_owners, position_id, body["bind"],
+                    modes, note, replace)
     if body.get("use_link_id"):
         # Which of the position's rows is the model in use.
         return _run(m.use_position_model, position_id, str(body["use_link_id"]))
@@ -1316,8 +1322,8 @@ def preview_position_prediction(position_id: str, body: dict = Body(default={}),
     """A parts-count prediction of this position from its parts list (and those of the positions inside
     it; a product design's bill of materials where they list none), previewed: environment (a handbook
     symbol; default this position's last, else the nearest above, else GF), mission_time (hours), assign
-    ({part id or part number: {record_id, quality_factor} or {rate_per_million_hours} or {excluded: true}}),
-    left_out ([parts-list entry id]: lines kept on the parts list but left out of this prediction; omitted,
+    ({part id or part number: {record_id, quality_factor} (an NSWC-11 record: {record_id, conditions,
+    cycles_per_hour}) or {rate_per_million_hours} or {excluded: true}}), left_out ([parts-list entry id]: lines kept on the parts list but left out of this prediction; omitted,
     the last prediction's). Saves nothing; save with POST
     /positions/{id}/models {prediction: {...}}."""
     from backend.maintenance import position_models as pm

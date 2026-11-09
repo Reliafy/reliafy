@@ -8,6 +8,8 @@
 // what's inside it too. Pure functions, tested in explorerModels.test.js; the cells are
 // drawn by ModelTable.jsx. The links come from GET /api/maintenance/position-models.
 
+import { isCovariateId, lineConditions } from "./covariate.js";
+
 export const MODEL_TYPE = "pmodel";
 export const isModelRow = (r) => r?.type === MODEL_TYPE;
 
@@ -221,11 +223,26 @@ export function rowActions(r, { viewOnly = null } = {}) {
     // lognormal model can be the baseline of one (bayesUpdate.js).
     link.role === "bayesian" ? { id: "model-bayes", label: "Update with new failures…", ...off }
       : link.model && /^(Weibull|Exponential|Lognormal)$/.test(link.model.kind || "") ? { id: "model-bayes", label: "Update with this position's history…", ...off } : null,
+    // A covariate model (NSWC-11, ALT, PH): which covariates are fixed here, the rest set in an RBD.
+    bindingOf(link) ? { id: "model-bind", label: "Fix covariates at this position…", ...off } : null,
     // A life model (not an RBD or a prediction) can be snapshotted into one of the user's data libraries.
     isLifeModelLink(link) ? { id: "model-to-library", label: "Add to a library…", ...off } : null,
     rbd ? null : { id: "model-replace", label: "Replace with…", ...off },
     { id: "model-unlink", label: "Unlink…", ...off },
   ].filter(Boolean);
+}
+
+// A row whose model takes covariates that can be fixed at the position: {source, ref}, or null. An
+// NSWC-11 record (or one saved with all its covariates fixed), an accelerated life model, or a
+// covariate (proportional-hazards) model.
+export function bindingOf(link) {
+  if (!link) return null;
+  const b = link.source?.binding;
+  if (b?.source && b?.ref) return { source: b.source, ref: b.ref };
+  if (link.model_type === "covariate_record") return { source: "nswc", ref: link.model_id };
+  if (link.model_type === "alt_model") return { source: "alt", ref: link.model_id };
+  if (link.model_type === "model" && (link.model?.covariates || []).length) return { source: "ph", ref: link.model_id };
+  return null;
 }
 
 // An RBD row whose diagram is there: opening it (a double-click, Enter, Open in the pane) shows the
@@ -302,6 +319,10 @@ export function predictionAssign(lines = []) {
     }
     if (!record) {
       out[key] = { record_id: null };
+      continue;
+    }
+    if (isCovariateId(record) || l.record?.kind === "covariate_model") {
+      out[key] = { record_id: record, ...lineConditions(l) }; // NSWC-11: its conditions, no quality factor
       continue;
     }
     const qs = String(l.quality_factor ?? "").trim();

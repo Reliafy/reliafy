@@ -16,6 +16,16 @@ environment instead, environment included: λ = λg × πQ × quantity, where π
 is the record's default grade (commercial or non-MIL, the lowest the handbook
 lists) unless the line gives one.
 
+A mechanical part can take an NSWC-11 component (the Navy's mechanical
+handbook, a library of covariate models): its rate is the component's total
+under the line's ``conditions`` (the model's inputs, by key; a missing one
+takes the handbook's default), times the quantity. It has no environment or
+quality factor: the conditions are its environment. A model whose rate is per
+million cycles or operations needs ``cycles_per_hour`` to become a rate per
+hour. A line whose conditions are incomplete or past a limit the handbook sets
+is listed with what it needs and left out of the total, like a line with no
+part type, so a preview still computes.
+
 Two kinds of line need no part type. A part the handbook has no type for
 (it has no batteries) can carry a rate the user gives,
 ``rate_per_million_hours`` per part, shown as user-given. A part that isn't
@@ -50,8 +60,13 @@ from backend.schema import ReliabilityPrediction
 from backend.services import access
 
 COLLECTION = "reliability_predictions"
-#: The library source a parts count draws on (the only handbook source today).
+#: The library sources a parts count draws on: MIL-HDBK-217F for electronic parts, NSWC-11 (covariate
+#: models) for mechanical ones.
 HANDBOOK_SOURCE = "mil-hdbk-217f-n2"
+MECHANICAL_SOURCE = "nswc-11"
+HANDBOOK_SOURCES = (HANDBOOK_SOURCE, MECHANICAL_SOURCE)
+MAX_CONDITIONS = 200
+MAX_CYCLES_PER_HOUR = 1e7
 DEFAULT_ENVIRONMENT = "GF"
 DEFAULT_MISSION_HOURS = 1000.0
 DEFAULT_QUALITY_FACTOR = 1.0
@@ -73,6 +88,22 @@ APPLIED = [
 GENERIC = {"symbol": "λg", "name": "generic failure rate for the environment (parts count, Appendix A)"}
 USER_GIVEN = {"symbol": "λ", "name": "a rate you gave (user-given, not from the handbook)"}
 METHOD = "Parts count: λ = Σ λb × πE × πQ × quantity over the lines (every part in series); R(t) = exp(−λt)."
+def method_text(electronic: list[str], mechanical: list[str], generic: bool) -> str:
+    """The method in words when NSWC-11 lines are in: which lines used which handbook."""
+    def names(xs: list[str]) -> str:
+        return ", ".join(xs[:8]) + (f" and {len(xs) - 8} more" if len(xs) > 8 else "")
+
+    parts = ["Parts count: λ = Σ over the lines (every part in series); R(t) = exp(−λt)."]
+    if electronic:
+        parts.append(f"MIL-HDBK-217F N2 lines ({names(electronic)}): λb × πE × πQ × quantity"
+                     + (", or λg × πQ × quantity for a part type with generic rates." if generic else "."))
+    if mechanical:
+        parts.append(f"NSWC-11 lines ({names(mechanical)}): the component's covariate model (base rate × condition "
+                     "factors, summed over its parts) under the line's conditions × quantity; a rate per cycle × "
+                     "the cycles an hour.")
+    return " ".join(parts)
+
+
 METHOD_GENERIC = ("Parts count: λ = Σ λb × πE × πQ × quantity over the lines, or λg × πQ × quantity for a "
                   "part type with the handbook's generic rates (every part in series); R(t) = exp(−λt).")
 #: A rate a user gives, per million hours: above 0 and at most this.
@@ -202,9 +233,50 @@ def normalise_lines(lines: Any) -> list[dict]:
                 raise PredictionError(f"'{name}': a line left out (not an electronic part) can't also have a part "
                                       "type or a rate.")
             line["excluded"] = True
+        conditions = raw.get("conditions")
+        if conditions not in (None, {}, ""):
+            if not record_id:
+                raise PredictionError(f"'{name}': conditions go with an NSWC-11 part type (record_id).")
+            line["conditions"] = _conditions(conditions, name)
+        cph = raw.get("cycles_per_hour")
+        if cph is not None and cph != "":
+            if not record_id:
+                raise PredictionError(f"'{name}': cycles_per_hour goes with an NSWC-11 part type (record_id).")
+            line["cycles_per_hour"] = _number(cph, "cycles_per_hour", name, 0, MAX_CYCLES_PER_HOUR)
         if raw.get("notes"):
             line["notes"] = _text(raw.get("notes"), "notes", 500)
         out.append(line)
+    return out
+
+
+def _conditions(value: Any, name: str) -> dict:
+    """A line's conditions for an NSWC-11 model: {input key: number or choice code}, kept as given
+    (the model checks them against its limits when it's evaluated)."""
+    if not isinstance(value, dict):
+        raise PredictionError(f"'{name}': conditions must be an object of input to value, e.g. "
+                              "{\"L_S\": 5000, \"bearing_type\": \"ball\"}.")
+    if len(value) > MAX_CONDITIONS:
+        raise PredictionError(f"'{name}': at most {MAX_CONDITIONS} conditions.")
+    out: dict[str, Any] = {}
+    for key, v in value.items():
+        k = str(key).strip()[:TEXT_LENGTH]
+        if not k or v is None or v == "":
+            continue
+        if isinstance(v, bool):
+            raise PredictionError(f"'{name}': condition {k} must be a number or a choice, not true or false.")
+        if isinstance(v, (int, float)):
+            if not math.isfinite(v):
+                raise PredictionError(f"'{name}': condition {k} must be a finite number.")
+            out[k] = float(v)
+        elif isinstance(v, str):
+            text = v.strip()[:TEXT_LENGTH]
+            try:
+                num = float(text)
+                out[k] = num if math.isfinite(num) else text
+            except ValueError:
+                out[k] = text
+        else:
+            raise PredictionError(f"'{name}': condition {k} must be a number or a choice.")
     return out
 
 
@@ -238,11 +310,11 @@ def _record(record_id: str, line_name: str) -> dict:
         rec = library_service.get(record_id)
     except library_service.LibraryNotFound:
         raise PredictionError(f"'{line_name}': no library record '{record_id}'. Search the library for the part "
-                              f"type (source {HANDBOOK_SOURCE}).") from None
-    if rec.get("basis") != "prediction_model" or not rec.get("prediction"):
+                              f"type (source {HANDBOOK_SOURCE}, or {MECHANICAL_SOURCE} for a mechanical part).") from None
+    if rec.get("basis") != "prediction_model" or not (rec.get("prediction") or rec.get("kind") == "covariate_model"):
         raise PredictionError(f"'{line_name}': '{rec['label']}' is {rec.get('basis', 'field data').replace('_', ' ')}, "
                               f"not a handbook part type. A parts count uses handbook base rates: search the "
-                              f"library with source {HANDBOOK_SOURCE}.")
+                              f"library with source {HANDBOOK_SOURCE} (or {MECHANICAL_SOURCE}).")
     return rec
 
 
@@ -305,6 +377,49 @@ def _environment_factor(rec: dict, code: str, line_name: str) -> float | None:
         raise PredictionError(f"'{line_name}': the handbook gives no {code} ({library_schema.ENVIRONMENTS[code][0].lower()}) "
                               f"factor for '{rec['name']}'. It has {convert.environment_choices(rec)}.")
     return float(values[code])
+
+
+# ---- an NSWC-11 line (a covariate model) -------------------------------------------------------
+
+def _covariate_line(rec: dict, line: dict) -> dict:
+    """An NSWC-11 line's rate per part, per million hours, under its conditions: {each, result,
+    warnings} or {problems} (what it needs before it counts)."""
+    from backend.library import covariate
+
+    conditions = line.get("conditions") or {}
+    try:
+        result = covariate.evaluate(rec, conditions, library_service.resolve)
+    except covariate.CovariateError as exc:
+        return {"problems": exc.problems}
+    problems = []
+    each = result["total"]
+    cph = line.get("cycles_per_hour")
+    if covariate.per_cycle(rec):
+        if cph is None:
+            problems.append(f"Its rate is {covariate.rate_unit_words(rec)}: give how many "
+                            f"{'operations' if 'operations' in result['unit'] else 'cycles'} it makes an hour "
+                            "(cycles_per_hour) to turn it into a rate per hour.")
+        else:
+            each = result["total"] * cph  # per million cycles × cycles an hour = per million hours
+    if problems:
+        return {"problems": problems}
+    return {"each": each, "result": result, "warnings": result.pop("warnings")}
+
+
+def _covariate_summary(rec: dict, line: dict, got: dict) -> dict:
+    """What a line shows of its NSWC-11 model: each mode's rate, the conditions used (defaults
+    filled), the unit, and the handbook's equation."""
+    r = got.get("result") or {}
+    return {
+        "equation": (rec.get("covariate_model") or {}).get("equation"),
+        "unit": (rec.get("units") or {}).get("value"), "unit_words": (rec.get("units") or {}).get("as_given"),
+        "cycles_per_hour": line.get("cycles_per_hour"),
+        "total_in_unit": r.get("total"),
+        "modes": [{"key": m["key"], "name": m.get("name"), "rate": m["rate"]} for m in r.get("modes") or []],
+        "conditions": line.get("conditions") or {},
+        "problems": got.get("problems") or [],
+        "warnings": got.get("warnings") or [],
+    }
 
 
 # ---- the calculation -------------------------------------------------------------------------
@@ -387,9 +502,11 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
     records: dict[str, dict] = {}
     sources: dict[str, dict] = {}
     used_generic = used_user = False
+    mechanical: list[str] = []  # the lines on an NSWC-11 model
+    needing: list[str] = []  # NSWC-11 lines whose conditions aren't complete yet
     for line in inputs["lines"]:
         row = {**line, "assembly_label": _label(line["assembly"]), "excluded": bool(line.get("excluded")),
-               "user_given": False, "generic_rate": False}
+               "user_given": False, "generic_rate": False, "handbook": None}
         if line.get("excluded") or (not line["record_id"] and "rate_per_million_hours" not in line):
             row.update({"assigned": False, "part_type": None, "category": None, "base_rate_per_million_hours": None,
                         "environment_factor": None, "quality_factor_range": None, "each_per_million_hours": None,
@@ -416,6 +533,42 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
             out_lines.append(row)
             continue
         rec = _record(line["record_id"], line["name"])
+        if rec.get("kind") == "covariate_model":
+            if line["quality_factor"] is not None:
+                raise PredictionError(f"'{line['name']}': an NSWC-11 model has no quality factor; leave "
+                                      "quality_factor out.")
+            got = _covariate_line(rec, line)
+            cov = _covariate_summary(rec, line, got)
+            sources.setdefault(rec["source"], _source(rec["source"]))
+            mechanical.append(line["name"])
+            records[rec["id"]] = {"label": rec["label"], "version": rec["version"], "source": rec["source"],
+                                  "citation": _citation(rec)}
+            base_row = {"part_type": rec["name"], "part_type_label": rec["label"], "handbook": "NSWC-11",
+                        "category": library_schema.EQUIPMENT_TYPES.get(rec["equipment_type"], rec["equipment_type"]),
+                        "equipment_type": rec["equipment_type"],
+                        "section": (rec.get("conditions") or {}).get("section") or rec.get("source_code"),
+                        "environment_factor": None, "quality_factor": None, "quality_factor_source": "none",
+                        "quality_factor_range": None, "covariate": cov, "not_applied": []}
+            if got.get("problems"):
+                needs = "; ".join(got["problems"])
+                row.update({**base_row, "assigned": False, "needs_conditions": True,
+                            "base_rate_per_million_hours": None, "each_per_million_hours": None,
+                            "rate_per_million_hours": None, "rate_per_hour": None, "share": None,
+                            "line_warnings": [f"Needs its conditions before it counts: {needs}"]})
+                needing.append(line["name"])
+                out_lines.append(row)
+                continue
+            each = got["each"]
+            rate = each * line["quantity"]
+            line_warnings = list(got["warnings"])
+            row.update({**base_row, "assigned": True, "needs_conditions": False,
+                        "base_rate_per_million_hours": each, "each_per_million_hours": each,
+                        "rate_per_million_hours": rate, "rate_per_hour": rate / PER_MILLION,
+                        "failure_rate": rate, "failure_rate_unit": "per_million_hours", "share": None,
+                        "applied": ["λ (covariate model)"], "line_warnings": line_warnings})
+            warnings.extend(f"'{line['name']}': {w}" for w in line_warnings)
+            out_lines.append(row)
+            continue
         pred = rec["prediction"]
         generic = bool(rec.get("generic_rates"))
         used_generic = used_generic or generic
@@ -468,16 +621,17 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
             "line_warnings": line_warnings,
         })
         warnings.extend(f"'{line['name']}': {w}" for w in line_warnings)
+        row["handbook"] = "MIL-HDBK-217F N2" if rec["source"] == HANDBOOK_SOURCE else rec["source"]
         records[rec["id"]] = {"label": rec["label"], "version": rec["version"], "source": rec["source"],
-                              "citation": f"{rec['citation'].get('report') or rec['citation']['title']}, "
-                                          f"{rec['citation']['table']}, p. {rec['citation']['page']}"}
+                              "citation": _citation(rec)}
         if rec["source"] not in sources:
             sources[rec["source"]] = _source(rec["source"])
         out_lines.append(row)
 
     assigned = [ln for ln in out_lines if ln["assigned"]]
     excluded = [ln for ln in out_lines if ln["excluded"]]
-    unassigned = [ln for ln in out_lines if not ln["assigned"] and not ln["excluded"]]
+    pending = [ln for ln in out_lines if ln.get("needs_conditions")]
+    unassigned = [ln for ln in out_lines if not ln["assigned"] and not ln["excluded"] and not ln.get("needs_conditions")]
     total = sum(ln["rate_per_million_hours"] for ln in assigned)
     for ln in assigned:
         ln["share"] = _share(ln["rate_per_million_hours"], total)
@@ -486,6 +640,12 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
         more = f" and {len(unassigned) - 6} more" if len(unassigned) > 6 else ""
         warnings.insert(0, f"{len(unassigned)} line{'s have' if len(unassigned) != 1 else ' has'} no handbook part "
                            f"type and {'are' if len(unassigned) != 1 else 'is'} left out of the total: {names}{more}.")
+    if pending:
+        names = ", ".join(ln["name"] for ln in pending[:6]) + (f" and {len(pending) - 6} more" if len(pending) > 6 else "")
+        warnings.insert(0, f"{len(pending)} NSWC-11 line{'s need' if len(pending) != 1 else ' needs'} "
+                           f"{'their' if len(pending) != 1 else 'its'} conditions before "
+                           f"{'they count' if len(pending) != 1 else 'it counts'}, so "
+                           f"{'they are' if len(pending) != 1 else 'it is'} left out of the total: {names}.")
     if not assigned:
         warnings.insert(0, "No line has a handbook part type yet, so there is no total.")
     left_out = None
@@ -508,8 +668,21 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
     reliability = math.exp(-total / PER_MILLION * t) if total > 0 else None
     applied_list = [dict(a) for a in APPLIED] + ([dict(GENERIC)] if used_generic else []) + (
         [dict(USER_GIVEN)] if used_user else [])
+    electronic = [ln["name"] for ln in assigned if ln.get("handbook") and ln.get("handbook") != "NSWC-11"]
+    counted_mech = [ln["name"] for ln in assigned if ln.get("handbook") == "NSWC-11"]
+    method = METHOD_GENERIC if used_generic else METHOD
+    if mechanical:
+        method = method_text(electronic, counted_mech, used_generic)
+    handbooks = []
+    if electronic:
+        handbooks.append({"source": HANDBOOK_SOURCE, "short_name": "MIL-HDBK-217F N2", "lines": electronic})
+    if counted_mech:
+        handbooks.append({"source": MECHANICAL_SOURCE, "short_name": "NSWC-11", "lines": counted_mech})
+    disclaimer = (sources.get(MECHANICAL_SOURCE) or {}).get("disclaimer") if mechanical else None
     return {
-        "method": METHOD_GENERIC if used_generic else METHOD,
+        "method": method,
+        "handbooks": handbooks,
+        **({"disclaimer": disclaimer} if disclaimer else {}),
         "environment": {"code": code, "name": env_name, "covers": env_covers},
         "mission_time_hours": t,
         "failure_rate_per_million_hours": total,
@@ -518,11 +691,13 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
         "reliability_at_mission": reliability,
         "unreliability_at_mission": (1 - reliability) if reliability is not None else None,
         "counts": {"lines": len(out_lines), "assigned": len(assigned), "unassigned": len(unassigned),
+                   **({"needs_conditions": len(pending)} if pending else {}),
                    "excluded": len(excluded),
                    "parts": _sig(sum(ln["quantity"] for ln in out_lines)),
                    "parts_assigned": _sig(sum(ln["quantity"] for ln in assigned))},
         "lines": out_lines,
         "unassigned": [{k: ln[k] for k in ("name", "reference", "quantity", "assembly")} for ln in unassigned],
+        "needs_conditions": [{k: ln[k] for k in ("name", "reference", "quantity", "assembly")} for ln in pending],
         "excluded": [{k: ln[k] for k in ("name", "reference", "quantity", "assembly")} for ln in excluded],
         "left_out_note": left_out,
         "assemblies": _assembly_rows(out_lines),
@@ -550,6 +725,11 @@ def compute(lines: Any, environment: Any = DEFAULT_ENVIRONMENT, mission_time: An
     }
 
 
+def _citation(rec: dict) -> str:
+    c = rec["citation"]
+    return f"{c.get('report') or c['title']}, {c['table']}, p. {c['page']}"
+
+
 def _source(source_id: str) -> dict:
     src = next((s for s in library_service.sources()["sources"] if s["id"] == source_id), None)
     if src is None:
@@ -557,6 +737,7 @@ def _source(source_id: str) -> dict:
     return {k: src.get(k) for k in ("id", "name", "short_name", "report", "edition", "url", "caveats")} | {
         "attribution": (src.get("licence") or {}).get("attribution"),
         "licence": (src.get("licence") or {}).get("name"),
+        **({"disclaimer": src["disclaimer"]} if src.get("disclaimer") else {}),
     }
 
 

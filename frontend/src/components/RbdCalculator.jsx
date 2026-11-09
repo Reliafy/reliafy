@@ -10,6 +10,9 @@ import RbdEmptyState from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
 import CovariatesModal from "./CovariatesModal.jsx";
 import { covariateWords } from "../rbdTvc.js";
+import BoundCovariatesModal from "./BoundCovariatesModal.jsx";
+import { boundNodes } from "../covariate.js";
+import { getBoundBlocks } from "../api.js";
 import { BandControls, BandInterval, BandNote, BandTargets, bandTraces, hasBand } from "./RbdBand.jsx";
 import AvailabilityCompare from "./AvailabilityCompare.jsx";
 import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
@@ -1396,7 +1399,7 @@ const WINDOW_PRESETS = [
 
 export default function RbdCalculator({
   graph, validation, stale: checkStale, onValidate = null, rbdId = null, name = null, onBuild, onProduction = null,
-  onNodeData = null,
+  onNodeData = null, onConditions = null,
 }) {
   const [result, setResult] = useState(null);
   // The diagram the shown result is for. A result is never shown as current
@@ -1476,6 +1479,22 @@ export default function RbdCalculator({
   );
 
   const covValue = (node, c) => covValues[node.id]?.[c.name] ?? c.default;
+
+  // Blocks whose covariates were left open at their positions (NSWC-11, ALT, PH): what each still
+  // needs, from the server, so the calculator says which blocks need what before it runs.
+  const bound = useMemo(() => boundNodes(graph), [graph]);
+  const [showBound, setShowBound] = useState(false);
+  const [boundNeeds, setBoundNeeds] = useState([]);
+  const boundSig = JSON.stringify([bound.map((n) => [n.id, n.data]), graph.conditions || []]);
+  useEffect(() => {
+    if (!bound.length) { setBoundNeeds([]); return undefined; }
+    let live = true;
+    const t = setTimeout(() => {
+      getBoundBlocks({ nodes: bound, conditions: graph.conditions || [] })
+        .then((d) => live && setBoundNeeds((d.blocks || []).map((b) => b.needs || b.problem).filter(Boolean)), () => {});
+    }, 250);
+    return () => { live = false; clearTimeout(t); };
+  }, [boundSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The covariate payload sent to the backend (filled with defaults).
   const covPayload = () => {
@@ -1842,6 +1861,18 @@ export default function RbdCalculator({
         </div>
       )}
 
+      {bound.length > 0 && (
+        <div className="rbd-cov-bar rbd-bound-bar">
+          <button className="secondary" onClick={() => setShowBound(true)} disabled={!onNodeData}>
+            Covariates…
+          </button>
+          <span className="hint" role="status">
+            {bound.length} block{bound.length === 1 ? " takes" : "s take"} covariates set here (left open at {bound.length === 1 ? "its position" : "their positions"})
+            {boundNeeds.length ? `. Still needed: ${boundNeeds.join("; ")}.` : ": every one has a value."}
+          </span>
+        </div>
+      )}
+
       {covNodes.length > 0 && (
         <div className="rbd-cov-bar">
           <button className="secondary" onClick={() => setShowCov(true)}>
@@ -2099,6 +2130,14 @@ export default function RbdCalculator({
         <RbdProduction graph={graph} t={evalT === "" ? null : Number(evalT)} onProduction={onProduction} />
       )}
 
+      {showBound && (
+        <BoundCovariatesModal graph={graph} onClose={() => setShowBound(false)}
+                              onApply={({ conditions, nodeData }) => {
+                                onConditions?.(conditions);
+                                if (onNodeData && Object.keys(nodeData).length) onNodeData(nodeData);
+                                setShowBound(false);
+                              }} />
+      )}
       {showCov && (
         <CovariatesModal
           covNodes={covNodes}
