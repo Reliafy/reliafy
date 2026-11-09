@@ -1,0 +1,50 @@
+<!doctype html><meta charset="utf-8">
+<style>
+  *{margin:0;box-sizing:border-box;font-family:-apple-system,"Segoe UI",Inter,Roboto,Arial,sans-serif}
+  body{width:1200px;height:630px;background:#fbfbf9;display:flex;flex-direction:column}
+  .main{flex:1;display:flex;padding:54px 70px 20px;gap:44px}
+  .left{flex:1;display:flex;flex-direction:column}
+  .brand{display:flex;align-items:center;gap:13px;margin-bottom:34px}
+  .mark{width:50px;height:50px;border-radius:14px;background:#2f6df6;display:grid;place-items:center}
+  .mark svg{width:31px;height:31px}
+  .bn{font-size:29px;font-weight:800;color:#16181d}
+  .eyebrow{color:#2f6df6;font-weight:700;letter-spacing:.11em;font-size:18px;margin-bottom:16px}
+  h1{font-size:46px;line-height:1.1;font-weight:800;color:#16181d;letter-spacing:-.015em}
+  .sub{margin-top:20px;font-size:21px;line-height:1.4;color:#5b616b;max-width:470px}
+  .panel{flex:0 0 512px;align-self:center;background:#fff;border:1px solid #e7e5de;border-radius:16px;
+         box-shadow:0 10px 30px rgba(15,23,42,.07);padding:22px 26px 18px}
+  .pt{font-size:12px;letter-spacing:.13em;color:#9aa0aa;font-weight:700;margin-bottom:10px}
+  .cap{margin-top:10px;font-size:14px;color:#8a93a0;line-height:1.35}
+  .foot{display:flex;justify-content:space-between;align-items:center;padding:18px 70px 24px;border-top:1px solid #ecebe6}
+  .url{color:#2f6df6;font-weight:700;font-size:21px}.tag{color:#9aa0aa;font-size:20px}
+  table{width:100%;border-collapse:collapse;font-size:17px;color:#16181d}
+  td{padding:11px 4px;border-bottom:1px solid #f0efea}
+  td.n{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+  tr.ref td{color:#2f6df6}
+  .bar{height:8px;border-radius:4px;background:#c9d7fb;display:inline-block}
+  tr.ref .bar{background:#2f6df6}
+</style>
+<body>
+  <div class="main">
+    <div class="left">
+      <div class="brand">
+        <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M3 14c2.5 0 2.5-8 5-8s2.5 12 5 12 2.5-6 5-6h3"/></svg></div>
+        <div class="bn">Reliafy</div>
+      </div>
+      <div class="eyebrow">COMMENTARY · AI AND FAILURE DATA</div>
+      <h1>AI agents will read your failure data next: what to check</h1>
+      <div class="sub">The checks are old ones. What changes is how fast a mistake spreads, and how sure of itself it sounds.</div>
+    </div>
+    <div class="panel">
+      <div class="pt">20 GEARBOXES, 8 FAILED: THE MEAN LIFE FOUR WAYS</div>
+      <table>
+<tr class="ref"><td>Counted properly</td><td><span class="bar" style="width:110px"></span></td><td class="n">7,100 h</td></tr>
+<tr class=""><td>Status column read backwards</td><td><span class="bar" style="width:97px"></span></td><td class="n">6,267 h</td></tr>
+<tr class=""><td>Running units dropped</td><td><span class="bar" style="width:85px"></span></td><td class="n">5,515 h</td></tr>
+<tr class=""><td>Average of the failure times</td><td><span class="bar" style="width:85px"></span></td><td class="n">5,500 h</td></tr>
+      </table>
+      <div class="cap">The first three are Weibull fits by maximum likelihood (SurPyval). No step throws an error.</div>
+    </div>
+  </div>
+  <div class="foot"><div class="url">reliafy.com</div><div class="tag">Every number reproducible · open source</div></div>
+</body>
