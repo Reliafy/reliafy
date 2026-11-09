@@ -172,6 +172,106 @@ def test_once_unless_asked_again_and_another_workspace_is_untouched(store, db):
     _rebuilds_the_same(m)
 
 
+def _predictions(db, owner=ORG):
+    return list(db.maintainability_predictions.find({"owner_id": owner}).sort("created_at", 1))
+
+
+def test_the_sample_product_has_its_own_maintainability_prediction(store, db):
+    """The product comes with a maintainability prediction in the workspace's saved
+    predictions, attached to it (product_id), from the shared sample's lines: the same
+    numbers. A second plain add makes no duplicate; another copy gets its own."""
+    from backend.services import maintainability, samples
+
+    samples._seed_maintainability_predictions(db)
+    shared = db.maintainability_predictions.find_one({"_id": "sample-maintainability-quadcopter"})
+    m = Maintenance(store, ORG, "tester")
+    out = templates.add_sample_product(m, db)
+    pid = out["product"]["id"]
+    events = m.s.event_count(ORG)
+    [doc] = _predictions(db)
+    assert out["maintainability"] == {"id": doc["_id"], "name": doc["name"], "added": True}
+    assert doc["name"] == "Survey quadcopter (sample) — maintainability"
+    assert "maintainability prediction “Survey quadcopter (sample) — maintainability”" in out["message"]
+    # Attached to the product: the id the product page and the prediction's own page go by.
+    assert (doc["inputs"]["product_id"], doc["inputs"]["product_name"]) == (pid, "Survey quadcopter (sample)")
+    assert doc["results"]["product"] == {"id": pid, "name": "Survey quadcopter (sample)"}
+    # One definition of the lines: everything but the product is the shared sample's.
+    assert doc["inputs"]["lines"] == shared["inputs"]["lines"] == samples.SAMPLE_MAINTAINABILITY_INPUTS["lines"]
+    assert shared["inputs"] == samples.SAMPLE_MAINTAINABILITY_INPUTS and shared["results"]["product"] is None
+    assert "product_id" not in samples.SAMPLE_MAINTAINABILITY_INPUTS
+    assert ({k: v for k, v in doc["results"].items() if k != "product"}
+            == {k: v for k, v in shared["results"].items() if k != "product"})
+    assert doc["results"]["mct"] > 0 and doc["results"]["counts"]["lines"] == len(templates.SAMPLE_PRODUCT_BOM)
+    # It is the workspace's own, read and listed like any saved prediction.
+    assert maintainability.get_prediction(db, doc["_id"], ORG).name == doc["name"]
+    assert [p.id for p in maintainability.list_predictions(db, [ORG])] == [doc["_id"]]
+
+    # Asked again plainly: the product is there, and so is its prediction. No duplicate.
+    twice = templates.add_sample_product(m, db)
+    assert twice["added"] is False and twice["maintainability"] == {"id": doc["_id"], "name": doc["name"], "added": False}
+    assert "maintainability" not in twice["message"] and len(_predictions(db)) == 1
+    assert m.s.event_count(ORG) == events  # a saved document, not an event: nothing in the log
+
+    # Another copy: its own prediction, attached to the new product.
+    again = templates.add_sample_product(m, db, again=True)
+    first, second = _predictions(db)
+    assert first["_id"] == doc["_id"] and again["maintainability"]["id"] == second["_id"] != doc["_id"]
+    assert second["name"] == "Survey quadcopter (sample 2) — maintainability"
+    assert second["inputs"]["product_id"] == again["product"]["id"] != pid
+    assert second["results"]["mct"] == doc["results"]["mct"]
+    # Another workspace has none of it, and gets its own with its own product.
+    other = Maintenance(store, OTHER, "other")
+    theirs = templates.add_sample_product(other, db)
+    [their_doc] = _predictions(db, OTHER)
+    assert their_doc["inputs"]["product_id"] == theirs["product"]["id"] and len(_predictions(db)) == 2
+    _rebuilds_the_same(m)
+
+
+def test_a_copy_from_before_gets_its_maintainability_prediction_once(store, db):
+    """A copy of the sample added before it had a maintainability prediction (here: its
+    prediction removed) is given one the next time the sample is asked for; every copy
+    without one is. A prediction of the user's own for the product counts as having one,
+    and a copy made the user's own is left alone."""
+    m = Maintenance(store, ORG, "tester")
+    first = templates.add_sample_product(m, db)
+    second = templates.add_sample_product(m, db, again=True)
+    db.maintainability_predictions.delete_many({})
+    events = m.s.event_count(ORG)
+
+    out = templates.add_sample_product(m, db)
+    have = out["product"]  # the copy the seeder answers with, of the two
+    assert out["added"] is False and have in (first["product"], second["product"])
+    assert out["maintainability"]["added"] and "Added its maintainability prediction" in out["message"]
+    assert out["maintainability"]["name"] == f"{have['name']} — maintainability"
+    docs = _predictions(db)
+    assert {d["inputs"]["product_id"] for d in docs} == {first["product"]["id"], second["product"]["id"]}
+    assert {d["name"] for d in docs} == {"Survey quadcopter (sample) — maintainability",
+                                         "Survey quadcopter (sample 2) — maintainability"}
+    assert templates.add_sample_product(m, db)["maintainability"]["added"] is False and len(_predictions(db)) == 2
+    assert m.s.event_count(ORG) == events  # nothing written to the log
+
+    # The user's own prediction for the product stands in for it.
+    from backend.services import maintainability
+
+    db.maintainability_predictions.delete_many({})
+    own = maintainability.save_prediction(
+        db, "My repair times", {"product_id": have["id"], "product_name": have["name"],
+                                "lines": [{"name": "Motor", "mttr": 1}]}, ORG)
+    out = templates.add_sample_product(m, db)
+    assert out["maintainability"] == {"id": own.id, "name": "My repair times", "added": False}
+    [other_copy] = [x["product"] for x in (first, second) if x["product"] != have]
+    assert sorted(d["name"] for d in _predictions(db)) == sorted(["My repair times",
+                                                                  f"{other_copy['name']} — maintainability"])
+
+    # Made the user's own, a copy isn't the sample any more: nothing is added to it.
+    db.maintainability_predictions.delete_many({})
+    m.clear_sample(first["product"]["id"])
+    m.clear_sample(second["product"]["id"])
+    out = templates.add_sample_product(m, db)
+    assert out["added"] is False and "maintainability" not in out and _predictions(db) == []
+    _rebuilds_the_same(m)
+
+
 def test_products_and_their_items_stay_off_the_assets_list(store, db):
     m = Maintenance(store, ORG, "tester")
     plant = m.create_position("Pump station")
@@ -314,6 +414,16 @@ def test_over_the_route(api):  # noqa: F811
     assert api.post(f"{M}/sample-product", json={}).json()["added"] is False
     rbds = api.get("/api/rbds").json()["rbds"]
     assert any(r["id"] == made["rbd"]["id"] for r in rbds)
+    # Its maintainability prediction: under the user's own in the list, naming the product, and theirs to change.
+    rows = api.get("/api/maintainability/predictions").json()["predictions"]
+    [mine] = [p for p in rows if p["id"] == made["maintainability"]["id"]]
+    assert mine["product"] == made["product"] and not mine["is_sample"] and not mine["read_only"]
+    assert mine["name"] == "Survey quadcopter (sample) — maintainability" and mine["lines"] == 11
+    [shared] = [p for p in rows if p["is_sample"]]
+    assert shared["product"] is None and shared["headline"] == mine["headline"]
+    full = api.get(f"/api/maintainability/predictions/{mine['id']}").json()
+    assert full["inputs"]["product_id"] == made["product"]["id"] and full["results"]["product"] == made["product"]
+    assert len([p for p in rows if not p["is_sample"]]) == 1  # the second plain add made no other
     assert api.get(f"{M}/products").json()["products"][0]["items_built"] == 3
     assert api.get(f"{M}/places").json()["not_placed"]["positions"] == 0
     # The sample truck's route is gone: the sample product is the one sample.
@@ -325,10 +435,12 @@ def test_over_mcp(env):  # noqa: F811
         made = _ok(await _do(client, "maintenance", "products.add_sample"))
         assert made["added"] and made["failure_modes"] == 84
         assert made["rbd"]["name"].endswith("(placeholder failure rates)")
+        assert made["maintainability"]["name"] == "Survey quadcopter (sample) — maintainability"
         twice = _ok(await _do(client, "maintenance", "products.add_sample"))
-        assert twice["added"] is False
+        assert twice["added"] is False and twice["maintainability"]["id"] == made["maintainability"]["id"]
         another = _ok(await _do(client, "maintenance", "products.add_sample", again=True))
         assert another["product"]["name"] == "Survey quadcopter (sample 2)"
+        assert another["maintainability"]["id"] != made["maintainability"]["id"]
         return True
 
     assert _session(env["token"], go)
