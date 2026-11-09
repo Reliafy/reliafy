@@ -19,8 +19,53 @@ export const PRIOR_CHOICES = [
   { value: "class", label: "The class's history" },
   { value: "model", label: "A saved model" },
   { value: "params", label: "Numbers I know" },
+  { value: "around", label: "Around a value, between two bounds" },
   { value: "b10", label: "A B10 I believe" },
 ];
+
+// Trust (a weight or a width) applies where the prior is evidence or numbers; around/between and a
+// B10 state their own ranges.
+export const showsTrust = (kind) => ["class", "model", "params"].includes(kind);
+
+// "Around a value, between two bounds": the rows for each distribution (a parameter left empty is
+// the data's alone; an exponential's by its mean life or its rate).
+export const AROUND_PARAMS = {
+  weibull: [["alpha", "Characteristic life (alpha)"], ["beta", "Shape (beta)"]],
+  exponential: [["mean", "Mean life"], ["failure_rate", "Failure rate"]],
+  lognormal: [["mu", "mu (log of the median)"], ["sigma", "sigma (spread)"]],
+};
+const aroundDist = (s) => (s.distribution && s.distribution !== "best" ? s.distribution : "weibull");
+const num = (v) => (v === "" || v == null ? null : Number(v));
+
+// The rows typed, as the server takes them ({name: {about?, between: [lo, hi]}}); null with a
+// problem in words.
+export function aroundParams(s) {
+  const out = {};
+  for (const [name, label] of AROUND_PARAMS[aroundDist(s)]) {
+    const r = s.around?.[name] || {};
+    const about = num(r.about), lo = num(r.lo), hi = num(r.hi);
+    if (about == null && lo == null && hi == null) continue;
+    if (lo == null || hi == null || !Number.isFinite(lo) || !Number.isFinite(hi)) return { problem: `Give ${label} both bounds, or leave it empty.` };
+    if (!(lo < hi)) return { problem: `For ${label}, the low bound must be below the high one.` };
+    if (about != null && !(lo < about && about < hi)) return { problem: `For ${label}, “about” must lie between the bounds.` };
+    out[name] = { ...(about != null ? { about } : {}), between: [lo, hi] };
+  }
+  if (aroundDist(s) === "exponential" && out.mean && out.failure_rate) return { problem: "Give the mean life or the failure rate, not both." };
+  if (!Object.keys(out).length) return { problem: "Give at least one parameter's bounds (the others are left to the data)." };
+  return { params: out };
+}
+
+// The Data dropdown's options, each with its counts where they're known.
+export function dataOptions({ positionCounts = null, cls = null, hasClass = true } = {}) {
+  const tail = (c) => (c ? ` (${countsWords(c)})` : "");
+  return [
+    { value: "position", label: `This position's history${tail(positionCounts)}` },
+    ...(hasClass ? [
+      { value: "class", label: `The class's pooled history${cls ? ` (${cls.positions} positions, ${countsWords(cls)})` : ""}` },
+      { value: "both", label: "Both: this position's, with the class's as a prior" },
+    ] : []),
+  ];
+}
 
 // The method and prior the data choice allows: Both is always with the class's history as the
 // prior; the class's pooled history as the data can't also be the prior.
@@ -38,6 +83,7 @@ export const priorChoices = (data) => PRIOR_CHOICES.filter((p) => !(data === "cl
 export function problem(s) {
   const { method, priorKind } = effective(s);
   if (method === "bayes" && s.distribution === "best" && (priorKind === "class")) return "“Best of” is for a plain fit: choose a distribution.";
+  if (method === "bayes" && priorKind === "around") return aroundParams(s).problem || null;
   if (method === "bayes" && priorKind !== "class" && !baselineOf({ ...s, kind: priorKind })) {
     return priorKind === "model" ? "Pick the model to use as the prior." : priorKind === "params"
       ? "Give the prior's numbers." : "Give the B10 with the values you'd be surprised under and over.";
@@ -52,7 +98,9 @@ export function bodyOf(s) {
     exclude: [...(s.exclude || [])] };
   if (method === "bayes") {
     out.trust = s.trust || "guide";
-    out.prior = priorKind === "class" ? { kind: "class" } : { kind: priorKind, ...(baselineOf({ ...s, kind: priorKind }) || {}) };
+    out.prior = priorKind === "class" ? { kind: "class" }
+      : priorKind === "around" ? { kind: "around", distribution: aroundDist(s), unit: s.unit, params: aroundParams(s).params || {} }
+        : { kind: priorKind, ...(baselineOf({ ...s, kind: priorKind }) || {}) };
   }
   if (Number(s.age) > 0) out.age = Number(s.age);
   return out;

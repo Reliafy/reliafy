@@ -11,8 +11,8 @@ test("the data choice sets what the method and prior can be", () => {
   assert.deepEqual(effective({ ...base, method: "bayes" }), { method: "bayes", priorKind: "class" });
   // The class as data can't be the prior too.
   assert.deepEqual(effective({ ...base, data: "class", method: "bayes", priorKind: "class" }), { method: "bayes", priorKind: "model" });
-  assert.deepEqual(priorChoices("class").map((p) => p.value), ["model", "params", "b10"]);
-  assert.deepEqual(priorChoices("position").map((p) => p.value), ["class", "model", "params", "b10"]);
+  assert.deepEqual(priorChoices("class").map((p) => p.value), ["model", "params", "around", "b10"]);
+  assert.deepEqual(priorChoices("position").map((p) => p.value), ["class", "model", "params", "around", "b10"]);
 });
 
 test("the request for each choice, and what's missing", () => {
@@ -42,4 +42,26 @@ test("the panel's words: For, the history, a refusal's way out", async () => {
   assert.equal(historyRow({ c: 2, xl: 100, xr: 200 }, "days").age, "100–200 days");
   assert.deepEqual(refusalSwitch("mle"), { to: "bayes", label: "Fit with a prior instead" });
   assert.equal(refusalSwitch("bayes"), null);
+});
+
+test("Data and Prior as dropdowns, and a prior around a value between two bounds", async () => {
+  const { AROUND_PARAMS, aroundParams, dataOptions, showsTrust, PRIOR_CHOICES } = await import("./fitDialog.js");
+  assert.deepEqual(dataOptions({ positionCounts: { failures: 0, suspensions: 1 }, cls: { positions: 2, failures: 5, suspensions: 2 } }).map((o) => o.label), [
+    "This position's history (0 failures, 1 suspension)", "The class's pooled history (2 positions, 5 failures, 2 suspensions)",
+    "Both: this position's, with the class's as a prior"]);
+  assert.deepEqual(dataOptions({ hasClass: false }).map((o) => o.value), ["position"]);
+  assert.deepEqual(PRIOR_CHOICES.map((p) => p.value), ["class", "model", "params", "around", "b10"]);
+  assert.ok(showsTrust("params") && !showsTrust("around") && !showsTrust("b10"));
+  assert.deepEqual(AROUND_PARAMS.weibull.map(([n]) => n), ["alpha", "beta"]);
+  const s = { ...base, method: "bayes", priorKind: "around", around: { alpha: { about: "4", lo: "3", hi: "6" }, beta: { lo: "1.5", hi: "3" } } };
+  assert.deepEqual(aroundParams(s).params, { alpha: { about: 4, between: [3, 6] }, beta: { between: [1.5, 3] } });
+  assert.equal(problem(s), null);
+  assert.deepEqual(bodyOf(s).prior, { kind: "around", distribution: "weibull", unit: "hours",
+    params: { alpha: { about: 4, between: [3, 6] }, beta: { between: [1.5, 3] } } });
+  assert.match(problem({ ...s, around: { alpha: { lo: "6", hi: "3" } } }), /low bound must be below/);
+  assert.match(problem({ ...s, around: { alpha: { about: "9", lo: "3", hi: "6" } } }), /must lie between/);
+  assert.match(problem({ ...s, around: { alpha: { lo: "3" } } }), /both bounds/);
+  assert.match(problem({ ...s, around: {} }), /at least one/);
+  const e = { ...s, distribution: "exponential", around: { mean: { lo: "100", hi: "300" }, failure_rate: { lo: "0.001", hi: "0.01" } } };
+  assert.match(problem(e), /not both/);
 });

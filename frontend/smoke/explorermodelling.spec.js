@@ -111,7 +111,7 @@ test("update a baseline with a position's one failure, and save it as the positi
   await headPick(page, "Life model", "Fit a life model…");
   const dialog = page.getByRole("dialog", { name: "Fit a life model" });
   await dialog.getByRole("radio", { name: "With a prior" }).click();
-  await dialog.getByRole("radio", { name: "A saved model" }).click();
+  await dialog.getByRole("combobox", { name: "Prior", exact: true }).selectOption("model");
   const option = await dialog.locator("option", { hasText: "Bearing life — Weibull" }).first().getAttribute("value");
   await dialog.getByRole("combobox", { name: "Prior model" }).selectOption(option);
   await expect(dialog.getByRole("status")).toContainText("90% chance it lies between");
@@ -231,7 +231,7 @@ test("a Bayesian update from numbers I know, on a position whose class has no mo
   await dialog.getByRole("button", { name: "Fit with a prior instead" }).click();
   await expect(dialog.getByRole("radio", { name: "With a prior" })).toHaveAttribute("aria-checked", "true");
   await expect(dialog.getByRole("alert")).toContainText("no history besides");
-  await dialog.getByRole("radio", { name: "Numbers I know" }).click();
+  await dialog.getByRole("combobox", { name: "Prior", exact: true }).selectOption("params");
   await expect(dialog).not.toContainText("no history besides");
   await expect(dialog).toContainText("Give the prior's numbers.");
   await dialog.getByLabel("Characteristic life (alpha)").fill("4");
@@ -318,10 +318,10 @@ test("Fit a life model… through each Data choice on a class of two positions",
   const dialog = page.getByRole("dialog", { name: "Fit a life model" });
   await expect(dialog.getByRole("status")).toContainText("A plain fit (maximum likelihood) to 2 failures and 1 suspension in this position's history");
   await expect(dialog.locator(".fit2-numbers thead")).toContainText("95% confidence bounds");
-  await dialog.getByRole("radio", { name: "The class", exact: true }).click();
+  await dialog.getByRole("combobox", { name: "Data" }).selectOption("class");
   await expect(dialog).toContainText(`2 positions of ${klass}: 5 failures, 2 suspensions`);
   await expect(dialog.getByRole("status")).toContainText("5 failures and 2 suspensions in the class");
-  await dialog.getByRole("radio", { name: "Both", exact: true }).click();
+  await dialog.getByRole("combobox", { name: "Data" }).selectOption("both");
   await expect(dialog.getByRole("status")).toContainText("counted as half of its evidence");
   await expect(dialog.locator(".fit2-numbers thead")).toContainText("90% credible interval");
   await expect(dialog.locator(".js-plotly-plot")).toBeVisible();
@@ -354,4 +354,38 @@ test("the Fit dialog at 400 px: inputs, then the result, nothing sideways, Save 
   expect(await sideways(page)).toBeLessThanOrEqual(400);
   await dialog.getByRole("button", { name: "Save as this position's model" }).scrollIntoViewIfNeeded();
   await expect(dialog.getByRole("button", { name: "Save as this position's model" })).toBeEnabled();
+});
+
+// A prior around a value, between two bounds: alpha about 400 (90% between 300 and 600), beta just
+// between 1.5 and 4; no trust chips (the ranges are the belief); the how-it-was-computed line says it.
+test("Fit a life model… with a prior around a value, between two bounds", async ({ page, request, problems }) => {
+  const tag = `a${Date.now()}`;
+  const ago = (d) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
+  const pump = await postOk(request, `${M}/positions`, { name: `Around pump ${tag}` });
+  await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `A1 ${tag}` }, on: ago(700) });
+  await postOk(request, `${M}/positions/${pump.id}/remove`, { on: ago(350), reason: "failure" });
+  await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `A2 ${tag}` }, on: ago(350) });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
+  await headPick(page, "Life model", "Fit a life model…");
+  const dialog = page.getByRole("dialog", { name: "Fit a life model" });
+  await expect(dialog.getByRole("combobox", { name: "Data" }).locator("option").first()).toHaveText("This position's history (1 failure, 1 suspension)");
+  await dialog.getByRole("radio", { name: "With a prior" }).click();
+  await dialog.getByRole("combobox", { name: "Prior", exact: true }).selectOption("around");
+  await expect(dialog.getByRole("radiogroup", { name: "How much to trust the prior" })).toHaveCount(0);
+  const rows = dialog.getByRole("group", { name: "Around a value, between two bounds" });
+  await rows.getByLabel("Characteristic life (alpha) about").fill("400");
+  await rows.getByLabel("Characteristic life (alpha) between").fill("300");
+  await rows.getByLabel("Characteristic life (alpha) and").fill("600");
+  await rows.getByLabel("Shape (beta) between").fill("1.5");
+  await rows.getByLabel("Shape (beta) and").fill("4");
+  await rows.getByLabel("Unit").selectOption("days");
+  await expect(dialog.getByRole("status")).toContainText("(as stated)");
+  await expect(dialog.locator(".fit2-how")).toContainText("alpha about 400, 90% between 300 and 600; beta 90% between 1.5 and 4");
+  // A bound the wrong way round is refused in words, before asking.
+  await rows.getByLabel("Shape (beta) and").fill("1");
+  await expect(dialog).toContainText("For Shape (beta), the low bound must be below the high one.");
+  await rows.getByLabel("Shape (beta) and").fill("4");
+  await saveFit(page, dialog, pump.id);
+  await expectHealthy(page, problems, { label: "a prior around a value" });
 });

@@ -158,7 +158,11 @@ def fit(m, db, owners, hidden, position_id: str, data: str = "position", method:
 
     base = None
     unit = "days"
-    if method == "bayes" and prior.get("kind") != "class":
+    if method == "bayes" and prior.get("kind") == "around":
+        base = around_prior(prior, distribution)
+        unit = base.get("unit") or "days"
+        distribution = base["distribution"]
+    elif method == "bayes" and prior.get("kind") != "class":
         spec = {k: v for k, v in prior.items() if k != "kind"}
         try:
             base = bl.baseline_from(db, owners, hidden, spec)
@@ -213,6 +217,8 @@ def _fit_on(m, db, p, position_id, data, method, prior, distribution, modes, tex
                 if "finite mass" not in str(err):
                     raise sv.Invalid(f"The fit with that prior didn't work: {err}") from None
                 base, priors, extra = _class_prior(sp, distribution, class_rows, trust, cls, unit, force_wide=True)
+        elif base.get("source") == "around":
+            priors, extra = base["priors"], ""
         else:
             # An earlier update as the prior carries its own (bayes_life.update reads its recipe).
             priors, extra = (None if base["source"] == "update" else bl.priors_for(base, trust)), ""
@@ -415,3 +421,64 @@ def given_with_class_prior(m, position_id: str, rows: list[dict], distribution: 
     if extra:
         result["words"] = f"{result.get('words', '')} {extra}".strip()
     return result
+
+
+AROUND_PARAMS = {"weibull": ("alpha", "beta"), "exponential": ("failure_rate", "mean"), "lognormal": ("mu", "sigma")}
+_AROUND_WORDS = {"alpha": "alpha", "beta": "beta", "failure_rate": "the failure rate", "mean": "the mean life",
+                 "mu": "mu", "sigma": "sigma"}
+
+
+def around_prior(prior: dict, distribution: str) -> dict:
+    """"Around a value, between two bounds": per parameter of the distribution, {about?, between: [lo, hi]}
+    (90% of the prior between them; about the middle, else just between them), SurPyval's
+    prior.around(about, between=(lo, hi)) or prior.between(lo, hi). A parameter left out is the data's
+    alone. An exponential's may be given as its mean life (mean) instead of its rate. Returns the base
+    the update reads: {source: around, name (the belief in words), distribution, unit, params, priors}."""
+    import surpyval as sp
+
+    from backend.services import bayes_life as bl
+
+    sv = _sv()
+    dist_id = (prior.get("distribution") or distribution or "weibull").lower()
+    if dist_id not in bl.DISTS:
+        raise sv.Invalid("Around a value, between two bounds takes a Weibull, exponential or lognormal.")
+    given = prior.get("params") or {}
+    if not isinstance(given, dict):
+        raise sv.Invalid("The prior's params are {name: {about, between: [low, high]}}.")
+    allowed = AROUND_PARAMS[dist_id]
+    stray = sorted(set(given) - set(allowed))
+    if stray:
+        raise sv.Invalid(f"A {dist_id} prior takes {', '.join(allowed)}; not {', '.join(stray)}.")
+    priors, words, params = {}, [], {}
+    for name in allowed:
+        spec = given.get(name)
+        if not spec:
+            continue
+        between = spec.get("between") or [None, None]
+        lo, hi = bl._f(between[0] if len(between) > 0 else None), bl._f(between[1] if len(between) > 1 else None)
+        about = bl._f(spec.get("about"))
+        label = _AROUND_WORDS[name]
+        if lo is None or hi is None:
+            raise sv.Invalid(f"Give {label} both bounds (between a low and a high), or leave it out.")
+        if not lo < hi:
+            raise sv.Invalid(f"For {label}, the low bound must be below the high one.")
+        if about is not None and not lo < about < hi:
+            raise sv.Invalid(f"For {label}, “about” must lie between the bounds.")
+        positive = name != "mu"
+        if positive and lo <= 0:
+            raise sv.Invalid(f"{label[0].upper()}{label[1:]} is positive: give bounds above 0.")
+        key, lo_k, hi_k, about_k = name, lo, hi, about
+        if name == "mean":  # an exponential's mean life, as its rate
+            key, lo_k, hi_k, about_k = "failure_rate", 1 / hi, 1 / lo, (1 / about if about else None)
+        if key in priors:
+            raise sv.Invalid("Give the exponential's rate or its mean life, not both.")
+        priors[key] = sp.prior.around(about_k, between=(lo_k, hi_k)) if about_k is not None else sp.prior.between(lo_k, hi_k)
+        if about_k is not None:
+            params[key] = about_k
+        words.append(f"{label} about {bl.num(about)}, 90% between {bl.num(lo)} and {bl.num(hi)}" if about is not None
+                     else f"{label} 90% between {bl.num(lo)} and {bl.num(hi)}")
+    if not priors:
+        raise sv.Invalid("Give at least one parameter's bounds (the others are left to the data).")
+    names = bl.DISTS[dist_id].parameter_names
+    return {"source": "around", "name": "; ".join(words), "distribution": dist_id, "unit": prior.get("unit") or "days",
+            "params": params if all(n in params for n in names) else {}, "priors": priors}
