@@ -125,6 +125,8 @@ export function lineChange(c = {}) {
     ...("record" in c ? { record: c.record, record_id: c.record ? c.record.id : null } : {}),
     // A new part type clears the last one's conditions.
     ...("record" in c && (c.record?.kind === "covariate_model" || isCovariateId(c.record?.id)) ? { conditions: {}, cycles_per_hour: "" } : {}),
+    // ... and a handbook part type's own environment and grade.
+    ...("record" in c ? { environment: "", quality: "" } : {}),
     ...("rate" in c ? { rate_per_million_hours: c.rate } : {}),
     ...("rateMode" in c ? { rate_mode: c.rateMode } : {}),
     ...("excluded" in c ? { excluded: c.excluded } : {}),

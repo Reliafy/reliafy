@@ -445,14 +445,16 @@ fit, 95% confidence bounds; bayes: with a prior, 90% credible intervals). The pr
 history as a power prior, SurPyval's prior.from_data: trust close counts all of its evidence, guide half, start a \
 fifth), {kind: model, model_id}, {kind: params, distribution, params, unit}, {kind: around, distribution, unit, \
 params: {alpha: {about: 4, between: [3, 6]}, beta: {between: [1.5, 3]}}} (90% between the bounds; a parameter left \
-out is the data's), {kind: library, record_id, shape?: [0.8, 3]} (a data library rate: exact gamma prior on an \
-exponential, else a prior on the mean life) or {kind: b10, ...}. A published rate as the model itself: models.link \
-with library_record_id, e.g. {position_id, library_record_id: "nrc-inl-2020:mov-sop"} (an exponential at its mean \
-rate per hour, its 5–95% range the interval, cited; per-demand records refused). The class can't \
+out is the data's), {kind: library, record_id, covariates?, shape?: [0.8, 3]} (a data library record under its covariates, e.g. a \
+pipe's length_ft: exact gamma prior on an exponential, else a prior on the mean life) or {kind: b10, ...}. A \
+published record as the model itself: models.link with library_record_id and covariates, e.g. {position_id, \
+library_record_id: "nrc-inl-2020:mov-sop"} (an exponential at its mean rate per hour under them, its 5–95% range \
+the interval, cited; a missing covariate is refused in words). The class can't \
 be both the data and the prior. Say which data and method when quoting it, with confidence or credible as the \
 result says. With one failure a plain Weibull fit refuses: use a prior, or exponential.
-- A covariate model at a position: models.link with bind {source: nswc (an NSWC-11 record), alt or ph (a saved \
-model), ref, fixed: {input: value}, roles?}. Fix some, all or none: design inputs usually here, use and \
+- A covariate model at a position: models.link with bind {source: nswc (an NSWC-11 record), library (any other \
+library record: its covariates), component (an NRC/INL component), alt or ph (a saved model), ref, fixed: {input: \
+value}, roles?}. Fix some, all or none: design inputs usually here, use and \
 environment left open. NSWC-11 with every input fixed is saved as a constant-rate exponential. What's left open is \
 set in an RBD built from the tree: each block's covariate_values, or the diagram's conditions [{name, role use or \
 environment, unit, value}] (matched by the input's key, symbol or label and unit; a block's covariate_map names \

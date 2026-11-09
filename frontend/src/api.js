@@ -3411,18 +3411,35 @@ export function getBoundBlocks(graph) {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph }),
   });
 }
-// A covariate model's rate (NSWC-11) under some conditions: {ok, result, warnings} or {ok: false, problems}.
-export function evaluateLibraryRecord(recordId, values) {
+// A record's rate under its covariates (any library record: a pipe's length, the clock, the demands
+// a year, a handbook part's environment and quality, an NSWC-11 model's conditions), or a
+// component's chance of failing over a period: {ok, result, warnings} or {ok: false, problems, missing}.
+export function evaluateLibraryRecord(recordId, covariates) {
   return request(`/api/library/records/${encodeURIComponent(recordId)}/evaluate`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values }),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ covariates }),
   });
 }
-// A record saved as a model in the user's models (a rate → an exponential, cited).
-// A rate per foot of pipe takes the pipe's length in feet.
-export function createModelFromLibrary(recordId, name, lengthFt = null) {
+// The components of a source (NRC/INL: an equipment type in one pooling group, its failure modes together).
+export function getLibraryComponents(source, q) {
+  const params = new URLSearchParams();
+  if (source) params.set("source", source);
+  if (q) params.set("q", q);
+  const s = params.toString();
+  return request(`/api/library/components${s ? `?${s}` : ""}`);
+}
+export function getLibraryComponent(componentId) {
+  return request(`/api/library/components/${encodeURIComponent(componentId)}`);
+}
+// A record saved as a model in the user's models (a rate → an exponential, cited), under its
+// covariates ({key: value}: a pipe's length, the clock and running hours, the demands a year...).
+// ``lengthFt`` is the pipe's length by its old name.
+export function createModelFromLibrary(recordId, name, lengthFt = null, covariates = null) {
   return request("/api/models/from-library", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ record_id: recordId, ...(name ? { name } : {}), ...(lengthFt != null ? { length_ft: lengthFt } : {}) }),
+    body: JSON.stringify({
+      record_id: recordId, ...(name ? { name } : {}), ...(lengthFt != null ? { length_ft: lengthFt } : {}),
+      ...(covariates && Object.keys(covariates).length ? { covariates } : {}),
+    }),
   });
 }
 // The records behind the user's latest models from the library.

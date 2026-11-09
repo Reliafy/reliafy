@@ -157,8 +157,10 @@ def test_search_detail_and_evaluate():
     assert ok["ok"] and ok["result"]["total"] > 0 and "did not take part" in ok["disclaimer"]
     no = library.evaluate(BEARING, {"L_S": 5000})
     assert not no["ok"] and any("p. 7-" in p for p in no["problems"])
-    with pytest.raises(ValueError, match="isn't a covariate model"):
-        library.evaluate("nrc-inl-2020:mdp-fts-ns", {})
+    # Every record evaluates under its covariates now (record_covariates.py): a probability per demand
+    # gives its probability, and a rate once its demands a year are given.
+    pd = library.evaluate("nrc-inl-2020:mdp-fts-ns", {})
+    assert pd["ok"] and pd["result"]["probability"] > 0 and pd["result"].get("failure_rate") is None
     with pytest.raises(convert.ConversionError):
         convert.to_block_model(library.get(BEARING))
     assert not library.usable_as(library.get(BEARING), "model")
@@ -181,7 +183,10 @@ def test_the_public_evaluate_route(client):
     r = client.post(f"/api/library/records/{BEARING}/evaluate", json={"values": {"n": -1}})
     assert r.status_code == 200 and not r.json()["ok"]
     assert client.post("/api/library/records/nope/evaluate", json={"values": {}}).status_code == 404
-    assert client.post("/api/library/records/nrc-inl-2020:mdp-fts-ns/evaluate", json={"values": {}}).status_code == 422
+    assert client.post("/api/library/records/nrc-inl-2020:mdp-fts-ns/evaluate", json={"values": {"x": 1}}).json()["ok"] is False
+    # covariates is the new name of values.
+    r = client.post(f"/api/library/records/{BEARING}/evaluate", json={"covariates": {"L_S": 5000, "F_R": 1000, "n": 1800}})
+    assert r.json()["ok"] and r.json()["result"]["total"] > 0
     assert client.get(f"/api/library/records/{BEARING}").json()["covariate"]["inputs"]
 
 

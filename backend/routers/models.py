@@ -654,12 +654,15 @@ def save_model(
 @router.post("/models/from-library")
 def create_from_library(record_id: str = Body(..., embed=True), name: str | None = Body(default=None, embed=True),
                         length_ft: float | None = Body(default=None, embed=True),
+                        covariates: dict | None = Body(default=None, embed=True),
                         session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
-    """A record of the reliability data library saved as a model in the user's models: a failure rate
-    per hour as an exponential that keeps the record's gamma (or lognormal) on the rate, its 5–95%
-    range as the interval (the spread across plants), the record id and citation kept. A rate per
-    foot of pipe takes ``length_ft``. A per-demand probability or a handbook base rate is refused in
-    words. Counts against the model cap."""
+    """A record of the reliability data library saved as a model in the user's models, under its
+    ``covariates`` (a pipe's length, the clock and running hours a year, the demands a year for a
+    probability per demand, a handbook part's environment and quality; get the record's
+    ``covariates`` for the list): an exponential that keeps the record's gamma (or lognormal) on the
+    rate, its 5–95% range as the interval (the spread across plants), the record id, citation and
+    covariates kept. ``length_ft`` is the old name of the pipe's length. A covariate with no value
+    and no default is refused in words. Counts against the model cap."""
     from backend.maintenance import library_models
 
     denied = _creation_denied(session, ctx, "models")
@@ -667,7 +670,7 @@ def create_from_library(record_id: str = Body(..., embed=True), name: str | None
         return denied
     try:
         model, _ = library_models.save_record_model(session, ctx.write_owner, record_id, name, owners=ctx.read_owners,
-                                                    length_ft=length_ft)
+                                                    length_ft=length_ft, covariates=covariates)
         access_service.stamp_editor(session, "models", model.id, ctx)
     except ValueError as exc:  # Invalid
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
@@ -687,7 +690,8 @@ def fit_with_prior(body: dict = Body(...), session=Depends(get_session), ctx: Ac
     """A saved dataset fitted with a data library record as the prior (the Library page's Use as a
     prior…): dataset_id, time_column, censor_column (0 failed, 1 still running; c_invert flips it),
     unit (the times' unit), distribution (exponential, weibull, lognormal), prior {kind: library,
-    record_id, shape?}, trust. Previewed (a refusal comes back as {refused}); with save true, saved as
+    record_id, covariates?, shape?} (the record's covariates: a pipe's length, the clock, the demands a
+    year...), trust. Previewed (a refusal comes back as {refused}); with save true, saved as
     a model (counts against the model cap)."""
     from backend.maintenance import library_models
     from backend.services import bayes_life

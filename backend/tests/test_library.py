@@ -222,22 +222,25 @@ def test_search_ranks_and_counts():
 
 
 def test_search_for_a_use_keeps_only_the_records_that_can_be_it():
-    """The pickers' ``use`` filter: a failure rate counted from service can be a model or a prior on
-    its own; a handbook base rate for a parts count and a probability per demand can't. The result
-    says how many it hid, by why."""
+    """The pickers' ``use`` filter, once every input a record needs is a covariate: a failure rate
+    counted from service and a probability per demand (with its demands a year) can be a model or
+    a prior; a handbook rate (with its environment) a model but not a prior (a point value, no
+    spread); a covariate model only a position's. The result says how many it hid, by why."""
     out = service.search(use="prior", page_size=100)
-    assert out["filters"] == {"use": "prior"} and out["total"] == 211
-    assert all(r["kind"] == "rate" and r["basis"] == "field_data" for r in out["results"])
-    assert out["left_out"] == {"prediction_model": N_MIL + n_nswc(), "per_demand": 89}
-    # A source with no usable records: nothing shown, and the line says why.
+    assert out["filters"] == {"use": "prior"} and out["total"] == 211 + 89
+    assert all(r["basis"] == "field_data" for r in out["results"])
+    assert out["left_out"] == {"prediction_model": N_MIL + n_nswc()}
     mil = service.search(source=MIL, use="model")
-    assert mil["total"] == 0 and mil["left_out"] == {"prediction_model": N_MIL}
+    assert mil["total"] == N_MIL and mil["left_out"] == {}
+    assert service.search(source=MIL, use="prior")["left_out"] == {"prediction_model": N_MIL}
     assert "left_out" not in service.search(source=MIL)
     with pytest.raises(ValueError, match="Unknown use"):
         service.search(use="dinner")
     assert service.usable_as({"basis": "field_data", "kind": "rate", "units": {"value": "per_hour"}}, "model")
-    assert not service.usable_as({"basis": "prediction_model", "kind": "rate", "units": {"value": "per_hour"}}, "model")
-    assert not service.usable_as({"basis": "field_data", "kind": "per_demand", "units": {"value": "per_demand"}}, "prior")
+    assert service.usable_as({"basis": "prediction_model", "kind": "rate", "units": {"value": "per_hour"}}, "model")
+    assert not service.usable_as({"basis": "prediction_model", "kind": "rate", "units": {"value": "per_hour"}}, "prior")
+    assert service.usable_as({"basis": "field_data", "kind": "per_demand", "units": {"value": "per_demand"}}, "prior")
+    assert not service.usable_as({"basis": "prediction_model", "kind": "covariate_model"}, "model")
 
 
 def test_search_pages():
@@ -397,7 +400,7 @@ def test_search_by_failure_mode_with_facets(client):
     body = r.json()
     facets = body["facets"]
     assert sum(facets["kind"].values()) == body["total"] == sum(facets["equipment_type"].values())
-    assert "per_demand" not in facets["kind"]  # left out for a prior, so not a choice either
+    assert set(facets["kind"]) == {"rate", "per_demand"}  # both can be a prior with their covariates
     mode = "Fails to run"
     assert facets["failure_mode"][mode] > 0
     r = client.get("/api/library/search", params={"source": NRC, "use": "prior", "failure_mode": mode.upper(), "facets": "true"})

@@ -199,14 +199,36 @@ def quality_default(rec: dict) -> Optional[dict]:
     return next((lv for lv in q.get("levels") or [] if lv["code"] == q.get("default")), None)
 
 
-def _handbook_assumption(rec: dict, env: dict) -> str:
+def _quality_for(rec: dict, quality: Optional[str] = None, quality_factor: Optional[float] = None) -> Optional[dict]:
+    """The πQ a handbook record's rate takes: {value, name, given}. A parts-count record: the grade
+    asked for (its lowest grade by default), or a number given for it; a part-stress record: the
+    number given (none given: None, πQ isn't applied). Raises ConversionError for a grade it hasn't."""
+    q = rec.get("quality_factors") or {}
+    if quality_factor is not None:
+        return {"value": float(quality_factor), "name": "as given", "given": True}
+    if not q.get("levels"):
+        if quality is not None:
+            raise ConversionError(f"'{rec['label']}' has no quality grades: give its quality factor as a number.")
+        return None
+    code = quality if quality is not None else q.get("default")
+    if code is None:
+        return None  # the handbook names no default grade: πQ isn't applied unless one is chosen
+    level = next((lv for lv in q["levels"] if lv["code"] == code), None)
+    if level is None:
+        raise ConversionError(f"'{rec['label']}' has no quality grade '{quality}'. Use one of "
+                              f"{', '.join(lv['code'] for lv in q['levels'])}.")
+    return {"value": float(level["value"]), "name": level["name"], "given": quality is not None
+            and quality != q.get("default"), "code": level["code"]}
+
+
+def _handbook_assumption(rec: dict, env: dict, q: Optional[dict] = None) -> str:
     pred = rec.get("prediction") or {}
     if rec.get("generic_rates"):
         said = (f"Rate = the handbook's parts-count generic rate λg {env['generic_rate_per_million_hours']:g} per "
                 f"million hours for {env['name'].lower()} ({env['code']}), environment included")
-        q = quality_default(rec)
         if q:
-            said += f", × πQ {q['value']:g} ({q['name'].lower()}, the handbook's lowest grade)."
+            why = "the handbook's lowest grade" if not q["given"] and q.get("code") else "as given"
+            said += f", × πQ {q['value']:g} ({q['name'].lower()}, {why})."
         else:
             said += "."
         held = pred.get("not_applied") or []
@@ -216,8 +238,9 @@ def _handbook_assumption(rec: dict, env: dict) -> str:
                      + ".")
         return said
     said = (f"Rate = {pred.get('per_million_hours', 0):g} per million hours × πE {env['factor']:g} for "
-            f"{env['name'].lower()} ({env['code']}).")
-    left_out = pred.get("not_applied") or []
+            f"{env['name'].lower()} ({env['code']})")
+    said += f" × πQ {q['value']:g} (as given)." if q else "."
+    left_out = [f for f in pred.get("not_applied") or [] if not (q and f.get("symbol") == "πQ")]
     if not left_out:
         return said + " That's the handbook's whole model for this part."
     names = ", ".join(f"{f['symbol']} ({f['name']})" for f in left_out)
@@ -227,14 +250,19 @@ def _handbook_assumption(rec: dict, env: dict) -> str:
 
 def rate_to_exponential(rec: dict, time_unit: str = "hours", time_basis: Optional[str] = None,
                         operating_hours_per_year: Optional[float] = None, length_ft: Optional[float] = None,
-                        point: Point = "mean", environment: Optional[str] = None) -> dict:
-    """An exponential model (failure_rate in ``time_unit``) from a rate record.
+                        point: Point = "mean", environment: Optional[str] = None, quality: Optional[str] = None,
+                        quality_factor: Optional[float] = None) -> dict:
+    """An exponential model (failure_rate in ``time_unit``) from a rate record. These arguments are
+    the record's covariates (backend/library/record_covariates.py, which declares them and checks
+    them; :func:`to_block_model` takes them as ``covariates`` too).
 
     ``time_basis``: the block's clock, 'operating' (hours of running) or
     'calendar'; by default the record's own. Changing it needs
     ``operating_hours_per_year`` (how many hours a year the component runs).
     A pipe's rate is per foot: give ``length_ft``. A handbook rate with
-    environment factors needs ``environment`` (e.g. 'GF', ground, fixed)."""
+    environment factors needs ``environment`` (e.g. 'GF', ground, fixed); a parts-count record takes
+    its ``quality`` grade (the lowest by default), and either takes ``quality_factor`` (πQ) as a
+    number."""
     if rec["kind"] != "rate":
         hint = " Use demand_to_per_demand." if rec["kind"] == "per_demand" else " Use life_to_model."
         raise ConversionError(f"'{rec['label']}' is a {rec['kind'].replace('_', ' ')} value, not a rate.{hint}")
@@ -250,9 +278,10 @@ def rate_to_exponential(rec: dict, time_unit: str = "hours", time_basis: Optiona
         raise ConversionError(f"'{rec['label']}' isn't a rate per foot of pipe: leave out length_ft.")
     env = environment_factor(rec, environment)
     factor = env["factor"] if env else 1.0
-    if env and rec.get("generic_rates") and quality_default(rec):
-        factor *= quality_default(rec)["value"]
-    assumptions: list[str] = [_handbook_assumption(rec, env)] if env else []
+    q = _quality_for(rec, quality, quality_factor) if env else None
+    if q:
+        factor *= q["value"]
+    assumptions: list[str] = [_handbook_assumption(rec, env, q)] if env else []
     if target != own_basis:
         if not operating_hours_per_year or not 0 < operating_hours_per_year <= HOURS_PER_YEAR:
             raise ConversionError(
@@ -291,6 +320,8 @@ def rate_to_exponential(rec: dict, time_unit: str = "hours", time_basis: Optiona
         out["rate_uncertainty"] = unc
     if env:
         out["environment"] = env
+    if q:
+        out["quality_factor"] = q
     return out
 
 
@@ -359,19 +390,38 @@ def life_to_model(rec: dict) -> dict:
     }
 
 
-def to_block_model(rec: dict, **options) -> dict:
-    """The record as a block model, by its kind (options go to the converter)."""
-    if rec["kind"] != "rate" and "environment" in options:
-        if options.pop("environment") is not None:
-            raise ConversionError(f"'{rec['label']}' doesn't depend on the environment: leave out environment.")
-    if rec["kind"] == "rate":
-        return rate_to_exponential(rec, **options)
-    if rec["kind"] == "per_demand":
-        return demand_to_per_demand(rec, **options)
-    if rec["kind"] == "life":
-        return life_to_model(rec, **options)
+def to_block_model(rec: dict, covariates: Optional[dict] = None, **options) -> dict:
+    """The record as a block model, by its kind. ``covariates`` are the record's covariates by key
+    (backend/library/record_covariates.py); the old arguments (``length_ft``,
+    ``operating_hours_per_year``, ``time_basis``, ``environment``, ``demands_per_year``,
+    ``quality_factor``) still work as aliases, and ``time_unit`` and ``point`` pass through. Only what
+    is given is applied: a covariate left out is what the record's own conversion does without it
+    (a handbook rate still asks for its environment)."""
+    from backend.library import record_covariates as rc
+
     if rec["kind"] == "covariate_model":
         raise ConversionError(f"'{rec['label']}' is a covariate model: its rate depends on the conditions the part "
                               "works in. Use it in a reliability prediction (a parts-list line's Conditions…), or "
                               "try it on its library page.")
-    raise ConversionError(f"Unknown kind '{rec['kind']}'.")
+    if rec["kind"] not in ("rate", "per_demand", "life"):
+        raise ConversionError(f"Unknown kind '{rec['kind']}'.")
+    passthrough = {k: options.pop(k) for k in ("time_unit", "point") if k in options}
+    unknown = sorted(k for k in options if k not in rc.LEGACY)
+    if unknown:
+        raise TypeError(f"to_block_model() got unexpected arguments {', '.join(unknown)}")
+    given = rc.from_legacy(options, covariates)
+    if rec["kind"] != "rate" and given.get(rc.ENVIRONMENT) is not None:
+        raise ConversionError(f"'{rec['label']}' doesn't depend on the environment: leave out environment.")
+    if rec["kind"] == "life":
+        return life_to_model(rec)
+    read = rc.read(rec, given)
+    if len(read["problems"]) > len(read["missing"]):  # a missing one is said by the conversion itself
+        raise ConversionError(" ".join(read["problems"]))
+    vals = {k: v for k, v in read["values"].items() if read["from"].get(k) == "given" or k == rc.CLOCK}
+    if rec["kind"] == "per_demand":
+        return demand_to_per_demand(rec, vals.get(rc.DEMANDS), **passthrough)
+    return rate_to_exponential(
+        rec, time_basis=vals.get(rc.CLOCK), operating_hours_per_year=vals.get(rc.RUNNING_HOURS),
+        length_ft=vals.get(rc.LENGTH), environment=given.get(rc.ENVIRONMENT),
+        quality=None if vals.get(rc.QUALITY) == rc.NOT_APPLIED else vals.get(rc.QUALITY),
+        quality_factor=vals.get(rc.QUALITY_FACTOR), **passthrough)

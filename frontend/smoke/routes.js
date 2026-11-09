@@ -96,6 +96,9 @@ export const DETAIL_IDS = {
   "/models/library/:source": ["/api/library/sources", list("sources")],
   "/models/library/:source/:record": ["/api/library/search?page_size=12",
     (body) => (body.results || []).map((r) => ({ ...r, id: r.id.replace(":", "/") }))],
+  // An NRC/INL component (its id "source:component:slug").
+  "/models/library/:source/components/:component": ["/api/library/components?source=nrc-inl-2020",
+    (body) => (body.components || []).map((c) => ({ ...c, id: `${c.source}/${c.id.split(":").pop()}` }))],
   // A maintainability prediction: the sample quadcopter's.
   "/maintainability/:id": ["/api/maintainability/predictions", list("predictions")],
   "/risk/:fleetId": ["/api/fleet/tracked", list("fleets")],

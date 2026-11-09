@@ -64,7 +64,10 @@ rate per assembly too.
 4. Give each line a **handbook part type**: type a word or two (`capacitor
    ceramic`, `resistor film`, `microprocessor MOS`, `memory DRAM`, `motor`,
    `crystal`) and pick the match. Set the **quality factor** (πQ) on a line
-   when its grade isn't the default.
+   when its grade isn't the default, or choose its grade under **Grade and
+   environment…** (**Environment…** for a part type with no grades), which also
+   sets an environment for that line alone. These are the part type's
+   covariates, the same inputs as on its library page.
 5. Press **Calculate**, read the result, then **Save prediction**.
 
 The Free plan keeps **1 saved reliability prediction** (the shared sample

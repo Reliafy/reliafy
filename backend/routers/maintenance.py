@@ -1246,7 +1246,8 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
         from backend.maintenance import library_models
 
         return _run(library_models.attach, m, session, ctx.write_owner, position_id, body["library_record_id"], modes, note,
-                    replace, owners=ctx.read_owners, length_ft=body.get("length_ft"))
+                    replace, owners=ctx.read_owners, length_ft=body.get("length_ft"),
+                    covariates=body.get("covariates") if isinstance(body.get("covariates"), dict) else None)
     if isinstance(body.get("bind"), dict):
         # A covariate model (NSWC-11, ALT or PH) with some, all or none of its covariates fixed here.
         from backend.maintenance import covariate_positions

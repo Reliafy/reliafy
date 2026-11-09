@@ -28,9 +28,9 @@ test("the library's three levels, then a record used as a model", async ({ page,
   await expect(page).toHaveURL(/\/models\/library\/nrc-inl-2020$/);
   await page.getByRole("searchbox", { name: "Search this library" }).fill("Motor-operated valve");
   const table = page.locator(".lib-table");
-  // A per-demand record can't be a model: its button is off, the reason in its title.
+  // A per-demand record is a model too, with its demands a year (a covariate of the record).
   const perDemand = table.locator("tr", { hasText: "Motor-operated valve: fails to open" }).first();
-  await expect(perDemand.getByRole("button", { name: "Use as a model…" })).toBeDisabled();
+  await expect(perDemand.getByRole("button", { name: "Use as a model…" })).toBeEnabled();
   await page.getByRole("combobox", { name: "Kind" }).selectOption("rate");
   await expect(table.locator("tr", { hasText: "fails to open" })).toHaveCount(0);
   await page.getByRole("combobox", { name: "Sort" }).selectOption("mean");
@@ -65,8 +65,8 @@ test("a pipe's rate record as a model keeps its gamma across plants", async ({ p
   await page.getByRole("button", { name: "Use as a model…" }).first().click();
   const dialog = page.getByRole("dialog", { name: "Use as a model" });
   const save = dialog.getByRole("button", { name: "Save the model" });
-  await expect(save).toBeDisabled(); // a rate per foot needs the pipe's length
-  await dialog.getByLabel("Pipe length (feet)").fill("100");
+  await expect(save).toBeDisabled(); // a rate per foot needs the pipe's length (a covariate with no default)
+  await dialog.getByLabel("Pipe length (L)").fill("100");
   await save.click();
   await expect(page).toHaveURL(/\/models\/m\//);
   await page.getByRole("tab", { name: "Model characteristics" }).click();
@@ -91,8 +91,7 @@ test("attach a library record to a position, then fit with a library prior", asy
   await open(page, `/asset-register/explorer?arrange=positions&sel=${valve.id}&tab=models`);
 
   // Life model › From the data library…: "Pick a library record" opens over the dialog at once, on the
-  // first library with usable records (handbook base rates for parts counts can't be a model); the
-  // records as a table. "Every library" says what it leaves out.
+  // first library with usable records; the records as a table.
   await headPick(page, "Life model", "From the data library…");
   const attach = page.getByRole("dialog", { name: "From the data library" });
   const picker = page.getByRole("dialog", { name: "Pick a library record" });
@@ -101,10 +100,8 @@ test("attach a library record to a position, then fit with a library prior", asy
   await expect(search).toBeFocused();
   await expect(picker.getByRole("combobox", { name: "Library", exact: true })).toHaveValue("nrc-inl-2020");
   await picker.getByRole("combobox", { name: "Library", exact: true }).selectOption("");
-  await expect(picker.locator(".lib-pick-status")).toContainText("Base rates for parts counts are left out");
   const options = picker.getByRole("listbox").getByRole("option");
   await expect(options).not.toHaveCount(0);
-  await expect(picker.getByRole("listbox").getByRole("option", { name: /MIL-HDBK/ })).toHaveCount(0);
   // Filter: words, then a failure mode (its choices come with counts); nothing matching offers to clear.
   await search.fill("Motor-operated valve");
   await picker.getByRole("combobox", { name: "Failure mode" }).selectOption("Spurious operation");
@@ -127,12 +124,15 @@ test("attach a library record to a position, then fit with a library prior", asy
   await expect(options.first()).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("Enter");
   await expect(picker).toHaveCount(0);
-  await expect(attach.getByRole("group", { name: "The library record" })).toContainText(
-    new RegExp(`${SOP} · .* per hour \\(calendar\\) · NRC/INL 2020`));
-  const saved = page.waitForResponse((r) => r.url().includes(`${M}/positions/${valve.id}/models`) && r.request().method() === "POST");
-  await attach.getByRole("button", { name: "Attach" }).click();
-  expect((await saved).status()).toBe(200);
+  // A published record goes on to Fix covariates: its clock (the record's own, calendar) left to the RBD.
   await expect(attach).toHaveCount(0);
+  const pane = page.getByRole("region", { name: "Fix covariates" });
+  await expect(pane).toBeVisible();
+  await expect(pane.getByRole("checkbox", { name: "Fix Clock at this position" })).not.toBeChecked();
+  const saved = page.waitForResponse((r) => r.url().includes(`${M}/positions/${valve.id}/models`) && r.request().method() === "POST");
+  await pane.getByRole("button", { name: "Save at this position" }).click();
+  expect((await saved).status()).toBe(200);
+  await expect(pane).toHaveCount(0);
   await expect(page.locator(".tp-row", { hasText: "Library: NRC/INL 2020, Motor-operated valve spurious operation" })).toHaveCount(1);
 
   // Fit a life model… with "A library record" as the prior: the fit is in the table area (not a dialog);
@@ -162,7 +162,7 @@ test("attach a library record to a position, then fit with a library prior", asy
   await expect(fit.getByRole("button", { name: "Change the library record" })).toBeFocused();
   await expect(fit.getByRole("listbox")).toHaveCount(0); // no list inside the dialog any more
   await fit.getByRole("combobox", { name: "Distribution" }).selectOption("exponential");
-  await expect(fit.getByRole("status")).toContainText("conjugate", { timeout: 30_000 });
+  await expect(fit.locator("p.ml-lead[role=status]")).toContainText("conjugate", { timeout: 30_000 });
   // Change… opens the picker again on the record picked; Escape leaves the pick as it was.
   await fit.getByRole("button", { name: "Change the library record" }).click();
   await expect(picker.getByRole("listbox").getByRole("option", { selected: true })).toContainText("(chosen)");
@@ -177,12 +177,12 @@ test("attach a library record to a position, then fit with a library prior", asy
   await expect(numbers.locator("tr", { hasText: "B10 life" }).locator("td").nth(1)).toContainText(/\d/);
   // On a Weibull the record is a prior on the mean life with the shape between bounds: the prior still shows.
   await fit.getByRole("combobox", { name: "Distribution" }).selectOption("weibull");
-  await expect(fit.getByRole("status")).toContainText("prior on the mean life", { timeout: 60_000 });
+  await expect(fit.locator("p.ml-lead[role=status]")).toContainText("prior on the mean life", { timeout: 60_000 });
   await expect(numbers.locator("tr", { hasText: "Mean life" }).locator("td").nth(1)).toContainText(/\d/);
   await expect(numbers.locator("tr", { hasText: "Shape" }).locator("td").nth(1)).toContainText(/\d/);
-  await expect(fit.getByRole("status")).not.toContainText("gave the belief its numbers.");
+  await expect(fit.locator("p.ml-lead[role=status]")).not.toContainText("gave the belief its numbers.");
   await fit.getByRole("combobox", { name: "Distribution" }).selectOption("exponential");
-  await expect(fit.getByRole("status")).toContainText("conjugate", { timeout: 30_000 });
+  await expect(fit.locator("p.ml-lead[role=status]")).toContainText("conjugate", { timeout: 30_000 });
   const fitted = page.waitForResponse((r) => r.url().includes(`${M}/positions/${valve.id}/models`) && r.request().method() === "POST",
     { timeout: 60_000 });
   await fit.getByRole("button", { name: "Save as this position's model" }).click();

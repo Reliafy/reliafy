@@ -204,20 +204,59 @@ def covariate_inputs(rec: dict) -> list[dict]:
     return [{k: i[k] for k in keep if k in i} for i in covariate.inputs(rec, resolve)]
 
 
-def evaluate(record_id: str, values: Optional[dict] = None) -> dict:
-    """A covariate model's rate under ``values`` (by input key; a missing one takes the handbook's
-    default): {ok, result, warnings} or {ok: false, problems} when an input is missing, not a
-    number, or past a limit the handbook sets (each said with its page). Raises LibraryNotFound,
-    or ValueError for a record that isn't a covariate model or values that aren't an object."""
-    rec = get(record_id)
-    if rec.get("kind") != "covariate_model":
-        raise ValueError(f"'{rec['label']}' isn't a covariate model: only those take conditions.")
+def record_inputs(rec: dict) -> list[dict]:
+    """The covariates a record reads (backend/library/record_covariates.py), as the shared input
+    component shows them."""
+    from backend.library import record_covariates as rc
+
+    if rec.get("kind") == "covariate_model":
+        return rc.inputs(rec, resolve)
+    return rc.inputs(rec)
+
+
+def evaluate(record_id: str, values: Optional[dict] = None, mine: Optional[dict] = None,
+             time_unit: str = "hours") -> dict:
+    """A record's rate under its covariates (by key; a missing one takes its default), or a
+    component's chance of failing over a period: {ok, result, warnings} or {ok: false, problems,
+    missing} when a covariate is missing, not a number, or past a limit (an NSWC-11 one says the
+    handbook's page). A covariate model's result is its modes and total, as before; any other
+    record's is the one evaluator's (record_covariates.evaluate). Raises LibraryNotFound, or
+    ValueError for values that aren't an object."""
+    from backend.library import components
+    from backend.library import record_covariates as rc
+
     if values is not None and not isinstance(values, dict):
-        raise ValueError("values must be an object of input name to value.")
-    src = _source_of(rec)
+        raise ValueError("covariates must be an object of covariate key to value.")
+    if components.is_component_id(record_id):
+        try:
+            comp = components.get(record_id)
+        except components.ComponentNotFound as exc:
+            raise LibraryNotFound(str(exc)) from None
+        try:
+            result = components.evaluate(comp, values or {})
+        except components.ComponentError as exc:
+            return {"ok": False, "component_id": comp["id"], "problems": exc.problems, "missing": exc.missing}
+        return {"ok": True, "component_id": comp["id"], "result": result, "warnings": []}
+    rec = get(record_id, mine)
+    src = _source_of(rec, mine)
+    if rec.get("kind") == "covariate_model":
+        try:
+            result = covariate.evaluate(rec, {k: v for k, v in (values or {}).items() if k != rc.CYCLES or
+                                              not covariate.per_cycle(rec)}, resolve)
+        except covariate.CovariateError as exc:
+            return {"ok": False, "record_id": rec["id"], "problems": exc.problems, "missing": exc.missing,
+                    "disclaimer": src.get("disclaimer")}
+        out = {"ok": True, "record_id": rec["id"], "result": result, "warnings": result.pop("warnings"),
+               "disclaimer": src.get("disclaimer")}
+        if covariate.per_cycle(rec) and (values or {}).get(rc.CYCLES) not in (None, ""):
+            try:
+                out["rate"] = rc.evaluate(rec, values, time_unit)
+            except rc.RecordCovariateError as exc:
+                out["rate_problems"] = exc.problems
+        return out
     try:
-        result = covariate.evaluate(rec, values or {}, resolve)
-    except covariate.CovariateError as exc:
+        result = rc.evaluate(rec, values or {}, time_unit, require_rate=False)
+    except rc.RecordCovariateError as exc:
         return {"ok": False, "record_id": rec["id"], "problems": exc.problems, "missing": exc.missing,
                 "disclaimer": src.get("disclaimer")}
     return {"ok": True, "record_id": rec["id"], "result": result, "warnings": result.pop("warnings"),
@@ -254,21 +293,24 @@ def brief(rec: dict, mine: Optional[dict] = None) -> dict:
 
 
 #: What a record can be used as on its own: a life model (an exponential at its rate) or a prior
-#: on one. A failure rate per hour counted from service can; a handbook base rate for a parts count
-#: can't (the environment and quality factors make the rate: it's for a prediction), nor can a
-#: probability per demand (not a life over time).
+#: on one, once its covariates are given (a pipe's length, the running hours for another clock, the
+#: demands a year for a probability per demand, a handbook part's environment). A handbook rate (a
+#: point value, no spread) can be a model but not a prior; a covariate model (NSWC-11) is attached
+#: at a position with its covariates fixed there or set in the RBD.
 USES = {"model": "a life model", "prior": "a prior on a life model",
         "attach": "a position's model (a life model, or a covariate model with covariates fixed there)"}
 
 
 def usable_as(rec: dict, use: str) -> bool:
-    """Whether the record can be ``use`` ("model" or "prior") on its own. A
+    """Whether the record can be ``use`` ("model", "prior" or "attach"), its covariates given. A
     life record (a life distribution, or a saved model's snapshot) always can."""
     if use == "attach" and rec.get("kind") == "covariate_model":
         return True
-    if rec.get("basis") == "prediction_model":
-        return False
     if rec.get("kind") == "life":
+        return True
+    if rec.get("basis") == "prediction_model":
+        return use != "prior" and rec.get("kind") == "rate"
+    if rec.get("kind") == "per_demand":
         return True
     return rec.get("kind") == "rate" and str((rec.get("units") or {}).get("value") or "").startswith("per_hour")
 
@@ -412,7 +454,14 @@ def detail(record_id: str, environment: Optional[str] = None, mine: Optional[dic
         except convert.ConversionError as exc:
             model = {"needs": client_message(exc)}
     src = _source_of(rec, mine)
-    out = {"record": rec, "units": units_text(rec), "block_model": model, "caveats": src.get("caveats") or []}
+    out = {"record": rec, "units": units_text(rec), "block_model": model, "caveats": src.get("caveats") or [],
+           "covariates": record_inputs(rec)}
+    from backend.library import components
+
+    member_of = [components.brief(c) for c in components.all_components(rec["source"])
+                 if any(m["record_id"] == rec["id"] for m in c["modes"])]
+    if member_of:
+        out["components"] = member_of
     if rec.get("kind") == "covariate_model":
         out["covariate"] = {**covariate_brief(rec), "inputs": covariate_inputs(rec)}
         out["disclaimer"] = src.get("disclaimer")
@@ -457,3 +506,38 @@ def sources(mine: Optional[dict] = None) -> dict:
         "environments": {code: {"name": name, "covers": covers}
                          for code, (name, covers) in schema.ENVIRONMENTS.items()},
     }
+
+
+def components(source: Optional[str] = None, query: Optional[str] = None) -> dict:
+    """The components (an equipment type in one of the source's pooling groups, its failure modes
+    together: backend/library/components.py), of ``source``, matching every word of ``query``."""
+    from backend.library import components as comp
+
+    if source is not None and source not in _library()["sources"]:
+        # A library of the user's own (or an unknown one) has no components: none, not an error.
+        return {"source": source, "query": query or None, "total": 0, "components": []}
+    tokens = [_stem(t) for t in _WORD.findall(str(query or "").lower()) if t not in _STOP][:12]
+    rows = []
+    for c in comp.all_components(source):
+        words = _words(f"{c['label']} {' '.join(m['mode'] for m in c['modes'])} "
+                       f"{schema.EQUIPMENT_TYPES.get(c['equipment_type'], '')}")
+        if all(t in words or any(w.startswith(t) for w in words) for t in tokens):
+            rows.append(comp.brief(c))
+    return {"source": source, "query": query or None, "total": len(rows), "components": rows}
+
+
+def component_detail(component_id: str) -> dict:
+    """One component in full: its modes, its covariates and how they combine."""
+    from backend.library import components as comp
+
+    try:
+        return comp.detail(component_id)
+    except comp.ComponentNotFound as exc:
+        raise LibraryNotFound(str(exc)) from None
+
+
+def components_is(record_id: str) -> bool:
+    """Whether an id names a component (an NRC/INL equipment type in one pooling group)."""
+    from backend.library import components as comp
+
+    return comp.is_component_id(record_id)

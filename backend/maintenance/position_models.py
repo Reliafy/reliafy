@@ -596,6 +596,14 @@ def describe(m, db, owners, hidden, links: list[dict], age: float | None = None)
         text = (model or {}).get("bayes_source") or source_text(link)
         if (link.get("source") or {}).get("binding_words"):  # covariates fixed here (covariate_positions.py)
             text = f"{text} ({link['source']['binding_words']})"
+        elif link.get("role") == "library" and doc is not None and link["model_type"] == "model":
+            # A record with every covariate set here (a pipe's length...): its covariates, fixed, read
+            # from the saved model (one saved before covariates kept only its length).
+            from backend.maintenance.library_models import covariates_of
+
+            fixed = covariates_of(getattr(doc, "results", None))
+            if fixed["words"]:
+                text = f"{text} (fixed here: {fixed['words']})"
         if link["model_type"] == "rbd":
             text = rbd_source(link, model)
         if model and model.get("covariate_words") and link.get("role") in ("assigned", "design"):
@@ -1076,6 +1084,11 @@ def _line_type(a: dict) -> dict:
         out["conditions"] = dict(a["conditions"])
     if a.get("record_id") and a.get("cycles_per_hour") not in (None, ""):
         out["cycles_per_hour"] = a["cycles_per_hour"]
+    for k in ("environment", "quality"):  # a handbook part's own covariates (record_covariates.py)
+        if a.get("record_id") and a.get(k) not in (None, ""):
+            out[k] = a[k]
+    if a.get("record_id") and isinstance(a.get("covariates"), dict) and a["covariates"]:
+        out["covariates"] = dict(a["covariates"])
     if a.get("rate_per_million_hours") not in (None, ""):
         out["rate_per_million_hours"] = a["rate_per_million_hours"]
     if a.get("excluded"):

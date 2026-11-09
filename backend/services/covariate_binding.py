@@ -7,15 +7,21 @@ or variables").
 
 A **binding** says which model and what's fixed::
 
-    {"source": "nswc" | "alt" | "ph",
-     "ref": "<library record id (nswc) or saved model id (alt, ph)>",
+    {"source": "nswc" | "library" | "component" | "alt" | "ph",
+     "ref": "<library record id (nswc, library), component id (component) or saved model id (alt, ph)>",
      "fixed": {input key: value},        # fixed at the position
      "roles": {input key: "design" | "use" | "environment"}}   # ALT / PH only: what each one is
 
 Every source's covariates come out as the same inputs (:func:`inputs_of`, the shape
 ``backend.library.covariate`` gives NSWC-11's), so one form fixes them at a position and one
 panel sets the rest on an RBD block. NSWC-11 inputs carry their role from the handbook's table;
-an ALT stress or a PH covariate is use until the user says otherwise.
+an ALT stress or a PH covariate is use until the user says otherwise. Any other library record
+(``library``: an NRC/INL rate or probability per demand, a MIL-HDBK-217F handbook rate) brings its
+record covariates (backend/library/record_covariates.py: a pipe's length, the clock and running hours,
+the demands a year, the environment and quality grade), and an NRC/INL ``component`` (its failure
+modes together, backend/library/components.py) its demands, running hours and calendar hours over a
+period. An input with ``needed_if`` is asked for only when another input has one of the values it
+names (running hours a year only when the clock is changed).
 
 In an RBD a block whose model is ``{"kind": "bound", "binding": {...}}`` takes, for each input
 the position left open, in this order: its own value (``data.covariate_values``), the diagram's
@@ -42,7 +48,8 @@ def _guess_role(text: str) -> str:
     return "environment" if any(w in low for w in _ENVIRONMENT_WORDS) else "use"
 
 
-SOURCES = {"nswc": "NSWC-11 covariate model", "alt": "Accelerated life model", "ph": "Proportional-hazards model"}
+SOURCES = {"nswc": "NSWC-11 covariate model", "alt": "Accelerated life model", "ph": "Proportional-hazards model",
+           "library": "Data library record", "component": "Data library component"}
 ROLES = ("design", "use", "environment")
 #: Where a block's value came from, in words.
 FROM = {"fixed": "fixed at the position", "block": "this block", "diagram": "the diagram's {role}: {name}",
@@ -66,6 +73,24 @@ def _nswc(ref: str) -> dict:
     if rec.get("kind") != "covariate_model":
         raise BindingError(f"'{rec['label']}' isn't a covariate model.")
     return rec
+
+
+def _record(ref: str) -> dict:
+    from backend.library import service as library
+
+    try:
+        return library.get(ref)
+    except library.LibraryNotFound:
+        raise BindingError(f"There's no library record '{ref}'.") from None
+
+
+def _component(ref: str) -> dict:
+    from backend.library import components
+
+    try:
+        return components.get(ref)
+    except components.ComponentNotFound:
+        raise BindingError(f"There's no library component '{ref}'.") from None
 
 
 def _cycles_input(rec: dict) -> dict:
@@ -110,6 +135,19 @@ def inputs_of(binding: dict, db=None, owners=None) -> list[dict]:
         if covariate.per_cycle(rec):
             out.append(_cycles_input(rec))
         return out
+    if source == "library":
+        from backend.library import record_covariates as rc
+
+        rec = _record(ref)
+        if rec.get("kind") == "covariate_model":
+            return inputs_of({**binding, "source": "nswc"}, db, owners)
+        if rec.get("kind") == "life":
+            raise BindingError(f"'{rec['label']}' is a life model: it has no covariates to fix or set.")
+        return rc.inputs(rec)
+    if source == "component":
+        from backend.library import components
+
+        return components.inputs(_component(ref))
     if source == "alt":
         doc = _alt_doc(ref, db, owners)
         r = doc.results or {}
@@ -184,7 +222,7 @@ def normalise(binding: Any, db=None, owners=None) -> dict:
         raise BindingError("roles maps an input to design, use or environment.")
     out = {"source": source, "ref": ref, "fixed": {}, "roles": {}}
     inputs = {i["key"]: i for i in inputs_of({**out, "roles": roles}, db, owners)}
-    if source in ("alt", "ph"):  # NSWC-11's roles are the handbook's: fixed in the data
+    if source in ("alt", "ph"):  # a library record's roles are the source's: fixed in the data
         out["roles"] = {k: v for k, v in roles.items() if k in inputs}
     fixed = binding.get("fixed") or {}
     if not isinstance(fixed, dict):
@@ -198,6 +236,14 @@ def normalise(binding: Any, db=None, owners=None) -> dict:
             continue
         out["fixed"][k] = _number(inputs[k], v)
     return out
+
+
+def needed_inputs(inputs: list[dict], values: Optional[dict] = None) -> list[dict]:
+    """The inputs asked for given ``values`` (with each input's default where it has no value): an
+    input with ``needed_if`` only when another input has one of the values it names."""
+    have = {i["key"]: i.get("default") for i in inputs}
+    have.update({k: v for k, v in (values or {}).items() if v not in (None, "")})
+    return [i for i in inputs if all(have.get(k) in allowed for k, allowed in (i.get("needed_if") or {}).items())]
 
 
 def open_inputs(binding: dict, db=None, owners=None) -> list[dict]:
@@ -260,6 +306,12 @@ def resolve_node(binding: dict, inputs: list[dict], block_values: Optional[dict]
             values[key], sources[key] = inp["default"], {"from": "default", "words": FROM["default"]}
             continue
         missing.append(inp)
+    # An input asked for only with some value of another (running hours a year when the clock is changed).
+    for inp in [i for i in inputs if i.get("needed_if")]:
+        if not all(values.get(k) in allowed for k, allowed in inp["needed_if"].items()):
+            values.pop(inp["key"], None)
+            sources.pop(inp["key"], None)
+            missing = [i for i in missing if i["key"] != inp["key"]]
     return {"values": values, "sources": sources, "missing": missing}
 
 
@@ -299,6 +351,33 @@ def concrete(binding: dict, values: dict, diagram_unit: str = "hours") -> dict:
             raise BindingError("Its rate comes out at 0 for these values: check them against the handbook's limits.")
         return {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": rate}],
                 "source": "bound", "warnings": got.get("warnings") or []}
+    if source == "library":
+        from backend.library import record_covariates as rc
+
+        rec = _record(binding["ref"])
+        if rec.get("kind") == "covariate_model":
+            return concrete({**binding, "source": "nswc"}, values, diagram_unit)
+        try:
+            got = rc.evaluate(rec, values, "hours")
+        except rc.RecordCovariateError as exc:
+            raise BindingError(" ".join(exc.problems)) from None
+        rate = got["rate_per_hour"] * _hours_per(diagram_unit)
+        if not rate > 0:
+            raise BindingError("Its rate comes out at 0 for these values.")
+        return {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": rate}],
+                "source": "bound", "warnings": got.get("warnings") or [], "clock": got.get("clock")}
+    if source == "component":
+        from backend.library import components
+
+        try:
+            got = components.evaluate(_component(binding["ref"]), values)
+        except components.ComponentError as exc:
+            raise BindingError(" ".join(exc.problems)) from None
+        rate = got["rate_per_calendar_hour"] * _hours_per(diagram_unit)
+        if not rate > 0:
+            raise BindingError("Its rate comes out at 0 for these values.")
+        return {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": rate}],
+                "source": "bound", "warnings": [], "component_probability": got["probability"]}
     if source == "alt":
         return {"kind": "alt_stress", "model_id": binding["ref"], "stress": [float(values[k]) for k in values],
                 "diagram_unit": diagram_unit}
@@ -346,7 +425,7 @@ def bind_graph(graph: dict, inputs_for: Callable[[dict], list[dict]], covariates
             needs.append(needs_words(label, got["missing"]))
             out_nodes.append(n)
             continue
-        ordered = {i["key"]: got["values"][i["key"]] for i in inputs}
+        ordered = {i["key"]: got["values"][i["key"]] for i in inputs if i["key"] in got["values"]}
         try:
             made = concrete(binding, ordered, unit)
         except BindingError as exc:

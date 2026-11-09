@@ -375,6 +375,13 @@ def public_results(model: Model) -> dict:
 
         results["rate_uncertainty"] = unc
         results["ci_note"] = library_models.CI_NOTE
+    if results.get("method") == "library" and isinstance(results.get("library"), dict) \
+            and "covariates" not in results["library"]:
+        # Saved before records had covariates: its pipe length shown as a fixed covariate (read-time only).
+        from backend.maintenance import library_models
+
+        cov = library_models.covariates_of(results)
+        results["library"] = {**results["library"], "covariates": cov["values"], "covariates_words": cov["words"]}
     if model.kind == "regression" and not results.get("metrics_note"):
         # #265: a model saved before says why it has no median / B10 / MTTF too.
         results["metrics_note"] = fitting.REGRESSION_METRICS_NOTE

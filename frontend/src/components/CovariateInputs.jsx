@@ -1,11 +1,15 @@
 import Field from "./ui/Field.jsx";
 import { Select, TextInput } from "./ui/Controls.jsx";
-import { ROLES, defaultText, groupInputs, limitProblem, limitText } from "../covariate.js";
+import { ROLES, defaultText, groupInputs, limitProblem, limitText, neededInputs } from "../covariate.js";
 import "./CovariateCalculator.css";
 
 // A covariate model's inputs, grouped Design / Use / Environment: the one input component for
-// NSWC-11, accelerated life and proportional-hazards models wherever their covariates are set (the
-// record page's Try it, a prediction line's Conditions…, fixing them at a position, an RBD block).
+// every library record's covariates (a pipe's length, the clock and running hours, the demands a
+// year, a handbook part's environment and quality, NSWC-11's conditions, a component's demands and
+// hours), accelerated life and proportional-hazards models, wherever they're set (a record's or
+// component's Try it, Use as a model…, a prior in the Fit dialog, a prediction line's Conditions…,
+// fixing them at a position, an RBD block). An input another one's value makes unnecessary
+// (``needed_if``: running hours when the clock is the record's own) isn't shown.
 // Each shows its unit, its default (and where that comes from) and its limits; a value past a
 // limit says which, and the page, as it's typed. Options add what a place needs:
 //
@@ -24,7 +28,7 @@ export default function CovariateInputs({
   const set = (key, v) => onChange?.({ ...values, [key]: v });
   return (
     <div className="cov-inputs">
-      {groupInputs(inputs).map((g) => (
+      {groupInputs(neededInputs(inputs, values)).map((g) => (
         <fieldset key={g.role} className="cov-group">
           <legend className="cov-legend">{g.label}</legend>
           {g.what && <p className="cov-what">{g.what}</p>}

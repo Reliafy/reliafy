@@ -16,6 +16,7 @@ import {
 import { fmt } from "../explorerModels.js";
 import TablePane from "./TablePane.jsx";
 import LibraryRecordPicker, { PickedRecord } from "./LibraryRecordPicker.jsx";
+import { RecordCovariatesField, useRecordCovariates } from "./LibraryParts.jsx";
 import { rowFromDetail } from "../libraryPicker.js";
 import "./RcmWorksheet.css";
 import "./FitLifeModel.css";
@@ -124,6 +125,13 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
       .then(([d, src]) => live && setRecord(rowFromDetail(d, src.sources)), () => {});
     return () => { live = false; };
   }, [state.recordId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The record's covariates (a pipe's length, the clock, the demands a year...): the shared calculator
+  // under the picked record, its values kept on the request.
+  const libCov = useRecordCovariates(state.recordId, opened.libCov);
+  const libSig = JSON.stringify([libCov.toSave, libCov.missing.map((i) => i.label)]);
+  useEffect(() => {
+    setState((s) => ({ ...s, libCov: libCov.toSave, libMissing: libCov.missing.map((i) => i.label) }));
+  }, [libSig]); // eslint-disable-line react-hooks/exhaustive-deps
   const [preview, setPreview] = useState({ data: null, refused: null, busy: false });
   const [chart, setChart] = useState("sf");
   const [saving, setSaving] = useState(false);
@@ -250,6 +258,7 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
                       <PickedRecord record={state.recordId ? record || { id: state.recordId } : null} onPick={() => setPicking(true)} />
                     </div>
                     {state.recordId && <p className="fit2-sum">{libraryPriorWords(state.distribution, record)}</p>}
+                    {state.recordId && record?.kind !== "life" && <RecordCovariatesField recordId={state.recordId} cov={libCov} idPrefix="fitcov" />}
                     {record?.kind !== "life" && (state.distribution === "weibull" || state.distribution === "lognormal") && (
                       <div className="fit2-pair">
                         <TextInput inputMode="decimal" aria-label="Shape between" placeholder="Shape between (0.5)" value={state.libShape.lo || ""}

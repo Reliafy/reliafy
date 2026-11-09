@@ -81,3 +81,5 @@ th.pred2-c-ne, td.pred2-c-ne { text-align: center; }
 .pred2-table .pred2-cond.is-needed { border-color: var(--warn-line); color: var(--warn); }
 .pred2-needs { color: var(--warn); font-size: var(--fs-12); white-space: nowrap; }
 .pred2-disclaimer { font-size: var(--fs-12); }
+.pred-q-cell { display: inline-flex; flex-direction: column; gap: 4px; align-items: flex-end; max-width: 9rem; }
+.pred-q-cell button { white-space: normal; text-align: right; }
