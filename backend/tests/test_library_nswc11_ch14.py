@@ -146,3 +146,28 @@ def test_motor_reads_the_real_part_records():
     assert used == {"nswc-11:shaft", "nswc-11:bearing-rolling-load-rating", "nswc-11:gear"}
     assert covariate.problems(rec, library.get) == []
     assert math.isfinite(lam("electric-motor", motor_type="ac_single", n_BE=1)["total"])
+
+
+def test_the_editor_is_told_which_inputs_wait_on_another():
+    # An input the model reads only when another has a certain value says so in terms an editor can
+    # check, so the rise isn't asked for until the insulation class is known (p. 14-11).
+    rows = {i["key"]: i for i in library.covariate_inputs(library.get("nswc-11:electric-motor"))}
+    assert rows["rise"]["needed_when"] == [{"key": "ins_class", "op": "!=", "value": "unknown"}]
+    assert "needed_when" not in rows["n"] and "when" not in rows["rise"]
+    # A part's inputs name the others by their keys here: the shaft's sections and its finish.
+    assert rows["shaft.D_L"]["needed_when"] == [{"key": "shaft.len_L", "op": ">", "value": 0}]
+    assert rows["shaft.T_S"]["needed_when"] == [{"key": "shaft.finish", "op": "!=", "value": "polished"},
+                                                {"key": "shaft.finish", "op": "!=", "value": "ground"}]
+    # The terms agree with the model: what they leave out, a rate doesn't need.
+    needed_first = [k for k, i in rows.items() if i.get("default") is None and "needed_when" not in i]
+    with pytest.raises(covariate.CovariateError) as exc:
+        covariate.evaluate(library.get("nswc-11:electric-motor"), {}, library.get)
+    assert set(exc.value.missing) <= set(needed_first) | {"shaft.D_X"}
+
+
+def test_only_plain_comparisons_become_terms():
+    assert covariate.when_terms("shape == 'gasket'") == [{"name": "shape", "op": "==", "value": "gasket"}]
+    assert covariate.when_terms("a > 0 and b <= 2.5") == [{"name": "a", "op": ">", "value": 0},
+                                                          {"name": "b", "op": "<=", "value": 2.5}]
+    for more in ("a > 0 or b > 0", "a + b > 0", "a > b", "not a", "0 < a < 2", "a >"):
+        assert covariate.when_terms(more) is None

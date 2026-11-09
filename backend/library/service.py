@@ -201,7 +201,20 @@ def covariate_inputs(rec: dict) -> list[dict]:
     shows them."""
     keep = ("key", "name", "group", "role", "kind", "label", "symbol", "unit", "default", "default_basis", "limits",
             "choices", "page", "help")
-    return [{k: i[k] for k in keep if k in i} for i in covariate.inputs(rec, resolve)]
+    every = covariate.inputs(rec, resolve)
+    keys = {i["key"] for i in every}
+    out = []
+    for i in every:
+        row = {k: i[k] for k in keep if k in i}
+        # An input the model reads only when others have certain values ("when"), as terms the editor can
+        # check: [{key, op, value}], every one to hold. Left off (always asked) when it isn't that plain,
+        # or when one of the others isn't entered here.
+        terms = covariate.when_terms(i["when"]) if i.get("when") else None
+        prefix = i["key"][:len(i["key"]) - len(i["name"])]
+        if terms and all(prefix + t["name"] in keys for t in terms):
+            row["needed_when"] = [{"key": prefix + t["name"], "op": t["op"], "value": t["value"]} for t in terms]
+        out.append(row)
+    return out
 
 
 def record_inputs(rec: dict) -> list[dict]:

@@ -154,6 +154,35 @@ test("a record's covariates: running hours only when the clock is changed", () =
   assert.deepEqual(covariatesToSave([CLOCK, HOURS], { clock: "calendar", running_hours_per_year: "4380" }), { clock: "calendar", running_hours_per_year: 4380 });
 });
 
+test("an input the model reads only under a condition isn't asked for until it holds", () => {
+  const CLASS = { key: "ins_class", kind: "choice", default: "unknown", choices: [{ code: "unknown" }, { code: "F" }] };
+  const RISE = { key: "rise", kind: "number", needed_when: [{ key: "ins_class", op: "!=", value: "unknown" }] };
+  assert.equal(isNeeded(RISE, [CLASS, RISE], {}), false);
+  assert.equal(isNeeded(RISE, [CLASS, RISE], { ins_class: "F" }), true);
+  assert.deepEqual(missingOf([CLASS, RISE], {}), []);
+  assert.deepEqual(missingOf([CLASS, RISE], { ins_class: "F" }).map((i) => i.key), ["rise"]);
+  // Numbers compare as numbers; a length still to type can't be told, so its diameter is asked for.
+  const LEN_X = { key: "shaft.len_X", kind: "number" };
+  const D_X = { key: "shaft.D_X", kind: "number", needed_when: [{ key: "shaft.len_X", op: ">", value: 0 }] };
+  assert.equal(isNeeded(D_X, [LEN_X, D_X], {}), true);
+  assert.equal(isNeeded(D_X, [LEN_X, D_X], { "shaft.len_X": "0" }), false);
+  assert.equal(isNeeded(D_X, [LEN_X, D_X], { "shaft.len_X": "1.2" }), true);
+  assert.equal(isNeeded(D_X, [LEN_X, D_X], { "shaft.len_X": "abc" }), true);
+  const LEN_L = { key: "shaft.len_L", kind: "number", default: 0 };
+  const D_L = { key: "shaft.D_L", kind: "number", needed_when: [{ key: "shaft.len_L", op: ">", value: 0 }] };
+  assert.deepEqual(neededInputs([LEN_L, D_L], {}).map((i) => i.key), ["shaft.len_L"]);
+  assert.deepEqual(neededInputs([LEN_L, D_L], { "shaft.len_L": "2" }).map((i) => i.key), ["shaft.len_L", "shaft.D_L"]);
+  // Every term must hold; the other input not entered here (fixed elsewhere): asked for.
+  const FINISH = { key: "finish", kind: "choice", default: "polished" };
+  const T_S = { key: "T_S", kind: "number", needed_when: [{ key: "finish", op: "!=", value: "polished" }, { key: "finish", op: "!=", value: "ground" }] };
+  assert.equal(isNeeded(T_S, [FINISH, T_S], {}), false);
+  assert.equal(isNeeded(T_S, [FINISH, T_S], { finish: "ground" }), false);
+  assert.equal(isNeeded(T_S, [FINISH, T_S], { finish: "machined" }), true);
+  assert.equal(isNeeded(T_S, [T_S], {}), true);
+  // What's saved leaves out a value typed for an input no longer asked for.
+  assert.deepEqual(covariatesToSave([CLASS, RISE], { rise: "85" }), {});
+});
+
 test("a library record's binding at a position, and what's ticked", () => {
   assert.deepEqual(bindingForRecord({ id: "nswc-11:bearing", kind: "covariate_model" }), { source: "nswc", ref: "nswc-11:bearing" });
   assert.deepEqual(bindingForRecord({ id: "nrc-inl-2020:pipe-sws-els", kind: "rate" }), { source: "library", ref: "nrc-inl-2020:pipe-sws-els" });

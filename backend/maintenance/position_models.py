@@ -1045,8 +1045,9 @@ def bayes_position(m, db, owners, hidden, position_id: str, baseline: dict | Non
 # A position's predicted failure rate from its parts list (Derryn, 9 Nov 2026: "failure
 # prediction in the sense of the parts/component method; this is the only place that should
 # go"): the parts listed at the position and every position inside it (replacement parts and
-# components; consumables aren't in it), or a product design's bill of materials where its
-# positions list none. Each part takes a handbook part type (MIL-HDBK-217F base rate) and a
+# components; consumables aren't in it), together with, on a product's design, the parts of its
+# bill of materials that no parts list in it has (a part on both is counted once, from the parts
+# lists, with what's inside it). Each part takes a handbook part type (MIL-HDBK-217F base rate) and a
 # quality factor, or an NSWC-11 mechanical component with its conditions (a covariate model); the environment is set once on the position (default: the nearest position
 # above with a prediction, else the handbook's ground fixed). The parts count itself is
 # backend/services/reliability_prediction.py. It's saved as a reliability prediction (on the
@@ -1100,12 +1101,41 @@ def _left_out_keys(left_out) -> set[str]:
     return {str(k) for k in (left_out or []) if isinstance(k, (str, int)) and str(k)}
 
 
+def _sample_tree(m, position_id: str) -> bool:
+    """Whether the position is in a copy of the sample product: its design, or a unit built from it."""
+    from backend.maintenance import templates
+
+    top, seen = m.s.node(m.org, position_id, "Position"), set()
+    while top and top["id"] not in seen:
+        seen.add(top["id"])
+        parent = m._parent(top["id"])
+        if not parent or parent.get("label") != "Position":
+            break
+        top = parent
+    design = top if not top or top.get("design") else m.s.node(m.org, top.get("design_position_id") or "", "Position")
+    return templates.is_sample_product(design)
+
+
+def _started(a: dict, reference: str, sample: bool) -> dict:
+    """A line's assignment, with the sample's conditions for its part where it has an NSWC-11
+    model and none of its own yet (the sample product only: its motors, templates.py)."""
+    if not sample or not a.get("record_id") or a.get("conditions"):
+        return a
+    from backend.maintenance import templates
+
+    start = templates.sample_part_conditions(reference, a["record_id"])
+    return {**a, "conditions": start} if start else a
+
+
 def prediction_lines(m, position_id: str, assign: dict | None = None, previous: dict | None = None,
                      left_out=None) -> dict:
     """The parts-count lines for a position: {lines (each with part_id, and listing_id and
-    position {id, name} when it's on a parts list), source ("parts lists" or "bill of materials"),
-    positions, warnings}. ``assign`` {part id or part number: {record_id, quality_factor} or
-    {rate_per_million_hours} or {excluded: true}} and ``previous`` (the last prediction's, by part
+    position {id, name} when it's on a parts list), source ("parts lists", "bill of materials" or
+    "parts lists and bill of materials"), positions, warnings}. A product's design counts both: its
+    positions' parts lists, then the parts of its bill of materials that none of them lists (so a
+    part added to a parts list never takes the bill of materials' other lines away, and a part on
+    both is counted once, as its parts lists have it). ``assign`` {part id or part number:
+    {record_id, quality_factor} or {rate_per_million_hours} or {excluded: true}} and ``previous`` (the last prediction's, by part
     number) give part types. ``left_out`` [listing id or part number]: lines left out of this
     prediction (they stay on the parts list); None takes the last prediction's (``previous``'s
     ``_left_out``)."""
@@ -1114,6 +1144,7 @@ def prediction_lines(m, position_id: str, assign: dict | None = None, previous: 
     root = m._get(position_id, "Position")
     previous = previous or {}
     out_keys = _left_out_keys(previous.get("_left_out") if left_out is None else left_out)
+    sample = _sample_tree(m, position_id)
     lines, warnings, n, branch = [], [], 0, []
     for pid, path in _branch(m, position_id):
         n += 1
@@ -1135,19 +1166,25 @@ def prediction_lines(m, position_id: str, assign: dict | None = None, previous: 
                 if fixed:
                     a = {**a, "conditions": {k: v for k, v in fixed.items() if k != "cycles_per_hour"},
                          **({"cycles_per_hour": fixed["cycles_per_hour"]} if "cycles_per_hour" in fixed else {})}
+            a = _started(a, ref, sample)
             lines.append({"part_id": part["id"], "listing_id": view["id"], "position": dict(here), "role": view["role"],
                           "name": part.get("name") or ref or "Part", "reference": ref,
                           "quantity": view.get("quantity") or 1, "assembly": list(path), **_line_type(a),
                           "left_out": view["id"] in out_keys})
     source = "parts lists"
-    if not lines and root.get("design"):
-        bom = rp.lines_from_product(m, position_id)
-        warnings += bom.get("warnings") or []
+    if root.get("design"):
+        # A product's design: its bill of materials too, less the parts a parts list has already.
+        on_lists = len(lines)
+        bom = rp.lines_from_product(m, position_id, skip=frozenset(ln["reference"].lower() for ln in lines
+                                                                   if ln["reference"]))
+        if bom.get("lines") or not on_lists:
+            warnings += bom.get("warnings") or []
         for ln in bom.get("lines") or []:
-            a = _assigned(assign, previous, None, ln.get("reference"))
+            a = _started(_assigned(assign, previous, None, ln.get("reference")), ln.get("reference") or "", sample)
             lines.append({**ln, "part_id": None, **_line_type(a),
                           "left_out": bool(ln.get("reference")) and ln.get("reference") in out_keys})
-        source = "bill of materials"
+        if len(lines) > on_lists or not on_lists:
+            source = "parts lists and bill of materials" if on_lists else "bill of materials"
     return {"lines": lines, "source": source, "positions": n, "warnings": warnings,
             "position": {"id": root["id"], "name": root["name"]}, "branch": branch}
 
@@ -1158,7 +1195,9 @@ def _prediction_links(m, position_id: str) -> list[dict]:
 
 def default_environment(m, position_id: str) -> str:
     """The environment a new prediction starts from: this position's last, else the nearest
-    position above with one, else the handbook's default."""
+    position above with one, else the handbook's default (the sample product: its own,
+    templates.SAMPLE_PRODUCT_ENVIRONMENT)."""
+    from backend.maintenance import templates
     from backend.services import reliability_prediction as rp
 
     pid = position_id
@@ -1171,7 +1210,7 @@ def default_environment(m, position_id: str) -> str:
                 return env
         parent = m._parent(pid)
         pid = parent["id"] if parent and parent.get("label") == "Position" else None
-    return rp.DEFAULT_ENVIRONMENT
+    return templates.SAMPLE_PRODUCT_ENVIRONMENT if _sample_tree(m, position_id) else rp.DEFAULT_ENVIRONMENT
 
 
 def _previous_types(db, owners, m, position_id: str) -> dict:

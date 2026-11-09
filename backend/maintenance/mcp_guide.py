@@ -468,8 +468,8 @@ life_data says more). With plenty of failures, fit the history instead.
 the row shows the model as fitted (its lowest tested stress, or the fit's average covariates). The stress at \
 the position is set where the model is used (an RBD block, a calculation), not on the link.
 - A parts-count prediction: models.link with prediction {environment?, mission_time?, assign?} predicts the \
-position's failure rate from its parts list and those of the positions inside it (a product design's bill of \
-materials where they list none): each part needs a handbook part type (assign {part number: {record_id, \
+position's failure rate from its parts list and those of the positions inside it (on a product design, plus the bill-of-\
+materials parts they don't list): each part needs a handbook part type (assign {part number: {record_id, \
 quality_factor?}}, a record from list kind library; parts without one are left out, and its last prediction's \
 are reused). A part the handbook has no type for (a battery) takes {rate_per_million_hours} the user gives; a \
 mechanical part (airframe, propeller) takes {excluded: true}: left out, and the result names it. The environment is set once (default: the position's last, else the nearest above). It's saved as \

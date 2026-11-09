@@ -151,6 +151,28 @@ def names_in(text: str) -> set[str]:
     return {n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and id(n) not in called}
 
 
+_WHEN_OPS = {ast.Eq: "==", ast.NotEq: "!=", ast.Gt: ">", ast.GtE: ">=", ast.Lt: "<", ast.LtE: "<="}
+
+
+def when_terms(text: str) -> Optional[list[dict]]:
+    """An input's ``when`` as plain terms a form can check as values are typed ({name, op, value}, every
+    one to hold), or None when it is more than one input compared with a fixed value, or several such
+    joined by ``and`` (a form then asks for the input whatever the others are)."""
+    try:
+        tree = parse(text)
+    except ExpressionError:
+        return None
+    body = tree.body if isinstance(tree, ast.Expression) else tree
+    parts = body.values if isinstance(body, ast.BoolOp) and isinstance(body.op, ast.And) else [body]
+    terms = []
+    for part in parts:
+        if not (isinstance(part, ast.Compare) and len(part.ops) == 1 and type(part.ops[0]) in _WHEN_OPS
+                and isinstance(part.left, ast.Name) and isinstance(part.comparators[0], ast.Constant)):
+            return None
+        terms.append({"name": part.left.id, "op": _WHEN_OPS[type(part.ops[0])], "value": part.comparators[0].value})
+    return terms
+
+
 def _eval(node: ast.AST, scope: dict[str, Any]) -> Any:
     if isinstance(node, ast.Expression):
         return _eval(node.body, scope)

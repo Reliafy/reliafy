@@ -103,6 +103,60 @@ def test_the_sample_product_is_a_design_with_items_built_and_reports(store, db):
     _rebuilds_the_same(m)
 
 
+def test_a_prediction_of_the_sample_starts_airborne_and_keeps_every_line(store, db):
+    """A parts count on the sample: its environment starts at the handbook's airborne, rotary
+    winged (the sample only), a part added to its parts list is one more line beside the bill of
+    materials' eleven, and a motor line given NSWC-11's electric motor starts from the sample's
+    conditions, so it has a rate at once."""
+    from backend.maintenance import position_models as pm
+    from backend.services import samples
+
+    samples.seed_samples(db)
+    owners = [ORG, "__samples__"]
+    m = Maintenance(store, ORG, "Ana")
+    out = templates.add_sample_product(m, db)
+    pid = out["product"]["id"]
+    first = pm.predict_position(m, db, owners, set(), pid)
+    assert first["environment"] == templates.SAMPLE_PRODUCT_ENVIRONMENT == "ARW"
+    bom = sorted(row[0] for row in templates.SAMPLE_PRODUCT_BOM)
+    assert sorted(ln["reference"] for ln in first["lines"]) == bom and len(bom) == 11
+    assert first["source"] == "bill of materials"
+    # A position inside it, and a unit built from it, start there too; another product doesn't.
+    motor1 = next(p["id"] for p in m.s.nodes(ORG, "Position") if p["name"] == "Motor 1" and not p.get("design_position_id"))
+    assert pm.default_environment(m, motor1) == "ARW"
+    assert pm.default_environment(m, out["items"][0]["top_position_id"]) == "ARW"
+    other = m.create_product("Ground station", part_number="GS-1")["id"]
+    assert pm.default_environment(m, other) == "GF"
+    # "+ Add a part" on the product: twelve lines, not one.
+    light = m.create_part("SQ-LED1", "Navigation light")["id"]
+    m.add_position_part(pid, light, role="component", quantity=1)
+    more = pm.predict_position(m, db, owners, set(), pid)
+    assert more["lines"][0]["reference"] == "SQ-LED1" and more["lines"][0]["listing_id"]
+    assert sorted(ln["reference"] for ln in more["lines"][1:]) == bom
+    # The motors on NSWC-11's electric motor: the sample's conditions, and a rate straight away.
+    motor = pm.predict_position(m, db, owners, set(), pid, assign={"SQ-M2210": {"record_id": samples.SAMPLE_MOTOR_MODEL}})
+    line = next(ln for ln in motor["lines"] if ln["reference"] == "SQ-M2210")
+    assert line["conditions"] == samples.SAMPLE_MOTOR_CONDITIONS
+    assert motor["results"]["counts"].get("needs_conditions", 0) == 0
+    counted = next(ln for ln in motor["results"]["lines"] if ln["reference"] == "SQ-M2210")
+    assert counted["rate_per_million_hours"] > 0 and counted["quantity"] == templates.ARMS
+    # Conditions given on the line are kept as given; another model takes none from the sample.
+    own = {**samples.SAMPLE_MOTOR_CONDITIONS, "n": 5500}
+    given = pm.predict_position(m, db, owners, set(), pid,
+                                assign={"SQ-M2210": {"record_id": samples.SAMPLE_MOTOR_MODEL, "conditions": own}})
+    assert next(ln for ln in given["lines"] if ln["reference"] == "SQ-M2210")["conditions"]["n"] == 5500
+    geared = pm.predict_position(m, db, owners, set(), pid, assign={"SQ-M2210": {"record_id": "nswc-11:electric-motor-geared"}})
+    assert "conditions" not in next(ln for ln in geared["lines"] if ln["reference"] == "SQ-M2210")
+    # Made the user's own, it is the same design: the same starting points.
+    m.clear_sample(pid)
+    assert pm.default_environment(m, pid) == "ARW"
+    # A saved prediction's environment is the next one's, as on any position.
+    pm.predict_position(m, db, owners, set(), pid, environment="GM", assign={"SQ-LED1": {"rate_per_million_hours": 1.0}},
+                        save=True)
+    assert pm.default_environment(m, pid) == "GM"
+    _rebuilds_the_same(m)
+
+
 def test_once_unless_asked_again_and_another_workspace_is_untouched(store, db):
     m = Maintenance(store, ORG, "tester")
     first = templates.add_sample_product(m, db)

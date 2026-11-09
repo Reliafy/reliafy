@@ -18,7 +18,7 @@ import { saveErrorText } from "../confirm.js";
 import { defaultQuality, fmtPerMillion, fmtQuantity, handbookConditionsLabel, qualityHint } from "../predictions.js";
 import { predictionAssign } from "../explorerModels.js";
 import {
-  branchPositions, conditionsLabel, isCovariateLine, leftOutKeys, lineChange, lineFromPreview, lineKey, lineMenu, lineMode,
+  adoptConditions, branchPositions, conditionsLabel, isCovariateLine, leftOutKeys, lineChange, lineFromPreview, lineKey, lineMenu, lineMode,
   mergeLines, noPartsText, predictionKey, predictionResult, predictionTitle, quantityTyped, removeQuestion, resultLines,
 } from "../predictionPane.js";
 import "./ModelTable.css";
@@ -28,7 +28,8 @@ import "./PredictionPane.css";
 // 9 Nov 2026: reliability prediction "by the parts/component method; this is the only place that
 // should go", and it "should also be the same, where it fills up the table area of the explorer
 // view"): a parts count of the position from its parts list and those of the positions inside it
-// (a product design's bill of materials where they list none). Set the environment once; give each
+// (on a product design, plus the bill-of-materials parts they don't list; a part on both is
+// counted once, from the parts lists). Set the environment once; give each
 // part a handbook part type (and a quality factor where the handbook has one), a rate of the user's
 // own for a part the handbook doesn't have (a battery), or tick "Not electronic" for a mechanical
 // part (an airframe, a propeller) to leave it out. The parts table takes the width; the result
@@ -102,8 +103,11 @@ export default function PredictionPane({ position, link = null, phone = false, h
           setLines((old) => {
             const got = mergeLines(old || [], d.lines, d.results);
             if (got.added.length) focusKey.current = got.added[got.added.length - 1];
-            return got.lines;
+            return adoptConditions(got.lines, d.lines);
           });
+        } else {
+          // A part type just chosen that the server starts from conditions: the line shows them.
+          setLines((old) => (old ? adoptConditions(old, d.lines) : old));
         }
       }, (e) => {
         if (mine !== seq.current) return;

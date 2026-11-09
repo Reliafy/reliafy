@@ -120,8 +120,9 @@ them later with **Fix covariates at this position…** on the row's ⋯ menu.
 
 **Prediction › Add a prediction (parts count)…** works
 out a parts count from the position's parts list and those of the positions
-inside it (on a product's design, its bill of materials where they list
-none). Set the environment once, the place the equipment works; the next
+inside it. On a product's design it also counts the parts of the bill of
+materials that aren't on a parts list, so a part you add never takes the
+other lines away; a part on both is counted once, from the parts lists. Set the environment once, the place the equipment works; the next
 prediction below it starts from the same one. Give each part a handbook part
 type (and a quality factor where the handbook has one): each part's rate is
 its base rate times the factors, and the rates add up as if every part were
