@@ -2649,6 +2649,8 @@ export async function hasFmeaExcel(positionId) {
   try {
     const res = await authedFetch(`${fmeaExcelUrl(positionId)}?scope=this`);
     fmeaExcel = res.status !== 404;
+    // Read the answer through, so the request ends (a body left unread stays open).
+    await res.arrayBuffer().catch(() => {});
   } catch {
     fmeaExcel = false;
   }
