@@ -876,7 +876,7 @@ export const COLUMNS = [
   {
     id: "interval", label: "Interval", width: 92, min: 72, on: true, align: "num",
     title: "How often the task is done, in its unit",
-    text: (r) => (isMode(r) ? whenText(d(r)) : ""),
+    text: (r) => (isTask(r) ? whenText(r.ref.task) : isMode(r) ? whenText(d(r)) : ""),
     sort: (r) => (isMode(r) && d(r)?.interval && !onEventOnly(d(r)) ? Number(d(r).interval) : null),
     // A task raised by an event: its trigger is changed in the task's Edit… (Trigger).
     edit: "number", can: (r) => isMode(r) && INTERVAL_OUTCOMES.has(d(r)?.outcome) && !onEventOnly(d(r)), field: "interval", onDecision: true,

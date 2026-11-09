@@ -239,12 +239,18 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks, onWorkin
 }
 
 // A task row's cells (the tree's fifth level): its kind in the Decision column; how
-// often, then "Serves N here" and "In: ‹package›" as chips, in the Task column.
+// often in the Interval column, as a failure mode's row has it; "Serves N here" and
+// "In: ‹package›" as chips in the Task column. Where the Interval column isn't shown, how
+// often leads the Task cell and the chips give way to it (RcmWorksheet.css).
 function TaskCell({ col, r }) {
   const t = r.ref.task || {};
   if (col.id === "decision") {
     const kind = taskKindText(r);
     return kind ? <span className="rw-txt" title={kind}>{kind}</span> : null;
+  }
+  if (col.id === "interval") {
+    const when = col.text(r);
+    return when ? <span className="rw-txt rw-task-iv" title={when}>{when}</span> : null;
   }
   if (col.id !== "task") return null;
   const every = everyText(t);

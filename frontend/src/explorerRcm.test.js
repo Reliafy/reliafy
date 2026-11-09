@@ -790,7 +790,9 @@ test("a task row's cells, phone line, menu and search", () => {
   assert.equal(COLUMN.decision.text(t1), "On condition");
   assert.equal(COLUMN.task.text(t1), "every 4 weeks · Serves 2 here");
   assert.equal(COLUMN.task.text(t2), "every 1 year · In: Yearly overhaul");
-  assert.equal(COLUMN.interval.text(t1), "");
+  // How often is in the Interval column, as a failure mode's row has it.
+  assert.equal(COLUMN.interval.text(t1), "4 weeks");
+  assert.equal(COLUMN.interval.text(t2), "1 year");
   assert.equal(COLUMN.modes.text(t1), ""); // never "0": nothing is inside a task
   assert.equal(COLUMN.consequence.text(t1), "");
   assert.equal(TASK_WITH_INTERVAL.text(t1), "every 4 weeks · Serves 2 here");

@@ -891,10 +891,20 @@ span.rim-tname.rim-r1-body { display: block; }
 @media (max-width: 480px) { .rim-calc { min-height: 36px; } }
 
 /* Tasks as the RCM tree's fifth level (Derryn, 9 Nov 2026). A task row's Task cell: how
-   often, then its chips, kept on the one line; the mode's step 3 lists its tasks as links. */
-.rw-taskrow { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; }
+   often, then its chips; the mode's step 3 lists its tasks as links. How often is shown
+   whole while the cell can hold it; a chip is shown whole or not at all: one with no room
+   beside what's before it wraps to a second line, which the one-line height cuts off (the
+   row gap keeps that line clear of the first). Only what leads the cell is ever cut short
+   with an ellipsis. Nothing is lost: the cell's tooltip and the task's details have it all. */
+.rw-taskrow {
+  display: inline-flex; flex-wrap: wrap; align-items: center; align-content: flex-start; gap: 30px 6px;
+  height: 20px; line-height: 20px; max-width: 100%; min-width: 0;
+}
 .rw-taskrow .rw-task-t { flex: 0 1 auto; }
-.rw-taskrow .rw-tchip { flex: none; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A block, not the chip's usual flex box, so a long one that leads the cell ends in an ellipsis. */
+.rw-taskrow .rw-tchip { display: block; flex: 0 1 auto; min-width: 0; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* With the Interval column shown, how often is there (.rw-task-iv), not here as well. */
+.tp-row:has(.rw-task-iv) .rw-taskrow > .rw-task-t { display: none; }
 .tp-row.tt.tt-task .tp-nm { font-weight: 400; }
 .tt-task .tp-ic { color: var(--muted); }
 .rim-tasklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
