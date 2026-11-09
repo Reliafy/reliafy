@@ -8,12 +8,17 @@
 // Both ride with the graph wherever it goes (save, validate, analyse, the
 // assistant), exactly like the diagram's costs and policies.
 
-export const MISSION_KEYS = ["phases", "network"];
+//   missions: [{ id, name, phases }]  more named missions over the same blocks, and
+//   mission_name: the name of the diagram's own (phases), both set on the Explorer's Missions tab
+//   (explorerMissions.js) and carried through the builder untouched.
+export const MISSION_KEYS = ["phases", "network", "missions", "mission_name"];
 
 // The mission keys a graph has set.
 export function missionFields(graph) {
   const out = {};
   if (Array.isArray(graph?.phases) && graph.phases.length) out.phases = graph.phases;
+  if (Array.isArray(graph?.missions) && graph.missions.length) out.missions = graph.missions;
+  if (graph?.mission_name && out.phases) out.mission_name = graph.mission_name;
   if (graph?.network && typeof graph.network === "object") out.network = graph.network;
   return out;
 }
@@ -132,6 +137,11 @@ export function cleanPhases(rows, nodes) {
       else v[id] = num;
     }
     if (Object.keys(v).length) out.votes = v;
+    // A phase's covariate values (set on the Missions tab) ride along: the blocks' own kept only
+    // for blocks still in the diagram.
+    if (r.values && Object.keys(r.values).length) out.values = { ...r.values };
+    const bv = Object.fromEntries(Object.entries(r.block_values || {}).filter(([id]) => blocks.has(id)));
+    if (Object.keys(bv).length) out.block_values = bv;
     return out;
   });
   return { phases, errors };
