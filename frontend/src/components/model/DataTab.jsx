@@ -11,7 +11,7 @@ import { ScrollCard, TablePanel } from "./ModelLayouts.jsx";
 import { getDataset } from "../../api.js";
 import { formatNumber, formatPercent } from "../../format.js";
 import { bestFitSentence, compareRows } from "../../lifeResults.js";
-import { dataWords } from "../../modelFrame.js";
+import { dataWords, intervalLevel } from "../../modelFrame.js";
 import { unitInText } from "../unitText.js";
 import { fmtP } from "../RegressionChecks.jsx";
 
@@ -23,6 +23,14 @@ const PART = { baseline: "Baseline", coefficients: "Covariate", frailty: "Groups
 function howWords(result) {
   const o = result.options || {};
   const out = [];
+  if (result.method === "bayesian_update") {
+    // Read from the saved model, never assumed: a Bayesian update isn't a maximum-likelihood fit.
+    const lv = intervalLevel(result);
+    out.push(`Fitted by a Bayesian update: the baseline (the prior) moved by the data. Ranges are ${lv.label} intervals: a ${lv.pct}% chance the value lies in them, given the baseline and the data.`);
+    if (result.bayes?.label) out.push(`${result.bayes.label}.`);
+    if (result.plot_note) out.push(result.plot_note);
+    return out;
+  }
   const method = o.how && o.how !== "MLE" ? o.how : "maximum likelihood";
   if (!result.params_only && result.kind !== "nonparametric") out.push(`Fitted by ${method}.`);
   const adj = [
@@ -247,10 +255,11 @@ function Parameters({ result }) {
       </section>
     );
   }
+  const lv = intervalLevel(result);
   return (
-    <ScrollCard title="Every parameter" sub={params.some((p) => p.ci) ? "with 95% intervals" : null}>
+    <ScrollCard title="Every parameter" sub={params.some((p) => p.ci) ? `with ${lv.label} intervals` : null}>
       <table className="mini-table">
-        <thead><tr><th>Parameter</th><th className="mf-num">Estimate</th><th className="mf-num">95% interval</th></tr></thead>
+        <thead><tr><th>Parameter</th><th className="mf-num">{lv.credible ? "Median" : "Estimate"}</th><th className="mf-num">{lv.label} interval</th></tr></thead>
         <tbody>
           {params.map((p) => {
             const v = paramView(result.kind === "regression" ? base : result, p);
@@ -268,7 +277,9 @@ function Parameters({ result }) {
           ))}
         </tbody>
       </table>
-      <CiNote params={params} note={result.ci_note} />
+      {lv.credible || result.method === "library"
+        ? result.ci_note && <p className="param-ci-note">{result.ci_note}</p>
+        : <CiNote params={params} note={result.ci_note} />}
     </ScrollCard>
   );
 }

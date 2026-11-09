@@ -3308,6 +3308,9 @@ def confidence_bounds(
             warnings.simplefilter("ignore", RuntimeWarning)
             if regression:
                 cb = regression_bands.band(model, entry["fields"], values, grid, on, alpha_ci, bound)
+            elif life_bounds.is_bayesian(model):
+                # A Bayesian update: the credible band (its cb refuses).
+                cb = np.asarray(model.cri(grid, on=on, alpha_ci=alpha_ci, bound=bound), dtype=float)
             else:
                 cb = _cb_off_pinned_points(model, grid, on, alpha_ci, bound)
     except Exception as exc:

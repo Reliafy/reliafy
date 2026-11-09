@@ -54,3 +54,16 @@ export function formatWithUnit(v, unit, opts) {
   if (!unit || s === MISSING) return s;
   return `${s} ${s === "1" ? singularUnit(unit) : unit}`;
 }
+
+// A data cell for a preview table: a number with a long fraction reads at
+// four significant figures ("3.438740588637919" → "3.439"); whole numbers,
+// short decimals and text stay as they were, so ids and codes aren't touched.
+export function formatCell(cell) {
+  if (cell == null) return "";
+  const text = String(cell);
+  if (typeof cell !== "number" && !/^\s*-?\d*\.\d+(e-?\d+)?\s*$/i.test(text)) return text;
+  const n = Number(cell);
+  if (!Number.isFinite(n) || Number.isInteger(n)) return text;
+  const digits = text.replace(/e.*$/i, "").replace(/[-.\s]/g, "").replace(/^0+/, "");
+  return digits.length > 4 ? formatNumber(n, { sig: 4 }) : text;
+}

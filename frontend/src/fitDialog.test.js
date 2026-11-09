@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bodyOf, effective, previewKey, priorChoices, problem } from "./fitDialog.js";
+import { bodyOf, dataOptions, effective, previewKey, priorChoices, problem, refusalWords } from "./fitDialog.js";
 
 const base = { data: "position", method: "mle", priorKind: "class", distribution: "weibull", trust: "guide", modes: [], exclude: [],
   unit: "hours", params: {}, b10: {}, shape: {} };
@@ -77,4 +77,13 @@ test("a library record as the prior", async () => {
   assert.ok(!showsTrust("library"));
   assert.match(libraryPriorWords("exponential"), /conjugate/);
   assert.match(libraryPriorWords("weibull"), /prior on the mean life/);
+});
+
+test("refusalWords names the distribution as the app does; dataOptions counts positions in the singular", () => {
+  assert.equal(refusalWords("This position's history has 0 failures; a plain weibull fit needs at least 2. Or fit with a prior."),
+    "This position's history has 0 failures; a plain Weibull fit needs at least 2. Or fit with a prior.");
+  assert.equal(refusalWords("a lognormal model needs at least 2"), "a Lognormal model needs at least 2");
+  assert.equal(refusalWords(null), "");
+  const opts = dataOptions({ cls: { positions: 1, failures: 0, suspensions: 1 } });
+  assert.match(opts[1].label, /\(1 position, /);
 });

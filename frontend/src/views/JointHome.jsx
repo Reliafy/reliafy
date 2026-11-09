@@ -40,8 +40,8 @@ export default function JointHome() {
     <div className="app">
       <SectionHeader
         section="models"
-        title="Remaining life from condition readings"
-        purpose="Combine readings (vibration, wear, oil debris) and failure history to see each unit's risk and remaining life."
+        title="Condition and life models"
+        purpose="Remaining life from condition readings: combine readings (vibration, wear, oil debris) and failure history to see each unit's risk and remaining life."
         help={HELP}
         primary={newModel}
       />

@@ -3,13 +3,16 @@ import { Link, useNavigate } from "react-router-dom";
 import { getClassForecast, getPositionClasses } from "../api.js";
 import { useRoles } from "../RolesProvider.jsx";
 import { formatNumber } from "../format.js";
+import { EXPLORER_PARTS_CLASSES_TABS } from "../explorerTabs.js";
 
 const classPath = (name) => `/asset-register/classes/${encodeURIComponent(name)}`;
 
 // The position classes with a fitted life model, each with its expected
 // failures over the next 12 months, under Forecasts. Each opens
 // on its class page, where the forecast can be changed. Nothing without
-// Reliafy Maintenance.
+// Reliafy Maintenance. While the Explorer's Classes tab is switched off
+// (EXPLORER_PARTS_CLASSES_TABS), a class address lands on an Explorer with no
+// Classes tab, so nothing here links to one.
 export default function ClassForecastList() {
   const { has } = useRoles();
   const navigate = useNavigate();
@@ -35,11 +38,12 @@ export default function ClassForecastList() {
     };
   }, [has.maintenance]);
   if (!has.maintenance) return null;
+  const linked = EXPLORER_PARTS_CLASSES_TABS;
 
   const cell = (name) => {
     const f = forecasts[name];
     if (!f) return <span className="lib-date">Working it out…</span>;
-    if (f.error) return <span className="lib-date">Open the class to see it</span>;
+    if (f.error) return <span className="lib-date">{linked ? "Open the class to see it" : "Couldn't work it out"}</span>;
     if (!f.n_forecast) return <span className="lib-date">{f.headline}</span>;
     return `≈ ${formatNumber(f.expected)} in 12 months`;
   };
@@ -48,13 +52,15 @@ export default function ClassForecastList() {
     <section className="home-card" aria-labelledby="class-forecasts">
       <div className="recent-models-head">
         <h2 id="class-forecasts">Position classes</h2>
-        <Link to="/asset-register/classes">All classes →</Link>
+        {linked && <Link to="/asset-register/classes">All classes →</Link>}
       </div>
       {classes === null ? (
         <div className="card empty">Loading…</div>
       ) : classes.length === 0 ? (
         <div className="card empty">
-          <p>No class has a fitted life model yet. Fit one from a class's pooled life data on its <Link to="/asset-register/classes">Classes</Link> page.</p>
+          {linked
+            ? <p>No class has a fitted life model yet. Fit one from a class's pooled life data on its <Link to="/asset-register/classes">Classes</Link> page.</p>
+            : <p>No class has a fitted life model yet. Fit one from a class's pooled life data in the Explorer's Modelling tab.</p>}
         </div>
       ) : (
         <div className="lib">
@@ -69,11 +75,14 @@ export default function ClassForecastList() {
             </thead>
             <tbody>
               {classes.map((c) => (
-                <tr key={c.position_class} className="lib-row" onClick={() => navigate(classPath(c.position_class))}>
+                <tr key={c.position_class} className={linked ? "lib-row" : undefined}
+                    onClick={linked ? () => navigate(classPath(c.position_class)) : undefined}>
                   <td>
-                    <Link className="lib-name lib-link" to={classPath(c.position_class)} onClick={(e) => e.stopPropagation()}>
-                      {c.position_class}
-                    </Link>
+                    {linked ? (
+                      <Link className="lib-name lib-link" to={classPath(c.position_class)} onClick={(e) => e.stopPropagation()}>
+                        {c.position_class}
+                      </Link>
+                    ) : <span className="lib-name">{c.position_class}</span>}
                   </td>
                   <td className="lib-n lib-opt">{c.positions}</td>
                   <td className="lib-n">{cell(c.position_class)}</td>

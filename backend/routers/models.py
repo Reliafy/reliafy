@@ -53,6 +53,10 @@ def _model_summary(model, ctx: AccessCtx) -> dict:
         "kind": model.kind,
         "distribution": results.get("distribution", model.distribution_id),
         "n": results.get("n"),
+        # How it was made, so the list can say what n means: a Bayesian update's n is the data
+        # the prior was moved by; a model made from parameters has no data at all.
+        "method": results.get("method"),
+        **({"params_only": True} if results.get("params_only") or (model.spec or {}).get("params_only") else {}),
         "unit": results.get("unit", (model.spec or {}).get("unit", "")),
         "surpyval_version": model.surpyval_version,
         "created_at": model.created_at.isoformat(),

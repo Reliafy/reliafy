@@ -38,6 +38,20 @@ const TAB_ALIASES = {
 };
 
 const MAX_TABS = 6;
+
+// How a model's intervals were made and at what level, so every tab says the
+// same: a Bayesian update's are credible intervals at its own level (90%), a
+// library record's are its source's 5–95% range, anything else 95%
+// confidence. ``label`` goes before a range ("90% credible 2.3–3.9").
+export function intervalLevel(result) {
+  const r = result || {};
+  if (r.method === "bayesian_update") {
+    const pct = Math.round((Number(r.credible_level) || 0.9) * 100);
+    return { pct, label: `${pct}% credible`, credible: true };
+  }
+  if (r.method === "library") return { pct: 90, label: "Source's 5–95%", credible: false };
+  return { pct: 95, label: "95%", credible: false };
+}
 const tab = (id) => ({ id, label: TAB_LABELS[id] });
 
 const isRegression = (r) => r?.kind === "regression";
@@ -45,6 +59,16 @@ const isRegression = (r) => r?.kind === "regression";
 // Whether a regression-style model can give B-lives (read off its curve at
 // the calculator's covariates, or from its life path).
 const regressionChars = (r) => !!(r.functions?.curves || r.functions?.life_path);
+
+// The model list's n column: the observations a model was fitted to. A model
+// made from parameters (a prediction, a handbook rate) has none, and a
+// Bayesian update's data were added to a prior, so a bare 0 or 1 would mislead.
+export function listN(m) {
+  if (m?.params_only) return { text: "—", title: "Made from parameters, not fitted to data" };
+  const n = Number(m?.n ?? 0).toLocaleString("en-US");
+  if (m?.method === "bayesian_update") return { text: `${n} + prior`, title: "A Bayesian update: these observations moved a prior" };
+  return { text: n, title: undefined };
+}
 
 // The tabs of a model's page, in order: [{ id, label }]. Empty for a model
 // with one view (per demand); null for a kind the frame doesn't draw yet.
@@ -80,7 +104,10 @@ export function modelTabs(result) {
       // A fitted distribution (or mixture); one made from parameters has no
       // data, so no plot and nothing to check it against.
       const data = !!r.plot && !r.params_only;
-      ids = [data && "plot", fns && "calc", (hasMeanLife(r) || !!r.life) && "chars", data && "diag", "data"];
+      // A Bayesian update has no goodness-of-fit checks (its prior is part of the answer), so no
+      // Diagnostics; it always has Model characteristics (its parameters' credible intervals).
+      const bayes = r.method === "bayesian_update";
+      ids = [data && "plot", fns && "calc", (hasMeanLife(r) || !!r.life || bayes) && "chars", data && !bayes && "diag", "data"];
     }
   }
   return ids.filter(Boolean).slice(0, MAX_TABS).map(tab);
@@ -139,7 +166,7 @@ function bLifeWords(result, label = "B10") {
   const b = (life?.b_lives || []).find((x) => x.label === label);
   if (!b || !Number.isFinite(Number(b.value))) return null;
   const bound = b.lower != null && Number.isFinite(Number(b.lower)) && life.confidence
-    ? ` (≥ ${formatNumber(b.lower)} at ${Math.round(life.confidence * 100)}%)` : "";
+    ? ` (≥ ${formatNumber(b.lower)} at ${Math.round(life.confidence * 100)}%${intervalLevel(result).credible ? " credible" : ""})` : "";
   return `${label} ${withUnit(b.value, result.unit)}${bound}`;
 }
 
@@ -159,7 +186,7 @@ const shape3 = (v) => (Math.abs(v) >= 0.001 && Math.abs(v) < 1e7 ? SHAPE.format(
 function shapeWords(result) {
   const beta = (result.params || []).find((p) => p.name === "beta");
   if (String(result.distribution_id) !== "weibull" || !beta) return null;
-  const ci = beta.ci ? ` (95% ${shape3(beta.ci[0])}–${shape3(beta.ci[1])})` : "";
+  const ci = beta.ci ? ` (${intervalLevel(result).label} ${shape3(beta.ci[0])}–${shape3(beta.ci[1])})` : "";
   return `β ${shape3(beta.value)}${ci}`;
 }
 

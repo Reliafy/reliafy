@@ -7,11 +7,12 @@ import { Select, TextInput } from "../components/ui/Controls.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import { LibraryFormDialog, LibraryPicker, UseAsModelDialog, UseAsPriorDialog } from "../components/LibraryParts.jsx";
 import { StorageCapNotice } from "../components/StorageCap.jsx";
+import { ShowMe } from "../components/SectionPage.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { ACCENT } from "../plotTheme.js";
 import {
   BASIS_LABEL as BASIS, KIND_LABEL as KIND, LIBRARY_PATH, curve, distributionWords, evidenceWords, isLife, lifeCurve, lifeWords,
-  rangeText, recordIdOf, recordPath, sig, sourcePath, unitsMeaning, whyNot,
+  asGivenWords, rangeText, recordIdOf, recordPath, sig, sourcePath, unitsMeaning, whyNot,
 } from "../libraryModels.js";
 import "./LibraryPages.css";
 
@@ -37,16 +38,26 @@ function useSources() {
   return { sources, error, reload };
 }
 
-function Actions({ rec }) {
+// Use as a model… and Use as a prior…. ``inline``: when one is off, why, in words under the
+// buttons (not only on hover); the records table says it once above the table instead.
+function Actions({ rec, inline = false }) {
   const [open, setOpen] = useState(null);
   const whyModel = whyNot(rec, "model");
   const whyPrior = whyNot(rec, "prior");
-  return (
+  const why = [...new Set([whyModel, whyPrior].filter(Boolean))];
+  const buttons = (
     <span className="lib-actions">
       <button type="button" className="secondary sm" disabled={!!whyModel} title={whyModel || undefined} onClick={() => setOpen("model")}>Use as a model…</button>
       <button type="button" className="secondary sm" disabled={!!whyPrior} title={whyPrior || undefined} onClick={() => setOpen("prior")}>Use as a prior…</button>
       {open === "model" && <UseAsModelDialog record={rec} onClose={() => setOpen(null)} />}
       {open === "prior" && <UseAsPriorDialog record={rec} onClose={() => setOpen(null)} />}
+    </span>
+  );
+  if (!inline || !why.length) return buttons;
+  return (
+    <span className="lib-actions-col">
+      {buttons}
+      {why.map((w) => <span key={w} className="lib-why">{w}</span>)}
     </span>
   );
 }
@@ -70,7 +81,6 @@ function SourceCard({ s }) {
 // /models/library: the libraries (yours, then the published ones), and a search across them all.
 export function LibraryHome() {
   const { sources, error, reload } = useSources();
-  const [picked, setPicked] = useState(null);
   const [making, setMaking] = useState(false);
   const navigate = useNavigate();
   const mine = (sources || []).filter((s) => s.mine);
@@ -78,14 +88,18 @@ export function LibraryHome() {
   return (
     <div className="app">
       <PageHeader crumbs={crumbsFor()} title="Library"
-                  meta="Published failure rates and probabilities, and libraries of your own models, each with its uncertainty and its source, to use as a model or a prior."
+                  meta={(
+                    <span className="sh-purpose">
+                      <span className="sh-purpose-text" title="Published failure rates and probabilities, and libraries of your own models, each with its uncertainty and its source, to use as a model or a prior.">Published failure rates and probabilities, and libraries of your own models, each with its uncertainty and its source, to use as a model or a prior.</span>
+                      <ShowMe help={{ guide: "fit-your-first-model" }} />
+                    </span>
+                  )}
                   primary={<button type="button" onClick={() => setMaking(true)}>New library…</button>} />
       {error && <div className="card error">{error}</div>}
       <StorageCapNotice kind="libraries" one="data library" many="data libraries" refreshKey={sources} />
       <section className="card" aria-label="Search every library">
         <h2 className="lib-h">Know the record you want?</h2>
-        <LibraryPicker value={picked?.id} onPick={setPicked} label="Records" use="look" />
-        {picked && <p><Link to={recordPath(picked.id)}>Open {picked.label}</Link></p>}
+        <LibraryPicker label="Records" use="look" />
       </section>
       {sources === null && !error && <div className="card empty">Loading…</div>}
       {sources !== null && (
@@ -147,6 +161,14 @@ export function LibrarySource() {
       && (!kind || r.kind === kind) && (!t || `${r.label} ${r.equipment_type} ${r.failure_mode}`.toLowerCase().includes(t)));
     return out.sort((a, b) => (sort === "mean" ? (a.mean ?? 0) - (b.mean ?? 0) : String(a.label).localeCompare(String(b.label))));
   }, [rows, q, equipment, mode, kind, sort]);
+  // Why Use as a model… / Use as a prior… are off, said once above the table (each button keeps it on hover).
+  const offWhy = useMemo(() => {
+    const counts = new Map();
+    for (const r of shown) {
+      for (const w of new Set([whyNot(r, "model"), whyNot(r, "prior")].filter(Boolean))) counts.set(w, (counts.get(w) || 0) + 1);
+    }
+    return [...counts].map(([text, n]) => ({ text, all: n === shown.length }));
+  }, [shown]);
   const mine = !!source?.mine;
   const canEdit = mine && !source.read_only;
   const onDelete = async () => {
@@ -200,8 +222,9 @@ export function LibrarySource() {
             <option value="name">By name</option><option value="mean">By mean, lowest first</option>
           </Select>
         </div>
+        {offWhy.length > 0 && <p className="lib-why">{offWhy.length === 1 && offWhy[0].all ? "Every record here: " : "Some records here: "}{offWhy.map((w) => w.text).join(" ")}</p>}
         {rows === null ? <p className="rim-tquiet">Loading the records…</p> : (
-          <div className="maint-scroll">
+          <div className="maint-scroll lib-scroll">
             <table className="lib-table">
               <thead><tr><th>Record</th><th>Equipment</th><th>Failure mode</th><th>Kind</th><th className="num">Mean</th><th className="num">5–95%</th><th>Units</th><th /></tr></thead>
               <tbody>
@@ -234,12 +257,23 @@ export function LibraryRecord() {
   const source = (sources || []).find((s) => s.id === sourceId);
   const [d, setD] = useState(null);
   const [error, setError] = useState(null);
-  useEffect(() => { setD(null); getLibraryRecord(id).then(setD, (e) => setError(e.message)); }, [id]);
+  // Not in any library (404): said plainly, with links back, as the model pages do.
+  const [missing, setMissing] = useState(false);
+  useEffect(() => {
+    setD(null);
+    setError(null);
+    setMissing(false);
+    getLibraryRecord(id).then(setD, (e) => (e.status === 404 ? setMissing(true) : setError(e.message)));
+  }, [id]);
   const rec = d?.record;
   const life = isLife(rec);
   const summary = rec?.summary || {};
+  // A rate or probability's own unit ("per hour (running)"), which the numbers are in; the source's
+  // wording (as_given, e.g. "failures per million hours") only where it is the same thing.
+  const valueUnits = life ? rec?.units?.as_given : (d?.units || rec?.units?.as_given || "");
+  const given = asGivenWords(rec, summary.mean);
   const brief = rec && { id: rec.id, label: rec.label, kind: rec.kind, basis: rec.basis, mean: summary.mean, p05: summary.p05,
-    p95: summary.p95, b10: summary.b10, units: rec.units?.as_given, source: source?.short_name || sourceId,
+    p95: summary.p95, b10: summary.b10, units: valueUnits, source: source?.short_name || sourceId,
     family: rec.distribution?.family, params: rec.distribution?.params, level: rec.distribution?.level };
   const pts = rec ? (life ? lifeCurve(rec.distribution, summary) : curve(rec.distribution, summary.p05, summary.p95)) : null;
   // The log axis's ticks: a decade apart, as powers of ten; a narrow range (under 2.5 decades) adds the 2s and 5s.
@@ -258,13 +292,27 @@ export function LibraryRecord() {
       setError(e.message);
     }
   };
+  if (missing) {
+    return (
+      <div className="app">
+        <PageHeader crumbs={crumbsFor(source || { id: sourceId })} title="Record not found" />
+        <div className="card" role="alert">
+          <p style={{ marginTop: 0 }}>We couldn't find this record. It may have been removed, or the link may be mistyped.</p>
+          <p style={{ marginBottom: 0 }}>
+            {source && <><Link to={sourcePath(source.id)}>See {source.short_name || source.name}</Link> · </>}
+            <Link to={LIBRARY_PATH}>The library</Link> · <Link to="/models">All models</Link>
+          </p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="app">
       <PageHeader crumbs={crumbsFor(source || { id: sourceId }, true)} title={rec?.label || "Record"}
                   meta={rec ? `${KIND[rec.kind] || rec.kind} · ${lib ? "Your library" : BASIS[rec.basis] || rec.basis}` : null}
                   primary={brief ? (
                     <span className="lib-actions">
-                      <Actions rec={brief} />
+                      <Actions rec={brief} inline />
                       {lib && !lib.read_only && <button type="button" className="secondary sm danger" onClick={onRemove}>Remove from library</button>}
                     </span>
                   ) : null} />
@@ -286,12 +334,12 @@ export function LibraryRecord() {
                 </>
               ) : (
                 <>
-                  <dt>Mean</dt><dd>{sig(summary.mean)} {rec.units?.as_given}</dd>
+                  <dt>Mean</dt><dd>{sig(summary.mean)} {valueUnits}{given ? ` (${given}, as the source gives it)` : ""}</dd>
                   {summary.median != null && <><dt>Median</dt><dd>{sig(summary.median)}</dd></>}
                   <dt>5–95%</dt><dd>{rangeText(summary)}{summary.error_factor ? ` (error factor ${sig(summary.error_factor)})` : ""}</dd>
                 </>
               )}
-              <dt>Units</dt><dd>{rec.units?.as_given}: {unitsMeaning(rec.kind, rec.units?.as_given)}</dd>
+              <dt>Units</dt><dd>{valueUnits}: {unitsMeaning(rec.kind, valueUnits)}</dd>
               {life && evidenceWords(rec.evidence) && <><dt>Evidence</dt><dd>{evidenceWords(rec.evidence)}</dd></>}
               {!life && rec.evidence?.failures != null && <><dt>Evidence</dt><dd>{[rec.evidence.failures != null && `${rec.evidence.failures} failures`,
                 rec.evidence.demands && `${Number(rec.evidence.demands).toLocaleString("en-AU")} demands`,

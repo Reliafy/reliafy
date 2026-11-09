@@ -6,13 +6,23 @@
 .lib-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
 .lib-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .lib-filters > * { flex: 1 1 160px; }
+/* The records table scrolls inside its card on a phone. Maintenance.css (.maint-scroll) is loaded
+   only with the maintenance pages, so this page carries its own rule. */
+.lib-scroll { overflow-x: auto; max-width: 100%; position: relative; }
 .lib-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
 .lib-table th, .lib-table td { padding: 5px 8px; border-bottom: 1px solid var(--line2); text-align: left; vertical-align: top; }
 .lib-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .lib-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.lib-actions-col { display: inline-flex; flex-direction: column; gap: 4px; align-items: flex-end; max-width: 360px; }
+.lib-why { font-size: var(--fs-13); color: var(--muted); margin: 0; }
+.lib-actions-col .lib-why { text-align: right; }
+@media (max-width: 720px) { .lib-actions-col { align-items: flex-start; } .lib-actions-col .lib-why { text-align: left; } }
 .lib-record { display: flex; flex-direction: column; gap: 12px; }
 .lib-picker { display: flex; flex-direction: column; gap: 8px; }
 .lib-picker .evidence-picker { max-height: 300px; overflow: auto; }
 .evidence-option.off { opacity: 0.6; }
-.lib-section { font-size: var(--fs-14); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 18px 0 8px; }
+/* "Yours" and "Published" in sentence case, as every other list's sections. */
+.lib-section { font-size: var(--fs-14); font-weight: 600; color: var(--muted); margin: 18px 0 8px; }
+.lib-look { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow: auto; }
+.lib-look li { display: flex; flex-direction: column; gap: 2px; }
 .lib-notes { white-space: pre-wrap; }

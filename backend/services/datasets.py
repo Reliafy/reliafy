@@ -614,8 +614,11 @@ _FAILED_NAME_RE = re.compile(
     r"(is_?)?(fail|failed|failure|failures|event|status|dead|death|broken)(_?flag)?",
     re.IGNORECASE,
 )
+# Interval-censored data has two time columns (the failure lies between them): SurPyval's xl / xr,
+# the shortest / longest a saved Bayesian update writes, or a plain left / right, lower / upper.
 _TIME_NAME_RE = re.compile(
-    r"(^x$|^t$|^xl$|^xr$|^tl$|^tr$|hour|time|age|day|week|month|year|cycle|km|mile|start|stop|end|date|observ)",
+    r"(^x$|^t$|^xl$|^xr$|^tl$|^tr$|hour|time|age|day|week|month|year|cycle|km|mile|start|stop|end|date|observ"
+    r"|shortest|longest|^left$|^right$|^lower$|^upper$)",
     re.IGNORECASE)
 _START_RE = re.compile(r"(start|entry|^tl$|from)", re.IGNORECASE)
 _STOP_RE = re.compile(r"(stop|end|exit|^tr$|until)", re.IGNORECASE)

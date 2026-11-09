@@ -104,7 +104,8 @@ export function sig(v) {
   const x = Number(v);
   if (v == null || !Number.isFinite(x)) return "—";
   if (x !== 0 && (Math.abs(x) < 0.001 || Math.abs(x) >= 1e7)) return x.toExponential(2).replace("e-", "e−");
-  return Number(x.toPrecision(3)).toLocaleString("en-AU");
+  // Three figures however small: 0.0037 stays "0.0037", not "0.004".
+  return Number(x.toPrecision(3)).toLocaleString("en-AU", { maximumSignificantDigits: 3 });
 }
 export const rangeText = (r) => (r?.p05 != null && r?.p95 != null ? `${sig(r.p05)} – ${sig(r.p95)}` : "—");
 
@@ -113,9 +114,19 @@ export function unitsMeaning(kind, units = "") {
   if (kind === "per_demand") return "The chance it fails each time it's asked to work (a demand), whatever the time between.";
   if (kind === "life") return "The times to failure the model describes; its parameters are in this unit.";
   const u = String(units).toLowerCase();
-  const basis = u.includes("calendar") ? "calendar hours (whether or not it's running)" : u.includes("running") || u.includes("operat")
-    ? "hours of operation" : "hours";
-  return `Failures per ${basis}: the mean life is one over the rate.`;
+  const per = u.includes("calendar") ? "calendar hour (whether or not it's running)" : u.includes("running") || u.includes("operat")
+    ? "hour of operation" : "hour";
+  const foot = u.includes("foot") ? " per foot of pipe" : "";
+  return `Failures per ${per}${foot}: the mean life is one over the rate.`;
+}
+
+// A rate as its source gives it, when that's another unit: a handbook's "failures per million
+// hours" for a value the library keeps per hour (0.0037 failures per million hours for 3.7e−9 per
+// hour). Null when the source's unit is the library's own.
+export function asGivenWords(rec, value) {
+  const given = String(rec?.units?.as_given || "");
+  if (rec?.kind !== "rate" || value == null || !/per million hours/i.test(given)) return null;
+  return `${sig(value * 1e6)} ${given}`;
 }
 
 // The distribution written out: "Gamma (shape 1.26, rate 7.17e6 per hour)".
