@@ -1018,7 +1018,7 @@ select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus); }
   .rw-sg > .rw-sl { padding-bottom: 0; }
 }
 @container rimtasks (max-width: 420px) {
-  .rim-tasklist { display: flex; flex-direction: column; }
+  .rim-tasklist { display: flex; flex-direction: column; align-items: stretch; }
   .rim-tasklist li {
     display: grid; grid-template-columns: max-content minmax(0, 1fr); grid-template-areas: "name name" "kind when" "chips chips";
     gap: 2px 8px; padding: 6px 0;
@@ -1030,7 +1030,7 @@ select.rim-kindchip:focus-visible { outline: none; box-shadow: var(--focus); }
   .rim-tl-chips:empty { display: none; }
 }
 @media (max-width: 600px) {
-  .rim-tasklist { display: flex; flex-direction: column; }
+  .rim-tasklist { display: flex; flex-direction: column; align-items: stretch; }
   .rim-tasklist li {
     display: grid; grid-template-columns: max-content minmax(0, 1fr); grid-template-areas: "name name" "kind when" "chips chips";
     gap: 2px 8px; padding: 6px 0;
