@@ -89,3 +89,49 @@ test("the result names the handbooks, the Navy's statement and the lines needing
   assert.deepEqual(out.needsConditions, ["Seal ×2"]);
   assert.equal(handbooksText([]), "");
 });
+
+import { bindSummary, bindingFromParam, bindingParam, bindingToSave, boundNodes, cleanConditions, initialFix, initialValues } from "./covariate.js";
+import { bindingOf } from "./explorerModels.js";
+import { paneFromQuery, setPaneQuery } from "./tablePane.js";
+
+const D = { key: "L_S", label: "Load rating", kind: "number", role: "design", unit: "lbf", limits: [] };
+const U = { key: "n", label: "Speed", kind: "number", role: "use", unit: "rpm", limits: [] };
+const E = { key: "T_O", label: "Temperature", kind: "number", role: "environment", unit: "°C", default: 60, default_basis: "neutral", limits: [] };
+
+test("fixing at a position: design ticked for NSWC-11, nothing for ALT and PH, the saved binding's when there is one", () => {
+  assert.deepEqual(initialFix("nswc", [D, U, E]), { L_S: true, n: false, T_O: false });
+  assert.deepEqual(initialFix("alt", [D, U, E]), { L_S: false, n: false, T_O: false });
+  assert.deepEqual(initialFix("ph", [D, U], { fixed: { n: 900 } }), { L_S: false, n: true });
+  assert.deepEqual(initialValues([D, E], { fixed: { L_S: 5000 } }), { L_S: "5000", T_O: "60" });
+});
+
+test("the binding saved: the ticked values, roles for ALT and PH, and what's ticked without a value", () => {
+  const got = bindingToSave({ source: "alt", ref: "m1", inputs: [D, U, E], fix: { L_S: true, n: true }, values: { L_S: "5000", n: "" }, roles: { n: "environment" } });
+  assert.deepEqual(got.binding, { source: "alt", ref: "m1", fixed: { L_S: 5000 }, roles: { L_S: "design", n: "environment", T_O: "environment" } });
+  assert.deepEqual(got.missing, ["Speed"]);
+  assert.equal(bindingToSave({ source: "nswc", ref: "r", inputs: [D], fix: {}, values: {} }).binding.roles, undefined);
+  assert.equal(bindSummary("nswc", [D, U], { L_S: true, n: true }), "Every covariate fixed: it's saved as a constant-rate model at this position.");
+  assert.match(bindSummary("alt", [D, U, E], { L_S: true }), /^1 of 3 fixed here; 2 set where it's used/);
+});
+
+test("a binding's address, and the pane it opens", () => {
+  assert.equal(bindingParam("nswc", "nswc-11:bearing"), "nswc:nswc-11:bearing");
+  assert.deepEqual(bindingFromParam("nswc:nswc-11:bearing"), { source: "nswc", ref: "nswc-11:bearing" });
+  assert.equal(bindingFromParam("x:y"), null);
+  const q = setPaneQuery(new URLSearchParams(), "bind", "p1", { rbd: "alt:m1" });
+  assert.deepEqual(paneFromQuery(q), { kind: "bind", id: "p1", bind: "alt:m1" });
+});
+
+test("which rows can fix covariates at their position", () => {
+  assert.deepEqual(bindingOf({ model_type: "alt_model", model_id: "a1" }), { source: "alt", ref: "a1" });
+  assert.deepEqual(bindingOf({ model_type: "covariate_record", model_id: "nswc-11:x" }), { source: "nswc", ref: "nswc-11:x" });
+  assert.deepEqual(bindingOf({ model_type: "model", model_id: "m", model: { covariates: ["load"] } }), { source: "ph", ref: "m" });
+  assert.deepEqual(bindingOf({ model_type: "model", model_id: "e", source: { binding: { source: "nswc", ref: "nswc-11:y" } } }), { source: "nswc", ref: "nswc-11:y" });
+  assert.equal(bindingOf({ model_type: "model", model_id: "w", model: { kind: "Weibull" } }), null);
+});
+
+test("the diagram's Use and Environment values as the server keeps them", () => {
+  assert.deepEqual(cleanConditions([{ name: " Temperature ", role: "environment", unit: "°C", value: "40" }, { name: "", value: "1" }, { name: "Duty", value: "" }]),
+    [{ name: "Temperature", role: "environment", unit: "°C", value: 40 }]);
+  assert.equal(boundNodes({ nodes: [{ data: { model: { kind: "bound" } } }, { data: { model: {} } }] }).length, 1);
+});

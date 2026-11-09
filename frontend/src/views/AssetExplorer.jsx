@@ -14,9 +14,11 @@ import BayesUpdateModal from "../components/BayesUpdateModal.jsx";
 import { FitPane } from "../components/FitLifeModel.jsx";
 import PredictionPane from "../components/PredictionPane.jsx";
 import RbdPane from "../components/RbdPane.jsx";
+import CovariateBindPane from "../components/CovariateBindPane.jsx";
+import { bindingFromParam, bindingParam } from "../covariate.js";
 import { PANE_PARAMS, TABLE_PANES, paneFromQuery, setPaneQuery } from "../tablePane.js";
 import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, graftModels, inUseWords, isModelRow, modelKey, openForModels, rollupText as modelRollup, lifeModelOf,
-  opensInPane,
+  opensInPane, bindingOf,
 } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -783,6 +785,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   };
   const openFit = (position, opts) => openPane("fit", position, opts);
   const openPredict = (position, link = null) => openPane("predict", position, { link });
+  // A covariate model with covariates fixed at the position (?bind=<source>:<ref>&on=<position>).
+  const openBind = (position, binding, { link = null, name = "" } = {}) =>
+    openPane("bind", position, { link, start: { name }, rbd: bindingParam(binding.source, binding.ref) });
   // Leaving the pane for other work: asks first only if something in it was changed.
   const leavePane = async () => {
     if (!panePosition || !paneDirty.current) return true;
@@ -1229,6 +1234,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         { link, start: { data: scope === "class" ? "class" : "position" } });
     }
     else if (id === "model-predict") openPredict(position, link);
+    else if (id === "model-bind") openBind(position, bindingOf(link), { link, name: link.model?.name || link.name });
     else if (id === "model-to-library") setModelModal({ kind: "to-library", position, link });
     else if (id === "model-rebuild") buildRbd(position, link);
     else if (id === "model-use") {
@@ -2128,6 +2134,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                  leavePane().then((ok) => ok && navigate(path));
                }} />
     </div>
+  ) : paneKind === "bind" && bindingFromParam(paneAt.bind) ? (
+    <div className="rw tt-side">
+      <CovariateBindPane key={`${paneAt.bind}:${seed?.n || 0}`} binding={bindingFromParam(paneAt.bind)}
+                         name={seed?.start?.name || ""} link={seed?.link || null} {...paneProps} />
+    </div>
   ) : paneKind === "predict" ? (
     // Waits for the models, so a reload knows whether it refreshes one.
     seed || pmodels.links ? (
@@ -2284,7 +2295,13 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       )}
       {modelModal?.kind === "library" && (
         <LibraryAttachModal position={modelModal.position} onClose={() => setModelModal(null)}
-                            onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
+                            onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }}
+                            onBind={(rec) => {
+                              // A covariate model (NSWC-11): which covariates are fixed here, in the table area.
+                              const p = modelModal.position;
+                              setModelModal(null);
+                              openBind(p, { source: "nswc", ref: rec.id }, { name: rec.label });
+                            }} />
       )}
       {modelModal?.kind === "to-library" && modelModal.link && (
         <AddToLibraryDialog modelId={modelModal.link.model_id} modelName={modelModal.link.model?.name || modelModal.link.name || "this model"}

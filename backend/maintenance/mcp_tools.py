@@ -679,7 +679,7 @@ RELIABILITY: Table = {
 # Life models on positions (the Explorer's Modelling tab, position_models.py). Read them with get.position (models).
 POSITION_MODELS: Table = {
     "link": ("position_id", "model_id model_type from_class fit distribution scope failure_mode_ids note "
-                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior library_record_id", """Attach a life model to a position (a link: the model isn't
+                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior library_record_id bind", """Attach a life model to a position (a link: the model isn't
         copied). One of: model_id (a saved model; model_type model default, recurrent_model, degradation_model,
         alt_model), from_class true (its position class's fitted model) or fit true (Pro: fit distribution, weibull
         default, to its own failure history, or its class's pooled history when its own is thin: scope auto,
@@ -693,7 +693,9 @@ POSITION_MODELS: Table = {
         {rate_per_million_hours} or {excluded: true}}}: a parts-count
         prediction from its parts list (and inside it), saved as an exponential model. rbd_id: link an RBD; build_rbd true:
         a new RBD from the positions inside (each block its model in use, else a flagged placeholder; with
-        replace_link_id, rebuilt). use_link_id: make that row its model in use. The RCM offers these first."""),
+        replace_link_id, rebuilt). use_link_id: make that row its model in use. bind {source nswc|alt|ph, ref, fixed?,
+        roles?}: a covariate model with some, all or none of its covariates fixed here (guide topic modelling). The RCM
+        offers these first."""),
     "unlink": ("link_id", "", "Take a model off its position (the model stays in Models)."),
 }
 
@@ -2384,7 +2386,11 @@ def register() -> None:
                                "weighed by trust), {kind: model, model_id}, {kind: params, distribution, params, unit} "
                                "or {kind: b10, b10: {value, low, high}, shape: {low, high}, unit}, or {kind: library, "
                                "record_id, shape?: [low, high]} (a data library rate record)."))] = None,
-                           library_record_id: str | None = None) -> dict[str, Any]:
+                           library_record_id: str | None = None,
+                           bind: Annotated[dict[str, Any] | None, Field(description=(
+                               "{source: nswc (an NSWC-11 record), alt or ph (a saved model), ref, fixed: {input: value} "
+                               "(some, all or none), roles?: {input: design|use|environment}}. What isn't fixed is set "
+                               "on an RBD block or the diagram's Use and Environment values."))] = None) -> dict[str, Any]:
         """The life models on a position (a functional location, or a position of a product's design): attach a
         saved model, the class's model or a new fit from its history; take one off. The guide's modelling topic
         says how they feed the RCM."""
@@ -2396,10 +2402,15 @@ def register() -> None:
             return run(m.unlink_position_model, link_id)
         reader = _reader(_caller(ctx))
         chosen = sum(bool(x) for x in (model_id, from_class, fit, prediction is not None, rbd_id, build_rbd, use_link_id,
-                                       library_record_id))
+                                       library_record_id, bind))
         if chosen != 1:
             raise ToolError("Give one of model_id (a saved model), from_class true, fit true, prediction, rbd_id, "
-                            "build_rbd true or use_link_id.")
+                            "build_rbd true, use_link_id or bind.")
+        if bind:
+            from backend.maintenance import covariate_positions
+
+            return run(covariate_positions.bind, m, _db(), m.org, reader.read_owners, position_id, bind,
+                       failure_mode_ids, note or "", replace_link_id)
         if use_link_id:
             return run(m.use_position_model, position_id, use_link_id)
         if library_record_id:

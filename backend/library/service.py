@@ -257,12 +257,15 @@ def brief(rec: dict, mine: Optional[dict] = None) -> dict:
 #: on one. A failure rate per hour counted from service can; a handbook base rate for a parts count
 #: can't (the environment and quality factors make the rate: it's for a prediction), nor can a
 #: probability per demand (not a life over time).
-USES = {"model": "a life model", "prior": "a prior on a life model"}
+USES = {"model": "a life model", "prior": "a prior on a life model",
+        "attach": "a position's model (a life model, or a covariate model with covariates fixed there)"}
 
 
 def usable_as(rec: dict, use: str) -> bool:
     """Whether the record can be ``use`` ("model" or "prior") on its own. A
     life record (a life distribution, or a saved model's snapshot) always can."""
+    if use == "attach" and rec.get("kind") == "covariate_model":
+        return True
     if rec.get("basis") == "prediction_model":
         return False
     if rec.get("kind") == "life":

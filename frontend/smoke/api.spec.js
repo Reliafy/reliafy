@@ -98,6 +98,9 @@ const SIGNED_IN = [
   ["GET", "/api/rbd-runs"],
   ["POST", "/api/rbds/import"],
   ["GET", "/api/rbds"],
+  // Covariates fixed at a position, the rest set on RBD blocks (covariate_binding.py).
+  ["POST", "/api/rbds/binding-inputs"],
+  ["POST", "/api/rbds/bound-blocks"],
   ["GET", "/api/maintenance/rcm/options"], // the decision dialog's vocabulary
   ["GET", "/api/fleet/fleets"],
   ["GET", "/api/strategy/analyses"],

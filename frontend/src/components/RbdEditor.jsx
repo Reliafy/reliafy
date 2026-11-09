@@ -390,6 +390,9 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   const [production, setProduction] = useState(null);
   // A phased mission's phases and a network's terminals (#160): {phases, network}.
   const [mission, setMission] = useState({});
+  // The diagram's Use and Environment values, which blocks with covariates left open at their
+  // positions take (covariate_binding.py): [{name, role, unit, value}].
+  const [conditions, setConditions] = useState([]);
   const network = !!mission.network;
   // Carried with the diagram wherever the costs are (save, validate, analyse).
   const costsField = useMemo(
@@ -398,8 +401,9 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       ...policyFields(policies),
       ...(production ? { production } : {}),
       ...mission,
+      ...(conditions.length ? { conditions } : {}),
     }),
-    [diagramCosts, policies, production, mission]
+    [diagramCosts, policies, production, mission, conditions]
   );
   // The diagram's kind: a block diagram (non-repairable or repairable) or a
   // network. Phases are kept (a network ignores them) so switching back
@@ -1029,6 +1033,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       setPolicies(policyFields(graph));
       setProduction(graph?.production || null);
       setMission(missionFields(graph));
+      setConditions(graph?.conditions || []);
       setSavedRbdId(id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(updatedAt);
@@ -1062,6 +1067,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     setPolicies({});
     setProduction(null);
     setMission({});
+    setConditions([]);
     setSavedRbdId(null);
     setSavedRbdName("");
     setSavedRbdUpdatedAt(null);
@@ -1087,6 +1093,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     if (graph.costs !== undefined) setDiagramCosts(graph.costs || null);
     if (POLICY_KEYS.some((k) => graph[k] !== undefined)) setPolicies(policyFields(graph));
     if (graph.production !== undefined) setProduction(graph.production || null);
+    if (graph.conditions !== undefined) setConditions(graph.conditions || []);
     if (MISSION_KEYS.some((k) => graph[k] !== undefined)) setMission(missionFields(graph));
     fitWhenMeasured(norm.nodes);
   }, [setNodes, setEdges, fitWhenMeasured]);
@@ -2028,6 +2035,8 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           safety={repairable && !!policies.safety_function}
           capacity={nodes.find((n) => n.id === modalNodeId)?.type === "component"}
           jointBlock={nodes.find((n) => n.id === modalNodeId)?.type === "component"}
+          conditions={conditions}
+          nodeId={modalNodeId}
           onClose={() => {
             setModal(null);
             setModalNodeId(null);
@@ -2172,9 +2181,11 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         onBuild={toBuilder}
         onProduction={setProduction}
         onNodeData={(updates) =>
-          // #52: covariate schedules set in the calculator, put on their blocks (unsaved).
-          setNodes((nds) => nds.map((n) => (updates[n.id] ? { ...n, data: { ...n.data, ...updates[n.id] } } : n)))
+          // #52: covariate schedules set in the calculator, put on their blocks (unsaved); and the
+          // values of covariates left open at the blocks' positions (null takes one off).
+          setNodes((nds) => nds.map((n) => (updates[n.id] ? { ...n, data: applyBlockExtras(n.data, updates[n.id]) } : n)))
         }
+        onConditions={setConditions}
       />
       )}
       <RbdPhasesResult

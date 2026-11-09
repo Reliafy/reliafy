@@ -267,6 +267,21 @@ part number a handbook `record_id` (and `quality_factor`): it's saved as a
 reliability prediction (its page links back to the position) and as an
 exponential model at its rate, and attached with role `prediction`. The app
 previews it with `POST /api/maintenance/positions/{id}/prediction`.
+
+`bind: {source: nswc | alt | ph, ref, fixed?: {input: value}, roles?: {input:
+design | use | environment}}` links a covariate model (an NSWC-11 record, an
+accelerated life model or a proportional-hazards model) with some, all or none
+of its covariates fixed at the position. An NSWC-11 model with every input
+fixed is saved as a constant-rate exponential; otherwise the link keeps the
+binding and an RBD built from the tree gets a bound block. A bound block takes
+each open input from its own `covariate_values`, else the diagram's
+`conditions` (`[{name, role: use | environment, unit, value}]`, matched by the
+input's key, symbol or label and unit, or named by the block's
+`covariate_map`), else a default the model gives; an analysis with one still
+missing is refused, naming each block and what it needs. `POST
+/api/rbds/binding-inputs {binding}` lists a model's inputs (the same shape for
+every source) and `POST /api/rbds/bound-blocks {graph}` each bound block's
+open inputs, the value each takes and where it came from.
 An RBD row: `rbd_id` links an existing diagram; `build_rbd: true` makes a new
 one from the positions one level inside (each block the child's model in use,
 or its own RBD as a sub-system; a flagged placeholder where it has none), wired

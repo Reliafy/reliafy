@@ -1247,6 +1247,12 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
 
         return _run(library_models.attach, m, session, ctx.write_owner, position_id, body["library_record_id"], modes, note,
                     replace, owners=ctx.read_owners)
+    if isinstance(body.get("bind"), dict):
+        # A covariate model (NSWC-11, ALT or PH) with some, all or none of its covariates fixed here.
+        from backend.maintenance import covariate_positions
+
+        return _run(covariate_positions.bind, m, session, ctx.write_owner, ctx.read_owners, position_id, body["bind"],
+                    modes, note, replace)
     if body.get("use_link_id"):
         # Which of the position's rows is the model in use.
         return _run(m.use_position_model, position_id, str(body["use_link_id"]))

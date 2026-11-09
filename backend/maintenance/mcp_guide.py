@@ -451,6 +451,13 @@ with library_record_id, e.g. {position_id, library_record_id: "nrc-inl-2020:mov-
 rate per hour, its 5–95% range the interval, cited; per-demand records refused). The class can't \
 be both the data and the prior. Say which data and method when quoting it, with confidence or credible as the \
 result says. With one failure a plain Weibull fit refuses: use a prior, or exponential.
+- A covariate model at a position: models.link with bind {source: nswc (an NSWC-11 record), alt or ph (a saved \
+model), ref, fixed: {input: value}, roles?}. Fix some, all or none: design inputs usually here, use and \
+environment left open. NSWC-11 with every input fixed is saved as a constant-rate exponential. What's left open is \
+set in an RBD built from the tree: each block's covariate_values, or the diagram's conditions [{name, role use or \
+environment, unit, value}] (matched by the input's key, symbol or label and unit; a block's covariate_map names \
+one where they differ). A calculation with a value still missing says which blocks need what: ask the user, never \
+guess.
 - One or two failures and a baseline the user trusts: models.link with fit true and baseline ({model_id}, \
 {distribution, params, unit} or a B10 belief; left out, the class's model) and trust (close, guide, start) saves \
 a Bayesian update of the baseline with the position's history and attaches it (Pro; the core guide topic \

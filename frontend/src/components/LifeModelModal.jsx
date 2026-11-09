@@ -1,3 +1,4 @@
+import BoundBlockFields from "./BoundBlockFields.jsx";
 import { useContext, useState } from "react";
 import Modal from "./Modal.jsx";
 import ModelPicker from "./ModelPicker.jsx";
@@ -62,7 +63,13 @@ function Fold({ title, summary, open: initialOpen, children }) {
 // safety function the proof test comes straight after Failure, open, and the
 // costs stay folded. Pre-filled with the node's current models.
 export default function LifeModelModal({ initial, onClose, onSubmit, repairable = false, crews = false, groups = [],
-                                         safety = false, capacity = false, jointBlock = false }) {
+                                         safety = false, capacity = false, jointBlock = false, conditions = [],
+                                         nodeId = null }) {
+  // A block whose model's covariates were left open at its position (covariate_binding.py): its
+  // covariates are set here (or from the diagram's values) unless another model is chosen.
+  const wasBound = initial?.model?.kind === "bound";
+  const [keepBound, setKeepBound] = useState(wasBound);
+  const [covExtras, setCovExtras] = useState(null);
   const [name, setName] = useState(initial?.label ?? "");
   const [model, setModel] = useState(initial?.model ?? null);
   const [repair, setRepair] = useState(initial?.repair ?? null);
@@ -77,12 +84,13 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
   // Throughput while it works (#122): its own section, for component blocks.
   const [cap, setCap] = useState({ value: initial?.capacity ?? null, valid: true });
   const valid = model && (!repairable || repair || instant) && extras.valid && quality.valid && cap.valid;
-  const capExtras = capacity ? { capacity: cap.value } : {};
+  const capExtras = { ...(capacity ? { capacity: cap.value } : {}), ...(keepBound && covExtras ? covExtras : {}),
+    ...(wasBound && !keepBound ? { covariate_values: null, covariate_map: null } : {}) };
 
   const submit = () => {
     if (!valid) return;
     const label = name.trim() || initial?.label;
-    if (!repairable) return onSubmit({ model, repair: undefined, label, extras: capacity ? capExtras : undefined });
+    if (!repairable) return onSubmit({ model, repair: undefined, label, extras: Object.keys(capExtras).length ? capExtras : undefined });
     onSubmit({
       label,
       model,
@@ -129,7 +137,16 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
       {initial?.label != null && <BlockNameField value={name} onChange={setName} />}
       <section className="rbd-dlg-sec">
         <h3>Failure</h3>
-        {!mixture && (
+        {keepBound && (
+          <div className="rbd-bound">
+            <p>{initial.model.name || "A covariate model"}: some covariates are fixed at its position; set the rest here, or
+              take them from the diagram’s Use and Environment values.{" "}
+              <button type="button" className="link" onClick={() => { setKeepBound(false); setModel(null); }}>Use another model instead</button></p>
+            <BoundBlockFields node={{ id: nodeId || "block", type: "component", data: initial }} conditions={conditions}
+                              onChange={setCovExtras} />
+          </div>
+        )}
+        {!mixture && !keepBound && (
           <>
             <ModelPicker label={safety ? "Non-repairable model (dangerous undetected failures, λDU)" : "Non-repairable model (time to failure)"}
                          value={initial?.model} onChange={setModel} rbdBlock unit={unit}
@@ -138,11 +155,11 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
             <MeanEcho model={model} unit={unit} label="Mean life" />
           </>
         )}
-        <RbdMixtureBuilder on={mixture} initial={initial?.model} unit={unit} onChange={setModel}
+        {!keepBound && <RbdMixtureBuilder on={mixture} initial={initial?.model} unit={unit} onChange={setModel}
                            onToggle={(on) => {
                              setMixture(on);
                              if (!on) setModel(isMixture(initial?.model) ? null : initial?.model ?? null);
-                           }} />
+                           }} />}
       </section>
       {repairable && safety && maintenance}
       {repairable && (

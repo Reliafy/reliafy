@@ -176,3 +176,69 @@ export function lineConditions(line = {}) {
     ...(String(line.cycles_per_hour ?? "").trim() !== "" && Number.isFinite(cph) && cph > 0 ? { cycles_per_hour: cph } : {}),
   };
 }
+
+// ---- fixing covariates at a position (CovariateBindPane.jsx) --------------------------------------
+
+// A binding's address part: "nswc:nswc-11:bearing-rolling-load-rating", "alt:<id>", "ph:<id>".
+export const bindingParam = (source, ref) => `${source}:${ref}`;
+export function bindingFromParam(param) {
+  const s = String(param || "");
+  const i = s.indexOf(":");
+  if (i < 1) return null;
+  const source = s.slice(0, i);
+  return ["nswc", "alt", "ph"].includes(source) ? { source, ref: s.slice(i + 1) } : null;
+}
+
+// What's ticked to start with: what the position's binding fixes when there is one; else, for an
+// NSWC-11 model, its design inputs (fixed by the design), and for an ALT or PH model none (their
+// stresses and covariates are use or environment by nature).
+export function initialFix(source, inputs = [], binding = null) {
+  if (binding?.fixed) return Object.fromEntries(inputs.map((i) => [i.key, i.key in binding.fixed]));
+  return Object.fromEntries(inputs.map((i) => [i.key, source === "nswc" && i.role === "design"]));
+}
+
+// The values to start with: the binding's fixed ones, else each input's default (as text).
+export function initialValues(inputs = [], binding = null) {
+  return Object.fromEntries(inputs.map((i) => {
+    const v = binding?.fixed?.[i.key] ?? i.default;
+    return [i.key, v == null ? "" : String(v)];
+  }));
+}
+
+// The binding the position saves: the ticked inputs with their values (as numbers or codes), and
+// for ALT and PH what each covariate is. {binding, missing: [labels ticked with no value]}.
+export function bindingToSave({ source, ref, inputs = [], fix = {}, values = {}, roles = {} }) {
+  const ticked = inputs.filter((i) => fix[i.key]);
+  const missing = ticked.filter((i) => String(values[i.key] ?? "").trim() === "").map((i) => i.label);
+  const fixed = valuesForServer(Object.fromEntries(ticked.map((i) => [i.key, values[i.key]])), inputs);
+  return {
+    binding: { source, ref, fixed, ...(source === "nswc" ? {} : { roles: Object.fromEntries(inputs.map((i) => [i.key, roles[i.key] || i.role])) }) },
+    missing,
+  };
+}
+
+// The summary under the form: "3 of 14 fixed here; 11 set where it's used (an RBD block, or the
+// diagram's Use and Environment values)", or "Every covariate fixed: a constant-rate model here".
+export function bindSummary(source, inputs = [], fix = {}) {
+  const n = inputs.filter((i) => fix[i.key]).length;
+  if (inputs.length && n === inputs.length) {
+    return source === "nswc"
+      ? "Every covariate fixed: it's saved as a constant-rate model at this position."
+      : "Every covariate fixed: a constant-stress model at this position.";
+  }
+  const open = inputs.length - n;
+  return `${n} of ${inputs.length} fixed here; ${open} set where it's used (each RBD block, or the diagram's Use and Environment values).`;
+}
+
+// The diagram's Use and Environment values as the server keeps them: named rows only, a number
+// where the value is one.
+export function cleanConditions(rows = []) {
+  return rows.filter((r) => String(r.name || "").trim() && String(r.value ?? "").trim() !== "").map((r) => {
+    const n = Number(String(r.value).trim());
+    return { name: String(r.name).trim(), role: r.role || "environment", unit: String(r.unit || "").trim(),
+      value: Number.isFinite(n) ? n : String(r.value).trim() };
+  });
+}
+
+// A diagram's blocks whose covariates were left open at their positions.
+export const boundNodes = (graph) => (graph?.nodes || []).filter((n) => n.data?.model?.kind === "bound");

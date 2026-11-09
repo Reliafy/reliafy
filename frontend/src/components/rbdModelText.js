@@ -87,6 +87,8 @@ export function lifeLine(model, unit, { short = false, repairable = false } = {}
   const u = unitAbbr(unit);
   const withU = (v) => `${n3(v)}${u ? ` ${u}` : ""}`;
   if (model.kind === "regression") return `${model.distribution} · covariates`;
+  // Covariates left open at its position, set on the block or the diagram (covariate_binding.py).
+  if (model.kind === "bound") return `${model.name || "Covariate model"} · covariates set here`;
   if (model.kind === "joint") return jointBlockLine(model, u); // a condition-based unit
   const k = distKey(model);
   if (k === "mixture") return model.distribution || "Mixture of failure modes"; // #318

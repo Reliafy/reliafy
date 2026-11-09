@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { evaluateLibraryRecord } from "../api.js";
 import Field from "./ui/Field.jsx";
-import { Select, TextInput } from "./ui/Controls.jsx";
-import {
-  cycleWord, defaultText, fmtRate, groupInputs, limitProblem, limitText, perCycle, resultLine, unitShort,
-  valuesForServer,
-} from "../covariate.js";
+import { TextInput } from "./ui/Controls.jsx";
+import CovariateInputs from "./CovariateInputs.jsx";
+import { cycleWord, fmtRate, perCycle, resultLine, unitShort, valuesForServer } from "../covariate.js";
 import "./CovariateCalculator.css";
 
 // A covariate model's inputs and its rate under them (NSWC-11): the record page's "Try it" and a
@@ -45,48 +43,14 @@ export default function CovariateCalculator({ recordId, inputs = [], unit, value
     return () => clearTimeout(t);
   }, [recordId, sent]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const set = (key, v) => onChange({ ...values, [key]: v });
   const cyc = perCycle(unit) && onCycles;
   const cph = Number(cycles);
   const perHour = answer?.ok && cyc && cph > 0 ? answer.result.total * cph : null;
-  const groups = groupInputs(inputs);
 
   return (
     <div className="cov">
       <div className="cov-inputs">
-        {groups.map((g) => (
-          <fieldset key={g.role} className="cov-group">
-            <legend className="cov-legend">{g.label}</legend>
-            {g.what && <p className="cov-what">{g.what}</p>}
-            <div className="cov-grid">
-              {g.inputs.map((i) => {
-                const id = `${idPrefix}-${i.key.replace(/[^A-Za-z0-9_-]/g, "-")}`;
-                const raw = values[i.key] ?? "";
-                const prob = limitProblem(i, raw);
-                const help = [prob?.severity === "warn" ? prob.text : null, i.default == null ? (String(raw).trim() === "" ? "Needed: no default" : "") : defaultText(i),
-                  limitText(i)].filter(Boolean).join(" · ");
-                const label = `${i.label}${i.symbol ? ` (${i.symbol})` : ""}${i.group ? ` · ${i.group}` : ""}`;
-                return (
-                  <Field key={i.key} id={id} label={label} help={help} error={prob?.severity === "refuse" ? prob.text : null}
-                         className={"cov-field" + (prob?.severity === "warn" ? " cov-warn" : "")}>
-                    {i.kind === "choice" ? (
-                      <Select value={raw === "" ? (i.default ?? "") : raw} onChange={(e) => set(i.key, e.target.value)}>
-                        {i.default == null && <option value="">Choose…</option>}
-                        {(i.choices || []).map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
-                      </Select>
-                    ) : (
-                      <span className="cov-num">
-                        <TextInput inputMode="decimal" value={raw} placeholder={i.default != null ? String(i.default) : "Needed"}
-                                   onChange={(e) => set(i.key, e.target.value)} />
-                        {i.unit ? <span className="cov-unit">{i.unit}</span> : null}
-                      </span>
-                    )}
-                  </Field>
-                );
-              })}
-            </div>
-          </fieldset>
-        ))}
+        <CovariateInputs inputs={inputs} values={values} onChange={onChange} idPrefix={idPrefix} />
         {cyc && (
           <fieldset className="cov-group">
             <legend className="cov-legend">How often it works</legend>

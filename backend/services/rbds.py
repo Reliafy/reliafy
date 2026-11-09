@@ -144,6 +144,19 @@ def public_graph(graph: dict) -> dict:
     return {**graph, "nodes": nodes}
 
 
+def bind_covariates(db, owner_id, graph: dict, covariates: dict | None = None) -> tuple[dict, dict | None]:
+    """Blocks whose covariates were left open at their position, made concrete from the blocks'
+    and the diagram's values (backend/services/covariate_binding.py). Raises AnalysisError naming
+    every block that still needs a value."""
+    from backend.services import covariate_binding
+
+    graph, covariates, needs = covariate_binding.bind_graph(
+        graph, lambda b: covariate_binding.inputs_of(b, db, owner_id), covariates)
+    if needs:
+        raise rbd_analysis.AnalysisError("Set the covariates these blocks need first: " + "; ".join(needs) + ".")
+    return graph, covariates
+
+
 def analyze_graph(
     db,
     graph: dict,
@@ -185,7 +198,16 @@ def analyze_graph(
         return sub.graph if sub is not None else None
 
     def resolve_model(model_id: str) -> dict | None:
+        if str(model_id).startswith("alt:"):  # a block on an ALT model at a stress (covariate_binding)
+            from backend.services import alt as alt_service
+
+            ref = str(model_id)[4:]
+            doc = alt_service.get_model(db, ref, owner_id)
+            live = alt_service.get_live_model(db, ref, owner_id) if doc is not None else None
+            return {"model": live, "name": doc.name, "unit": (doc.results or {}).get("unit")} if live is not None else None
         return models_service.get_live_model(db, model_id, owner_id)
+
+    graph, covariates = bind_covariates(db, owner_id, graph, covariates)
 
     # A repairable diagram is a distinct modelling choice: it reports
     # availability (uptime) rather than a reliability curve.
