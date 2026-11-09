@@ -378,9 +378,22 @@ class _Editor:
         if op.get("production") is not None:
             parts.append(self._set_production(op["production"]))
         parts += self._set_mission(op)
+        if op.get("conditions") is not None:
+            from backend.services import rbd_graph
+
+            try:
+                conditions = rbd_graph._conditions(op["conditions"])
+            except rbd_graph.GraphError as exc:
+                raise EditError(str(exc)) from None
+            if conditions:
+                self.graph["conditions"] = conditions
+                parts.append(f"{len(conditions)} Use and Environment value{'' if len(conditions) == 1 else 's'} set")
+            else:
+                self.graph.pop("conditions", None)
+                parts.append("Use and Environment values cleared")
         if not parts:
             raise EditError("nothing to set — give name, unit, repairable, repair_crews, maintenance_groups, "
-                            "safety_function, target_sil, costs, production, phases and/or network.")
+                            "safety_function, target_sil, costs, production, phases, conditions and/or network.")
         return "; ".join(parts)
 
     def _set_production(self, raw: dict) -> str:

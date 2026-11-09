@@ -27,8 +27,8 @@ import LibraryRecordPicker, { PickedRecord } from "./LibraryRecordPicker.jsx";
 // (explorerModels.js), like the RCM and Measurements tabs. This file has what the page
 // needs for it: the read of every attached model; each row's cells; its phone line;
 // the details beside the table for a row picked (the plot, the parameters with bounds,
-// the data behind it, what uses it, notes); and the dialogs that attach a model (fit
-// from history, assign a saved one, the class's) and take one off.
+// the data behind it, what uses it, notes); and the dialogs that attach a model (assign a saved
+// one, the class's) and take one off. Fitting is the fit pane (FitLifeModel.jsx).
 
 export { MODEL_COLUMNS } from "../explorerModels.js";
 export { MODEL_TREE_HEAD } from "../explorerModels.js";
@@ -548,35 +548,32 @@ function ModelPicker({ kind, onKind, value, onChange }) {
   );
 }
 
-// The dialogs: {kind: "fit" | "assign" | "class", position: {id, name}, link?: the model
-// row's link (Refit… and Replace with… take its place)}.
+// The dialogs: {kind: "assign" | "class", position: {id, name}, link?: the model row's link
+// (Replace with… takes its place)}.
 export function ModelDialogs({ modal, onClose, onDone }) {
   if (!modal) return null;
   return <AttachModal key={`${modal.kind}:${modal.position.id}:${modal.link?.id || ""}`} modal={modal} onClose={onClose} onDone={onDone} />;
 }
 
-const TITLES = { fit: "Fit a model from history", assign: "Assign a saved model", class: "Assign the class's model" };
+const TITLES = { assign: "Assign a saved model", class: "Assign the class's model" };
 
 function AttachModal({ modal, onClose, onDone }) {
   const { kind, position, link } = modal;
   const modes = useModes(position.id);
   const [chosen, setChosen] = useState(() => (link?.failure_modes || []).map((f) => f.id));
-  const [distribution, setDistribution] = useState(link?.source?.distribution || "weibull");
-  const [scope, setScope] = useState(link?.source?.scope === "class" ? "class" : "auto");
   const [mkind, setMkind] = useState(link?.model_type || "model");
   const [modelId, setModelId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
-  const refit = kind === "fit" && link;
-  const title = refit ? "Refit the model" : link && kind === "assign" ? "Replace with another model" : TITLES[kind];
+  const title = link && kind === "assign" ? "Replace with another model" : TITLES[kind];
   const save = async () => {
     setBusy(true);
     setFailed(null);
     const body = { failure_mode_ids: chosen, ...(link ? { replace_link_id: link.id } : {}),
-      ...(kind === "fit" ? { fit: true, distribution, scope } : kind === "class" ? { from_class: true } : { model_id: modelId, model_type: mkind }) };
+      ...(kind === "class" ? { from_class: true } : { model_id: modelId, model_type: mkind }) };
     try {
       const made = await linkPositionModel(position.id, body);
-      onDone(made, refit ? `Refitted ${made.name}.` : `Attached ${made.name} to ${position.name}.`);
+      onDone(made, `Attached ${made.name} to ${position.name}.`);
     } catch (e) {
       setBusy(false);
       setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
@@ -588,38 +585,16 @@ function AttachModal({ modal, onClose, onDone }) {
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
                <button type="button" onClick={save} disabled={busy || (kind === "assign" && !modelId)} aria-busy={busy || undefined}>
-                 {busy ? (kind === "fit" ? "Fitting…" : "Saving…") : kind === "fit" ? (refit ? "Refit" : "Fit and attach") : link ? "Replace" : "Attach"}
+                 {busy ? "Saving…" : link ? "Replace" : "Attach"}
                </button>
              </>
            )}>
       <p className="rw-fhelp">
-        {kind === "fit" && <>Fits a life distribution to {position.name}’s failures: each item’s days in service, ended by a failure or still running. With fewer than two failures of its own it pools its class’s positions instead. The model is saved to Models and linked here.</>}
         {kind === "assign" && <>Links a model from your library (or a sample) to {position.name}. It isn’t copied: a change in Models shows here.</>}
         {kind === "class" && <>Links the model fitted to {position.name}’s position class, pooled from every position of that class.</>}
       </p>
-      {kind === "fit" && (
-        <div className="ml-row">
-          <Field label="Distribution">
-            <Select value={distribution} onChange={(e) => setDistribution(e.target.value)}>
-              <option value="weibull">Weibull (shape and life)</option>
-              <option value="exponential">Exponential (a constant failure rate)</option>
-              <option value="lognormal">Lognormal</option>
-              <option value="gamma">Gamma</option>
-              <option value="best">The best fit of these</option>
-            </Select>
-          </Field>
-          <Field label="History">
-            <Select value={scope} onChange={(e) => setScope(e.target.value)}>
-              <option value="auto">Its own, else its class’s</option>
-              <option value="position">Its own only</option>
-              <option value="class">Its class’s pooled history</option>
-            </Select>
-          </Field>
-        </div>
-      )}
       {kind === "assign" && <ModelPicker kind={mkind} onKind={setMkind} value={modelId} onChange={setModelId} />}
       <ModesField modes={modes} value={chosen} onChange={setChosen} />
-      {kind === "fit" && chosen.length > 0 && <p className="rim-tquiet">Failures by other modes count as still running at that age (suspensions).</p>}
       {failed && <p className="field-error" role="alert">{failed}</p>}
     </Modal>
   );

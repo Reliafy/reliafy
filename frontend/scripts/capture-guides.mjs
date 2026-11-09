@@ -572,7 +572,7 @@ async function fillPerDemand(page) {
     await page.getByLabel("Demands", { exact: true }).nth(i).fill(String(demands));
     await page.getByLabel("Failures", { exact: true }).nth(i).fill(String(failures));
   }
-  await page.getByLabel("Confidence (%)").fill("90");
+  await page.getByLabel("Confidence", { exact: true }).fill("90");
   await wait(500);
 }
 
@@ -740,7 +740,7 @@ async function main() {
         await press(page, /^Parameters$/); await wait(400);
         await chooseOption(page, "Distribution", /^Exponential$/);
         await page.locator(".picker .param-field input").first().fill("0.000114155");
-        await page.getByLabel("Unit (optional)").fill("Hours");
+        await page.getByLabel("Unit of the model's times").fill("Hours");
         await page.getByRole("button", { name: /^Compute$/ }).click();
         await page.getByText(/Test every/).first().waitFor({ timeout: 20000 }); await wait(800);
       } },

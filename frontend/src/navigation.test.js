@@ -5,7 +5,7 @@ import {
   ENTRIES, MENU_ENTRIES, RESERVED_IDS, ROLES, ROLE_IDS, activeEntry, activeTrail, buildMenu, childActive, crumbsFor,
   datasetPath, entryActive, flatEntries, homeCards, itemPath, liveEntries,
 } from "./navigation.js";
-import { MOVED, movedHref, movedTo } from "./redirects.js";
+import { MOVED, classesPath, movedHref, movedTo, partsPath } from "./redirects.js";
 import { EXPLORER_PARTS_CLASSES_TABS } from "./explorerTabs.js";
 import { PLANNED } from "./plannedPages.js";
 import { appRoutes, hasParam } from "../smoke/routes.js";
@@ -146,7 +146,7 @@ test("without Reliafy Maintenance: no Assets and no Maintenance", () => {
   assert.deepEqual(ids(none), ["home", "modelling", "decisions", "reports"]);
   assert.ok(!everyLink(none).includes("/asset-register"));
   assert.equal(liveEntries(ALL).find((e) => e.id === "maintenance").to, "/maintenance");
-  // With only the preview, Maintenance opens on its Field inbox.
+  // With only the preview, Maintenance opens on Requests.
   assert.equal(liveEntries({ preview: true }).find((e) => e.id === "maintenance").to, "/maintenance/inbox");
 });
 
@@ -428,6 +428,10 @@ test("every earlier address redirects to its page's new place, with its id", () 
   assert.equal(movedTo("/asset-register/classes/Pool%20pump"), tabbed("tab=classes&scope=all&class=Pool%20pump"));
   // A class's address with a query of its own keeps it after the tab's.
   assert.equal(movedHref(movedTo("/asset-register/classes/Pump"), "?sel=p1"), tabbed("tab=classes&scope=all&class=Pump&sel=p1", "?sel=p1"));
+  // Links go straight to where the old Parts and stock and Classes addresses land.
+  assert.equal(partsPath(), movedTo("/asset-register/parts"));
+  assert.equal(classesPath(), movedTo("/asset-register/classes"));
+  assert.equal(classesPath("Pool pump"), movedTo("/asset-register/classes/Pool%20pump"));
   // Each part's own page stays.
   assert.equal(movedTo("/asset-register/parts/pt1"), null);
   assert.equal(movedTo("/modelling/m/"), null);
@@ -487,12 +491,12 @@ test("not-yet-built entries show only where the menu preview is on", () => {
   // The library moved under Models, for everyone (9 Nov 2026): Data has no preview entries now.
   assert.deepEqual(kids(preview, "data"), []);
   assert.deepEqual(kids(plain, "maintenance"), []);
-  assert.deepEqual(kids(preview, "maintenance"), ["Field inbox"]);
+  assert.deepEqual(kids(preview, "maintenance"), ["Requests"]);
   assert.deepEqual(kids(preview, "systems"), ["RBDs", "Fault trees", "Simulation runs"]);
   assert.deepEqual(kids(preview, "assets"), []);
 });
 
-test("every placeholder page has its text; Field inbox is in the preview menu, the library is live under Models", () => {
+test("every placeholder page has its text; Requests is in the preview menu, the library is live under Models", () => {
   const links = new Set(everyLink(liveEntries(PREVIEW)));
   for (const [id, page] of Object.entries(PLANNED)) assert.ok(page.title && page.purpose && page.will.length, id);
   assert.ok(new Set(everyLink(liveEntries(ALL))).has("/models/library"));

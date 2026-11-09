@@ -91,7 +91,7 @@ test("a prediction line on an NSWC bearing, with its conditions", async ({ page,
   await picker.fill("bearing load rating");
   const list = page.getByRole("listbox", { name: `Handbook part type of Input bearing ${tag} matches` });
   await expect(list.locator(".ptp-group", { hasText: "NSWC-11" })).toBeVisible();
-  await list.getByRole("option", { name: new RegExp(BEARING.replace(/[()]/g, "\\$&")) }).first().click();
+  await list.getByRole("option", { name: BEARING }).first().click();
   const status = pane.getByRole("status").first();
   await expect(pane.locator(".pred2-c-lambda").first()).toHaveText("Needs conditions");
   await expect(status).toContainText(`Left out, needs its conditions: Input bearing ${tag} ×2`);
@@ -122,7 +122,7 @@ test("a prediction line on an NSWC bearing, with its conditions", async ({ page,
   await expect(pane).toBeVisible();
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await picker.fill("bearing load rating");
-  await list.getByRole("option", { name: new RegExp(BEARING.replace(/[()]/g, "\\$&")) }).first().click();
+  await list.getByRole("option", { name: BEARING }).first().click();
   await pane.getByRole("button", { name: `Conditions of Input bearing ${tag}` }).click();
   await dlg.getByLabel("Dynamic load rating (catalogue) (L_S)").fill("5000");
   await dlg.getByLabel("Radial load (F_R)").fill("1000");

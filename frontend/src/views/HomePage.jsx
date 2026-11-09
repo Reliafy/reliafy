@@ -23,6 +23,7 @@ import { RolesCard } from "../components/RolePicker.jsx";
 import { StartHere, StartHereCompact, useActivation } from "../components/FirstRun.jsx";
 import WhatChangedPanel, { ChangeList } from "../components/WhatChanged.jsx";
 import UnsavedFitReminder from "../components/UnsavedFitReminder.jsx";
+import { partsPath } from "../redirects.js";
 
 // A list that can't be read counts as empty: Home is a summary, and each
 // section's own page reports its errors.
@@ -104,7 +105,7 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has }) {
             <Figures items={[
               { label: "overdue", n: (maintenance.due || []).filter((t) => t.overdue).length, to: "/maintenance", alert: true },
               { label: "due in 30 days", n: (maintenance.due || []).length, to: "/maintenance" },
-              { label: "critical spares short", n: (maintenance.critical_spares || []).length, to: "/asset-register/parts", alert: true },
+              { label: "critical spares short", n: (maintenance.critical_spares || []).length, to: partsPath(), alert: true },
               { label: "changes proposed", n: (maintenance.proposals || []).length, to: "/maintenance" },
             ]} />
           )}
@@ -123,7 +124,7 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has }) {
     case "spares":
       if (!has.maintenance) return null;
       return (
-        <HomeList id={id} title="Critical spares short" all={{ to: "/asset-register/parts", label: "Parts and stock" }}
+        <HomeList id={id} title="Critical spares short" all={{ to: partsPath(), label: "Parts and stock" }}
                   rows={first(sparesRows(maintenance))}
                   empty={maintenance ? "Every critical spare is stocked." : "Loading…"} />
       );

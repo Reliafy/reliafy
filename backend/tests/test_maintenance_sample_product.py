@@ -46,7 +46,7 @@ def test_the_sample_product_is_a_design_with_items_built_and_reports(store, db):
     pid = out["product"]["id"]
     # The design: 33 positions, the sample's modes on each arm, motor, ESC, propeller and IMU.
     assert {k: out[k] for k in ("positions", "failure_modes", "scored")} == {
-        "positions": 33, "failure_modes": 83, "scored": 83}
+        "positions": 33, "failure_modes": 84, "scored": 84}
     [product] = m.products()["products"]
     assert product["id"] == pid and product["rev"] == "C" and product["part"]["part_number"] == "SQ-4"
     assert product["positions"] == 33 and product["items_built"] == 3 and product["open_reports"] == 2
@@ -154,8 +154,8 @@ def test_the_design_carries_a_whole_rcm(store, db):
     out = templates.add_sample_product(m, db)
     assert {k: out[k] for k in ("functions", "standards", "functional_failures", "failure_modes", "decisions",
                                 "causes_linked", "tasks")} == {
-        "functions": 47, "standards": 63, "functional_failures": 79, "failure_modes": 83, "decisions": 81,
-        "causes_linked": 64, "tasks": 17}
+        "functions": 47, "standards": 63, "functional_failures": 79, "failure_modes": 84, "decisions": 82,
+        "causes_linked": 64, "tasks": 18}
     sheet = m.rcm_worksheet(out["product"]["id"], "below")
     gaps = rcm_graph.gaps(sheet)
     assert gaps["counts"]["functions_without_failure"] == 0 and gaps["counts"]["no_functional_failure"] == 0
@@ -182,7 +182,7 @@ def test_the_design_carries_a_whole_rcm(store, db):
     for mo in modes:
         d = mo.get("decision") or {}
         outcomes[d.get("outcome")] = outcomes.get(d.get("outcome"), 0) + 1
-    assert outcomes == {"on_condition": 46, "fixed_interval": 9, "failure_finding": 8, "rtf": 7, "redesign": 8,
+    assert outcomes == {"on_condition": 47, "fixed_interval": 9, "failure_finding": 8, "rtf": 7, "redesign": 8,
                         "accept": 3, None: 2}
     assert {(mo["decision"] or {}).get("rtf_basis") for mo in modes if (mo.get("decision") or {}).get("outcome") == "rtf"} \
         == {"random", "uneconomic"}
@@ -205,7 +205,7 @@ def test_the_design_carries_a_whole_rcm(store, db):
     shared = {t["name"]: t for mo in modes for t in mo["tasks"] if t["name"] in templates.SAMPLE_UAV_PROGRAMME_NAMES}
     assert set(shared) == set(templates.SAMPLE_UAV_PROGRAMME_NAMES)
     failsafe = store.node(ORG, shared["Failsafe function tests"]["id"], "Task")
-    assert (failsafe["interval"], failsafe["unit"], failsafe["outcome"]) == (25, "hours", "failure_finding")
+    assert (failsafe["interval"], failsafe["unit"], failsafe["outcome"]) == (1, "months", "failure_finding")
     assert len(failsafe["checklist"]) == 4 and failsafe["checklist"][0].startswith("Link loss:")
     pre_flight = store.node(ORG, shared["Pre-flight check"]["id"], "Task")
     assert (pre_flight["interval"], pre_flight["unit"]) == (1, "flights") and len(pre_flight["checklist"]) == 13
@@ -239,8 +239,8 @@ def test_the_evidence_check_shows_each_case(store, db):
     assert status[("Payload gimbal", "Gimbal motor stalls on a snagged cable")] == "supported"
     assert status[("Motor 2", "Bearing seizure")] == "contradicted"
     assert status[("Battery pack", "Cell capacity fade")] == "inconclusive"
-    assert graph["rollup"] == {"modes": 83, "decided": 81, "supported": 11, "contradicted": 4,
-                               "inconclusive": 1, "unevidenced": 54, "stale": 0, "partly": 0,
+    assert graph["rollup"] == {"modes": 84, "decided": 82, "supported": 11, "contradicted": 4,
+                               "inconclusive": 1, "unevidenced": 55, "stale": 0, "partly": 0,
                                # The motors' legacy run-to-failure plan on a safety consequence breaks the
                                # rules: kept, and counted as needing review (Nov 2026).
                                "needs_review": 4, "undecided": 2, "state": "to_decide"}
@@ -269,7 +269,7 @@ def test_over_the_route(api):  # noqa: F811
 def test_over_mcp(env):  # noqa: F811
     async def go(client):
         made = _ok(await _do(client, "maintenance", "products.add_sample"))
-        assert made["added"] and made["failure_modes"] == 83
+        assert made["added"] and made["failure_modes"] == 84
         assert made["rbd"]["name"].endswith("(placeholder failure rates)")
         twice = _ok(await _do(client, "maintenance", "products.add_sample"))
         assert twice["added"] is False
@@ -376,6 +376,87 @@ def test_a_designs_tasks_are_its_programme_never_due(store, db):
     assert copies and copies[0]["resources"]["labour"][0]["trade"] == "Technician"
     assert m._task_view(copies[0])["next_due"] is not None
     _rebuilds_the_same(m)
+
+
+def test_the_programme_has_its_lsa_a_package_and_life_models(store, db):
+    """Every programme task has its LSA record (task.resources_set), copied to the items built;
+    the calendar tasks are packaged into one monthly visit on the first item; the motors,
+    propellers, battery pack and radio carry shared sample life models, each saying it's
+    sample values, copied to the items built."""
+    m = Maintenance(store, ORG, "tester")
+    out = templates.add_sample_product(m, db)
+    pid = out["product"]["id"]
+    design = m._design_ids()
+
+    def on(t):
+        return (_subject(m.s, ORG, t) or {}).get("id")
+
+    programme = {t["name"]: t for t in m.s.nodes(ORG, "Task")
+                 if t["name"] in templates.SAMPLE_UAV_PROGRAMME_NAMES and on(t) == pid}
+    assert set(programme) == set(templates.SAMPLE_UAV_PROGRAMME_NAMES) and out["lsa_records"] == len(programme) == 7
+    for task in programme.values():
+        r = task["resources"]
+        assert r["labour"] and r["tools"] and r["method"] and r["duration_hours"] > 0
+    propeller = next(pt for pt in m.s.nodes(ORG, "Part") if pt["part_number"] == "SQ-P1045")
+    assert programme["Pre-flight check"]["resources"]["spares"] == [
+        {"part_id": propeller["id"], "name": "Propeller 10x4.5", "qty": 4}]
+    assert any("Battery analyser" in x["name"] for x in programme["Battery storage check"]["resources"]["tools"])
+    # Three calendar tasks, by what they find: a configuration change, a pack draining in storage, age.
+    calendar = sorted(name for name, t in programme.items() if t["unit"] in ("days", "weeks", "months", "years"))
+    assert calendar == ["Annual inspection", "Battery storage check", "Failsafe function tests"]
+    assert (programme["Battery storage check"]["interval"], programme["Battery storage check"]["unit"]) == (3, "months")
+    # Each item built carries the programme with its LSA.
+    for item in out["items"]:
+        copies = [t for t in m.s.nodes(ORG, "Task") if on(t) == item["top_position_id"]
+                  and t["name"] in templates.SAMPLE_UAV_PROGRAMME_NAMES]
+        assert len(copies) == 7 and all(t.get("resources") for t in copies)
+
+    # One package: the calendar tasks on 0007, monthly, the battery check every third visit and the
+    # annual inspection every twelfth.
+    [listed] = m.packages()["packages"]
+    pkg = m.package(listed["id"])
+    assert pkg["name"] == "Monthly maintenance visit" and out["package"]["id"] == pkg["id"]
+    assert pkg["subject"]["id"] == out["items"][0]["top_position_id"]
+    assert pkg["cadence"]["text"] == "the first Monday of every month"
+    assert [(t["name"], t["visit_rule"], t["every_nth"]) for t in pkg["tasks"]] == [
+        ("Failsafe function tests", "every", None), ("Battery storage check", "nth", 3),
+        ("Annual inspection", "nth", 12)]
+    assert pkg["rollup"]["labour_hours"] == 8.5
+
+    # Life models: on the design's motors, propellers, battery pack and radio, each for its failure
+    # mode, then copied to the items built (role design).
+    named = {p["id"]: p["name"] for p in m.tree_rows()["positions"]}
+    links = {named[pos]: m.position_models(pos) for pos in design if m.position_models(pos)}
+    assert sorted(links) == ["Battery pack", "Comms", "Motor 1", "Motor 2", "Motor 3", "Motor 4", "Propeller 1",
+                             "Propeller 2", "Propeller 3", "Propeller 4"]
+    assert out["models_linked"] == 10 and all(len(v) == 1 for v in links.values())
+    assert links["Motor 3"][0]["model_id"] == templates.UAV_BEARING_MODEL
+    assert [fm["text"] for fm in links["Motor 3"][0]["failure_modes"]] == ["Bearing seizure"]
+    assert links["Propeller 2"][0]["model_id"] == templates.UAV_PROPELLER_MODEL
+    assert links["Battery pack"][0]["model_id"] == templates.UAV_BATTERY_MODEL
+    assert [fm["text"] for fm in links["Comms"][0]["failure_modes"]] == ["Radio module fails (electronic)"]
+    assert all(v[0]["note"].startswith("Sample values, not field data") for v in links.values())
+    built = [link for pos in named if pos not in design for link in m.position_models(pos)]
+    assert len(built) == 30 and {link["role"] for link in built} == {"design"}
+    _rebuilds_the_same(m)
+
+
+def test_the_sample_life_models_are_shared_samples():
+    """The life models the sample product links are shared samples: the bearing and avionics fits,
+    and the propeller and battery models from parameters alone, whose notes say they're invented."""
+    from backend.services import samples
+
+    ids = {s["id"]: s for s in samples.SAMPLE_MODELS}
+    for _, model_id, name, _, _ in templates.SAMPLE_PRODUCT_MODELS:
+        assert ids[model_id]["name"] == name
+    for model_id in (templates.UAV_PROPELLER_MODEL, templates.UAV_BATTERY_MODEL):
+        assert ids[model_id]["notes"].startswith("Sample values, not field data")
+    test_db = mongomock.MongoClient()["shared_samples"]
+    samples._seed_params_model(test_db, ids[templates.UAV_PROPELLER_MODEL])
+    doc = test_db.models.find_one({"_id": templates.UAV_PROPELLER_MODEL})
+    assert samples.is_sample(doc["owner_id"]) and doc["spec"]["params_only"] and doc["dataset_id"] == ""
+    assert [(p["name"], p["value"]) for p in doc["results"]["params"]] == [("alpha", 400.0), ("beta", 3.0)]
+    assert doc["results"]["unit"] == "Hours"
 
 
 def test_make_own_over_the_route(api):  # noqa: F811

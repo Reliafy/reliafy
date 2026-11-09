@@ -2649,6 +2649,8 @@ export async function hasFmeaExcel(positionId) {
   try {
     const res = await authedFetch(`${fmeaExcelUrl(positionId)}?scope=this`);
     fmeaExcel = res.status !== 404;
+    // Read the answer through, so the request ends (a body left unread stays open).
+    await res.arrayBuffer().catch(() => {});
   } catch {
     fmeaExcel = false;
   }
@@ -2858,6 +2860,11 @@ export function addWorkCost(id, body) {
 }
 export function checkWorkItem(id, index, done) {
   return postJson(`/api/maintenance/work-orders/${id}/checklist/${index}`, { done });
+}
+// A work package's work order line answered during the visit, saved at once:
+// {state: todo | done | not_done (reason) | problem (finding)}. Returns the work order.
+export function markWorkOrderLine(id, taskId, body) {
+  return putJson(`/api/maintenance/work-orders/${id}/lines/${encodeURIComponent(taskId)}`, body);
 }
 export function removeWorkEntry(id) {
   return postJson(`/api/maintenance/work-entries/${id}/remove`, {});

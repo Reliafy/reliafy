@@ -100,7 +100,7 @@ export const ENTRIES = [
   {
     id: "maintenance", label: "Maintenance", to: "/maintenance", landingNeeds: "maintenance",
     children: [
-      { to: "/maintenance/inbox", label: "Field inbox", needs: "preview" },
+      { to: "/maintenance/inbox", label: "Requests", needs: "preview" },
     ],
   },
 

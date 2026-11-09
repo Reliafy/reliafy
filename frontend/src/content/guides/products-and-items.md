@@ -60,7 +60,10 @@ have no failure reports, signals, stock, work or due dates. Its tabs:
 - **LSA**: every task in the design with what it needs to be done (labour,
   tools, spares, consumables, method), added up. Its tasks are packaged into
   visits on the items built from it, not on the design. An item built later
-  carries copies of the tasks with what they need.
+  carries copies of the tasks with what they need. In the sample product every
+  programme task has its record, and item 0007 has its calendar tasks (the
+  failsafe tests, the battery storage check and the annual inspection) in one
+  monthly work package.
 
 **Delete…** (in the product's row menu in its tree, or the bin on its row in
 Products) deletes the design and everything inside it. Items built from it stay. Its

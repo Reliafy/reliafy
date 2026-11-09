@@ -4,6 +4,7 @@ import { addPositionPart, createMaintenancePart, listMaintenanceParts, updatePos
 import { Field, FormModal, PositionPicker } from "./MaintenanceParts.jsx";
 import { ClassPicker } from "./MaintenanceItemClasses.jsx";
 import { PART_ROLES } from "../maintenanceSpares.js";
+import { partsPath } from "../redirects.js";
 
 // The parts forms, one copy each wherever they're used (Derryn, 9 Nov 2026: "use the same
 // components so a change in one place appears in the other"): New part (the Parts tab; the
@@ -99,7 +100,7 @@ export function PartEntryModal({ p, entry, onClose, onDone, positions = null }) 
       {!entry && (
         <Field label="Part">
           {catalogue === null ? <span className="lib-date">Loading…</span> : catalogue.length === 0 ? (
-            <span className="lib-date">The catalogue is empty: add parts on the <Link to="/asset-register/parts">Parts</Link> page first.</span>
+            <span className="lib-date">The catalogue is empty: add parts on the <Link to={partsPath()}>Parts and stock</Link> page first.</span>
           ) : (
             <select autoFocus value={f.part_id} onChange={set("part_id")} aria-label="Part">
               <option value="">Choose…</option>

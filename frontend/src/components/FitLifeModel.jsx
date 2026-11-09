@@ -11,7 +11,7 @@ import { saveErrorText } from "../confirm.js";
 import { TRUST_CHOICES } from "../bayesUpdate.js";
 import {
   AROUND_PARAMS, METHOD_CHOICES, METHOD_LINE, bodyOf, countsWords, dataOptions, effective, forWords, historyRow, previewKey,
-  fitChanged, fitTitle, initialFit, libraryPriorWords, priorChoices, problem, refusalSwitch, refusalWords, showsTrust,
+  fitChanged, fitTitle, initialFit, keepsOwnPrior, libraryPriorWords, priorChoices, problem, refusalSwitch, refusalWords, showsTrust,
 } from "../fitDialog.js";
 import { fmt } from "../explorerModels.js";
 import TablePane from "./TablePane.jsx";
@@ -32,7 +32,9 @@ import "./FitLifeModel.css";
 // picker is a dialog, over the pane.
 //
 //   position  {id, name, position_class}
-//   start     {data?, method?, priorKind?, modelId?, recordId?}   link: a row it replaces (Refit…)
+//   start     {data?, method?, priorKind?, modelId?, recordId?, update?}   link: a row it replaces (Refit…)
+//             update: "Update with new failures…" on a fit with a prior, that row's model the prior
+//             (fitDialog.priorFrom); its own prior is kept, so trust isn't asked.
 
 const PARAM_NAMES = { weibull: ["alpha", "beta"], exponential: ["failure_rate"], lognormal: ["mu", "sigma"] };
 const PARAM_WORDS = { alpha: "Characteristic life (alpha)", beta: "Shape (beta)", failure_rate: "Failure rate", mu: "mu", sigma: "sigma" };
@@ -90,7 +92,7 @@ export function FitPane({ position, start = {}, link = null, phone = false, head
   const [saving, setSavingState] = useState(false);
   const setSaving = (v) => { setSavingState(v); onSaving?.(v); };
   return (
-    <TablePane title={fitTitle(link)} subject={position.name} phone={phone} busy={saving} headingRef={headingRef} onClose={onClose}
+    <TablePane title={fitTitle(link, start)} subject={position.name} phone={phone} busy={saving} headingRef={headingRef} onClose={onClose}
                className="fit-pane">
       <FitLifeModel position={position} start={start} link={link} onClose={onClose} onDone={onDone} onDirty={onDirty} onSaving={setSaving} />
     </TablePane>
@@ -248,7 +250,7 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
                       .map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </Select>
                 )}
-                {showsTrust(eff.priorKind) && (
+                {showsTrust(eff.priorKind) && !keepsOwnPrior(state, start, d) && (
                   <ChoiceChips label="How much to trust the prior" className="sm" value={state.trust} onChange={(v) => v && set("trust", v)}
                                options={TRUST_CHOICES.map((t) => ({ value: t.value, label: t.label }))} />
                 )}
@@ -288,6 +290,10 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
                   <Select aria-label="Prior model" value={state.modelId || ""} onChange={(e) => set("modelId", e.target.value || null)}>
                     <option value="">{models === null ? "Loading models…" : "Pick a Weibull, exponential or lognormal model"}</option>
                     {(models || []).map((m) => <option key={m.id} value={m.id}>{m.name}{m.is_sample ? " (sample)" : ""}</option>)}
+                    {/* The row it was opened from, while the list is read or if the list leaves it out. */}
+                    {state.modelId && state.modelId === link?.model_id && !(models || []).some((m) => m.id === state.modelId) && (
+                      <option value={state.modelId}>{link.model?.name || link.name}</option>
+                    )}
                   </Select>
                 )}
                 {eff.priorKind === "params" && (

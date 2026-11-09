@@ -23,8 +23,8 @@ Each token has **scopes**, chosen when you create it:
 | Scope | Allows |
 |---|---|
 | `ingest` (Push data) | the `/api/ingest/*` endpoints and `/api/import/models` |
-| `read` | `/api/v1` reads and calculations: the read-only tools (`guide`, `get`, `list`, `life_data_analysis`, `repairable_analysis`, `strategy`, `rbd_analysis`, `library`, `upgrade_link`, and Reliafy Maintenance's reads) |
-| `write` | `/api/v1` creates; every tool that saves, changes, deletes or shares (`models`, `datasets`, `rbd`, `uploads`, `sharing`, `fleet`, Reliafy Maintenance's writes and `maintenance apply`), and photo uploads |
+| `read` | `/api/v1` reads and calculations: the read-only tools (`guide`, `get`, `list`, `analyse`, and Reliafy Maintenance's reads) |
+| `write` | `/api/v1` creates; every tool that saves, changes, deletes or shares (`change`, `report_problem`, Reliafy Maintenance's writes and `maintenance apply`), and photo uploads |
 
 A request outside the token's scopes gets `403`. A token that only has
 `ingest` can push data but can never read your analyses; no token can touch
@@ -41,7 +41,7 @@ Every action of every Reliafy MCP tool is also a REST call:
 
 ```
 POST /api/v1/{tool}/{action}     # a tool with actions (or kinds): body = the action's arguments
-POST /api/v1/{tool}              # a tool without actions (guide, upgrade_link, …)
+POST /api/v1/{tool}              # a tool without actions (guide)
 ```
 
 The body is a JSON object of the action's arguments, exactly as the MCP tool
@@ -49,7 +49,7 @@ takes them (the action itself is in the path). The answer is the tool's
 result, the same JSON an AI assistant gets.
 
 ```bash
-curl -X POST https://reliafy.com/api/v1/life_data_analysis/fit \
+curl -X POST https://reliafy.com/api/v1/analyse/fit \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"data": [120, 340, 510, 700, 980], "censored": [0, 0, 1, 0, 0]}'
 
@@ -78,7 +78,7 @@ The REST calls are gated exactly as over MCP:
 | Who | Gets |
 |---|---|
 | Pro, operators, self-hosted | every tool, no allowance |
-| A signed-in Free account (session) | the same monthly allowance of tool calls as over MCP, without fitting, fleets and simulations; `guide`, `get account`, `upgrade_link` and `library` lookups aren't counted |
+| A signed-in Free account (session) | the same monthly allowance of tool calls as over MCP, without fitting, fleets and simulations; `guide`, `get account`, `get upgrade_link` and the data library's lookups (`list library`, `get library_record`, `list library_sources`) aren't counted |
 | An API token on an account without Pro | `402` |
 | Reliafy Maintenance tools | only accounts with Reliafy Maintenance (today: operators); everyone else gets `404` and doesn't see them in `/api/v1/tools` or the spec |
 
@@ -105,7 +105,7 @@ the command line wait for you.
 ### Many maintenance changes in one call
 
 Reliafy Maintenance's write actions can run as one batch, `POST
-/api/v1/maintenance/apply`: a list of the `maintenance_<area>` actions with
+/api/v1/maintenance/apply`: a list of the `maintenance` tool's actions (`positions.create` and so on) with
 their own arguments, in order, with `@ref`s between them (`"@p"` is op p's
 id; `"@p.fitted.item.id"` a field of its result). Every operation is first run
 on a throwaway copy of the workspace, so with any failure nothing is written
@@ -518,11 +518,10 @@ everyone, so it's readable without an account:
 | `GET /api/library/components/{id}` | One component: its `modes` (each a record with its `trigger`: per demand, per hour of running (first hour, after the first hour) or per calendar hour; and whether it's added), its `inputs` and `how` they combine. |
 | `GET /api/library/sources` | The sources, their licences and what each holds. |
 
-The same reads are the `library` tool: `POST /api/v1/library/search`
-(`query`, `source`, `equipment_type`, `kind`, `page`, `page_size`), `POST
-/api/v1/library/get` (`id`, a record or component id; `covariates`, adding `evaluation`; `conditions` and `environment` are the old names) and `POST
-/api/v1/library/sources`, and on the command line `reliafy list kind library
---query "motor-driven pump"`. Library lookups are never counted against the
+The same reads are on the tools API: `POST /api/v1/list/library`
+(`query`, `source`, `equipment_type`, `record_kind`, `components`, `page`, `page_size`), `POST
+/api/v1/get/library_record` (`id`, a record or component id; `covariates`, adding `evaluation`; `conditions` and `environment` are the old names) and `POST
+/api/v1/list/library_sources`, and on the command line `reliafy list library --query "motor-driven pump"`. Library lookups are never counted against the
 Free plan's tool calls. These are generic estimates (today: U.S. nuclear
 power plant industry averages, and base failure rates for electronic parts
 from the MIL-HDBK-217F prediction handbook, and covariate models for mechanical
@@ -590,9 +589,9 @@ The same over MCP and `/api/v1`: `list kind libraries`, `get kind library`
 (`library_id`, `name?`, `description?`, `notes?`), `library_delete`
 (`library_id`), `library_add_model` (`library_id`, `model_id`, `label?`,
 `equipment_type?`, `failure_mode?`, `notes?`) and `library_remove_record`
-(`library_id`, `record_id`); on the command line `reliafy change
-library_create --name "Site pumps"` and `reliafy change library_add_model
---library-id … --model-id …`. A user record works like any other in **Use as
+(`library_id`, `record_id`); on the command line
+`reliafy change library_create --name "Site pumps"` and
+`reliafy change library_add_model --library-id … --model-id …`. A user record works like any other in **Use as
 a model…** (a model of the record's family with its parameters and bounds)
 and **Use as a prior…** (each parameter about its value, between the record's
 bounds, or within about 30% when the record has none; the fit is in the
@@ -629,9 +628,9 @@ fitted to one such dataset; a degradation model reads its measurements. See
 
 | Call | Does |
 |---|---|
-| `POST /api/v1/datasets/add_measurements` | `dataset_id` with `csv` (text), `upload_id` (a file sent to an upload link; `sheet` for a workbook) or `from_dataset_id` (another dataset's table, copied in). Adds the measurements, or replaces them; refused while a model reads them. |
-| `POST /api/v1/datasets/remove_measurements` | `dataset_id`: takes the measurements off (the life data stays). |
-| `POST /api/v1/datasets/split` | `dataset_id` whose one table holds life data and readings together (a reading per row, the censoring flag filled in once per unit): splits it into the two parts in place. Columns are guessed; `unit_column`, `age_column`, `censor_column`, `life_columns` and `measurement_columns` override them. |
+| `POST /api/v1/change/dataset_add_measurements` | `dataset_id` with `csv` (text), `upload_id` (a file sent to an upload link; `sheet` for a workbook) or `from_dataset_id` (another dataset's table, copied in). Adds the measurements, or replaces them; refused while a model reads them. |
+| `POST /api/v1/change/dataset_remove_measurements` | `dataset_id`: takes the measurements off (the life data stays). |
+| `POST /api/v1/change/dataset_split` | `dataset_id` whose one table holds life data and readings together (a reading per row, the censoring flag filled in once per unit): splits it into the two parts in place. Columns are guessed; `unit_column`, `age_column`, `censor_column`, `life_columns` and `measurement_columns` override them. |
 | `POST /api/v1/get/dataset` | `id` with `part: "measurements"` pages the readings; without it, the life data (and a `measurements` summary where there is one). `list/datasets` shows each dataset's `measurements`. |
 
 On the command line: `reliafy upload readings.csv --measurements-for
@@ -647,7 +646,7 @@ pip install reliafy-client
 
 The package is `reliafy-client`; you import it as `reliafy`, and it installs
 the `reliafy` command (also as `reliafy-client`, the same command, for when
-some other program called `reliafy` is already on your path). Version 0.3 needs a Reliafy server with the
+some other program called `reliafy` is already on your path). The client needs a Reliafy server with the
 tools API above (`GET /api/v1/tools` answers); against an older server it
 says so, and the 0.2 functions keep working.
 
@@ -656,8 +655,8 @@ from reliafy import Client
 
 rf = Client(token="rlf_...")                    # or RELIAFY_TOKEN, or `reliafy login`
 rf.call("list", "models")
-rf.call("life_data_analysis", "fit", data=[120, 340, 510], censored=[0, 0, 1])
-rf.call("rbd_analysis", "analyze", rbd_id="…", wait=True)   # waits for a job
+rf.call("analyse", "fit", data=[120, 340, 510], censored=[0, 0, 1])
+rf.call("analyse", "rbd", rbd_id="…", wait=True)   # waits for a job
 rf.upload_dataset("bearings.xlsx", name="Bearings")
 rf.add_photo("nameplate.jpg", target_id="…")
 rf.add_document("manual.pdf", target_id="…", kind="manual")

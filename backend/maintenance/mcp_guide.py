@@ -738,8 +738,9 @@ item with its product, item class, position path, status and open reports; produ
 offset). get.item and get.position say which product an item or position belongs to.
 - products.clear: the tree is a plain tree again; refused while items built from it are in use.
 - products.add_sample: a worked example to explore (an invented quadcopter: its design with a scored FME(C)A, its \
-part and BOM, three items built, a replaced motor, two failure reports, and an RBD whose rates are placeholders, \
-said so in its name); once unless again is true. products.add_sample make_own=true (product_id: the copy, \
+maintenance programme with each task's LSA record, sample life models on its motors, propellers, battery pack and \
+radio, its part and BOM, three items built (the first with a monthly work package of its calendar tasks), a \
+replaced motor, two failure reports, and an RBD whose rates are placeholders, said so in its name); once unless again is true. products.add_sample make_own=true (product_id: the copy, \
 default the only one) makes a copy the user's own in place: "(sample)" leaves its name (and its part's and built \
 items'), nothing inside changes, ids stay, and the sample isn't added again beside it unless asked.
 - A design's tasks are its maintenance programme, with their LSA records (tasks.set_resources): they never fall \

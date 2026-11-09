@@ -221,7 +221,7 @@ export function rowActions(r, { viewOnly = null } = {}) {
     link.role === "fitted" ? { id: "model-refit", label: "Refit…", ...off } : null,
     link.role === "prediction" ? { id: "model-predict", label: "Refresh the prediction…", ...off } : null,
     // A Bayesian update takes the position's new failures; a plain Weibull, exponential or
-    // lognormal model can be the baseline of one (bayesUpdate.js).
+    // lognormal model can be the prior of a new one. Both open the fit pane (fitDialog.priorFrom).
     link.role === "bayesian" ? { id: "model-bayes", label: "Update with new failures…", ...off }
       : link.model && /^(Weibull|Exponential|Lognormal)$/.test(link.model.kind || "") ? { id: "model-bayes", label: "Update with this position's history…", ...off } : null,
     // A covariate model (NSWC-11, ALT, PH): which covariates are fixed here, the rest set in an RBD.
