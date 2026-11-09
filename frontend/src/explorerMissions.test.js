@@ -53,6 +53,7 @@ test("a mission row's cells in words", () => {
   assert.equal(phasesText(m1), "3 phases: Take-off, Transit, Landing");
   assert.equal(phasesText(m2), "No phases yet");
   assert.equal(lengthText(1.5, "Hours"), "1.5 hours");
+  assert.equal(lengthText(1, "Hours"), "1 hour");
   assert.equal(completesText(m1), "98.2%");
   assert.equal(completesText(m2), "—");
   assert.equal(completesText({ result: { reliability: null, through: { phase: "Take-off", reliability: 0.999 } } }),

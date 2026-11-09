@@ -54,7 +54,6 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   await expect(nameRow(page, `Stabilise ${tag}`)).toBeVisible();
   await expect(nameRow(page, `Front motor bearing ${tag}`)).toContainText("No RBD yet");
   await expect(nameRow(page, `Corridor inspection ${tag}`)).toHaveCount(1);
-  await shot(page, "missions-tab-1440");
 
   // Open the mission: the table area, phases as rows.
   await mission.locator(".tp-nm").dblclick();
@@ -110,6 +109,7 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   await page.keyboard.press("Escape");
   await expect(pane).toHaveCount(0);
   await expect(nameRow(page, `Corridor inspection ${tag}`)).toContainText("%");
+  await shot(page, "missions-tab-1440");
 
   // At 400 px: the tab, then the mission on its own screen with Back.
   await page.setViewportSize({ width: 400, height: 860 });

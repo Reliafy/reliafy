@@ -43,7 +43,12 @@ export function fmt(v) {
 }
 export const unitWord = (unit) => String(unit || "").trim().toLowerCase();
 // "12.5 hours", "3 cycles"; a number alone with no unit.
-export const lengthText = (v, unit) => (v == null ? "—" : `${fmt(v)}${unitWord(unit) ? ` ${unitWord(unit)}` : ""}`);
+export function lengthText(v, unit) {
+  if (v == null) return "—";
+  let u = unitWord(unit);
+  if (Number(v) === 1 && u.endsWith("s")) u = u.slice(0, -1); // "1 hour"
+  return `${fmt(v)}${u ? ` ${u}` : ""}`;
+}
 export const pct = reliabilityPercent;
 
 // A mission's "Completes" cell: its chance, once worked out ("—" before), or how far it got.
