@@ -26,7 +26,8 @@ tab. The tree stays in the first column; under each position with an RBD are
 its missions, with:
 
 - **Phases**: how many, and their names.
-- **Length**: every phase added up, in the RBD's time unit.
+- **Length**: every phase added up, in the RBD's time unit. Each phase's row
+  under the mission shows that phase's own length.
 - **Completes**: the chance the mission completes, once worked out.
 - **RBD**: the diagram it's flown on.
 
@@ -43,7 +44,8 @@ Back**). Name it, then **Add a phase** for each stage, in order, with how long
 it lasts. Use **↑** and **↓** to reorder and **×** to remove one. **Save**
 keeps it on the RBD.
 
-Each mission's phases are rows under it in the tree, in order. A mission's row
+Each mission's phases are rows under it in the tree, in order, each with its
+place (**Phase 2 of 3**) and its own length. A mission's row
 menu (right-click it, or press its **⋯**) starts with **Add a phase**: it adds
 one at the end and opens the mission on it, ready for its name and duration. A
 phase's row menu has **Open…** (the mission, on that phase), **Move earlier**,

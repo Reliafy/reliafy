@@ -49,6 +49,12 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   const mission = nameRow(page, `Corridor inspection ${tag}`);
   await expect(mission).toBeVisible();
   await expect(mission).toContainText("2 phases: Take-off, Survey");
+  // The mission's length is every phase added up; opened, each phase's row shows its own.
+  await expect(mission).toContainText("3.2 hours");
+  await mission.locator(".tp-chev").click();
+  const phaseRow = (name) => page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: new RegExp(`^${name}$`) }) });
+  await expect(phaseRow("Take-off")).toContainText("0.2 hours");
+  await expect(phaseRow("Survey")).toContainText("3 hours");
   // The gimbal's own mission is under the gimbal; the drone's isn't repeated there.
   await nameRow(page, `Gimbal ${tag}`).first().locator(".tp-chev").click();
   await expect(nameRow(page, `Stabilise ${tag}`)).toBeVisible();

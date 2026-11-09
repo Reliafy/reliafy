@@ -1,7 +1,8 @@
 // The Explorer's Missions tab (Derryn, 9 Nov 2026: "Products need an RBD tab, called Missions";
 // "Missions are RBDs, so they belong to positions"): a tree-table like the Modelling tab. Under
 // each position with an RBD hang that RBD's missions (name, phases, length, the chance of
-// completing it once worked out); a position with none says so and offers to build one. A
+// completing it once worked out); a position with none says so and offers to build one. Under a
+// mission, each phase's row has its own length in the same column (the mission's is their total). A
 // mission is the RBD flown through phases: each phase its duration, the blocks it doesn't need,
 // vote counts and its own Use / Environment covariate values. Missions never come down from the
 // position above: a sub-position has its own RBD's missions. Pure functions, tested in
@@ -39,7 +40,7 @@ export function parseMissionParam(value) {
 
 export const MISSION_COLUMNS = [
   { id: "phases", label: "Phases", width: 230, title: "How many phases, and their names" },
-  { id: "duration", label: "Length", width: 130, num: true, title: "The whole mission, every phase added up, in the RBD's unit" },
+  { id: "duration", label: "Length", width: 130, num: true, title: "A phase's own length; a mission's is every phase added up. In the RBD's unit" },
   { id: "reliability", label: "Completes", width: 150, num: true, title: "The chance the mission completes, once worked out" },
   { id: "rbd", label: "RBD", width: 200, title: "The diagram the mission is flown on" },
 ];
@@ -99,6 +100,7 @@ export function graftMissions(display, links = []) {
       for (const m of link.missions || []) {
         const key = missionKey(link.rbd.id, m.id);
         const names = m.phase_names || [];
+        const lengths = m.phase_durations || [];
         const kids = names.map((_, i) => phaseKey(link.rbd.id, m.id, i));
         rows.set(key, {
           key, type: MISSION_TYPE, parent: pk, kids, depth: p.depth + 1, own: noStatus(), sum: noStatus(),
@@ -110,7 +112,7 @@ export function graftMissions(display, links = []) {
         names.forEach((name, i) => rows.set(kids[i], {
           key: kids[i], type: PHASE_TYPE, parent: key, kids: [], depth: p.depth + 2, own: noStatus(), sum: noStatus(),
           ref: {
-            name, phase: { index: i, name, of: names.length }, mission: m, rbd: link.rbd, position_id: pk,
+            name, phase: { index: i, name, of: names.length, duration: lengths[i] ?? null }, mission: m, rbd: link.rbd, position_id: pk,
             search: String(name || "").toLowerCase(),
           },
         }));
@@ -168,6 +170,8 @@ export function phasesText(m) {
 
 // A phase row's cells and phone line: "Phase 2 of 3".
 export const phaseOfText = (p) => `Phase ${p.index + 1} of ${p.of}`;
+// A phase row's own length, in its mission's unit: "0.25 hours" ("" when the read has none).
+export const phaseLengthText = (p, unit) => (p?.duration == null ? "" : lengthText(p.duration, unit));
 
 // A mission row's ⋯ (Add a phase, then Open, Show the RBD, Delete…), a phase row's (Open…, Move
 // earlier, Move later, Delete…) and a position's (Add a mission, Open the RBD, Build…).

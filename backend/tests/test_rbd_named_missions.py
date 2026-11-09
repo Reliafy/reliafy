@@ -105,6 +105,19 @@ def test_summary_keeps_a_result_only_while_it_still_holds():
     assert "result" not in rm.summary(g2, m2, {m["id"]: rec})
 
 
+def test_summary_carries_each_phase_s_own_length_beside_its_name():
+    phases = [{"name": "Take-off", "duration": 0.1}, {"name": "Cruise", "duration": 5}, {"name": "Hold", "duration": 0}]
+    g, m = rm.save({**_two_motors(), "unit": "Hours"}, name="Delivery run", phases=phases)
+    s = rm.summary(g, m)
+    assert s["phase_names"] == ["Take-off", "Cruise", "Hold"]
+    assert s["phase_durations"] == [0.1, 5.0, 0.0]           # one per phase, in the phases' order
+    assert s["duration"] == pytest.approx(sum(s["phase_durations"])) and s["unit"] == "Hours"
+    assert rm.summary(g, {"id": "x", "name": "Empty", "phases": []})["phase_durations"] == []
+    # The diagram's own phases (the mission kept on the RBD itself) read the same way.
+    own = {**_two_motors(), "phases": [{"name": "Take-off", "duration": 0.1}, {"name": "Cruise", "duration": 5}]}
+    assert rm.summary(own, rm.missions_of(own)[0])["phase_durations"] == [0.1, 5.0]
+
+
 # ---- ageing across phases, blocks not needed, vote overrides ---------------------------------
 
 def test_blocks_age_across_the_whole_mission_with_a_vote_override(db):

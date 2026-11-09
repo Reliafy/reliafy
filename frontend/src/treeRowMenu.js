@@ -7,11 +7,15 @@
 // On every other tab a row's menu starts with what that tab keeps under it
 // (Derryn, 10 Nov 2026: "The relevant 'add' should be the top item"): New
 // position inside is first on the Summary tab only. Elsewhere the tab's adds
-// come first, then a line, then these items (addsFirst, leadWith): Failure
-// reports puts Add failure report… first; Measurements its four adds
-// (explorerMeasurements.js measAddActions); RCM, FME(C)A, Modelling and
-// Missions build their own menus (explorerRcm.js, explorerFmea.js,
-// explorerModels.js, explorerMissions.js).
+// come first, then a line, then these items (addsFirst, tabMenu): Failure
+// reports puts Add failure report… first; the LSA tab Package the tasks here…
+// (lsaLead: the drafts open in the panel beside the tree); Measurements its
+// four adds (explorerMeasurements.js measAddActions); RCM, FME(C)A, Modelling
+// and Missions build their own menus (explorerRcm.js, explorerFmea.js,
+// explorerModels.js, explorerMissions.js). Where a tab has nothing of its own
+// for a row (a design's row on the LSA tab: a design has no packages; a place
+// on Failure reports), the changes to the tree go last, after Focus and Pin
+// this branch (tabMenu).
 //
 // A position can be renamed, moved (PATCH parent_id) and deleted; a location
 // renamed, moved and deleted; an item renamed (never deleted from the tree:
@@ -69,13 +73,19 @@ export function summaryActions(r, { mode, viewOnly = null } = {}) {
 export function addsFirst(adds, rest) {
   return adds?.length ? [...adds, { separator: true }, ...rest] : rest;
 }
-// The items with these ids moved to the top, then a line, then the others as they were.
-export function leadWith(items, ids) {
-  return addsFirst(items.filter((i) => ids.includes(i.id)), items.filter((i) => !ids.includes(i.id)));
-}
 // What a tab puts first on the Summary menu's rows (the tabs drawn as the plain
 // tree, not a tree-table): ids, in order.
 export const TAB_LEADS = { reports: ["report-new"] };
+
+// The LSA tab's own for a row: Package the tasks here… (drafts packages from
+// the tasks there and below in no package; they open in the panel beside the
+// tree, never a dialog). A position or a place only, and never a design's (a
+// design's tasks are packaged on the items built from it).
+export const LSA_PACKAGE = { id: "lsa-package", label: "Package the tasks here…" };
+export function lsaLead(r, { design = false, viewOnly = null } = {}) {
+  if (!r || design || (r.type !== "pos" && r.type !== "loc")) return [];
+  return [write(LSA_PACKAGE, viewOnly)];
+}
 
 // The menu with Pin this branch (or Show whole tree) added: after the
 // changes, before Delete.
@@ -83,6 +93,32 @@ export function withPin(items, pin) {
   const at = items.findIndex((i) => i.danger);
   if (at < 0) return [...items, ...pin];
   return [...items.slice(0, at), ...pin, ...items.slice(at)];
+}
+
+// The tree's quiet last row ("+ New position inside …") follows the same rule
+// as the row menu: adding to the tree belongs to the Summary tab. On every
+// other tab the tree ends at its last row.
+export const showsAddRow = (tab) => !tab || tab === "summary";
+
+// A row's menu on a tab drawn as the plain tree. `items`: the Summary menu
+// (summaryActions); `lead`: what the tab itself offers for the row (lsaLead);
+// `pin`: Focus and Pin this branch.
+//   Summary: the changes to the tree, Focus and Pin before Delete….
+//   A tab with something of its own for the row: that first, a line, then the
+//   Summary menu.
+//   A tab with nothing of its own for it: New … inside, Rename…, Move to… and
+//   Delete… go last, after Focus and Pin (they change the tree, not what the
+//   tab shows), so the tab never opens on New position inside.
+const TREE_CHANGES = ["tree-new", "tree-rename", "tree-move", "tree-delete"];
+export function tabMenu(tab, items, { lead = [], pin = [] } = {}) {
+  if (!tab || tab === "summary") return withPin(items, pin);
+  const ids = TAB_LEADS[tab] || [];
+  const first = [...lead, ...items.filter((i) => ids.includes(i.id))];
+  const rest = items.filter((i) => !ids.includes(i.id));
+  if (first.length) return withPin(addsFirst(first, rest), pin);
+  const tree = rest.filter((i) => TREE_CHANGES.includes(i.id));
+  const before = [...rest.filter((i) => !TREE_CHANGES.includes(i.id)), ...pin];
+  return before.length && tree.length ? [...before, { separator: true }, ...tree] : [...before, ...tree];
 }
 
 // A row's Isolate (closes the rest of the tree, opens this row so far): a

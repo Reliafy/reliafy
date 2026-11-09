@@ -4,7 +4,7 @@ import { buildDisplay } from "./assetTree.js";
 import {
   MAX_PHASES, answerText, changedPhases, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow,
   isPhaseRow, lengthText, missionKey, missionParam, missionRowActions, movePhase, newPhase, parseMissionParam, phaseCompletes,
-  phaseCovariates, phaseKey, phaseLine, phaseNeeds, phaseOfText, phasesText, positionMissionActions, rollupText, typed,
+  phaseCovariates, phaseKey, phaseLengthText, phaseLine, phaseNeeds, phaseOfText, phasesText, positionMissionActions, rollupText, typed,
   withBlockValue, withNewPhase, withoutPhase, withValue,
 } from "./explorerMissions.js";
 
@@ -21,7 +21,7 @@ const DATA = {
 const RBD = { id: "r1", name: "Drone RBD", unit: "Hours", repairable: false, network: false };
 const LINKS = [
   { position_id: "drone", link_id: "l1", in_use: true, rbd: RBD, missions: [
-    { id: "m1", name: "Corridor inspection", phases: 3, phase_names: ["Take-off", "Transit", "Landing"], duration: 1.5, unit: "Hours",
+    { id: "m1", name: "Corridor inspection", phases: 3, phase_names: ["Take-off", "Transit", "Landing"], phase_durations: [0.25, 1, 0.25], duration: 1.5, unit: "Hours",
       result: { reliability: 0.9821, method: "exact" } },
     { id: "m2", name: "Survey grid", phases: 0, phase_names: [], duration: 0, unit: "Hours" },
   ] },
@@ -140,6 +140,14 @@ test("a mission's phases hang under it in the tree, in order", () => {
   assert.equal(p2.ref.position_id, "drone");
   assert.ok(isPhaseRow(p2) && isMissionRow(p2) && !isPhaseRow(m1));
   assert.equal(phaseOfText(p2.ref.phase), "Phase 2 of 3");
+  // Each phase's own length, in its mission's unit; together they're the mission's.
+  const lengths = m1.kids.map((k) => phaseLengthText(d.rows.get(k).ref.phase, m1.ref.mission.unit));
+  assert.deepEqual(lengths, ["0.25 hours", "1 hour", "0.25 hours"]);
+  assert.equal(m1.kids.reduce((n, k) => n + d.rows.get(k).ref.phase.duration, 0), m1.ref.mission.duration);
+  // A read with no lengths (an older server): the cell is left blank, never a made-up 0.
+  const old = graftMissions(buildDisplay(DATA, "positions"), [{ ...LINKS[0], missions: [{ ...LINKS[0].missions[0], phase_durations: undefined }] }]);
+  assert.equal(old.rows.get(phaseKey("r1", "m1", 0)).ref.phase.duration, null);
+  assert.equal(phaseLengthText(old.rows.get(phaseKey("r1", "m1", 0)).ref.phase, "Hours"), "");
   assert.deepEqual(d.rows.get(missionKey("r1", "m2")).kids, []); // no phases yet
   // The position's counts are its missions', not their phases.
   assert.equal(rollupText(d.rows.get("drone"), true), "2 missions");
