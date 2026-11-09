@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { curve, density, distributionWords, lgamma, rangeText, recordIdOf, recordPath, sig, sourcePath, unitsMeaning, whyNot } from "./libraryModels.js";
+import {
+  curve, density, distributionWords, leftOutWords, lgamma, pickerDetail, rangeText, recordIdOf, recordPath, sig, sourcePath, unitsMeaning,
+  usableSource, whyNot,
+} from "./libraryModels.js";
 
 test("the three levels' addresses", () => {
   assert.equal(sourcePath("nrc-inl-2020"), "/models/library/nrc-inl-2020");
@@ -13,6 +16,23 @@ test("which records can be a model or a prior, in words", () => {
   assert.match(whyNot({ kind: "per_demand" }), /counts of demands and failures/);
   assert.match(whyNot({ kind: "per_demand" }, "prior"), /counts lives, not demands/);
   assert.match(whyNot({ kind: "rate", basis: "prediction_model" }), /parts count/);
+});
+
+test("the pickers: the default library, the records hidden, and a record's detail line", () => {
+  const handbook = { id: "mil-hdbk-217f-n2", basis: "prediction_model", kinds: { rate: 236 } };
+  const field = { id: "nrc-inl-2020", basis: "field_data", kinds: { rate: 211, per_demand: 89 } };
+  assert.equal(usableSource(handbook), false);
+  assert.equal(usableSource(field), true);
+  assert.equal(usableSource(null), false);
+  assert.equal([handbook, field].find(usableSource), field);
+  assert.equal(leftOutWords({}), null);
+  assert.equal(leftOutWords(undefined), null);
+  assert.match(leftOutWords({ prediction_model: 236 }), /^Base rates for parts counts are left out; use them in a prediction\.$/);
+  assert.match(leftOutWords({ prediction_model: 1, per_demand: 2 }), /parts counts.*per demand/);
+  assert.equal(pickerDetail({ mean: 9.13e-5, units: "per hour (running)", p05: 7.34e-7, p95: 3.33e-4, source: "NRC/INL 2020" }),
+    "9.13e−5 per hour (running) · 5–95%: 7.34e−7 – 3.33e−4 · NRC/INL 2020");
+  // A base rate with no range given says none, rather than "5–95%: —".
+  assert.equal(pickerDetail({ mean: 3.8e-9, units: "per hour (running)", source: "MIL-HDBK-217F N2" }), "3.80e−9 per hour (running) · MIL-HDBK-217F N2");
 });
 
 test("the words and the density", () => {

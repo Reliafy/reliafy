@@ -289,7 +289,9 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
                 <ProbabilityPlot plot={d.plot} unit={u} download={`${position.name} — probability plot`} />
               ) : d.curves?.x && (
                 <Plot data={shownChart === "hf" ? [
-                  { x: d.curves.x, y: d.curves.hf, mode: "lines", line: { color: ACCENT, width: 2 }, name: "Hazard rate" },
+                  ...(d.curves.baseline_hf ? [{ x: d.curves.x, y: d.curves.baseline_hf, mode: "lines", line: { color: MUTED, width: 1.5, dash: "dash" },
+                    name: eff.priorKind === "class" ? "The class's own fit" : "The prior" }] : []),
+                  { x: d.curves.x, y: d.curves.hf, mode: "lines", line: { color: ACCENT, width: 2 }, name: d.method === "bayes" ? "Fitted with the prior" : "Hazard rate" },
                 ] : [
                   ...(d.curves.sf_lower && d.curves.sf_upper ? [
                     { x: d.curves.x, y: d.curves.sf_upper, mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
@@ -300,7 +302,8 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
                     name: eff.priorKind === "class" ? "The class's own fit" : "The prior" }] : []),
                   { x: d.curves.x, y: d.curves.sf, mode: "lines", line: { color: ACCENT, width: 2 }, name: d.method === "bayes" ? "Fitted with the prior" : "Fitted" },
                 ]} layout={{ height: 320, xaxis: { title: { text: `Age${u ? ` (${u})` : ""}` } },
-                  yaxis: shownChart === "hf" ? { title: { text: "Hazard rate" }, rangemode: "tozero" } : { title: { text: "Reliability" }, range: [0, 1.02] } }}
+                  // A hazard per hour can be 1e-7: ticks to 3 significant figures (not "5.0049999999e-8").
+                  yaxis: shownChart === "hf" ? { title: { text: "Hazard rate" }, rangemode: "tozero", tickformat: ".3~g" } : { title: { text: "Reliability" }, range: [0, 1.02] } }}
                       download={`${position.name} — life model`} />
               )}
               <div className="maint-scroll">

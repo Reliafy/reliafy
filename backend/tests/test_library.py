@@ -210,6 +210,25 @@ def test_search_ranks_and_counts():
     assert row["citation"] == "INL/EXT-21-65055, Table 1, p. 8" and row["source"] == "NRC/INL 2020"
 
 
+def test_search_for_a_use_keeps_only_the_records_that_can_be_it():
+    """The pickers' ``use`` filter: a failure rate counted from service can be a model or a prior on
+    its own; a handbook base rate for a parts count and a probability per demand can't. The result
+    says how many it hid, by why."""
+    out = service.search(use="prior", page_size=100)
+    assert out["filters"] == {"use": "prior"} and out["total"] == 211
+    assert all(r["kind"] == "rate" and r["basis"] == "field_data" for r in out["results"])
+    assert out["left_out"] == {"prediction_model": N_MIL, "per_demand": 89}
+    # A source with no usable records: nothing shown, and the line says why.
+    mil = service.search(source=MIL, use="model")
+    assert mil["total"] == 0 and mil["left_out"] == {"prediction_model": N_MIL}
+    assert "left_out" not in service.search(source=MIL)
+    with pytest.raises(ValueError, match="Unknown use"):
+        service.search(use="dinner")
+    assert service.usable_as({"basis": "field_data", "kind": "rate", "units": {"value": "per_hour"}}, "model")
+    assert not service.usable_as({"basis": "prediction_model", "kind": "rate", "units": {"value": "per_hour"}}, "model")
+    assert not service.usable_as({"basis": "field_data", "kind": "per_demand", "units": {"value": "per_demand"}}, "prior")
+
+
 def test_search_pages():
     first = service.search(kind="per_demand", page_size=10)
     assert first["total"] == 89 and first["pages"] == 9 and len(first["results"]) == 10
@@ -350,6 +369,9 @@ def test_public_routes_need_no_sign_in(client):
     body = r.json()
     assert body["total"] == 5 and len(body["results"]) == 2 and body["pages"] == 3
     assert client.get("/api/library/search", params={"kind": "weekly"}).status_code == 422
+    r = client.get("/api/library/search", params={"use": "prior", "page_size": 1})
+    assert r.status_code == 200 and r.json()["left_out"]["prediction_model"] == N_MIL
+    assert client.get("/api/library/search", params={"use": "dinner"}).status_code == 422
     r = client.get(f"/api/library/records/{NRC}:mdp-fts-ns")
     assert r.status_code == 200 and r.json()["record"]["licence"]["id"] == "us-government-work"
     assert client.get("/api/library/records/nope").status_code == 404

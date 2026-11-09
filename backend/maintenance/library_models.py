@@ -69,7 +69,8 @@ def _refuse_per_demand(rec: dict, use: str):
 
 
 def why_not(rec: dict, use: str = "model") -> str | None:
-    """Why a record can't be a model (or a prior), in words; None when it can."""
+    """Why a record can't be a model (or a prior), in words; None when it can (the library's
+    ``usable_as``, which the pickers search by, says the same)."""
     if rec.get("basis") == "prediction_model":
         b = brief(rec)
         return (f"“{b['label']}” is a handbook base rate for a parts count: on its own it isn't a model (the "
@@ -226,8 +227,11 @@ def prior_base(prior: dict, distribution: str) -> dict:
     priors = sp.prior.on_quantities(bl.DISTS[dist_id], mean=sp.prior.around(1 / mean, between=(1 / float(p95), 1 / float(p05))),
                                     **{shape_name: sp.prior.between(lo, hi)})
     said = "the default" if not prior.get("shape") else "as given"
+    # around() puts the prior's median at the geometric middle of the bounds: say what was built.
+    middle = (1 / float(p95) * 1 / float(p05)) ** 0.5
     note = (f"The record gives a failure rate; for a {bl.LABELS[dist_id]} it's a prior on the mean life (one over the "
-            f"rate: about {bl.num(1 / mean)} hours, 90% between {bl.num(1 / float(p95))} and {bl.num(1 / float(p05))}), "
-            f"with the {'shape' if dist_id == 'weibull' else 'spread'} between {bl.num(lo)} and {bl.num(hi)} ({said}).")
+            f"rate: 90% between {bl.num(1 / float(p95))} and {bl.num(1 / float(p05))} hours, centred on about "
+            f"{bl.num(middle)}), with the {'shape' if dist_id == 'weibull' else 'spread'} between {bl.num(lo)} and "
+            f"{bl.num(hi)} ({said}).")
     return {"source": "library", "name": name, "distribution": dist_id, "unit": "hours", "params": {},
             "priors": priors, "note": note}

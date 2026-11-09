@@ -167,6 +167,8 @@ export function LibraryRecord() {
   const brief = rec && { id: rec.id, label: rec.label, kind: rec.kind, basis: rec.basis, mean: summary.mean, p05: summary.p05,
     p95: summary.p95, units: rec.units?.as_given, source: source?.short_name || sourceId };
   const pts = rec ? curve(rec.distribution, summary.p05, summary.p95) : null;
+  // The log axis's ticks: a decade apart, as powers of ten; a narrow range (under 2.5 decades) adds the 2s and 5s.
+  const decades = pts ? Math.log10(pts.x[pts.x.length - 1] / pts.x[0]) : 0;
   const cite = rec?.citation || {};
   return (
     <div className="app">
@@ -195,8 +197,11 @@ export function LibraryRecord() {
             <section className="card">
               <h2 className="lib-h">The distribution</h2>
               <Plot data={[{ x: pts.x, y: pts.y, mode: "lines", line: { color: ACCENT, width: 2 }, name: "Density" }]}
-                    layout={{ height: 260, xaxis: { type: "log", title: { text: rec.kind === "per_demand" ? "Probability per demand" : "Failure rate (per hour)" } },
-                      yaxis: { title: { text: "Density" }, rangemode: "tozero" } }}
+                    layout={{ height: 260,
+                      // Powers of ten on the log axis (not "1.0000005e-12"); the density in SI prefixes.
+                      xaxis: { type: "log", dtick: decades < 2.5 ? "D2" : 1, exponentformat: "power", showexponent: "all",
+                        title: { text: rec.kind === "per_demand" ? "Probability per demand" : "Failure rate (per hour)" } },
+                      yaxis: { title: { text: "Density" }, rangemode: "tozero", exponentformat: "SI", showexponent: "all" } }}
                     download={`${rec.label} — distribution`} />
             </section>
           )}

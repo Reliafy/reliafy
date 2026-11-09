@@ -27,6 +27,24 @@ export function whyNot(rec, use = "model") {
   return null;
 }
 
+// A library that has records usable as a model or a prior on their own (a failure rate counted
+// from service; not a handbook of base rates for parts counts): the pickers' default.
+export const usableSource = (s) => !!s && s.basis !== "prediction_model" && !!(s.kinds?.rate);
+
+// Why a search for a use hid records, in one grey line (the search's left_out: {why: count});
+// null when it hid none.
+export function leftOutWords(leftOut) {
+  const parts = [];
+  if (leftOut?.prediction_model) parts.push("Base rates for parts counts are left out; use them in a prediction.");
+  if (leftOut?.per_demand) parts.push("Probabilities per demand are left out: they aren't lives over time.");
+  return parts.length ? parts.join(" ") : null;
+}
+
+// A record's one detail line in a picker: its value and units, its 5–95% range and the short
+// source name ("9.13e−5 per hour (running) · 5–95%: 7.34e−7 – 3.33e−4 · NRC/INL 2020").
+export const pickerDetail = (r) => [`${sig(r.mean)} ${r.units || ""}`.trim(), r?.p05 != null && r?.p95 != null ? `5–95%: ${rangeText(r)}` : null, r.source]
+  .filter(Boolean).join(" · ");
+
 // A number to 3 significant figures, small ones in scientific form.
 export function sig(v) {
   const x = Number(v);

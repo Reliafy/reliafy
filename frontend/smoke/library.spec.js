@@ -65,10 +65,20 @@ test("attach a library record to a position, then fit with a library prior", asy
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${valve.id}&tab=models`);
 
-  // Life model › From the data library…: the record attached, cited in its row's Source.
+  // Life model › From the data library…: the picker opens on the first library with usable records
+  // (handbook base rates for parts counts can't be a model), each record stacked: its name, then one
+  // detail line (value, 5–95%, source). "Every library" says what it leaves out.
   await headPick(page, "Life model", "From the data library…");
   const attach = page.getByRole("dialog", { name: "From the data library" });
+  await expect(attach.getByRole("combobox", { name: "Library" })).toHaveValue("nrc-inl-2020");
+  await attach.getByRole("combobox", { name: "Library" }).selectOption("");
+  await expect(attach.locator(".lib-leftout")).toContainText("Base rates for parts counts are left out");
+  await expect(attach.locator(".lib-record")).not.toHaveCount(0);
+  await expect(attach.locator(".lib-record", { hasText: "MIL-HDBK" })).toHaveCount(0);
   await attach.getByRole("searchbox", { name: "Search the data library" }).fill("Motor-operated valve spurious");
+  const row = attach.locator(".lib-record", { hasText: SOP }).first();
+  await expect(row.locator(".evidence-meta")).toContainText(/per hour .* · 5–95%: .* · NRC\/INL 2020 · Details/);
+  await expect(row.locator(".evidence-meta")).not.toContainText("INL/EXT-21-65055");
   await attach.getByRole("radio", { name: new RegExp(SOP) }).first().check();
   const saved = page.waitForResponse((r) => r.url().includes(`${M}/positions/${valve.id}/models`) && r.request().method() === "POST");
   await attach.getByRole("button", { name: "Attach" }).click();
@@ -84,6 +94,18 @@ test("attach a library record to a position, then fit with a library prior", asy
   await fit.getByRole("combobox", { name: "Distribution" }).selectOption("exponential");
   await fit.getByRole("searchbox", { name: "Search the data library" }).fill("Motor-operated valve spurious");
   await fit.getByRole("radio", { name: new RegExp(SOP) }).first().check();
+  await expect(fit.getByRole("status")).toContainText("conjugate", { timeout: 30_000 });
+  // The prior shows beside the fit: its mean life and B10 as numbers, not "—".
+  const numbers = fit.locator(".fit2-numbers");
+  await expect(numbers.locator("tr", { hasText: "Mean life" }).locator("td").nth(1)).toContainText(/\d/);
+  await expect(numbers.locator("tr", { hasText: "B10 life" }).locator("td").nth(1)).toContainText(/\d/);
+  // On a Weibull the record is a prior on the mean life with the shape between bounds: the prior still shows.
+  await fit.getByRole("combobox", { name: "Distribution" }).selectOption("weibull");
+  await expect(fit.getByRole("status")).toContainText("prior on the mean life", { timeout: 60_000 });
+  await expect(numbers.locator("tr", { hasText: "Mean life" }).locator("td").nth(1)).toContainText(/\d/);
+  await expect(numbers.locator("tr", { hasText: "Shape" }).locator("td").nth(1)).toContainText(/\d/);
+  await expect(fit.getByRole("status")).not.toContainText("gave the belief its numbers.");
+  await fit.getByRole("combobox", { name: "Distribution" }).selectOption("exponential");
   await expect(fit.getByRole("status")).toContainText("conjugate", { timeout: 30_000 });
   const fitted = page.waitForResponse((r) => r.url().includes(`${M}/positions/${valve.id}/models`) && r.request().method() === "POST",
     { timeout: 60_000 });

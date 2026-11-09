@@ -168,16 +168,46 @@ def brief(rec: dict) -> dict:
     }
 
 
+#: What a record can be used as on its own: a life model (an exponential at its rate) or a prior
+#: on one. A failure rate per hour counted from service can; a handbook base rate for a parts count
+#: can't (the environment and quality factors make the rate: it's for a prediction), nor can a
+#: probability per demand (not a life over time).
+USES = {"model": "a life model", "prior": "a prior on a life model"}
+
+
+def usable_as(rec: dict, use: str) -> bool:
+    """Whether the record can be ``use`` ("model" or "prior") on its own."""
+    if rec.get("basis") == "prediction_model":
+        return False
+    return rec.get("kind") == "rate" and str((rec.get("units") or {}).get("value") or "").startswith("per_hour")
+
+
+def left_out_by(records: list, use: str) -> dict:
+    """Why records were left out of a search for ``use``: {prediction_model: n, per_demand: n, other: n}."""
+    out: dict = {}
+    for rec in records:
+        if usable_as(rec, use):
+            continue
+        why = "prediction_model" if rec.get("basis") == "prediction_model" else \
+            "per_demand" if rec.get("kind") == "per_demand" else "other"
+        out[why] = out.get(why, 0) + 1
+    return out
+
+
 def search(query: Optional[str] = None, source: Optional[str] = None, equipment_type: Optional[str] = None,
-           kind: Optional[str] = None, page: int = 1, page_size: int = DEFAULT_PAGE_SIZE) -> dict:
+           kind: Optional[str] = None, page: int = 1, page_size: int = DEFAULT_PAGE_SIZE,
+           use: Optional[str] = None) -> dict:
     """A page of the records matching ``query`` and the filters, best first,
     with the total and the counts by equipment type, kind and source (of the
     query's matches, before the filters narrow them, so a filter shows what
-    choosing it would give)."""
+    choosing it would give). ``use`` ("model" or "prior") keeps only the
+    records that can be that on their own (:func:`usable_as`), and
+    ``left_out`` says how many the other filters matched but it hid, by why."""
     lib = _library()
     _check_choice("source", source, lib["sources"])
     _check_choice("equipment_type", equipment_type, schema.EQUIPMENT_TYPES)
     _check_choice("kind", kind, schema.KINDS)
+    _check_choice("use", use, USES)
     page = 1 if page is None else int(page)
     page_size = DEFAULT_PAGE_SIZE if page_size is None else int(page_size)
     if page < 1:
@@ -200,14 +230,18 @@ def search(query: Optional[str] = None, source: Optional[str] = None, equipment_
             if (source is None or m[2]["source"] == source)
             and (equipment_type is None or m[2]["equipment_type"] == equipment_type)
             and (kind is None or m[2]["kind"] == kind)]
+    left_out = left_out_by([m[2] for m in hits], use) if use else {}
+    if use:
+        hits = [m for m in hits if usable_as(m[2], use)]
     hits.sort(key=lambda m: (-m[0], m[1]))
     total = len(hits)
     start = (page - 1) * page_size
     rows = [brief(m[2]) for m in hits[start:start + page_size]]
     return {
         "query": text or None,
-        "filters": {k: v for k, v in (("source", source), ("equipment_type", equipment_type), ("kind", kind)) if v},
+        "filters": {k: v for k, v in (("source", source), ("equipment_type", equipment_type), ("kind", kind), ("use", use)) if v},
         "total": total, "page": page, "page_size": page_size,
+        **({"left_out": left_out} if use else {}),
         "pages": max(1, math.ceil(total / page_size)),
         "results": rows,
         "counts": counts,
