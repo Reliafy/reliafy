@@ -6,15 +6,17 @@ import {
 import { graftMeasurements, isMeasRow, measKey, openForMeasurements, rollupText as measRollup } from "../explorerMeasurements.js";
 import { measurementsCsv } from "../measurementsTable.js";
 import {
-  LibraryAttachModal, MODEL_COLUMNS, MODEL_TREE_HEAD, ModelCell, ModelDialogs, ModelSide, ParamsModal, RbdBuildModal, RbdLinkModal, modelPhoneRow, modelRowActions,
+  LibraryAttachModal, MODEL_COLUMNS, MODEL_TREE_HEAD, ModelCell, ModelDialogs, ModelSide, ParamsModal, RbdLinkModal, modelPhoneRow, modelRowActions,
   unlinkModel, useTreeModels,
 } from "../components/ModelTable.jsx";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import BayesUpdateModal from "../components/BayesUpdateModal.jsx";
 import { FitPane } from "../components/FitLifeModel.jsx";
 import PredictionPane from "../components/PredictionPane.jsx";
-import { PANE_PARAMS, TABLE_PANES, paneFromQuery } from "../tablePane.js";
+import RbdPane from "../components/RbdPane.jsx";
+import { PANE_PARAMS, TABLE_PANES, paneFromQuery, setPaneQuery } from "../tablePane.js";
 import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, graftModels, inUseWords, isModelRow, modelKey, openForModels, rollupText as modelRollup, lifeModelOf,
+  opensInPane,
 } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -312,10 +314,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     try { localStorage.setItem("reliafy.models.treecols", JSON.stringify(next)); } catch { /* not kept */ }
   };
   const [modelModal, setModelModal] = useState(null);
-  // "Fit a life model…" and "Add a prediction…" fill the table area (?fit= / ?predict=<position
-  // id>, so a reload keeps it open; tablePane.js), the tree kept beside it (Derryn, 9 Nov 2026: "It
-  // shouldn't be a modal itself"). `paneSeed`: what the opener chose for it ({kind, id, start,
-  // link, n}); a reload opens it fresh. `paneDirty`: whether anything in it has been changed
+  // "Fit a life model…", "Add a prediction…" and a position's RBD fill the table area (?fit= /
+  // ?predict=<position id>, ?rbd=<RBD id>&on=<position id>, so a reload keeps it open;
+  // tablePane.js), the tree kept beside it (Derryn, 9 Nov 2026: "It shouldn't be a modal itself").
+  // `paneSeed`: what the opener chose for it ({kind, id, start, link, built, n}); a reload opens it
+  // fresh. `paneDirty`: whether anything in it has been changed
   // (leaving it for another row asks first only then).
   const [paneSeed, setPaneSeed] = useState(null);
   const paneDirty = useRef(false);
@@ -648,6 +651,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (phone) return undefined;
     const onKey = (e) => {
       if (e.defaultPrevented || !isFullScreenKey(e) || hasOpenLayer(document)) return;
+      // In the RBD builder (the table area), F is the builder's own full screen.
+      if (e.target?.closest?.(".rbd-shell")) return;
       e.preventDefault();
       toggleFull();
     };
@@ -765,20 +770,68 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   useEffect(() => {
     if (paneAt && data && !panePosition) setQuery_((q) => { for (const k of PANE_PARAMS) q.delete(k); });
   }, [paneAt?.id, data, !!panePosition]); // eslint-disable-line react-hooks/exhaustive-deps
-  const openPane = (kind, position, { start = {}, link = null, query = null } = {}) => {
+  const openPane = (kind, position, { start = {}, link = null, query = null, rbd = null, built = null } = {}) => {
     paneDirty.current = false;
-    setPaneSeed((s) => ({ kind, id: position.id, start, link, n: (s?.n || 0) + 1 }));
+    setPaneSeed((s) => ({ kind, id: position.id, start, link, built, n: (s?.n || 0) + 1 }));
     setPanel(false);
     if (selPos !== position.id && display.rows.has(position.id)) reveal(position.id);
     setQuery_((q) => {
-      for (const k of PANE_PARAMS) q.delete(k);
-      q.set(TABLE_PANES[kind].param, position.id);
+      setPaneQuery(q, kind, position.id, { rbd });
       query?.(q);
     });
     setTimeout(() => paneHeading.current?.focus({ preventScroll: true }), 0);
   };
   const openFit = (position, opts) => openPane("fit", position, opts);
   const openPredict = (position, link = null) => openPane("predict", position, { link });
+  // Leaving the pane for other work: asks first only if something in it was changed.
+  const leavePane = async () => {
+    if (!panePosition || !paneDirty.current) return true;
+    if (!(await confirm(TABLE_PANES[paneKind].discard))) return false;
+    paneDirty.current = false;
+    return true;
+  };
+  // × or Esc on an RBD: the builder keeps what it has until saved, so it asks first when changed.
+  const closeRbd = async () => {
+    if (await leavePane()) closePane();
+  };
+  // A position's RBD in the table area: the RBD builder itself (RbdPane). `built`: what Build from
+  // what's inside… just made, shown over it.
+  const openRbd = async (position, rbdId, { built = null } = {}) => {
+    if (!rbdId || !(await leavePane())) return;
+    openPane("rbd", position, { rbd: rbdId, built });
+  };
+  // The positions one level inside, each with the model its block will take (or none: a placeholder).
+  const insideOf = (pid) => (whole.rows.get(pid)?.kids || []).map((k) => whole.rows.get(k))
+    .filter((k) => k?.type === "pos").map((k) => {
+      const used = (pmodels.links || []).find((l) => l.position_id === k.key && l.in_use);
+      return { id: k.key, name: k.ref.name || "(no name)", model: used ? `${used.model?.name || used.name} (${inUseWords(used)})` : null };
+    });
+  // Build from what's inside… (and Rebuild, `link` its RBD row): the backend derives the diagram
+  // from the positions inside (rbd_derive: placeholders flagged, never a made-up figure), saves it
+  // and links it here; it then opens in the table area, what it made said over it.
+  const building = useRef(false);
+  const buildRbd = async (position, link = null) => {
+    if (building.current) return;
+    const kidsNow = insideOf(position.id);
+    if (!kidsNow.length) {
+      say(`There are no positions inside ${position.name} to make blocks from.`, "error");
+      return;
+    }
+    if (!(await leavePane())) return;
+    building.current = true;
+    say(`${link ? "Rebuilding" : "Building"} an RBD from what's inside ${position.name}…`);
+    try {
+      const made = await linkPositionModel(position.id, { build_rbd: true, ...(link ? { replace_link_id: link.id } : {}) });
+      say(`${link ? "Rebuilt" : "Built"} ${made.name}.`);
+      pmodels.load();
+      paneDirty.current = false;
+      openPane("rbd", position, { rbd: made.model_id, built: { name: made.name, rebuilt: !!link, kids: kidsNow, notes: made.notes || [] } });
+    } catch (e) {
+      say(saveErrorText(e, { offline: navigator.onLine === false }), "error");
+    } finally {
+      building.current = false;
+    }
+  };
   // Back to the table, the row picked as it was (focus on it); `focusRow`: false when another row is being picked.
   const closePane = ({ focusRow = true } = {}) => {
     paneDirty.current = false;
@@ -1147,12 +1200,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (id === "model-attach-fit-life") return openFit(position);
     if (id === "model-attach-predict") return openPredict(position);
     if (id === "model-refresh-predict") return openPredict(position, predictionOf(pid));
+    if (id === "model-attach-rbd-build") return buildRbd(position);
     // Add to a library…: the position's life model in use (else its first) snapshotted into a data library.
     if (id === "model-attach-to-library") return setModelModal({ kind: "to-library", position, link: lifeModelOf(pmodels.links, pid) });
     return setModelModal({ kind: id.slice(13), position });
   };
   // A model row's details spread across the table (a double-click, Open, Enter), as a measurement row's.
+  // An RBD row opens the builder in the table area instead (opensInPane).
   const openModel = (key) => {
+    const link = whole.rows.get(key)?.ref?.link;
+    if (opensInPane(link)) {
+      const pr = whole.rows.get(link.position_id);
+      return openRbd({ id: link.position_id, name: pr?.ref.name || "(no name)" }, link.model_id);
+    }
     pick(key, { go: true });
     if (!phone) setExpanded(true);
     setTimeout(() => detailsHeading.current?.focus(), 0);
@@ -1161,7 +1221,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const link = r.ref.link;
     const position = { id: r.ref.position_id, name: whole.rows.get(r.ref.position_id)?.ref.name || "(no name)" };
     if (id === "model-open") openModel(r.key);
-    else if (id === "model-page" && link.model?.path) navigate(link.model.path);
+    else if (id === "model-rbd-pane") openRbd(position, link.model_id);
+    else if (id === "model-page" && link.model?.path) leavePane().then((ok) => ok && navigate(link.model.path));
     else if (id === "model-refit") {
       const scope = link.source?.scope;
       openFit({ ...position, position_class: whole.rows.get(r.ref.position_id)?.ref.position_class || "" },
@@ -1169,7 +1230,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     }
     else if (id === "model-predict") openPredict(position, link);
     else if (id === "model-to-library") setModelModal({ kind: "to-library", position, link });
-    else if (id === "model-rebuild") setModelModal({ kind: "rbd-build", position, link });
+    else if (id === "model-rebuild") buildRbd(position, link);
     else if (id === "model-use") {
       linkPositionModel(position.id, { use_link_id: link.id }).then(() => {
         say(`${link.model?.name || link.name} is now ${position.name}'s model in use.`);
@@ -1377,13 +1438,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // open over it (Esc closes that first). Capture phase, so a picker or list over the pane is still
   // seen before its own Escape takes it away.
   const closePaneRef = useRef(null);
-  closePaneRef.current = closePane;
+  closePaneRef.current = paneKind === "rbd" ? closeRbd : closePane;
   const paneOpen = !!panePosition;
   useEffect(() => {
     if (!paneOpen) return undefined;
     const onKey = (e) => {
       if (e.key !== "Escape" || e.defaultPrevented || hasOpenLayer(document)) return;
       if (paneSaving.current) return; // saving: it closes itself once saved
+      // The RBD builder's own: a block's name or a field being typed in, or its full screen.
+      if (e.target?.closest?.(".rbd-shell") && isTyping(e)) return;
+      if (document.querySelector(".rbd-builder.is-full") || document.fullscreenElement?.closest?.(".rbd-shell")) return;
       closePaneRef.current?.();
     };
     window.addEventListener("keydown", onKey, true);
@@ -2048,7 +2112,23 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     },
   } : null;
   const predictLink = seed ? seed.link : panePosition ? predictionOf(panePosition.id) : null;
-  const paneSide = !panePosition ? null : paneKind === "predict" ? (
+  const paneSide = !panePosition ? null : paneKind === "rbd" ? (
+    <div className="rw tt-side">
+      <RbdPane key={`${paneAt.rbd}:${seed?.n || 0}`} rbdId={paneAt.rbd} position={panePosition} built={seed?.built || null}
+               phone={phone} headingRef={paneHeading} onClose={closeRbd}
+               onDirty={(d) => { paneDirty.current = d; }}
+               onSaved={(id) => {
+                 pmodels.load();
+                 // Save as new: the copy is what's open now, as on the RBD's page.
+                 if (id && id !== paneAt.rbd) setQuery_((q) => { setPaneQuery(q, "rbd", panePosition.id, { rbd: id }); });
+               }}
+               onOpenFull={(e, path) => {
+                 if (!paneDirty.current) return;
+                 e.preventDefault();
+                 leavePane().then((ok) => ok && navigate(path));
+               }} />
+    </div>
+  ) : paneKind === "predict" ? (
     // Waits for the models, so a reload knows whether it refreshes one.
     seed || pmodels.links ? (
       <div className="rw tt-side">
@@ -2202,15 +2282,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <BayesUpdateModal position={modelModal.position} start={modelModal.start || null} onClose={() => setModelModal(null)}
                           onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       )}
-      {modelModal?.kind === "rbd-build" && (
-        <RbdBuildModal position={modelModal.position} link={modelModal.link || null} onClose={() => setModelModal(null)}
-                       kids={(whole.rows.get(modelModal.position.id)?.kids || []).map((k) => whole.rows.get(k))
-                         .filter((k) => k?.type === "pos").map((k) => {
-                           const used = (pmodels.links || []).find((l) => l.position_id === k.key && l.in_use);
-                           return { id: k.key, name: k.ref.name || "(no name)", model: used ? `${used.model?.name || used.name} (${inUseWords(used)})` : null };
-                         })}
-                       onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
-      )}
       {modelModal?.kind === "library" && (
         <LibraryAttachModal position={modelModal.position} onClose={() => setModelModal(null)}
                             onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
@@ -2225,9 +2296,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       )}
       {modelModal?.kind === "rbd-link" && (
         <RbdLinkModal position={modelModal.position} onClose={() => setModelModal(null)}
-                      onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
+                      onDone={(made, text) => {
+                        const position = modelModal.position;
+                        setModelModal(null);
+                        say(text);
+                        pmodels.load();
+                        // Linked: it opens in the table area.
+                        openRbd(position, made.model_id);
+                      }} />
       )}
-      <ModelDialogs modal={["bayes", "rbd-build", "rbd-link", "params", "library", "to-library"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
+      <ModelDialogs modal={["bayes", "rbd-link", "params", "library", "to-library"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
                     onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       <MeasDialogs modal={measModal} onClose={() => setMeasModal(null)} onSaid={(text) => say(text)}
                    onDone={() => { setMeasModal(null); meas.load(); }} />

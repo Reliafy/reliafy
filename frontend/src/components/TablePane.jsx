@@ -9,7 +9,10 @@ import "./TablePane.css";
 //
 //   title    what it does          subject  the position's name
 //   busy     saving: it can't be closed      headingRef  focused when it opens
-export default function TablePane({ title, subject, phone = false, busy = false, headingRef = null, onClose, className = "", children }) {
+//   actions  more in the heading, before × ("Open full page")
+//   closeLabel  ×'s name, when "Close <title>" doesn't read ("Close the RBD")
+export default function TablePane({ title, subject, phone = false, busy = false, headingRef = null, onClose, className = "", actions = null,
+  closeLabel = null, children }) {
   return (
     <section className={"rw-panel table-pane is-expanded" + (className ? ` ${className}` : "") + (phone ? " table-pane-phone" : "")}
              aria-label={title}>
@@ -21,10 +24,13 @@ export default function TablePane({ title, subject, phone = false, busy = false,
         <h2 className="table-pane-title" tabIndex={-1} ref={headingRef}>
           {title} <span className="table-pane-pos">· {subject}</span>
         </h2>
-        {!phone && (
+        {(actions || !phone) && (
           <div className="rw-panel-btns">
-            <button type="button" className="ghost sm rw-x" onClick={onClose} disabled={busy}
-                    aria-label={`Close ${title.toLowerCase()}`} title="Back to the table (Esc)"><CloseIcon /></button>
+            {actions}
+            {!phone && (
+              <button type="button" className="ghost sm rw-x" onClick={onClose} disabled={busy}
+                      aria-label={closeLabel || `Close ${title.toLowerCase()}`} title="Back to the table (Esc)"><CloseIcon /></button>
+            )}
           </div>
         )}
       </div>

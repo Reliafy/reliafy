@@ -1,0 +1,38 @@
+/* RbdPane.jsx: a position's RBD in the Explorer's table area (TablePane.css): the RBD editor
+   filling the pane under its heading. The builder's tab fills the room (the canvas takes what the
+   toolbar leaves, never under 320 px: past that the pane scrolls); the result tabs scroll in the
+   pane. Full screen covers the screen from here too, so the pane isn't a size container (which
+   would hold a fixed full-screen builder inside it). */
+.tt-side > .rw-panel.table-pane.rbd-pane { container-type: normal; }
+.rbd-pane { display: flex; flex-direction: column; }
+.rbd-pane > .table-pane-head { flex: none; }
+.rbd-pane .rw-panel-btns { align-items: center; gap: 10px; }
+.rbd-pane-full { font-size: var(--fs-13); font-weight: 600; white-space: nowrap; }
+.rbd-pane-body { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.rbd-pane-body > * { flex: none; }
+.rbd-pane-note { margin: 10px 12px 0; padding: 8px 12px; border: 1px solid var(--line2); border-radius: var(--r-sm);
+  background: var(--surf-2); font-size: var(--fs-13); display: flex; flex-direction: column; gap: 4px; }
+.rbd-pane-note .ml-lead { justify-content: space-between; align-items: flex-start; flex-wrap: nowrap; }
+.rbd-pane-note .ml-lead > span { min-width: 0; }
+.rbd-pane-note .ml-lead > button { flex: none; }
+.rbd-pane-how summary { cursor: pointer; color: var(--muted); }
+.rbd-pane-how .ml-used { margin-top: 4px; }
+.rbd-pane-wait, .rbd-pane-failed { margin: 0; padding: 16px 18px; }
+.rbd-pane-failed p { margin: 0; color: var(--danger); }
+
+/* The editor in the pane: its card's frame dropped (the pane is the frame), a slimmer padding, and
+   the builder taking the height left. */
+.rbd-pane-body > .rbd-wrap.rbd-wrap-embedded {
+  --wrap-pad: 12px;
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  padding: 8px var(--wrap-pad) var(--wrap-pad);
+  min-width: 0;
+}
+.rbd-wrap-embedded > .rbd-shell { flex: 1 1 auto; height: auto; }
+.rbd-wrap-embedded .rbd-builder:not(.is-full) .rbd-canvas { min-height: 320px; }
+.rbd-wrap-embedded .rbd-builder:not(.is-full) .rbd-canvas,
+.rbd-wrap-embedded .rbd-builder:not(.is-full) .rbd-canvas .react-flow { border-radius: 0 0 var(--r-sm) var(--r-sm); }
+/* The diagram's name and whether it's saved, in the toolbar (no page title here). */
+.rbd-wrap-embedded .rbd-full-status { max-width: 260px; }

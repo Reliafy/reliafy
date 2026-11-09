@@ -9251,7 +9251,9 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .rbd-toolbar {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
+  /* The actions keep to the right (margin-left: auto); the settings stay beside
+     + Add block when the toolbar wraps. */
+  justify-content: flex-start;
   align-items: center;
   gap: var(--sp-2) var(--sp-3);
   padding-bottom: var(--sp-3);
@@ -9535,29 +9537,35 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
     --wrap-pad: 1rem;
     padding: 0.5rem var(--wrap-pad) var(--wrap-pad);
   }
-  /* The toolbar collapses to its actions (#301): the unit and mode move
-     into ⋯, so the canvas keeps the screen. */
-  .rbd-toolbar .rbd-tb-settings { display: none; }
+  /* Big enough to tap. (The toolbar's narrow layout goes by the builder's own
+     width: .rbd-builder.is-narrow, below.) */
   .rbd-toolbar button.sm, .rbd-toolbar button.rbd-valid-toggle { min-height: 40px; }
-  .rbd-ovm-settings {
-    display: flex; flex-direction: column; gap: 8px; padding: 6px 8px 10px;
-    margin-bottom: 4px; border-bottom: 1px solid var(--line2);
-  }
-  .rbd-ovm-settings label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-13); color: var(--muted); }
-  .rbd-ovm-settings input, .rbd-ovm-settings select { font-size: var(--fs-16); min-height: 40px; }
-  /* The minimap would cover a third of the canvas, and the standing hint
-     (right-click, shift-click, keys) is for a mouse and keyboard: on a phone,
-     show the diagram. */
-  .rbd-canvas .react-flow__minimap {
-    display: none;
-  }
+  /* The standing hint (right-click, shift-click, keys) is for a mouse and
+     keyboard: on a phone, show the diagram. */
   .rbd-hint {
     display: none;
   }
-  /* A phone's toolbar has no gap to spare: the notice takes a row of its own
-     under the actions while it shows. */
-  .rbd-tb-flash { flex-basis: 100%; order: 1; text-align: left; }
 }
+/* A narrow builder (rbdEditorLayout.js: a phone, or the Explorer's table area
+   beside the tree): the toolbar collapses to its actions (#301), the unit and
+   mode moving into ⋯, so the canvas keeps the room. */
+.rbd-builder.is-narrow .rbd-toolbar .rbd-tb-settings { display: none; }
+.rbd-builder.is-narrow .rbd-ovm-settings {
+  display: flex; flex-direction: column; gap: 8px; padding: 6px 8px 10px;
+  margin-bottom: 4px; border-bottom: 1px solid var(--line2);
+}
+.rbd-builder.is-narrow .rbd-ovm-settings label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-13); color: var(--muted); }
+.rbd-builder.is-narrow .rbd-ovm-settings input, .rbd-builder.is-narrow .rbd-ovm-settings select { font-size: var(--fs-16); min-height: 40px; }
+/* The minimap would cover a third of a narrow canvas: show the diagram. */
+.rbd-builder.is-narrow .rbd-canvas .react-flow__minimap { display: none; }
+/* No gap to spare: the notice takes a row of its own under the actions while
+   it shows. */
+.rbd-builder.is-narrow .rbd-tb-flash { flex-basis: 100%; order: 1; text-align: left; }
+/* "+ Add block" says "+ Add" so the toolbar keeps one row; the diagram's name
+   (in full screen, or beside the tree) leaves "Saved" alone. */
+.rbd-builder.is-tight .rbd-add-word { display: none; }
+.rbd-builder.is-narrow .rbd-full-name { display: none; }
+.rbd-builder.is-narrow .rbd-full-status { margin-right: 0; }
 
 /* Reliability growth projection panel (#232). */
 .growth-projection .strategy-costs .calc-t { min-width: 0; }
@@ -9665,8 +9673,6 @@ input.rbd-rename {
   .rbd-sif-bar { display: none; }
   .rbd-avail-imp-scroll .rbd-sif-shares-table th { white-space: normal; }
   .rbd-sif-shares-table th, .rbd-sif-shares-table td { padding: 0.4rem 0.3rem; }
-  /* "+ Add block" says "+ Add" so the toolbar keeps one row. */
-  .rbd-add-word { display: none; }
 }
 
 /* ---- "Use this model" (#294) ------------------------------------------- */
