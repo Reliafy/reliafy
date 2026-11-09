@@ -389,3 +389,30 @@ test("Fit a life model… with a prior around a value, between two bounds", asyn
   await saveFit(page, dialog, pump.id);
   await expectHealthy(page, problems, { label: "a prior around a value" });
 });
+
+// Life model › From the data library… at 400 px: "Pick a library record" fills the screen over the
+// dialog, each record a card (the name, one grey line), and nothing scrolls the page sideways.
+test("the library record picker at 400 px", async ({ page, request, problems }) => {
+  const tag = `lp${Date.now()}`;
+  const pump = await postOk(request, `${M}/positions`, { name: `Phone pump ${tag}` });
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
+  await row(page, pump.id).locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Life model", exact: true }).click();
+  await page.getByRole("group", { name: "Life model" }).getByRole("menuitem", { name: "From the data library…" }).click();
+  const picker = page.getByRole("dialog", { name: "Pick a library record" });
+  await picker.getByRole("combobox", { name: "Search the data library" }).fill("Motor-driven pump fails to run");
+  const first = picker.getByRole("listbox").getByRole("option").first();
+  await expect(first.locator(".lib-pick-detail")).toBeVisible();
+  await expect(first.locator(".lib-pick-detail")).toContainText("NRC/INL 2020");
+  await expect(picker.locator(".lib-pick-head")).toBeHidden();
+  const box = await picker.boundingBox();
+  expect(Math.round(box.width)).toBe(400);
+  expect(await sideways(page)).toBeLessThanOrEqual(400);
+  expect(await picker.locator(".lib-pick-list").evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  await first.click();
+  await expect(picker).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "From the data library" }).getByRole("group", { name: "The library record" }))
+    .toContainText("Motor-driven pump");
+  await expectHealthy(page, problems, { label: "the library record picker at 400 px" });
+});

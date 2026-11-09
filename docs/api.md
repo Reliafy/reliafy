@@ -490,7 +490,7 @@ everyone, so it's readable without an account:
 
 | Call | Does |
 |---|---|
-| `GET /api/library/search?q=…&source=…&equipment_type=…&kind=…&use=…&page=1&page_size=25` | Matching records, best first, 25 a page (at most 100), with `total`, `pages` and `counts` by equipment type, kind and source. `kind` is `rate`, `per_demand` or `life`. `use` (`model` or `prior`) keeps only the records usable as that on their own (a failure rate counted from service; not a handbook base rate for a parts count, nor a probability per demand), and `left_out` counts what it hid, by why. |
+| `GET /api/library/search?q=…&source=…&equipment_type=…&kind=…&failure_mode=…&use=…&facets=true&page=1&page_size=25` | Matching records, best first, 25 a page (at most 100), with `total`, `pages` and `counts` by equipment type, kind and source. `kind` is `rate`, `per_demand` or `life`; `failure_mode` is a failure mode's name (any case). `facets=true` adds `facets`: for equipment type, failure mode and kind, how many records each choice would give with the other filters (and `use`) kept. `use` (`model` or `prior`) keeps only the records usable as that on their own (a failure rate counted from service; not a handbook base rate for a parts count, nor a probability per demand), and `left_out` counts what it hid, by why. |
 | `GET /api/library/records/{id}?environment=…` | One record in full (values, spread, evidence, conditions, citation, licence and notes) and `block_model`: the model an RBD block would use. A handbook rate (MIL-HDBK-217F) depends on the environment the part works in: give `environment` (e.g. `GF`, ground, fixed) for its block model; without it, `environments` lists the rate in each. |
 | `GET /api/library/sources` | The sources, their licences and what each holds. |
 

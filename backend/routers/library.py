@@ -91,6 +91,8 @@ def library_search(
     source: Optional[str] = None,
     equipment_type: Optional[str] = None,
     kind: Optional[str] = None,
+    failure_mode: Optional[str] = Query(default=None, max_length=200, description="A failure mode's name (any case)."),
+    facets: bool = Query(default=False, description="Add what each filter's choices would give with the others kept."),
     page: int = 1,
     page_size: int = service.DEFAULT_PAGE_SIZE,
     use: Optional[str] = Query(default=None, description=(
@@ -106,7 +108,8 @@ def library_search(
     mine = _mine(session, ctx)
     try:
         out = service.search(q, source=source, equipment_type=equipment_type, kind=kind, page=page,
-                             page_size=page_size, use=use, mine=mine)
+                             page_size=page_size, use=use, mine=mine,
+                             failure_mode=failure_mode, facets=facets)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=out, headers=_PRIVATE if mine else _CACHE)

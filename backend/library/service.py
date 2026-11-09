@@ -226,7 +226,8 @@ def left_out_by(records: list, use: str) -> dict:
 
 def search(query: Optional[str] = None, source: Optional[str] = None, equipment_type: Optional[str] = None,
            kind: Optional[str] = None, page: int = 1, page_size: int = DEFAULT_PAGE_SIZE,
-           use: Optional[str] = None, mine: Optional[dict] = None) -> dict:
+           use: Optional[str] = None, mine: Optional[dict] = None, failure_mode: Optional[str] = None,
+           facets: bool = False) -> dict:
     """A page of the records matching ``query`` and the filters, best first,
     with the total and the counts by equipment type, kind and source (of the
     query's matches, before the filters narrow them, so a filter shows what
@@ -234,7 +235,10 @@ def search(query: Optional[str] = None, source: Optional[str] = None, equipment_
     records that can be that on their own (:func:`usable_as`), and
     ``left_out`` says how many the other filters matched but it hid, by why.
     ``mine`` (:func:`backend.library.user.mine`): the caller's own libraries,
-    searched beside the published sources (first on a tie)."""
+    searched beside the published sources (first on a tie). ``failure_mode``
+    keeps the records with that failure mode's name (any case). ``facets``
+    adds what each filter's choices would give with the other filters (and
+    ``use``) kept: the app's record picker fills its dropdowns from them."""
     lib = _library()
     own = mine or {"sources": {}, "records": []}
     _check_choice("source", source, {**own["sources"], **lib["sources"]})
@@ -260,10 +264,13 @@ def search(query: Optional[str] = None, source: Optional[str] = None, equipment_
     counts = {"equipment_type": _count([m[2] for m in matched], "equipment_type"),
               "kind": _count([m[2] for m in matched], "kind"),
               "source": _count([m[2] for m in matched], "source")}
-    hits = [m for m in matched
-            if (source is None or m[2]["source"] == source)
-            and (equipment_type is None or m[2]["equipment_type"] == equipment_type)
-            and (kind is None or m[2]["kind"] == kind)]
+    mode = " ".join(str(failure_mode or "").split()).lower() or None
+    wanted = {"source": source, "equipment_type": equipment_type, "kind": kind, "failure_mode": mode}
+
+    def keeps(rec: dict, skip: Optional[str] = None) -> bool:
+        return all(v is None or k == skip or _facet_value(rec, k) == v for k, v in wanted.items())
+
+    hits = [m for m in matched if keeps(m[2])]
     left_out = left_out_by([m[2] for m in hits], use) if use else {}
     if use:
         hits = [m for m in hits if usable_as(m[2], use)]
@@ -273,13 +280,33 @@ def search(query: Optional[str] = None, source: Optional[str] = None, equipment_
     rows = [brief(m[2], own) for m in hits[start:start + page_size]]
     return {
         "query": text or None,
-        "filters": {k: v for k, v in (("source", source), ("equipment_type", equipment_type), ("kind", kind), ("use", use)) if v},
+        "filters": {k: v for k, v in (("source", source), ("equipment_type", equipment_type), ("kind", kind),
+                                                ("failure_mode", failure_mode), ("use", use)) if v},
         "total": total, "page": page, "page_size": page_size,
         **({"left_out": left_out} if use else {}),
         "pages": max(1, math.ceil(total / page_size)),
         "results": rows,
         "counts": counts,
+        **({"facets": {key: _facet_counts([m[2] for m in matched if keeps(m[2], key) and (not use or usable_as(m[2], use))], key)
+                       for key in ("equipment_type", "failure_mode", "kind")}} if facets else {}),
     }
+
+
+def _facet_value(rec: dict, key: str) -> str:
+    if key == "failure_mode":
+        return " ".join(str((rec.get("failure_mode") or {}).get("name") or "").split()).lower()
+    return rec[key]
+
+
+def _facet_counts(records: list[dict], key: str) -> dict[str, int]:
+    """Counts by ``key``; failure modes by their name as written (the first
+    spelling met), empty names left out."""
+    out: dict[str, int] = {}
+    for r in records:
+        v = (r.get("failure_mode") or {}).get("name", "").strip() if key == "failure_mode" else r[key]
+        if v:
+            out[v] = out.get(v, 0) + 1
+    return dict(sorted(out.items(), key=lambda kv: kv[0].lower()))
 
 
 def get(record_id: str, mine: Optional[dict] = None) -> dict:

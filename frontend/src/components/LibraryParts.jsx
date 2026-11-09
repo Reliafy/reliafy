@@ -10,56 +10,40 @@ import Field from "./ui/Field.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { saveErrorText } from "../confirm.js";
 import {
-  familyName, isLife, leftOutWords, lifeWords, pickerDetail, pickerSources, rangeText, recordPath, sig, sourcePath, usableSource,
-  whyNot,
+  familyName, isLife, lifeWords, pickerDetail, pickerSources, rangeText, recordPath, sig, sourcePath,
 } from "../libraryModels.js";
-import "./LibraryParts.css";
 
-// The library's shared pieces: a picker (search across the sources; each hit as a stacked item: its
-// name, then one quiet line with its value, 5–95% range and source, and a Details link), and the two
-// actions a record has on its pages: Use as a model… and Use as a prior….
-//
-// ``use``: "model" or "prior" shows only the records that can be that on their own (the search's
-// ``use`` filter; a grey line says what was left out) and starts on the first library that has any;
-// "look" shows every record (the Library page's search).
+// The library's shared pieces: a look-up (search across the sources, each hit a link to its record),
+// and the two actions a record has on its pages: Use as a model… and Use as a prior…. Picking a
+// record inside a dialog is "Pick a library record" (LibraryRecordPicker.jsx), a modal of its own.
 
-export function LibraryPicker({ value, onPick, use = "model", label = "Data library records" }) {
-  const filtered = use !== "look";
+export function LibraryLookup({ label = "Records" }) {
   const [q, setQ] = useState("");
-  const [source, setSource] = useState(filtered ? null : ""); // null: not chosen yet (the default comes with the sources)
+  const [source, setSource] = useState("");
   const [sources, setSources] = useState([]);
   const [rows, setRows] = useState(null);
-  const [leftOut, setLeftOut] = useState(null);
   useEffect(() => {
     let live = true;
-    getLibrarySources().then((d) => {
-      if (!live) return;
-      const list = pickerSources(d.sources);
-      setSources(list);
-      setSource((cur) => (cur === null ? (list.find(usableSource) || list[0])?.id || "" : cur));
-    }, () => live && setSource((cur) => (cur === null ? "" : cur)));
+    getLibrarySources().then((d) => live && setSources(pickerSources(d.sources)), () => {});
     return () => { live = false; };
   }, []);
   useEffect(() => {
-    if (source === null) return undefined;
     let live = true;
-    const t = setTimeout(() => searchLibrary({ q: q.trim() || undefined, source: source || undefined, pageSize: 12, use: filtered ? use : undefined })
-      .then((d) => { if (live) { setRows(d.results || []); setLeftOut(d.left_out || null); } }, () => live && setRows([])), 250);
+    const t = setTimeout(() => searchLibrary({ q: q.trim() || undefined, source: source || undefined, pageSize: 12 })
+      .then((d) => live && setRows(d.results || []), () => live && setRows([])), 250);
     return () => { live = false; clearTimeout(t); };
-  }, [q, source, use, filtered]);
-  const hidden = filtered ? leftOutWords(leftOut) : null;
+  }, [q, source]);
   return (
     <div className="lib-picker">
       <div className="fit2-pair">
         <TextInput type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, equipment, failure mode"
                    aria-label="Search the data library" />
-        <Select aria-label="Library" value={source || ""} onChange={(e) => setSource(e.target.value)}>
+        <Select aria-label="Library" value={source} onChange={(e) => setSource(e.target.value)}>
           <option value="">Every library</option>
           {sources.map((s) => <option key={s.id} value={s.id}>{s.mine ? `${s.name} (yours)` : s.short_name || s.name}</option>)}
         </Select>
       </div>
-      {rows === null ? <p className="rim-tquiet">Searching…</p> : rows.length === 0 ? <p className="rim-tquiet">No records match.</p> : !filtered ? (
-        // Looking a record up (the library's own page): each result is a plain link to it, nothing to pick.
+      {rows === null ? <p className="rim-tquiet">Searching…</p> : rows.length === 0 ? <p className="rim-tquiet">No records match.</p> : (
         <ul className="lib-look" aria-label={label}>
           {rows.map((r) => (
             <li key={r.id}>
@@ -68,25 +52,7 @@ export function LibraryPicker({ value, onPick, use = "model", label = "Data libr
             </li>
           ))}
         </ul>
-      ) : (
-        <div className="evidence-picker lib-records" role="radiogroup" aria-label={label}>
-          {rows.map((r) => {
-            const why = filtered ? whyNot(r, use) : null;
-            return (
-              <label key={r.id} className={"evidence-option lib-record" + (value === r.id ? " selected" : "") + (why ? " off" : "")} title={why || undefined}>
-                <input type="radio" name={`lib-${use}`} checked={value === r.id} disabled={!!why} onChange={() => onPick(r)} />
-                <span className="evidence-name">{r.label}</span>
-                <span className="evidence-meta">
-                  {pickerDetail(r)}
-                  {" · "}<Link to={recordPath(r.id)} target="_blank" rel="noreferrer">Details</Link>
-                  {why ? ` · ${why}` : ""}
-                </span>
-              </label>
-            );
-          })}
-        </div>
       )}
-      {hidden && <p className="rim-tquiet lib-leftout">{hidden}</p>}
     </div>
   );
 }

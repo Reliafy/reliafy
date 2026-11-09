@@ -1,7 +1,7 @@
 // The data library under Models (Derryn, 9 Nov 2026: "a good way to use models from a library.
 // Especially the NUREG life models"): three levels (the sources, a source's records, a record),
 // each record usable as a model or a prior; the Explorer's "From the data library…" and the Fit
-// dialog's "A library record" prior.
+// dialog's "A library record" prior, both through "Pick a library record" (a modal search).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { headMenu } from "./explorer.js";
 
@@ -65,36 +65,82 @@ test("attach a library record to a position, then fit with a library prior", asy
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${valve.id}&tab=models`);
 
-  // Life model › From the data library…: the picker opens on the first library with usable records
-  // (handbook base rates for parts counts can't be a model), each record stacked: its name, then one
-  // detail line (value, 5–95%, source). "Every library" says what it leaves out.
+  // Life model › From the data library…: "Pick a library record" opens over the dialog at once, on the
+  // first library with usable records (handbook base rates for parts counts can't be a model); the
+  // records as a table. "Every library" says what it leaves out.
   await headPick(page, "Life model", "From the data library…");
   const attach = page.getByRole("dialog", { name: "From the data library" });
-  await expect(attach.getByRole("combobox", { name: "Library" })).toHaveValue("nrc-inl-2020");
-  await attach.getByRole("combobox", { name: "Library" }).selectOption("");
-  await expect(attach.locator(".lib-leftout")).toContainText("Base rates for parts counts are left out");
-  await expect(attach.locator(".lib-record")).not.toHaveCount(0);
-  await expect(attach.locator(".lib-record", { hasText: "MIL-HDBK" })).toHaveCount(0);
-  await attach.getByRole("searchbox", { name: "Search the data library" }).fill("Motor-operated valve spurious");
-  const row = attach.locator(".lib-record", { hasText: SOP }).first();
-  await expect(row.locator(".evidence-meta")).toContainText(/per hour .* · 5–95%: .* · NRC\/INL 2020 · Details/);
-  await expect(row.locator(".evidence-meta")).not.toContainText("INL/EXT-21-65055");
-  await attach.getByRole("radio", { name: new RegExp(SOP) }).first().check();
+  const picker = page.getByRole("dialog", { name: "Pick a library record" });
+  await expect(picker).toBeVisible();
+  const search = picker.getByRole("combobox", { name: "Search the data library" });
+  await expect(search).toBeFocused();
+  await expect(picker.getByRole("combobox", { name: "Library", exact: true })).toHaveValue("nrc-inl-2020");
+  await picker.getByRole("combobox", { name: "Library", exact: true }).selectOption("");
+  await expect(picker.locator(".lib-pick-status")).toContainText("Base rates for parts counts are left out");
+  const options = picker.getByRole("listbox").getByRole("option");
+  await expect(options).not.toHaveCount(0);
+  await expect(picker.getByRole("listbox").getByRole("option", { name: /MIL-HDBK/ })).toHaveCount(0);
+  // Filter: words, then a failure mode (its choices come with counts); nothing matching offers to clear.
+  await search.fill("Motor-operated valve");
+  await picker.getByRole("combobox", { name: "Failure mode" }).selectOption("Spurious operation");
+  const row = picker.getByRole("listbox").getByRole("option", { name: new RegExp(SOP) }).first();
+  await expect(row).toBeVisible();
+  await expect(row).toContainText("NRC/INL 2020");
+  await expect(row).not.toContainText("INL/EXT-21-65055");
+  await search.fill("xyzzy");
+  await expect(picker).toContainText("No records match.");
+  await picker.getByRole("button", { name: "Clear the filters" }).click();
+  await expect(picker.getByRole("combobox", { name: "Failure mode" })).toHaveValue("");
+  // Pick with the keyboard: the highlight moves with the arrows, Enter picks and closes the picker.
+  await search.fill("Motor-operated valve");
+  await picker.getByRole("combobox", { name: "Failure mode" }).selectOption("Spurious operation");
+  await expect(options.first()).toContainText(SOP);
+  await search.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(options.nth(1)).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowUp");
+  await expect(options.first()).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Enter");
+  await expect(picker).toHaveCount(0);
+  await expect(attach.getByRole("group", { name: "The library record" })).toContainText(
+    new RegExp(`${SOP} · .* per hour \\(calendar\\) · NRC/INL 2020`));
   const saved = page.waitForResponse((r) => r.url().includes(`${M}/positions/${valve.id}/models`) && r.request().method() === "POST");
   await attach.getByRole("button", { name: "Attach" }).click();
   expect((await saved).status()).toBe(200);
   await expect(attach).toHaveCount(0);
   await expect(page.locator(".tp-row", { hasText: "Library: NRC/INL 2020, Motor-operated valve spurious operation" })).toHaveCount(1);
 
-  // Fit a life model… with "A library record" as the prior: on an exponential, exact (conjugate).
+  // Fit a life model… with "A library record" as the prior: choosing it opens the picker over the Fit
+  // dialog; Escape closes only the picker, and the dialog keeps one Pick a library record… button.
   await headPick(page, "Life model", "Fit a life model…");
   const fit = page.getByRole("dialog", { name: "Fit a life model" });
   await fit.getByRole("radio", { name: "With a prior" }).click();
   await fit.getByRole("combobox", { name: "Prior", exact: true }).selectOption("library");
+  await expect(picker).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(picker).toHaveCount(0);
+  await expect(fit).toBeVisible();
+  await fit.getByRole("button", { name: "Pick a library record…" }).click();
+  await expect(picker).toBeVisible();
+  await search.fill("Motor-operated valve spurious");
+  await expect(picker.getByRole("listbox").getByRole("option").first()).toContainText(SOP);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("Enter");
+  await expect(picker).toHaveCount(0);
+  const picked = fit.getByRole("group", { name: "The library record" });
+  await expect(picked).toContainText(SOP);
+  await expect(fit.getByRole("button", { name: "Change the library record" })).toBeFocused();
+  await expect(fit.getByRole("listbox")).toHaveCount(0); // no list inside the dialog any more
   await fit.getByRole("combobox", { name: "Distribution" }).selectOption("exponential");
-  await fit.getByRole("searchbox", { name: "Search the data library" }).fill("Motor-operated valve spurious");
-  await fit.getByRole("radio", { name: new RegExp(SOP) }).first().check();
   await expect(fit.getByRole("status")).toContainText("conjugate", { timeout: 30_000 });
+  // Change… opens the picker again on the record picked; Escape leaves the pick as it was.
+  await fit.getByRole("button", { name: "Change the library record" }).click();
+  await expect(picker.getByRole("listbox").getByRole("option", { selected: true })).toContainText("(chosen)");
+  await page.keyboard.press("Escape");
+  await expect(picker).toHaveCount(0);
+  await expect(fit).toBeVisible();
+  await expect(picked).toContainText(SOP);
   // The prior shows beside the fit: its mean life and B10 as numbers, not "—".
   const numbers = fit.locator(".fit2-numbers");
   await expect(numbers.locator("tr", { hasText: "Mean life" }).locator("td").nth(1)).toContainText(/\d/);
@@ -145,7 +191,7 @@ test("build a library: a model added to it, found in the picker, used as a prior
   await page.getByRole("button", { name: "More actions" }).first().click();
   await page.getByRole("button", { name: "Add to a library…" }).click();
   const add = page.getByRole("dialog", { name: "Add to a library" });
-  await add.getByRole("combobox", { name: "Library" }).selectOption({ label: `Site gearboxes ${tag}` });
+  await add.getByRole("combobox", { name: "Library", exact: true }).selectOption({ label: `Site gearboxes ${tag}` });
   await add.getByLabel("Failure mode").fill("Bearing wear");
   await add.getByRole("combobox", { name: "Equipment type" }).selectOption("rotating");
   await add.getByRole("button", { name: "Add to the library" }).click();
@@ -178,10 +224,13 @@ test("build a library: a model added to it, found in the picker, used as a prior
   const fit = page.getByRole("dialog", { name: "Fit a life model" });
   await fit.getByRole("radio", { name: "With a prior" }).click();
   await fit.getByRole("combobox", { name: "Prior", exact: true }).selectOption("library");
-  const dropdown = fit.getByRole("combobox", { name: "Library" });
-  await expect(dropdown.locator("option").nth(1)).toHaveText(`Site gearboxes ${tag} (yours)`);
+  const picker = page.getByRole("dialog", { name: "Pick a library record" });
+  const dropdown = picker.getByRole("combobox", { name: "Library", exact: true });
+  await expect(dropdown.locator("option").first()).toHaveText(`Site gearboxes ${tag} (yours)`);
   await dropdown.selectOption({ label: `Site gearboxes ${tag} (yours)` });
-  await fit.getByRole("radio", { name: new RegExp(`Gearbox ${tag}: Bearing wear`) }).first().check();
+  await picker.getByRole("listbox").getByRole("option", { name: new RegExp(`Gearbox ${tag}: Bearing wear`) }).click();
+  await expect(picker).toHaveCount(0);
+  await expect(fit.getByRole("group", { name: "The library record" })).toContainText(`Gearbox ${tag}: Bearing wear · mean life`);
   await expect(fit.getByRole("status")).toContainText("The record's Weibull is the prior", { timeout: 60_000 });
   const fitted = page.waitForResponse((r) => r.url().includes(`${M}/positions/${box.id}/models`) && r.request().method() === "POST",
     { timeout: 60_000 });

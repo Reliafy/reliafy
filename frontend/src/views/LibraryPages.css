@@ -19,7 +19,6 @@
 @media (max-width: 720px) { .lib-actions-col { align-items: flex-start; } .lib-actions-col .lib-why { text-align: left; } }
 .lib-record { display: flex; flex-direction: column; gap: 12px; }
 .lib-picker { display: flex; flex-direction: column; gap: 8px; }
-.lib-picker .evidence-picker { max-height: 300px; overflow: auto; }
 .evidence-option.off { opacity: 0.6; }
 /* "Yours" and "Published" in sentence case, as every other list's sections. */
 .lib-section { font-size: var(--fs-14); font-weight: 600; color: var(--muted); margin: 18px 0 8px; }
