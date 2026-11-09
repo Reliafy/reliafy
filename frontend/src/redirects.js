@@ -27,6 +27,13 @@ import { EXPLORER_PARTS_CLASSES_TABS } from "./explorerTabs.js";
 const EXPLORER = "/asset-register/explorer";
 const tabAt = (query) => (EXPLORER_PARTS_CLASSES_TABS ? `${EXPLORER}?${query}` : EXPLORER);
 
+// Where Assets' Parts and stock and Classes live now, for links: the same
+// place their old addresses redirect to, without the extra hop. A class's
+// name opens its panel.
+export const partsPath = () => tabAt("tab=parts&scope=all");
+export const classesPath = (name) =>
+  tabAt(name == null ? "tab=classes&scope=all" : `tab=classes&scope=all&class=${encodeURIComponent(name)}`);
+
 export const MOVED = [
   // The reliability data library moved from Data to Models (9 Nov 2026): its records are models.
   { path: "/data/library", to: "/models/library" },
