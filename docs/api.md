@@ -261,8 +261,8 @@ models attach as they are (their stress is set where they're used, an RBD block
 or a calculation). `prediction: {environment?, mission_time?, assign?}` (an
 `assign` entry for an NSWC-11 part type carries `conditions` and, for a rate per
 cycle, `cycles_per_hour`) makes a
-parts-count prediction from the position's parts list (and those inside it; a
-product design's bill of materials where they list none), `assign` giving each
+parts-count prediction from the position's parts list (and those inside it; on a
+product design, plus the bill-of-materials parts they don't list), `assign` giving each
 part number a handbook `record_id` (and `quality_factor`): it's saved as a
 reliability prediction (its page links back to the position) and as an
 exponential model at its rate, and attached with role `prediction`. The app
@@ -563,7 +563,8 @@ covariates?, shape?}`, `save` with `name` to keep it).
 **A record's covariates.** Every input a record needs before it gives a rate is
 a covariate of the record, in the shape NSWC-11's inputs have (`key`, `label`,
 `unit`, `kind` number or choice, `role` design, use or environment, `default`,
-`limits`, `help`; `needed_if` asks for one only when another has a value):
+`limits`, `help`; `needed_if` asks for one only when another has a value, and
+`needed_when`, a list of `{key, op, value}`, only while every comparison holds):
 
 | Record | Covariates |
 |---|---|

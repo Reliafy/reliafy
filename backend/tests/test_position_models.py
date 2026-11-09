@@ -369,6 +369,80 @@ def test_left_out_lines_over_rest(client):
     assert r.json()["lines"][0]["quantity"] == 5 and r.json()["results"]["lines"][0]["quantity"] == 5
 
 
+def _product_with_a_bom(m):
+    """A product whose part holds four capacitors and a board with two opto-isolators on it."""
+    product = m.create_product("Drone", part_number="DR-3")
+    cap = m.create_part("C-300", "Capacitor")["id"]
+    board = m.create_part("PCB-1", "Control board")["id"]
+    opto = m.create_part("U-9", "Opto-isolator")["id"]
+    m.add_component(product["part"]["id"], cap, quantity=4)
+    m.add_component(product["part"]["id"], board, quantity=1)
+    m.add_component(board, opto, quantity=2)
+    return product["id"], cap, board
+
+
+def test_a_products_prediction_counts_its_parts_lists_and_its_bill_of_materials_together(m, db):
+    """A product's design: the parts on its positions' parts lists and the parts of its bill of
+    materials that none of them lists. A part added to a parts list never takes the other lines
+    away, and a part on both is counted once, from the parts lists."""
+    product, cap, board = _product_with_a_bom(m)
+    esc = m.create_position("Speed controller", parent_id=product)["id"]
+    first = pm.predict_position(m, db, OWNERS, set(), product)
+    assert [(ln["reference"], ln["quantity"]) for ln in first["lines"]] == [("C-300", 4), ("U-9", 2)]
+    assert first["source"] == "bill of materials" and not any(ln.get("listing_id") for ln in first["lines"])
+    assert first["lines"][1]["assembly"] == ["Control board"]
+    # A new part on the product's own parts list: one more line, every other one still there.
+    light = m.create_part("L-1", "Navigation light")["id"]
+    m.add_position_part(product, light, role="component", quantity=1)
+    both = pm.predict_position(m, db, OWNERS, set(), product)
+    assert [ln["reference"] for ln in both["lines"]] == ["L-1", "C-300", "U-9"]
+    assert both["source"] == "parts lists and bill of materials"
+    assert both["lines"][0]["listing_id"] and both["lines"][0]["position"]["id"] == product
+    assert both["lines"][1]["part_id"] is None and "listing_id" not in both["lines"][1]
+    # The rates add over both kinds of line.
+    assign = {"L-1": {"rate_per_million_hours": 2.0}, "C-300": {"record_id": CAP}, "U-9": {"record_id": OPTO}}
+    counted = pm.predict_position(m, db, OWNERS, set(), product, assign=assign)
+    assert [ln["reference"] for ln in counted["results"]["lines"]] == ["L-1", "C-300", "U-9"]
+    assert counted["results"]["failure_rate_per_million_hours"] == pytest.approx(
+        sum(ln["rate_per_million_hours"] for ln in counted["results"]["lines"]))
+    # A consumable on a parts list isn't a prediction line, so the bill of materials still has its part.
+    grease = m.create_part("G-3", "Grease")["id"]
+    m.add_component(m.product(product)["part"]["id"], grease, quantity=1)
+    m.add_position_part(esc, grease, role="consumable", quantity=1)
+    assert [ln["reference"] for ln in pm.predict_position(m, db, OWNERS, set(), product)["lines"]] == [
+        "L-1", "C-300", "G-3", "U-9"]
+    # A part of the bill of materials put on a parts list inside the product: counted once, as listed.
+    m.add_position_part(esc, cap, role="component", quantity=3)
+    once = pm.predict_position(m, db, OWNERS, set(), product)
+    assert [(ln["reference"], ln["quantity"]) for ln in once["lines"]] == [("L-1", 1), ("C-300", 3), ("G-3", 1), ("U-9", 2)]
+    assert once["lines"][1]["position"]["id"] == esc and once["lines"][1]["assembly"] == ["Speed controller"]
+    # An assembly on a parts list stands for what's inside it.
+    m.add_position_part(esc, board, role="replacement", quantity=1)
+    listed = pm.predict_position(m, db, OWNERS, set(), product)
+    assert [ln["reference"] for ln in listed["lines"]] == ["L-1", "C-300", "PCB-1", "G-3"]
+    # A position inside the product counts its own parts lists only: the bill of materials is the product's.
+    inside = pm.predict_position(m, db, OWNERS, set(), esc)
+    assert [ln["reference"] for ln in inside["lines"]] == ["C-300", "PCB-1"] and inside["source"] == "parts lists"
+    # Saved and refreshed: each line keeps its part type, whichever list it came from.
+    assign = {"L-1": {"rate_per_million_hours": 2.0}, "C-300": {"record_id": CAP}, "PCB-1": {"excluded": True},
+              "G-3": {"excluded": True}}
+    link = pm.predict_position(m, db, OWNERS, set(), product, assign=assign, save=True)
+    assert link["source"]["parts_source"] == "parts lists and bill of materials"
+    again = pm.predict_position(m, db, OWNERS, set(), product)
+    assert again["results"]["failure_rate_per_hour"] == pytest.approx(link["prediction"]["results"]["failure_rate_per_hour"])
+    assert [ln.get("excluded", False) for ln in again["lines"]] == [False, False, True, True]
+    _same_after_rebuild(m)
+
+
+def test_every_part_of_the_bill_of_materials_on_a_parts_list_leaves_only_the_lists(m, db):
+    product, cap, board = _product_with_a_bom(m)
+    m.add_position_part(product, cap, role="component", quantity=4)
+    m.add_position_part(product, board, role="component", quantity=1)
+    got = pm.predict_position(m, db, OWNERS, set(), product)
+    assert [ln["reference"] for ln in got["lines"]] == ["C-300", "PCB-1"]
+    assert got["source"] == "parts lists" and got["warnings"] == []
+
+
 def test_a_built_items_prediction_follows_its_design(m, db):
     product = m.create_product("Drone", part_number="DR-2")["id"]
     esc = m.create_position("Speed controller", parent_id=product)["id"]

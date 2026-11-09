@@ -9,7 +9,8 @@ import "./CovariateCalculator.css";
 // hours), accelerated life and proportional-hazards models, wherever they're set (a record's or
 // component's Try it, Use as a model…, a prior in the Fit dialog, a prediction line's Conditions…,
 // fixing them at a position, an RBD block). An input another one's value makes unnecessary
-// (``needed_if``: running hours when the clock is the record's own) isn't shown.
+// (``needed_if``: running hours when the clock is the record's own; ``needed_when``: a winding's
+// temperature rise while its insulation class isn't known) isn't shown.
 // Each shows its unit, its default (and where that comes from) and its limits; a value past a
 // limit says which, and the page, as it's typed. Options add what a place needs:
 //

@@ -775,11 +775,13 @@ def _source(source_id: str) -> dict:
 
 # ---- a product's parts list ------------------------------------------------------------------
 
-def lines_from_structure(structure: dict) -> tuple[list[dict], list[str]]:
+def lines_from_structure(structure: dict, skip=frozenset()) -> tuple[list[dict], list[str]]:
     """The lines a part's structure (``Maintenance.part_structure``) gives: each
     lowest-level part a line with the quantity in one of the top part and the
     parts above it as its assembly path; parts that hold parts are
-    assemblies, not lines. Returns (lines, warnings)."""
+    assemblies, not lines. ``skip`` (part numbers, lower case): parts counted
+    somewhere else already, left out with everything inside them. Returns
+    (lines, warnings)."""
     lines: list[dict] = []
     warnings: list[str] = []
 
@@ -788,6 +790,8 @@ def lines_from_structure(structure: dict) -> tuple[list[dict], list[str]]:
             warnings.append(f"The structure under {node.get('name') or node.get('part_number')} was cut short: "
                             "some parts are missing from this list.")
         for child in node.get("children") or []:
+            if skip and (child.get("part_number") or "").lower() in skip:
+                continue
             label = child.get("name") or child.get("part_number") or "Part"
             if child.get("children"):
                 walk(child, path + [label])
@@ -800,11 +804,12 @@ def lines_from_structure(structure: dict) -> tuple[list[dict], list[str]]:
     return lines, warnings
 
 
-def lines_from_product(m, product_id: str) -> dict:
+def lines_from_product(m, product_id: str, skip=frozenset()) -> dict:
     """A product's parts list as prediction lines: the bill of materials of
     the product's part (``Maintenance.part_structure``), flattened to its
-    lowest-level parts under their assemblies. ``m`` is the caller's
-    Maintenance; its NotFound and Invalid pass through."""
+    lowest-level parts under their assemblies. ``skip`` (part numbers, lower
+    case) leaves those parts out with everything inside them. ``m`` is the
+    caller's Maintenance; its NotFound and Invalid pass through."""
     product = m.product(product_id)
     out = {"product": {"id": product["id"], "name": product["name"], "rev": product.get("rev") or None,
                        "part_number": (product.get("part") or {}).get("part_number")},
@@ -815,11 +820,11 @@ def lines_from_product(m, product_id: str) -> dict:
                                "a bill of materials, or type the parts list here.")
         return out
     structure = m.part_structure(part["id"])
-    lines, warnings = lines_from_structure(structure)
+    lines, warnings = lines_from_structure(structure, skip)
     out["lines"] = lines
     out["assemblies"] = len({tuple(ln["assembly"][:d]) for ln in lines for d in range(1, len(ln["assembly"]) + 1)})
     out["warnings"] = warnings
-    if not lines:
+    if not lines and not skip:
         out["warnings"].append(f"Nothing is inside {part['part_number']} yet: add what goes in it on the part's page, "
                                "or type the parts list here.")
     return out

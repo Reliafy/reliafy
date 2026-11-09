@@ -119,16 +119,40 @@ const valueOf = (i, values) => {
   return s !== "" ? s : i.default == null ? "" : String(i.default);
 };
 
-// Whether an input is asked for given the others' values (``needed_if``: running hours a year only
-// when the clock is changed from the record's own).
+// One ``needed_when`` term against the other input's value now: true, false, or null when it can't
+// be told (nothing typed and no default, or not a number where one is compared).
+const COMPARE = { "==": (a, b) => a === b, "!=": (a, b) => a !== b, ">": (a, b) => a > b, ">=": (a, b) => a >= b,
+                  "<": (a, b) => a < b, "<=": (a, b) => a <= b };
+function termHolds(term, other, values) {
+  const text = valueOf(other, values);
+  const compare = COMPARE[term.op];
+  if (text === "" || !compare) return null;
+  if (typeof term.value === "number") {
+    const n = Number(text);
+    return Number.isFinite(n) ? compare(n, term.value) : null;
+  }
+  return compare(text, String(term.value));
+}
+
+// Whether an input is asked for given the others' values. ``needed_if`` ({key: [values]}): running
+// hours a year only when the clock is changed from the record's own. ``needed_when`` ([{key, op,
+// value}], every one to hold): a winding's temperature rise only when its insulation class is known.
 export function isNeeded(input = {}, inputs = [], values = {}) {
   const cond = input.needed_if;
-  if (!cond) return true;
-  return Object.entries(cond).every(([k, allowed]) => {
+  const listed = !cond || Object.entries(cond).every(([k, allowed]) => {
     const other = inputs.find((i) => i.key === k);
     // The other one isn't here (fixed at the position, say): it can't be told, so it's asked for.
     return other ? allowed.map(String).includes(valueOf(other, values)) : true;
   });
+  if (!listed) return false;
+  // In order, as the server reads them: one that can't be told yet asks for the input.
+  for (const term of input.needed_when || []) {
+    const other = inputs.find((i) => i.key === term.key);
+    const holds = other ? termHolds(term, other, values) : null;
+    if (holds === null) return true;
+    if (!holds) return false;
+  }
+  return true;
 }
 
 // The inputs asked for now (those another input's value makes unnecessary are left out).

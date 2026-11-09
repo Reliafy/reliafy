@@ -1649,6 +1649,33 @@ SAMPLE_PRODUCT_BOM = [
     ("SQ-RL24", "Telemetry radio 2.4 GHz", 1, "LRU"),
     ("SQ-GB2", "Camera gimbal, 2 axis", 1, "LRU"),
 ]
+# Where a parts-count prediction of the sample starts (position_models.py). Sample values,
+# invented like the rest: nothing here is a real design's figure.
+# Its environment: MIL-HDBK-217F's "Airborne, rotary winged" (ARW), the handbook's environment for
+# equipment on a rotorcraft, which a quadcopter is. The handbook's uninhabited environments (AUC,
+# AUF) are the uncrewed bays of fixed-wing transports and fighters. The sample prediction on the
+# Predictions page (backend/services/samples.py) uses ARW too.
+SAMPLE_PRODUCT_ENVIRONMENT = "ARW"
+SAMPLE_MOTOR_PART = "SQ-M2210"
+
+
+def is_sample_product(node: dict | None) -> bool:
+    """A design's top that is a copy of the sample product, made the user's own or not."""
+    return bool(node and node.get("design") and (products.is_sample(node)
+                                                 or node.get("from_sample") == products.SAMPLE_KEY))
+
+
+def sample_part_conditions(reference: str, record_id: str) -> dict | None:
+    """The conditions a part of the sample starts from when a prediction gives it this handbook
+    model (None: the sample has none for it). The motors on NSWC-11's electric motor: the sample
+    prediction's conditions for a 2210 brushless motor (sample values, not measured)."""
+    from backend.services import samples
+
+    if (reference or "").upper() == SAMPLE_MOTOR_PART and record_id == samples.SAMPLE_MOTOR_MODEL:
+        return dict(samples.SAMPLE_MOTOR_CONDITIONS)
+    return None
+
+
 # The items built: serial, revision, flight hours and sorties flown, read now.
 SAMPLE_PRODUCT_ITEMS = [("0007", "C", 212.0, 553), ("0008", "C", 31.0, 81), ("0009", "B", 640.0, 1670)]
 # The flight-critical RBD's blocks: a guessed constant failure rate per flight hour each

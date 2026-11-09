@@ -1593,8 +1593,11 @@ _MMIC = "a-5-4-gaas-mmic-1-to-100-active-elements"
 # NSWC-11 Eq. 14-1 conditions for the sample's 2210 motor in the hover: brushless, two
 # small ball bearings (a 3 mm bore, catalogue rating about 0.56 kN), a 3 mm steel shaft.
 # The bearings' thrust load is folded into an equivalent radial load, which the
-# handbook's bearing model expects. Invented design figures, like the product.
-_MOTOR_CONDITIONS = {
+# handbook's bearing model expects. Invented design figures, like the product. A prediction
+# made on the sample product itself starts its motor line from the same ones
+# (backend/maintenance/templates.py: sample_part_conditions).
+SAMPLE_MOTOR_MODEL = "nswc-11:electric-motor"
+SAMPLE_MOTOR_CONDITIONS = {
     "motor_type": "dc_brushless", "n": 9000, "load": "light_impact", "T_O": 40, "n_BE": 2,
     "bearings.L_S": 126, "bearings.F_R": 1.0,
     "shaft.N_cycles": 1e9, "shaft.F": 0.2, "shaft.E": 30e6, "shaft.len_X": 1.2, "shaft.D_X": 0.118,
@@ -1658,8 +1661,8 @@ SAMPLE_PREDICTION = {
             ("RF coaxial connector, antenna", "15-1-rf-coaxial", 1, ["Telemetry radio"], 2, ""),
             ("Ceramic capacitors", "10-1-ck-11015", 14, ["Telemetry radio"], 1, ""),
             ("Chip resistors", "9-1-rm-55342", 10, ["Telemetry radio"], 1, ""),
-            ("Brushless motor 2210", "nswc-11:electric-motor", 4, ["Propulsion"], None, "SQ-M2210",
-             {"conditions": _MOTOR_CONDITIONS,
+            ("Brushless motor 2210", SAMPLE_MOTOR_MODEL, 4, ["Propulsion"], None, "SQ-M2210",
+             {"conditions": SAMPLE_MOTOR_CONDITIONS,
               "notes": "NSWC-11 conditions for a 2210 motor in the hover: 9,000 rpm, 40 °C, two ball bearings, a 3 "
                        "mm steel shaft. Invented design figures, like the product."}),
             ("Propeller 10x4.5", None, 4, ["Propulsion"], None, "SQ-P1045", {"excluded": True}),

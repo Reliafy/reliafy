@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  adoptConditions,
   branchPositions, leftOutKeys, lineChange, lineKey, lineMenu, lineMode, mergeLines, missionHours, noPartsText,
   predictionKey, predictionResult, predictionTitle, quantityTyped, removeQuestion, resultLines,
 } from "./predictionPane.js";
@@ -139,4 +140,26 @@ test("a quantity typed: more than 0 and changed, else nothing", () => {
 test("the result names what was left out of this prediction", () => {
   const out = predictionResult({ failure_rate_per_million_hours: 2, left_out: [{ name: "Battery", quantity: 2 }] });
   assert.deepEqual(out.leftOut, ["Battery ×2"]);
+});
+
+test("a line takes the conditions the server started it from, never over its own", () => {
+  const motor = { reference: "M-1", record: { id: "nswc-11:electric-motor", kind: "covariate_model" }, record_id: "nswc-11:electric-motor",
+    conditions: {}, cycles_per_hour: "" };
+  const other = { listing_id: "L2", part_id: "p2", record_id: "nswc-11:bearing", conditions: { n: "1800" } };
+  const lines = [motor, other, { reference: "R-1", record_id: "217f:resistor" }];
+  const fresh = [
+    { reference: "M-1", record_id: "nswc-11:electric-motor", conditions: { n: 9000, motor_type: "dc_brushless" }, cycles_per_hour: 30 },
+    { listing_id: "L2", part_id: "p2", record_id: "nswc-11:bearing", conditions: { n: 900 } },
+    { reference: "R-1", record_id: "217f:resistor" },
+  ];
+  const got = adoptConditions(lines, fresh);
+  assert.deepEqual(got[0].conditions, { n: 9000, motor_type: "dc_brushless" });
+  assert.equal(got[0].cycles_per_hour, 30);
+  assert.equal(got[0].record, motor.record);
+  assert.equal(got[1], other); // its own conditions stay
+  // Nothing to take: the same list, so nothing is drawn or sent again.
+  assert.equal(adoptConditions(got, fresh), got);
+  assert.equal(adoptConditions(lines, [{ reference: "M-1", record_id: "nswc-11:electric-motor" }]), lines);
+  // The server's line is on another part type (the choice changed since it was asked): not taken.
+  assert.equal(adoptConditions(lines, [{ reference: "M-1", record_id: "nswc-11:gear", conditions: { n: 1 } }]), lines);
 });

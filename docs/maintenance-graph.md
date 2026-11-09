@@ -1195,7 +1195,8 @@ saved model assigned by hand. Code: `backend/maintenance/position_models.py`.
   is saved as a reliability prediction and an exponential model at its rate;
   the link names the model, and `source` the prediction, the environment and
   the counts. It's computed from the parts lists at the position and inside
-  it (a product design's bill of materials where they list none). No new event:
+  it (on a product design, plus the bill-of-materials parts they don't list; a
+  part on both is counted once, from the parts lists). No new event:
   it's a `position.model_linked` like any other.
 - **Covariate models** (accelerated life, proportional hazards) are linked as
   they are; the link carries no stress (that's set where the model is used).
