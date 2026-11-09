@@ -148,7 +148,7 @@ const TOP = "\u0000top";
 // branch (?sel=, a link, a new row), the page shows the whole tree again and
 // says so; a pinned row that's gone (retired, deleted) quietly un-pins.
 //
-// "Isolate ›" in a row's menu (both tabs; treeIsolate.js) is a one-off change
+// "Focus ›" in a row's menu (both tabs; treeIsolate.js) is a one-off change
 // to what's open: every other branch closes (still on show), the rows above
 // it stay open, and it opens 1, 2 or 3 levels below it, or all of them. Then
 // it's picked and brought into view. Nothing is hidden and the address stays.
@@ -845,7 +845,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   });
   // Isolate: the rest of the tree closed, this row opened `depth` levels
   // below it, picked and brought into view; said to screen readers.
-  // Isolate incomplete rows: the way to what's still to finish under this row
+  // Focus on incomplete rows: the way to what's still to finish under this row
   // (functions with no functional failure, failures with no failure mode,
   // modes with no decision) opened, the rest closed; the first one picked.
   const isolateIncomplete = (r) => {
@@ -1135,7 +1135,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       // A position's own on the Modelling tab: attach a model (the heading's "…" isn't there on a phone).
       if (modelsOn && r.type === "pos") {
         // Two levels (Derryn, 9 Nov 2026): Life model ›, RBD ›, Prediction ›, a line, then only the
-        // position items that make sense here (Rename…, Isolate ›, Pin this branch).
+        // position items that make sense here (Rename…, Focus ›, Pin this branch).
         const own = summaryActions(r, { mode, viewOnly }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id));
         return [...modelGroups(r.key, r.ref.position_class), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
       }

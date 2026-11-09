@@ -343,5 +343,5 @@ export function attachGroups({ positionClass = "", hasPrediction = false, hasLif
 }
 
 // The position items that make sense on the Modelling tab, after the groups: Rename… only
-// (Isolate › and Pin this branch are added by the page); the rest stay on Summary and RCM.
+// (Focus › and Pin this branch are added by the page); the rest stay on Summary and RCM.
 export const MODEL_POSITION_ITEMS = ["tree-rename"];

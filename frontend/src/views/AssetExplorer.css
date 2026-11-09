@@ -1042,9 +1042,9 @@ button.rw-cklink {
 /* An item that can't be used now: greyed, with the reason under it. */
 .row-menu .ovm-item.off { color: var(--subtle); cursor: not-allowed; }
 .row-menu .ovm-item.off:hover, .row-menu .ovm-item.off:focus-visible { background: var(--surf-2, transparent); color: var(--muted); }
-/* A submenu (Isolate ›): its item has the arrow at its end; beside the menu
+/* A submenu (Focus ›): its item has the arrow at its end; beside the menu
    on a wide screen, in place under its item on a phone. The arrow is drawn,
-   not text (no alt text: the item's name stays "Isolate"). */
+   not text (no alt text: the item's name stays "Focus"). */
 .row-menu .ovm-item.row-menu-parent { display: flex; align-items: center; gap: 12px; }
 .row-menu-sep { height: 1px; margin: 4px 8px; background: var(--line, #e9ebee); }
 .row-menu-parent::after { content: "›" / ""; margin-left: auto; color: var(--muted); }

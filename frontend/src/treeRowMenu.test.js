@@ -87,11 +87,11 @@ test("Move to…: every position or location but the row itself and what's insid
 test("Isolate: a submenu of levels; just Isolate on a row with nothing inside; nothing where it can't", () => {
   const items = isolateItems({ key: "a", kids: ["b"] }, { can: true });
   assert.equal(items.length, 1);
-  assert.equal(items[0].label, "Isolate");
+  assert.equal(items[0].label, "Focus");
   assert.deepEqual(items[0].items.map((i) => [i.id, i.label]), [
     ["isolate:1", "With 1 level open"], ["isolate:2", "With 2 levels open"], ["isolate:3", "With 3 levels open"], ["isolate:all", "With everything open"],
   ]);
-  assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true }), [{ id: "isolate:1", label: "Isolate" }]);
+  assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true }), [{ id: "isolate:1", label: "Focus" }]);
   assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: false }), []);
   // Before Delete, with Pin this branch after it.
   const skim = summaryActions({ key: "a", type: "pos", kids: ["b"], ref: {} }, { mode: "positions" });
