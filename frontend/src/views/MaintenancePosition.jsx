@@ -25,10 +25,7 @@ import {
   removeMaintenanceItem,
   updateMaintenancePosition,
   voidMaintenanceFitment,
-  addPositionPart,
-  listMaintenanceParts,
   removePositionPart,
-  updatePositionPart,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import ClampLines from "../components/ui/ClampLines.jsx";
@@ -48,7 +45,8 @@ import ReadingsTable from "../components/ReadingsTable.jsx";
 import { READINGS_INTRO } from "../measuringPoint.js";
 import { pointPagePath } from "../measurementsTab.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
-import { PART_ROLES, roleLabel, stockText } from "../maintenanceSpares.js";
+import { PartEntryModal } from "../components/PartForms.jsx";
+import { roleLabel, stockText } from "../maintenanceSpares.js";
 import { TasksCard } from "../components/MaintenanceTasks.jsx";
 import { ConditionsCard, ConnectionConditions } from "../components/MaintenanceConditions.jsx";
 import "./Maintenance.css";
@@ -550,63 +548,6 @@ function PartsListCard({ p, onChanged }) {
       {modal && <PartEntryModal p={p} entry={modal.id ? modal : null} onClose={() => setModal(null)}
                                 onDone={() => { setModal(null); onChanged(); }} />}
     </section>
-  );
-}
-
-function PartEntryModal({ p, entry, onClose, onDone }) {
-  const [catalogue, setCatalogue] = useState(null);
-  const [f, setF] = useState({
-    part_id: "", role: entry?.role || (p.parts_list?.some((x) => x.role === "replacement") ? "component" : "replacement"),
-    quantity: entry?.quantity ?? 1, critical: !!entry?.critical, min: entry?.min_on_hand ?? "", notes: entry?.notes || "",
-  });
-  useEffect(() => {
-    if (!entry) listMaintenanceParts().then((d) => setCatalogue(d.parts)).catch(() => setCatalogue([]));
-  }, [entry]);
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const listed = new Set((p.parts_list || []).map((x) => x.part.id));
-  const body = {
-    role: f.role, quantity: Number(f.quantity), critical: f.critical, notes: f.notes,
-    ...(f.critical ? { min_on_hand: f.min === "" ? null : Number(f.min) } : {}),
-  };
-  return (
-    <FormModal title={entry ? `${entry.part.part_number} on ${p.name}` : `Add a part to ${p.name}`}
-               submitLabel={entry ? "Save" : "Add"} onClose={onClose}
-               canSubmit={!!(entry || f.part_id) && Number(f.quantity) > 0}
-               onSubmit={async () => onDone(entry ? await updatePositionPart(entry.id, body)
-                 : await addPositionPart(p.id, { ...body, part_id: f.part_id }))}>
-      {!entry && (
-        <Field label="Part">
-          {catalogue === null ? <span className="lib-date">Loading…</span> : catalogue.length === 0 ? (
-            <span className="lib-date">The catalogue is empty: add parts on the <Link to="/asset-register/parts">Parts</Link> page first.</span>
-          ) : (
-            <select autoFocus value={f.part_id} onChange={set("part_id")}>
-              <option value="">Choose…</option>
-              {catalogue.filter((pt) => !listed.has(pt.id)).map((pt) => (
-                <option key={pt.id} value={pt.id}>{pt.part_number}: {pt.name}{pt.superseded_by ? " (superseded)" : ""}</option>
-              ))}
-            </select>
-          )}
-        </Field>
-      )}
-      <Field label="Role">
-        <select value={f.role} onChange={set("role")}>
-          {PART_ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-        </select>
-      </Field>
-      <Field label="Quantity per job"><input type="number" inputMode="decimal" min="0" step="any" value={f.quantity}
-             onChange={set("quantity")} /></Field>
-      <label className="maint-row" style={{ gap: "0.5rem" }}>
-        <input type="checkbox" checked={f.critical} onChange={(e) => setF({ ...f, critical: e.target.checked })} />
-        Critical spare: keep some in stock
-      </label>
-      {f.critical && (
-        <Field label="Keep at least (blank: one job's worth)"><input type="number" inputMode="decimal" min="0" step="any"
-               value={f.min} onChange={set("min")} /></Field>
-      )}
-      <Field label="Compatibility notes (optional)"><textarea rows={2} value={f.notes}
-             placeholder="e.g. needs the matching button kit; fits from serial 4000 on" onChange={set("notes")} /></Field>
-      <p className="lib-date">What supersedes a part, and the parts interchangeable with it, come from the catalogue.</p>
-    </FormModal>
   );
 }
 

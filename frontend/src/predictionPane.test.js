@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lineChange, lineMode, missionHours, predictionKey, predictionResult, predictionTitle } from "./predictionPane.js";
+import {
+  branchPositions, leftOutKeys, lineChange, lineKey, lineMenu, lineMode, mergeLines, missionHours, noPartsText,
+  predictionKey, predictionResult, predictionTitle, quantityTyped, removeQuestion, resultLines,
+} from "./predictionPane.js";
 
 test("the heading: add, or refresh the one there", () => {
   assert.equal(predictionTitle(), "Add a prediction");
@@ -67,4 +70,72 @@ test("a change from the shared part-type controls as the line's fields", () => {
   assert.deepEqual(lineChange({ excluded: true, record: null, rate: "", rateMode: false }),
     { excluded: true, record: null, record_id: null, rate_per_million_hours: "", rate_mode: false });
   assert.deepEqual(lineChange({}), {});
+});
+
+test("lines left out of this prediction: by parts-list entry, else part number; a change", () => {
+  const lines = [{ listing_id: "e1", reference: "C-1" }, { listing_id: "e2", reference: "U-7", left_out: true },
+    { reference: "BOM-3", left_out: true }];
+  assert.deepEqual(leftOutKeys(lines), ["e2", "BOM-3"]);
+  assert.equal(lineKey({ part_id: "p" }), "p");
+  const opened = predictionKey({ lines });
+  assert.notEqual(predictionKey({ lines: [lines[0], { ...lines[1], left_out: false }, lines[2]] }), opened);
+});
+
+test("the result's lines skip the ones left out", () => {
+  const lines = [{ name: "A" }, { name: "B", left_out: true }, { name: "C" }];
+  const got = resultLines(lines, { lines: [{ name: "A" }, { name: "C" }] });
+  assert.deepEqual(got.map((r) => r && r.name), ["A", null, "C"]);
+  assert.deepEqual(resultLines(lines, null), [null, null, null]);
+});
+
+test("the parts lists read again keep each line's choices; a new line is named", () => {
+  const old = [{ listing_id: "e1", name: "Cap", quantity: 2, record: { id: "r1", name: "Capacitor" }, left_out: true }];
+  const fresh = [
+    { listing_id: "e1", name: "Cap", quantity: 5, record_id: "r1", position: { id: "p1", name: "Power" }, left_out: true },
+    { listing_id: "e9", name: "Opto", quantity: 1, record_id: "r2", position: { id: "p2", name: "Board" } },
+  ];
+  const { lines, added } = mergeLines(old, fresh, { lines: [{ part_type: "Opto-isolator" }] });
+  assert.deepEqual(added, ["e9"]);
+  assert.equal(lines[0].quantity, 5);
+  assert.equal(lines[0].record.name, "Capacitor");
+  assert.equal(lines[0].left_out, true);
+  assert.deepEqual(lines[1].record, { id: "r2", name: "Opto-isolator" });
+  // A line taken off its list goes.
+  assert.equal(mergeLines(old, []).lines.length, 0);
+});
+
+test("where a part can go: the branch, each with what's on its list", () => {
+  const branch = [{ id: "p1", name: "Power", depth: 0 }, { id: "p2", name: "Board", depth: 1 }];
+  const lines = [{ part_id: "a", role: "replacement", position: { id: "p2" } }];
+  const got = branchPositions(branch, lines);
+  assert.deepEqual(got[0].parts_list, []);
+  assert.deepEqual(got[1].parts_list, [{ part: { id: "a" }, role: "replacement" }]);
+});
+
+test("the words: empty state and the removal question", () => {
+  assert.equal(noPartsText("Power"), "No parts listed on Power or inside it.");
+  assert.equal(removeQuestion({ name: "Battery pack 6S 10 Ah", position: { name: "Power" } }),
+    "Remove Battery pack 6S 10 Ah from Power’s parts list? It also leaves the BOM and the LSA. The part itself stays in your parts.");
+});
+
+test("a line's menu: leave out or put back; a bill of materials line can't be changed on a list", () => {
+  const ids = (items) => items.filter((it) => !it.separator).map((it) => `${it.id}${it.disabled ? "!" : ""}`);
+  assert.deepEqual(ids(lineMenu({ listing_id: "e1" })), ["quantity", "out", "remove"]);
+  assert.deepEqual(ids(lineMenu({ listing_id: "e1", left_out: true })), ["quantity", "back", "remove"]);
+  assert.deepEqual(ids(lineMenu({ reference: "BOM-1" })), ["quantity!", "out", "remove!"]);
+  assert.equal(lineMenu({}).find((it) => it.id === "remove").danger, true);
+});
+
+test("a quantity typed: more than 0 and changed, else nothing", () => {
+  assert.equal(quantityTyped("3", 2), 3);
+  assert.equal(quantityTyped(" 2.5 ", 1), 2.5);
+  assert.equal(quantityTyped("2", 2), null);
+  assert.equal(quantityTyped("0", 2), null);
+  assert.equal(quantityTyped("", 2), null);
+  assert.equal(quantityTyped("abc", 2), null);
+});
+
+test("the result names what was left out of this prediction", () => {
+  const out = predictionResult({ failure_rate_per_million_hours: 2, left_out: [{ name: "Battery", quantity: 2 }] });
+  assert.deepEqual(out.leftOut, ["Battery ×2"]);
 });

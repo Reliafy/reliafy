@@ -542,7 +542,7 @@ test("Add a prediction… opens in the table area: live result, the part-type li
   // The parts across the pane, every column in view; at this width the result under them, in view
   // with Save (side by side on a wider screen: the product test below).
   await expect(pane.locator(".pred2-table tbody tr")).toHaveCount(3);
-  await expect(pane.locator(".pred2-table thead th")).toHaveText(["Part", "Qty", "Handbook part type", "Quality factor", "Not electronic", "Your own rate", "λ per 10⁶ h"]);
+  await expect(pane.locator(".pred2-table thead th")).toHaveText(["Part", "Qty", "Handbook part type", "Quality factor", "Not electronic", "Your own rate", "λ per 10⁶ h", "Actions"]);
   const inBox = await pane.locator(".pred2-in").boundingBox();
   const outBox = await pane.locator(".pred2-out").boundingBox();
   expect(outBox.y).toBeGreaterThan(inBox.y + inBox.height - 2);
@@ -662,6 +662,116 @@ test("the prediction at 400 px takes the screen: the parts, then the result, not
   await pane.getByRole("button", { name: "Back to the table" }).click();
   await expect(pane).toHaveCount(0);
   await expect(row(page, ctl.id)).toBeVisible();
+});
+
+// Adding and removing the prediction's lines (Derryn, 9 Nov 2026: "definitely need a way to add and
+// remove rows from the parts prediction"): the empty state's buttons, a new part on a position
+// inside it (the same New part form), typed, the result changing; a line left out and put back;
+// its quantity changed on the parts list; one taken off its parts list (asked first, with Undo).
+test("the prediction's lines: add a part on a child, leave one out and put it back, change a quantity, remove one", async ({ page, request, problems }) => {
+  const tag = `pa${Date.now()}`;
+  const power = await postOk(request, `${M}/positions`, { name: `Power ${tag}` });
+  const board = await postOk(request, `${M}/positions`, { name: `Board ${tag}`, parent_id: power.id });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${power.id}&tab=models`);
+  await headPick(page, "Prediction", "Add a prediction (parts count)…");
+  const pane = page.getByRole("region", { name: "Add a prediction" });
+  await expect(pane.getByText(`No parts listed on Power ${tag} or inside it.`)).toBeVisible();
+  await expect(pane.getByRole("button", { name: "Import a BOM" })).toBeVisible();
+  // Import a BOM: the same dialog as the Parts tab's.
+  await pane.getByRole("button", { name: "Import a BOM" }).click();
+  await expect(page.getByRole("dialog", { name: "Import a BOM" })).toBeVisible();
+  await page.getByRole("dialog", { name: "Import a BOM" }).getByRole("button", { name: "Cancel" }).click();
+
+  // Add a part, on the board inside it: the line comes in with its part-type picker focused.
+  const addPart = async (pn, name, on, quantity) => {
+    await pane.getByRole("button", { name: "Add a part" }).first().click();
+    const dlg = page.getByRole("dialog", { name: "New part" });
+    await dlg.getByLabel("Part number").fill(pn);
+    await dlg.getByLabel("Name").fill(name);
+    await dlg.getByRole("combobox", { name: "On", exact: true }).selectOption(on);
+    await dlg.getByLabel("Quantity").fill(String(quantity));
+    await dlg.getByRole("button", { name: "Add" }).click();
+    await expect(dlg).toHaveCount(0);
+  };
+  await addPart(`C-${tag}`, `Capacitor ${tag}`, board.id, 2);
+  const rows = pane.locator(".pred2-table tbody tr");
+  await expect(rows).toHaveCount(1);
+  const capType = pane.getByRole("combobox", { name: `Handbook part type of Capacitor ${tag}` });
+  await expect(capType).toBeFocused();
+  await expect(rows.first().locator(".pred2-ref")).toContainText(`Board ${tag}`);
+  await capType.fill("capacitor");
+  await page.getByRole("listbox", { name: `Handbook part type of Capacitor ${tag} matches` }).getByRole("option").first().click();
+  const status = pane.getByRole("status");
+  const big = pane.locator(".pred2-big b");
+  await expect(status).toContainText("failures per million hours");
+  const one = await big.textContent();
+
+  // A second part, on the position itself, from the foot of the table.
+  await addPart(`U-${tag}`, `Opto-isolator ${tag}`, power.id, 1);
+  await expect(rows).toHaveCount(2);
+  const optoType = pane.getByRole("combobox", { name: `Handbook part type of Opto-isolator ${tag}` });
+  await expect(optoType).toBeFocused();
+  await optoType.fill("opto");
+  await page.getByRole("listbox", { name: `Handbook part type of Opto-isolator ${tag} matches` }).getByRole("option").first().click();
+  await expect(big).not.toHaveText(one);
+  const two = await big.textContent();
+  await expect(status).toContainText("2 of 2 lines counted");
+  await pane.locator(".pred2-lines").evaluate((el) => { el.scrollLeft = 0; });
+  await shot(page, "1440-prediction-added-row");
+
+  // Leave the opto-isolator out of this prediction (it stays on the list), then put it back.
+  const optoRow = rows.filter({ hasText: `Opto-isolator ${tag}` });
+  await optoRow.getByRole("button", { name: `Actions for Opto-isolator ${tag}` }).click();
+  const menu = page.getByRole("menu", { name: `Actions for Opto-isolator ${tag}` });
+  await expect(menu.getByRole("menuitem")).toHaveText(["Change quantity", "Leave out of this prediction", "Remove from the parts list…"]);
+  await shot(page, "1440-prediction-line-menu");
+  await menu.getByRole("menuitem", { name: "Leave out of this prediction" }).click();
+  await expect(optoRow).toHaveClass(/pred2-out-row/);
+  await expect(optoRow).toContainText("Left out of this prediction");
+  await expect(status).toContainText(`Left out of this prediction: Opto-isolator ${tag}`);
+  await expect(big).toHaveText(one);
+  await pane.locator(".pred2-lines").evaluate((el) => { el.scrollLeft = 0; });
+  await shot(page, "1440-prediction-left-out");
+  await optoRow.getByRole("button", { name: "Put back" }).click();
+  await expect(optoRow).not.toHaveClass(/pred2-out-row/);
+  await expect(big).toHaveText(two);
+
+  // Change the capacitor's quantity, on its parts list: the result follows.
+  const qty = pane.getByLabel(`Quantity of Capacitor ${tag}`);
+  await qty.fill("6");
+  await qty.press("Enter");
+  await expect(big).not.toHaveText(two);
+  const listed = await (await request.get(`${M}/positions/${power.id}/parts`)).json();
+  expect(listed.parts_list.map((x) => x.part.part_number)).toEqual([`U-${tag}`]);
+
+  // Remove the opto-isolator from its parts list (right-click), asked first; Undo puts it back.
+  await optoRow.click({ button: "right" });
+  await page.getByRole("menu", { name: `Actions for Opto-isolator ${tag}` }).getByRole("menuitem", { name: "Remove from the parts list…" }).click();
+  const ask = page.getByRole("dialog", { name: "Remove from the parts list" });
+  await expect(ask).toContainText(`Remove Opto-isolator ${tag} from Power ${tag}’s parts list? It also leaves the BOM and the LSA. The part itself stays in your parts.`);
+  await ask.getByRole("button", { name: "Remove" }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(pane.getByText(`Removed Opto-isolator ${tag} from Power ${tag}’s parts list.`)).toBeVisible();
+  await pane.getByRole("button", { name: "Undo" }).click();
+  await expect(rows).toHaveCount(2);
+
+  // 400 px: nothing sideways.
+  await page.setViewportSize({ width: 400, height: 860 });
+  await expect(rows).toHaveCount(2);
+  expect(await sideways(page)).toBeLessThanOrEqual(400);
+  await shot(page, "400-prediction-lines");
+  await optoRow.getByRole("button", { name: `Actions for Opto-isolator ${tag}` }).click();
+  await shot(page, "400-prediction-line-menu");
+  await page.getByRole("menu", { name: `Actions for Opto-isolator ${tag}` }).getByRole("menuitem", { name: "Leave out of this prediction" }).click();
+  await expect(optoRow).toHaveClass(/pred2-out-row/);
+  await pane.locator(".pred2-lines").evaluate((el) => { el.scrollLeft = 0; });
+  await optoRow.scrollIntoViewIfNeeded();
+  await expect(optoRow.getByRole("button", { name: "Put back" })).toBeVisible();
+  await expect(pane.getByRole("button", { name: "Add a part" })).toBeInViewport();
+  await shot(page, "400-prediction-left-out");
+  expect(await sideways(page)).toBeLessThanOrEqual(400);
+  await expectHealthy(page, problems, { label: "adding and removing prediction lines" });
 });
 
 test("a product's Modelling tab: Add a prediction… in the table area, on the sample quadcopter", async ({ page, request, problems }) => {

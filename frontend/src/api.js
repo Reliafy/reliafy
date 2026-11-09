@@ -2887,6 +2887,9 @@ export function setMaintenanceReorder(partId, body) {
   return postJson(`/api/maintenance/parts/${partId}/reorder-point`, body);
 }
 // A position's parts list (its bill of materials), and where the spares fall short.
+export function getPositionParts(positionId) {
+  return request(`/api/maintenance/positions/${positionId}/parts`);
+}
 export function addPositionPart(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/parts`, body);
 }
