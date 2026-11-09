@@ -51,7 +51,11 @@ HOURS = {"hour": 1.0, "day": 24.0, "week": 168.0, "month": 730.5, "year": 8766.0
 
 
 class BindingError(ValueError):
-    """A binding that can't be used, said for the user."""
+    """A binding that can't be used, said for the user (``words``)."""
+
+    def __init__(self, words: str):
+        super().__init__(words)
+        self.words = str(words)
 
 
 # ---- the inputs, the same shape for every source -----------------------------------------------
@@ -380,7 +384,7 @@ def bound_blocks(graph: dict, inputs_for: Callable[[dict], list[dict]]) -> list[
         try:
             inputs = inputs_for(binding)
         except BindingError as exc:
-            out.append({**row, "inputs": [], "values": {}, "sources": {}, "missing": [], "problem": str(exc)})
+            out.append({**row, "inputs": [], "values": {}, "sources": {}, "missing": [], "problem": exc.words})
             continue
         got = resolve_node(binding, inputs, data.get("covariate_values"), conditions, data.get("covariate_map"))
         open_ = [i for i in inputs if i["key"] not in (binding.get("fixed") or {})]
