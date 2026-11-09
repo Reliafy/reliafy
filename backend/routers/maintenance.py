@@ -1258,7 +1258,7 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
         # A parts-count prediction from the position's parts list (position_models.predict_position).
         pr = body["prediction"]
         return _run(pm.predict_position, m, session, ctx.read_owners, ctx.hidden, position_id, pr.get("environment"),
-                    pr.get("mission_time"), pr.get("assign"), True, note, replace, ctx.write_owner)
+                    pr.get("mission_time"), pr.get("assign"), True, note, replace, ctx.write_owner, pr.get("left_out"))
     if body.get("fit") and any(k in body for k in ("data", "method", "prior")):
         # "Fit a life model…": which data (position, class, both) and which method (mle, bayes), fit_life.py.
         from backend.maintenance import fit_life
@@ -1316,13 +1316,14 @@ def preview_position_prediction(position_id: str, body: dict = Body(default={}),
     """A parts-count prediction of this position from its parts list (and those of the positions inside
     it; a product design's bill of materials where they list none), previewed: environment (a handbook
     symbol; default this position's last, else the nearest above, else GF), mission_time (hours), assign
-    ({part id or part number: {record_id, quality_factor} or {rate_per_million_hours} or {excluded: true}}).
-    Saves nothing; save with POST
+    ({part id or part number: {record_id, quality_factor} or {rate_per_million_hours} or {excluded: true}}),
+    left_out ([parts-list entry id]: lines kept on the parts list but left out of this prediction; omitted,
+    the last prediction's). Saves nothing; save with POST
     /positions/{id}/models {prediction: {...}}."""
     from backend.maintenance import position_models as pm
 
     return _run(pm.predict_position, m, session, ctx.read_owners, ctx.hidden, position_id, body.get("environment"),
-                body.get("mission_time"), body.get("assign"))
+                body.get("mission_time"), body.get("assign"), left_out=body.get("left_out"))
 
 
 @router.post("/positions/{position_id}/fit-preview")

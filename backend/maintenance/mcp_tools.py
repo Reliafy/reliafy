@@ -2372,7 +2372,8 @@ def register() -> None:
                                "A parts-count prediction: {environment? (handbook symbol, e.g. GF; default the "
                                "position's last, else the nearest above), mission_time? (hours), assign? {part number "
                                "or part id: {record_id (a handbook record: list kind library), quality_factor?}, {rate_per_million_hours} (the "
-                               "user's own rate, e.g. a battery) or {excluded: true} (not electronic: left out)}}."))]
+                               "user's own rate, e.g. a battery) or {excluded: true} (not electronic: left out)}, left_out? "
+                               "[parts-list entry id] (kept on the list, left out of this prediction)}."))]
                            = None, rbd_id: str | None = None, build_rbd: bool | None = None,
                            use_link_id: str | None = None,
                            data: Literal["position", "class", "both"] | None = None,
@@ -2415,7 +2416,7 @@ def register() -> None:
             pr = prediction or {}
             return run(pm.predict_position, m, _db(), reader.read_owners, reader.hidden, position_id,
                        pr.get("environment"), pr.get("mission_time"), pr.get("assign"), True, note or "",
-                       replace_link_id)
+                       replace_link_id, None, pr.get("left_out"))
         if fit:
             if _caller(ctx).get("mcp_plan", "pro") != "pro":
                 raise mcp_server.Refusal(mcp_server._pro_only_message("analyse.fit"), "pro_only")

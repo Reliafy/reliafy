@@ -34,6 +34,23 @@ th.pred2-c-ne, td.pred2-c-ne { text-align: center; }
 .pred2-c-ne .ptc-exclude { justify-content: center; }
 .pred2-c-lambda { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pred2-table tr.is-off td:first-child .pred2-name { color: var(--muted); text-decoration: line-through; }
+/* A line left out of this prediction (still on its parts list): greyed, with Put back. */
+.pred2-table tr.pred2-out-row td { color: var(--muted); background: var(--surf2, transparent); }
+.pred2-table tr.pred2-out-row td:first-child .pred2-name { text-decoration: none; }
+.pred2-left { font-size: var(--fs-12); white-space: nowrap; }
+.pred2-left .link { font-size: var(--fs-12); }
+.pred2-table input.pred2-qty { width: 2.75rem; text-align: right; padding-left: 4px; padding-right: 6px; }
+.pred2-c-more { width: 1%; padding-left: 0 !important; padding-right: 4px !important; text-align: right; }
+.pred2-table tfoot td { border-top: 1px solid var(--line2); padding: 6px 8px; }
+.pred2-add-in { position: sticky; left: 8px; display: inline-flex; flex-wrap: wrap; row-gap: 4px; }
+.pred2-add .link { display: inline-flex; align-items: center; gap: 4px; margin-right: 16px; font-size: var(--fs-13); }
+.pred2-add .link svg { width: 14px; height: 14px; }
+.pred2-empty { display: flex; flex-direction: column; gap: 8px; }
+.pred2-empty p { margin: 0; }
+.pred2-empty .maint-row { flex-wrap: wrap; gap: 8px; margin: 0; }
+.pred2-toast { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; font-size: var(--fs-13);
+  border: 1px solid var(--line2); border-radius: var(--r-sm); background: var(--surf); }
+.pred2-toast > span { flex: 1 1 12rem; min-width: 0; }
 
 .pred2-status { display: flex; flex-direction: column; gap: 6px; }
 .pred2-big { margin: 0; font-size: var(--fs-14); }

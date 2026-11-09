@@ -13,7 +13,6 @@ import {
   getMaintenanceLocation,
   getPositionClasses,
   adjustMaintenanceStock,
-  createMaintenancePart,
   getSparesCover,
   listMaintenanceParts,
   setMaintenanceReorder,
@@ -35,7 +34,7 @@ import { openWorkPath } from "../maintenanceAssets.js";
 import { subjectBadge } from "../maintenanceSubjects.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
 import {
-  ClassPicker, ItemClassesSection, KindFilters, PartKindModal, useKinds,
+  ItemClassesSection, KindFilters, PartKindModal, useKinds,
 } from "../components/MaintenanceItemClasses.jsx";
 import { ConditionsCard, ConditionsSection } from "../components/MaintenanceConditions.jsx";
 import { ClassStocking } from "../components/MaintenanceStocking.jsx";
@@ -56,6 +55,7 @@ import LoadFailed from "../components/LoadFailed.jsx";
 import { isNotFound } from "../components/loadFailed.js";
 import { explorerPath } from "../assetTree.js";
 import { DeleteTreeModal } from "../components/DeleteTree.jsx";
+import { NewPartModal } from "../components/PartForms.jsx";
 import { partsInBranch } from "../explorerTabs.js";
 import { EXPLORER_LABEL } from "../navigation.js";
 import { itemTreePath, productPath } from "../products.js";
@@ -912,34 +912,6 @@ function SparesCoverCard({ parts }) {
         </>
       ))}
     </section>
-  );
-}
-
-function NewPartModal({ kinds, onClose, onDone }) {
-  const [f, setF] = useState({ part_number: "", name: "", manufacturer: "", unit_cost: "", item_class_id: null,
-    manufacturer_id: null });
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  return (
-    <FormModal title="New part" submitLabel="Add" canSubmit={!!f.part_number.trim() && !!f.name.trim()} onClose={onClose}
-               onSubmit={async () => onDone(await createMaintenancePart({ ...f, unit_cost: f.unit_cost === "" ? null : Number(f.unit_cost) }))}>
-      <Field label="Part number"><input autoFocus value={f.part_number} onChange={set("part_number")} /></Field>
-      <Field label="Name"><input value={f.name} placeholder="e.g. Magnesium anode" onChange={set("name")} /></Field>
-      <Field label="Manufacturer (optional)"><input value={f.manufacturer} onChange={set("manufacturer")} /></Field>
-      <Field label="Cost each (optional)"><input type="number" inputMode="decimal" min="0" step="any" value={f.unit_cost} onChange={set("unit_cost")} /></Field>
-      {kinds.classes?.length > 0 && (
-        <Field label="Item class (optional: what kind of thing it is)">
-          <ClassPicker classes={kinds.classes} value={f.item_class_id} onChange={(v) => setF({ ...f, item_class_id: v })} />
-        </Field>
-      )}
-      {kinds.makers?.length > 0 && (
-        <Field label="Manufacturer in the register (optional)">
-          <select value={f.manufacturer_id || ""} onChange={(e) => setF({ ...f, manufacturer_id: e.target.value || null })}>
-            <option value="">None</option>
-            {kinds.makers.map((mk) => <option key={mk.id} value={mk.id}>{mk.name}</option>)}
-          </select>
-        </Field>
-      )}
-    </FormModal>
   );
 }
 

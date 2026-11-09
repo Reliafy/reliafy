@@ -277,6 +277,69 @@ def test_a_prediction_row_from_the_parts_list(m, db):
     _same_after_rebuild(m)
 
 
+def test_lines_left_out_of_a_prediction_stay_on_the_list_and_are_kept(m, db):
+    """"Leave out of this prediction": the line stays on the parts list but isn't counted; the saved
+    prediction keeps it (with its part type), so refreshing it leaves it out again."""
+    from backend.services import reliability_prediction as rp
+
+    ctl, psu = _board(m)
+    first = pm.predict_position(m, db, OWNERS, set(), ctl)
+    cap_line, opto_line = first["lines"]
+    assert cap_line["listing_id"] and cap_line["position"] == {"id": ctl, "name": "Controller"}
+    assert opto_line["position"] == {"id": psu, "name": "Power supply"} and not cap_line["left_out"]
+    assert first["branch"] == [{"id": ctl, "name": "Controller", "depth": 0}, {"id": psu, "name": "Power supply", "depth": 1}]
+    assign = {"C-100": {"record_id": CAP}, "U-7": {"record_id": OPTO}}
+    both = pm.predict_position(m, db, OWNERS, set(), ctl, assign=assign)
+    out = pm.predict_position(m, db, OWNERS, set(), ctl, assign=assign, left_out=[opto_line["listing_id"]])
+    assert [ln["left_out"] for ln in out["lines"]] == [False, True]
+    assert [ln["reference"] for ln in out["results"]["lines"]] == ["C-100"]  # the counted lines only
+    assert out["results"]["left_out"] == [{"name": "Opto-isolator", "reference": "U-7", "quantity": 1}]
+    assert out["results"]["counts"]["left_out"] == 1 and out["results"]["counts"]["lines"] == 1
+    assert out["results"]["failure_rate_per_hour"] < both["results"]["failure_rate_per_hour"]
+    assert [x["part"]["part_number"] for x in m.position_parts(psu)["parts_list"]] == ["U-7"]  # still listed
+    # Every line left out: nothing counted, no error.
+    none = pm.predict_position(m, db, OWNERS, set(), ctl, assign=assign,
+                               left_out=[ln["listing_id"] for ln in first["lines"]])
+    assert none["results"]["failure_rate_per_hour"] == 0 and none["results"]["lines"] == []
+    with pytest.raises(Invalid, match="left_out"):
+        pm.predict_position(m, db, OWNERS, set(), ctl, left_out="U-7")
+    # Saved, the prediction keeps what was left out; a refresh (no left_out given) leaves it out again,
+    # with the part type it had.
+    link = pm.predict_position(m, db, OWNERS, set(), ctl, assign=assign, left_out=[opto_line["listing_id"]], save=True)
+    saved = rp.get_prediction(db, link["source"]["prediction_id"], OWNERS)
+    assert [ln["reference"] for ln in saved.inputs["lines"]] == ["C-100"]
+    assert saved.inputs["left_out"][0]["listing_id"] == opto_line["listing_id"]
+    assert saved.inputs["left_out"][0]["record_id"] == OPTO
+    again = pm.predict_position(m, db, OWNERS, set(), ctl)
+    assert [ln["left_out"] for ln in again["lines"]] == [False, True] and again["lines"][1]["record_id"] == OPTO
+    # Put back: an empty list counts every line.
+    back = pm.predict_position(m, db, OWNERS, set(), ctl, left_out=[])
+    assert len(back["results"]["lines"]) == 2
+    # A position with no parts yet: the preview says so (the pane offers Add a part); saving refuses.
+    bare = m.create_position("Bare")["id"]
+    empty = pm.predict_position(m, db, OWNERS, set(), bare)
+    assert empty["lines"] == [] and empty["results"]["failure_rate_per_hour"] == 0
+    with pytest.raises(Invalid, match="no parts list"):
+        pm.predict_position(m, db, OWNERS, set(), bare, save=True)
+    _same_after_rebuild(m)
+
+
+def test_left_out_lines_over_rest(client):
+    ctl = client.post("/api/maintenance/positions", json={"name": "Controller"}).json()["id"]
+    part = client.post("/api/maintenance/parts", json={"part_number": "C-100", "name": "Capacitor"}).json()
+    listed = client.post(f"/api/maintenance/positions/{ctl}/parts",
+                         json={"part_id": part["id"], "role": "component", "quantity": 3}).json()
+    entry = listed["parts_list"][0]["id"]
+    r = client.post(f"/api/maintenance/positions/{ctl}/prediction",
+                    json={"assign": {"C-100": {"record_id": CAP}}, "left_out": [entry]})
+    assert r.status_code == 200, r.text
+    assert r.json()["lines"][0]["left_out"] and r.json()["results"]["counts"]["left_out"] == 1
+    # Quantity changed on the parts list: the preview follows it.
+    client.patch(f"/api/maintenance/position-parts/{entry}", json={"quantity": 5})
+    r = client.post(f"/api/maintenance/positions/{ctl}/prediction", json={"assign": {"C-100": {"record_id": CAP}}})
+    assert r.json()["lines"][0]["quantity"] == 5 and r.json()["results"]["lines"][0]["quantity"] == 5
+
+
 def test_a_built_items_prediction_follows_its_design(m, db):
     product = m.create_product("Drone", part_number="DR-2")["id"]
     esc = m.create_position("Speed controller", parent_id=product)["id"]

@@ -1066,36 +1066,52 @@ def _line_type(a: dict) -> dict:
     return out
 
 
-def prediction_lines(m, position_id: str, assign: dict | None = None, previous: dict | None = None) -> dict:
-    """The parts-count lines for a position: {lines (each with part_id), source ("parts lists" or
-    "bill of materials"), positions, warnings}. ``assign`` {part id or part number: {record_id,
-    quality_factor} or {rate_per_million_hours} or {excluded: true}} and ``previous`` (the last prediction's, by part number) give part types."""
+def _left_out_keys(left_out) -> set[str]:
+    return {str(k) for k in (left_out or []) if isinstance(k, (str, int)) and str(k)}
+
+
+def prediction_lines(m, position_id: str, assign: dict | None = None, previous: dict | None = None,
+                     left_out=None) -> dict:
+    """The parts-count lines for a position: {lines (each with part_id, and listing_id and
+    position {id, name} when it's on a parts list), source ("parts lists" or "bill of materials"),
+    positions, warnings}. ``assign`` {part id or part number: {record_id, quality_factor} or
+    {rate_per_million_hours} or {excluded: true}} and ``previous`` (the last prediction's, by part
+    number) give part types. ``left_out`` [listing id or part number]: lines left out of this
+    prediction (they stay on the parts list); None takes the last prediction's (``previous``'s
+    ``_left_out``)."""
     from backend.services import reliability_prediction as rp
 
     root = m._get(position_id, "Position")
     previous = previous or {}
-    lines, warnings, n = [], [], 0
+    out_keys = _left_out_keys(previous.get("_left_out") if left_out is None else left_out)
+    lines, warnings, n, branch = [], [], 0, []
     for pid, path in _branch(m, position_id):
         n += 1
+        branch.append({"id": pid, "name": path[-1] if path else root["name"], "depth": len(path)})
+        here = None
         for x in m._listings_at(pid):
             view = m._listing_view(x)
             if view["role"] not in PREDICTION_ROLES:
                 continue
+            here = here or view["position"]
             part = view["part"]
             ref = part.get("part_number") or ""
             a = _assigned(assign, previous, part["id"], ref)
-            lines.append({"part_id": part["id"], "name": part.get("name") or ref or "Part", "reference": ref,
-                          "quantity": view.get("quantity") or 1, "assembly": list(path), **_line_type(a)})
+            lines.append({"part_id": part["id"], "listing_id": view["id"], "position": dict(here), "role": view["role"],
+                          "name": part.get("name") or ref or "Part", "reference": ref,
+                          "quantity": view.get("quantity") or 1, "assembly": list(path), **_line_type(a),
+                          "left_out": view["id"] in out_keys})
     source = "parts lists"
     if not lines and root.get("design"):
         bom = rp.lines_from_product(m, position_id)
         warnings += bom.get("warnings") or []
         for ln in bom.get("lines") or []:
             a = _assigned(assign, previous, None, ln.get("reference"))
-            lines.append({**ln, "part_id": None, **_line_type(a)})
+            lines.append({**ln, "part_id": None, **_line_type(a),
+                          "left_out": bool(ln.get("reference")) and ln.get("reference") in out_keys})
         source = "bill of materials"
     return {"lines": lines, "source": source, "positions": n, "warnings": warnings,
-            "position": {"id": root["id"], "name": root["name"]}}
+            "position": {"id": root["id"], "name": root["name"]}, "branch": branch}
 
 
 def _prediction_links(m, position_id: str) -> list[dict]:
@@ -1127,19 +1143,38 @@ def _previous_types(db, owners, m, position_id: str) -> dict:
     out = {}
     for x in _prediction_links(m, position_id):
         doc = rp.get_prediction(db, (x.get("source") or {}).get("prediction_id") or "", owners)
-        for ln in ((doc.inputs or {}).get("lines") if doc else None) or []:
+        inputs = (doc.inputs or {}) if doc else {}
+        for ln in (inputs.get("lines") or []) + (inputs.get("left_out") or []):
             if ln.get("reference") and (ln.get("record_id") or ln.get("excluded")
                                         or ln.get("rate_per_million_hours") is not None):
                 out[ln["reference"]] = _line_type(ln)
+        # The lines left out of it (by parts-list entry; a bill of materials' by part number).
+        keys = [ln.get("listing_id") or ln.get("reference") for ln in inputs.get("left_out") or []]
+        out["_left_out"] = [k for k in keys if k]
     return out
+
+
+def _no_lines_result(environment: str, mission_time) -> dict:
+    """The result when every line is left out of the prediction: nothing counted."""
+    from backend.services import reliability_prediction as rp
+
+    env = rp.environment_code(environment or rp.DEFAULT_ENVIRONMENT)
+    hours = mission_time if isinstance(mission_time, (int, float)) and mission_time > 0 else rp.DEFAULT_MISSION_HOURS
+    return {"failure_rate_per_million_hours": 0.0, "failure_rate_per_hour": 0.0, "mtbf_hours": None,
+            "reliability_at_mission": None, "mission_time_hours": hours, "lines": [], "excluded": [],
+            "unassigned": [], "warnings": [], "counts": {"lines": 0, "assigned": 0, "unassigned": 0, "excluded": 0},
+            "environment": {"code": env}}
 
 
 def predict_position(m, db, owners, hidden, position_id: str, environment: str | None = None,
                      mission_time=None, assign: dict | None = None, save: bool = False, note: str = "",
-                     replace_link_id: str | None = None, owner_id: str | None = None) -> dict:
+                     replace_link_id: str | None = None, owner_id: str | None = None, left_out=None) -> dict:
     """The parts count for a position: previewed (``save`` false: the lines with their part
     types, the environment and the result), or saved as a prediction and an exponential model and
-    attached (role prediction; an earlier prediction on the position is replaced)."""
+    attached (role prediction; an earlier prediction on the position is replaced). ``left_out``
+    [parts-list entry id or part number]: lines kept on the parts list but left out of this
+    prediction (None: the last prediction's). The result's lines are the counted lines only, in
+    order; the left-out ones are its ``left_out`` and the saved inputs' ``left_out``."""
     from backend.db import to_doc
     from backend.schema import ReliabilityPrediction
     from backend.services import models as models_service
@@ -1150,17 +1185,33 @@ def predict_position(m, db, owners, hidden, position_id: str, environment: str |
     if p.get("retired"):
         raise sv.Invalid(f"{p['name']} has been retired: restore it first.")
     env = environment or default_environment(m, position_id)
-    got = prediction_lines(m, position_id, assign, _previous_types(db, owners, m, position_id))
-    if not got["lines"]:
+    if left_out is not None and not isinstance(left_out, list):
+        raise sv.Invalid("left_out must be a list of parts-list entry ids (or part numbers).")
+    got = prediction_lines(m, position_id, assign, _previous_types(db, owners, m, position_id), left_out)
+    if not got["lines"] and save:
         raise sv.Invalid(f"{p['name']} has no parts list (nor anything inside it): add the parts it's made of to its "
                          "parts list first.")
+    plain = ("part_id", "listing_id", "position", "role", "left_out")
+    counted = [{k: v for k, v in ln.items() if k not in plain} for ln in got["lines"] if not ln["left_out"]]
+    skipped = [ln for ln in got["lines"] if ln["left_out"]]
     raw = {"environment": env, "mission_time": mission_time, "notes": note or "",
-           "lines": [{k: v for k, v in ln.items() if k != "part_id"} for ln in got["lines"]]}
+           "lines": counted or [{"name": "-"}]}
     try:
         inputs = rp.normalise_inputs(raw)
-        results = rp.results_for(inputs)
+        if counted:
+            results = rp.results_for(inputs)
+        else:
+            inputs["lines"] = []
+            results = _no_lines_result(inputs["environment"], inputs["mission_time"])
     except rp.PredictionError as err:
         raise sv.Invalid(str(err)) from None
+    # What was left out, kept with the prediction (so refreshing it leaves them out again).
+    inputs["left_out"] = [{"listing_id": ln.get("listing_id"), "name": ln["name"], "reference": ln.get("reference") or "",
+                           "quantity": ln.get("quantity") or 1, "assembly": list(ln.get("assembly") or []),
+                           **{k: v for k, v in _line_type(ln).items() if v is not None}} for ln in skipped]
+    results["left_out"] = [{"name": ln["name"], "reference": ln.get("reference") or "", "quantity": ln.get("quantity") or 1}
+                           for ln in skipped]
+    results.setdefault("counts", {})["left_out"] = len(skipped)
     preview = {**got, "environment": inputs["environment"], "mission_time": inputs["mission_time"], "results": results}
     if not save:
         return preview

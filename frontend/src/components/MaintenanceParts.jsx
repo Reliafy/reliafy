@@ -246,10 +246,11 @@ export function DocumentsCard({ title = "Documents", documents, target, onChange
   );
 }
 
-export function PositionPicker({ positions, value, onChange, emptyLabel = "None (top level)" }) {
+// emptyLabel null: one must be chosen (no "None").
+export function PositionPicker({ positions, value, onChange, emptyLabel = "None (top level)", ...rest }) {
   return (
-    <select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
-      <option value="">{emptyLabel}</option>
+    <select value={value || ""} onChange={(e) => onChange(e.target.value || null)} {...rest}>
+      {emptyLabel !== null && <option value="">{emptyLabel}</option>}
       {positions.map((p) => (
         <option key={p.id} value={p.id}>{"  ".repeat(p.depth)}{p.name}</option>
       ))}
