@@ -237,11 +237,13 @@ def duration(phases: list) -> float:
 
 
 def summary(graph: dict, mission: dict, results: Optional[dict] = None) -> dict:
-    """A mission as a row of a list: {id, name, own, phases (how many), phase_names, duration, unit,
-    result (its last calculation, while it still holds: reliability, method, complete, at)}."""
+    """A mission as a row of a list: {id, name, own, phases (how many), phase_names, phase_durations
+    (each phase's own length, in the same order), duration (all of them added up), unit, result (its
+    last calculation, while it still holds: reliability, method, complete, at)}."""
     phases = mission.get("phases") or []
     out = {"id": mission["id"], "name": mission["name"], "own": bool(mission.get("own")),
            "phases": len(phases), "phase_names": [p["name"] for p in phases],
+           "phase_durations": [float(p.get("duration") or 0) for p in phases],
            "duration": duration(phases), "unit": (graph or {}).get("unit") or ""}
     got = (results or {}).get(mission["id"])
     if isinstance(got, dict) and got.get("signature") == signature(graph, phases):

@@ -2,7 +2,7 @@
 // Packages tab, and ?tab=packages still opens it): a table of every task on the
 // picked row and below it with what each needs, formatted as the RCM table. A
 // task's row opens its LSA (?task=): add a labour line and a tool and the
-// table's Hours and Tools fill in, and the bar adds up the ticked tasks. Search it (?q=), sort it (a header click, Shift-click for a second
+// table's Labour and Tools fill in, and the bar adds up the ticked tasks. Search it (?q=), sort it (a header click, Shift-click for a second
 // key: ?sort=), tick two tasks and Package selected… makes a package with
 // them: the Package column fills in, and the package's name opens it in the
 // tab. At 400 px the table scrolls inside its card, the action bar shows,
@@ -44,7 +44,7 @@ test("LSA: search and sort the tasks below, tick two and package them", async ({
   await expect.poll(() => query(page).get("tab")).toBe("lsa");
   await expect(rows(page)).toHaveCount(3);
   await expect(panel(page).getByRole("columnheader")).toHaveText(
-    ["", "Position", "Failure mode", "Task", "Kind", "Interval", "Trade", "Next due", "Package", "Hours", "People", "Tools", "Spares",
+    ["", "Position", "Failure mode", "Task", "Kind", "Interval", "Trade", "Next due", "Package", "Labour", "People", "Tools", "Spares",
       "Consumables", "Method"]);
   await expect((await headMenu(page)).locator(".ovm-menu .ovm-item")).toHaveText(["Columns…", "Export CSV", "Package the tasks…", "Add a package…", "Open the full page"]);
   await page.keyboard.press("Escape");
@@ -151,7 +151,7 @@ test("LSA: open a task, add a labour line and a tool, see them in the table and 
   await tools.getByRole("textbox", { name: "Tool, line 1" }).fill("Photometer");
   await panel(page).getByRole("textbox", { name: "Method" }).click(); // leaving Tools saves it
   await expect(tools.getByRole("status")).toContainText("Saved");
-  await expect(panel(page).locator(".lsa-total")).toContainText("0.5 labour hours");
+  await expect(panel(page).locator(".lsa-total")).toContainText("0.5 h labour");
   await shot(page, "lsa-task-desktop");
 
   await panel(page).getByRole("button", { name: "← All tasks here" }).click();
@@ -160,8 +160,8 @@ test("LSA: open a task, add a labour line and a tool, see them in the table and 
   const row = rows(page).filter({ hasText: `Test water ${tag}` });
   const cols = await panel(page).getByRole("columnheader").allTextContents();
   const cell = (name) => row.getByRole("cell").nth(cols.findIndex((c) => c.startsWith(name)));
-  await expect(cell("Hours")).toHaveText("0.5");
-  await expect(cell("Tools")).toHaveText("1");
+  await expect(cell("Labour")).toContainText("0.5 h");
+  await expect(cell("Tools")).toHaveText("Photometer");
   await panel(page).getByRole("checkbox", { name: `Tick Test water ${tag}` }).check();
   const bar = panel(page).getByRole("region", { name: "Selected tasks" });
   await expect(bar.getByRole("group", { name: "To bring" })).toContainText("0.5 h (Pool technician 0.5 h)");
@@ -221,7 +221,7 @@ test("a product's design has the LSA: what each task needs, added up; packaging 
   await expect(rows(page)).toHaveCount(1);
   // The asset's table less ticks, Next due and Package; the heading's "…" less packaging.
   await expect(panel(page).getByRole("columnheader")).toHaveText(
-    ["Position", "Failure mode", "Task", "Kind", "Interval", "Trade", "Hours", "People", "Tools", "Spares", "Consumables", "Method"]);
+    ["Position", "Failure mode", "Task", "Kind", "Interval", "Trade", "Labour", "People", "Tools", "Spares", "Consumables", "Method"]);
   await expect(panel(page).getByRole("checkbox")).toHaveCount(0);
   await expect((await headMenu(page)).locator(".ovm-menu .ovm-item")).toHaveText(["Columns…", "Export CSV", "Open the full page"]);
   await page.keyboard.press("Escape");

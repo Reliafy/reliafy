@@ -25,6 +25,9 @@
 .pk-name-input { width: 100%; min-width: 0; box-sizing: border-box; }
 .pk-warn { display: block; color: var(--warning, inherit); }
 .pk-left-out { margin-top: 8px; font-size: 13px; }
+/* Package the tasks, in the panel: the heading, then the same fields the drafts need, the two buttons last. */
+.pk-packaging .pk-view-name { margin: 0 0 6px; }
+.pk-packaging-foot { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .pk-check { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; }
 .pk-pick { max-height: 280px; overflow-y: auto; margin-bottom: 8px; }
 

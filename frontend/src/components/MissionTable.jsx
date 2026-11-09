@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { listPositionMissions } from "../api.js";
 import Chip from "./ui/Chip.jsx";
-import { completesText, isPhaseRow, lengthText, phaseOfText, phasesText } from "../explorerMissions.js";
+import { completesText, isPhaseRow, lengthText, phaseLengthText, phaseOfText, phasesText } from "../explorerMissions.js";
 
 // The Explorer's Missions tab is the tree with each position's missions in it
 // (explorerMissions.js), like the Modelling tab: the read of every position's RBD missions, each
@@ -19,12 +19,15 @@ export function useTreeMissions({ on }) {
   return { links: state.links, error: state.error, load };
 }
 
-// One cell of a mission row (r.ref: {mission, rbd}); a phase row (r.ref.phase: {index, of}) has
-// its place in the mission under Phases and nothing else (the list read has no phase's own length
-// or chance: they're in the mission, opened).
+// One cell of a mission row (r.ref: {mission, rbd}); a phase row (r.ref.phase: {index, of,
+// duration}) has its place in the mission under Phases and its own length under Length, in the
+// mission's unit (the mission's row has their total). A phase's own chance is in the mission, opened.
 export function MissionCell({ r, col }) {
   if (isPhaseRow(r)) {
-    return col.id === "phases" ? <span className="ml-src">{phaseOfText(r.ref.phase)}</span> : null;
+    if (col.id === "phases") return <span className="ml-src">{phaseOfText(r.ref.phase)}</span>;
+    if (col.id !== "duration") return null;
+    const text = phaseLengthText(r.ref.phase, r.ref.mission.unit);
+    return text ? <span className="ml-num">{text}</span> : <span className="rw-blank">—</span>;
   }
   const m = r.ref.mission;
   switch (col.id) {
@@ -48,7 +51,7 @@ export function MissionCell({ r, col }) {
 
 // A row's second line on a phone.
 export function missionPhoneRow(r, rollup) {
-  if (isPhaseRow(r)) return { line: phaseOfText(r.ref.phase), status: null };
+  if (isPhaseRow(r)) return { line: [phaseOfText(r.ref.phase), phaseLengthText(r.ref.phase, r.ref.mission.unit)].filter(Boolean).join(" · "), status: null };
   if (r.type !== "mission") return { line: rollup || "", status: null };
   const m = r.ref.mission;
   const done = m.result?.reliability != null;

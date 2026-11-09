@@ -309,7 +309,9 @@ Environment covariate once for every bound block it feeds in that phase,
 block whose covariates change from phase to phase carries its age into the
 next. `GET /api/maintenance/position-missions?position_ids=` lists each
 position's RBDs and their missions (a position has its own RBDs' missions,
-never a parent's). On an RBD: `GET /api/rbds/{id}/missions`, `POST
+never a parent's). A mission in a list is `{id, name, phases` (how many)`,
+phase_names, phase_durations` (each phase's own length, in the same
+order)`, duration` (the whole mission)`, unit, result?}`. On an RBD: `GET /api/rbds/{id}/missions`, `POST
 /api/rbds/{id}/missions {name?, phases?}`, `GET|PUT|DELETE
 /api/rbds/{id}/missions/{mission}` (`PUT {name?, phases?,
 expected_updated_at?}`; `GET` adds the blocks, vote nodes and every open

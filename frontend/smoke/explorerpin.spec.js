@@ -189,7 +189,7 @@ test("the RCM tab with a pin: the one table shows only the branch, its rows' men
   // A function's menu (with the mouse: Move to…, no Move up / down, a drag does them; Isolate before Delete).
   await trow(`^Function: Pump water ${tag}`).locator(".tt-tree").click({ button: "right" });
   await expect(rowMenu(page, `Function: Pump water ${tag}`).getByRole("menuitem"))
-    .toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Focus", "Focus on incomplete rows", "Delete function…"]);
+    .toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Edit description", "Move to…", "Focus", "Focus on incomplete rows", "Delete function…"]);
   await page.keyboard.press("Escape");
   await trow(`^Works pump A ${tag}`).locator(".tt-tree").click();
   await shot(page, "3-pinned-rcm-tab");

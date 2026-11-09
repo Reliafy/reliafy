@@ -106,8 +106,11 @@ The **Package** column fills in at once. Tasks counted by use (run hours) and
 rounds stay on their own, so their boxes can't be ticked; tasks already in a
 package stay where they are.
 
-To let Reliafy draft the packages for you, choose **Package the tasks…** from
-**More actions (…)**. It groups every task here that isn't in a package by
+To let Reliafy draft the packages for you, right-click the row in the tree (or
+press its **⋯**) and choose **Package the tasks here…**, the first item on
+this tab. **Package the tasks…** in **More actions (…)** does the same for the
+row you're on. The drafts open in the tab, in place of the table (**← All
+tasks here** goes back). It groups every task here that isn't in a package by
 how often it's due and by trade: the weekly ones visit on the day you pick,
 and monthly and longer ones become layers on those visits (the first of that
 day in the month). Untick or rename the drafts, then **Make** them, all together

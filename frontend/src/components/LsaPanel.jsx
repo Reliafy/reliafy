@@ -4,7 +4,7 @@ import {
   addPackageTask, changePackage, createPackage, createPackages, getPackage, getTaskTable, listPackages, proposePackages,
   removePackageTask,
 } from "../api.js";
-import { Field, FormModal, fmtDate } from "./MaintenanceParts.jsx";
+import { Field, FormModal, fmtDate, useSendOnce } from "./MaintenanceParts.jsx";
 import Chip from "./ui/Chip.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
 import { ShowMe } from "./SectionPage.jsx";
@@ -42,7 +42,10 @@ import "./LsaPanel.css";
 // their intervals) and Add to a package… (one already on this tree). A
 // package's name opens it in the same tab (?package=, with a back link): its
 // tasks, layers and ⋯ (Pause…, Resume, Retire…, Add tasks…). "Package the
-// tasks…" in the heading's "…" drafts packages from every loose task here.
+// tasks…" in the heading's "…" drafts packages from every loose task here, as
+// does "Package the tasks here…" on a row's own menu in the tree (it leads the
+// menu on this tab: treeRowMenu.js lsaLead); the drafts open in the tab too
+// (?packaging=<the row>, with a back link), never a dialog.
 //
 // On a product's design (Derryn, 9 Nov 2026: a design's maintenance programme
 // and its logistic support are design outputs) the table is the same, less
@@ -53,7 +56,8 @@ import "./LsaPanel.css";
 
 const HELP = { guide: "lsa" };
 
-// ?package= (a package open) or ?task= (a task's LSA open), kept in the address.
+// ?package= (a package open), ?task= (a task's LSA open) or ?packaging= (the
+// row whose tasks are being packaged), kept in the address.
 function useOpenParam(name) {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -122,7 +126,9 @@ function WhenCell({ pkg }) {
 
 // Package the tasks…: drafts from the tasks here and below in no package, the
 // longer cadences as layers on the shortest, visiting on the weekday picked.
-export function PackageTasksDialog({ scope, where, onClose, onDone }) {
+// Drawn in the panel beside the tree, in place of the task table (never a
+// dialog): the heading's "…" and the row's own menu on this tab both open it.
+export function PackageTasks({ scope, where, onBack, onDone }) {
   const [weekday, setWeekday] = useState(DEFAULT_VISIT_DAY);
   const [tolerance, setTolerance] = useState(String(DEFAULT_TOLERANCE_DAYS));
   const [state, setState] = useState({ weekday: null, data: null, error: null });
@@ -137,13 +143,15 @@ export function PackageTasksDialog({ scope, where, onClose, onDone }) {
   const data = state.weekday === weekday ? state.data : null;
   const problem = data ? proposalProblem(rows) : "Loading…";
   const leftOut = data?.left_out || [];
-  const submit = async () => {
+  const can = !!data && !proposalProblem(rows);
+  const send = useSendOnce(async () => {
     const out = await createPackages(proposalBatch(rows, { tolerance }));
     onDone(`Made ${plural(out.created.length, "package")}.`);
-  };
+  }, can);
   return (
-    <FormModal title="Package the tasks" submitLabel={data && rows.some((r) => r.ticked) ? `Make ${plural(rows.filter((r) => r.ticked).length, "package")}` : "Make packages"}
-               pendingLabel="Making…" canSubmit={!!data && !proposalProblem(rows)} onClose={onClose} onSubmit={submit}>
+    <div className="pk-view pk-packaging" role="region" aria-label="Package the tasks">
+      <button type="button" className="link pk-back" onClick={onBack} disabled={send.busy}>← All tasks here</button>
+      <h3 className="pk-view-name">Package the tasks</h3>
       <p className="lib-date">
         Groups the tasks {where} that aren&apos;t in a package by how often they&apos;re due and by trade, so each visit raises
         one work order. The longer ones go on some of the visits (the first {dayName(weekday)} of the month for a monthly task).
@@ -190,7 +198,14 @@ export function PackageTasksDialog({ scope, where, onClose, onDone }) {
         </details>
       )}
       {data && rows.length > 0 && problem && <p className="lib-date" role="alert">{problem}</p>}
-    </FormModal>
+      {send.error && <div className="card error">{send.error}</div>}
+      <div className="pk-packaging-foot">
+        <button type="button" onClick={send.submit} disabled={send.busy || !can} aria-busy={send.busy || undefined}>
+          {send.busy ? "Making…" : data && rows.some((r) => r.ticked) ? `Make ${plural(rows.filter((r) => r.ticked).length, "package")}` : "Make packages"}
+        </button>
+        <button type="button" className="secondary" onClick={onBack} disabled={send.busy}>Cancel</button>
+      </div>
+    </div>
   );
 }
 
@@ -574,6 +589,8 @@ const TICK_W = 36;
 export default function LsaPanel({ row, today, onMenu = null }) {
   const open = useOpenParam("package");
   const taskOpen = useOpenParam("task");
+  // The row whose tasks are being packaged: only this row's (another row picked shows its table).
+  const packaging = useOpenParam("packaging");
   const tq = useTableQuery();
   const scope = useMemo(() => packageScope(row), [row]);
   const [state, setState] = useState({ key: null, data: null, error: null });
@@ -624,11 +641,20 @@ export default function LsaPanel({ row, today, onMenu = null }) {
     { id: "lsa-csv", label: "Export CSV", disabled: !all?.length, title: all?.length ? "The table with every column, for Excel" : "No tasks to export",
       onSelect: () => saveText(lsaCsv(shown || all), exportFilename(row.ref.name, { what: "LSA" })) },
     ...(design ? [] : [
-      { id: "pkg-propose", label: "Package the tasks…", onSelect: () => setModal("propose"), title: "Drafts packages from every task here not in one, by how often and by trade" },
+      { id: "pkg-propose", label: "Package the tasks…", onSelect: () => packaging.setOpen(row.key), title: "Drafts packages from every task here not in one, by how often and by trade" },
       { id: "pkg-new", label: "Add a package…", onSelect: () => setModal("new") },
     ]),
   ]);
   if (!scope) return null;
+  const done = (text) => { setModal(null); setSaid(text); setPicked(new Set()); refresh(); };
+  if (packaging.open === row.key && !design) {
+    return (
+      <div className="td-tab-page pk-panel">
+        <PackageTasks scope={scope} where={`${where} and below`} onBack={() => packaging.setOpen(null)}
+                      onDone={(text) => { packaging.setOpen(null); done(text); }} />
+      </div>
+    );
+  }
   if (taskOpen.open) {
     return (
       <div className="td-tab-page pk-panel">
@@ -645,7 +671,6 @@ export default function LsaPanel({ row, today, onMenu = null }) {
   }
   const tick = shown ? tickState(shown.filter((t) => !t.why_not), picked) : "none";
   const flip = (id) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const done = (text) => { setModal(null); setSaid(text); setPicked(new Set()); refresh(); };
   const free = chosen.filter((t) => !t.package && !t.why_not);
   const inOne = chosen.filter((t) => t.package);
   return (
@@ -748,9 +773,6 @@ export default function LsaPanel({ row, today, onMenu = null }) {
         <AddPackageDialog scope={scope} where={where} tasks={free} onClose={() => setModal(null)} onDone={(text) => done(text)} />
       )}
       {modal === "add-to" && <AddToPackageDialog scope={scope} tasks={free} onClose={() => setModal(null)} onDone={done} />}
-      {modal === "propose" && (
-        <PackageTasksDialog scope={scope} where={`${where} and below`} onClose={() => setModal(null)} onDone={done} />
-      )}
       {modal === "new" && (
         <AddPackageDialog scope={scope} where={where} onClose={() => setModal(null)}
                           onDone={(text, id) => { done(text); open.setOpen(id); }} />

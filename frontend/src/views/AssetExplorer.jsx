@@ -74,7 +74,7 @@ import { saveErrorText } from "../confirm.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
 import { hasOpenLayer, isFullScreenKey, isTyping } from "../fullScreen.js";
-import { rowKind, shownTab, tabParam, tabsFor } from "../explorerTabs.js";
+import { isDesignRow, rowKind, shownTab, tabParam, tabsFor } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { openGuide } from "../components/HelpButton.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
@@ -88,7 +88,7 @@ import {
 import { keepLevel } from "../outlineTree.js";
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL, EXPLORER_PATH } from "../navigation.js";
-import { TAB_LEADS, addsFirst, isolateItems, leadWith, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
+import { addsFirst, isolateItems, liveKids, lsaLead, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withPin } from "../treeRowMenu.js";
 import { canIsolate, depthWords, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen, levelsBelow } from "../treeIsolate.js";
 import { removeTaskFromMode } from "../components/RcmModeTasks.jsx";
 import { MoveModal, RenameModal } from "../components/TreeRowModals.jsx";
@@ -523,6 +523,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setQuery_((q) => {
       q.set("sel", selPos);
       q.delete("report");
+      // The packaging open in the LSA tab was the last row's as well.
+      if (q.get("packaging") !== selPos) q.delete("packaging");
       for (const k of VIEW_PARAMS) q.delete(k);
       for (const k of PANE_PARAMS) if (q.get(k) && q.get(k) !== selPos) q.delete(k);
     });
@@ -663,6 +665,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (toTable) q.set("arrange", "positions");
       // The report open in the Failure reports tab goes with the tab.
       if (t !== "reports") q.delete("report");
+      // And the packaging open in the LSA tab.
+      if (t !== "lsa") q.delete("packaging");
       // So does a point or channel open in full in the Measurements tab.
       if (t !== "measurements") for (const k of VIEW_PARAMS) q.delete(k);
     });
@@ -1406,11 +1410,33 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (id === "mission-build-rbd") return buildRbd(position);
     return undefined;
   };
+  // The LSA tab's Package the tasks here…: the row picked, and its drafts open in the panel beside
+  // the tree (?packaging=<the row>, read by LsaPanel; a task or a package open there closes). On a
+  // phone the panel is its own screen, so Back returns to the tree.
+  const packageAt = (r) => {
+    setRcmFocus(null);
+    setSelected((s) => ({ ...s, [mode]: r.key }));
+    const q = new URLSearchParams(params);
+    q.set("sel", r.key);
+    q.set("packaging", r.key);
+    q.delete("task");
+    q.delete("package");
+    navigate(`${location.pathname}?${q}${location.hash}`, phone ? { state: { treeDetail: r.key } } : { replace: true, state: location.state });
+  };
   const rowMenu = {
     // The moves a drag does: on a phone, or from the keyboard (no dragging there).
     actions: (r, { keyboard = false } = {}) => {
-      // The plain tree's tabs: the Summary menu; on a tab with adds of its own (Failure reports), those first.
-      if (!tableOn) return withPin(leadWith(designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), TAB_LEADS[tab] || []), [...isolateItem(r), ...pinItem(r)]);
+      // The plain tree's tabs: the Summary menu; on a tab with something of its own for the row (Failure
+      // reports' add, the LSA tab's Package the tasks here…), that first; on one with nothing for it, the
+      // changes to the tree go after Focus and Pin (treeRowMenu.js tabMenu). A row the tab doesn't have
+      // (an item on the LSA tab) shows Summary, so it gets the Summary menu.
+      if (!tableOn) {
+        const at = shownTab(tab, r);
+        return menuOnTab(at, designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), {
+          lead: at === "lsa" ? lsaLead(r, { design: isDesignRow(r), viewOnly }) : [],
+          pin: [...isolateItem(r), ...pinItem(r)],
+        });
+      }
       // The Measurements tab: a measurement row's own (Open, Record…, Edit…, Move…, Retire…);
       // a position's: its adds (a measuring point, a setting, a consumable, a sensor channel), a
       // line, then the Summary menu, with isolating and pinning.
@@ -1452,6 +1478,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (id.startsWith("model-attach-") || id === "model-refresh-predict") return attachAt(r.key, id);
       if (id.startsWith("model-")) return modelAction(r, id);
       if (id.startsWith("mission-")) return missionAction(r, id);
+      if (id === "lsa-package") return packageAt(r);
       if (id === "tree-new") {
         setNewParent(r.key);
         setModal(r.type === "loc" ? "location" : "position");
@@ -2371,7 +2398,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // Inside a pinned branch, or one tree on show (a product's structure, an
   // item's tree), it goes inside that branch's top instead.
   const addRow = (() => {
-    if (!data || nothing) return null;
+    if (!data || nothing || !showsAddRow(tab)) return null; // the Summary tab only, as New … inside in a row's menu
     const kind = mode === "locations" ? "location" : "position";
     const top = pinKey || root;
     let parent = TOP;
