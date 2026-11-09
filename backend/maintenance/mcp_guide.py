@@ -443,7 +443,9 @@ or attach unasked: say what the data supports first (failures, suspensions, the 
 history; both: its own history with the class's other positions' history as the prior) and method (mle: a plain \
 fit, 95% confidence bounds; bayes: with a prior, 90% credible intervals). The prior: {kind: class} (the class's \
 history as a power prior, SurPyval's prior.from_data: trust close counts all of its evidence, guide half, start a \
-fifth), {kind: model, model_id}, {kind: params, distribution, params, unit} or {kind: b10, ...}. The class can't \
+fifth), {kind: model, model_id}, {kind: params, distribution, params, unit}, {kind: around, distribution, unit, \
+params: {alpha: {about: 4, between: [3, 6]}, beta: {between: [1.5, 3]}}} (90% between the bounds; a parameter left \
+out is the data's) or {kind: b10, ...}. The class can't \
 be both the data and the prior. Say which data and method when quoting it, with confidence or credible as the \
 result says. With one failure a plain Weibull fit refuses: use a prior, or exponential.
 - One or two failures and a baseline the user trusts: models.link with fit true and baseline ({model_id}, \

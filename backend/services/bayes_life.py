@@ -354,7 +354,9 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None,
     result["moved"] = _moved(base, post, rows, unit)
     u = _unit_word(unit)
     b = result["b10"]
-    result["words"] = (f"{result['moved']} Starting from {base['name']} ({t['label'].lower() if base['source'] != 'update' else 'its earlier prior'}), "
+    how = ("its earlier prior" if base["source"] == "update" else "as stated" if base["source"] in ("around", "belief")
+           else t["label"].lower())
+    result["words"] = (f"{result['moved']} Starting from {base['name']} ({how}), "
                        f"the position's best B10 is about {num(b['point'])}{(' ' + u) if u else ''}: there's a "
                        f"{LEVEL:.0%} chance it lies between {num(b['lower'])} and {num(b['upper'])}.")
     return model, result, priors

@@ -132,3 +132,29 @@ def test_a_refusal_still_carries_the_history(m, db):
     plain = fit_life.fit(m, db, OWNERS, set(), new, data="class", method="mle", age=300)
     assert plain["plot"]["scatter"]["x"] and 0 < plain["at_age"]["reliability"] < 1
     assert plain["at_age"]["lower"] < plain["at_age"]["reliability"] < plain["at_age"]["upper"]
+
+
+def test_a_prior_around_a_value_between_two_bounds(m, db):
+    new = _plant(m)
+    prior = {"kind": "around", "distribution": "weibull", "unit": "days",
+             "params": {"alpha": {"about": 400, "between": [300, 600]}, "beta": {"between": [1.5, 4]}}}
+    got = fit_life.fit(m, db, OWNERS, set(), new, data="position", method="bayes", prior=prior)
+    assert got["baseline"]["name"] == "alpha about 400, 90% between 300 and 600; beta 90% between 1.5 and 4"
+    assert "(as stated)" in got["words"] and got["interval_label"] == "90% credible interval"
+    # The same as SurPyval directly.
+    own = m.life_data(new)
+    direct = sp.Weibull.fit_bayes(np.array([r["x"] for r in own], float), c=np.array([r["c"] for r in own]),
+                                  priors={"alpha": sp.prior.around(400, between=(300, 600)), "beta": sp.prior.between(1.5, 4)})
+    assert next(p["median"] for p in got["posterior"] if p["name"] == "alpha") == pytest.approx(direct.params[0], rel=0.01)
+    # An exponential by its mean life.
+    exp = fit_life.fit(m, db, OWNERS, set(), new, method="bayes",
+                       prior={"kind": "around", "distribution": "exponential", "unit": "days",
+                              "params": {"mean": {"about": 400, "between": [200, 800]}}})
+    assert "the mean life about 400" in exp["baseline"]["name"]
+    for bad, words in (({"alpha": {"between": [600, 300]}}, "low bound must be below"),
+                       ({"alpha": {"about": 900, "between": [300, 600]}}, "must lie between the bounds"),
+                       ({}, "at least one parameter"), ({"gamma": {"between": [1, 2]}}, "takes alpha, beta")):
+        with pytest.raises(Invalid, match=words):
+            fit_life.fit(m, db, OWNERS, set(), new, method="bayes", prior={"kind": "around", "params": bad})
+    saved = fit_life.fit(m, db, OWNERS, set(), new, method="bayes", prior=prior, save=True)
+    assert saved["role"] == "bayesian"

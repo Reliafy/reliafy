@@ -9,6 +9,11 @@
   `POST /api/v1/maintenance/models.link` and `models.unlink`; the CLI has
   `reliafy maintenance models.link` and `models.unlink`.
 
+- **A prior around a value, between two bounds**: the fit's `prior` takes
+  `{kind: "around", distribution, unit, params: {alpha: {about: 4, between:
+  [3, 6]}, beta: {between: [1.5, 3]}}}` (an exponential's as `mean` or
+  `failure_rate`).
+
 - **Fit a life model**: `maintenance models.link` with `fit` takes `data`
   (`position`, `class`, `both`), `method` (`mle`, `bayes`) and `prior`
   (`{kind: class | model | params | b10, ...}`; the class's history is a power

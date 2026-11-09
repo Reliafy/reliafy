@@ -35,3 +35,8 @@
   .fit2-in, .fit2-out { overflow: visible; }
   .fit2-grid.rw-sg { grid-template-columns: minmax(0, 1fr); }
 }
+.fit2-around { display: flex; flex-direction: column; gap: 4px; }
+.fit2-around-head, .fit2-around-row { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)); gap: 6px; align-items: center; }
+.fit2-around-head { font-size: var(--fs-12); color: var(--muted); }
+.fit2-around-name { font-size: var(--fs-13); }
+.fit2-around .field-select, .fit2-around select { max-width: 10rem; }

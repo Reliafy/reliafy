@@ -11,8 +11,8 @@ import { ACCENT, BAND_FILL, MUTED } from "../plotTheme.js";
 import { saveErrorText } from "../confirm.js";
 import { TRUST_CHOICES } from "../bayesUpdate.js";
 import {
-  DATA_CHIPS, METHOD_CHOICES, METHOD_LINE, bodyOf, countsWords, effective, forWords, historyRow, previewKey, priorChoices, problem,
-  refusalSwitch,
+  AROUND_PARAMS, METHOD_CHOICES, METHOD_LINE, bodyOf, countsWords, dataOptions, effective, forWords, historyRow, previewKey,
+  priorChoices, problem, refusalSwitch, showsTrust,
 } from "../fitDialog.js";
 import { fmt } from "../explorerModels.js";
 import "./RcmWorksheet.css";
@@ -79,7 +79,7 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
   const modes = useModes(position.id);
   const [state, setState] = useState(() => ({
     data: start.data || "position", method: start.method || "mle", priorKind: start.priorKind || "class",
-    modelId: start.modelId || null, distribution: "weibull", trust: "guide", unit: "hours", params: {}, b10: {}, shape: {},
+    modelId: start.modelId || null, distribution: "weibull", trust: "guide", unit: "hours", params: {}, b10: {}, shape: {}, around: {},
     modes: (link?.failure_modes || []).map((f) => f.id), exclude: new Set(), age: "",
   }));
   const set = (k, v) => setState((s) => ({ ...s, [k]: v }));
@@ -129,10 +129,15 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
   };
   const d = preview.data;
   const ctx = d || preview.refused; // the history and counts come with a refusal too
+  // The Data dropdown's counts: this position's, remembered from whichever preview last read them.
+  const [positionCounts, setPositionCounts] = useState(null);
+  useEffect(() => {
+    if (ctx?.counts && ctx.data !== "class") setPositionCounts(ctx.counts);
+  }, [ctx?.counts, ctx?.data]);
   const u = (ctx?.unit || "").toLowerCase();
   const cls = ctx?.class_history;
   const bayes = eff.method === "bayes";
-  const showDist = !bayes || eff.priorKind === "class";
+  const showDist = !bayes || eff.priorKind === "class" || eff.priorKind === "around";
   const rows = ctx?.rows || [];
   const toggle = (id) => setState((s) => {
     const next = new Set(s.exclude);
@@ -149,8 +154,10 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
         <section className="fit2-in" aria-label="What to fit">
           <div className="rw-sg rw-steps-first fit2-grid">
             <Step label="Data">
-              <ChoiceChips label="Data" className="sm" value={state.data} onChange={(v) => v && set("data", v)}
-                           options={DATA_CHIPS.filter((c) => c.value === "position" || position.position_class)} />
+              <Select aria-label="Data" value={state.data} onChange={(e) => set("data", e.target.value)}>
+                {dataOptions({ positionCounts, cls: ctx?.class_history, hasClass: !!position.position_class })
+                  .map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
               <p className="fit2-sum">
                 {state.data === "class" && cls ? `${cls.positions} positions of ${cls.name}: ${countsWords(cls)}`
                   : ctx?.counts ? countsWords(ctx.counts) : "…"}
@@ -184,11 +191,30 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
             {bayes && (
               <Step label="Prior">
                 {state.data !== "both" && (
-                  <ChoiceChips label="Prior" className="sm" value={eff.priorKind} onChange={(v) => v && set("priorKind", v)}
-                               options={priorChoices(state.data).filter((p) => p.value !== "class" || position.position_class)} />
+                  <Select aria-label="Prior" value={eff.priorKind} onChange={(e) => set("priorKind", e.target.value)}>
+                    {priorChoices(state.data).filter((p) => p.value !== "class" || position.position_class)
+                      .map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                  </Select>
                 )}
-                <ChoiceChips label="How much to trust the prior" className="sm" value={state.trust} onChange={(v) => v && set("trust", v)}
-                             options={TRUST_CHOICES.map((t) => ({ value: t.value, label: t.label }))} />
+                {showsTrust(eff.priorKind) && (
+                  <ChoiceChips label="How much to trust the prior" className="sm" value={state.trust} onChange={(v) => v && set("trust", v)}
+                               options={TRUST_CHOICES.map((t) => ({ value: t.value, label: t.label }))} />
+                )}
+                {eff.priorKind === "around" && (
+                  <div className="fit2-around" role="group" aria-label="Around a value, between two bounds">
+                    <div className="fit2-around-head" aria-hidden="true"><span /><span>about</span><span>between</span><span>and</span></div>
+                    {AROUND_PARAMS[state.distribution === "best" ? "weibull" : state.distribution].map(([k, label]) => (
+                      <div key={k} className="fit2-around-row">
+                        <span className="fit2-around-name">{label}</span>
+                        {[["about", "about"], ["lo", "between"], ["hi", "and"]].map(([f, word]) => (
+                          <TextInput key={f} inputMode="decimal" aria-label={`${label} ${word}`} value={state.around[k]?.[f] || ""}
+                                     onChange={(e) => set("around", { ...state.around, [k]: { ...(state.around[k] || {}), [f]: e.target.value } })} />
+                        ))}
+                      </div>
+                    ))}
+                    <Select aria-label="Unit" value={state.unit} onChange={(e) => set("unit", e.target.value)}>{UNITS.map((x) => <option key={x} value={x}>{x}</option>)}</Select>
+                  </div>
+                )}
                 {eff.priorKind === "model" && (
                   <Select aria-label="Prior model" value={state.modelId || ""} onChange={(e) => set("modelId", e.target.value || null)}>
                     <option value="">{models === null ? "Loading models…" : "Pick a Weibull, exponential or lognormal model"}</option>

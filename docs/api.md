@@ -282,7 +282,10 @@ a plain fit with 95% confidence bounds; `bayes`: with a `prior`, 90% credible
 intervals) is "Fit a life model…": `prior` is `{kind: class}` (the class's
 history as a power prior, SurPyval's `prior.from_data`, weighed by `trust`:
 `close` all of its evidence, `guide` half, `start` a fifth), `{kind: model,
-model_id}`, `{kind: params, distribution, params, unit}` or `{kind: b10, …}`.
+model_id}`, `{kind: params, distribution, params, unit}`, `{kind: around,
+distribution, unit, params: {alpha: {about: 4, between: [3, 6]}, beta:
+{between: [1.5, 3]}}}` (90% between the bounds, "about" optional; a parameter
+left out is the data's) or `{kind: b10, …}`.
 The class can't be both the data and the prior. The app previews with
 `POST /api/maintenance/positions/{id}/fit-preview` (a refusal comes back as
 `{refused: words}`). `analyse bayes_update` takes `baseline:
