@@ -11,7 +11,7 @@ import { ShowMe } from "./SectionPage.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import {
-  DEFAULT_TASK_COLUMNS, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, cellText, countTitle, dayName, daysLate, freeTasks,
+  DEFAULT_TASK_COLUMNS, DEFAULT_TOLERANCE_DAYS, DEFAULT_VISIT_DAY, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, cellText, countTitle, dayName, daysLate, freeTasks,
   kindText, lateText, lsaColumns, lsaCsv, lsaRollup, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows,
   renameRow, rollupLines, searchTasks, sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
 } from "../lsaTab.js";
@@ -123,8 +123,8 @@ function WhenCell({ pkg }) {
 // Package the tasks…: drafts from the tasks here and below in no package, the
 // longer cadences as layers on the shortest, visiting on the weekday picked.
 export function PackageTasksDialog({ scope, where, onClose, onDone }) {
-  const [weekday, setWeekday] = useState("saturday");
-  const [tolerance, setTolerance] = useState("1");
+  const [weekday, setWeekday] = useState(DEFAULT_VISIT_DAY);
+  const [tolerance, setTolerance] = useState(String(DEFAULT_TOLERANCE_DAYS));
   const [state, setState] = useState({ weekday: null, data: null, error: null });
   const [rows, setRows] = useState([]);
   useEffect(() => {
@@ -207,10 +207,10 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
   const [timing, setTiming] = useState("fixed");
   const [every, setEvery] = useState(String(start.every));
   const [unit, setUnit] = useState(start.unit);
-  const [weekday, setWeekday] = useState("saturday");
+  const [weekday, setWeekday] = useState(DEFAULT_VISIT_DAY);
   const [nth, setNth] = useState("1");
   const [trade, setTrade] = useState(trades.length === 1 ? trades[0] : "");
-  const [tolerance, setTolerance] = useState("1");
+  const [tolerance, setTolerance] = useState(String(DEFAULT_TOLERANCE_DAYS));
   const patterned = timing === "fixed" && (unit === "weeks" || unit === "months");
   const n = Number(every);
   const ok = name.trim() && Number.isInteger(n) && n >= 1;
@@ -232,10 +232,10 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
           ? <>A package {where}, done on one visit: {tasks.map((t) => t.name).join(", ")}.{start.mixed ? " Their intervals differ: the visit goes by the one below, and each task is done on every visit." : ""}</>
           : <>A package {where}: the tasks done together on one visit. Add its tasks after.</>}
       </p>
-      <Field label="Name" text={name}><input autoFocus value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder="e.g. Pool weekly check" /></Field>
+      <Field label="Name" text={name}><input autoFocus value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder="e.g. Weekly inspection" /></Field>
       <Field label="Dates">
         <select value={timing} onChange={(e) => setTiming(e.target.value)}>
-          <option value="fixed">Set dates (every Saturday)</option>
+          <option value="fixed">{unit === "weeks" ? `Set dates (every ${dayName(weekday)})` : "Set dates"}</option>
           <option value="from_last_visit">Counted from the last visit</option>
         </select>
       </Field>
@@ -273,7 +273,7 @@ function PauseDialog({ pkg, onClose, onDone }) {
     <FormModal title={`Pause ${pkg.name}`} submitLabel="Pause" canSubmit={!!reason.trim()} onClose={onClose}
                onSubmit={async () => onDone(await changePackage(pkg.id, "pause", { reason: reason.trim(), until: until || null, full_visit: full }), "Paused.")}>
       <p className="lib-date">While it&apos;s paused it raises no work orders and its tasks aren&apos;t overdue. It comes back by itself on the return date.</p>
-      <Field label="Why" text={reason}><input autoFocus value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Pool drained for resurfacing" /></Field>
+      <Field label="Why" text={reason}><input autoFocus value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Plant shut down for overhaul" /></Field>
       <Field label="Back on (leave blank if not known)"><input type="date" value={until} onChange={(e) => setUntil(e.target.value)} /></Field>
       <label className="pk-check"><input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} /> The first visit back does everything missed while paused</label>
     </FormModal>
@@ -676,7 +676,7 @@ export default function LsaPanel({ row, today, onMenu = null }) {
         <div className="card empty pk-empty">
           <p>{design ? "No tasks in the design here or below yet. Decide the failure modes on the RCM tab: their tasks show here, to say what each needs."
             : "No tasks here or below yet. Decide the failure modes on the RCM tab: their tasks show here to package."}</p>
-          <p className="section-empty-more"><ShowMe help={HELP}>How work packages work</ShowMe></p>
+          <p className="section-empty-more"><ShowMe help={HELP}>Say what each task needs, and package tasks into visits</ShowMe></p>
         </div>
       ) : shown && (
         <div className="maint-scroll rw-grid pk-grid">

@@ -138,6 +138,10 @@ def test_task_table_and_lsa_page_carry_the_record(m):
     m.set_task_resources(clean["id"], {"labour": [{"trade": "Fitter", "people": 1, "hours": 2}]})
     row = next(r for r in m.task_table(position_id=pool["id"])["tasks"] if r["id"] == clean["id"])
     assert row["resources"]["labour_hours"] == 2
+    assert row["instructions"] == ""  # always there, for the LSA CSV's Instructions column
+    m.update_task(clean["id"], instructions="Isolate the supply, then lift the cell out.")
+    row = next(r for r in m.task_table(position_id=pool["id"])["tasks"] if r["id"] == clean["id"])
+    assert row["instructions"] == "Isolate the supply, then lift the cell out."
     page = m.task_lsa(test["id"])  # on the pool: the points and parts inside it too
     assert page["task"]["id"] == test["id"]
     assert [p["name"] for p in page["points"]] == ["Free chlorine"]
