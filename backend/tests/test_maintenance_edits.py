@@ -7,6 +7,7 @@ import pytest
 
 from backend.maintenance.service import PROJECTORS, Invalid, Maintenance
 from backend.maintenance.store import GraphStore
+from backend.tests.rcm_tree import position_with_rcm
 
 
 @pytest.fixture()
@@ -71,14 +72,14 @@ def test_mistakes_are_struck_out_or_corrected(m):
 
 
 def test_tasks_edit_and_retire_and_positions_retire(m):
-    class Study:
-        id, name, system = "s1", "Alarm RCM", "Smoke alarms"
+    class Rcm:
+        name = "Smoke alarms"
         functions = [{"id": "f", "text": "Detect smoke", "failures": [{"id": "ff", "text": "No alarm", "modes": [
             {"id": "m1", "text": "Battery flat", "consequence": "hidden",
              "decision": {"outcome": "failure_finding", "interval": 1, "interval_unit": "months",
                           "task": "Press test"}}]}]}]
 
-    pos = m.position_from_rcm(Study())["position"]
+    pos = position_with_rcm(m, Rcm.functions, Rcm.name)["position"]
     task = pos["tasks"][0]
     edited = m.update_task(task["id"], name="Press the test button", interval=3, unit="mo")
     assert (edited["name"], edited["interval"], edited["unit"]) == ("Press the test button", 3, "months")

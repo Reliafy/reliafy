@@ -1,0 +1,867 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
+import {
+  NARROW_TABLE, TASK_WITH_INTERVAL, functionSummary, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, opensPanel, filterChoices, fitWidths, graftRcm, linkChoices, linkSectionTitle, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardKeys, tableCols,
+  taskWithInterval, usualCols, withTableCols, modeTaskRows, taskKey, taskServes,
+} from "./explorerRcm.js";
+import { isolateOpen, levelsBelow } from "./treeIsolate.js";
+import { isolateItems } from "./treeRowMenu.js";
+import { dropZones } from "./rcmDrag.js";
+import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, checkValue, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
+
+const DATA = {
+  positions: [
+    { id: "plant", name: "Plant", parent_id: null, not_analysed: true },
+    { id: "pump", name: "Pump", parent_id: "plant", not_analysed: true },
+    { id: "motor", name: "Motor", parent_id: "pump", not_analysed: true },
+  ],
+  locations: [], spares: [], unhomed: [],
+};
+const mode = (id, text, decision = null) => ({ id, text, consequence: "operational", decision });
+const RCM = {
+  positions: [{
+    id: "pump",
+    functions: [
+      { id: "f1", text: "Pump water", failures: [
+        { id: "x1", text: "No flow", modes: [mode("m1", "Bearing seizes"), mode("m2", "Seal leaks", { outcome: "rtf", status: "contradicted" })] },
+        { id: "x2", text: "Low flow", modes: [mode("m3", "Impeller worn")] },
+      ] },
+      { id: "f2", text: "Contain the water", failures: [] },
+    ],
+    unassigned: [mode("m4", "Coupling fails", { outcome: "redesign" })],
+  }],
+};
+
+test("the RCM nested in the tree: functions, then failures, then modes, before the positions inside", () => {
+  const base = buildDisplay(DATA, "positions");
+  const d = graftRcm(base, RCM);
+  assert.notEqual(d.rows, base.rows); // the tree it came from is left as it was
+  assert.deepEqual(base.rows.get("pump").kids, ["motor"]);
+  assert.deepEqual(d.rows.get("pump").kids, ["f1", "f2", "U:pump", "motor"]);
+  assert.equal(d.rows.get("pump").rcmKids, 3);
+  assert.deepEqual(d.rows.get("f1").kids, ["x1", "x2"]);
+  assert.deepEqual(d.rows.get("x1").kids, ["m1", "m2"]);
+  assert.equal(d.rows.get("m1").depth, 4);
+  assert.equal(d.rows.get("motor").depth, 2); // the positions keep their place
+  // Counts: a position's own modes, each row's inside it.
+  assert.equal(d.rows.get("pump").rsum.modes, 4);
+  assert.equal(d.rows.get("pump").rsum.undecided, 2);
+  assert.equal(d.rows.get("f1").rsum.contradicted, 1);
+  assert.equal(positionOf(d.rows.get("m3")), "pump");
+  assert.equal(positionOf(d.rows.get("pump")), "pump");
+  assert.ok(isRcmRow(d.rows.get("U:pump")) && !isRcmRow(d.rows.get("pump")));
+  assert.deepEqual(failuresOn(d, "pump").map((f) => f.id), ["x1", "x2"]);
+  // The tree's markers don't count the RCM rows as positions inside.
+  assert.equal(markersOf(d.rows.get("f1")).length, 0);
+  assert.equal(markersOf(d.rows.get("pump"), { rcm: true })[0].label, "2 positions not analysed yet here and inside");
+});
+
+test("no Add rows in the tree: adding is from each row's menu", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), RCM);
+  assert.ok(![...d.rows.keys()].some((k) => k.startsWith("+")));
+  assert.deepEqual(d.rows.get("f2").kids, []);
+  assert.deepEqual(d.rows.get("motor").kids, []);
+  const ids = (key, opts) => rowActions(d.rows.get(key), opts).map((a) => a.id);
+  // A position's Delete… (everything inside it, as on the Summary tab): last, danger; greyed when view only.
+  assert.deepEqual(ids("pump"), ["add-fn", "import-sheet", "export-csv", "tree-delete"]);
+  assert.deepEqual(ids("motor"), ["add-fn", "import-sheet", "export-csv", "tree-delete"]); // a position with no RCM yet
+  const del = rowActions(d.rows.get("pump")).at(-1);
+  assert.deepEqual(del, { id: "tree-delete", label: "Delete…", danger: true });
+  assert.deepEqual(rowActions(d.rows.get("pump"), { viewOnly: "View only." }).at(-1),
+    { id: "tree-delete", label: "Delete…", danger: true, disabled: true, reason: "View only." });
+  assert.deepEqual(ids("f1"), ["open", "add-std", "add-fail", "rename", "delete"]);
+  assert.deepEqual(ids("x1"), ["open", "add-mode", "link-cause", "link-effect", "rename", "delete"]); // pump has a position above it, no standards
+  assert.deepEqual(ids("m1"), ["open", "decide", "add-task", "rename", "delete"]);
+  assert.deepEqual(ids("U:pump"), ["add-mode"]); // the "Not under a functional failure" heading: add a mode there
+  // On a phone the details panel edits the description, so no Edit description.
+  // Open… stays on a phone: it's the way to the dialog there (no double-click).
+  assert.deepEqual(ids("f1", { canRename: false }), ["open", "add-std", "add-fail", "delete"]);
+  const label = (key) => rowActions(d.rows.get(key)).map((a) => a.label);
+  assert.deepEqual(label("f1"), ["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Delete function…"]);
+  assert.equal(label("m2")[1], "Change the decision…");
+  assert.equal(label("m1")[1], "Decide…");
+  assert.equal(label("m1")[2], "Add a task…");
+  assert.deepEqual(rowActions(null), []);
+});
+
+test("the Task cell says how many more tasks a mode has; a second task on a cost-only consequence asks why", () => {
+  const two = { id: "m", text: "Acid under-dosed", consequence: "operational", decision: {
+    outcome: "on_condition", task: "Weekly pH check", interval: 1, interval_unit: "weeks", task_id: "t1",
+    tasks: [{ id: "t1", name: "Weekly pH check", text: "Weekly pH check", interval: 1, unit: "weeks", shared_with: 2 },
+      { id: "t2", name: "Replace the acid pump", text: "Replace the acid pump", interval: 24, unit: "months", shared_with: 0 }] } };
+  const row = (m) => ({ type: "mode", ref: m, sum: { modes: 1, tasks: 1 }, kids: [] });
+  assert.equal(taskWithInterval(row(two)), "Weekly pH check · every 1 week · +1 task");
+  assert.equal(COLUMN.task.text(row(two)), "Weekly pH check · +1 task");
+  assert.equal(TASK_WITH_INTERVAL.text(row(two)), "Weekly pH check · every 1 week · +1 task");
+  assert.match(secondTaskHint(row(two)), /What does this catch that “Weekly pH check” doesn't\?/);
+  assert.equal(secondTaskHint(row({ ...two, consequence: "safety" })), null);
+  assert.equal(secondTaskHint(row({ ...two, decision: null })), null);
+  // One task, or an older read with only the decision's task: nothing more.
+  const one = { ...two, decision: { ...two.decision, tasks: two.decision.tasks.slice(0, 1) } };
+  assert.equal(taskWithInterval(row(one)), "Weekly pH check · every 1 week");
+  const old = { ...two, decision: { outcome: "on_condition", task: "Weekly pH check", interval: 1, interval_unit: "weeks" } };
+  assert.equal(taskWithInterval(row(old)), "Weekly pH check · every 1 week");
+  assert.equal(phoneLine(row(two)), "Operational · On condition · 1 week · Weekly pH check · +1 task");
+});
+
+test("levels count functions and failures; the one search and the chips reach the RCM rows", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), RCM);
+  const { list } = flatten(d, levelSet(d, 3));
+  assert.ok(list.some((v) => v.key === "f1") && !list.some((v) => v.key === "x1"));
+  assert.ok(flatten(d, levelSet(d, Infinity)).list.some((v) => v.key === "m3"));
+  const found = computeFilter(d, { query: "impeller" });
+  assert.deepEqual([...found.match], ["m3"]);
+  assert.ok(found.keep.has("x2") && found.keep.has("f1") && found.keep.has("pump") && found.keep.has("plant"));
+  assert.deepEqual([...computeFilter(d, { chips: ["undecided"] }).match].sort(), ["m1", "m3"]);
+  assert.deepEqual([...computeFilter(d, { chips: ["unanalysed"] }).match].sort(), ["motor", "plant", "pump"]);
+  // Opening the tab on the pump opens it down to its failure modes.
+  assert.deepEqual([...openFor(d, "pump")].sort(), ["U:pump", "f1", "f2", "pump", "x1", "x2"]);
+});
+
+test("the Evidence check column: hidden until evidence is linked somewhere, unless chosen", () => {
+  // Nothing linked (decisions from judgement, or none yet): no column, no "to check".
+  assert.equal(hasLinkedEvidence(RCM), true); // m2 is contradicted: linked evidence
+  const plain = { positions: [{ id: "pump", functions: [{ id: "f", failures: [{ id: "x", modes: [
+    mode("a", "A", { outcome: "fixed_interval", status: "unevidenced" }), mode("b", "B")] }] }], unassigned: [] }] };
+  assert.equal(hasLinkedEvidence(plain), false);
+  assert.equal(hasLinkedEvidence(null), false);
+  const linkedLater = { positions: [{ id: "p", functions: [], unassigned: [mode("c", "C", { outcome: "rtf", evidence: { type: "model", id: "m" } })] }] };
+  assert.equal(hasLinkedEvidence(linkedLater), true);
+
+  const prefs = { cols: DEFAULT_COLUMNS, widths: {} };
+  assert.ok(!tableCols(prefs, false).includes("check"));
+  assert.ok(tableCols(prefs, true).includes("check"));
+  assert.deepEqual(tableCols(prefs, true), DEFAULT_COLUMNS);
+
+  // Ticked on in the Columns menu: shown with nothing linked, and remembered.
+  const shown = tableCols(prefs, false);
+  const on = withTableCols(prefs, [...shown, "check"], shown);
+  assert.equal(on.explorerCheck, true);
+  assert.ok(tableCols(on, false).includes("check"));
+  // Ticked off: hidden even when evidence is linked.
+  const off = withTableCols(prefs, DEFAULT_COLUMNS.filter((c) => c !== "check"), DEFAULT_COLUMNS);
+  assert.equal(off.explorerCheck, false);
+  assert.ok(!tableCols(off, true).includes("check"));
+  // Another column changed: the Evidence check keeps following the evidence,
+  // and the shared set (the study worksheet's) keeps its own Evidence check.
+  const other = withTableCols(prefs, shown.filter((c) => c !== "effects"), shown);
+  assert.equal(other.explorerCheck, undefined);
+  assert.ok(!other.cols.includes("effects") && other.cols.includes("check"));
+  // Show the usual columns: back to following the evidence.
+  const reset = withTableCols(on, DEFAULT_COLUMNS, tableCols(on, false), { reset: true });
+  assert.equal("explorerCheck" in reset, false);
+  // Remembered on this device with the other column choices.
+  assert.equal(loadPrefs({ getItem: () => JSON.stringify({ cols: DEFAULT_COLUMNS, explorerCheck: false }) }).explorerCheck, false);
+  assert.equal("explorerCheck" in loadPrefs({ getItem: () => JSON.stringify({ cols: DEFAULT_COLUMNS }) }), false);
+});
+
+test("the usual columns by the window's width: under 1400 px, no Interval (it's in the Task cell) and no Evidence check", () => {
+  assert.equal(NARROW_TABLE, 1400);
+  const fresh = loadPrefs({ getItem: () => null });
+  assert.equal(fresh.colsChosen, undefined);
+  assert.deepEqual(tableCols(fresh, false, { narrow: true }), ["effects", "consequence", "decision", "task"]);
+  assert.deepEqual(tableCols(fresh, true, { narrow: true }), ["effects", "consequence", "decision", "task"]); // even with evidence linked
+  assert.deepEqual(tableCols(fresh, false, { narrow: false }), ["effects", "consequence", "decision", "task", "interval"]);
+  assert.deepEqual(tableCols(fresh, true, { narrow: false }), ["effects", "consequence", "decision", "task", "interval", "check"]);
+  assert.deepEqual(usualCols({ narrow: true }), ["effects", "consequence", "decision", "task"]);
+  // Saved before as the usual set (the page saves its prefs as it opens): still the usual ones, by width.
+  const saved = loadPrefs({ getItem: () => JSON.stringify({ cols: DEFAULT_COLUMNS }) });
+  assert.equal(saved.colsChosen, undefined);
+  assert.deepEqual(tableCols(saved, false, { narrow: true }), ["effects", "consequence", "decision", "task"]);
+  // Chosen in the Columns menu: kept whatever the width, and remembered.
+  const shown = tableCols(fresh, false, { narrow: true });
+  const withInterval = withTableCols(fresh, [...shown, "interval"], shown);
+  assert.equal(withInterval.colsChosen, true);
+  assert.deepEqual(tableCols(withInterval, false, { narrow: true }), ["effects", "consequence", "decision", "task", "interval"]);
+  let stored = null;
+  const box = { getItem: () => stored, setItem: (k, v) => { stored = v; } };
+  savePrefs(withInterval, box);
+  assert.equal(loadPrefs(box).colsChosen, true);
+  const noTask = withTableCols(fresh, shown.filter((c) => c !== "task"), shown);
+  assert.deepEqual(tableCols(noTask, false, { narrow: false }), ["effects", "consequence", "decision"]);
+  // Columns chosen before this was remembered (not the usual set): chosen.
+  assert.equal(loadPrefs({ getItem: () => JSON.stringify({ cols: ["effects", "task"] }) }).colsChosen, true);
+  // Show the usual columns: by width again; the shared set back to its usual.
+  const reset = withTableCols(withInterval, usualCols({ narrow: true }), tableCols(withInterval, false, { narrow: true }), { reset: true });
+  assert.equal("colsChosen" in reset, false);
+  assert.deepEqual(reset.cols, DEFAULT_COLUMNS);
+  assert.deepEqual(tableCols(reset, false, { narrow: true }), ["effects", "consequence", "decision", "task"]);
+  savePrefs(reset, box);
+  assert.equal(loadPrefs(box).colsChosen, undefined);
+});
+
+test("the columns narrow to fit the pane before the table scrolls sideways, never below their least", () => {
+  const ids = ["effects", "consequence", "decision", "task"];
+  const w = { effects: 180, consequence: 114, decision: 150, task: 190 }; // 634
+  assert.deepEqual(fitWidths(ids, w, 900), w); // room to spare: as they are (never widened)
+  const fit = fitWidths(ids, w, 500);
+  assert.equal(Object.values(fit).reduce((a, b) => a + b, 0), 500);
+  for (const id of ids) assert.ok(fit[id] >= COLUMN[id].min && fit[id] <= w[id], id);
+  // Each gives up the same share of its slack.
+  assert.ok(fit.effects < 180 && fit.task < 190 && fit.consequence < 114);
+  // Too little room: each at its least, and the table scrolls.
+  const least = fitWidths(ids, w, 200);
+  for (const id of ids) assert.equal(least[id], COLUMN[id].min);
+  // The side panel open at 1280 px: the four main columns still fit.
+  const mins = ids.reduce((t, id) => t + COLUMN[id].min, 0);
+  assert.ok(mins <= 410, `the four columns at their least: ${mins} px`);
+  // A width already under its least (chosen narrower before) isn't widened.
+  assert.equal(fitWidths(["task"], { task: 80 }, 60).task, 80);
+  assert.deepEqual(fitWidths(ids, w, NaN), w);
+});
+
+test("the Task cell with the interval folded in", () => {
+  const m = (decision) => ({ type: "mode", ref: { decision } });
+  assert.equal(taskWithInterval(m({ outcome: "fixed_interval", task: "Inspect roof tubes", interval: 12, interval_unit: "months" })),
+    "Inspect roof tubes · every 12 months");
+  assert.equal(taskWithInterval(m({ outcome: "fixed_interval", task: "Empty the basket", interval: 1, interval_unit: "weeks" })),
+    "Empty the basket · every 1 week");
+  assert.equal(taskWithInterval(m({ outcome: "on_condition", interval: 3, interval_unit: "months" })), "Every 3 months");
+  assert.equal(taskWithInterval(m({ outcome: "rtf", task: "Replace the motor" })), "Replace the motor");
+  assert.equal(taskWithInterval(m(null)), "");
+  // A parent row: what's inside it, as the Task column says.
+  assert.equal(taskWithInterval({ type: "fn", ref: {}, sum: { tasks: 2 } }), "2 tasks");
+  assert.equal(TASK_WITH_INTERVAL.id, "task");
+  assert.equal(TASK_WITH_INTERVAL.edit, "text"); // still edits the task itself
+});
+
+test("each of a function's performance standards knows whether the function has notes (where the working is)", () => {
+  const rcm = (fn) => ({ positions: [{ id: "pump", functions: [{ id: "f", text: "Keep it clean", notes: "Demand 4.3 ppm", failures: [], ...fn }] }] });
+  const listed = graftRcm(buildDisplay(DATA, "positions"), rcm({ standards: [st("a", "FC 1-3 ppm"), st("b", "pH 7.2-7.8")] }));
+  assert.deepEqual(["a", "b"].map((k) => listed.rows.get(k).ref.function_has_notes), [true, true]);
+  const none = graftRcm(buildDisplay(DATA, "positions"), rcm({ notes: "  ", standards: [st("a", "FC 1-3 ppm")] }));
+  assert.equal(none.rows.get("a").ref.function_has_notes, false);
+});
+
+test("the one search box reaches a function's notes, the working in them too", () => {
+  const display = graftRcm(buildDisplay(DATA, "positions"), {
+    positions: [{ id: "pump", functions: [{ id: "f", text: "Keep it clean", standard: "",
+      notes: "Why\n\nWorking\n\nChlorine demand 4.3 ppm per day", failures: [] }] }],
+  });
+  const f = computeFilter(display, { query: "chlorine demand" });
+  assert.ok(f.keep.has("f"));
+  assert.equal(computeFilter(display, { query: "turnover" })?.keep.has("f") ?? false, false);
+});
+
+// ---- a functional failure caused by lower ones ---------------------------------------
+
+const roll = (modes, undecided, tasks) => ({ modes, undecided, tasks, hidden: 0, safety: 0, mode_ids: [] });
+const cause = (id, text, pos, name, over = {}) => ({
+  id, text, position: { id: pos, name }, inside: true, covered: true, chain: roll(2, 0, 1), ...over,
+});
+const LINKED = {
+  positions: [
+    { id: "plant", functions: [{ id: "pf", text: "Make power", failures: [
+      { id: "px", text: "No power", modes: [mode("pm", "Own cause", { outcome: "accept" })],
+        causes: [cause("x1", "No flow", "pump", "Pump", { chain: { ...roll(3, 1, 1), mode_ids: ["m1", "m2", "m3"] }, covered: false })],
+        effects: [], below: roll(3, 1, 1), covered: false, explained_below: false },
+      { id: "py", text: "Output low", modes: [], causes: [cause("x2", "Low flow", "pump", "Pump"), cause("mx", "Motor stops", "motor", "Motor")],
+        effects: [], below: roll(4, 0, 2), covered: true, explained_below: true },
+    ] }], unassigned: [] },
+    { id: "pump", functions: [{ id: "f1", text: "Pump water", failures: [
+      { id: "x1", text: "No flow", modes: [mode("m1", "Bearing seizes"), mode("m2", "Seal leaks", { outcome: "rtf" })],
+        causes: [], effects: [{ id: "px", text: "No power", position: { id: "plant", name: "Plant" }, inside: true }], below: null },
+      { id: "x2", text: "Low flow", modes: [mode("m3", "Impeller worn")], causes: [],
+        effects: [{ id: "py", text: "Output low", position: { id: "plant", name: "Plant" }, inside: true }], below: null },
+    ] }], unassigned: [] },
+    { id: "motor", functions: [{ id: "mf", text: "Turn", failures: [{ id: "mx", text: "Motor stops", modes: [], causes: [],
+      effects: [{ id: "py", text: "Output low", position: { id: "plant", name: "Plant" }, inside: true }], below: null }] }], unassigned: [] },
+  ],
+};
+
+test("a reference row under a higher failure per cause, after its own modes, with the chain's roll-up", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
+  assert.deepEqual(d.rows.get("px").kids, ["pm", causeKey("px", "x1")]);
+  assert.deepEqual(d.rows.get("py").kids, [causeKey("py", "x2"), causeKey("py", "mx")]);
+  const ref = d.rows.get(causeKey("px", "x1"));
+  assert.equal(ref.type, "cause");
+  assert.ok(isRcmRow(ref));
+  assert.equal(ref.ref.on, "Pump");
+  assert.equal(ref.ref.cause_id, "x1");
+  assert.equal(ref.depth, d.rows.get("pm").depth);
+  assert.deepEqual(ref.kids, []);
+  // The chain's own failure modes (m1, m2, m3), counted as a mode's are.
+  assert.equal(ref.rsum.modes, 3);
+  assert.equal(ref.rsum.undecided, 2);
+  assert.equal(positionOf(ref), "plant"); // the position the failure it explains is on
+});
+
+test("functions and failures count their own failure modes, positions theirs and those inside them: a chain below is not added in", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
+  // Each position's own (ownSum); a functional failure's own (rsum), its chain beside it.
+  assert.equal(d.rows.get("plant").ownSum.modes, 1);
+  assert.equal(d.rows.get("pf").rsum.modes, 1);
+  assert.equal(d.rows.get("px").rsum.modes, 1);
+  assert.equal(d.rows.get("py").rsum.modes, 0);
+  assert.equal(d.rows.get("pump").ownSum.modes, 3);
+  // A position's rsum: its own and every position inside it, each failure mode once.
+  const inside = (key) => {
+    let n = d.rows.get(key).ownSum.modes;
+    for (const k of d.rows.get(key).kids) if (d.rows.get(k).type === "pos") n += inside(k);
+    return n;
+  };
+  assert.equal(d.rows.get("plant").rsum.modes, inside("plant"));
+  assert.ok(d.rows.get("plant").rsum.modes > 1);
+  assert.equal(d.rows.get("pump").rsum.modes, inside("pump"));
+});
+
+test("the Decision and Task cells say what is below, and the panel and phone lines match", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
+  const cell = (key) => ({ ...d.rows.get(key), sum: d.rows.get(key).rsum });
+  // Own failure modes and a chain with one still to decide.
+  assert.equal(COLUMN.decision.text(cell("px")), "All decided · 1 to decide below");
+  assert.equal(COLUMN.task.text(cell("px")), "1 below");
+  // No failure modes of its own, all decided below.
+  assert.equal(COLUMN.decision.text(cell("py")), "Explained below");
+  assert.equal(COLUMN.task.text(cell("py")), "2 below");
+  assert.equal(belowDecisionText(cell("py")), "Explained below");
+  assert.equal(insideWords(cell("py")), "Explained below");
+  assert.equal(phoneLine(cell("py")), "Explained below");
+  assert.equal(phoneLine(cell("px")), "1 failure mode · all decided · 1 to decide below");
+  // A failure with nothing linked reads as it did.
+  assert.equal(COLUMN.decision.text(cell("x1")), "1 to decide");
+  assert.equal(COLUMN.task.text(cell("x1")), "");
+  // A reference row's phone lines: where it is, and its chain.
+  const ref = cell(causeKey("px", "x1"));
+  assert.equal(phoneLine(ref), "on Pump · 2 to decide");
+  assert.equal(COLUMN.decision.text(ref), "2 to decide");
+});
+
+test("a failure shows ↑ n for the failures above it that it causes (and only there)", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
+  const m = markersOf(d.rows.get("x1"));
+  assert.equal(m.length, 1);
+  assert.equal(m[0].text, "↑ 1");
+  assert.equal(m[0].effect, "px");
+  assert.equal(m[0].label, "Causes: No power (on Plant)");
+  assert.deepEqual(markersOf(d.rows.get("px")), []);
+  assert.deepEqual(markersOf(d.rows.get("m1")), []);
+  assert.deepEqual(markersOf(d.rows.get(causeKey("px", "x1"))), []);
+});
+
+test("row menus: a failure offers Link to a cause and Link to an effect; a reference row Go to it and Unlink", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
+  const labels = (key) => rowActions(d.rows.get(key)).map((a) => a.label);
+  // The top's failure too: an effect may be beside it or on the same position.
+  assert.deepEqual(labels("px"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Edit description", "Delete functional failure…"]);
+  assert.deepEqual(labels("x1"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Edit description", "Delete functional failure…"]);
+  assert.deepEqual(labels(causeKey("px", "x1")), ["Go to it", "Unlink"]);
+  assert.deepEqual(rowActions(d.rows.get(causeKey("px", "x1")), { canRename: false }).map((a) => a.id), ["go", "unlink"]);
+  assert.deepEqual(rowActions(d.rows.get("f1")).map((a) => a.id), ["open", "add-std", "add-fail", "rename", "delete"]);
+});
+
+test("opening a position's RCM opens functions and failures, so the reference rows show", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
+  const open = openFor(d, "plant");
+  assert.ok(open.has("px") && open.has("py"));
+  assert.ok(![...open].some((k) => k.startsWith("L:")));
+});
+
+test("the pickers: the whole tree, the likely positions first; linked ones are marked, the failure itself left out", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
+  const down = linkChoices(d, "px", "cause");
+  // Its own position (its other failure), then the positions inside it.
+  assert.deepEqual(down.map((g) => [g.name, g.depth, g.section]), [["Plant", 0, "here"], ["Pump", 1, "inside"], ["Motor", 2, "inside"]]);
+  assert.deepEqual(down[0].items.map((i) => i.text), ["Output low"]);
+  assert.deepEqual(down[1].items.map((i) => [i.text, i.linked]), [["No flow", true], ["Low flow", false]]);
+  assert.equal(down[1].items[0].function, "Pump water");
+  assert.equal(down[1].items[1].summary, "1 failure mode · 1 to decide");
+  assert.equal(down[2].items[0].summary, "no failure modes yet");
+  assert.deepEqual(down[1].functions, [{ id: "f1", text: "Pump water" }]);
+  // Effects from the motor: its own position, then those above (nearest first).
+  const up = linkChoices(d, "mx", "effect");
+  assert.deepEqual(up.map((g) => [g.name, g.section]), [["Motor", "here"], ["Pump", "above"], ["Plant", "above"]]);
+  assert.deepEqual(up[0].items, []); // the motor's one failure is the one linking
+  assert.deepEqual(up[2].items.map((i) => [i.text, i.linked]), [["No power", false], ["Output low", true]]);
+  assert.equal(up[2].items[1].summary, "explained below");
+  // From the pump: causes inside first, then the rest of the tree (the plant above, by branch).
+  const pump = linkChoices(d, "x1", "cause");
+  assert.deepEqual(pump.map((g) => [g.name, g.section, g.depth]), [["Pump", "here", 0], ["Motor", "inside", 1], ["Plant", "rest", 0]]);
+  assert.deepEqual(pump[0].items.map((i) => i.text), ["Low flow"]); // a failure on the same position
+  // The top's effects: its own position, then nothing else is above but the tree is listed.
+  assert.deepEqual(linkChoices(d, "px", "effect").map((g) => g.section), ["here", "rest", "rest"]);
+  assert.deepEqual(linkChoices(d, "m1", "cause"), []); // not a functional failure
+});
+
+test("the picker's section headings: one where each section starts", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
+  const groups = linkChoices(d, "x1", "cause");
+  assert.deepEqual(groups.map((g, i) => linkSectionTitle(g, groups[i - 1], "Pump")),
+    ["This position", "Inside Pump", "Elsewhere on the tree"]);
+  const up = linkChoices(d, "mx", "effect");
+  assert.deepEqual(up.map((g, i) => linkSectionTitle(g, up[i - 1], "Motor")), ["This position", "Above Motor", null]);
+});
+
+test("the picker's filter matches the position, function or failure text", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
+  const down = linkChoices(d, "px", "cause");
+  assert.equal(filterChoices(down, "  ").length, 3);
+  assert.deepEqual(filterChoices(down, "low flow").map((g) => g.items.map((i) => i.text)), [["Low flow"]]);
+  assert.deepEqual(filterChoices(down, "motor").map((g) => g.name), ["Motor"]);
+  assert.equal(filterChoices(down, "pump")[0].items.length, 2); // the position's name keeps all its failures
+  assert.deepEqual(filterChoices(down, "zzz"), []);
+});
+
+test("unlinking asks only when it would leave the higher failure with nothing explaining it", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
+  assert.equal(unlinkEmptiesFailure(d, "px", "x1"), false); // it has a failure mode of its own
+  assert.equal(unlinkEmptiesFailure(d, "py", "x2"), false); // another cause stays
+  const one = graftRcm(buildDisplay(DATA, "positions"), { positions: [
+    { id: "plant", functions: [{ id: "pf", text: "Make power", failures: [
+      { id: "py", text: "Output low", modes: [], causes: [cause("x2", "Low flow", "pump", "Pump")], effects: [], below: roll(1, 0, 0) }] }], unassigned: [] }] });
+  assert.equal(unlinkEmptiesFailure(one, "py", "x2"), true);
+  assert.equal(unlinkEmptiesFailure(one, "py", "nope"), false);
+  assert.equal(unlinkEmptiesFailure(one, "missing", "x2"), false);
+});
+
+test("a link whose cause is no longer inside still shows, and is said to be", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), { positions: [
+    { id: "plant", functions: [{ id: "pf", text: "Make power", failures: [
+      { id: "py", text: "Output low", modes: [], causes: [cause("x2", "Low flow", "pump", "Pump", { inside: false, covered: false })], effects: [], below: null }] }], unassigned: [] }] });
+  const ref = d.rows.get(causeKey("py", "x2"));
+  assert.equal(ref.ref.inside, false);
+  assert.match(phoneLine({ ...ref, sum: ref.rsum }), /no longer inside Plant/);
+  // It doesn't count: no "explained below" on the failure.
+  const f = { ...d.rows.get("py"), sum: d.rows.get("py").rsum };
+  assert.equal(COLUMN.decision.text(f), "");
+});
+
+test("a row opened: which rows open their details, and what a field kept sends", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), RCM);
+  const row = (k) => d.rows.get(k);
+  assert.deepEqual(["pump", "f1", "x1", "m1", "U:pump", "m4"].map((k) => opensItem(row(k))), [false, true, true, true, false, true]);
+  assert.equal(opensItem(null), false);
+  // A double-click also opens a position's panel, wide; its menu still has no Open….
+  assert.deepEqual(["pump", "f1", "m1", "U:pump"].map((k) => opensPanel(row(k))), [true, true, true, false]);
+  assert.equal(opensPanel(null), false);
+  const m1 = row("m1");
+  // Checked as the table checks it, then sent: a failure mode's words in one write, its consequence in another.
+  assert.deepEqual(checkValue("name", m1, "  "), { error: "Every failure mode needs a description." });
+  assert.match(checkValue("name", row("f1"), "x".repeat(201)).error, /Shorten it to 200 characters/);
+  assert.deepEqual(itemWrites(m1, { name: "Bearing seizes early", effects: "Stops" }), [{ api: "mode", body: { text: "Bearing seizes early", effects: "Stops" } }]);
+  assert.deepEqual(itemWrites(m1, { consequence: null }), [{ api: "decide", body: { consequence: null } }]);
+  assert.deepEqual(itemWrites(m1, { notes: "n" }), [{ api: "mode", body: { notes: "n" } }]);
+  assert.deepEqual(itemWrites(row("f1"), { name: "Pump", standard: "10 L/s" }), [{ api: "function", body: { text: "Pump" } }]); // the standards are a list, saved on their own
+  assert.deepEqual(itemWrites(row("x1"), { name: "No flow at all" }), [{ api: "failure", body: { text: "No flow at all" } }]);
+  assert.deepEqual(itemWrites(row("x1"), {}), []);
+});
+
+test("a functional failure's state in plain words", () => {
+  const blank = { modes: 0, undecided: 0 };
+  const ff = (sum, ref = {}) => ({ type: "fail", sum, rsum: sum, ref: { causes: [], ...ref } });
+  assert.equal(failureStatusWords(ff({ modes: 2, undecided: 1 })), "1 of its 2 failure modes still needs a decision.");
+  assert.equal(failureStatusWords(ff({ modes: 3, undecided: 0 })), "Analysed: all 3 of its failure modes have a decision.");
+  assert.equal(failureStatusWords(ff({ modes: 1, undecided: 0 })), "Analysed: its failure mode has a decision.");
+  assert.equal(failureStatusWords(ff(blank)), "Not analysed yet: it has no failure modes and nothing linked below.");
+  assert.match(failureStatusWords(ff(blank, { causes: [{ id: "c" }], explained_below: true })), /^Covered/);
+  assert.match(failureStatusWords(ff(blank, { causes: [{ id: "c" }], explained_below: false })), /^Not finished/);
+  assert.match(failureStatusWords(ff({ modes: 1, undecided: 0 }, { causes: [{ id: "c" }] })), /also caused by a failure below/);
+});
+
+// ---- performance standards as a level of the tree -----------------------------------
+
+const st = (id, text, failures = 0, extra = {}) => ({ id, text, order: 1, parameter: null, comparator: null, value: null, unit: null, when: null, source: null, failures, ...extra });
+const STANDARDS = {
+  positions: [{
+    id: "pump",
+    functions: [
+      // A list: each failure under the standard it breaches; one under none.
+      { id: "f1", text: "Pump water", standard: "At least 50 L/s; At 4 bar", legacy_standard: "", standards_without_failure: 1,
+        standards: [st("s1", "At least 50 L/s", 1), st("s2", "At 4 bar", 0, { order: 2, parameter: "Pressure", comparator: ">=", value: 4, unit: "bar", source: "E25 manual" })],
+        failures: [
+          { id: "x1", text: "No flow", standard: null, modes: [mode("m1", "Bearing seizes")] },
+          { id: "x2", text: "Low flow", standard: { id: "s1", text: "At least 50 L/s" }, modes: [mode("m3", "Impeller worn", { outcome: "rtf" })] },
+        ] },
+      // The one text (no list): one legacy standard row with every failure under it.
+      { id: "f2", text: "Contain the water", standard: "No leak past the seal", standards: [], failures: [
+        { id: "x3", text: "Leaks", standard: null, modes: [mode("m4", "Seal worn")] },
+      ] },
+      // No standard at all: failures right under the function, as before.
+      { id: "f3", text: "Stop on the lanyard", standard: "", standards: [], failures: [{ id: "x4", text: "Doesn't stop", standard: null, modes: [] }] },
+    ],
+    unassigned: [],
+  }],
+};
+
+test("standards are a level: a list's rows with their failures, a 'No standard' row for the rest, the one text as one row", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), STANDARDS);
+  const row = (k) => d.rows.get(k);
+  // The list: a row per standard, then the "No standard" row, before the positions inside.
+  assert.deepEqual(row("f1").kids, ["s1", "s2", noStdKey("f1")]);
+  assert.deepEqual(row("s1").kids, ["x2"]);
+  assert.deepEqual(row("s2").kids, []);
+  assert.deepEqual(row(noStdKey("f1")).kids, ["x1"]);
+  assert.equal(row("s1").type, "std");
+  assert.equal(row(noStdKey("f1")).type, "nostd");
+  assert.ok(isRcmRow(row("s1")) && isRcmRow(row(noStdKey("f1"))));
+  // Depths: function 2, standard 3, failure 4, mode 5 (the pump is inside the plant).
+  assert.deepEqual([row("f1").depth, row("s1").depth, row("x2").depth, row("m3").depth], [2, 3, 4, 5]);
+  assert.deepEqual([row(noStdKey("f1")).depth, row("x1").depth, row("m1").depth], [3, 4, 5]);
+  // The row's ref: which function and position, the list's ids (for Move up/down), the quiet marker.
+  assert.equal(row("s1").ref.function_id, "f1");
+  assert.equal(row("s1").ref.standard_id, "s1");
+  assert.equal(row("s1").ref.legacy, false);
+  assert.deepEqual(row("s1").ref.standard_ids, ["s1", "s2"]);
+  assert.equal(row("s1").ref.no_failure, false);
+  assert.equal(row("s2").ref.no_failure, true);
+  assert.deepEqual(markersOf(row("s2")), [{ kind: "nofail", text: "no failure yet", label: "No functional failure written yet for this performance standard" }]);
+  assert.deepEqual(markersOf(row("s1")), []);
+  assert.equal(positionOf(row("s1")), "pump");
+  assert.equal(positionOf(row(noStdKey("f1"))), "pump");
+  // Counts roll up through the standard: the failure's modes are the standard's, and the function's.
+  assert.equal(row("s1").rsum.modes, 1);
+  assert.equal(row("s1").rsum.undecided, 0);
+  assert.equal(row(noStdKey("f1")).rsum.undecided, 1);
+  assert.equal(row("f1").rsum.modes, 2);
+  assert.equal(row("pump").rsum.modes, 3);
+  // The failure knows it has standards to pick from (Change standard…), and which it breaches.
+  assert.equal(row("x1").ref.has_standards, true);
+  assert.equal(row("x1").ref.standard, null);
+  assert.equal(row("x2").ref.standard.id, "s1");
+
+  // The one text: a legacy row, every failure under it, no "No standard" row, no marker, not re-pointable.
+  assert.deepEqual(row("f2").kids, [legacyKey("f2")]);
+  const legacy = row(legacyKey("f2"));
+  assert.equal(legacy.type, "std");
+  assert.equal(legacy.ref.legacy, true);
+  assert.equal(legacy.ref.standard_id, null);
+  assert.equal(legacy.ref.text, "No leak past the seal");
+  assert.deepEqual(legacy.kids, ["x3"]);
+  assert.equal(legacy.ref.no_failure, false);
+  assert.deepEqual(markersOf(legacy), []);
+  assert.equal(row("x3").ref.has_standards, false);
+  assert.equal(row("x3").depth, 4);
+  // No standard at all: as before.
+  assert.deepEqual(row("f3").kids, ["x4"]);
+  assert.equal(row("x4").depth, 3);
+  assert.equal(row("x4").ref.has_standards, false);
+
+  // The helpers that walk a function's failures go through the standards.
+  assert.deepEqual(failureRows(d, row("f1")).map((x) => x.key), ["x2", "x1"]);
+  assert.deepEqual(failureRows(d, row("f2")).map((x) => x.key), ["x3"]);
+  assert.deepEqual(failureRows(d, row("f3")).map((x) => x.key), ["x4"]);
+  assert.deepEqual(failuresOn(d, "pump").map((f) => [f.id, f.function]), [["x2", "Pump water"], ["x1", "Pump water"], ["x3", "Contain the water"], ["x4", "Stop on the lanyard"]]);
+  // Opening the tab on the pump opens the standards too, so the failures and modes show.
+  const open = openFor(d, "pump");
+  assert.ok(open.has("s1") && open.has("s2") && open.has(noStdKey("f1")) && open.has(legacyKey("f2")) && open.has("x2") && open.has("x3"));
+  // Levels and the filter reach the standard rows; the chips still count modes.
+  assert.ok(flatten(d, levelSet(d, 4)).list.some((v) => v.key === "s1"));
+  assert.ok(!flatten(d, levelSet(d, 4)).list.some((v) => v.key === "x2"));
+  assert.deepEqual([...computeFilter(d, { query: "e25 manual" }).match].sort(), ["f1", "s2"]); // the function searches its list too
+  assert.ok(computeFilter(d, { query: "4 bar" }).keep.has("f1"));
+  assert.deepEqual([...computeFilter(d, { chips: ["undecided"] }).match].sort(), ["m1", "m4"]);
+  // The Summary tab's tree (no RCM) is untouched.
+  assert.deepEqual(buildDisplay(DATA, "positions").rows.get("pump").kids, ["motor"]);
+});
+
+test("the standard rows' cells and phone line: the limit in words, what's inside", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), STANDARDS);
+  const cell = (k) => cellRow(d.rows.get(k));
+  assert.equal(COLUMN.standard, undefined); // a row of the tree, not a column
+  assert.equal(phoneLine(cell("s2")), "Pressure at least 4 bar · E25 manual · No functional failure written yet");
+  assert.equal(phoneLine(cell("s1")), "1 failure mode · all decided");
+  assert.equal(insideWords(cell("f1")), "2 failure modes · 1 to decide");
+  assert.equal(insideWords(cell(legacyKey("f2"))), "1 failure mode · 1 to decide");
+  // A function with failures and no modes counts its failures, not its standard rows.
+  const bare = graftRcm(buildDisplay(DATA, "positions"), { positions: [{ id: "pump", functions: [
+    { id: "f", text: "Keep it", standard: "", standards: [st("s", "pH 7.2-7.8"), st("t", "TA 80-120 ppm")], failures: [{ id: "x", text: "pH high", standard: null, modes: [] }] }], unassigned: [] }] });
+  assert.equal(insideWords(cellRow(bare.rows.get("f"))), "1 functional failure, no failure modes yet");
+  assert.equal(insideWords(cellRow(bare.rows.get("s"))), "No functional failure written yet");
+  assert.equal(insideWords(cellRow(bare.rows.get(noStdKey("f")))), "1 functional failure, no failure modes yet");
+});
+
+test("row menus for the standards level: add, edit, move, remove; a failure changes its standard", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), STANDARDS);
+  const items = (k, opts) => rowActions(d.rows.get(k), opts);
+  const labels = (k, opts) => items(k, opts).map((a) => a.label);
+  assert.deepEqual(labels("s1"), ["Open…", "Edit text", "Add a functional failure…", "Move up", "Move down", "Delete performance standard…"]);
+  // The first can't move up, the last can't move down (disabled, still listed).
+  assert.deepEqual(items("s1").map((a) => [a.id, !!a.disabled]), [["open", false], ["rename", false], ["add-fail", false], ["move-up", true], ["move-down", false], ["delete", false]]);
+  assert.deepEqual(items("s2").filter((a) => a.id.startsWith("move")).map((a) => [a.id, !!a.disabled]), [["move-up", false], ["move-down", true]]);
+  // A wide screen's pointer menu drags them instead (moves: false): no Move up / down.
+  assert.deepEqual(labels("s1", { moves: false }), ["Open…", "Edit text", "Add a functional failure…", "Delete performance standard…"]);
+  assert.equal(items("s1").find((a) => a.id === "delete").danger, true);
+  // The one text's row: no moving; on a phone no in-place edit.
+  assert.deepEqual(labels(legacyKey("f2")), ["Open…", "Edit text", "Add a functional failure…", "Remove performance standard"]);
+  assert.deepEqual(items(legacyKey("f2"), { canRename: false }).map((a) => a.id), ["open", "add-fail", "delete"]);
+  assert.deepEqual(labels(noStdKey("f1")), ["Add a functional failure…"]); // the "No standard" heading: its details, on the add row
+  // A failure under a function with a list offers Change standard…; one without doesn't.
+  // Which standard it breaches is where it sits: moved (Move to…, a drag), not picked here.
+  assert.deepEqual(labels("x1"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Edit description", "Delete functional failure…"]);
+  assert.deepEqual(labels("f1").slice(0, 3), ["Open…", "Add a performance standard…", "Add functional failure"]);
+});
+
+test("a standard's limit fields, each kept as you go; the one text saved as the function's", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), STANDARDS);
+  const row = (k) => d.rows.get(k);
+  assert.equal(opensItem(row("s1")), true);
+  assert.equal(opensItem(row(noStdKey("f1"))), false);
+  // One field at a time (the panel keeps each as it's left): a number is sent as one, other text as typed.
+  assert.deepEqual(checkValue("when", row("s2"), " at full flow "), { value: "at full flow" });
+  assert.deepEqual(itemWrites(row("s2"), { value: checkValue("value", row("s2"), "4.5").value }), [{ api: "standard", body: { value: 4.5 } }]);
+  assert.deepEqual(itemWrites(row("s2"), { value: "7.2-7.8" }), [{ api: "standard", body: { value: "7.2-7.8" } }]);
+  assert.deepEqual(itemWrites(row("s2"), { comparator: ">=" }), [{ api: "standard", body: { comparator: ">=" } }]);
+  assert.deepEqual(itemWrites(row("s2"), { unit: "" }), [{ api: "standard", body: { unit: "" } }]); // cleared
+  assert.deepEqual(checkValue("name", row("s1"), " "), { error: "Every performance standard needs a description." });
+  // The one text's row: the text, as the function's standard; the limit fields are ignored.
+  assert.deepEqual(itemWrites(row(legacyKey("f2")), { name: "No leak past the seal or the gland", unit: "x" }), [{ api: "function-standard", body: { standard: "No leak past the seal or the gland" } }]);
+  assert.deepEqual(itemWrites(row("s2"), {}), []);
+});
+
+test("standard rows that arrive under an open function open at once, so the failures stay on show", () => {
+  const before = graftRcm(buildDisplay(DATA, "positions"), STANDARDS);
+  const seen = standardKeys(before);
+  assert.deepEqual([...seen].sort(), [noStdKey("f1"), legacyKey("f2"), "s1", "s2"].sort());
+  // The one text split into two standards: its failure moves under a new "No standard" row.
+  const after = graftRcm(buildDisplay(DATA, "positions"), { positions: [{ id: "pump", functions: [
+    STANDARDS.positions[0].functions[0],
+    { id: "f2", text: "Contain the water", standard: "No leak; No overflow", standards: [st("t1", "No leak"), st("t2", "No overflow")],
+      failures: [{ id: "x3", text: "Leaks", standard: null, modes: [] }] },
+  ], unassigned: [] }] });
+  assert.deepEqual(newStandardRows(after, seen, new Set(["pump", "f1", "f2"])).sort(), [noStdKey("f2"), "t1", "t2"].sort());
+  // Under a closed function nothing opens (it wasn't on show).
+  assert.deepEqual(newStandardRows(after, seen, new Set(["pump", "f1"])), []);
+  assert.deepEqual(newStandardRows(after, standardKeys(after), new Set(["pump", "f1", "f2"])), []);
+});
+
+// ---- failure modes directly under a function (written on the FME(C)A tab) --------------
+import { RCM_CHIPS, noFailKey } from "./explorerRcm.js";
+import { NOFAIL_HINT } from "./rcmWorksheet.js";
+
+const RCM_DIRECT = {
+  positions: [{
+    id: "pump",
+    functions: [
+      { id: "f1", text: "Pump water", modes: [mode("d1", "Bearing seizes"), mode("d2", "Seal leaks")], failures: [
+        { id: "x1", text: "No flow", modes: [mode("m1", "Impeller worn")] },
+      ] },
+    ],
+    unassigned: [],
+  }],
+};
+
+test("a function's direct failure modes sit under one \"No functional failure yet\" row after its failures; counts roll up to the function", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), RCM_DIRECT);
+  assert.equal(noFailKey("f1"), "F:f1");
+  assert.deepEqual(d.rows.get("f1").kids, ["x1", "F:f1"]);
+  const g = d.rows.get("F:f1");
+  assert.equal(g.type, "nofail");
+  assert.equal(g.ref.text, "No functional failure yet");
+  assert.equal(g.ref.function_id, "f1");
+  assert.deepEqual(g.ref.mode_ids, ["d1", "d2"]);
+  assert.deepEqual(g.kids, ["d1", "d2"]);
+  assert.equal(g.depth, d.rows.get("x1").depth); // beside the functional failures
+  assert.equal(d.rows.get("d1").depth, d.rows.get("m1").depth);
+  assert.equal(d.rows.get("d1").ref.functional_failure_id, null);
+  assert.equal(d.rows.get("d1").ref.function_id, "f1");
+  assert.equal(g.rsum.modes, 2);
+  assert.equal(d.rows.get("f1").rsum.modes, 3);
+  assert.equal(d.rows.get("pump").rsum.undecided, 3);
+  assert.ok(isRcmRow(g) && positionOf(g) === "pump");
+  // Its menu: write the functional failure, or put them under one; openFor opens it.
+  assert.deepEqual(rowActions(g).map((a) => a.id), ["add-fail", "assign-fail"]);
+  assert.ok(openFor(d, "pump").has("F:f1"));
+  // The quiet hint, in words (never a gate).
+  assert.deepEqual(markersOf(g), [{ kind: "nofail", text: "finish the RCM", label: NOFAIL_HINT }]);
+  // The chips are the RCM tab's own.
+  assert.ok(RCM_CHIPS.every((c) => c.tab === "rcm"));
+});
+
+test("a failure mode's details save the FME(C)A's fields in the same write as its words", () => {
+  const r = { type: "mode", ref: { id: "m1" } };
+  assert.deepEqual(itemWrites(r, { name: "Seal leaks", severity: 9, cause: "Dust", action_due: null, consequence: "safety" }), [
+    { api: "mode", body: { text: "Seal leaks", severity: 9, cause: "Dust", action_due: null } },
+    { api: "decide", body: { consequence: "safety" } },
+  ]);
+  assert.deepEqual(itemWrites(r, { mode_ratio: 0.5, severity_class: "I" }), [{ api: "mode", body: { mode_ratio: 0.5, severity_class: "I" } }]);
+});
+
+test("functionSummary: a position's functions with standards, failures and decided modes", () => {
+  const rcm = {
+    positions: [{
+      id: "pump",
+      functions: [
+        { id: "f1", text: "Move water", has_basis: true, standards: [{ id: "s1", text: "50 L/s" }, { id: "s2", text: "" }], failures: [{ id: "ff1", modes: [mode("m1", "Seal", { action: "run" }), mode("m2", "Bearing")] }] },
+        { id: "f2", text: "", standard: "Hold 2 bar" },
+      ],
+    }],
+  };
+  const display = graftRcm(buildDisplay(DATA, "positions"), rcm);
+  const s = functionSummary(display, display.rows.get("pump"));
+  assert.equal(s.length, 2);
+  assert.deepEqual([s[0].standards, s[0].standardTexts, s[0].failures, s[0].modes, s[0].decided], [2, ["50 L/s"], 1, 2, 1]);
+  assert.deepEqual([s[1].text, s[1].standards, s[1].modes], ["(no text yet)", 1, 0]);
+  assert.deepEqual(functionSummary(display, null), []);
+});
+
+// ---- tasks: the tree's fifth level -------------------------------------------------------
+
+const task = (id, name, extra = {}) => ({ id, name, text: name, interval: 4, unit: "weeks", shared_with: 0, ...extra });
+const TASKED = {
+  positions: [{
+    id: "pump",
+    functions: [
+      { id: "f1", text: "Pump water", failures: [
+        { id: "x1", text: "No flow", modes: [
+          // A combination: a weekly check (what's done when found said) and a yearly swap.
+          { ...mode("m1", "Bearing seizes", {
+            outcome: "on_condition", task_id: "t1", task: "Listen to the bearing", interval: 4, interval_unit: "weeks",
+            outcomes: [
+              { outcome: "on_condition", task_id: "t1", task: "Listen to the bearing", interval: 4, interval_unit: "weeks", on_found: "Grease it" },
+              { outcome: "fixed_interval", task_id: "t2", task: "Replace the bearing", interval: 1, interval_unit: "years" },
+            ],
+          }), tasks: [task("t1", "Listen to the bearing", { shared_with: 1, outcome: "on_condition" }),
+            task("t2", "Replace the bearing", { interval: 1, unit: "years", outcome: "fixed_interval", package: { id: "k1", name: "Yearly overhaul" } })] },
+          // Run to failure: no task rows.
+          mode("m2", "Seal leaks", { outcome: "rtf", task: "Replace the seal" }),
+        ] },
+        { id: "x2", text: "Low flow", modes: [
+          // The check above also serves this mode (one task, two modes).
+          { ...mode("m3", "Impeller worn", { outcome: "on_condition", task_id: "t1", task: "Listen to the bearing", interval: 4, interval_unit: "weeks", on_found: "Look at the impeller" }),
+            tasks: [task("t1", "Listen to the bearing", { shared_with: 1, outcome: "on_condition" })] },
+        ] },
+      ] },
+    ],
+    unassigned: [
+      // No decision yet: the task linked before it is a row too.
+      { ...mode("m4", "Coupling fails"), tasks: [task("t4", "Check the coupling")] },
+    ],
+  }],
+};
+
+test("tasks are the fifth level: one row per task under each failure mode, none for run to failure", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), TASKED);
+  assert.deepEqual(d.rows.get("m1").kids, [taskKey("m1", "t1"), taskKey("m1", "t2")]);
+  assert.deepEqual(d.rows.get("m2").kids, []); // run to failure: the mode's row says it
+  assert.deepEqual(d.rows.get("m4").kids, [taskKey("m4", "t4")]);
+  const t1 = d.rows.get(taskKey("m1", "t1"));
+  assert.equal(t1.type, "task");
+  assert.equal(t1.depth, d.rows.get("m1").depth + 1);
+  assert.equal(t1.parent, "m1");
+  assert.ok(isRcmRow(t1));
+  assert.equal(positionOf(t1), "pump");
+  assert.equal(t1.ref.text, "Listen to the bearing");
+  assert.equal(t1.ref.outcome, "on_condition");
+  assert.equal(t1.ref.on_found, "Grease it");
+  assert.deepEqual(t1.ref.found, { at: 0, text: "Grease it" });
+  assert.equal(d.rows.get(taskKey("m1", "t2")).ref.outcome, "fixed_interval");
+  assert.equal(d.rows.get(taskKey("m1", "t2")).ref.found, null);
+  assert.equal(d.rows.get(taskKey("m4", "t4")).ref.outcome, null);
+  // Counted once, on the modes: the task rows add nothing to the counts.
+  assert.equal(d.rows.get("pump").rsum.modes, 4);
+  assert.equal(d.rows.get("pump").rsum.tasks, 4); // run to failure's action counts too, as before
+  assert.equal(t1.rsum.modes, 0);
+  assert.equal(d.rows.get("x1").rsum.tasks, 2);
+});
+
+test("a shared task has a row under every failure mode it serves, keyed by mode and task", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), TASKED);
+  const a = d.rows.get(taskKey("m1", "t1"));
+  const b = d.rows.get(taskKey("m3", "t1"));
+  assert.ok(a && b && a.key !== b.key);
+  assert.equal(a.ref.task_id, b.ref.task_id);
+  // Each says what's done when it's found under its own mode.
+  assert.equal(b.ref.on_found, "Look at the impeller");
+  assert.deepEqual(taskServes(d, "t1").map((x) => x.mode.key), ["m1", "m3"]);
+  assert.deepEqual(taskServes(d, "t2").map((x) => x.mode.key), ["m1"]);
+});
+
+test("modeTaskRows: a combination's members in order, a plain decision's tasks, nothing for accept or redesign alone", () => {
+  assert.deepEqual(modeTaskRows(TASKED.positions[0].functions[0].failures[0].modes[0]).map((x) => [x.task.id, x.outcome]),
+    [["t1", "on_condition"], ["t2", "fixed_interval"]]);
+  assert.deepEqual(modeTaskRows({ ...mode("a", "A", { outcome: "accept" }), tasks: [] }), []);
+  assert.deepEqual(modeTaskRows({ ...mode("r", "R", { outcome: "redesign" }), tasks: [task("t9", "Old check")] }), []);
+  // A plain decision: its task takes the decision's kind when the task has none.
+  assert.deepEqual(modeTaskRows({ ...mode("p", "P", { outcome: "failure_finding", task_id: "t7", on_found: "Repair" }), tasks: [task("t7", "Test the trip")] })
+    .map((x) => [x.task.id, x.outcome, x.found?.text]), [["t7", "failure_finding", "Repair"]]);
+  // The decision's own task takes the decision's kind even when the task says the kind it was made as.
+  assert.deepEqual(modeTaskRows({ ...mode("q", "Q", { outcome: "failure_finding", task_id: "t8" }), tasks: [task("t8", "Test it", { outcome: "on_condition" })] })
+    .map((x) => [x.outcome, x.found]), [["failure_finding", { at: 0, text: "" }]]);
+  // Tasks with no id (an older read) have no row.
+  assert.deepEqual(modeTaskRows({ ...mode("o", "O", { outcome: "on_condition", task: "Look", interval: 1, interval_unit: "weeks" }) }), []);
+});
+
+test("a task row's cells, phone line, menu and search", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), TASKED);
+  const t1 = cellRow(d.rows.get(taskKey("m1", "t1")));
+  const t2 = cellRow(d.rows.get(taskKey("m1", "t2")));
+  assert.equal(COLUMN.decision.text(t1), "On condition");
+  assert.equal(COLUMN.task.text(t1), "every 4 weeks · Serves 2 here");
+  assert.equal(COLUMN.task.text(t2), "every 1 year · In: Yearly overhaul");
+  assert.equal(COLUMN.interval.text(t1), "");
+  assert.equal(COLUMN.modes.text(t1), ""); // never "0": nothing is inside a task
+  assert.equal(COLUMN.consequence.text(t1), "");
+  assert.equal(TASK_WITH_INTERVAL.text(t1), "every 4 weeks · Serves 2 here");
+  assert.equal(phoneLine(t1), "On condition · every 4 weeks · Serves 2 here · Then, if found: Grease it");
+  assert.equal(insideWords(t1), "");
+  assert.ok(opensItem(t1));
+  assert.deepEqual(rowActions(t1).map((a) => a.label), ["Open…", "Link to another failure mode…", "Remove from this failure mode…"]);
+  assert.deepEqual(rowActions(t2).map((a) => a.label), ["Open…", "Link to another failure mode…", "Retire the task…"]);
+  // The one search box finds a task by its name, its instructions and what's done when found.
+  const f = computeFilter(d, { query: "grease it" });
+  assert.ok(f.match.has(taskKey("m1", "t1")));
+});
+
+test("isolate opens a fourth and a fifth level on the RCM tab, down to the tasks; tasks are no drop target", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), TASKED);
+  // pump › f1 › x1 › m1 › task: four levels below the function, five below the position's functions' level.
+  assert.equal(levelsBelow(d, "f1"), 3);
+  assert.equal(levelsBelow(d, "m1"), 1);
+  assert.equal(levelsBelow(d, taskKey("m1", "t1")), 0);
+  assert.equal(levelsBelow(d, "pump"), 4);
+  assert.equal(levelsBelow(d, "plant"), 5);
+  const labels = (key) => isolateItems(d.rows.get(key), { can: true, levels: levelsBelow(d, key) })[0].items.map((i) => i.label);
+  assert.deepEqual(labels("f1"), ["With 1 level open", "With 2 levels open", "With 3 levels open", "With everything open"]);
+  assert.deepEqual(labels("pump"), ["With 1 level open", "With 2 levels open", "With 3 levels open", "With 4 levels open", "With everything open"]);
+  assert.deepEqual(labels("plant"), ["With 1 level open", "With 2 levels open", "With 3 levels open", "With 4 levels open", "With 5 levels open", "With everything open"]);
+  // Without `levels` (the Summary tab), the three as before.
+  assert.equal(isolateItems(d.rows.get("plant"), { can: true })[0].items.length, 4);
+  // With 4 levels open from the position: its failure modes open, so their tasks show.
+  const open = isolateOpen(d, new Set(), "pump", 4);
+  assert.ok(open.has("m1") && !open.has(taskKey("m1", "t1")));
+  const shown = flatten(d, open, null).list.map((x) => x.key);
+  assert.ok(shown.includes(taskKey("m1", "t2")));
+  // A task row is never a place to drop, and says nothing (quiet).
+  for (const src of [{ kind: "modes", keys: ["m3"] }, { kind: "fail", keys: ["x2"] }, { kind: "task", keys: ["m3"], task: { id: "t1" } }]) {
+    assert.deepEqual(dropZones(d, src, taskKey("m1", "t2")), { zones: [] });
+  }
+});
+
+test("opening the RCM tab on a position opens down to its failure modes, not their tasks", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), TASKED);
+  const o = openFor(d, "pump");
+  assert.ok(o.has("x1") && !o.has("m1"));
+});
+
+import { phonePositionLine } from "./explorerRcm.js";
+import { decidedWords } from "./rcmWorksheet.js";
+
+test("the phone's position line uses the desktop's decided words, and stays quiet where no RCM is expected", () => {
+  const sum = { modes: 114, undecided: 0, review: 0 };
+  // A parent whose own RCM isn't marked done but everything inside is decided: "all decided", as on the desktop.
+  assert.equal(phonePositionLine({ rsum: sum, ref: { not_analysed: true } }), "114 failure modes · all decided");
+  assert.equal(phonePositionLine({ rsum: sum, ref: {} }), `114 failure modes · ${decidedWords(sum)}`);
+  assert.equal(phonePositionLine({ rsum: { ...sum, undecided: 2 }, ref: {} }), "114 failure modes · 2 to decide");
+  assert.equal(phonePositionLine({ rsum: { modes: 1, undecided: 0, review: 1 }, ref: {} }), "1 failure mode · 1 to review");
+  // No failure modes: "Not analysed yet" only with a class or a function.
+  assert.equal(phonePositionLine({ rsum: { modes: 0 }, ref: { not_analysed: true } }), "");
+  assert.equal(phonePositionLine({ rsum: { modes: 0 }, ref: { not_analysed: true, position_class: "Pump" } }), "Not analysed yet");
+  assert.equal(phonePositionLine({ rsum: { modes: 0 }, rcmKids: 1, ref: { not_analysed: true } }), "Not analysed yet");
+  assert.equal(phonePositionLine({ ref: { position_class: "Pump" } }), "");
+});
+
+import { onlyOnEvent } from "./rcmWorksheet.js";
+
+test("a decision whose task is done on an event (no interval, no task of its own) is a saved task, not a form", () => {
+  const d = { outcome: "on_condition", task: "Dose shock by the pool's volume", on_found: "Keep swimmers out" };
+  assert.equal(onlyOnEvent(d, []), true);
+  assert.equal(onlyOnEvent({ ...d, interval: "" }, []), true);
+  // With an interval, or a task of its own, or no words: not this case.
+  assert.equal(onlyOnEvent({ ...d, interval: 1, interval_unit: "weeks" }, []), false);
+  assert.equal(onlyOnEvent(d, [{ id: "t1", name: "Dose shock" }]), false);
+  assert.equal(onlyOnEvent({ outcome: "on_condition" }, []), false);
+  // Run to failure and combinations aren't scheduled tasks.
+  assert.equal(onlyOnEvent({ ...d, outcome: "rtf" }, []), false);
+  assert.equal(onlyOnEvent(null, []), false);
+});

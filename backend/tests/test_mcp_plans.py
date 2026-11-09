@@ -38,7 +38,7 @@ USERS = {
 }
 UPGRADE = "upgrade to Reliafy Pro (US$19/month)"
 WEIBULL = [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
-N_TOOLS = 16
+N_TOOLS = 6
 
 
 # MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
@@ -132,27 +132,27 @@ def test_free_user_tries_every_tool_but_the_pro_only_ones_within_the_allowance(e
     token = env.oauth[FREE]
     assert _post_mcp(token).status_code == 200  # connecting works
     tools = {t.name for t in _run(token, lambda c: c.list_tools()).tools}
-    assert len(tools) == N_TOOLS and {"upgrade_link", "list", "models"} <= tools
+    assert len(tools) == N_TOOLS and {"get", "list", "analyse", "change"} <= tools
 
     assert "life_models" in _ok(_call(token, "list", {"kind": "models"}))
-    assert _ok(_call(token, "models", {"action": "save", "name": "Bearing", "distribution": "weibull",
+    assert _ok(_call(token, "change", {"action": "model_save", "name": "Bearing", "distribution": "weibull",
                                        "params": WEIBULL}))["saved"]
-    assert _ok(_call(token, "strategy", {"action": "optimal_replacement",
+    assert _ok(_call(token, "analyse", {"action": "optimal_replacement",
         "distribution_id": "weibull", "params": WEIBULL, "planned_cost": 100, "unplanned_cost": 1000}))
-    assert _ok(_call(token, "datasets", {"action": "upload", "name": "d", "csv": "t,c\n1,0\n2,0\n"}))["id"]
-    assert _ok(_call(token, "life_data_analysis", {"action": "plan_demonstration_test",
+    assert _ok(_call(token, "change", {"action": "dataset_upload", "name": "d", "csv": "t,c\n1,0\n2,0\n"}))["id"]
+    assert _ok(_call(token, "analyse", {"action": "plan_demonstration_test",
                                                    "reliability": 0.95}))["units"] == 59
     assert _calls_used(env.db, FREE) == 5
 
     # Fitting and fleets are Pro-only: refused, and refusals aren't counted.
-    for name, args in [("life_data_analysis", {"action": "fit", **FIT_ARGS}),
-                       ("models", {"action": "fit", "name": "x", **FIT_ARGS}),
-                       ("models", {"action": "fit_alt", "name": "x", "data": [120, 340], "stresses": [[350], [400]]}),
+    for name, args in [("analyse", {"action": "fit", **FIT_ARGS}),
+                       ("change", {"action": "model_fit", "name": "x", **FIT_ARGS}),
+                       ("change", {"action": "model_fit_alt", "name": "x", "data": [120, 340], "stresses": [[350], [400]]}),
                        ("list", {"kind": "fleets"}),
-                       ("fleet", {"action": "create_alert", "fleet_id": "nope", "kind": "above", "threshold": 1})]:
+                       ("change", {"action": "fleet_create_alert", "fleet_id": "nope", "kind": "above", "threshold": 1})]:
         msg = _err(_call(token, name, args))
         assert FREE_PRO_ONLY in msg and f"{BASE}/billing" in msg and "upgrade_link" in msg, name
-    assert "SurPyval" in _err(_call(token, "life_data_analysis", {"action": "fit", **FIT_ARGS}))
+    assert "SurPyval" in _err(_call(token, "analyse", {"action": "fit", **FIT_ARGS}))
     assert _calls_used(env.db, FREE) == 5
     assert env.db.models.count_documents({"owner_id": FREE, "dataset_id": {"$ne": ""}}) == 0
 
@@ -160,7 +160,7 @@ def test_free_user_tries_every_tool_but_the_pro_only_ones_within_the_allowance(e
 def test_free_user_gets_the_exact_figures_but_no_simulations(env):
     rid = _repairable(env, FREE, "Pumps")
     assert _calls_used(env.db, FREE) == 1
-    out = _ok(_call(env.oauth[FREE], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
+    out = _ok(_call(env.oauth[FREE], "analyse", {"action": "rbd", "rbd_id": rid}))
     # The exact figures (#154) on the Free plan, within the allowance...
     assert out["available"] is True and out["has_simulation"] is False
     exact = out["exact"]
@@ -170,7 +170,7 @@ def test_free_user_gets_the_exact_figures_but_no_simulations(env):
     # ...the simulation refused, with the way forward.
     sim = out["simulation"]
     assert sim["available"] is False and sim["code"] == "pro_required"
-    assert "isn't included on the Free plan" in sim["message"] and "rbd_analysis export_python" in sim["message"]
+    assert "isn't included on the Free plan" in sim["message"] and "analyse rbd_export_python" in sim["message"]
     assert env.simulations["n"] == 0
     assert _calls_used(env.db, FREE) == 2  # an answer, so it counts
 
@@ -182,7 +182,7 @@ def test_free_user_simulation_only_diagram_is_refused_and_not_counted(env):
     graph = doc["graph"]
     graph["repair_crews"] = {"crews": 1}
     env.db.rbds.update_one({"_id": rid}, {"$set": {"graph": graph}})
-    out = _ok(_call(env.oauth[FREE], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
+    out = _ok(_call(env.oauth[FREE], "analyse", {"action": "rbd", "rbd_id": rid}))
     assert out["available"] is False and out["code"] == "pro_required"
     assert "isn't included on the Free plan" in out["message"]
     assert env.simulations["n"] == 0
@@ -193,13 +193,13 @@ def test_free_user_current_state(env):
     rid = _repairable(env, FREE, "Pumps")
     graph = env.db.rbds.find_one({"_id": rid})["graph"]
     ids = [n["id"] for n in graph["nodes"] if n["type"] == "component"]
-    new = _ok(_call(env.oauth[FREE], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "t_max": 100}))["exact"]
-    now = _ok(_call(env.oauth[FREE], "rbd_analysis", {"action": "analyze",
+    new = _ok(_call(env.oauth[FREE], "analyse", {"action": "rbd", "rbd_id": rid, "t_max": 100}))["exact"]
+    now = _ok(_call(env.oauth[FREE], "analyse", {"action": "rbd",
         "rbd_id": rid, "t_max": 100, "current_state": {ids[0]: {"down": True, "since": 0.5}}}))
     assert now["current_state"] == {ids[0]: {"down": True, "since": 0.5}}
     assert now["exact"]["from"] == "now" and new["from"] == "new"
     assert now["exact"]["mission_availability"] < new["mission_availability"]
-    msg = _err(_call(env.oauth[FREE], "rbd_analysis", {"action": "analyze",
+    msg = _err(_call(env.oauth[FREE], "analyse", {"action": "rbd",
         "rbd_id": rid, "current_state": {"nope": {"age": 3}}}))
     assert "isn't a component block" in msg
     assert "availability_cache" not in env.db.rbds.find_one({"_id": rid})
@@ -208,13 +208,13 @@ def test_free_user_current_state(env):
 def test_free_user_shares_a_protected_link_within_the_allowance(env):
     """Share links (#125) are on every plan and count like any other call."""
     token = env.oauth[FREE]
-    rbd = _ok(_call(token, "rbd", {"action": "create", "name": "Skid", "stages": REPAIRABLE_STAGES}))
+    rbd = _ok(_call(token, "change", {"action": "rbd_create", "name": "Skid", "stages": REPAIRABLE_STAGES}))
     before = _calls_used(env.db, FREE)
-    out = _ok(_call(token, "sharing", {"action": "create_link", "kind": "rbd", "id": rbd["id"], "password": True,
+    out = _ok(_call(token, "change", {"action": "share_link", "kind": "rbd", "id": rbd["id"], "password": True,
                                           "expires_in_days": 30}))
     assert out["url"].startswith(f"{BASE}/p/") and out["passphrase"] and out["protected"] is True
     assert _ok(_call(token, "list", {"kind": "share_links"}))["count"] == 1
-    _ok(_call(token, "sharing", {"action": "revoke_link", "token": out["token"]}))
+    _ok(_call(token, "change", {"action": "share_revoke", "token": out["token"]}))
     assert _calls_used(env.db, FREE) == before + 3
 
 
@@ -230,7 +230,7 @@ def test_free_allowance_is_per_calendar_month(env, monkeypatch):
     assert ("You've used this month's 20 free Reliafy tool calls. They reset on 1 November "
             "(UTC) — in 29 days. ") in msg
     assert ("Using Reliafy from AI agents without a limit is part of Reliafy Pro (US$19/month) — upgrade at "
-            f"{BASE}/billing, or call upgrade_link for a payment link.") in msg
+            f"{BASE}/billing, or call get kind upgrade_link for a payment link.") in msg
     assert _calls_used(env.db, FREE) == 20  # the refused call isn't counted
     doc = env.db.mcp_usage.find_one({"uid": FREE})
     assert doc["_id"].endswith(":2026-10")
@@ -263,7 +263,7 @@ def test_a_lapsed_agent_plan_is_free_again(env):
     env.db.users.update_one({"_id": AGENT}, {"$set": {"plan_until": past}})
     _ok(_call(env.oauth[AGENT], "list", {"kind": "models"}))
     assert billing.mcp_calls_used(env.db, AGENT, "free") == 1 and _calls_today(env.db, AGENT) == 0
-    assert FREE_PRO_ONLY in _err(_call(env.oauth[AGENT], "life_data_analysis", {"action": "fit", **FIT_ARGS}))
+    assert FREE_PRO_ONLY in _err(_call(env.oauth[AGENT], "analyse", {"action": "fit", **FIT_ARGS}))
 
 
 @pytest.mark.parametrize("uid", [FREE, AGENT])
@@ -304,12 +304,12 @@ def test_pro_has_every_tool_without_quota(env, monkeypatch, via):
     monkeypatch.setattr(config, "MCP_AGENT_DAILY_CALLS", 0)
     token = getattr(env, via)[PRO]
     assert len(_run(token, lambda c: c.list_tools()).tools) == N_TOOLS
-    assert _ok(_call(token, "life_data_analysis", {"action": "fit", "data": [120, 340, 510, 700, 980]}))["params"]
-    assert _ok(_call(token, "models", {"action": "fit", "name": "x", "data": [120, 340, 510, 700, 980]}))["saved"]
+    assert _ok(_call(token, "analyse", {"action": "fit", "data": [120, 340, 510, 700, 980]}))["params"]
+    assert _ok(_call(token, "change", {"action": "model_fit", "name": "x", "data": [120, 340, 510, 700, 980]}))["saved"]
     assert "fleets" in _ok(_call(token, "list", {"kind": "fleets"}))
-    alerts = _call(token, "fleet", {"action": "create_alert", "fleet_id": "nope", "kind": "above", "threshold": 1})
+    alerts = _call(token, "change", {"action": "fleet_create_alert", "fleet_id": "nope", "kind": "above", "threshold": 1})
     assert "not found" in _err(alerts).lower()  # past the gate, into the tool
-    assert _ok(_call(token, "models", {"action": "save", "name": "Bearing", "distribution": "weibull",
+    assert _ok(_call(token, "change", {"action": "model_save", "name": "Bearing", "distribution": "weibull",
                                        "params": WEIBULL}))
     for _ in range(3):
         _ok(_call(token, "list", {"kind": "models"}))
@@ -321,7 +321,7 @@ def test_self_hosted_and_operators_have_full_access(env, monkeypatch):
 
     monkeypatch.setattr(config, "ADMIN_EMAILS", {"free@example.org"})
     _ok(_call(env.oauth[FREE], "list", {"kind": "models"}))
-    _ok(_call(env.oauth[FREE], "life_data_analysis", {"action": "fit", "data": [120, 340, 510, 700, 980]}))
+    _ok(_call(env.oauth[FREE], "analyse", {"action": "fit", "data": [120, 340, 510, 700, 980]}))
     monkeypatch.setattr(config, "ADMIN_EMAILS", set())
     monkeypatch.setattr(config, "BILLING_ENABLED", False)
     for _ in range(2):
@@ -335,18 +335,18 @@ def test_self_hosted_and_operators_have_full_access(env, monkeypatch):
 def test_grandfathered_agent_keeps_tools_except_fitting_and_fleets(env):
     token = env.oauth[AGENT]
     assert "life_models" in _ok(_call(token, "list", {"kind": "models"}))
-    assert _ok(_call(token, "strategy", {"action": "optimal_replacement",
+    assert _ok(_call(token, "analyse", {"action": "optimal_replacement",
         "distribution_id": "weibull", "params": WEIBULL, "planned_cost": 100, "unplanned_cost": 1000}))
-    assert _ok(_call(token, "models", {"action": "save", "name": "Bearing", "distribution": "weibull",
+    assert _ok(_call(token, "change", {"action": "model_save", "name": "Bearing", "distribution": "weibull",
                                        "params": WEIBULL}))["saved"]
 
-    for name, args in [("life_data_analysis", {"action": "fit", "data": [120, 340, 510, 700, 980]}),
-                       ("models", {"action": "fit", "name": "x", "data": [120, 340, 510, 700, 980]})]:
+    for name, args in [("analyse", {"action": "fit", "data": [120, 340, 510, 700, 980]}),
+                       ("change", {"action": "model_fit", "name": "x", "data": [120, 340, 510, 700, 980]})]:
         msg = _err(_call(token, name, args))
         assert "part of Reliafy Pro (US$19/month)" in msg
-        assert "SurPyval" in msg and "models save" in msg and f"{BASE}/billing" in msg
+        assert "SurPyval" in msg and "change model_save" in msg and f"{BASE}/billing" in msg
     for name, args in [("list", {"kind": "fleets"}),
-                       ("fleet", {"action": "create_alert", "fleet_id": "nope", "kind": "above", "threshold": 1})]:
+                       ("change", {"action": "fleet_create_alert", "fleet_id": "nope", "kind": "above", "threshold": 1})]:
         msg = _err(_call(token, name, args))
         assert "Fleet forecasts and fleet alerts are part of Reliafy Pro" in msg and f"{BASE}/billing" in msg
     assert env.db.models.count_documents({"owner_id": AGENT, "dataset_id": {"$ne": ""}}) == 0
@@ -362,7 +362,7 @@ def test_grandfathered_agent_keeps_the_daily_quota(env, monkeypatch):
     monkeypatch.setattr(config, "MCP_AGENT_DAILY_CALLS", 2)
     token = env.oauth[AGENT]
     # A refused Pro-only call doesn't use the quota; tools/list never does.
-    _err(_call(token, "life_data_analysis", {"action": "fit", "data": [1, 2, 3]}))
+    _err(_call(token, "analyse", {"action": "fit", "data": [1, 2, 3]}))
     _run(token, lambda c: c.list_tools())
     assert _calls_today(env.db, AGENT) == 0
 
@@ -384,22 +384,22 @@ def test_grandfathered_agent_keeps_the_daily_quota(env, monkeypatch):
 # ---- availability simulation: Pro or purchased credits ---------------------------------------
 
 def _repairable(env, uid, name):
-    return _ok(_call(env.oauth[uid], "rbd", {"action": "create", "name": name, "repairable": True,
+    return _ok(_call(env.oauth[uid], "change", {"action": "rbd_create", "name": name, "repairable": True,
                                              "stages": REPAIRABLE_STAGES}))["id"]
 
 
 def test_grandfathered_agent_gets_no_simulations(env):
     rid = _repairable(env, AGENT, "Pumps")
-    out = _ok(_call(env.oauth[AGENT], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
+    out = _ok(_call(env.oauth[AGENT], "analyse", {"action": "rbd", "rbd_id": rid}))
     assert out["available"] is True and out["exact"]["status"] == "ok"
     assert out["simulation"]["available"] is False and out["simulation"]["code"] == "pro_required"
     msg = out["simulation"]["message"]
     assert "needs Reliafy Pro (US$19/month" in msg and f"{BASE}/billing" in msg
-    assert "rbd_analysis export_python" in msg and "Download as Python" in msg and "RePyability" in msg
+    assert "analyse rbd_export_python" in msg and "Download as Python" in msg and "RePyability" in msg
     assert env.simulations["n"] == 0
 
     # The way forward it names works on the plan.
-    script = _ok(_call(env.oauth[AGENT], "rbd_analysis", {"action": "export_python", "rbd_id": rid}))
+    script = _ok(_call(env.oauth[AGENT], "analyse", {"action": "rbd_export_python", "rbd_id": rid}))
     assert "repyability" in script["script"].lower()
     compile(script["script"], script["filename"], "exec")
 
@@ -409,16 +409,16 @@ def test_pro_simulates_and_purchased_credits_dont(env):
 
     rid = _repairable(env, PRO, "Pumps")
     # Every figure is exact: no simulation unless asked (#262)...
-    out = _ok(_call(env.oauth[PRO], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
+    out = _ok(_call(env.oauth[PRO], "analyse", {"action": "rbd", "rbd_id": rid}))
     assert out["has_simulation"] is False and out["simulation"]["on_request"] is True
     assert "simulate=true" in out["simulation"]["message"] and env.simulations["n"] == 0
     # ...and asked, it runs.
-    out = _ok(_call(env.oauth[PRO], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
+    out = _ok(_call(env.oauth[PRO], "analyse", {"action": "rbd", "rbd_id": rid, "simulate": True}))
     assert out["available"] and out["cached"] is False and env.simulations["n"] == 1
     assert out["has_simulation"] is True and out["simulation"]["available"] is True
     assert out["exact"]["status"] == "ok" and out["precision"]
     # simulate=false: the exact figures only (the saved simulation still served).
-    fast = _ok(_call(env.oauth[PRO], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": False,
+    fast = _ok(_call(env.oauth[PRO], "analyse", {"action": "rbd", "rbd_id": rid, "simulate": False,
                                                       "t_max": 500}))
     assert fast["has_simulation"] is False and fast["exact"]["window"] == 500
     assert env.simulations["n"] == 1
@@ -426,7 +426,7 @@ def test_pro_simulates_and_purchased_credits_dont(env):
     # An Agent user who bought credits isn't entitled: simulations are Pro.
     billing.grant_credits(env.db, AGENT, 500, "purchase")
     rid = _repairable(env, AGENT, "Compressors")
-    out = _ok(_call(env.oauth[AGENT], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
+    out = _ok(_call(env.oauth[AGENT], "analyse", {"action": "rbd", "rbd_id": rid, "simulate": True}))
     assert out["simulation"]["available"] is False and out["simulation"]["code"] == "pro_required"
     assert env.simulations["n"] == 1
 
@@ -466,8 +466,8 @@ def test_agent_mcp_cap_message_says_the_limit_and_upgrade(env, monkeypatch):
 
     monkeypatch.setattr(config, "AGENT_MAX_DATASETS", 1)
     csv = "hours,failed\n1,0\n2,0\n3,1\n"
-    _ok(_call(env.oauth[AGENT], "datasets", {"action": "upload", "name": "a", "csv": csv}))
-    msg = _err(_call(env.oauth[AGENT], "datasets", {"action": "upload", "name": "b", "csv": csv}))
+    _ok(_call(env.oauth[AGENT], "change", {"action": "dataset_upload", "name": "a", "csv": csv}))
+    msg = _err(_call(env.oauth[AGENT], "change", {"action": "dataset_upload", "name": "b", "csv": csv}))
     assert "Agent plan's limit of 1 saved datasets" in msg and "doesn't reset" in msg
     assert UPGRADE in msg and "US$2" not in msg
 
@@ -488,21 +488,21 @@ def test_web_app_cap_message_uses_the_users_own_plan(env, monkeypatch):
     )
 
 
-# ---- models save ---------------------------------------------------------------------------
+# ---- change model_save ---------------------------------------------------------------------------
 
 def test_save_model_from_parameters(env):
     token = env.oauth[PRO]
-    ds = _ok(_call(token, "datasets", {"action": "upload", "name": "Bearings",
+    ds = _ok(_call(token, "change", {"action": "dataset_upload", "name": "Bearings",
                                        "csv": "hours,failed\n900,0\n1200,0\n1500,1\n"}))
     # Parameter order doesn't matter; names do.
-    saved = _ok(_call(token, "models", {"action": "save",
+    saved = _ok(_call(token, "change", {"action": "model_save",
         "name": "Bearing life", "distribution": "Weibull", "unit": "hours",
         "params": [{"name": "beta", "value": 2.5}, {"name": "alpha", "value": 1200}],
         "dataset_id": ds["id"], "notes": "surpyval.Weibull.fit, MLE"}))
     mid = saved["model_id"]
     assert saved["distribution_id"] == "weibull" and saved["unit"] == "Hours"
     assert saved["params"] == [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
-    assert saved["url"].endswith(f"/modelling/m/{mid}") and saved["dataset_id"] == ds["id"]
+    assert saved["url"].endswith(f"/models/m/{mid}") and saved["dataset_id"] == ds["id"]
     ref = surpyval.Weibull.from_params([1200, 2.5])
     assert saved["metrics"]["mttf"] == pytest.approx(float(ref.mean()))
 
@@ -512,15 +512,15 @@ def test_save_model_from_parameters(env):
     assert doc["dataset_id"] == ""  # a reference only: never refitted from that dataset
 
     # Usable like any fitted model.
-    rel = _ok(_call(token, "life_data_analysis", {"action": "reliability_at", "model_id": mid, "times": [600]}))
+    rel = _ok(_call(token, "analyse", {"action": "reliability_at", "model_id": mid, "times": [600]}))
     assert rel["points"][0]["reliability"] == pytest.approx(float(ref.sf(600)), rel=1e-3)
-    assert _ok(_call(token, "strategy", {"action": "optimal_replacement", "model_id": mid, "planned_cost": 100,
+    assert _ok(_call(token, "analyse", {"action": "optimal_replacement", "model_id": mid, "planned_cost": 100,
                                          "unplanned_cost": 1000}))
     assert mid in [m["id"] for m in _ok(_call(token, "list", {"kind": "models", "model_type": "life"}))["life_models"]]
 
 
 def test_save_model_with_an_offset(env):
-    saved = _ok(_call(env.oauth[AGENT], "models", {"action": "save",
+    saved = _ok(_call(env.oauth[AGENT], "change", {"action": "model_save",
         "name": "Offset", "distribution": "weibull",
         "params": [*WEIBULL, {"name": "gamma", "value": 100}]}))
     assert {"name": "gamma (offset)", "value": 100.0} in saved["extra_params"]
@@ -538,14 +538,14 @@ def test_save_model_with_an_offset(env):
     ({"distribution": "weibull", "params": WEIBULL, "dataset_id": "missing"}, "Dataset not found"),
 ])
 def test_save_model_validates(env, args, expect):
-    msg = _err(_call(env.oauth[PRO], "models", {"action": "save", "name": "Bad", **args}))
+    msg = _err(_call(env.oauth[PRO], "change", {"action": "model_save", "name": "Bad", **args}))
     assert expect in msg
     assert env.db.models.count_documents({"owner_id": PRO}) == 0
 
 
 def test_save_model_dataset_must_be_the_callers(env):
-    ds = _ok(_call(env.oauth[PRO], "datasets", {"action": "upload", "name": "Mine", "csv": "t,c\n1,0\n2,0\n"}))
-    msg = _err(_call(env.oauth[AGENT], "models", {"action": "save",
+    ds = _ok(_call(env.oauth[PRO], "change", {"action": "dataset_upload", "name": "Mine", "csv": "t,c\n1,0\n2,0\n"}))
+    msg = _err(_call(env.oauth[AGENT], "change", {"action": "model_save",
         "name": "Sneaky", "distribution": "weibull", "params": WEIBULL, "dataset_id": ds["id"]}))
     assert "Dataset not found" in msg
 
@@ -708,7 +708,7 @@ def test_webhook_handles_an_existing_agent_subscription_to_its_end(stripe_client
     assert acct["active_plan"] == "free" and acct["stripe_subscription_id"] is None
     _ok(_call(s.oauth[FREE], "list", {"kind": "models"}))  # back on Free's allowance...
     assert _calls_used(s.db, FREE) == 1
-    assert FREE_PRO_ONLY in _err(_call(s.oauth[FREE], "life_data_analysis", {"action": "fit",
+    assert FREE_PRO_ONLY in _err(_call(s.oauth[FREE], "analyse", {"action": "fit",
                                                                              **FIT_ARGS}))  # ...without fitting
 
     # customer.subscription.deleted ends one too.
@@ -828,12 +828,15 @@ def test_upgrade_link_offers_only_pro_and_works_past_the_free_allowance(stripe_c
     monkeypatch.setattr(config, "MCP_FREE_MONTHLY_CALLS", 1)
     s = stripe_client
     tools = _run(s.oauth[FREE], lambda c: c.list_tools()).tools
-    schema = next(t for t in tools if t.name == "upgrade_link").input_schema["properties"]["plan"]
-    assert schema.get("enum", [schema.get("const")]) == ["pro"] and schema["default"] == "pro"
+    from backend.mcp_server import action_schema
+
+    assert "upgrade_link" in next(t for t in tools if t.name == "get").input_schema["properties"]["kind"]["enum"]
+    schema = action_schema("get.upgrade_link")["arguments"]["properties"]["plan"]
+    assert schema.get("enum", [schema.get("const")]) == ["pro"]
 
     _ok(_call(s.oauth[FREE], "list", {"kind": "models"}))
     assert "this month's 1 free" in _err(_call(s.oauth[FREE], "list", {"kind": "models"}))  # allowance used...
-    out = _ok(_call(s.oauth[FREE], "upgrade_link"))  # ...but the way to Pro works
+    out = _ok(_call(s.oauth[FREE], "get", {"kind": "upgrade_link"}))  # ...but the way to Pro works
     assert out["plan"] == "pro" and out["price"] == "US$19/month"
     assert out["url"].startswith("https://checkout.stripe.test/")
     assert "nothing is charged until the checkout is completed" in out["note"]
@@ -842,7 +845,7 @@ def test_upgrade_link_offers_only_pro_and_works_past_the_free_allowance(stripe_c
     assert kw["metadata"] == {"uid": FREE, "kind": "pro"}
 
     # Asking for the retired plan isn't possible.
-    assert _call(s.oauth[FREE], "upgrade_link", {"plan": "agent"}).is_error
+    assert _call(s.oauth[FREE], "get", {"kind": "upgrade_link", "plan": "agent"}).is_error
     assert not any(kw.get("metadata", {}).get("kind") == "agent" for _, kw in
                    [c for c in s.fake.calls if c[0] == "checkout"])
     assert _calls_used(s.db, FREE) == 1  # upgrade_link isn't counted
@@ -856,7 +859,7 @@ def test_upgrade_link_past_the_agent_quota_and_never_switching_a_subscriber(stri
     _ok(_call(s.oauth[AGENT], "list", {"kind": "models"}))
     assert "upgrade_link" in _err(_call(s.oauth[AGENT], "list", {"kind": "models"}))  # quota used up
 
-    out = _ok(_call(s.oauth[AGENT], "upgrade_link"))
+    out = _ok(_call(s.oauth[AGENT], "get", {"kind": "upgrade_link"}))
     assert out["url"].endswith("/billing") and "billing page" in out["note"] and out["plan"] == "pro"
     assert not any(c[0] in ("modify", "checkout") for c in s.fake.calls)
     assert _calls_today(s.db, AGENT) == 1  # upgrade_link isn't counted

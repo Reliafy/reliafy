@@ -1,22 +1,21 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Modal from "./Modal.jsx";
 import GoodnessOfFit from "./GoodnessOfFit.jsx";
-import Select from "./Select.jsx";
 import Chip from "./ui/Chip.jsx";
-import RequirementCheck from "./RequirementCheck.jsx";
 import ModelNextSteps, { ReplacementLink } from "./ModelNextSteps.jsx";
 import { openGuide } from "./HelpButton.jsx";
-import { lifeAt } from "../api.js";
 import { formatNumber } from "../format.js";
-import { bestFitSentence, boundWords, compareRows, criterionLabel, timeAtValue } from "../lifeResults.js";
+import { bestFitSentence, compareRows, criterionLabel, timeAtValue } from "../lifeResults.js";
 import { unitInText } from "./unitText.js";
 import { PARAMS, paramLabel } from "../paramLabels.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
 
 // The side panel beside a fitted life distribution's plot (#311): its
 // parameters by their plain names with their intervals, the data, and a quiet
-// one-line reading of what the fit says — the answer next to the chart, not
-// stacked above the tabs.
+// row with what the fit says (the failure pattern or the median life) that
+// opens its reading in words — the answer next to the chart, not stacked
+// above the tabs. B-lives are read on the Calculator tab ("Time at
+// reliability": R = 90% is the B10 life).
 
 function distId(result) {
   if (result.distribution_id && result.distribution_id !== "best") return result.distribution_id;
@@ -49,7 +48,15 @@ const HOW_CI = "95% intervals. A positive parameter's interval is taken on the l
 
 // What the fit says, as a short title and one line: the failure pattern when
 // the shape says one (Weibull, exponential), otherwise the median life.
-function verdict(result) {
+// ``label`` and ``short`` are the panel row that opens it ("Failure pattern ·
+// Wear-out", "Median life · 1,240 hours").
+export function verdict(result) {
+  const v = verdictText(result);
+  if (!v) return null;
+  return { label: "Failure pattern", short: v.title, ...v };
+}
+
+function verdictText(result) {
   const id = distId(result);
   const unit = result.unit ? ` ${unitInText(result.unit)}` : "";
   const byName = Object.fromEntries((result.params || []).map((p) => [p.name, p]));
@@ -79,13 +86,14 @@ function verdict(result) {
   if (median != null && id === "lognormal") {
     // μ and σ are on log time (#292): say what they mean in time.
     return {
-      title: "Median life",
+      title: "Median life", label: "Median life", short: `${formatNumber(median)}${unit}`,
       text: <><b>{formatNumber(median)}{unit}</b> (e<sup>μ</sup>): half have failed by then. μ and σ are the
         mean and spread of log(time), not of time.</>,
     };
   }
   if (median != null) {
-    return { title: "Median life", text: <><b>{formatNumber(median)}{unit}</b>: half have failed by then.</> };
+    return { title: "Median life", label: "Median life", short: `${formatNumber(median)}${unit}`,
+             text: <><b>{formatNumber(median)}{unit}</b>: half have failed by then.</> };
   }
   return null;
 }
@@ -100,161 +108,6 @@ function dataText(result, split) {
     return parts.join(", ");
   }
   return result.n != null ? `${result.n.toLocaleString()} observations` : null;
-}
-
-// B-lives and MTTF at a confidence the viewer picks (#288). The fit carries
-// them at 90%; another level is fetched from the model's life path and kept
-// here, so going back to a level (or tab) doesn't ask again.
-const lifeCache = new Map();
-export const LIFE_LEVELS = [80, 90, 95, 99];
-
-function useLife(result, level, tau = null) {
-  const path = result.functions?.life_path;
-  const stored = result.life;
-  // A non-parametric mean life's horizon (#85): the stored one is the default.
-  const storedFits = stored && Math.abs(stored.confidence * 100 - level) < 1e-6 && tau == null;
-  const key = path ? `${path}|${level}|${tau ?? ""}` : null;
-  const [fetched, setFetched] = useState(() => (key && lifeCache.has(key) ? { key, data: lifeCache.get(key) } : null));
-  useEffect(() => {
-    if (!key || storedFits || !(level > 0 && level < 100)) return undefined;
-    if (lifeCache.has(key)) {
-      setFetched({ key, data: lifeCache.get(key) });
-      return undefined;
-    }
-    let live = true;
-    const id = setTimeout(() => {
-      lifeAt(path, { confidence: level / 100, ...(tau != null ? { tau } : {}) })
-        .then((data) => {
-          lifeCache.set(key, data);
-          if (live) setFetched({ key, data });
-        })
-        .catch(() => live && setFetched({ key, data: null }));
-    }, 250);
-    return () => {
-      live = false;
-      clearTimeout(id);
-    };
-  }, [key, storedFits, level, path, tau]);
-  if (storedFits) return { life: stored, pending: false };
-  if (fetched?.key === key && fetched.data) return { life: fetched.data, pending: false };
-  if (stored) {
-    // While another level loads, the estimates stand; their bounds wait.
-    return { life: { ...stored, b_lives: stored.b_lives.map((b) => ({ ...b, lower: null })),
-                     mttf: tau == null ? { ...stored.mttf, lower: null } : { value: null, lower: null, tau } },
-             pending: !!key };
-  }
-  if (fetched?.data) {
-    // Another level or horizon loading: the last answer's estimates stand.
-    const last = fetched.data;
-    return { life: { ...last, b_lives: last.b_lives.map((b) => ({ ...b, lower: null })),
-                     mttf: { value: null, lower: null, tau: tau ?? last.mttf?.tau } }, pending: true };
-  }
-  if (path && fetched?.key !== key) return { life: null, pending: true };
-  // A model saved without them and no live path: the estimates off the curve.
-  const fromCurve = [[0.01, "B1"], [0.05, "B5"], [0.1, "B10"], [0.5, "B50"]].map(([p, label]) => ({
-    p, label, value: lifeFromCurve(result, p), lower: null,
-  }));
-  if (fromCurve.every((b) => b.value == null)) return { life: null, pending: false };
-  return { life: { b_lives: fromCurve, mttf: { value: null, lower: null }, bounds_note: null }, pending: false };
-}
-
-const LIFE_NAMES = { B50: "B50 (median)" };
-
-// The horizon of a non-parametric mean life (#85), typed in place. The value
-// is sent when it is a time above zero; the card refetches after a pause.
-function TauInput({ tau, unit, onChange }) {
-  const [text, setText] = useState(tau != null ? String(+Number(tau).toPrecision(6)) : "");
-  const [prevTau, setPrevTau] = useState(tau);
-  if (tau !== prevTau) {
-    setPrevTau(tau);
-    if (Number(text) !== Number(tau)) setText(tau != null ? String(+Number(tau).toPrecision(6)) : "");
-  }
-  return (
-    <input
-      className="life-tau"
-      type="number" inputMode="decimal"
-      min="0"
-      step="any"
-      value={text}
-      aria-label={`Count the mean life up to this time${unit ? ` (${unit})` : ""}`}
-      title={`Count the mean life up to this time${unit ? ` (${unit})` : ""}`}
-      onChange={(e) => {
-        setText(e.target.value);
-        const v = Number(e.target.value);
-        if (e.target.value !== "" && Number.isFinite(v) && v > 0) onChange(v);
-      }}
-    />
-  );
-}
-
-function LifeCard({ result, level, onLevel, modelId = null, name = null }) {
-  const [tau, setTau] = useState(null);
-  const { life, pending } = useLife(result, level, tau);
-  if (!life) return null;
-  const unit = result.unit ? unitInText(result.unit) : "";
-  // A non-parametric estimate's mean is the area under its curve to a
-  // horizon (#85): the whole mean (MTTF) only where the curve reaches zero.
-  const np = result.kind === "nonparametric" && life.mttf?.tau != null;
-  // Once a horizon is typed, the row keeps its input (and says "to").
-  const restricted = np && (life.mttf.restricted !== false || tau != null);
-  const canPick = !!result.functions?.life_path && !!onLevel;
-  const levels = LIFE_LEVELS.includes(level) ? LIFE_LEVELS : [...LIFE_LEVELS, level].sort((a, b) => a - b);
-  const rows = [
-    ...life.b_lives.map((b) => ({
-      key: b.label, label: LIFE_NAMES[b.label] || b.label, value: b.value, lower: b.lower,
-      what: `${b.label}: ${Math.round(b.p * 100)}% have failed by then`,
-    })),
-    { key: "MTTF", label: restricted ? "Mean to" : "MTTF (mean)", value: life.mttf?.value,
-      lower: life.mttf?.lower,
-      what: restricted
-        ? `Mean life to ${formatNumber(life.mttf.tau)}${unit ? ` ${unit}` : ""}: the average time to failure, `
-          + "counting only up to then — the data don't reach the end of life, so the full mean can't be estimated"
-        : life.mttf?.value == null && result.extras?.p != null
-        ? "MTTF: none — some units never fail"
-        : "MTTF: the mean time to failure" },
-  ];
-  const hasBounds = rows.some((r) => r.lower != null);
-  return (
-    <div className="gof-card life-card">
-      <div className="gofh life-card-head">
-        <span>Life{unit ? <span className="gof-sub">{unit}</span> : null}</span>
-        {canPick ? (
-          <Select
-            value={level}
-            onChange={(v) => onLevel(Number(v))}
-            className="life-conf"
-            title="The confidence of the lower bounds (one-sided)"
-            options={levels.map((l) => ({ value: l, label: `${l}% lower bound` }))}
-          />
-        ) : (
-          hasBounds && <span className="gof-sub">{Math.round((life.confidence ?? 0.9) * 100)}% lower bound</span>
-        )}
-      </div>
-      {rows.map((r) => (
-        <div
-          className="gofr life-row"
-          key={r.key}
-          title={r.lower != null
-            ? `${r.what}. ${boundWords(level, "lower", r.lower, null, (v) => `${formatNumber(v)}${unit ? ` ${unit}` : ""}`)}.`
-            : `${r.what}.`}
-        >
-          <span className="gk">
-            {r.label}
-            {restricted && r.key === "MTTF" && (
-              <TauInput tau={life.mttf.tau} unit={unit} onChange={setTau} />
-            )}
-          </span>
-          <span className="gv">{formatNumber(r.value)}</span>
-          <span className="life-lo">{r.lower != null ? `≥ ${formatNumber(r.lower)}` : pending ? "…" : ""}</span>
-        </div>
-      ))}
-      {life.bounds_note && <p className="param-ci-note">{life.bounds_note}</p>}
-      {/* #295: "B10 ≥ 50,000 at 90%?" — a row that opens a small form. */}
-      {canPick && (
-        <RequirementCheck result={result} level={level} onLevel={onLevel} levels={levels} modelId={modelId} name={name} />
-      )}
-    </div>
-  );
 }
 
 // Every distribution on the same data, best first (#293): ΔAIC and a verdict
@@ -303,7 +156,7 @@ function CompareDistributions({ result, compare, onPick }) {
       <ScrollCue className="rs-table-wrap">
         <table className="mini-table compare-table">
           <thead>
-            <tr><th>Distribution</th><th>{label}</th><th>Δ{label}</th><th>Verdict</th></tr>
+            <tr><th>Distribution</th><th title="Number of parameters fitted">Parameters</th><th>{label}</th><th>Δ{label}</th><th>Verdict</th></tr>
           </thead>
           <tbody>
             {rows.map((r) => {
@@ -317,6 +170,7 @@ function CompareDistributions({ result, compare, onPick }) {
                     ) : r.name}
                     {r.current && <span className="gof-sub"> · this fit</span>}
                   </td>
+                  <td>{r.k ?? "—"}</td>
                   <td>{formatNumber(r.value, { sig: 5 })}</td>
                   <td>{r.delta === 0 ? "—" : `+${r.delta.toFixed(1)}`}</td>
                   <td>
@@ -330,25 +184,30 @@ function CompareDistributions({ result, compare, onPick }) {
         </table>
       </ScrollCue>
       <p className="muted-line">
-        Lower {label} is better. Under 2 apart, the data can't tell two distributions apart.
+        Lower {label} is better.{key === "neg_ll" ? "" : " Under 2 apart, the data can't tell two distributions apart."}
         {onPick ? " Pick a name to fit that one instead." : ""}
       </p>
+      {(selection.guidance || []).map((g) => <p key={g} className="muted-line compare-guidance">{g}</p>)}
       {selection.failed?.length > 0 && (
-        <p className="muted-line">Couldn't fit: {selection.failed.map((f) => f.name).join(", ")}.</p>
+        <p className="muted-line">
+          Couldn't fit: {selection.failed.map((f) => (f.reason ? `${f.name} (${f.reason})` : f.name)).join("; ")}.
+        </p>
       )}
     </div>
   );
 }
 
 // ``split`` ({ failed, running, other }) when the caller can count the data.
-// ``children`` (the plot) goes on the left; the panel sits on the right.
-// ``level`` / ``onLevel``: the confidence (%) of the life card's lower bounds,
-// shared with the calculator. ``compare`` / ``onPick``: see CompareDistributions.
-// ``modelId`` / ``name``: the saved model, for the requirement check's test plan
-// and "Use this model" (#294); ``onUse`` (a fit not saved yet) saves it first.
-export default function LifeAside({ result, split = null, bestFit = false, level = 90, onLevel = null,
-                                   compare = null, onPick = null, modelId = null, name = null, onUse = null }) {
+// ``compare`` / ``onPick``: see CompareDistributions. ``modelId``: the saved
+// model, for "Use this model" (#294); ``onUse`` (a fit not saved yet) saves it
+// first.
+// ``onStats`` (the model page's frame) opens the Diagnostics tab from the
+// Fit statistics row instead of a dialog; ``showUse`` false leaves "Use this
+// model" to the page's header.
+export default function LifeAside({ result, split = null, bestFit = false, compare = null, onPick = null,
+                                   modelId = null, onUse = null, onStats = null, showUse = true }) {
   const [statsOpen, setStatsOpen] = useState(false);
+  const [readingOpen, setReadingOpen] = useState(false);
   const aic = (result.gof || []).find((g) => g.id === "aic") || (result.gof || [])[0];
   const id = distId(result);
   // Shape before scale: the reading turns on the shape.
@@ -359,11 +218,10 @@ export default function LifeAside({ result, split = null, bestFit = false, level
   const data = dataText(result, split);
   const reading = verdict(result);
   // Maximum likelihood goes without saying; another method is named.
-  const method = result.options?.how && result.options.how !== "MLE" ? result.options.how : null;
+  // A Bayesian update says so above its parameters already.
+  const method = result.options?.how && result.options.how !== "MLE" && result.method !== "bayesian_update" ? result.options.how : null;
   const caveat = result.fit_warning && !result.no_finite_maximum;
   const nonparametric = result.kind === "nonparametric";
-  const showLife = (result.kind === "distribution" || result.kind === "flexible" || nonparametric)
-    && !result.no_finite_maximum;
   return (
     <div className="aside">
       <div className="gof-card">
@@ -385,6 +243,9 @@ export default function LifeAside({ result, split = null, bestFit = false, level
             </button>
           </div>
         )}
+        {result.method === "bayesian_update" && result.bayes?.label && (
+          <p className="muted life-bayes" title={result.bayes.words || undefined}>{result.bayes.label}. {result.bayes.words}</p>
+        )}
         {params.map((p) => {
           const v = paramView(result, p);
           return (
@@ -392,7 +253,10 @@ export default function LifeAside({ result, split = null, bestFit = false, level
               <span className="gk">{v.label}</span>
               <span className="gv-col">
                 <span className="gv">{id === "weibull" && p.name === "beta" ? fmtShape(p.value) : v.value}</span>
-                {v.ci && <span className="param-ci" title={result.ci_note || HOW_CI}>95% {v.ci}</span>}
+                {/* A Bayesian update's are credible intervals (bayes_life.py), never confidence bounds. */}
+                {v.ci && <span className="param-ci" title={result.ci_note || HOW_CI}>
+                  {result.method === "bayesian_update" ? `${Math.round((result.credible_level || 0.9) * 100)}% credible`
+                    : result.method === "library" ? "Source's 5–95%" : "95%"} {v.ci}</span>}
               </span>
             </div>
           );
@@ -403,6 +267,14 @@ export default function LifeAside({ result, split = null, bestFit = false, level
             <span className="gv">{formatNumber(p.value)}</span>
           </div>
         ))}
+        {/* What the fit says, one quiet row; its reading in words opens on click. */}
+        {reading && (
+          <button type="button" className="gofr gofr-link life-reading-row" onClick={() => setReadingOpen(true)}
+                  aria-haspopup="dialog" aria-label={`${reading.label}: ${reading.short}. What this means`}>
+            <span className="gk">{reading.label}</span>
+            <span className="gv">{reading.short} ›</span>
+          </button>
+        )}
         {data && (
           <div className="gofr">
             <span className="gk">Data</span>
@@ -410,24 +282,24 @@ export default function LifeAside({ result, split = null, bestFit = false, level
           </div>
         )}
         {aic && (
-          <button type="button" className="gofr gofr-link" onClick={() => setStatsOpen(true)}>
+          <button type="button" className="gofr gofr-link" onClick={() => (onStats ? onStats() : setStatsOpen(true))}
+                  aria-label={onStats ? `Fit statistics: AIC ${formatNumber(aic.value, { sig: 5 })}. Open Diagnostics` : undefined}>
             <span className="gk">Fit statistics</span>
             <span className="gv">AIC {formatNumber(aic.value, { sig: 5 })} ›</span>
           </button>
         )}
       </div>
-      {showLife && <LifeCard result={result} level={level} onLevel={onLevel} modelId={modelId} name={name} />}
       {caveat && <div className="life-reading caveat">{result.fit_warning}</div>}
-      {reading && (
-        <div className="life-reading">
-          <div className="life-reading-title">{reading.title}</div>
-          <div>{reading.text}</div>
-          {reading.action === "replacement" && <ReplacementLink result={result} modelId={modelId} onUse={onUse} />}
-        </div>
-      )}
-      <ModelNextSteps result={result} modelId={modelId} onUse={onUse}
-                      skip={reading?.action === "replacement" ? ["replacement"] : []} />
+      {showUse && <ModelNextSteps result={result} modelId={modelId} onUse={onUse} />}
       {method && <p className="life-method">{method} fit.</p>}
+      {readingOpen && reading && (
+        <Modal title={reading.title} className="modal-sm reading-modal" onClose={() => setReadingOpen(false)}
+               footer={<div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+                 <button type="button" onClick={() => setReadingOpen(false)}>Done</button></div>}>
+          <p className="reading-text">{reading.text}</p>
+          {reading.action === "replacement" && <ReplacementLink result={result} modelId={modelId} onUse={onUse} />}
+        </Modal>
+      )}
       {statsOpen && (
         <Modal title="Fit statistics" onClose={() => setStatsOpen(false)}
                footer={<div className="row" style={{ margin: 0, marginLeft: "auto" }}>

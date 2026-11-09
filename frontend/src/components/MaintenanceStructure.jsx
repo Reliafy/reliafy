@@ -15,7 +15,7 @@ import {
   bomFormatText, bomImportSummary, bomIsIndented, levelsIn, positionsPlanSummary, qtyNumber, qtyText, treeKeys,
 } from "../maintenanceStructure.js";
 
-const partLink = (id) => `/maintenance/parts/${id}`;
+const partLink = (id) => `/asset-register/parts/${id}`;
 
 // ---- the tree ------------------------------------------------------------------------
 
@@ -85,10 +85,12 @@ export function StructureTree({ tree, onEdit, onRemove, showTop = true }) {
 
 // ---- quantities rolled up ------------------------------------------------------------------
 
-export function RollupCard({ structure }) {
+// On a product's design (`design`) it's the bill of materials only: how many go
+// into one, with no stock (on hand) and nothing installed (a design isn't operated).
+export function RollupCard({ structure, design = false }) {
   const [every, setEvery] = useState(false);
   const rows = (structure.rollup || []).filter((r) => every || r.lowest);
-  const installed = structure.items > 0;
+  const installed = !design && structure.items > 0;
   return (
     <section className="card">
       <div className="maint-head">
@@ -104,7 +106,8 @@ export function RollupCard({ structure }) {
       </p>
       <div className="maint-scroll"><table className="lib-table">
         <thead><tr><th>Part number</th><th>Part</th><th>Level</th><th>In one</th>
-          {installed && <th>Installed ({structure.items} {structure.items === 1 ? "item" : "items"})</th>}<th>On hand</th></tr></thead>
+          {installed && <th>Installed ({structure.items} {structure.items === 1 ? "item" : "items"})</th>}
+          {!design && <th>On hand</th>}</tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}>
@@ -113,7 +116,7 @@ export function RollupCard({ structure }) {
               <td className="lib-date">{r.level || "—"}</td>
               <td>{qtyNumber(r.total)} {r.unit && r.unit !== "each" ? r.unit : ""}</td>
               {installed && <td>{qtyNumber(r.installed)}</td>}
-              <td className="lib-date">{qtyNumber(r.on_hand)}</td>
+              {!design && <td className="lib-date">{qtyNumber(r.on_hand)}</td>}
             </tr>
           ))}
         </tbody>
@@ -152,10 +155,10 @@ export function WhereUsedCard({ used }) {
               <ul className="maint-list">
                 {used.positions.map((p, i) => (
                   <li key={`${p.position.id}-${p.how}-${i}`}>
-                    <Link to={`/maintenance/positions/${p.position.id}`}>{p.position.name}</Link>
+                    <Link to={`/asset-register/positions/${p.position.id}`}>{p.position.name}</Link>
                     {p.position.path.length > 0 && <span className="lib-date"> · {p.position.path.join(" › ")}</span>}
                     <span className="lib-date"> · {p.how === "fitted"
-                      ? <>fitted: <Link to={`/maintenance/items/${p.item.id}`}>{p.item.name}{p.item.serial ? ` ${p.item.serial}` : ""}</Link></>
+                      ? <>fitted: <Link to={`/asset-register/items/${p.item.id}`}>{p.item.name}{p.item.serial ? ` ${p.item.serial}` : ""}</Link></>
                       : `on its parts list (${p.role}, ${qtyNumber(p.quantity)} a job)`}</span>
                   </li>
                 ))}
@@ -168,7 +171,7 @@ export function WhereUsedCard({ used }) {
               <ul className="maint-list">
                 {used.items.map((it) => (
                   <li key={it.id}>
-                    <Link to={`/maintenance/items/${it.id}`}>{it.name}</Link>
+                    <Link to={`/asset-register/items/${it.id}`}>{it.name}</Link>
                     {it.serial && <span className="lib-date"> · {it.serial}</span>}
                     <span className="lib-date"> · {it.fitted_to ? `fitted to ${it.fitted_to.name}` : it.location || "not fitted"}
                       {!it.linked && " · its part number typed in, not linked"}</span>

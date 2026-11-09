@@ -33,7 +33,7 @@ about.
 
 ## The starter
 
-On the **RBDs** page, choose **Verify a safety function (SIL / PFDavg) → Open
+On the **RBDs** page, choose **Verify a safety function → Open
 the starter**. It opens an unsaved diagram:
 
 - two pressure transmitters, λDU 3e-7 per hour each, voting **1oo2** (either
@@ -156,7 +156,7 @@ Those deserve a source you can cite, not a default.
 
 ## Try it
 
-Open the **RBDs** page and choose **Verify a safety function (SIL / PFDavg)**.
+Open the **RBDs** page and choose **Verify a safety function**.
 Calculate the starter as it is, then rename the blocks and enter your own loop.
 The step-by-step guide, [Verify a safety function](/guides/verify-a-safety-function),
 covers each setting. [Common-cause failure and the beta-factor model](/learn/common-cause-failure)

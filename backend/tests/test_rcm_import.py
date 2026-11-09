@@ -1,16 +1,15 @@
-"""FMEA / RCM spreadsheet -> RCM study worksheet: column mapping, carry-down
+"""FMEA / RCM spreadsheet -> an RCM worksheet tree: column mapping, carry-down
 of blank function / failure cells, consequence and decision-type value
-mapping, FMEA scores kept in the mode's notes, and the import endpoints (new
-study vs existing, append vs replace, access and edit conflicts)."""
+mapping, FMEA scores landing on the mode (an RPN column only checked), a
+mode with no functional failure directly under its function. (Adding the
+tree to a position is backend/maintenance/rcm_sheet.py:
+test_maintenance_rcm_sheet.py.)"""
 
-import io
-import json
 
-import mongomock
 import pytest
-from openpyxl import Workbook
 
-from backend.services import excel, rcm, rcm_import
+from backend.maintenance import rcm_decisions
+from backend.services import excel, rcm_import
 
 HEADER = ["Item", "Function", "Functional failure", "Failure mode", "Effect", "S", "O", "D", "RPN",
           "Consequence", "Task type", "Recommended action", "Interval", "Unit", "Comments"]
@@ -38,13 +37,31 @@ def _modes(result):
 
 
 def test_guess_maps_typical_fmea_headers():
+    """The FMEA columns map to the mode's scores (S / O / D, the RPN checked
+    only, the recommended action its own field); only the item column is left
+    for the notes."""
     mapping = excel.guess_mapping(HEADER, rcm_import.FIELDS)
     assert mapping == {
         "function": "Function", "failure": "Functional failure", "mode": "Failure mode",
         "effects": "Effect", "consequence": "Consequence", "outcome": "Task type",
-        "task": "Recommended action", "interval": "Interval", "interval_unit": "Unit", "notes": "Comments",
+        "action": "Recommended action", "interval": "Interval", "interval_unit": "Unit", "notes": "Comments",
+        "severity": "S", "occurrence": "O", "detection": "D", "rpn": "RPN",
     }
-    assert rcm_import.default_extra_columns(HEADER, mapping) == ["Item", "S", "O", "D", "RPN"]
+    assert rcm_import.default_extra_columns(HEADER, mapping) == ["Item"]
+    # A column Reliafy works out itself is never kept as notes, mapped or not.
+    assert rcm_import.default_extra_columns(["Item", "RPN", "Action priority", "Mode criticality"], {}) == ["Item"]
+    # An FMEA worksheet's own headers (cause, local / next higher / end effect, controls, owner, due).
+    fmea_header = ["Function", "Potential failure mode", "Potential cause", "Local effect", "Next higher effect",
+                   "End effect", "Current controls", "Severity", "Occurrence", "Detection", "RPN",
+                   "Recommended action", "Responsibility", "Target date", "Status"]
+    guessed = excel.guess_mapping(fmea_header, rcm_import.FIELDS)
+    assert guessed == {
+        "function": "Function", "mode": "Potential failure mode", "cause": "Potential cause",
+        "effect_local": "Local effect", "effect_next": "Next higher effect", "effects": "End effect",
+        "detection_method": "Current controls", "severity": "Severity", "occurrence": "Occurrence",
+        "detection": "Detection", "rpn": "RPN", "action": "Recommended action", "action_owner": "Responsibility",
+        "action_due": "Target date", "action_status": "Status",
+    }
 
 
 def test_build_tree_carries_down_and_maps_values():
@@ -58,21 +75,25 @@ def test_build_tree_carries_down_and_maps_values():
     ]
     bearing, impeller, seal, casing = (m for _, _, m in modes)
     assert bearing["consequence"] == "operational" and impeller["consequence"] == "operational"  # "O"
+    # No task column: the recommended action names the decision's task too.
     assert bearing["decision"] == {"outcome": "on_condition", "task": "Vibration analysis",
                                    "interval": 1.0, "interval_unit": "months", "evidence": None}
     assert impeller["decision"]["outcome"] == "fixed_interval"
     assert impeller["decision"]["interval"] == 2.0 and impeller["decision"]["interval_unit"] == "years"
-    assert casing["consequence"] == "hidden"
+    # "H" is the old fifth value: the casing's failure is hidden, its category still to say.
+    assert casing["hidden"] is True and casing["consequence"] is None
     assert casing["decision"]["outcome"] == "failure_finding"
     assert casing["decision"]["interval"] == 1.0 and casing["decision"]["interval_unit"] == "years"
-    # Run-to-failure needs a basis the sheet doesn't give: undecided, task kept in notes.
-    assert seal["decision"] is None
-    assert "Task: Replace on failure" in seal["notes"]
-    # FMEA scores (and the item) appended to the notes; mapped notes first.
-    assert bearing["notes"] == "Item P-101 · S 8 · O 4 · D 3 · RPN 96"
-    assert impeller["notes"] == "OEM advice\nS 5 · O 3 · D 2 · RPN 30"
+    # Run-to-failure needs a basis the sheet doesn't give: undecided; the action is on the mode.
+    assert seal["decision"] is None and seal["action"] == "Replace on failure"
+    assert seal["notes"] == "Task type: Run to failure"  # the unmapped decision type kept, the action not repeated
+    # FMEA scores land on the mode (the RPN column is checked, never kept); the item goes to the notes.
+    assert (bearing["severity"], bearing["occurrence"], bearing["detection"]) == (8, 4, 3) and "rpn" not in bearing
+    assert bearing["notes"] == "Item P-101" and bearing["action"] == "Vibration analysis"
+    assert impeller["notes"] == "OEM advice"
     assert bearing["effects"] == "Pump stops"
     assert result["counts"] == {"functions": 2, "failures": 3, "modes": 4, "decisions": 3, "skipped_rows": 1}
+    assert result["errors"] == [] and not any("RPN" in w for w in result["warnings"])
     assert any("1 row with no failure mode was skipped" in w for w in result["warnings"])
     rtf = next(v for v in result["values"]["outcome"] if v["value"] == "Run to failure")
     assert rtf["guess"] is None and "basis" in rtf["hint"]
@@ -88,17 +109,52 @@ def test_explicit_value_maps_override_guesses():
     assert seal["decision"]["outcome"] == "rtf" and seal["decision"]["rtf_basis"] == "uneconomic"
     assert seal["decision"]["task"] == "Replace on failure"
     assert bearing["decision"] is None                        # mapped to "leave unset"
-    assert "Task: Vibration analysis · Interval: 1 months" in bearing["notes"]
+    assert "Interval: 1 months" in bearing["notes"] and bearing["action"] == "Vibration analysis"
     assert casing["consequence"] == "safety"
-    assert "S 8" not in (bearing.get("notes") or "")          # extras switched off
+    assert "Item" not in (bearing.get("notes") or "")         # extras switched off
 
 
-def test_missing_function_and_failure_columns_go_under_imported():
+def test_missing_function_column_goes_under_imported_and_no_failure_goes_directly_under_the_function():
+    """No function column: one "Imported" function. No functional failure column
+    (or none named yet under the function): the modes sit directly under the
+    function, as an FMEA worksheet reads, not under a stand-in failure."""
     mapping = {"mode": "Failure mode", "effects": "Effect"}
     result = rcm_import.build_tree(HEADER, ROWS, {"mapping": mapping})
     assert [f["text"] for f in result["functions"]] == ["Imported"]
-    assert [f["text"] for f in result["functions"][0]["failures"]] == ["Imported"]
+    assert result["functions"][0]["failures"] == []
+    assert [m["text"] for m in result["functions"][0]["modes"]] == [
+        "Bearing seized", "Impeller worn", "Seal failure", "Casing crack"]
     assert result["counts"]["modes"] == 4 and result["counts"]["decisions"] == 0
+    assert not any("Imported" in w for w in result["warnings"])
+    # The failure column mapped but blank until the second row of a function: the
+    # first mode is directly under the function, the later ones under the failure.
+    header = ["Function", "Functional failure", "Failure mode"]
+    rows = [["F1", None, "m1"], ["F1", "X", "m2"], [None, None, "m3"], ["F2", None, "m4"]]
+    out = rcm_import.build_tree(header, rows, {"mapping": {"function": "Function", "failure": "Functional failure",
+                                                           "mode": "Failure mode"}}, keep_rows=True)
+    f1, f2 = out["functions"]
+    assert [m["text"] for m in f1["modes"]] == ["m1"] and [m["row"] for m in f1["modes"]] == [2]
+    assert [m["text"] for m in f1["failures"][0]["modes"]] == ["m2", "m3"]
+    assert [m["text"] for m in f2["modes"]] == ["m4"] and "failures" in f2 and f2["failures"] == []
+
+
+def test_scores_out_of_range_are_row_errors_and_a_wrong_rpn_only_warns():
+    header = ["Function", "Failure mode", "S", "O", "D", "RPN", "Due date"]
+    rows = [["F", "m1", 8, 4, 3, 96, "2026-12-01"], ["F", "m2", 11, 4, 3, None, None],
+            ["F", "m3", 7, "x", 3, None, None], ["F", "m4", 5, 3, 2, 40, "soon"]]
+    mapping = excel.guess_mapping(header, rcm_import.FIELDS)
+    out = rcm_import.build_tree(header, rows, {"mapping": mapping}, keep_rows=True)
+    assert out["errors"] == [
+        "Row 3: Severity is a whole number from 1 (no effect) to 10 (hazardous without warning).",
+        "Row 4: Occurrence is a whole number from 1 (almost never) to 10 (almost certain).",
+        "Row 5: The due date is a date (YYYY-MM-DD).",
+    ]
+    [warning] = [w for w in out["warnings"] if "RPN" in w]
+    assert "1 row (row 5)" in warning and "isn't kept" in warning
+    m1, m2, m3, m4 = out["functions"][0]["modes"]
+    assert m1["action_due"] == "2026-12-01" and (m1["severity"], m1["occurrence"], m1["detection"]) == (8, 4, 3)
+    assert "severity" not in m2 and m2["occurrence"] == 4  # the bad value is dropped, the row still errors
+    assert "rpn" not in m4 and m4["severity"] == 5
 
 
 def test_same_function_later_in_the_sheet_merges():
@@ -142,156 +198,4 @@ def test_errors():
 
 def test_mode_notes_are_kept_by_clean_tree():
     tree = [{"text": "F", "failures": [{"text": "X", "modes": [{"text": "m", "notes": " RPN 96 "}]}]}]
-    assert rcm.clean_tree(tree)[0]["failures"][0]["modes"][0]["notes"] == "RPN 96"
-
-
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
-
-A, B = "user-a", "user-b"
-USERS = {A: {"uid": A, "email": "a@x.com", "name": "A"}, B: {"uid": B, "email": "b@x.com", "name": "B"}}
-XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-
-
-def _workbook() -> bytes:
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "RCM worksheet"
-    ws.append(["Conveyor RCM"])
-    ws.append([])
-    ws.append(HEADER)
-    for r in ROWS:
-        ws.append(r)
-    ws.merge_cells("B4:B6")  # the function written once, merged down
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
-
-
-@pytest.fixture()
-def client(monkeypatch):
-    from fastapi.testclient import TestClient
-
-    from backend import config, db
-    from backend.auth import get_current_user
-    from backend.main import app
-
-    monkeypatch.setattr(config, "AUTH_DISABLED", False)
-    monkeypatch.setattr(config, "BILLING_ENABLED", False)
-    test_db = mongomock.MongoClient()["reliafy_test"]
-    monkeypatch.setattr(db, "_db", test_db)
-    monkeypatch.setattr(db, "_simulated", True)
-    who = {"uid": A}
-    app.dependency_overrides[get_current_user] = lambda: USERS[who["uid"]]
-    tc = TestClient(app)
-    tc.db = test_db
-    tc.who = who
-    try:
-        yield tc
-    finally:
-        app.dependency_overrides.clear()
-
-
-def _form(**extra):
-    opts = _options()
-    return {"sheet": "RCM worksheet", "header_row": "3", "options": json.dumps(opts), **extra}
-
-
-def _post(client, path, **extra):
-    return client.post(path, files={"file": ("rcm.xlsx", _workbook(), XLSX)}, data=_form(**extra))
-
-
-def test_preview_saves_nothing(client):
-    r = _post(client, "/api/rcm/import/preview")
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["counts"]["modes"] == 4
-    assert {v["value"] for v in body["values"]["consequence"]} == {"Operational", "O", "Environmental", "Hidden"}
-    assert client.db.rcm_studies.count_documents({}) == 0
-
-
-def test_import_creates_a_study(client):
-    r = _post(client, "/api/rcm/import", name="Conveyor", system="Line 2")
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["name"] == "Conveyor" and body["system"] == "Line 2"
-    assert body["rollup"]["modes"] == 4 and body["rollup"]["decided"] == 3
-    assert body["imported"]["counts"]["modes"] == 4
-    got = client.get(f"/api/rcm/studies/{body['id']}").json()
-    assert got["functions"][0]["text"] == "Pump water at 100 L/min"
-
-
-def test_import_new_study_needs_a_name_and_respects_the_cap(client, monkeypatch):
-    assert _post(client, "/api/rcm/import").status_code == 422
-    from backend.services import billing
-
-    monkeypatch.setattr(billing, "would_exceed_cap", lambda *a, **k: True)
-    r = _post(client, "/api/rcm/import", name="Over the cap")
-    assert r.status_code == 402 and r.json()["code"] == "cap"
-    assert client.db.rcm_studies.count_documents({}) == 0
-
-
-def test_import_bad_mapping_creates_nothing(client):
-    r = client.post("/api/rcm/import", files={"file": ("rcm.xlsx", _workbook(), XLSX)},
-                    data={"sheet": "RCM worksheet", "header_row": "3", "name": "X",
-                          "options": json.dumps({"mapping": {"function": "Function"}})})
-    assert r.status_code == 422 and "Failure mode" in r.json()["detail"]
-    assert client.db.rcm_studies.count_documents({}) == 0
-
-
-def _existing(client):
-    study = client.post("/api/rcm/studies", json={"name": "Existing"}).json()
-    tree = [{"text": "Keep me", "failures": [{"text": "F", "modes": [{"text": "old mode"}]}]}]
-    return client.put(f"/api/rcm/studies/{study['id']}/tree", json={"functions": tree}).json()
-
-
-def test_append_keeps_the_existing_worksheet(client):
-    study = _existing(client)
-    r = _post(client, "/api/rcm/import", study_id=study["id"], mode="append",
-              expected_updated_at=study["updated_at"])
-    assert r.status_code == 200, r.text
-    fns = r.json()["functions"]
-    assert [f["text"] for f in fns] == ["Keep me", "Pump water at 100 L/min", "Contain fluid"]
-    assert fns[0]["id"] == study["functions"][0]["id"]
-    assert r.json()["rollup"]["modes"] == 5
-
-
-def test_replace_swaps_the_worksheet(client):
-    study = _existing(client)
-    r = _post(client, "/api/rcm/import", study_id=study["id"], mode="replace",
-              expected_updated_at=study["updated_at"])
-    assert r.status_code == 200, r.text
-    assert [f["text"] for f in r.json()["functions"]] == ["Pump water at 100 L/min", "Contain fluid"]
-
-
-def test_import_detects_edit_conflicts(client):
-    study = _existing(client)
-    stale = "2000-01-01T00:00:00+00:00"
-    r = _post(client, "/api/rcm/import", study_id=study["id"], mode="append", expected_updated_at=stale)
-    assert r.status_code == 409 and r.json()["code"] == "conflict"
-    assert len(client.get(f"/api/rcm/studies/{study['id']}").json()["functions"]) == 1
-
-
-def test_import_into_someone_elses_study_is_refused(client):
-    study = _existing(client)
-    client.who["uid"] = B
-    r = _post(client, "/api/rcm/import", study_id=study["id"], mode="replace")
-    assert r.status_code == 404
-    client.who["uid"] = A
-    assert len(client.get(f"/api/rcm/studies/{study['id']}").json()["functions"]) == 1
-
-
-def test_import_into_a_sample_is_refused(client):
-    from backend.services import samples
-
-    samples.seed_samples(client.db)
-    sample = next(s for s in client.get("/api/rcm/studies").json()["studies"] if s["is_sample"])
-    before = client.get(f"/api/rcm/studies/{sample['id']}").json()["functions"]
-    r = _post(client, "/api/rcm/import", study_id=sample["id"], mode="append")
-    assert r.status_code == 403
-    assert client.get(f"/api/rcm/studies/{sample['id']}").json()["functions"] == before
-
-
-def test_import_rejects_unknown_mode(client):
-    assert _post(client, "/api/rcm/import", name="X", mode="merge").status_code == 422
+    assert rcm_decisions.clean_tree(tree)[0]["failures"][0]["modes"][0]["notes"] == "RPN 96"

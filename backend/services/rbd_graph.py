@@ -4,7 +4,7 @@ A Python port of ``frontend/src/rbdGraph.js`` (``normalizeRbdGraph`` /
 ``compactGraph``) so programmatic callers — the MCP server — speak the same
 compact node format as the in-app assistant and get diagrams that open on the
 builder canvas exactly as if the assistant had drawn them: input/output
-handles, fleshed-out life models and a tidy left-to-right layered layout.
+handles, fleshed-out non-repairable models and a tidy left-to-right layered layout.
 
 Compact node (what an assistant writes and reads)::
 
@@ -33,7 +33,7 @@ component node with ``"repeat_of": "<id of the component it repeats>"`` and
 no model of its own (see :mod:`backend.services.rbd_repeats`).
 
 A node may instead carry the persisted ``data: {...}`` object; both are
-accepted. ``model.saved_model_id`` references a saved plain life model; it is
+accepted. ``model.saved_model_id`` references a saved plain non-repairable model; it is
 resolved (owner-scoped) into the same shape the builder's model picker stores.
 A repairable diagram may carry ``"costs": {"downtime_rate": 500, "horizon":
 87600}`` (see :mod:`backend.services.rbd_maintenance` for the cost and
@@ -56,10 +56,13 @@ NODE_TYPES = ("input", "output", "component", "series", "parallel", "knode", "st
 
 _ARROW = {"type": "arrowclosed", "width": 18, "height": 18}
 #: Repairable block fields beyond the models (#99/#100), carried as given.
-MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection", "rcm_source",
+MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection",
                     "maintenance_group", "crew_priority", "repair_one_at_a_time", "repair_quality")
 #: Diagram-level settings of a repairable diagram (#99, #156, #157), carried as given.
-DIAGRAM_KEYS = ("costs", "repair_crews", "maintenance_groups", "safety_function", "target_sil")
+DIAGRAM_KEYS = ("costs", "repair_crews", "maintenance_groups", "safety_function", "target_sil", "conditions")
+#: A block's values for the covariates its position left open, and which of the diagram's
+#: conditions an input takes where the names differ (covariate_binding.py).
+COVARIATE_KEYS = ("covariate_values", "covariate_map")
 #: A block's capacity and the diagram's demand (#122, :mod:`.rbd_capacity`).
 CAPACITY_KEYS = ("capacity",)
 PRODUCTION_KEYS = ("production",)
@@ -413,7 +416,7 @@ def _saved_model(model_id: str, where: str, resolve_saved_model, joint_unit=None
             "kind": "joint",
             "modelId": saved.id,
             "name": saved.name,
-            "distribution": "Condition monitoring",
+            "distribution": "Condition and life",
             "unit": r.get("unit") or "",
             "joint_unit": _joint_unit(joint_unit, saved, where),
         }
@@ -449,6 +452,18 @@ def _saved_model(model_id: str, where: str, resolve_saved_model, joint_unit=None
 def _model(model, where: str, resolve_saved_model) -> dict:
     if not isinstance(model, dict):
         raise GraphError(f"{where}: model must be an object.")
+    if model.get("kind") == "bound":
+        # A covariate model with some covariates left open at its position (covariate_binding.py):
+        # the binding as given; the block's and the diagram's values fill the rest at calculation.
+        b = model.get("binding")
+        if not isinstance(b, dict) or b.get("source") not in ("nswc", "alt", "ph") or not b.get("ref"):
+            raise GraphError(f"{where}: a bound model needs binding {{source: nswc, alt or ph, ref, fixed}}.")
+        out = {"kind": "bound", "binding": {"source": b["source"], "ref": str(b["ref"]),
+                                            "fixed": dict(b.get("fixed") or {}), "roles": dict(b.get("roles") or {})}}
+        for key in ("name", "position"):
+            if model.get(key):
+                out[key] = model[key]
+        return out
     saved_id = model.get("saved_model_id") or model.get("modelId") or model.get("model_id")
     if saved_id:
         out = _saved_model(str(saved_id), where, resolve_saved_model, model.get("joint_unit"))
@@ -500,7 +515,7 @@ def _inline_disagrees(model: dict, saved: dict) -> bool:
 
 
 def normalize_model(model, where: str, resolve_saved_model=None) -> dict:
-    """A compact life model (inline, or a ``saved_model_id``) in the persisted shape."""
+    """A compact non-repairable model (inline, or a ``saved_model_id``) in the persisted shape."""
     return _model(model, where, resolve_saved_model)
 
 
@@ -525,7 +540,7 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
 
     data = dict(raw.get("data") or {})
     for key in ("label", "model", "repair", "n", "k", "spares", "cold", "dormancy",
-                "standbyModel", "startProb", "repeat_of") + MAINTENANCE_KEYS + CAPACITY_KEYS:
+                "standbyModel", "startProb", "repeat_of") + MAINTENANCE_KEYS + CAPACITY_KEYS + COVARIATE_KEYS:
         if raw.get(key) is not None and key not in data:
             data[key] = raw[key]
     if raw.get("subsystem_rbd_id") and "rbd" not in data:
@@ -548,7 +563,7 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
             raise GraphError(f"{where}: {exc}") from None
         if data["covariate_schedules"] is None:
             del data["covariate_schedules"]
-    for key in ("costs", "preventive", "inspection", "rcm_source", "repair_quality"):
+    for key in ("costs", "preventive", "inspection", "repair_quality") + COVARIATE_KEYS:
         if data.get(key) is not None and not isinstance(data[key], dict):
             raise GraphError(f"{where}: {key} must be an object.")
     if isinstance(data.get("repair_quality"), dict) and data["repair_quality"].get("model", "perfect") == "perfect" \
@@ -642,6 +657,8 @@ def normalize_graph(
     for key in DIAGRAM_KEYS:
         if graph.get(key):
             out[key] = graph[key]
+    if out.get("conditions") is not None:
+        out["conditions"] = _conditions(out["conditions"])
     if graph.get("production"):
         from backend.services import rbd_capacity
 
@@ -663,6 +680,30 @@ def _carry_mission(graph: dict, out: dict) -> None:
     rbd_network.carry(graph, out)
 
 
+def _conditions(raw) -> list:
+    """The diagram's Use and Environment values (covariate_binding.py): [{name, role, unit,
+    value}], each named once; a bound block's open covariate takes the one matching it."""
+    if not isinstance(raw, list):
+        raise GraphError("conditions is a list of {name, role (use or environment), unit, value}.")
+    out, seen = [], set()
+    for c in raw:
+        if not isinstance(c, dict) or not str(c.get("name") or "").strip():
+            raise GraphError("each condition needs a name.")
+        name = " ".join(str(c["name"]).split())[:80]
+        if name.lower() in seen:
+            raise GraphError(f"the condition '{name}' is named twice.")
+        seen.add(name.lower())
+        role = c.get("role") or "environment"
+        if role not in ("use", "environment"):
+            raise GraphError(f"condition '{name}': role is use or environment.")
+        value = c.get("value")
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)) or (
+                isinstance(value, float) and not math.isfinite(value)):
+            raise GraphError(f"condition '{name}': value must be a number (or a choice).")
+        out.append({"name": name, "role": role, "unit": str(c.get("unit") or "")[:40], "value": value})
+    return out
+
+
 def compact_graph(graph: dict) -> dict:
     """Strip a persisted graph to what an assistant needs to read and edit."""
     nodes = []
@@ -681,6 +722,8 @@ def compact_graph(graph: dict) -> dict:
                     cm["saved_model_id"] = m["modelId"]
                 if m.get("kind") == "joint":  # a condition-based block: its unit
                     cm = {"saved_model_id": m.get("modelId"), "joint_unit": m.get("joint_unit")}
+                if m.get("kind") == "bound":  # covariates left open at its position
+                    cm = {"kind": "bound", "binding": m.get("binding")}
                 if m.get("placeholder"):
                     cm["placeholder"] = True
                 if m.get("extras") and not m.get("modelId"):
@@ -694,6 +737,9 @@ def compact_graph(graph: dict) -> dict:
             node["subsystem_rbd_id"] = d["rbd"]["id"]
         if d.get("covariate_schedules"):  # #52
             node["covariate_schedules"] = d["covariate_schedules"]
+        for key in COVARIATE_KEYS:
+            if d.get(key):
+                node[key] = d[key]
         nodes.append(node)
     edges = [{"source": e.get("source"), "target": e.get("target")} for e in graph.get("edges") or []]
     out = {"nodes": nodes, "edges": edges, "unit": graph.get("unit") or ""}
@@ -712,7 +758,7 @@ def compact_graph(graph: dict) -> dict:
 
 
 def placeholder_labels(graph: dict) -> list[str]:
-    """Labels of blocks whose life model is a guessed placeholder."""
+    """Labels of blocks whose non-repairable model is a guessed placeholder."""
     return [
         (n.get("data") or {}).get("label") or n.get("id")
         for n in graph.get("nodes") or []

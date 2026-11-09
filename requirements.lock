@@ -1943,9 +1943,9 @@ starlette==1.8.0 \
 stripe==16.0.0 \
     --hash=sha256:5016068d54aebb43e61b3c377ef45bede4e0b4eb1817d7a12af81630c55a23d2 \
     --hash=sha256:6a401baf2fc19c59ccb59005e674f8da8fa256e8db319ad8c50292f4cddf8c26
-surpyval==0.25 \
-    --hash=sha256:627716ef7c2f10eeb3bfd1b305b21bac60ff5b329603198fa8f5e967530eab6f \
-    --hash=sha256:8414ce381ce252fed00112c5dc99bc56d4b882a3eb6567538c28c4dd61f52b60
+surpyval==0.26 \
+    --hash=sha256:06dd5b795ac1d3d7e044241a80d4d9f855828632a3d3b3f869e04eac9dbb478a \
+    --hash=sha256:a8f2bce1618a4b880d043c2f4210a0690795bbc42e0f9b9b4408de71b7743f35
 tabulate==0.10.0 \
     --hash=sha256:e2cfde8f79420f6deeffdeda9aaec3b6bc5abce947655d17ac662b126e48a60d \
     --hash=sha256:f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3

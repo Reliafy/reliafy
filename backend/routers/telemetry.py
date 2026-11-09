@@ -48,7 +48,6 @@ CLIENT_EVENTS = frozenset({
     "rbd_export_json",
     "alt_save",
     "degradation_save",
-    "rcm_create",
     "rcm_import",
     # First-run starts on an empty workspace (#194): frontend/src/components/FirstRun.jsx.
     "first_run_sample",

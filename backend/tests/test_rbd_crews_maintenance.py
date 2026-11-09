@@ -490,7 +490,7 @@ def test_r2_maintenance_unchanged():
 
 
 # ---------------------------------------------------------------------------
-# MCP: rbd create / rbd edit round-trip the new fields
+# MCP: change rbd_create / change rbd_edit round-trip the new fields
 # ---------------------------------------------------------------------------
 def _m(dist, **params):
     return {"distribution_id": dist, "params": [{"name": k, "value": v} for k, v in params.items()]}
@@ -524,7 +524,7 @@ def _mcp_graph():
 
 
 def test_mcp_create_rbd_round_trips_the_new_fields(env):
-    out = _ok(_call(env.token[A], "rbd", {"action": "create",
+    out = _ok(_call(env.token[A], "change", {"action": "rbd_create",
         "name": "SIF", "unit": "Hours", "repairable": True, **_mcp_graph(), "repair_crews": 2,
         "maintenance_groups": {"north": {"setup_cost": 500}}, "safety_function": True, "target_sil": 2}))
     graph = _doc(env, out["id"])["graph"]
@@ -540,8 +540,8 @@ def test_mcp_create_rbd_round_trips_the_new_fields(env):
     got = _ok(_call(env.token[A], "get", {"kind": "rbd", "id": out["id"]}))["graph"]
     assert got["repair_crews"] == {"crews": 2} and got["safety_function"] is True
     assert {n["id"]: n for n in got["nodes"]}["fan"]["maintenance_group"] == "north"
-    # rbd_analysis analyze reports the method, the crews and the safety function.
-    res = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": out["id"]}))
+    # analyse rbd reports the method, the crews and the safety function.
+    res = _ok(_call(env.token[A], "analyse", {"action": "rbd", "rbd_id": out["id"]}))
     assert res["repair_crews"]["crews"] == 2 and res["long_run_method"]["route"] in (
         "exact", "numerical", "refused")
     assert res["safety"]["pfd_avg"] > 0
@@ -553,12 +553,12 @@ def test_mcp_create_rbd_refuses_settings_on_a_reliability_diagram(env):
     g = {"nodes": [{"id": "input", "type": "input"}, {"id": "output", "type": "output"},
                    {"id": "a", "type": "component", "model": _m("exponential", failure_rate=1e-3)}],
          "edges": [{"source": "input", "target": "a"}, {"source": "a", "target": "output"}]}
-    msg = _err(_call(env.token[A], "rbd", {"action": "create", "name": "x", **g, "repair_crews": 1}))
+    msg = _err(_call(env.token[A], "change", {"action": "rbd_create", "name": "x", **g, "repair_crews": 1}))
     assert "repairable diagrams only" in msg
 
 
 def test_mcp_edit_rbd_sets_and_clears_the_new_fields(env):
-    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "SIF", "unit": "Hours", "repairable": True,
+    rid = _ok(_call(env.token[A], "change", {"action": "rbd_create", "name": "SIF", "unit": "Hours", "repairable": True,
                                                  **_mcp_graph()}))["id"]
     out = _ok(_edit(env, rid,
                     {"op": "set", "repair_crews": 1, "safety_function": True, "target_sil": 3,
@@ -585,7 +585,7 @@ def test_mcp_edit_rbd_sets_and_clears_the_new_fields(env):
 
 
 def test_mcp_edit_rbd_errors(env):
-    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "SIF", "unit": "Hours", "repairable": True,
+    rid = _ok(_call(env.token[A], "change", {"action": "rbd_create", "name": "SIF", "unit": "Hours", "repairable": True,
                                                  **_mcp_graph()}))["id"]
     assert "only component nodes" in _err(_edit(env, rid, {"op": "update_node", "id": "bank",
                                                            "preventive": {"interval": 10}}))

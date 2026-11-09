@@ -33,6 +33,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import Body, FastAPI
 from fastapi.responses import JSONResponse
@@ -40,6 +41,7 @@ from fastapi.responses import JSONResponse
 from backend import config
 from backend.services import compute_core
 from backend.services.rbd_analysis import AnalysisError, _repyability_version
+from backend.errors import client_message
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("reliafy.compute")
@@ -127,6 +129,27 @@ def _post(url: str, payload: dict, timeout: float) -> int:
     return r.status_code
 
 
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+
+
+def callback_target(requested: Optional[str]) -> Optional[str]:
+    """Where to report a job: the configured ``COMPUTE_CALLBACK_URL`` (always,
+    when set: the task's own value is ignored), else the task's value only
+    when it points at this machine (a local run). None when neither applies."""
+    if config.COMPUTE_CALLBACK_URL:
+        return config.COMPUTE_CALLBACK_URL
+    if not isinstance(requested, str):
+        return None
+    try:
+        parts = urlsplit(requested.strip())
+        host = parts.hostname
+    except ValueError:
+        return None
+    if parts.scheme in ("http", "https") and host in _LOCAL_HOSTS:
+        return urlunsplit(parts)
+    return None
+
+
 def post_callback(url: str, payload: dict, timeout: float = 30.0) -> bool:
     """Deliver one callback; True on a 2xx answer."""
     try:
@@ -138,6 +161,16 @@ def post_callback(url: str, payload: dict, timeout: float = 30.0) -> bool:
         logger.warning("Callback for job %s answered %s", payload.get("job_id"), status)
         return False
     return True
+
+
+def _report_running(url: str, job_id: str, started: str) -> Optional[int]:
+    """Report a job started; the callback's HTTP status (None if it
+    couldn't be delivered)."""
+    try:
+        return _post(url, {"job_id": job_id, "status": "running", "started_at": started}, 10.0)
+    except Exception as exc:  # noqa: BLE001 - best effort
+        logger.warning("Running callback for job %s failed: %s", job_id, exc)
+        return None
 
 
 def _now() -> str:
@@ -157,16 +190,19 @@ def run_job(job_id: str, kind: str, request: dict, callback_url: str) -> bool:
     """Run one job and report it. Returns whether the final callback landed."""
     started = _now()
     # Best effort: lets the app show "Running…". A lost one doesn't matter.
-    post_callback(callback_url, {"job_id": job_id, "status": "running", "started_at": started},
-                  timeout=10.0)
+    # The web app answers 409 when the user cancelled the job while it was
+    # queued: then nothing is calculated (and the task is done, not retried).
+    if _report_running(callback_url, job_id, started) == 409:
+        logger.info("Job %s was cancelled before it started; skipped", job_id)
+        return True
     t0 = time.perf_counter()
     status, result, error = "done", None, None
     try:
         result = execute(kind, request)
     except AnalysisError as exc:
-        status, error = "failed", str(exc) or GENERIC_FAILURE
+        status, error = "failed", client_message(exc, GENERIC_FAILURE)
     except compute_core.InvalidRequest as exc:
-        status, error = "failed", f"Invalid calculation request: {exc}"
+        status, error = "failed", f"Invalid calculation request: {client_message(exc)}"
     except Exception:  # noqa: BLE001 - deterministic: retrying won't help
         logger.exception("Job %s (%s) failed", job_id, kind)
         status, error = "failed", GENERIC_FAILURE
@@ -210,9 +246,9 @@ def compute_availability(
     try:
         result = execute("availability", {"graph": graph, "options": options})
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except compute_core.InvalidRequest as exc:
-        return JSONResponse(status_code=400, content={"detail": str(exc)})
+        return JSONResponse(status_code=400, content={"detail": client_message(exc)})
     return JSONResponse(content=result)
 
 
@@ -225,7 +261,7 @@ def compute_run(
 ) -> JSONResponse:
     """Cloud Tasks target: run the job, then report it to the web app.
     A 5xx answer makes Cloud Tasks retry the task."""
-    url = config.COMPUTE_CALLBACK_URL or callback_url
+    url = callback_target(callback_url)
     if not url:
         logger.error("Job %s: no callback URL (set COMPUTE_CALLBACK_URL)", job_id)
         return JSONResponse(status_code=500, content={"detail": "No callback URL configured."})

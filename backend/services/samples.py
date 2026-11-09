@@ -65,6 +65,37 @@ _BRAKE_WEAR_CSV = (
     "pad-06,2700,2.97\npad-06,3250,3.53\npad-06,3800,4.13\npad-06,4350,4.85\n"
 ).encode()
 
+# The sample quadcopter's speed controllers (backend/maintenance/templates.py):
+# each controller's temperature rise above ambient in the hover, read from the
+# flight log every 25 flight hours. The thermal pad to the arm dries out, so the
+# rise climbs about 0.1 °C an hour toward the 45 °C limit the controller derates
+# at. Six controllers, invented.
+_QUAD_ESC_TEMP_CSV = (
+    "esc,hours,temp_rise_c\n"
+    "esc-01,25,17.8\nesc-01,50,20.1\nesc-01,75,23.0\nesc-01,100,24.8\n"
+    "esc-01,125,27.8\nesc-01,150,29.9\nesc-01,175,32.4\nesc-01,200,34.8\n"
+    "esc-02,25,18.4\nesc-02,50,20.2\nesc-02,75,22.6\nesc-02,100,24.8\n"
+    "esc-02,125,28.0\nesc-02,150,29.5\nesc-02,175,31.8\nesc-02,200,34.1\n"
+    "esc-03,25,17.1\nesc-03,50,20.3\nesc-03,75,22.6\nesc-03,100,25.5\n"
+    "esc-03,125,28.5\nesc-03,150,31.1\nesc-03,175,33.8\nesc-03,200,35.8\n"
+    "esc-04,25,18.8\nesc-04,50,21.7\nesc-04,75,24.2\nesc-04,100,27.6\n"
+    "esc-04,125,29.7\nesc-04,150,33.0\nesc-04,175,35.9\nesc-04,200,38.7\n"
+    "esc-05,25,18.2\nesc-05,50,21.2\nesc-05,75,22.5\nesc-05,100,25.0\n"
+    "esc-05,125,27.6\nesc-05,150,29.5\nesc-05,175,31.7\nesc-05,200,34.1\n"
+    "esc-06,25,17.5\nesc-06,50,20.3\nesc-06,75,22.6\nesc-06,100,24.8\n"
+    "esc-06,125,26.8\nesc-06,150,29.1\nesc-06,175,32.0\nesc-06,200,34.0\n"
+).encode()
+
+# The sample quadcopter's avionics boards (radios and flight controllers) in the
+# field: flight hours to an electronic failure, the boards still working at the
+# review on a 1. Random failures (no wear-out), so an exponential fits: the
+# evidence behind the radio's run-to-failure decision. Invented.
+_QUAD_AVIONICS_CSV = (
+    "hours,censored\n"
+    "140,0\n310,0\n480,0\n620,0\n790,0\n950,0\n1180,0\n1420,0\n1690,0\n2050,0\n"
+    "350,1\n400,1\n450,1\n520,1\n580,1\n640,1\n700,1\n760,1\n820,1\n900,1\n960,1\n1050,1\n1150,1\n1250,1\n"
+).encode()
+
 # Accelerated life test with covariates: valve seals run at combinations of
 # temperature and mechanical load. Life falls as either stress rises — the
 # textbook proportional-hazards regression case. A crossed 3×2 stress design
@@ -240,11 +271,53 @@ _PUMP_MODES_CSV = (
     "P-71,4210,,A,60\nP-72,50,seal leak,B,60\n"
 ).encode()
 
+def _feed_pump_fleet(n: int = 40, seed: int = 12, stop: float = 120.0, every: float = 10.0) -> tuple[bytes, bytes]:
+    """Condition and life in one dataset: ``(life data, measurements)`` for
+    40 feed pumps watched for 120 days, their vibration read every 10 days.
+    Drawn from a joint model (each pump's vibration follows its own straight
+    line; a Weibull failure rate rises with the vibration now and with a
+    heavier duty, ``load`` 1), so the condition and life fit recovers it:
+    35 pumps fail, 5 are still running with their own readings to judge
+    them by. Deterministic (a fixed seed), so the seed is idempotent."""
+    import numpy as np
+
+    truth = dict(a=2.0, b=0.02, sd_a=0.3, sd_b=0.004, sd_noise=0.15, alpha=150.0, beta=2.0, zeta=0.8, ref=2.0,
+                 load=0.5)
+    rng = np.random.default_rng(seed)
+    grid = np.linspace(0, 1000, 20001)
+    life = ["pump,age_days,running,load"]
+    reads = ["pump,age_days,vibration_mm_s"]
+    for k in range(n):
+        load = k % 2
+        a, b = rng.normal(truth["a"], truth["sd_a"]), rng.normal(truth["b"], truth["sd_b"])
+        h = (truth["beta"] / truth["alpha"] * (np.maximum(grid, 1e-12) / truth["alpha"]) ** (truth["beta"] - 1)
+             * np.exp(truth["zeta"] * (a + b * grid - truth["ref"]) + truth["load"] * load))
+        cum = np.concatenate([[0], np.cumsum((h[1:] + h[:-1]) / 2 * np.diff(grid))])
+        t_fail = float(np.interp(rng.exponential(), cum, grid))
+        end = min(t_fail, stop)
+        ages = np.arange(0.0, end, every)
+        y = a + b * ages + rng.normal(0, truth["sd_noise"], ages.size)
+        uid = f"P-{k + 1:02d}"
+        life.append(f"{uid},{end:.1f},{int(t_fail >= stop)},{load}")
+        reads += [f"{uid},{t:g},{v:.3f}" for t, v in zip(ages, y)]
+    return ("\n".join(life) + "\n").encode(), ("\n".join(reads) + "\n").encode()
+
+
+_FEED_PUMP_LIVES_CSV, _FEED_PUMP_VIBRATION_CSV = _feed_pump_fleet()
+
 SAMPLE_DATASETS = [
     {
         "id": "sample-ds-bearings",
         "name": "Bearing fatigue test (sample)",
         "csv": _BEARINGS_CSV,
+    },
+    {
+        # One dataset with both parts (docs/datasets.md): the pumps' lives
+        # and their vibration readings, for condition and life.
+        "id": "sample-ds-feed-pumps",
+        "name": "Feed pumps — lives and vibration readings (sample)",
+        "csv": _FEED_PUMP_LIVES_CSV,
+        "measurements": _FEED_PUMP_VIBRATION_CSV,
     },
     {
         "id": "sample-ds-insulating-fluid",
@@ -286,6 +359,40 @@ SAMPLE_DATASETS = [
         "name": "Pump failures by mode (sample)",
         "csv": _PUMP_MODES_CSV,
     },
+    {
+        "id": "sample-ds-quad-esc-temperature",
+        "name": "Quadcopter speed controller temperature rise (sample)",
+        "csv": _QUAD_ESC_TEMP_CSV,
+    },
+    {
+        "id": "sample-ds-quad-avionics",
+        "name": "Quadcopter avionics boards — field failures (sample)",
+        "csv": _QUAD_AVIONICS_CSV,
+    },
+]
+
+# A condition and life (joint) model on the feed pumps: each running pump's
+# own risk from its own vibration readings. Fitted in-process at seed time
+# (about a second), once.
+SAMPLE_JOINT_MODELS = [
+    {
+        "id": "sample-joint-feed-pumps",
+        "name": "Feed pumps — condition and life (sample)",
+        "dataset_id": "sample-ds-feed-pumps",
+        "spec": {
+            "dataset_id": "sample-ds-feed-pumps",
+            "mapping": {"id": "pump", "x": "age_days", "c": "running"},
+            "readings_mapping": {"id": "pump", "age": "age_days", "value": "vibration_mm_s"},
+            "covariates": ["load"],
+            "hazard_covariates": ["load"],
+            "path_covariates": [],
+            "c_invert": False,
+            "path_model": "linear",
+            "unit": "Days",
+            "marker": "vibration",
+            "marker_unit": "mm/s",
+        },
+    },
 ]
 
 SAMPLE_DEGRADATION_MODELS = [
@@ -301,6 +408,22 @@ SAMPLE_DEGRADATION_MODELS = [
             "population_method": "moments",
             "unit": "hours",
             "measurement_unit": "mm",
+        },
+    },
+    {
+        # The sample quadcopter's speed controllers: the evidence behind the
+        # on-condition check of their temperature rise (templates.py).
+        "id": "sample-deg-quad-esc-temperature",
+        "name": "Quadcopter speed controller — temperature rise (sample)",
+        "dataset_id": "sample-ds-quad-esc-temperature",
+        "spec": {
+            "mapping": {"i": "esc", "x": "hours", "y": "temp_rise_c"},
+            "threshold": 45.0,
+            "path": "linear",
+            "distribution_id": "weibull",
+            "population_method": "moments",
+            "unit": "hours",
+            "measurement_unit": "°C",
         },
     },
 ]
@@ -456,12 +579,23 @@ SAMPLE_MODELS = [
         "mapping": {"x": "hours", "e": "failure_mode", "g": "site"},
         "unit": "hours",
     },
+    {
+        # The sample quadcopter's avionics: an exponential fit (memoryless, so
+        # random failures), the evidence behind the radio's run-to-failure
+        # decision (backend/maintenance/templates.py).
+        "id": "sample-model-quad-avionics-exponential",
+        "name": "Quadcopter avionics — Exponential (sample)",
+        "dataset_id": "sample-ds-quad-avionics",
+        "distribution": "exponential",
+        "mapping": {"x": "hours", "c": "censored"},
+        "unit": "hours",
+    },
 ]
 
 
 # A small but representative diagram: a controller in series with two redundant
 # pumps in parallel (input -> controller -> {Pump A | Pump B} -> output). Each
-# component carries an inline Weibull life model so the RBD is self-contained
+# component carries an inline Weibull non-repairable model so the RBD is self-contained
 # (it doesn't depend on any saved model). Shape matches what the React Flow
 # builder produces, so it opens, analyses, and edits like any user diagram.
 def _weibull(alpha: float, beta: float) -> dict:
@@ -512,7 +646,7 @@ def _pump_station_graph() -> dict:
 #     compressors — they share suction, power and maintenance, so 10 % of
 #     compressor failures are assumed to take all three out together.
 #   * "availability" is repairable: every component carries a Lognormal
-#     repair-time model on top of its life model, and the dryers become a
+#     repair-time model on top of its non-repairable model, and the dryers become a
 #     1-out-of-2 gate (standby isn't supported in availability mode), so the
 #     result is steady-state uptime rather than a survival curve.
 # ---------------------------------------------------------------------------
@@ -896,22 +1030,79 @@ def _upgrade_sample_dataset(db, spec: dict, existing: dict) -> None:
     so models fitted to the sample stay valid."""
     have = {str(c.get("name")) for c in existing.get("columns") or [] if isinstance(c, dict)}
     df = fitting.read_dataframe(spec["csv"])
-    if not set(map(str, df.columns)) - have:
+    update: dict = {}
+    if set(map(str, df.columns)) - have:
+        update.update({
+            "data": spec["csv"],
+            "checksum": storage.checksum(spec["csv"]),
+            "n_rows": int(df.shape[0]),
+            "columns": [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns],
+        })
+    # A measurements part this release gives the sample (never one it has).
+    if spec.get("measurements") and not existing.get("measurements"):
+        update["measurements"] = _sample_part(spec["measurements"]).model_dump()
+    if not update:
         return
-    db.datasets.update_one({"_id": spec["id"]}, {"$set": {
-        "data": spec["csv"],
-        "checksum": storage.checksum(spec["csv"]),
-        "n_rows": int(df.shape[0]),
-        "columns": [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns],
-    }})
-    logger.info("Upgraded sample dataset %r (new columns).", spec["id"])
+    db.datasets.update_one({"_id": spec["id"]}, {"$set": update})
+    logger.info("Upgraded sample dataset %r (%s).", spec["id"],
+                "new columns" if "data" in update else "measurements")
+
+
+def _sample_part(csv: bytes):
+    """A sample dataset's measurements part from its CSV."""
+    from backend.schema import DatasetPart
+
+    df = fitting.read_dataframe(csv)
+    return DatasetPart(checksum=storage.checksum(csv), n_rows=int(df.shape[0]),
+                       columns=[{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns], data=csv)
+
+
+def _seed_joint_models(db) -> None:
+    """Fit and save the sample condition and life models (idempotent: a
+    saved one is left as it is)."""
+    for spec in SAMPLE_JOINT_MODELS:
+        try:
+            if db.models.find_one({"_id": spec["id"]}, {"_id": 1}) is not None:
+                continue
+            if db.datasets.find_one({"_id": spec["dataset_id"]}, {"_id": 1}) is None:
+                continue
+            from backend import joint as joint_fit  # local: heavy import
+            from backend.services import compute_core
+            from backend.services import joint as joint_service
+
+            s = spec["spec"]
+            items, summary = joint_service.items_for(db, s, SAMPLE_OWNER)
+            request = joint_fit.fit_request(
+                items, s["covariates"], path_model=s["path_model"], hazard_covariates=s.get("hazard_covariates"),
+                path_covariates=s.get("path_covariates"), unit=s.get("unit") or "", marker=s.get("marker") or "",
+                marker_unit=s.get("marker_unit") or "", summary=summary)
+            out = compute_core.to_wire(compute_core.run_joint_fit(request))
+            import surpyval
+
+            model = Model(
+                id=spec["id"],
+                name=spec["name"],
+                owner_id=SAMPLE_OWNER,
+                dataset_id=spec["dataset_id"],
+                kind=joint_service.KIND,
+                distribution_id=(out.get("results") or {}).get("distribution_id") or "joint",
+                spec=dict(s),
+                results=out.get("results") or {},
+                serialized={"format": "surpyval_joint", "model": out.get("model"), "units": out.get("units") or {}},
+                surpyval_version=getattr(surpyval, "__version__", None),
+                status="ready",
+            )
+            db.models.insert_one(to_doc(model))
+            logger.info("Seeded sample condition and life model %r.", spec["id"])
+        except Exception as exc:  # pragma: no cover - defensive; never block boot
+            logger.warning("Failed to seed sample condition and life model %r: %s", spec["id"], exc)
 
 
 def _upgrade_sample_recurrent(db, spec: dict, existing: dict) -> None:
     """A seeded sample recurrent model whose spec predates a mapping key or
     the default growth-projection settings this release ships (#265: the
     compressor model's failure-mode column): map them, and store the
-    projection, so repairable_analysis growth_projection and the app's Projection panel work on
+    projection, so analyse growth_projection and the app's Projection panel work on
     it straight away. The fit itself doesn't change (the mode column isn't
     part of it). Settings a sample already has are kept."""
     from backend import recurrent as recurrent_fit  # local: heavy import
@@ -973,11 +1164,14 @@ def seed_samples(db) -> None:
                 n_rows=int(df.shape[0]),
                 columns=columns,
                 data=spec["csv"],
+                measurements=_sample_part(spec["measurements"]) if spec.get("measurements") else None,
             )
             db.datasets.insert_one(to_doc(dataset))
             logger.info("Seeded sample dataset %r.", spec["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample dataset %r: %s", spec["id"], exc)
+
+    _seed_joint_models(db)
 
     import surpyval
 
@@ -991,9 +1185,13 @@ def seed_samples(db) -> None:
                 if is_regression:
                     continue
                 # Upgrade older seeds whose cached results predate newer payload
-                # fields (parameter CIs / the randomness verdict).
-                old_params = (existing.get("results") or {}).get("params") or []
-                if old_params and "ci" in old_params[0]:
+                # fields (parameter CIs / the randomness verdict / the failures
+                # on the time scale that the model page's checks draw).
+                old_results = existing.get("results") or {}
+                old_params = old_results.get("params") or []
+                old_plot = old_results.get("plot")
+                has_points = not old_plot or "empirical" in old_plot
+                if old_params and "ci" in old_params[0] and has_points:
                     continue
             ds_doc = db.datasets.find_one({"_id": spec["dataset_id"]})
             if ds_doc is None:
@@ -1009,7 +1207,7 @@ def seed_samples(db) -> None:
                 db.models.update_one(
                     {"_id": spec["id"]}, {"$set": {"results": result}}
                 )
-                logger.info("Upgraded sample model %r (param CIs).", spec["id"])
+                logger.info("Upgraded sample model %r (newer result fields).", spec["id"])
                 continue
             model = Model(
                 id=spec["id"],
@@ -1036,7 +1234,8 @@ def seed_samples(db) -> None:
             logger.warning("Failed to seed sample model %r: %s", spec["id"], exc)
 
     _seed_strategy_analyses(db)
-    _seed_rcm_study(db)
+    _seed_reliability_prediction(db)
+    _seed_maintainability_predictions(db)
     _seed_fleet(db)
 
     for spec in SAMPLE_RBDS:
@@ -1055,12 +1254,21 @@ def seed_samples(db) -> None:
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample RBD %r: %s", spec["id"], exc)
     _seed_availability_results(db)
+    from backend.services import fault_trees  # local: it imports the RBD analysis
+
+    fault_trees.seed_samples(db, SAMPLE_OWNER)
 
     for spec in SAMPLE_DEGRADATION_MODELS:
         try:
             from backend import degradation as degradation_fit  # local: heavy import
 
-            model_exists = db.degradation_models.find_one({"_id": spec["id"]}) is not None
+            existing_deg = db.degradation_models.find_one({"_id": spec["id"]})
+            model_exists = existing_deg is not None
+            # Upgrade an older seed whose results predate newer payload fields
+            # (each reading's residual, which the model page's checks draw).
+            stale = model_exists and not all(
+                "residuals" in u for u in ((existing_deg.get("results") or {}).get("units") or [])
+            )
 
             def _needs_seed(it):
                 doc = db.tracked_items.find_one({"_id": it["id"]})
@@ -1075,7 +1283,7 @@ def seed_samples(db) -> None:
                 it for it in SAMPLE_TRACKED_ITEMS
                 if it["model_id"] == spec["id"] and _needs_seed(it)
             ]
-            if model_exists and not missing_items:
+            if model_exists and not missing_items and not stale:
                 continue
 
             ds_doc = db.datasets.find_one({"_id": spec["dataset_id"]})
@@ -1100,6 +1308,9 @@ def seed_samples(db) -> None:
                 )
                 db.degradation_models.insert_one(to_doc(doc))
                 logger.info("Seeded sample degradation model %r.", spec["id"])
+            elif stale:
+                db.degradation_models.update_one({"_id": spec["id"]}, {"$set": {"results": payload}})
+                logger.info("Upgraded sample degradation model %r (newer result fields).", spec["id"])
 
             live = degradation_fit.get_live(cache_id)
             for it in missing_items:
@@ -1153,6 +1364,13 @@ def seed_samples(db) -> None:
     for spec in SAMPLE_ALT_MODELS:
         try:
             existing = db.alt_models.find_one({"_id": spec["id"]})
+            levels = ((existing or {}).get("results") or {}).get("levels") or []
+            if existing is not None and levels and "failures" not in levels[0]:
+                # The model page's frame: each level's failures and own fit,
+                # and a two-stress model's second chart. Refit once to gain them.
+                db.alt_models.delete_one({"_id": spec["id"]})
+                existing = None
+                logger.info("Refitting sample ALT model %r (model page).", spec["id"])
             if existing is not None:
                 units = spec["spec"].get("stress_units")
                 if units and not (existing.get("spec") or {}).get("stress_units"):
@@ -1199,124 +1417,11 @@ def seed_samples(db) -> None:
     _seed_tracked_fleet(db)
 
 
-def _seed_rcm_study(db) -> None:
-    """Sample RCM study wiring every sample artifact together as evidence.
-
-    One decision — the legacy run-to-failure plan on the wheel bearings — is
-    deliberately linked to a model that CONTRADICTS it (the bearing Weibull
-    fits wear-out, β ≈ 2.5): the study opens with a red badge that demos the
-    live evidence validation.
-    """
-    from backend.schema import RcmStudy
-
-    if db.rcm_studies.find_one({"_id": "sample-rcm-truck"}) is not None:
-        return
-    try:
-        functions = [
-            {
-                "id": "sample-rcm-f1",
-                "text": "Stop the vehicle within the rated distance",
-                "failures": [
-                    {
-                        "id": "sample-rcm-f1-ff1",
-                        "text": "Insufficient braking force",
-                        "modes": [
-                            {
-                                "id": "sample-rcm-m1",
-                                "text": "Brake pad wear beyond the 8 mm limit",
-                                "effects": "Extended stopping distance; risk of collision.",
-                                "consequence": "safety",
-                                "decision": {
-                                    "outcome": "on_condition",
-                                    "task": "Measure pad wear at each service; replace before the 8 mm threshold.",
-                                    "evidence": {"type": "degradation_model", "id": "sample-deg-brake-wear"},
-                                },
-                            },
-                            {
-                                "id": "sample-rcm-m2",
-                                "text": "Secondary hydraulic circuit failed (hidden until demanded)",
-                                "effects": "No redundancy on primary circuit failure.",
-                                "consequence": "hidden",
-                                "decision": {
-                                    "outcome": "failure_finding",
-                                    "task": "Function-test the secondary circuit.",
-                                    "evidence": {"type": "strategy_analysis", "id": "sample-strategy-ffi-brake-circuit"},
-                                },
-                            },
-                        ],
-                    },
-                ],
-            },
-            {
-                "id": "sample-rcm-f2",
-                "text": "Transmit drive to the wheels",
-                "failures": [
-                    {
-                        "id": "sample-rcm-f2-ff1",
-                        "text": "Wheel does not rotate freely",
-                        "modes": [
-                            {
-                                "id": "sample-rcm-m3",
-                                "text": "Wheel-bearing fatigue",
-                                "effects": "Vehicle immobilised; tow required.",
-                                "consequence": "operational",
-                                "decision": {
-                                    "outcome": "fixed_interval",
-                                    "task": "Replace wheel bearings preventively.",
-                                    "interval": 580,
-                                    "interval_unit": "hours",
-                                    "evidence": {"type": "strategy_analysis", "id": "sample-strategy-bearing-replacement"},
-                                },
-                            },
-                            {
-                                "id": "sample-rcm-m4",
-                                "text": "Wheel-bearing failure — legacy run-to-failure plan",
-                                "effects": "As above; inherited from the old maintenance plan.",
-                                "consequence": "operational",
-                                "decision": {
-                                    "outcome": "rtf",
-                                    "rtf_basis": "random",
-                                    "notes": "Legacy decision — kept to demonstrate live evidence validation.",
-                                    "evidence": {"type": "model", "id": "sample-model-bearings-weibull"},
-                                },
-                            },
-                            {
-                                "id": "sample-rcm-m5",
-                                "text": "Chassis cracking at the spring hanger",
-                                "effects": "Structural risk under load.",
-                                "consequence": "safety",
-                                "decision": {
-                                    "outcome": "redesign",
-                                    "notes": "No task can manage the risk — reinforcement redesign raised with engineering.",
-                                },
-                            },
-                        ],
-                    },
-                ],
-            },
-        ]
-        from backend.services import rcm as rcm_service
-
-        study = RcmStudy(
-            id="sample-rcm-truck",
-            name="Delivery truck — RCM demo (sample)",
-            system="Delivery truck (brakes + drivetrain)",
-            description=(
-                "A worked RCM study with every decision linked to its evidence. "
-                "Note the legacy run-to-failure decision flagged as CONTRADICTED — "
-                "its own life model shows wear-out, not random failure."
-            ),
-            owner_id=SAMPLE_OWNER,
-            functions=rcm_service.clean_tree(functions),
-        )
-        db.rcm_studies.insert_one(to_doc(study))
-        logger.info("Seeded sample RCM study 'sample-rcm-truck'.")
-    except Exception as exc:  # pragma: no cover - defensive; never block boot
-        logger.warning("Failed to seed sample RCM study: %s", exc)
-
-
 def _seed_strategy_analyses(db) -> None:
-    """Sample saved strategy analyses (evidence for the sample RCM study).
+    """Sample saved strategy analyses: the evidence the sample quadcopter's RCM
+    decisions link (backend/maintenance/templates.py), and the bearing
+    replacement and brake-circuit ones (still linked by copies of the earlier
+    sample truck some workspaces keep).
 
     The bearing replacement analysis reads the just-seeded bearing model's
     fitted parameters, so this runs after the SAMPLE_MODELS loop.
@@ -1356,6 +1461,61 @@ def _seed_strategy_analyses(db) -> None:
         },
     })
 
+    # The sample quadcopter's (all invented, in flight hours): propeller fatigue
+    # and pack retirement as age-based replacements, the BMS cut-off's
+    # failure-finding test interval, and the gimbal motor's replacement analysis,
+    # which finds no worthwhile interval (its failures are random), so the
+    # run-to-failure decision it supports reads as supported.
+    specs += [
+        {
+            "id": "sample-strategy-quad-gimbal-replacement",
+            "name": "Quadcopter gimbal motor — preventive replacement (sample)",
+            "kind": "optimal_replacement",
+            "inputs": {
+                "distribution_id": "exponential",
+                "params": [{"name": "failure_rate", "value": 1e-4}],
+                "planned_cost": 80.0,
+                "unplanned_cost": 300.0,
+                "unit": "hours",
+            },
+        },
+        {
+            "id": "sample-strategy-quad-propeller-replacement",
+            "name": "Quadcopter propeller — preventive replacement (sample)",
+            "kind": "optimal_replacement",
+            "inputs": {
+                "distribution_id": "weibull",
+                "params": [{"name": "alpha", "value": 400.0}, {"name": "beta", "value": 3.0}],
+                "planned_cost": 60.0,
+                "unplanned_cost": 900.0,
+                "unit": "hours",
+            },
+        },
+        {
+            "id": "sample-strategy-quad-battery-retirement",
+            "name": "Quadcopter battery pack — retirement age (sample)",
+            "kind": "optimal_replacement",
+            "inputs": {
+                "distribution_id": "weibull",
+                "params": [{"name": "alpha", "value": 600.0}, {"name": "beta", "value": 3.0}],
+                "planned_cost": 150.0,
+                "unplanned_cost": 1200.0,
+                "unit": "hours",
+            },
+        },
+        {
+            "id": "sample-strategy-quad-bms-failure-finding",
+            "name": "Quadcopter BMS cut-off — failure finding (sample)",
+            "kind": "failure_finding",
+            "inputs": {
+                "distribution_id": "exponential",
+                "params": [{"name": "failure_rate", "value": 2.5e-5}],
+                "target_availability": 0.998,
+                "unit": "hours",
+            },
+        },
+    ]
+
     for spec in specs:
         try:
             if db.strategy_analyses.find_one({"_id": spec["id"]}) is not None:
@@ -1369,6 +1529,147 @@ def _seed_strategy_analyses(db) -> None:
             logger.info("Seeded sample strategy analysis %r.", spec["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample analysis %r: %s", spec["id"], exc)
+
+
+# The sample reliability prediction: a parts count for the sample product's
+# electronics (backend/maintenance/templates.py: "Survey quadcopter (sample)",
+# part SQ-4, rev C), at part level as a design team's parts lists would be.
+# Entirely invented, like the product. Airborne, rotary winged (ARW); a
+# 100-hour season of flights. Motors and propellers are listed with no part
+# type: they're mechanical, outside the handbook, so the result says so.
+_R = "mil-hdbk-217f-n2:"
+SAMPLE_PREDICTION = {
+    "id": "sample-prediction-quadcopter",
+    "name": "Survey quadcopter electronics (sample)",
+    "inputs": {
+        "environment": "ARW",
+        "mission_time": 100.0,
+        "product": {"id": None, "name": "Survey quadcopter (sample)", "rev": "C", "part_number": "SQ-4"},
+        "notes": (
+            "An invented part-level parts list for the sample quadcopter's electronics, as a design team's parts "
+            "lists would be. Microcircuits (the processor, the sensor and radio chips) aren't among the library's "
+            "handbook records, so they aren't counted; motors and propellers are mechanical, outside the "
+            "handbook, and are listed without a part type. Quality factors are 1 except where the design uses "
+            "commercial plastic parts (πQ 5.5) or commercial connectors (πQ 2)."
+        ),
+        "lines": [
+            # name, record, quantity, assembly path, πQ, reference
+            ("Decoupling capacitors, 0.1 µF ceramic", "10-1-ck-11015", 48, ["Flight controller"], 1, ""),
+            ("Chip resistors", "9-1-rm-55342", 62, ["Flight controller"], 1, ""),
+            ("Schottky diodes, power input", "6-1-power-rectifier-schottky-power-diode", 3, ["Flight controller"],
+             5.5, ""),
+            ("MOSFETs, power switching", "6-4-mosfet", 2, ["Flight controller"], 5.5, ""),
+            ("Rectangular connectors (sensors, radio)", "15-1-rectangular", 4, ["Flight controller"], 2, ""),
+            ("Reflow solder joints", "17-1-reflow-solder", 620, ["Flight controller"], 1, ""),
+            ("MOSFETs, motor drive (6 per ESC)", "6-4-mosfet", 24, ["Speed controllers (4)"], 5.5, ""),
+            ("Ceramic capacitors", "10-1-ck-11015", 32, ["Speed controllers (4)"], 1, ""),
+            ("Electrolytic capacitors, aluminium", "10-1-cu-39018", 8, ["Speed controllers (4)"], 1, ""),
+            ("Chip resistors", "9-1-rm-55342", 80, ["Speed controllers (4)"], 1, ""),
+            ("Power connectors", "15-1-power", 4, ["Speed controllers (4)"], 2, ""),
+            ("Reflow solder joints", "17-1-reflow-solder", 1200, ["Speed controllers (4)"], 1, ""),
+            ("MOSFETs, charge and discharge switch", "6-4-mosfet", 4, ["Power", "BMS board"], 5.5, ""),
+            ("Thermistors, cell temperature", "9-1-rth-23648", 2, ["Power", "BMS board"], 1, ""),
+            ("Chip resistors", "9-1-rm-55342", 24, ["Power", "BMS board"], 1, ""),
+            ("Ceramic capacitors", "10-1-ck-11015", 16, ["Power", "BMS board"], 1, ""),
+            ("Power connectors, battery and load", "15-1-power", 2, ["Power"], 2, ""),
+            ("Ceramic capacitors", "10-1-ck-11015", 12, ["IMUs (2)"], 1, ""),
+            ("Chip resistors", "9-1-rm-55342", 8, ["IMUs (2)"], 1, ""),
+            ("RF coaxial connector, antenna", "15-1-rf-coaxial", 1, ["GPS module"], 2, ""),
+            ("Ceramic capacitors", "10-1-ck-11015", 10, ["GPS module"], 1, ""),
+            ("Chip resistors", "9-1-rm-55342", 6, ["GPS module"], 1, ""),
+            ("RF transformer (balun)", "11-1-rf-10k-10m-hz", 1, ["Telemetry radio"], 1, ""),
+            ("RF coaxial connector, antenna", "15-1-rf-coaxial", 1, ["Telemetry radio"], 2, ""),
+            ("Ceramic capacitors", "10-1-ck-11015", 14, ["Telemetry radio"], 1, ""),
+            ("Chip resistors", "9-1-rm-55342", 10, ["Telemetry radio"], 1, ""),
+            ("Brushless motor 2210", None, 4, ["Propulsion"], 1, "SQ-M2210"),
+            ("Propeller 10x4.5", None, 4, ["Propulsion"], 1, "SQ-P1045"),
+        ],
+    },
+}
+
+
+def sample_prediction_inputs() -> dict:
+    """The sample prediction's inputs as the service takes them."""
+    spec = SAMPLE_PREDICTION["inputs"]
+    lines = [{"name": name, "record_id": (_R + rec) if rec else None, "quantity": qty, "assembly": list(path),
+              "quality_factor": q, "reference": ref}
+             for name, rec, qty, path, q, ref in spec["lines"]]
+    return {**spec, "lines": lines}
+
+
+def _seed_reliability_prediction(db) -> None:
+    """The sample reliability prediction (the parts count of the sample
+    product's electronics), computed from the library's handbook records."""
+    from backend.schema import ReliabilityPrediction
+    from backend.services import reliability_prediction as prediction_service
+
+    spec = SAMPLE_PREDICTION
+    try:
+        if db.reliability_predictions.find_one({"_id": spec["id"]}) is not None:
+            return
+        inputs = prediction_service.normalise_inputs(sample_prediction_inputs())
+        results = prediction_service.results_for(inputs)
+        doc = ReliabilityPrediction(id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER, inputs=inputs,
+                                    results=results)
+        db.reliability_predictions.insert_one(to_doc(doc))
+        logger.info("Seeded sample reliability prediction %r.", spec["id"])
+    except Exception as exc:  # pragma: no cover - defensive; never block boot
+        logger.warning("Failed to seed sample reliability prediction %r: %s", spec["id"], exc)
+
+
+def _seed_maintainability_predictions(db) -> None:
+    """The sample maintainability prediction: the sample survey quadcopter's
+    parts list (backend/maintenance/templates.py, SAMPLE_PRODUCT_BOM) with
+    invented repair times and failure rates. It stands alone (a sample product
+    is added per workspace, so it links no product id)."""
+    from backend.schema import MaintainabilityPrediction
+    from backend.services import maintainability
+
+    spec = {
+        "id": "sample-maintainability-quadcopter",
+        "name": "Survey quadcopter — maintainability prediction (sample)",
+        "inputs": SAMPLE_MAINTAINABILITY_INPUTS,
+    }
+    try:
+        if db.maintainability_predictions.find_one({"_id": spec["id"]}) is not None:
+            return
+        results = maintainability.compute(spec["inputs"])
+        doc = MaintainabilityPrediction(id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER,
+                                        inputs=spec["inputs"], results=results)
+        db.maintainability_predictions.insert_one(to_doc(doc))
+        logger.info("Seeded sample maintainability prediction %r.", spec["id"])
+    except Exception as exc:  # pragma: no cover - defensive; never block boot
+        logger.warning("Failed to seed sample maintainability prediction %r: %s", spec["id"], exc)
+
+
+# The sample quadcopter's lines: the bill of materials' lowest-level parts with
+# the assembly each sits in, a guessed failure rate per million flight hours,
+# and repair times in minutes split into the handbook's elements, with the
+# time 95% of that line's repairs are done by. All invented.
+def _mline(ref, name, assembly, quantity, rate, isolation, access, replace, restore, checkout, maximum):
+    return {"ref": ref, "name": name, "assembly": assembly, "quantity": quantity, "failure_rate": rate,
+            "elements": {"isolation": isolation, "access": access, "replace": replace, "restore": restore,
+                         "checkout": checkout}, "maximum": maximum}
+
+
+SAMPLE_MAINTAINABILITY_INPUTS = {
+    "unit": "minutes",
+    "failure_rate_unit": "per_million_hours",
+    "percentile": 0.95,
+    "lines": [
+        _mline("SQ-AF", "Airframe kit, carbon arms", "Airframe", 1, 40, 10, 20, 45, 25, 15, 220),
+        _mline("SQ-M2210", "Brushless motor 2210", "Propulsion", 4, 180, 10, 5, 15, 5, 10, 90),
+        _mline("SQ-ESC30", "Speed controller 30 A", "Propulsion", 4, 120, 15, 10, 15, 10, 10, 120),
+        _mline("SQ-P1045", "Propeller 10x4.5", "Propulsion", 4, 600, 2, 1, 3, 1, 3, 20),
+        _mline("SQ-FC7", "Flight controller", "Flight control", 1, 90, 20, 10, 10, 10, 30, 160),
+        _mline("SQ-IMU9", "Inertial measurement unit", "Flight control", 2, 60, 25, 10, 10, 10, 25, 160),
+        _mline("SQ-GPS8", "GPS module", "Flight control", 1, 70, 15, 5, 5, 5, 15, 90),
+        _mline("SQ-BP6S", "Battery pack 6S 10 Ah", "Power", 1, 250, 5, 2, 3, 2, 5, 35),
+        _mline("SQ-BMS6", "Battery management board", "Power", 1, 80, 20, 15, 10, 15, 10, 140),
+        _mline("SQ-RL24", "Telemetry radio 2.4 GHz", "Comms", 1, 100, 15, 5, 5, 5, 15, 90),
+        _mline("SQ-GB2", "Camera gimbal, 2 axis", "Payload gimbal", 1, 150, 15, 10, 20, 10, 15, 140),
+    ],
+}
 
 
 # ---------------------------------------------------------------------------
@@ -1393,7 +1694,8 @@ def hide_sample(db, uid: str, sample_id: str) -> None:
 # Every collection that can hold a shared-sample artifact.
 _SAMPLE_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models", "tracked_items",
-    "tracked_fleets", "rcm_studies", "strategy_analyses", "fleets",
+    "tracked_fleets", "strategy_analyses", "fleets", "reliability_predictions", "fault_trees",
+    "maintainability_predictions",
 )
 
 

@@ -6,7 +6,7 @@ import JointBlockSource from "./JointBlockSource.jsx";
 import { paramLabel } from "../paramLabels.js";
 import { unitInText } from "./unitText.js";
 import { formatNumber } from "../format.js";
-import { preferredModel, recentModel, rememberModel, savedModelRef } from "../modelNext.js";
+import { latestOnly, preferredModel, recentModel, rememberModel, savedModelRef } from "../modelNext.js";
 
 // The shape or spread a mean leaves open, in the words the Mean entry uses
 // (#299): a lognormal "takes mean + spread".
@@ -31,8 +31,8 @@ const GIVEN_LABEL = {
 // false opens on "Saved model" with none chosen.
 // ``initialSavedId`` opens on that saved model and emits it (a link's preset).
 // ``wt`` is a guided walkthrough's anchor (walkthroughs.js).
-// ``joint`` (an RBD block's life model: ``{repairable}``) adds "Condition-based":
-// one unit of a condition monitoring model, given its readings.
+// ``joint`` (an RBD block's non-repairable model: ``{repairable}``) adds "Condition-based":
+// one unit of a condition and life model, given its readings.
 export default function ModelPicker({ label, value, onChange, rbdBlock = false, meanEntry = null, unit = "",
                                       preferSaved = false, wanted = null, autoPick = true, initialSavedId = "", wt,
                                       joint = null }) {
@@ -160,14 +160,20 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
       .catch(() => emitMean(id, meanVal, nextGiven));
   };
 
+  // The latest pick wins: the first choice made for the user (the newest
+  // saved model) can still be loading when they pick another one.
+  const pickSeq = useRef(null);
+  if (!pickSeq.current) pickSeq.current = latestOnly();
   const onPickSaved = async (id) => {
+    const current = pickSeq.current();
     setSavedId(id);
     if (!id) return onChange(null);
     rememberModel(id);
     try {
-      onChange(savedModelRef({ ...(await getModel(id)), id }));
+      const m = await getModel(id);
+      if (current()) onChange(savedModelRef({ ...m, id }));
     } catch {
-      onChange(null);
+      if (current()) onChange(null);
     }
   };
 
@@ -213,6 +219,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
         className="picker-seg"
         value={source}
         onChange={(v) => {
+          pickSeq.current(); // a saved model still loading no longer counts
           setSource(v);
           if (v === "mean") toMean();
           else if (v === "params") emitParams(distId, pvals);
@@ -223,7 +230,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
           ...(meanEntry ? [{ value: "mean", label: "Mean" }] : []),
           { value: "params", label: "Parameters" },
           { value: "saved", label: "Saved model" },
-          ...(joint ? [{ value: "joint", label: "Condition monitoring", title: "One unit of a condition monitoring model (remaining life from its readings)" }] : []),
+          ...(joint ? [{ value: "joint", label: "Condition and life", title: "One unit of a condition and life model (remaining life from its readings)" }] : []),
         ]}
       />
 

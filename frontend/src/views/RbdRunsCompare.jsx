@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { compareRbdRuns } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import ResultSummary from "../components/ui/ResultSummary.jsx";
@@ -10,7 +10,10 @@ import { rollingMean } from "../components/RbdCalculator.jsx";
 import { unitInText } from "../components/unitText.js";
 import { formatNumber } from "../format.js";
 import { availabilityText, compareSummary, runsPath, runtimeText } from "../rbdRuns.js";
+import { availabilityPct } from "../components/availabilityPrecision.js";
 import "../components/RbdRuns.css";
+import { RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
+import { RowLink, rowOpen } from "../components/LibRows.jsx";
 
 const when = (iso) =>
   iso ? new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -72,14 +75,12 @@ export default function RbdRunsCompare() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const key = ids.join(",");
+  const tooFew = ids.length < 2;
 
   useEffect(() => {
     setData(null);
     setError(null);
-    if (ids.length < 2) {
-      setError("Pick two or more finished runs to compare.");
-      return;
-    }
+    if (ids.length < 2) return;
     compareRbdRuns(ids).then(setData).catch((err) => setError(err.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
@@ -94,12 +95,21 @@ export default function RbdRunsCompare() {
   return (
     <div className="app rbd-runs">
       <PageHeader
-        crumbs={[{ label: "RBDs", to: "/rbds" }, { label: "Simulation runs", to: runsPath(rbdId) }]}
+        crumbs={[{ label: SYSTEM_MODELS_LABEL, to: RBDS_PATH }, { label: "Simulation runs", to: runsPath(rbdId) }]}
         title="Compare runs"
         meta={names.length ? names.join(" · ") : null}
       />
+      {/* Opened with fewer than two runs (a bookmark, the back button, a
+          shared link): nothing to compare yet, not an error. */}
+      {tooFew && (
+        <div className="card empty">
+          <h2>Nothing to compare yet</h2>
+          <p>Pick two or more finished runs on Simulation runs to compare them.</p>
+          <p><Link to={runsPath()}>Open Simulation runs</Link></p>
+        </div>
+      )}
       {error && <div className="card error">{error}</div>}
-      {!data && !error && <div className="card empty">Loading…</div>}
+      {!data && !error && !tooFew && <div className="card empty">Loading…</div>}
       {data && (
         <div className="card">
           {sum ? (
@@ -137,16 +147,16 @@ export default function RbdRunsCompare() {
                   const a = availabilityText(r.availability);
                   const ss = r.steady_state_availability;
                   return (
-                    <tr key={r.run_id} className="lib-row" onClick={() => navigate(`/rbds/runs/${r.run_id}`)}>
+                    <tr key={r.run_id} className="lib-row" onClick={rowOpen(navigate, `/systems/runs/${r.run_id}`)}>
                       <td>
-                        <Chip dot={COLORWAY[i % COLORWAY.length]}>Run {i + 1}</Chip>{" "}
+                        <RowLink to={`/systems/runs/${r.run_id}`}><Chip dot={COLORWAY[i % COLORWAY.length]}>Run {i + 1}</Chip></RowLink>{" "}
                         <span className="lib-date">{when(r.created_at)}</span>
                       </td>
                       <td className="lib-n">
                         {a.value}
                         {a.interval && <span className="rbd-runs-ci"> {a.interval}</span>}
                       </td>
-                      <td className="lib-opt lib-n">{ss != null ? `${(ss * 100).toFixed(3)}%` : "—"}</td>
+                      <td className="lib-opt lib-n">{ss != null ? availabilityPct(ss) : "—"}</td>
                       <td className="lib-opt lib-n">{r.window != null ? `${formatNumber(r.window)}${u}` : "—"}</td>
                       <td className="lib-opt lib-n">{r.replications != null ? r.replications.toLocaleString() : "—"}</td>
                       <td className="lib-opt lib-n">{runtimeText(r.runtime_s)}</td>

@@ -15,12 +15,14 @@ from backend.http_limits import read_upload
 from backend.fitting import FitError
 from backend.units import canonical_unit
 from backend.services import datasets as datasets_service
+from backend.services import billing as billing_service
 from backend.services import recurrent as recurrent_service
 from backend.services import samples as samples_service
 from backend.services import access as access_service
 from backend.services import shares as shares_service
 from backend.services.access import AccessCtx, get_access
 from backend.schema import RecurrentModelDoc
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -128,7 +130,7 @@ def fit_preview(
                                windows=windows, baseline=baseline, m=m)
         payload, _ = recurrent_fit.fit_spec(df, spec)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except HTTPException:
         raise
     except Exception:  # pragma: no cover - defensive
@@ -165,6 +167,10 @@ def save_model(
     if denied is not None:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
+    if (ctx.is_personal and not billing_service.is_admin_user(ctx.user)
+            and billing_service.would_exceed_cap(session, ctx.uid, "models")):
+        return JSONResponse(status_code=402, content={
+            "detail": billing_service.cap_message(session, ctx.uid, "models"), "code": "cap", "upgrade": True})
     denied = datasets_service.upload_denial(session, ctx, dataset_id, file)
     if denied is not None:
         status, payload = denied
@@ -176,7 +182,7 @@ def save_model(
         doc = recurrent_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "recurrent_models", doc.id, ctx)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except HTTPException:
         raise
     except Exception:  # pragma: no cover - defensive
@@ -201,12 +207,16 @@ def save_from_params(
     if denied is not None:
         status, payload = denied
         return JSONResponse(status_code=status, content=payload)
+    if (ctx.is_personal and not billing_service.is_admin_user(ctx.user)
+            and billing_service.would_exceed_cap(session, ctx.uid, "models")):
+        return JSONResponse(status_code=402, content={
+            "detail": billing_service.cap_message(session, ctx.uid, "models"), "code": "cap", "upgrade": True})
     try:
         params = [{"name": "alpha", "value": alpha}, {"name": "beta", "value": beta}]
         doc = recurrent_service.save_from_params(session, name, model, params, horizon, unit or "", ctx.write_owner)
         access_service.stamp_editor(session, "recurrent_models", doc.id, ctx)
     except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except HTTPException:
         raise
     except Exception:  # pragma: no cover - defensive
@@ -286,7 +296,7 @@ def predict(
     except recurrent_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @router.get("/recurrent/models/{model_id}/projection")
@@ -322,7 +332,7 @@ def projection(
             session, doc, fef=body.get("fef"), bc=body.get("bc"), test_end=body.get("test_end"),
             mode_column=body.get("mode_column"))
     except (FitError, ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     saved = False
     if body.get("save", True) and access_service.can_write(ctx, doc.owner_id):
         recurrent_service.save_projection(session, doc, payload, body.get("mode_column"), doc.owner_id)
@@ -351,4 +361,4 @@ def overhaul(
     except recurrent_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})

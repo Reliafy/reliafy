@@ -9,7 +9,7 @@ OR gate over its minimal cut sets. Perfect junctions (k-of-n voting nodes)
 drop out.
 
 The diagram is built exactly as the calculator builds it
-(``rbd_analysis._build_rbd``), so every block keeps the life model the
+(``rbd_analysis._build_rbd``), so every block keeps the non-repairable model the
 calculator uses, and the top event probability is the calculator's
 unreliability ``1 - R(t)``. On top of ``from_rbd``:
 
@@ -165,7 +165,7 @@ def _develop(
     """Add a diagram's tree to ``b`` and return its top gate's name.
 
     Only the top-level diagram honours pinned blocks — the calculator
-    evaluates a sub-system with its own blocks' life models, so the tree
+    evaluates a sub-system with its own blocks' non-repairable models, so the tree
     does too."""
     rbd, labels, node_types, reliabilities, working, broken, _ = ra._build_rbd(
         graph, b.resolve_subsystem, visited, b.resolve_model, b.covariates
@@ -182,7 +182,7 @@ def _develop(
                 "group, to see the fault tree."
             )
 
-    # A pinned block without a life model stands in as never-failing, which
+    # A pinned block without a non-repairable model stands in as never-failing, which
     # from_rbd would drop as a junction: give it a model so it stays an event
     # (its probability is fixed to 0 or 1 below).
     structural = dict(rbd._init_args["reliabilities"])

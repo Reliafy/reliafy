@@ -28,6 +28,7 @@ import { articles } from "./learn.js";
 import { guides } from "./guides.js";
 import { families as refFamilies, totalEntries } from "./reference.js";
 import { linkedinFeed, socialPost } from "./contentFeed.js";
+import { HOME_DESCRIPTION, HOME_TITLE, SITE, homeJsonLd } from "./siteCopy.js";
 
 // Short LinkedIn posts (#367). Globbed here, in the build-time bundle only:
 // they're never part of the website's own bundle or pages.
@@ -36,8 +37,6 @@ const socialFiles = import.meta.glob("./content/social/*.md", {
   import: "default",
   eager: true,
 });
-
-const SITE = "https://reliafy.com";
 
 // Every prerendered route with its head metadata (title, description, and
 // optional JSON-LD structured data). Future-dated blog posts and updates are
@@ -49,9 +48,9 @@ export function routes() {
   const base = [
     {
       path: "/",
-      title: "Reliafy — open-source reliability engineering",
-      description:
-        "Fit Weibull and other life distributions, build reliability block diagrams, and turn failure data into maintenance decisions. Open source and self-hostable, or ready in seconds in the cloud.",
+      title: HOME_TITLE,
+      description: HOME_DESCRIPTION,
+      jsonld: homeJsonLd(),
     },
     {
       path: "/blog",
@@ -137,6 +136,7 @@ export function routes() {
     title: `${u.title} — What's new in Reliafy`,
     description: u.summary || "",
     lastmod: u.date || null,
+    image: u.image || null,
   }));
   const guidePages = guides.map((g) => ({
     path: `/guides/${g.slug}`,
@@ -172,8 +172,8 @@ export function gatedPages() {
   return pages;
 }
 
-// Titles of the blog posts and updates, for the operators' monthly content
-// report (backend/services/content_report.py).
+// Titles of the blog posts and updates, for operator tooling (a content
+// report).
 export function pageTitles() {
   const titles = {};
   for (const p of allPosts) titles[`/blog/${p.slug}`] = p.title;
@@ -181,8 +181,8 @@ export function pageTitles() {
   return titles;
 }
 
-// Every blog post as the admin page's publishing calendar needs it
-// (backend/services/content_calendar.py): the image has no source files.
+// Every blog post with its date, type and image, for operator tooling (a
+// publishing calendar): the image has no source files.
 export function calendarPosts() {
   return allPosts.map((p) => ({
     slug: p.slug,

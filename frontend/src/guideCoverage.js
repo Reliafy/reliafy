@@ -14,18 +14,23 @@ export const GUIDE_COVERAGE = [
   // Where the app opens.
   { feature: "Home", href: "/home" },
   // Life data and the other model types.
-  { feature: "Fit a life model (life data)", href: "/modelling/new" },
-  { feature: "Repairable models (repairable systems)", href: "/modelling/recurrent" },
-  { feature: "Accelerated life models", href: "/modelling/alt" },
-  { feature: "Degradation models", href: "/modelling/degradation" },
-  { feature: "Condition monitoring (remaining life from readings)", href: "/modelling/joint" },
-  { feature: "Per-demand (one-shot) models", href: "/modelling/new?mode=perdemand" },
+  { feature: "Fit a non-repairable model (life data)", href: "/models/new" },
+  { feature: "Repairable models (repairable systems)", href: "/models/recurrent" },
+  { feature: "Accelerated life models", href: "/models/alt" },
+  { feature: "Degradation models", href: "/models/degradation" },
+  { feature: "Condition and life (remaining life from readings)", href: "/models/joint" },
+  { feature: "Per-demand (one-shot) models", href: "/models/new?mode=perdemand" },
+  { feature: "Maintainability prediction", href: "/maintainability" },
+  { feature: "The reliability data library (published rates as models)", href: "/models/library" },
   // Data.
-  { feature: "Data (datasets)", href: "/modelling/data" },
+  { feature: "Data (datasets)", href: "/data" },
   // System modelling.
-  { feature: "Reliability block diagrams", href: "/rbds" },
-  { feature: "RBD builder (targets, design, phases, production, outages)", href: "/rbds/b" },
-  { feature: "Simulation run history", href: "/rbds/runs" },
+  { feature: "Reliability block diagrams", href: "/systems/rbds" },
+  { feature: "RBD builder (targets, design, phases, production, outages)", href: "/systems/b" },
+  { feature: "Simulation run history", href: "/systems/runs" },
+  { feature: "Reliability prediction (a parts count)", href: "/predictions" },
+  { feature: "Reliability prediction: new prediction", href: "/predictions/new" },
+  { feature: "Fault trees built by hand", href: "/systems/fault-trees" },
   // Strategy.
   { feature: "Saved strategy analyses", href: "/strategy" },
   { feature: "Optimal replacement by age", href: "/strategy/replacement" },
@@ -38,11 +43,15 @@ export const GUIDE_COVERAGE = [
   { feature: "Test planning: accelerated test", href: "/strategy/test-planning/accelerated" },
   { feature: "Test planning: comparison", href: "/strategy/test-planning/comparison" },
   // Fleets.
-  { feature: "Fleet failure and spares forecasts", href: "/fleet" },
-  { feature: "Degradation tracking", href: "/fleet/tracking" },
-  // RCM.
-  { feature: "RCM studies", href: "/rcm" },
-  // Sharing and teams.
+  { feature: "Fleet failure and spares forecasts", href: "/forecasts" },
+  { feature: "Condition monitoring (tracked items)", href: "/risk" },
+  // RCM lives on the Explorer's RCM tab (/asset-register/explorer?tab=rcm), a
+  // page the guide check treats as operators-only while the Explorer is
+  // (guides/rcm-on-your-asset-tree.md describes it without a link). When the
+  // Explorer opens to every account, add:
+  //   { feature: "RCM on the asset tree", href: "/asset-register/explorer?tab=rcm" },
+  // Sharing, reports and teams.
+  { feature: "Reports (reports, saved analyses, shared links)", href: "/reports" },
   { feature: "Teams", href: "/team" },
   { feature: "What changed in the workspace", href: "/changes" },
   // Agents, MCP and the API.

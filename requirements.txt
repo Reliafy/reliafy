@@ -8,13 +8,13 @@ pandas
 numpy
 # SurPyval from PyPI, pinned to the version the RePyability below targets
 # (each tagged release is published to PyPI from its tag).
-# 0.25 removes the names 0.24 deprecated (e.g. ``ProportionalIntensityNHPP``
-# takes ``baseline``, not ``dist``) and deprecates the top-level converters
-# and ``RecurrentEventData`` (now ``EventHistoryData``).
-surpyval==0.25
+# 0.26 removes the names 0.25 deprecated (``RecurrentEventData``,
+# ``EventHistoryData.items`` and ``get_times_to_first_events()``) and
+# deprecates Cox's ``check_ph()`` in favour of ``diagnose()``.
+surpyval==0.26
 # RePyability is installed --no-deps in the Dockerfile (and CI), pinned to a
-# git commit (tag v0.15, which requires SurPyval 0.25), so the SurPyval
-# pin above stays authoritative: it declares surpyval>=0.25 (uncapped), but
+# git commit (tag v0.16, which requires SurPyval 0.26), so the SurPyval
+# pin above stays authoritative: it declares surpyval>=0.26 (uncapped), but
 # --no-deps also stops pip re-resolving it to a newer surpyval. backend/tests/test_rbd_analysis.py exercises the pairing,
 # so a real break would fail the suite rather than reach production.
 # RePyability's runtime deps (numpy/scipy via surpyval, networkx, tqdm) are
@@ -43,9 +43,6 @@ markdown
 # the iCalendar standard's recurrences). Already installed with pandas; named
 # because the app imports it.
 python-dateutil>=2.8.2
-# Reads the content calendar for the admin page (backend/services/content_calendar.py).
-# Already installed by uvicorn[standard]; named because the app imports it.
-pyyaml
 # Managed Agents live in the beta namespace (beta.agents/environments/sessions);
 # event-delta streaming (for our SSE) landed in 0.115.0. Pinned for reproducible
 # builds against the still-evolving Managed Agents beta API.

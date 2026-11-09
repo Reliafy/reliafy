@@ -64,7 +64,7 @@ reliafy fit bearings.csv --dist weibull --unit hours --save "Bearing life"
 Fitting 10 rows: times from 'hours', censoring from 'censored' (0 = failed, 1 = still running).
 saved: true
 model_id: …
-url: https://reliafy.com/modelling/m/…
+url: https://reliafy.com/models/m/…
 …
 alpha  996.3
 beta   3.82
@@ -107,7 +107,7 @@ print(result["url"])
 command line takes:
 
 ```python
-rf.call("strategy", "optimal_replacement", distribution_id="weibull",
+rf.call("analyse", "optimal_replacement", distribution_id="weibull",
         params=[{"name": "alpha", "value": 996}, {"name": "beta", "value": 3.8}],
         planned_cost=1000, unplanned_cost=8000)
 ```
@@ -157,10 +157,13 @@ readings (`reliafy ingest measurements`) and new failures for a dataset
 
 ## Files and photos
 
-`reliafy upload` sends a CSV or Excel file as a dataset. `reliafy import rbd`
+`reliafy upload` sends a CSV or Excel file as a dataset, or, with
+`--measurements-for DATASET_ID`, as a dataset's measurements (readings on its
+units: unit id, age, value, for a condition and life model). `reliafy import rbd`
 brings in a diagram from BlockSim, Open-PSA, Galileo or RePyability JSON, and
 `reliafy import excel` reads an .xlsx workbook: a sheet as a dataset, an FMEA or
-RCM worksheet as an RCM study, or Reliafy's RBD template as a diagram. The details are on [Files and photos](/api-docs/files); to import
+RCM worksheet onto a position's RCM (`--target rcm --position ID`), or Reliafy's
+RBD template as a diagram. The details are on [Files and photos](/api-docs/files); to import
 from the app instead, see [import a diagram](/guides/import-a-diagram).
 
 ## Where to go next

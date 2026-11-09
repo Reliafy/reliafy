@@ -26,6 +26,7 @@ import ProductPage from "./views/ProductPage.jsx";
 import { PRODUCT_PAGES } from "./productPages.jsx";
 import { AuthProvider, useAuth } from "./AuthProvider.jsx";
 import { ConfigProvider } from "./ConfigProvider.jsx";
+import { ConfirmProvider } from "./components/ConfirmProvider.jsx";
 import { WorkspaceProvider } from "./WorkspaceProvider.jsx";
 import { AUTH_DISABLED } from "./firebase.js";
 import { installTelemetry, trackEvent } from "./telemetry.js";
@@ -80,11 +81,12 @@ export default function App() {
       <ScrollToTop />
       <ConfigProvider>
         <AuthProvider>
+          <ConfirmProvider>
           <Routes>
             {/* Marketing storefront (landing, blog) and login only exist on
                 multi-user (cloud) builds. Single-user self-host builds go
                 straight into the app: these routes fall through to the shell,
-                whose catch-all redirects to /modelling. */}
+                whose catch-all redirects to /home. */}
             {!AUTH_DISABLED && <Route path="/" element={<Landing />} />}
             {!AUTH_DISABLED && <Route path="/blog" element={<Blog />} />}
             {!AUTH_DISABLED && <Route path="/blog/:slug" element={<BlogPost />} />}
@@ -151,6 +153,7 @@ export default function App() {
               }
             />
           </Routes>
+          </ConfirmProvider>
         </AuthProvider>
       </ConfigProvider>
     </BrowserRouter>

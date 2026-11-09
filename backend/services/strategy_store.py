@@ -20,9 +20,20 @@ from backend.db import from_doc, to_doc
 from backend.schema import StrategyAnalysis
 from backend.services import strategy as strategy_service
 from backend.services.strategy import StrategyError
-from backend.units import unit_in_text
+from backend.units import unit_in_text, with_unit
 
-KINDS = ("optimal_replacement", "compare_two", "failure_finding", "demonstration_test")
+KINDS = ("optimal_replacement", "compare_two", "failure_finding", "demonstration_test",
+         "on_condition_interval", "failure_finding_interval")
+
+# The RCM interval calculators' inputs (backend/services/rcm_intervals.py), as saved.
+ON_CONDITION_INPUTS = (
+    "pf_interval", "pf_unit", "onset_rate", "inspection_cost", "found_cost", "failure_cost",
+    "detection_probability", "unit", "current_interval", "current_unit", "act_time",
+)
+FAILURE_FINDING_INPUTS = (
+    "failure_rate", "distribution_id", "params", "model_unit", "extras", "target_unavailability", "test_cost",
+    "repair_cost", "demand_rate", "consequence_cost", "unit", "current_interval", "current_unit",
+)
 
 # The demonstration-test calculator's inputs (the endpoint body shape).
 DEMO_INPUTS = (
@@ -30,7 +41,6 @@ DEMO_INPUTS = (
     "shape", "units", "mtbf", "design_reliability", "design_mtbf", "unit", "producer_risk",
     "b_life", "shape_interval", "shape_model", "failure_terminated",
 )
-
 
 
 def _list_query(owner_id, shared=frozenset()):
@@ -73,6 +83,15 @@ def compute(kind: str, inputs: dict) -> dict:
             unit=inputs.get("unit"),
             extras=inputs.get("extras"),
         )
+    if kind == "on_condition_interval":
+        from backend.services import rcm_intervals
+
+        return rcm_intervals.on_condition_interval(**{k: inputs.get(k) for k in ON_CONDITION_INPUTS if k in inputs})
+    if kind == "failure_finding_interval":
+        from backend.services import rcm_intervals
+
+        return rcm_intervals.failure_finding_interval(
+            **{k: inputs.get(k) for k in FAILURE_FINDING_INPUTS if k in inputs})
     if kind == "demonstration_test":
         return strategy_service.demonstration_test(
             **{k: inputs[k] for k in DEMO_INPUTS if k in inputs}
@@ -148,25 +167,43 @@ def headline(doc: StrategyAnalysis) -> str:
     if doc.kind == "failure_finding":
         unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
         i = r.get("interval")
-        return f"Check every ~{strategy_service.fmt_num(i)}{unit}" if i is not None else "Failure-finding interval"
+        return f"Check every ~{strategy_service.fmt_num(i)}{unit}" if i is not None else "Failure finding"
     if doc.kind == "demonstration_test":
         return demonstration_headline(r)
+    if doc.kind in ("on_condition_interval", "failure_finding_interval"):
+        rec = r.get("recommended")
+        if not rec:
+            return "Checking never pays"
+        verb = "Check" if doc.kind == "on_condition_interval" else "Test"
+        return f"{verb} every {strategy_service.fmt_num(rec['value'])} {unit_in_text(rec['unit'])}"
     return doc.kind
 
 
 def demonstration_headline(r: dict) -> str:
     """'59 units × 1,000 hours, 0 failures' — the plan in a few words."""
     fmt = strategy_service.fmt_num
-    unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
+    unit = unit_in_text(r["unit"]) if r.get("unit") else ""
     failures = r.get("failures") or 0
-    allowed = f"≤{failures} failure{'s' if failures != 1 else ''}" if failures else "0 failures"
+    allowed = (
+        f"≤{failures} failure{'s' if failures != 1 else ''}"
+        if failures
+        else "0 failures"
+    )
     if r.get("method") == "mtbf":
         total = r.get("total_test_time")
-        return f"{fmt(total)}{unit} total test time, {allowed}" if total is not None else "MTBF test"
+        return (
+            f"{with_unit(fmt(total), unit)} total test time, {allowed}"
+            if total is not None
+            else "MTBF test"
+        )
     n = r.get("units")
     if n is None:
         return "Demonstration test"
     per_unit = r.get("test_time_per_unit")
     k = r.get("test_multiple") or 1
-    length = f"{fmt(per_unit)}{unit}" if per_unit is not None else f"{fmt(k)} mission{'s' if k != 1 else ''}"
+    length = (
+        with_unit(fmt(per_unit), unit)
+        if per_unit is not None
+        else f"{fmt(k)} mission{'s' if k != 1 else ''}"
+    )
     return f"{n:,} units × {length}, {allowed}"

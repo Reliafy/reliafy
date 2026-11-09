@@ -34,7 +34,6 @@ SAMPLES = {
     "rbds": "sample-rbd-pump-station",
     "strategy_analyses": "sample-strategy-bearing-replacement",
     "fleets": "sample-fleet-trucks",
-    "rcm_studies": "sample-rcm-truck",
     "datasets": "sample-ds-bearings",
 }
 
@@ -131,7 +130,7 @@ def test_owner_composes_saves_and_edits_a_report(client):
     rep = r.json()
     assert rep["title"] == "Pump reliability review" and rep["author"] == "Alice, Acme Mining"
     assert [s["name"] for s in rep["sections"]] == ["Pump bearings", "Bearing preventive replacement (sample)"]
-    assert rep["sections"][0]["note"] == "The main finding." and rep["sections"][0]["kind"] == "Life model"
+    assert rep["sections"][0]["note"] == "The main finding." and rep["sections"][0]["kind"] == "Non-repairable model"
 
     # Saving publishes nothing.
     assert client.db.public_links.count_documents({}) == 0
@@ -300,7 +299,6 @@ def test_every_item_kind_renders_in_a_report(client):
     assert by_coll["strategy_analyses"]["artifact"]["results"]["optimal_time"] > 0
     assert by_coll["recurrent_models"]["artifact"]["results"]["mtbf"] > 0
     assert by_coll["degradation_models"]["artifact"]["results"]["threshold"] == 8.0
-    assert by_coll["rcm_studies"]["artifact"]["functions"]
     assert by_coll["datasets"]["artifact"]["preview"]
 
 

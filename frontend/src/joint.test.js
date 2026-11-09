@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  covariateParts, guessLifetimeColumns, guessReadingColumns, jointBlockLine, jointBlockModel, medianText,
+  covariateParts, guessLifetimeColumns, lifeLeftNumber, riskText, sortRiskRows, guessReadingColumns, jointBlockLine, jointBlockModel, medianText,
   paramGroups, parseReadings, readingsText, riskTone,
 } from "./joint.js";
 
@@ -44,6 +44,10 @@ test("typed readings parse, sort and refuse nonsense", () => {
 test("median remaining life: never infinite", () => {
   assert.equal(medianText({ median_reached: false, median_remaining: null }), "not reached");
   assert.equal(medianText({ median_reached: true, median_remaining: 23.4 }, "Days"), "23.4 days");
+  // One precision down a column: not "9.99 days" beside "12 days".
+  assert.equal(medianText({ median_remaining: 9.9944 }, "Days"), "10.0 days");
+  assert.equal(medianText({ median_remaining: 11.96 }, "Days"), "12.0 days");
+  assert.equal(lifeLeftNumber(1234.5), "1,230");
   assert.equal(riskTone(0.6), "danger");
   assert.equal(riskTone(0.2), "warning");
   assert.equal(riskTone(0.01), "success");
@@ -54,8 +58,8 @@ test("block model and line", () => {
   assert.equal(m.kind, "joint");
   assert.equal(m.unit, "Days"); // the time unit, as every block model's
   assert.deepEqual(m.joint_unit, { id: "P3" });
-  assert.equal(jointBlockLine(m), "Condition monitoring · unit P3");
-  assert.equal(jointBlockLine({ joint_unit: { age: 50, markers: [[0, 1]] } }, "d"), "Condition monitoring · age 50 d, 1 reading");
+  assert.equal(jointBlockLine(m), "Condition and life · unit P3");
+  assert.equal(jointBlockLine({ joint_unit: { age: 50, markers: [[0, 1]] } }, "d"), "Condition and life · age 50 d, 1 reading");
 });
 
 test("parameters grouped by part", () => {
@@ -65,4 +69,32 @@ test("parameters grouped by part", () => {
     { part: "link", part_label: "Link", name: "marker_effect" },
   ]);
   assert.deepEqual(g.map((x) => [x.label, x.rows.length]), [["Reading path", 2], ["Link", 1]]);
+});
+
+test("a chance of failing is never shown as certain", () => {
+  assert.equal(riskText(1), "> 99.9%");
+  assert.equal(riskText(0.9996), "> 99.9%");
+  assert.equal(riskText(0.9958), "99.5%");
+  assert.equal(riskText(0.6375), "64%");
+  assert.equal(riskText(0.0004), "< 0.1%");
+  assert.equal(riskText(0), "< 0.1%");
+  assert.equal(riskText(null), "—");
+});
+
+test("the risk table is sorted by the named column, ties by median life left", () => {
+  // The review's rows: P38 sat above P8 with both showing "99%" for 90 days
+  // and P8 higher at 30. Now the 90-day column shows the difference.
+  const rows = [
+    { id: "P35", risk: [0.8715, 1, 1], median_remaining: 11.96 },
+    { id: "P38", risk: [0.6302, 0.9942, 1], median_remaining: 22.4 },
+    { id: "P6", risk: [0.9178, 1, 1], median_remaining: 9.99 },
+    { id: "P8", risk: [0.6375, 0.9915, 1], median_remaining: 21.8 },
+    { id: "P1", risk: [0.1, 0.3, 0.6], median_reached: false, median_remaining: null },
+  ];
+  assert.deepEqual(sortRiskRows(rows).map((r) => r.id), ["P6", "P35", "P38", "P8", "P1"]);
+  assert.deepEqual(rows.map((r) => riskText(r.risk[1])).slice(0, 4), ["> 99.9%", "99.4%", "> 99.9%", "99.1%"]);
+  // Shown alike: the shorter median life left first.
+  const tied = [{ id: "a", risk: [0, 0.5], median_remaining: 30 }, { id: "b", risk: [0, 0.5], median_remaining: 20 }];
+  assert.deepEqual(sortRiskRows(tied).map((r) => r.id), ["b", "a"]);
+  assert.deepEqual(sortRiskRows(rows, 0).map((r) => r.id), ["P6", "P35", "P8", "P38", "P1"]);
 });

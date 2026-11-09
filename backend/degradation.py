@@ -26,6 +26,7 @@ from backend.services.method_labels import hides_solver_names, note_fit
 from backend.units import canonical_unit
 from surpyval.degradation import PATH_MODELS as _SURPYVAL_PATHS
 from surpyval.degradation import DegradationAnalysis
+from backend.errors import client_message
 
 # Path-model registry for the API/UI (display names from surpyval instances).
 PATH_MODELS = {name: {"id": name, "name": pm.name} for name, pm in _SURPYVAL_PATHS.items()}
@@ -193,10 +194,14 @@ def _build_payload(model, distribution_id: str, unit: str, measurement_unit: str
         hi = pft if np.isfinite(pft) else float(ux.max()) * 1.2
         grid = np.linspace(float(ux.min()), max(hi, float(ux.max())), 100)
         line = np.asarray(model.path(grid, u), dtype=float)
+        # Each reading less the item's fitted path at its time (the
+        # Diagnostics tab's "do the readings scatter evenly about each path?").
+        resid = uy - np.asarray(model.path(ux, u), dtype=float)
         units_payload.append({
             "id": str(u),
             "scatter": {"x": ux.tolist(), "y": uy.tolist()},
             "line": {"x": grid.tolist(), "y": line.tolist()},
+            "residuals": _col(resid),
             "pseudo_failure_time": pft,
             "censored": censored,
         })
@@ -243,6 +248,7 @@ def _build_payload(model, distribution_id: str, unit: str, measurement_unit: str
             ),
             "name": model.path_model.name,
             "n_params": int(model.path_params.shape[1]),
+            "param_names": [str(n) for n in getattr(model.path_model, "parameter_names", [])],
         },
         "path_selection": selection,
         "population_method": model.population_method,
@@ -317,7 +323,7 @@ def predict_item(model, t, y, alpha_ci: float = 0.05) -> dict:
         return _json_safe({
             **base,
             "method": "error",
-            "detail": str(exc),
+            "detail": client_message(exc),
         })
 
 

@@ -1,4 +1,4 @@
-"""Condition monitoring: joint models of a marker's readings and units' lives.
+"""Condition and life: joint models of a marker's readings and units' lives.
 
 A joint model (SurPyval's ``JointPH``) fits two things together: how a
 measurement read again and again on each unit (vibration, wear, oil debris)
@@ -638,7 +638,7 @@ def results_payload(model, items: list[dict], covariates: list[str], *, path_mod
                             "care, and check the data (enough failures, enough readings per unit).")
     return {
         "kind": "joint",
-        "distribution": f"Condition monitoring (Weibull, {path_label(path_model).lower()} path)",
+        "distribution": f"Condition and life (Weibull, {path_label(path_model).lower()} path)",
         "distribution_id": f"joint_weibull_{path_model}",
         "path_model": path_model,
         "path_label": path_label(path_model),
@@ -780,9 +780,9 @@ def python_script(name: str, items: list[dict], covariates: list[str], *, path_m
     shown_unit = unit_in_text(unit) or "the model's time unit"
     versions = versions or {}
     pins = " ".join(f"{k}=={v}" for k, v in versions.items() if v) or "surpyval"
-    title = " ".join(str(name or "Condition monitoring").split())
+    title = " ".join(str(name or "Condition and life").split())
     lines = [
-        f'"""{title}: condition monitoring (a joint model of readings and failures).',
+        f'"""{title}: condition and life (a joint model of readings and failures).',
         "",
         "Exported from Reliafy. It refits the model with SurPyval from the data it was",
         "fitted to, then predicts the running unit at the highest risk.",

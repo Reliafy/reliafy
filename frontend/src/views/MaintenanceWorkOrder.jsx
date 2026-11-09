@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import {
   addPartUsed, addWorkCost, cancelWorkOrder, checkWorkItem, closeWorkOrder, getWorkOrder, listMaintenanceLocations,
   listMaintenanceParts, logLabour, removeWorkEntry,
@@ -9,15 +10,21 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import { FailureModePicker, Field, FormModal, NotesCard, fmtDate, today } from "../components/MaintenanceParts.jsx";
 import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
+import WorkOrderReadings from "../components/WorkOrderReadings.jsx";
+import { mergeValues, progressText, readingRows, readingsToSend } from "../workOrderReadings.js";
 import { partChoices, stockText } from "../maintenanceSpares.js";
-import { actionKinds, itemAtText, subjectPath } from "../maintenanceSubjects.js";
+import { actionKinds, closeActionKind, defaultCloseKind, itemAtText, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
+import { tooLong } from "../maintenanceText.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const STATUS_LABELS = {
   open: "open", planned: "planned", in_progress: "in progress", waiting: "waiting", closed: "closed", cancelled: "cancelled",
 };
 
 const KINDS = [
+  // A check that found nothing to do: sent as an inspection that found it OK.
+  { id: "checked", label: "Checked, nothing done" },
   { id: "replace", label: "Replaced it" },
   { id: "repair", label: "Repaired it" },
   { id: "inspect", label: "Inspected it" },
@@ -32,17 +39,23 @@ export default function MaintenanceWorkOrder() {
   const [wo, setWo] = useState(null);
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(null);
+  // The Readings and settings boxes: here, so closing sends what's filled in.
+  const [values, setValues] = useState({});
 
   const refresh = useCallback(() => {
     getWorkOrder(id).then(setWo).catch((e) => setError(e.message));
   }, [id]);
   useEffect(() => refresh(), [refresh]);
+  // Boxes for the work order as (re)loaded: a setting starts at its value, and a box being typed in keeps
+  // what was typed (a functional update, so it can't race a keystroke after a Record or a checklist tick).
+  useEffect(() => { if (wo) setValues((prev) => mergeValues(readingRows(wo), prev)); }, [wo]);
 
-  if (error && !wo) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !wo) return <div className="app"><LoadFailed header error={error} notFound="Work order not found." to="/maintenance" label="Back to Maintenance" /></div>;
   if (!wo) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   return (
     <div className="app">
+      <PageTitle name={wo && `#${wo.number} ${wo.title}`} />
       <PageHeader
         crumbs={[{ label: "Maintenance", to: "/maintenance" },
           ...(wo.subject ? [{ label: wo.subject.name, to: subjectPath(wo.subject) }] : [])]}
@@ -73,7 +86,7 @@ export default function MaintenanceWorkOrder() {
       {wo.warranty && (
         <div className="maint-ask">
           <p><strong>Under warranty.</strong>{" "}
-            {wo.warranty.item && <Link to={`/maintenance/items/${wo.warranty.item.id}`}>{wo.warranty.item.name}</Link>}
+            {wo.warranty.item && <Link to={`/asset-register/items/${wo.warranty.item.id}`}>{wo.warranty.item.name}</Link>}
             {" "}was in warranty when this was raised (until {fmtDate(wo.warranty.ends_on)}). Check the warranty before paying for the work.</p>
           {wo.warranty.coverage && <p className="lib-date">Covers: {wo.warranty.coverage}</p>}
           {wo.warranty.terms && <p className="lib-date" style={{ whiteSpace: "pre-wrap" }}>{wo.warranty.terms}</p>}
@@ -103,7 +116,10 @@ export default function MaintenanceWorkOrder() {
               <input type="checkbox" checked={c.done} disabled={["closed", "cancelled"].includes(wo.status)}
                      onChange={async (e) => setWo(await checkWorkItem(wo.id, i, e.target.checked))} />
               <span style={c.done ? { textDecoration: "line-through", color: "var(--muted)" } : null}>
-                {c.position_id ? <Link to={`/maintenance/positions/${c.position_id}`}>{c.text}</Link> : c.text}</span>
+                {c.position_id ? <Link to={`/asset-register/positions/${c.position_id}`}>{c.text}</Link> : c.text}</span>
+              {c.task_id && !c.step && progressText(wo.readings_by_task?.[c.task_id]) && (
+                <span className="lib-date maint-line-readings">{progressText(wo.readings_by_task[c.task_id])}</span>
+              )}
             </label>
           ))}
         </section>
@@ -116,6 +132,8 @@ export default function MaintenanceWorkOrder() {
                          photos={wo.photos || []} onChanged={refresh}
                          related={[wo.subject, wo.position && { ...wo.position, kind: "Position" },
                            wo.location && { ...wo.location, kind: "Location" }]} />
+
+      {wo.status !== "cancelled" && <WorkOrderReadings wo={wo} values={values} setValues={setValues} onRecorded={setWo} />}
 
       {wo.status === "cancelled" ? (
         <section className="card"><p>Cancelled {fmtDate(wo.closed)}{wo.cancel_reason ? `: ${wo.cancel_reason}` : ""}.</p></section>
@@ -139,21 +157,20 @@ export default function MaintenanceWorkOrder() {
           {wo.close_notes && <p className="maint-notes">{wo.close_notes}</p>}
         </section>
       ) : (
-        <CloseForm wo={wo} onClosed={setWo} />
+        <CloseForm wo={wo} onClosed={setWo} readings={readingsToSend(readingRows(wo), values)} />
       )}
     </div>
   );
 }
 
-function CloseForm({ wo, onClosed }) {
+function CloseForm({ wo, onClosed, readings }) {
   const [on, setOn] = useState(today());
   const [notes, setNotes] = useState("");
-  const [readings, setReadings] = useState({});
   const kinds = actionKinds(KINDS, wo);
   // A replacement can only be recorded at a position (an item's: where it's fitted now).
   const atPosition = wo.can_replace !== false;
-  const [actions, setActions] = useState([{ kind: wo.type === "inspection" || wo.subject?.kind === "location" ? "inspect"
-    : atPosition ? "replace" : "repair" }]);
+  // Starts from the task's kind: a check is "Checked, nothing done", a fixed-interval task a replacement.
+  const [actions, setActions] = useState([{ kind: defaultCloseKind(wo) }]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -171,16 +188,14 @@ function CloseForm({ wo, onClosed }) {
     setError(null);
     try {
       const body = actions.map((a) => ({
-        kind: a.kind,
-        ...(a.kind === "other" ? {} : failureModeBody(a.mode)),
+        ...(a.kind === "other" || a.kind === "checked" ? {} : failureModeBody(a.mode)),
         finding: a.kind === "inspect" ? a.finding || null : null,
+        ...closeActionKind(a.kind),
         notes: a.notes || "",
         new_item: a.kind === "replace" && a.new_name ? { name: a.new_name, serial: a.new_serial || "" } : null,
         ...(a.kind === "replace" && a.part_id ? { part_id: a.part_id, from_location_id: a.from || null } : {}),
       }));
-      const meterReadings = Object.entries(readings).filter(([, v]) => v !== "")
-        .map(([point_id, value]) => ({ point_id, value: Number(value) }));
-      onClosed(await closeWorkOrder(wo.id, { actions: body, on, notes, readings: meterReadings }));
+      onClosed(await closeWorkOrder(wo.id, { actions: body, on, notes, readings }));
     } catch (e) {
       setError(e.message);
       setBusy(false);
@@ -216,7 +231,7 @@ function CloseForm({ wo, onClosed }) {
                 </select>
               </Field>
             )}
-            {a.kind !== "other" && atPosition && (
+            {a.kind !== "other" && a.kind !== "checked" && atPosition && (
               <Field label={a.kind === "replace" ? "Did it fail? Which way" : "Failure mode (optional)"}>
                 <FailureModePicker modes={wo.failure_modes} classModes={wo.class_failure_modes || []} value={a.mode}
                                    onChange={(mode) => update(i, { mode })}
@@ -263,17 +278,13 @@ function CloseForm({ wo, onClosed }) {
       </div>
       <div className="rcm-form">
         <Field label="Done on"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
-        {(wo.measurements || []).map((mt) => (
-          <Field key={mt.id} label={`${mt.name} now (${mt.unit}, optional)`}>
-            <input type="number" inputMode="decimal" min="0" step="any" value={readings[mt.id] ?? ""}
-                   placeholder={mt.reading != null ? `last: ${mt.reading}` : ""}
-                   onChange={(e) => setReadings({ ...readings, [mt.id]: e.target.value })} />
-          </Field>
-        ))}
+        {readings.length > 0 && (
+          <p className="lib-date">Closing also records {readings.length === 1 ? "the value" : `the ${readings.length} values`} filled in under Readings and settings.</p>
+        )}
         <Field label="Closing notes (optional; the notes above are kept)"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
       <div className="maint-row">
-        <button onClick={submit} disabled={busy || !actions.every((a) => failureModeReady(a.mode))}>
+        <button onClick={submit} disabled={busy || !actions.every((a) => a.kind === "checked" || failureModeReady(a.mode))}>
           {busy ? "Closing…" : "Close work order"}
         </button>
         {wo.subject && <Link to={subjectPath(wo.subject)} className="lib-date">Back to {wo.subject.name}</Link>}
@@ -301,9 +312,9 @@ function EditWorkOrder({ wo, onClose, onDone }) {
   const [planned, setPlanned] = useState(wo.planned_for || "");
   const [trade, setTrade] = useState(wo.trade || "");
   return (
-    <FormModal title="Edit work order" submitLabel="Save" canSubmit={!!title.trim()} onClose={onClose}
+    <FormModal title="Edit work order" submitLabel="Save" canSubmit={!!title.trim() && !tooLong(title)} onClose={onClose}
                onSubmit={async () => onDone(await updateWorkOrder(wo.id, { title, due, assignee, planned_for: planned, trade }))}>
-      <Field label="Title"><input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
+      <Field label="Title" text={title} hint="put the detail in the notes"><input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
       <Field label="Who may do it: trade, licence or competency"><input value={trade} placeholder="e.g. Licensed electrician"
              onChange={(e) => setTrade(e.target.value)} /></Field>
       <Field label="Assigned to"><input value={assignee} placeholder="a name" onChange={(e) => setAssignee(e.target.value)} /></Field>

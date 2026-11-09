@@ -32,6 +32,12 @@ export const test = base.extend({
       const text = `${msg.text()}${where ? ` (${where})` : ""}`;
       if (!BENIGN_CONSOLE.some((re) => re.test(text))) problems.push(`console: ${text}`);
     });
+    // The browser's own dialogs are never used (the app has its own confirm
+    // dialog): one opening is a failure, dismissed so the test doesn't hang.
+    page.on("dialog", (dialog) => {
+      problems.push(`native ${dialog.type()} dialog: ${dialog.message()}`);
+      dialog.dismiss().catch(() => {});
+    });
     // A server error behind the page is a failure even if the page copes.
     page.on("response", (res) => {
       if (res.status() >= 500) problems.push(`${res.status()} from ${res.request().method()} ${res.url()}`);
@@ -84,4 +90,21 @@ export async function expectHealthy(page, problems, { label = page.url(), chart 
   }
   await crashed(); // a crash once the page's data arrived
   expect(problems, `${label}: errors in the page`).toEqual([]);
+}
+
+// POST to the API and return the JSON, failing the test on a refusal. The
+// Maintenance API takes at most 600 changes a minute per workspace, and the
+// whole suite shares one: a 429 waits for the next minute (up to 65 s) and
+// tries again, rather than failing a test for what other tests did.
+export async function postOk(request, path, data) {
+  const until = Date.now() + 65_000;
+  for (;;) {
+    const res = await request.post(path, { data });
+    if (res.status() === 429 && Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 2_000));
+      continue;
+    }
+    expect(res.ok(), `${path}: ${res.status()} ${await res.text()}`).toBeTruthy();
+    return res.json();
+  }
 }

@@ -14,8 +14,12 @@ import {
 import Chip from "../components/ui/Chip.jsx";
 import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import LoadFailed from "../components/LoadFailed.jsx";
 import ResultSummary from "../components/ui/ResultSummary.jsx";
 import { itemName } from "../components/LibRows";
+import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
+import { changedText, deleteConfirm, renamePrompt } from "../confirm.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const CONFIDENCE_LEVELS = [
   { value: "0.8", label: "80%" },
@@ -47,7 +51,7 @@ export default function StrategyTracking() {
 
   const refresh = useCallback(() => {
     if (!fleetId) {
-      navigate("/fleet/tracking", { replace: true });
+      navigate("/risk", { replace: true });
       return;
     }
     getTrackedFleet(fleetId)
@@ -60,6 +64,8 @@ export default function StrategyTracking() {
       .catch((e) => setError(e.message));
   }, [fleetId, navigate]);
   useEffect(() => { setFleet(null); refresh(); }, [refresh]);
+  const confirm = useConfirm();
+  const askText = useAskText();
 
   // Recompute the selected item's crossing prediction at the chosen confidence.
   // At 95% the stored prediction already applies, so no round-trip is needed.
@@ -80,7 +86,7 @@ export default function StrategyTracking() {
     return () => { cancelled = true; };
   }, [fleet, selectedId, confidence]);
 
-  if (error && !fleet) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !fleet) return <div className="app"><LoadFailed header error={error} notFound="Tracked fleet not found." to="/risk" label="See condition monitoring" /></div>;
   if (!fleet) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const model = fleet.model || null;
@@ -96,10 +102,10 @@ export default function StrategyTracking() {
     : null;
 
   const onRename = async () => {
-    const name = window.prompt("Fleet name", fleet.name);
-    if (!name || !name.trim() || name.trim() === fleet.name) return;
+    const name = changedText(await askText(renamePrompt({ kind: "fleet", name: fleet.name })), fleet.name);
+    if (!name) return;
     try {
-      const updated = await renameTrackedFleet(fleetId, name.trim());
+      const updated = await renameTrackedFleet(fleetId, name);
       setFleet((f) => ({ ...f, name: updated.name }));
     } catch (err) {
       setError(err.message);
@@ -107,7 +113,7 @@ export default function StrategyTracking() {
   };
 
   const onDeleteItem = async (it) => {
-    if (!window.confirm(`Delete tracked item “${it.name}”?`)) return;
+    if (!(await confirm(deleteConfirm({ kind: "tracked item", name: it.name })))) return;
     await deleteTrackedItem(it.model_id, it.id);
     refresh();
   };
@@ -141,9 +147,10 @@ export default function StrategyTracking() {
 
   return (
     <div className="app">
+      <PageTitle name={fleet && itemName(fleet)} />
       <PageHeader
         className="trk-header"
-        crumbs={[{ label: "Fleet" }, { label: "Degradation tracking", to: "/fleet/tracking" }]}
+        crumbs={[{ label: "Condition monitoring", to: "/risk" }]}
         title={itemName(fleet)}
         badges={fleet.is_sample && <Chip>Sample</Chip>}
         meta={
@@ -151,7 +158,7 @@ export default function StrategyTracking() {
             {model ? (
               <>
                 Against{" "}
-                <Link to={`/modelling/degradation/${model.id}`} className="evidence-link">
+                <Link to={`/models/degradation/${model.id}`} className="evidence-link">
                   {itemName({ name: model.name, is_sample: fleet.is_sample || String(model.id).startsWith("sample-") })}
                 </Link>
                 {" "}· limit {model.threshold}{mUnit ? ` ${mUnit}` : ""}{unit ? ` · time in ${unitInText(unit)}` : ""}
@@ -168,7 +175,7 @@ export default function StrategyTracking() {
         {fleet.is_sample && (
           <div className="ph-meta">
             A shared sample: items you register here are yours. For real assets,{" "}
-            <Link to="/fleet/tracking" className="evidence-link">create your own fleet</Link>.
+            <Link to="/risk" className="evidence-link">create your own fleet</Link>.
           </div>
         )}
       </PageHeader>

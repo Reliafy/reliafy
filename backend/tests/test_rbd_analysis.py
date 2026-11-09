@@ -189,7 +189,7 @@ def test_validate_warns_on_asymmetric_common_cause():
         "ccf_groups": [{"id": "g", "members": ["a", "b"], "beta": 0.1}],
     }
     v = validate_graph(graph)
-    assert any("different life models" in w for w in v["warnings"])
+    assert any("different non-repairable models" in w for w in v["warnings"])
 
 
 def test_series_system_is_product_of_components():
@@ -357,7 +357,7 @@ def test_missing_life_model_is_a_clear_error():
     }
     with pytest.raises(AnalysisError) as exc:
         analyze(graph)
-    assert "life model" in str(exc.value)
+    assert "non-repairable model" in str(exc.value)
 
 
 def test_no_edges_is_a_clear_error():
@@ -455,7 +455,7 @@ def test_validate_flags_missing_life_model():
     }
     v = validate_graph(graph)
     assert not v["valid"] and not v["can_calculate"]
-    assert any("life model" in e for e in v["errors"])
+    assert any("non-repairable model" in e for e in v["errors"])
 
 
 def test_validate_flags_dangling_node():
@@ -640,7 +640,7 @@ def test_all_importance_measures_present_and_populated():
 
 def test_pinned_working_and_failed_override_the_model():
     """A node pinned working/failed (manual what-if) contributes as perfectly
-    reliable / unreliable regardless of its life model."""
+    reliable / unreliable regardless of its non-repairable model."""
     import json
 
     io = _io_nodes()
@@ -673,7 +673,7 @@ def test_pinned_working_and_failed_override_the_model():
     r2 = analyze(g2)
     assert min(r2["system"]["sf"]) == pytest.approx(1.0, abs=1e-9)
 
-    # A pinned node needs no life model of its own.
+    # A pinned node needs no non-repairable model of its own.
     nomodel = {"id": "c3", "type": "component", "data": {"label": "spare", "state": "working"}}
     g3 = {
         "unit": "Hours",

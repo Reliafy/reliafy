@@ -69,9 +69,23 @@ def _connect():
 
     import mongomock
 
+    _quiet_mongomock_clock(mongomock)
     _db = mongomock.MongoClient()[config.MONGODB_DB]
     _simulated = True
     return _db
+
+
+def _quiet_mongomock_clock(mongomock) -> None:
+    """Give the simulator a clock that raises no DeprecationWarning.
+
+    mongomock expires TTL-indexed documents on ``datetime.utcnow()`` (deprecated
+    since Python 3.12). A library that turns warnings into errors for a moment
+    (``warnings.catch_warnings`` is process-wide, not per thread) would make any
+    request that touches a TTL collection answer 500, intermittently. The same
+    naive UTC time, patched as mongomock's docs suggest."""
+    from datetime import datetime, timezone
+
+    mongomock.utcnow = lambda: datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def get_db():
@@ -103,7 +117,11 @@ def init_db() -> None:
     db.rbds.create_index([("owner_id", 1), ("created_at", -1)])
     db.outage_logs.create_index([("owner_id", 1), ("rbd_id", 1), ("created_at", -1)])
     db.strategy_analyses.create_index([("owner_id", 1), ("created_at", -1)])
-    db.rcm_studies.create_index([("owner_id", 1), ("created_at", -1)])
+    db.reliability_predictions.create_index([("owner_id", 1), ("created_at", -1)])
+    db.maintainability_predictions.create_index([("owner_id", 1), ("created_at", -1)])
+    db.libraries.create_index([("owner_id", 1), ("created_at", -1)])
+    db.library_records.create_index([("library_id", 1), ("created_at", -1)])
+    db.library_records.create_index([("owner_id", 1), ("model_id", 1)])
     db.degradation_models.create_index([("owner_id", 1), ("created_at", -1)])
     db.tracked_items.create_index([("owner_id", 1), ("model_id", 1)])
     db.tracked_items.create_index([("model_id", 1), ("created_at", -1)])
@@ -167,6 +185,8 @@ def init_db() -> None:
     db.rbd_jobs.create_index([("uid", 1), ("rbd_id", 1), ("created_at", -1)])
     db.rbd_jobs.create_index([("uid", 1), ("cache_key", 1), ("created_at", -1)])
     db.rbd_jobs.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    # Cancels of runs computing in the web process (rbd_jobs.cancel_token).
+    db.rbd_job_cancels.create_index([("expires_at", 1)], expireAfterSeconds=0)
     # Run history (#112) by diagram, and the runtime quote's calibration log (#286).
     from backend.services import rbd_runs
 

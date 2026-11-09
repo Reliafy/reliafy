@@ -25,12 +25,14 @@ Grouped by area:
 
     # any tool action (0.3; needs a server with the tools API)
     reliafy.call("list", "models")
-    reliafy.call("life_data_analysis", "fit", data=[120, 340, 510], censored=[0, 0, 1])
+    reliafy.call("analyse", "fit", data=[120, 340, 510], censored=[0, 0, 1])
     reliafy.default_client().upload_dataset("bearings.xlsx")
 
     # ingest
     reliafy.push_usage(fleet_id, [{"name": "Truck 07", "current_use": 12500}])
     reliafy.push_readings([{"tag": "PT-101", "value": 4.2}])
+    reliafy.push_snapshot({"tag": "pump.vib", "time": "2026-11-03T10:00:00Z",
+                           "sample_rate": 3200, "axes": {"X": [0.01, -0.03]}})
 
 The token is a personal API token (Reliafy Cloud -> API access; a Pro
 feature); self-hosted instances pass ``base_url``. The ``reliafy`` command
@@ -46,9 +48,9 @@ import urllib.request
 
 from reliafy import config as _saved
 
-__version__ = "0.3.0"
+__version__ = "0.5.2"
 __all__ = ["configure", "default_client", "call", "Client", "models", "data", "strategy", "fleet", "ReliafyError",
-           "ServerTooOld", "push", "push_params", "push_usage", "push_readings", "push_lives",
+           "ServerTooOld", "push", "push_params", "push_usage", "push_readings", "push_snapshot", "push_lives",
            "push_measurements"]
 
 _DEFAULT_BASE = "https://reliafy.com"
@@ -150,6 +152,11 @@ def push_usage(fleet_id: str, rows=None, *, csv: str | None = None, file: str | 
 def push_readings(rows=None, *, csv: str | None = None, file: str | None = None) -> dict:
     """Readings for Reliafy Maintenance's measurement points: rows of {tag, value, time?}."""
     return default_client().push_readings(rows, csv=csv, file=file)
+
+
+def push_snapshot(snapshot=None, *, file: str | None = None, snapshots=None) -> dict:
+    """Push a signal channel's snapshot(s) (Reliafy Maintenance)."""
+    return default_client().push_snapshot(snapshot, file=file, snapshots=snapshots)
 
 
 def push_measurements(fleet_id: str, rows=None, *, csv: str | None = None, file: str | None = None) -> dict:

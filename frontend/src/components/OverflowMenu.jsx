@@ -8,8 +8,11 @@ import useMenuDismiss from "./useMenuDismiss.js";
 // that closes the menu.
 //
 // With ``label`` it's a menu button instead ("+ New analysis ▾"): a page's
-// main action when that action is one of several tools.
-export default function OverflowMenu({ children, label, ariaLabel }) {
+// main action when that action is one of several tools. ``triggerClass``
+// replaces the "…" button's look (the Explorer's panel heading draws it as
+// the tree pane's 30 × 30 icon buttons); ``disabled`` greys it, with
+// ``title`` saying why.
+export default function OverflowMenu({ children, label, ariaLabel, triggerClass = "secondary", disabled = false, title = "More actions" }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const close = useCallback(() => setOpen(false), []);
@@ -25,9 +28,13 @@ export default function OverflowMenu({ children, label, ariaLabel }) {
         </button>
       ) : (
         <button
-          className="secondary ovm-trigger"
+          type="button"
+          className={`${triggerClass} ovm-trigger`}
           aria-label="More actions"
-          title="More actions"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          title={title}
+          disabled={disabled}
           onClick={() => setOpen((o) => !o)}
         >
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">

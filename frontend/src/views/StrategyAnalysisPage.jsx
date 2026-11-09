@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import ReplacementResult from "../components/ReplacementResult.jsx";
 import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
@@ -8,13 +9,17 @@ import { ShareButton } from "../components/ShareDialog.jsx";
 import { getStrategyAnalysis } from "../api.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import IntervalAnalysisResult from "../components/IntervalAnalysisResult.jsx";
 import { itemName } from "../components/LibRows";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const KIND_LABEL = {
   optimal_replacement: "Optimal replacement",
   compare_two: "Two-model comparison",
   failure_finding: "Failure finding",
   demonstration_test: "Demonstration test",
+  on_condition_interval: "Check interval (P-F)",
+  failure_finding_interval: "Test interval",
 };
 
 // A saved strategy analysis, rendered read-only from its stored results.
@@ -31,7 +36,7 @@ export default function StrategyAnalysisPage() {
     return (
       <div className="app">
         <header><h1>Saved analysis</h1></header>
-        <div className="card error">{error}</div>
+        <LoadFailed error={error} to="/strategy" label="See all saved analyses" />
       </div>
     );
   }
@@ -39,6 +44,7 @@ export default function StrategyAnalysisPage() {
 
   return (
     <div className="app">
+      <PageTitle name={doc && itemName(doc)} />
       <PageHeader
         crumbs={[{ label: "Strategy", to: "/strategy" }]}
         title={itemName(doc)}
@@ -48,7 +54,7 @@ export default function StrategyAnalysisPage() {
             {doc.shared_by && <Chip title={`Shared by ${doc.shared_by}`}>Shared</Chip>}
           </>
         }
-        meta={<>{KIND_LABEL[doc.kind] || doc.kind} · computed when saved; results are stored, not refreshed.</>}
+        meta={<>{KIND_LABEL[doc.kind] || doc.kind} · results as computed when it was saved.</>}
         id={doc.id}
         menu={
           <ShareButton
@@ -66,6 +72,9 @@ export default function StrategyAnalysisPage() {
         {doc.kind === "compare_two" && <CompareResult result={doc.results} name={doc.name} />}
         {doc.kind === "failure_finding" && <FfiResult result={doc.results} />}
         {doc.kind === "demonstration_test" && <DemoTestResult result={doc.results} />}
+        {(doc.kind === "on_condition_interval" || doc.kind === "failure_finding_interval") && (
+          <IntervalAnalysisResult kind={doc.kind} result={doc.results} />
+        )}
       </div>
     </div>
   );

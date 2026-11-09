@@ -15,10 +15,11 @@ import {
   uploadMaintenancePhoto,
 } from "../api.js";
 import {
-  PLACE_KINDS, alsoOnText, placeKindWord, placeOptions, placePath, suggestions,
+  PLACE_KINDS, alsoOnText, photoLabel, photoStep, placeKindWord, placeOptions, placePath, suggestions,
 } from "../maintenancePhotoPlaces.js";
 import Modal from "./Modal.jsx";
 import { Field, FormModal, flatten, fmtDate } from "./MaintenanceParts.jsx";
+import { useConfirm } from "./ConfirmProvider.jsx";
 
 // What the picker can choose from, loaded once per kind when it's first asked for.
 const LOADERS = {
@@ -135,6 +136,30 @@ export default function MaintenancePhotos({ title = "Photos", targetId, targetNa
   const [open, setOpen] = useState(null);
   const [link, setLink] = useState(null);
   const [placing, setPlacing] = useState(null);
+  // The thumbnail buttons, so closing the viewer puts focus back where it was.
+  const thumbs = useRef({});
+  const openIndex = open ? photos.findIndex((x) => x.id === open.id) : -1;
+  const close = () => {
+    const id = open?.id;
+    setOpen(null);
+    if (id) setTimeout(() => thumbs.current[id]?.focus(), 0);
+  };
+  const step = (key) => {
+    const next = photoStep(openIndex, photos.length, key);
+    if (next != null) setOpen(photos[next]);
+  };
+  // ← and → step through the photos while the viewer is open (not while
+  // typing in a field or with the "Link or move" picker on top).
+  useEffect(() => {
+    if (!open || placing) return undefined;
+    const onKey = (e) => {
+      if (e.target.closest?.("input, textarea, select")) return;
+      const next = photoStep(openIndex, photos.length, e.key);
+      if (next != null) { e.preventDefault(); setOpen(photos[next]); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, openIndex, photos, placing]);
 
   const onFiles = async (files) => {
     setError(null);
@@ -169,15 +194,16 @@ export default function MaintenancePhotos({ title = "Photos", targetId, targetNa
     }
   };
 
+  const confirm = useConfirm();
   const remove = async (p) => {
-    if (!window.confirm("Remove this photo?")) return;
+    if (!(await confirm({ title: "Remove this photo?", body: "It comes off everywhere it's shown. This can't be undone.", confirmLabel: "Remove photo" }))) return;
     await removeMaintenancePhoto(p.id).catch((e) => setError(e.message));
     setOpen(null);
     onChanged?.();
   };
 
   const unlink = async (p, place) => {
-    if (!window.confirm(`Take this photo off ${place.name || "there"}? It stays everywhere else.`)) return;
+    if (!(await confirm({ title: "Take this photo off here?", body: `It comes off ${place.name || "this place"} but stays everywhere else it's shown.`, confirmLabel: "Take photo off" }))) return;
     try {
       await unlinkMaintenancePhoto(p.id, place.id);
       setOpen(place.id === targetId ? null : { ...p, also_on: p.also_on.filter((x) => x.id !== place.id) });
@@ -223,9 +249,13 @@ export default function MaintenancePhotos({ title = "Photos", targetId, targetNa
         <p className="lib-date">No photos yet. Nameplates are the most useful: make, model and serial.</p>
       ) : (
         <div className="maint-photos">
-          {photos.map((p) => (
+          {photos.map((p, i) => (
             <figure key={p.id}>
-              <AuthImage photoId={p.id} className="maint-photo" alt={p.caption || "Photo"} onClick={() => setOpen(p)} />
+              {/* A real button, so the keyboard reaches it (Tab, then Enter or Space). */}
+              <button type="button" className="maint-photo-btn" aria-label={photoLabel(i, photos.length, p.caption)}
+                      ref={(el) => { thumbs.current[p.id] = el; }} onClick={() => setOpen(p)}>
+                <AuthImage photoId={p.id} className="maint-photo" alt="" />
+              </button>
               <figcaption className="lib-date">
                 {p.caption || fmtDate(p.taken_on || p.uploaded_on)}
                 {p.also_on?.length > 0 && <span className="maint-photo-also">{alsoOnText(p.also_on)}</span>}
@@ -237,11 +267,16 @@ export default function MaintenancePhotos({ title = "Photos", targetId, targetNa
       <p className="lib-date">Photos are stored without their location or camera details.</p>
 
       {open && (
-        <Modal title={open.caption || "Photo"} onClose={() => setOpen(null)}
+        <Modal title={`${open.caption || "Photo"}${photos.length > 1 && openIndex >= 0 ? ` (${openIndex + 1} of ${photos.length})` : ""}`}
+               onClose={close}
                footer={<>
+                 {photos.length > 1 && <>
+                   <button className="secondary" onClick={() => step("ArrowLeft")} aria-label="Previous photo">←</button>
+                   <button className="secondary" onClick={() => step("ArrowRight")} aria-label="Next photo">→</button>
+                 </>}
                  <button className="secondary" onClick={() => remove(open)}>Remove</button>
                  <button className="secondary" onClick={() => setPlacing(open)}>Link or move…</button>
-                 <button onClick={() => setOpen(null)}>Close</button>
+                 <button onClick={close} autoFocus>Close</button>
                </>}>
           <AuthImage photoId={open.id} size="full" className="maint-photo-full" alt={open.caption || "Photo"} />
           <p className="lib-date">

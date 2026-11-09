@@ -3,7 +3,7 @@ title: "Import a diagram from BlockSim, Open-PSA, Galileo or Excel"
 task: "I already have this system drawn in another tool or a spreadsheet. How do I bring it into Reliafy?"
 category: "Reliability block diagrams"
 prerequisites: "A diagram file: a BlockSim project (.rsgz / .rsr / .rsrp), Open-PSA XML, a Galileo .dft, RePyability JSON, or an Excel workbook of blocks and connections."
-related_href: "/rbds"
+related_href: "/systems/rbds"
 related_label: "Open the RBDs page"
 order: 11
 ---
@@ -19,7 +19,7 @@ anything you need to set before the numbers mean something.
 
 ## Import the file
 
-Open **RBDs** in the sidebar and press **Import** at the top of the page. Pick
+Open **Modelling → System models → RBDs** in the menu and press **Import** at the top of the page. Pick
 the file. Reliafy works out the format from what's inside it, so the file
 extension only has to be roughly right.
 
@@ -47,11 +47,11 @@ The notes are the part to read carefully. Two are common:
   usually per hour: type *Hours* in the toolbar's **Unit** box, or whatever the
   source model used. Reliafy never rescales the parameters, so the unit only
   labels them; it has to match.
-- **A block with no life model.** A basic event with only a fixed failure
+- **A block with no non-repairable model.** A basic event with only a fixed failure
   probability (the valve above, *p* = 0.001) has no failure time to model.
   Reliafy won't invent a failure rate for it, because that would change the
-  answer. It imports as a block marked *No life model*: double-click it and set
-  one, such as an exponential failure rate, before you calculate.
+  answer. It imports as a block marked *No failure data*: double-click it and set a
+  non-repairable model, such as an exponential failure rate, before you calculate.
 
 Press **Validate** once you've dealt with the notes. It names any block still
 missing a model and any wiring problem. Then **Save**. Saving is the moment the
@@ -104,6 +104,13 @@ can't import honestly.
   has one.
 - Refused: the dynamic gates with no block-diagram equivalent (PAND, POR, SEQ,
   FDEP, PDEP, MUTEX) and spares shared between gates.
+
+Open-PSA and Galileo files can also come in as **fault trees** rather than
+block diagrams: press **Import** on the [Fault trees](/systems/fault-trees)
+page instead. Each top event becomes a tree, gates and basic events as they are
+in the file; a fixed probability stays a probability there. Spare gates can't
+come in as a fault tree (they're dynamic): import those files as an RBD. See
+[Build a fault tree](/guides/build-a-fault-tree).
 
 **RePyability JSON**
 

@@ -11,8 +11,13 @@
     reliafy photo add IMG_01.jpg IMG_02.HEIC --to POSITION_ID
     reliafy photo link PHOTO_ID --to LOCATION_ID      # show it there too
     reliafy photo move PHOTO_ID --to POSITION_ID      # only there
+    reliafy document add manual.pdf --to ITEM_ID --kind manual
+    reliafy document get DOCUMENT_ID -o manual.pdf
     reliafy ingest usage fleet.csv --fleet FLEET_ID
     reliafy ingest readings readings.csv
+    reliafy ingest snapshot burst.json
+    reliafy apply ops.json                          # maintenance changes in one call (a dry run)
+    reliafy apply ops.json --run                    # ... for real
 
 The generic commands come from the server's OpenAPI spec, so a new tool
 action is on the command line as soon as the server has it. Output is a
@@ -37,7 +42,7 @@ from reliafy.client import Client, ReliafyError, ServerTooOld, _version
 
 SPEC_TTL_S = 24 * 3600
 BUILTINS = ("login", "logout", "whoami", "tools", "spec", "call", "push", "fit", "upload", "import", "photo",
-            "ingest", "help")
+            "document", "ingest", "apply", "help")
 
 
 # ---- output --------------------------------------------------------------------
@@ -396,13 +401,17 @@ def cmd_fit(client: Client, ns) -> int:
               + (f", censoring from {ccol!r} (0 = failed, 1 = still running" + (", inverted" if ns.c_invert else "")
                  + ")" if ccol else ", all failures") + ".", file=sys.stderr)
     result = client.fit(data, distribution=ns.dist, censored=censored, counts=counts,
-                        c_invert=True if ns.c_invert else None, unit=ns.unit, save_as=ns.save)
+                        c_invert=True if ns.c_invert else None, unit=ns.unit, save_as=ns.save,
+                        criterion=ns.criterion)
     render(result, ns.json)
     return 0
 
 
 def cmd_upload(client: Client, ns) -> int:
-    render(client.upload_dataset(ns.file, name=ns.name, sheet=ns.sheet), ns.json)
+    if ns.measurements_for:
+        render(client.add_measurements(ns.measurements_for, ns.file, sheet=ns.sheet), ns.json)
+    else:
+        render(client.upload_dataset(ns.file, name=ns.name, sheet=ns.sheet), ns.json)
     return 0
 
 
@@ -410,7 +419,8 @@ def cmd_import(client: Client, ns) -> int:
     if ns.what == "rbd":
         result = client.import_rbd(ns.file, name=ns.name, format=ns.format)
     else:
-        result = client.import_excel(ns.file, target=ns.target, sheet=ns.sheet, name=ns.name)
+        result = client.import_excel(ns.file, target=ns.target, sheet=ns.sheet, name=ns.name,
+                                     position_id=ns.position)
     render(result, ns.json)
     return 0
 
@@ -451,7 +461,7 @@ def cmd_photo(client: Client, ns) -> int:
 
 
 def _photo_links(client: Client, ns) -> int:
-    """photo link / move / unlink: maintenance_attachments link_photo,
+    """photo link / move / unlink: maintenance attachments.link_photo,
     move_photo and unlink_photo for each photo id."""
     if ns.verb == "unlink":
         if not ns.from_id:
@@ -461,13 +471,48 @@ def _photo_links(client: Client, ns) -> int:
     results = []
     for photo_id in ns.files:
         if ns.verb == "unlink":
-            out = client.call("maintenance_attachments", "unlink_photo", photo_id=photo_id, target_id=ns.from_id)
+            out = client.call("maintenance", "attachments.unlink_photo", photo_id=photo_id, target_id=ns.from_id)
         else:
-            out = client.call("maintenance_attachments", f"{ns.verb}_photo", photo_id=photo_id, target_id=ns.to,
+            out = client.call("maintenance", f"attachments.{ns.verb}_photo", photo_id=photo_id, target_id=ns.to,
                               from_id=ns.from_id if ns.verb == "move" else None)
         results.append({"photo_id": photo_id, "on": ", ".join(t.get("name") or t["id"] for t in out.get("on", []))})
     render(results, ns.json)
     return 0
+
+
+def cmd_document(client: Client, ns) -> int:
+    """document add FILE.pdf … (kept on an item, a position or a class) and
+    document get ID (saved as a file)."""
+    if ns.verb == "get":
+        if len(ns.files) != 1:
+            raise ReliafyError("document get takes one document id.")
+        path = client.download_document(ns.files[0], ns.output)
+        render({"document_id": ns.files[0], "saved_to": path}, ns.json)
+        return 0
+    if bool(ns.to) == bool(ns.position_class):
+        raise ReliafyError("document add needs --to ITEM_OR_POSITION_ID or --class POSITION_CLASS (one of them).")
+    if ns.output:
+        raise ReliafyError("-o is for document get.")
+    files = _expand(ns.files)
+    failed = 0
+    results = []
+    for path in files:
+        try:
+            doc = client.add_document(path, ns.to, position_class=ns.position_class,
+                                      title=ns.title if len(files) == 1 else None, kind=ns.kind)
+            results.append({"file": path, "ok": True, "document_id": doc.get("id"), "detail": ""})
+        except (ReliafyError, OSError) as exc:
+            if isinstance(exc, ServerTooOld):
+                raise
+            failed += 1
+            results.append({"file": path, "ok": False, "document_id": None,
+                            "detail": str(getattr(exc, "detail", None) or exc)})
+    if ns.json:
+        render(results, True)
+    else:
+        table(results)
+        print(f"\n{len(files) - failed} of {len(files)} added.")
+    return 1 if failed else 0
 
 
 def cmd_ingest(client: Client, ns) -> int:
@@ -477,6 +522,8 @@ def cmd_ingest(client: Client, ns) -> int:
         result = client.push_usage(ns.fleet, file=ns.file)
     elif ns.what == "readings":
         result = client.push_readings(file=ns.file)
+    elif ns.what == "snapshot":
+        result = client.push_snapshot(file=ns.file)
     elif ns.what == "measurements":
         if not ns.fleet:
             raise ReliafyError("ingest measurements needs --fleet FLEET_ID.")
@@ -489,9 +536,39 @@ def cmd_ingest(client: Client, ns) -> int:
     return 0
 
 
+def cmd_apply(client: Client, ns) -> int:
+    """apply FILE.json: a list of maintenance operations (or {operations: [...]})
+    as one maintenance apply call. A dry run unless --run; the per-operation
+    results as a table, and the undo list written beside the file."""
+    with open(ns.file, encoding="utf-8") as fh:
+        body = json.load(fh)
+    operations = body.get("operations") if isinstance(body, dict) else body
+    if not isinstance(operations, list):
+        raise ReliafyError(f"{ns.file} should hold a list of operations, or " + '{"operations": [...]}.')
+    result = client.apply(operations, dry_run=not ns.run, on_error=ns.on_error, idempotency_key=ns.key)
+    if ns.json:
+        render(result, True)
+    else:
+        summary = {k: v for k, v in result.items() if k not in ("results", "undo", "irreversible")}
+        render(summary, False)
+        rows = [{k: r.get(k) for k in ("index", "ref", "do", "status", "id", "error")} for r in result.get("results", [])]
+        if rows:
+            print(f"\nresults ({len(rows)}):")
+            table(rows)
+    undo = result.get("undo")
+    if undo and ns.run:
+        path = os.path.splitext(ns.file)[0] + ".undo.json"
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"operations": undo}, fh, indent=2)
+        if not ns.json:
+            print(f"\nTo undo it: reliafy apply {path} --run")
+    return 0 if result.get("ok") else 1
+
+
 def builtin_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="reliafy", description="Reliafy from the command line: every tool action, files, photos and ingest.",
+        prog="reliafy", description="Reliafy from the command line: every tool action, files, photos, documents "
+                                    "and ingest.",
         epilog="Any tool action: reliafy <tool> <action> --arg value … (reliafy tools lists them; add --help).",
         formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     p.add_argument("--version", action="version", version=f"reliafy-client {_version()}")
@@ -525,12 +602,16 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--censor-column")
     sp.add_argument("--count-column")
     sp.add_argument("--c-invert", action="store_true", help="The censor column uses 1 = failed.")
+    sp.add_argument("--criterion", choices=["aic", "aic_c", "bic", "neg_ll"],
+                    help="With the best fit: the score the distributions are ranked by (default aic).")
     sp.add_argument("--unit")
     sp.add_argument("--save", metavar="NAME", help="Save the model under this name.")
-    sp = add("upload", cmd_upload, "Upload a CSV or .xlsx file as a dataset.")
+    sp = add("upload", cmd_upload, "Upload a CSV or .xlsx file as a dataset, or as a dataset's measurements.")
     sp.add_argument("file")
     sp.add_argument("--name")
     sp.add_argument("--sheet")
+    sp.add_argument("--measurements-for", metavar="DATASET_ID",
+                    help="Add the file as this dataset's measurements (readings: unit id, age, value) instead.")
     sp = add("import", cmd_import, "Import a diagram file (rbd) or an .xlsx workbook (excel).")
     sp.add_argument("what", choices=["rbd", "excel"])
     sp.add_argument("file")
@@ -538,6 +619,8 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--format", help="rbd: blocksim, openpsa, galileo, excel or repyability (default: detected).")
     sp.add_argument("--target", help="excel: dataset, rcm or rbd.")
     sp.add_argument("--sheet")
+    sp.add_argument("--position", help="excel --target rcm: add the worksheet (.xlsx or .csv) to this maintenance "
+                                       "position's RCM (required for --target rcm). Only adds.")
     sp = add("photo", cmd_photo, "Add photos to a maintenance position, item, location or work order; link a "
                                  "photo to another one too, move it, or unlink it.")
     sp.add_argument("verb", choices=["add", "link", "move", "unlink"])
@@ -547,12 +630,27 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--from", dest="from_id", help="unlink: where to take it off. move: only off this one "
                                                    "(default: off everywhere else).")
     sp.add_argument("--caption")
-    sp = add("ingest", cmd_ingest, "Push usage, readings, measurements or life data from a CSV file.")
-    sp.add_argument("what", choices=["usage", "readings", "measurements", "lives"])
+    sp = add("document", cmd_document, "Keep PDFs on a maintenance item, position or position class, or save "
+                                       "one to a file.")
+    sp.add_argument("verb", choices=["add", "get"])
+    sp.add_argument("files", nargs="+", help="add: PDF files (globs work; at most 20 MB each). get: a document id.")
+    sp.add_argument("--to", help="add: the item or position id.")
+    sp.add_argument("--class", dest="position_class", help="add: a position class (instead of --to).")
+    sp.add_argument("--title", help="add: the title (one file; default: the file name).")
+    sp.add_argument("--kind", choices=["manual", "datasheet", "invoice", "drawing", "certificate", "other"])
+    sp.add_argument("-o", "--output", help="get: where to save it (default: its own file name).")
+    sp = add("ingest", cmd_ingest, "Push usage, readings, measurements or life data from a CSV file, or a signal snapshot from a JSON file.")
+    sp.add_argument("what", choices=["usage", "readings", "snapshot", "measurements", "lives"])
     sp.add_argument("file")
     sp.add_argument("--fleet")
     sp.add_argument("--dataset")
     sp.add_argument("--no-refit", action="store_true")
+    sp = add("apply", cmd_apply, "Run a JSON file of Reliafy Maintenance operations as one maintenance apply "
+                                 "call: a dry run unless --run.")
+    sp.add_argument("file", help="A JSON list of {do, args, ref?, confirm?}, or {operations: [...]}.")
+    sp.add_argument("--run", action="store_true", help="Write the changes (default: a dry run).")
+    sp.add_argument("--on-error", choices=["stop", "continue"], dest="on_error")
+    sp.add_argument("--key", help="An idempotency key: the same key and file within 24 hours isn't run twice.")
     return p
 
 

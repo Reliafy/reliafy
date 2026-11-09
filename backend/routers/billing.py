@@ -319,7 +319,7 @@ def _handle_event(session, event) -> None:
     if etype == "checkout.session.completed":
         meta = obj.get("metadata") or {}
         uid = meta.get("uid") or obj.get("client_reference_id")
-        if not uid:
+        if not uid or not isinstance(uid, str):
             return
         if meta.get("kind") == "pack":
             grant = int(meta.get("grant_cents") or 0)
@@ -376,7 +376,7 @@ def _subscriber(session, customer_id, subscription_id):
     """The user a subscription event is about, or None — including when the
     user's recorded subscription is a different one (e.g. an old subscription
     ending after they moved to a new one must not touch the new plan)."""
-    if not customer_id:
+    if not customer_id or not isinstance(customer_id, str):
         return None
     doc = session.users.find_one({"stripe_customer_id": customer_id})
     if doc is None:

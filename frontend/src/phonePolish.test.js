@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { scrollEdges, scrollStep, scrollToReveal } from "./scrollCue.js";
+import { scrollEdges, scrollStep, scrollToReveal, wholeItemLeft } from "./scrollCue.js";
 import { chartFileName } from "./plotTheme.js";
 
 test("a strip that fits shows no cue", () => {
@@ -32,6 +32,15 @@ test("the active tab is scrolled clear of the fade, only when hidden", () => {
   assert.equal(scrollToReveal({ ...strip, scrollLeft: 300 }, { left: 20, width: 80 }, 40), 0);
   // Never past the end.
   assert.equal(scrollToReveal(strip, { left: 640, width: 60 }, 40), 400);
+});
+
+test("a revealed tab row starts on a whole tab, clear of the chevron", () => {
+  const starts = [0, 90, 150, 240, 380];
+  assert.equal(wholeItemLeft(30, starts, { pad: 32, max: 200 }), 58); // RCM at 90 shows whole, not "ary"
+  assert.equal(wholeItemLeft(0, starts, { pad: 32 }), 0); // at the start: as it is
+  assert.equal(wholeItemLeft(null, starts, { pad: 32 }), null);
+  assert.equal(wholeItemLeft(190, starts, { pad: 32, max: 200 }), 200); // never past the end
+  assert.equal(wholeItemLeft(400, starts, { pad: 32, max: 500 }), 400); // no tab further on: unchanged
 });
 
 test("an arrow scrolls most of a view, within bounds", () => {

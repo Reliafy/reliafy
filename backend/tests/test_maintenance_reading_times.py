@@ -64,8 +64,9 @@ def test_correct_changes_the_time_and_the_note(m):
     p = m.record_reading(lvl["id"], 47, note="10:34 drained")
     rid = p["readings"][0]["id"]
     p = m.correct_reading(rid, at=_mins_ago(30), reason="time was in the note", note="drained")
-    r = p["readings"][0]
-    assert r["status"] == "correction" and r["precision"] == "minute" and r["note"] == "drained"
+    # By status, not position: just after midnight "30 minutes ago" is yesterday and sorts first.
+    r = next(x for x in p["readings"] if x["status"] == "correction")
+    assert r["precision"] == "minute" and r["note"] == "drained"
     with pytest.raises(Invalid, match="as it is"):
         m.correct_reading(r["id"], reason="same again")
 

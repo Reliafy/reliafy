@@ -1,7 +1,7 @@
 // Pure helpers for reliability-block-diagram graphs, shared by the RBD builder
 // and the AI assistant. Turns a minimal {nodes, edges} description (as the agent
 // produces, or as the canvas holds) into the React-Flow / persisted shape:
-// input/output handles on the sides, edges styled, life models fleshed out, and
+// input/output handles on the sides, edges styled, non-repairable models fleshed out, and
 // a tidy left-to-right layered layout so the agent never has to place nodes.
 
 const COL_GAP = 280;
@@ -89,7 +89,7 @@ function fleshModel(model) {
 // Repairable blocks: instant repair, costs and maintenance (#99/#100), the
 // maintenance group, crew priority and a standby group's own repairer (#156/#157).
 const BLOCK_KEYS = [
-  "instant_repair", "costs", "preventive", "inspection", "rcm_source",
+  "instant_repair", "costs", "preventive", "inspection",
   "maintenance_group", "crew_priority", "repair_one_at_a_time",
 ];
 // Diagram-level settings of a repairable diagram, carried as given.

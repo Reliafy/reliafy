@@ -279,21 +279,6 @@ def test_quote_runs_on_the_compute_machine_when_queued(client, queue):
     assert client.post("/api/rbds/quote", json={"graph": _graph()}).json()["machine"] == "compute"
 
 
-def test_admin_calibration_endpoints(client):
-    client.act_as(PRO)
-    assert client.get("/api/admin/runtime-quote").status_code == 403
-    assert client.post("/api/admin/runtime-quote/refit", json={"machine": "web"}).status_code == 403
-    graph = _graph()
-    _analyze(client, graph, _save(client, graph))
-    client.act_as(ADMIN)
-    out = client.get("/api/admin/runtime-quote").json()
-    web = next(m for m in out["machines"] if m["machine"] == "web")
-    assert web["runs"] == 1 and web["factor"] == 1.0 and out["min_runs"] == 10
-    assert out["model"]["coefficients"]["log_replications"] == 0.58
-    refit = client.post("/api/admin/runtime-quote/refit", json={"machine": "web", "apply": True}).json()
-    assert refit["refitted"] is False and refit["observed"] == 1
-
-
 # ---- MCP -------------------------------------------------------------------------------------
 
 from backend.tests.test_mcp import _err, _ok  # noqa: E402
@@ -304,12 +289,12 @@ from backend.tests.test_mcp_plans import PRO as MCP_PRO  # noqa: E402
 def test_mcp_quote_list_and_get_runs(env):
     rid = _repairable(env, MCP_PRO, "Pumps")
     token = env.oauth[MCP_PRO]
-    quote = _ok(_call(token, "rbd_analysis", {"action": "quote_simulation", "rbd_id": rid}))
+    quote = _ok(_call(token, "analyse", {"action": "rbd_quote_simulation", "rbd_id": rid}))
     assert quote["available"] is True and quote["estimate"] and quote["median_s"] <= quote["p90_s"]
     assert "jobs_in_queue" not in quote  # no queue configured: runs in-process
     assert env.simulations["n"] == 0  # a quote runs nothing
 
-    _ok(_call(token, "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
+    _ok(_call(token, "analyse", {"action": "rbd", "rbd_id": rid, "simulate": True}))
     runs = _ok(_call(token, "list", {"kind": "rbd_runs", "rbd_id": rid}))
     [row] = runs["runs"]
     assert row["ran_by"] == "you" and row["via"] == "Claude (MCP)" and row["status"] == "done"
@@ -321,7 +306,7 @@ def test_mcp_quote_list_and_get_runs(env):
     assert run["result"]["n_simulations"] == 20 and run["result"]["precision"]
     assert run["engines"]["repyability"] and run["engines"]["surpyval"]
     assert run["inputs"]["blocks"] > 0 and len(run["curve"]["t"]) == len(run["curve"]["upper"])
-    assert run["url"].endswith(f"/rbds/runs/{row['run_id']}")
+    assert run["url"].endswith(f"/systems/runs/{row['run_id']}")
     # Someone else's run doesn't exist for them.
     assert "Run not found" in _err(_call(env.oauth[AGENT], "get", {"kind": "rbd_run", "id": row["run_id"]}))
     other = _ok(_call(env.oauth[AGENT], "list", {"kind": "rbd_runs"}))
@@ -337,9 +322,9 @@ def test_mcp_pending_job_carries_the_estimate(env, monkeypatch):
     tasks, dispatch = _mcp_queue(env, monkeypatch)
     rid = _repairable(env, MCP_PRO, "Pumps")
     token = env.oauth[MCP_PRO]
-    quote = _ok(_call(token, "rbd_analysis", {"action": "quote_simulation", "rbd_id": rid}))
+    quote = _ok(_call(token, "analyse", {"action": "rbd_quote_simulation", "rbd_id": rid}))
     assert quote["jobs_in_queue"] == 0
-    out = _ok(_call(token, "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
+    out = _ok(_call(token, "analyse", {"action": "rbd", "rbd_id": rid, "simulate": True}))
     sim = out["simulation"]
     assert sim["status"] == "queued" and sim["estimate"] == quote["estimate"]
     pending = _ok(_call(token, "get", {"kind": "job", "id": sim["job_id"]}))

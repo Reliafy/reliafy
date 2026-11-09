@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import DegradationNewModal from "../components/DegradationNewModal.jsx";
 import { listDegradationModels, deleteDegradationModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
-import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
+import { StorageCapNotice } from "../components/StorageCap.jsx";
 
 const HELP = { guide: "degradation-modelling" };
 
-// Modelling › Degradation: list, create (a 3-step modal that
+// Models › Degradation: list, create (a 3-step modal that
 // fits, saves and opens the new model's page), open, delete. Lives inside the
-// Modelling section.
+// Models section.
 export default function DegradationHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
@@ -29,11 +32,9 @@ export default function DegradationHome() {
   useEffect(() => refresh(), [refresh]);
 
 
+  const confirm = useConfirm();
   const onDelete = async (m) => {
-    const msg = m.is_sample
-      ? `Remove the sample “${itemName(m)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete “${m.name}” and its tracked items?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(m, "model", { name: itemName(m), extra: "with its tracked items" })))) return;
     try {
       await deleteDegradationModel(m.id);
       refresh();
@@ -42,20 +43,23 @@ export default function DegradationHome() {
     }
   };
 
-  const open = (id) => navigate(`/modelling/degradation/${id}`);
+  const pathOf = (id) => `/models/degradation/${id}`;
+  const open = (id) => navigate(pathOf(id));
   const newModel = <button onClick={() => setModalOpen(true)}><PlusIcon /> New model</button>;
 
   return (
     <div className="app">
       <SectionHeader
-        section="modelling"
+        section="models"
         title="Degradation models"
-        purpose="How assets wear toward a failure threshold. Track individual items under Fleet."
+        purpose={<>How items wear toward a failure threshold. Track each one in <Link to="/risk">Condition monitoring</Link>.
+          Failure times too? Use <Link to="/models/joint">Condition and life</Link>.</>}
         help={HELP}
         primary={newModel}
       />
 
       {error && <div className="card error">{error}</div>}
+      <StorageCapNotice kind="degradation_models" one="degradation model" many="degradation models" refreshKey={models} />
 
       <SectionList
         rows={models}
@@ -77,10 +81,10 @@ export default function DegradationHome() {
           <th key="a"><span className="sr-only">Actions</span></th>,
         ]}
         render={(m) => (
-          <tr key={m.id} className="lib-row" onClick={() => open(m.id)}>
+          <tr key={m.id} className="lib-row" onClick={rowOpen(navigate, pathOf(m.id))}>
             <td>
               <div className="lib-name">
-                {itemName(m)}
+                <RowLink to={pathOf(m.id)}>{itemName(m)}</RowLink>
                 {m.shared_by && <Chip title={`Shared by ${m.shared_by}`}>Shared</Chip>}
               </div>
             </td>
@@ -89,7 +93,7 @@ export default function DegradationHome() {
             <td className="lib-n lib-opt">{m.n_units}</td>
             <td className="lib-n lib-opt">{m.n_items}</td>
             <td className="lib-date lib-opt">{relativeTime(m.updated_at || m.created_at)}</td>
-            <RowActions item={m} onOpen={() => open(m.id)} onDelete={() => onDelete(m)} />
+            <RowActions item={m} to={pathOf(m.id)} onDelete={() => onDelete(m)} />
           </tr>
         )}
       />

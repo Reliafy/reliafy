@@ -1,0 +1,17 @@
+/* TablePane.jsx: work in the Explorer's table area, the tree beside it. A heading, then the work,
+   which lays itself out by the pane's width (container "tablepane"). On a phone it takes the
+   screen, the heading kept at the top. */
+.tt-side > .rw-panel.table-pane { padding: 0; gap: 0; overflow: hidden; container-type: inline-size; container-name: tablepane; }
+.rw-panel.is-expanded > .table-pane-head { max-width: none; }
+.table-pane-head { padding: 10px 12px 10px 18px; border-bottom: 1px solid var(--line2); min-width: 0; }
+.table-pane-title { margin: 0; font-size: var(--fs-16); font-weight: 600; min-width: 0; flex: 1 1 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.table-pane-title:focus { outline: none; }
+.table-pane-title:focus-visible { box-shadow: var(--focus); border-radius: var(--r-sm); }
+.table-pane-pos { font-weight: 400; color: var(--muted); }
+.tt-side > .rw-panel.table-pane.table-pane-phone, .table-pane-phone { position: fixed; inset: 0; z-index: 90; width: auto; max-height: none; border: 0; border-radius: 0;
+  padding: 0; gap: 0; overflow: auto; background: var(--surf); container-type: normal; }
+.table-pane-phone .table-pane-head { position: sticky; top: 0; z-index: 1; background: var(--surf); padding: 6px 12px; justify-content: flex-start; }
+.table-pane-phone .table-pane-title { white-space: normal; font-size: var(--fs-16); }
+.table-pane-phone button.table-pane-back { min-height: 40px; flex: none; }
+.table-pane-phone :is(input, textarea, select) { font-size: var(--fs-16); }

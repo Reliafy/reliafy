@@ -33,9 +33,9 @@ const OUT = resolve(dirname(fileURLToPath(import.meta.url)), "../public/guides/i
 
 // --- Fixtures: create real saved diagrams via the API so we can screenshot
 // --- them without automating the canvas. Auth-disabled mode needs no token.
-async function api(path, body) {
+async function api(path, body, method = null) {
   const res = await fetch(`${BASE}/api${path}`, {
-    method: body ? "POST" : "GET",
+    method: method || (body ? "POST" : "GET"),
     headers: body ? { "Content-Type": "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -198,15 +198,16 @@ async function seedTwoValveSif() {
 }
 
 // Condition-based risk: the smoke suite's demo fleet (40 pumps, vibration read
-// every 10 days; smoke/seed.js), fitted as a joint model, and a diagram with two
-// of its running pumps in parallel as condition-based blocks.
+// every 10 days; smoke/seed.js) as one dataset — the lives with the readings as
+// its measurements — fitted as a joint model, and a diagram with two of its
+// running pumps in parallel as condition-based blocks.
 async function seedJointModel() {
   const { lifetimes, readings } = jointFleet();
   const life = await api("/datasets/paste", { name: "Pump lives", content: lifetimes });
-  const reads = await api("/datasets/paste", { name: "Pump vibration", content: readings });
+  await api(`/datasets/${life.id}/measurements/paste`, { content: readings }, "PUT");
   const fit = await api("/joint/models", {
     name: "Feed pumps (condition-based)",
-    lifetimes_dataset_id: life.id, readings_dataset_id: reads.id,
+    dataset_id: life.id,
     mapping: { id: "pump", x: "age", c: "running" },
     readings_mapping: { id: "pump", age: "age", value: "vibration" },
     covariates: ["load"], path_model: "linear", unit: "Days", marker: "vibration", marker_unit: "mm/s",
@@ -233,7 +234,7 @@ async function seedJointModel() {
     ],
   };
   const rbd = await api("/rbds", { name: "Feed pump train", graph });
-  return { modelId, rbdId: rbd.id, datasetIds: [life.id, reads.id] };
+  return { modelId, rbdId: rbd.id, datasetIds: [life.id] };
 }
 
 // A model of the user's own (samples can't be shared), for the Share dialog.
@@ -255,7 +256,7 @@ async function seedOwnModel() {
 
 // A small Galileo dynamic fault tree, written here (no vendor file): a supply
 // with a cold spare, three pumps voting 2-of-3, and a valve with only a fixed
-// failure probability, which imports without a life model and says so.
+// failure probability, which imports without a non-repairable model and says so.
 const GALILEO_FEED = [
   'toplevel "Feed system";',
   '"Feed system" or "Supply" "Pumps" "Valve";',
@@ -430,22 +431,68 @@ async function scrollTo(locator, offset = 80) {
   await wait(600);
 }
 
-// RCM and teams guides: a study of the user's own (the sample is read-only, so
-// its decision dialog can't open), with one mode still to decide; and a team
-// with one pending invitation (single-user mode can create one: no billing).
-async function seedRcmStudy() {
-  const study = await api("/rcm/studies", { name: "Conveyor drive — RCM", system: "Conveyor line 2", description: "" });
-  const res = await fetch(`${BASE}/api/rcm/studies/${study.id}/tree`, {
-    method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ functions: [{ text: "Drive the belt at 4 m/s", failures: [{ text: "Belt stops", modes: [
-      { text: "Gearbox bearing fatigue", effects: "Line stops until the bearing is changed; about 8 hours lost.",
-        consequence: null, decision: null },
-      { text: "Motor overload trip fails to operate (hidden)", effects: "Motor burns out on the next jam.",
-        consequence: "hidden", decision: null },
-    ] }] }] }),
+// RCM and FME(C)A guides: the sample UAV product (the one sample for both tabs), its
+// design with its RCM (some decisions linked to sample evidence) and every failure
+// mode scored. When this run added it, the cleanup retires its design and items and
+// deletes its RBD; one already there is left alone. null when Reliafy Maintenance is
+// off on this server (then those shots are skipped, out loud, and keep their images).
+// Teams guide: a team with one pending invitation (single-user mode can create one:
+// no billing).
+async function seedSampleProduct(config) {
+  if (!config.maintenance) return null;
+  const made = await api("/maintenance/sample-product", {});
+  const id = made.product?.id || made.position.id;
+  const items = made.items || (await api(`/maintenance/products/${id}/items`)).items;
+  // The design's positions by name (Motor 1, Propeller 1, ...), for the shots that pick one.
+  const sheet = await api(`/maintenance/positions/${id}/rcm?scope=below`);
+  const at = Object.fromEntries(sheet.positions.map((p) => [p.name, p.id]));
+  return { id, added: !!made.added, tops: items.map((it) => it.top_position_id), rbdId: made.rbd?.id, at };
+}
+// Failure reports guide: a report filed on the first quadcopter built from the sample
+// product (serial 0007, which has the sample's own report on its Motor 1) and taken
+// part way round the loop (investigated, one corrective action), so the list and the
+// report have something to show. Reports are never deleted (rejected at most); when
+// this run added the product, retiring its items in the cleanup takes it out of the
+// tree. null without the product.
+async function seedUavReport(uav) {
+  if (!uav?.tops?.length) return null;
+  const top = uav.tops[0];
+  const report = await api("/maintenance/failure-reports", {
+    position_id: top, title: "Drifted and landed hard in a gust",
+    description: "The aircraft yawed and dropped about a metre in a gust on the return leg, then landed hard on its failsafe. One landing leg cracked.",
+    found_by: "Sam (pilot)", consequence: "operational", failure_mode_text: "Loses sync with the motor on a rapid throttle change",
   });
-  if (!res.ok) throw new Error(`rcm tree → ${res.status} ${await res.text()}`);
-  return study.id;
+  await api(`/maintenance/failure-reports/${report.id}/status`, { status: "investigating" });
+  await api(`/maintenance/failure-reports/${report.id}/investigation`, {
+    notes: "Flight log shows an RPM dropout on ESC 3 at the moment of the yaw; the motor batch was changed last month.",
+    root_cause_category: "design", root_cause: "Controller timing not retuned for the new motor batch",
+    whys: ["The aircraft dropped in a gust", "Motor 3 lost thrust for a moment", "ESC 3 lost sync on a rapid throttle change", "Its timing wasn't retuned for the new motor batch"],
+  }, "PUT");
+  await api(`/maintenance/failure-reports/${report.id}/actions`, {
+    what: "Retune the controller timing for each motor batch and add RPM dropouts to the log review", owner: "Flight test", work_order_ref: "WO-2041",
+  });
+  await api(`/maintenance/failure-reports/${report.id}/status`, { status: "corrective_action" });
+  return { id: report.id, top };
+}
+// Signals guide: a pump with a vibration channel, six snapshots over 40 days with
+// a 50 Hz tone growing (null when Reliafy Maintenance is off on this server).
+async function seedSignals(config) {
+  if (!config.maintenance) return null;
+  const pump = await api("/maintenance/positions", { name: "Cooling water pump (guide fixture)" });
+  const channel = await api("/maintenance/signals/channels", {
+    position_id: pump.id, name: "Drive-end bearing", unit: "g", sample_rate: 3200, axes: ["X"], rpm: 2980, tag: "guide.pump.vib",
+  });
+  const day = 24 * 3600 * 1000;
+  const gaps = [40, 33, 25, 14, 6, 1];
+  for (let i = 0; i < gaps.length; i += 1) {
+    const amp = 0.08 + 0.1 * i;
+    const x = Array.from({ length: 4096 }, (_, k) => +(amp * Math.sin((2 * Math.PI * 49.7 * k) / 3200)
+      + 0.05 * Math.sin((2 * Math.PI * 99.4 * k) / 3200) + 0.02 * Math.sin(k * 1.7)).toFixed(5));
+    await api("/maintenance/signals/snapshots", {
+      channel_id: channel.id, time: new Date(Date.now() - gaps[i] * day).toISOString(), running: true, axes: { X: x },
+    });
+  }
+  return { positionId: pump.id, channelId: channel.id };
 }
 async function seedTeam() {
   const team = await api("/teams", { name: "Reliability team" });
@@ -525,7 +572,7 @@ async function fillPerDemand(page) {
     await page.getByLabel("Demands", { exact: true }).nth(i).fill(String(demands));
     await page.getByLabel("Failures", { exact: true }).nth(i).fill(String(failures));
   }
-  await page.getByLabel("Confidence (%)").fill("90");
+  await page.getByLabel("Confidence", { exact: true }).fill("90");
   await wait(500);
 }
 
@@ -580,26 +627,21 @@ async function main() {
   // list pages like Saved models, which real users would never see.
   const sampleShots = [
     // --- Fit your first model ---
-    { file: "fit-01-new.png", url: "/modelling/new?mode=data", settle: 1200 },
-    { file: "fit-02-result.png", url: `/modelling/m/${S.bearings}`, settle: 2500 },
-    { file: "fit-03-calculator.png", url: `/modelling/m/${S.bearings}`, settle: 2000, act: modelCalculator },
+    { file: "fit-01-new.png", url: "/models/new?mode=data", settle: 1200 },
+    { file: "fit-02-result.png", url: `/models/m/${S.bearings}`, settle: 2500 },
+    { file: "fit-03-calculator.png", url: `/models/m/${S.bearings}`, settle: 2000, act: modelCalculator },
     // --- Censored data (the pump model is right-censored) ---
-    { file: "censored-01-model.png", url: `/modelling/m/${S.pumps}`, settle: 2500 },
+    { file: "censored-01-model.png", url: `/models/m/${S.pumps}`, settle: 2500 },
     // --- B-lives and confidence bounds ---
-    { file: "blife-01-life-card.png", url: `/modelling/m/${S.bearings}`, settle: 2500,
-      async act(page) { await page.locator(".sel-trigger", { hasText: /lower bound/ }).click(); await wait(500); } },
-    { file: "blife-02-calculator.png", url: `/modelling/m/${S.bearings}`, settle: 2000,
-      async act(page) { await modelCalculator(page); await press(page, /^Time at reliability$/); await wait(2000); } },
-    // --- Check a requirement and plan a demonstration test ---
-    { file: "req-01-check.png", url: `/modelling/m/${S.bearings}`, settle: 2500,
+    // A B-life is the Calculator's "Time at reliability": R = 90% is B10, with
+    // its 90% lower bound. The requirement guide shows it too.
+    { file: "blife-02-calculator.png", url: `/models/m/${S.bearings}`, settle: 2000,
       async act(page) {
-        await page.getByRole("button", { name: /Check a requirement/ }).click(); await wait(600);
-        const m = page.locator(".req-modal");
-        await m.locator("input").nth(0).fill("10");
-        await m.locator("input").nth(1).fill("500");
-        await m.getByRole("button", { name: /^Check$/ }).click();
-        await m.locator(".req-verdict").waitFor({ timeout: 20000 }); await wait(600);
+        await modelCalculator(page); await press(page, /^Time at reliability$/);
+        await page.locator(".calc-answer-ci").waitFor({ timeout: 20000 }); await wait(1200);
       } },
+    // --- Check a requirement and plan a demonstration test ---
+    // (The check against the model is blife-02-calculator.png: B10's bound.)
     { file: "req-02-plan.png",
       url: `/strategy/test-planning?b=10&life=500&conf=90&unit=Hours&model=${S.bearings}`, settle: 2500,
       async act(page) {
@@ -621,12 +663,12 @@ async function main() {
         await wait(600);
       } },
     // --- Accelerated life ---
-    { file: "alt-01-new.png", url: "/modelling/alt/new", settle: 1200 },
-    { file: "alt-02-lifestress.png", url: `/modelling/alt/${S.altModel}`, settle: 2500 },
-    { file: "alt-03-probplot.png", url: `/modelling/alt/${S.altModel}`, settle: 1800,
+    { file: "alt-01-new.png", url: "/models/alt/new", settle: 1200 },
+    { file: "alt-02-lifestress.png", url: `/models/alt/${S.altModel}`, settle: 2500 },
+    { file: "alt-03-probplot.png", url: `/models/alt/${S.altModel}`, settle: 1800,
       async act(page) { await press(page, /^Probability plot$/); await wait(1800); } },
-    { file: "alt-04-uselevel.png", url: `/modelling/alt/${S.altModel}`, settle: 1800,
-      async act(page) { await press(page, /^Use-level calculator$/); await wait(1200);
+    { file: "alt-04-uselevel.png", url: `/models/alt/${S.altModel}`, settle: 1800,
+      async act(page) { await press(page, /^Calculator$/); await wait(1200);
                         await page.getByRole("button", { name: /Compute at use level/i }).click().catch(() => {}); await wait(3000); } },
     // Planning the next accelerated test from the sample fit, at a use stress of 20 kV.
     { file: "alt-05-plan.png", url: `/strategy/test-planning/accelerated?model=${S.altModel}`, settle: 2000,
@@ -638,11 +680,11 @@ async function main() {
         await wait(600);
       } },
     // --- Recurrent events ---
-    { file: "recurrent-01-new.png", url: "/modelling/recurrent/new", settle: 1200 },
-    { file: "recurrent-02-mcf.png", url: `/modelling/recurrent/${S.recurrent}`, settle: 2500 },
+    { file: "recurrent-01-new.png", url: "/models/recurrent/new", settle: 1200 },
+    { file: "recurrent-02-mcf.png", url: `/models/recurrent/${S.recurrent}`, settle: 2500 },
     // --- Degradation ---
-    { file: "degradation-01-model.png", url: `/modelling/degradation/${S.degradation}`, settle: 2500 },
-    { file: "degradation-02-tracking.png", url: "/fleet/tracking", settle: 2000 },
+    { file: "degradation-01-model.png", url: `/models/degradation/${S.degradation}`, settle: 2500 },
+    { file: "degradation-02-tracking.png", url: "/risk", settle: 2000 },
     // --- Optimal replacement: the bearing model, 1,000 planned vs 8,000 failure ---
     // The tool opens on "Saved model"; ?model= chooses the bearing fit, as a
     // model page's "Use this model" does (#294).
@@ -676,8 +718,8 @@ async function main() {
         await wait(600);
       } },
     // --- Fleet failures and spares ---
-    { file: "fleet-01-forecast.png", url: `/fleet/forecasts/${S.fleet}`, settle: 3000 },
-    { file: "fleet-02-new.png", url: "/fleet", settle: 1500,
+    { file: "fleet-01-forecast.png", url: `/forecasts/${S.fleet}`, settle: 3000 },
+    { file: "fleet-02-new.png", url: "/forecasts", settle: 1500,
       async act(page) {
         await page.getByRole("button", { name: /New forecast/ }).click(); await wait(800);
         const m = page.locator(".modal").last();
@@ -686,25 +728,25 @@ async function main() {
         await page.getByRole("option", { name: /Bearing life — Weibull/ }).first().click(); await wait(500);
       } },
     // --- Verify a safety function: the starter, as it opens and calculated ---
-    { file: "sif-01-starter.png", url: "/rbds", settle: 1500,
+    { file: "sif-01-starter.png", url: "/systems/rbds", settle: 1500,
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); } },
-    { file: "sif-02-results.png", url: "/rbds", settle: 1500,
+    { file: "sif-02-results.png", url: "/systems/rbds", settle: 1500,
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); await calculate(page); } },
-    // --- RCM study: the sample, with its evidence statuses ---
-    { file: "rcm-01-study.png", url: "/rcm/studies/sample-rcm-truck", settle: 2000 },
+    // --- Maintainability prediction: the sample quadcopter's saved prediction ---
+    { file: "mp-01-result.png", url: "/maintainability/sample-maintainability-quadcopter", settle: 1500 },
     // --- Failure-finding interval: a trip failing once a year (λ = 1/8,760 h), 99% ---
     { file: "ff-01-result.png", url: "/strategy/failure-finding", settle: 1200,
       async act(page) {
         await press(page, /^Parameters$/); await wait(400);
         await chooseOption(page, "Distribution", /^Exponential$/);
         await page.locator(".picker .param-field input").first().fill("0.000114155");
-        await page.getByLabel("Unit (optional)").fill("Hours");
+        await page.getByLabel("Unit of the model's times").fill("Hours");
         await page.getByRole("button", { name: /^Compute$/ }).click();
         await page.getByText(/Test every/).first().waitFor({ timeout: 20000 }); await wait(800);
       } },
     // --- Import a diagram: a Galileo file through RBDs → Import. It opens
     // unsaved with its import notes, so nothing is left behind. ---
-    { file: "import-01-notes.png", url: "/rbds", settle: 1500,
+    { file: "import-01-notes.png", url: "/systems/rbds", settle: 1500,
       async act(page) {
         await page.locator('input[type="file"]').first().setInputFiles({
           name: "feed-system.dft", mimeType: "text/plain", buffer: Buffer.from(GALILEO_FEED),
@@ -713,7 +755,7 @@ async function main() {
         await arrange(page);
       } },
     // --- Compare groups: the sample seals split by load ---
-    { file: "cmp-01-groups.png", url: "/datasets/d/sample-ds-seal-alt?compare=load", settle: 1500,
+    { file: "cmp-01-groups.png", url: "/data/sample-ds-seal-alt?compare=load", settle: 1500,
       async act(page) {
         await page.locator(".cg-run").click();
         await page.locator(".cg-result").waitFor({ timeout: 20000 }); await wait(1500);
@@ -730,17 +772,18 @@ async function main() {
         await wait(600);
       } },
     // --- Competing risks: the Model step with a failure-mode column, the
-    // sample by-mode model, and its Gray's test by site ---
-    { file: "crisk-01-model-step.png", url: "/modelling/new?dataset=sample-ds-pump-modes", settle: 1500,
+    // sample by-mode model (its Failure modes tab), and its Gray's test by
+    // site (on its Diagnostics tab) ---
+    { file: "crisk-01-model-step.png", url: "/models/new?dataset=sample-ds-pump-modes", settle: 1500,
       async act(page) {
         await chooseOption(page, "Failure mode (optional)", /^failure_mode/);
         await page.getByRole("button", { name: /^Next$/ }).click(); await wait(1200);
       } },
-    { file: "crisk-02-incidence.png", url: "/modelling/m/sample-model-pump-modes", settle: 2500 },
-    { file: "crisk-03-by-site.png", url: "/modelling/m/sample-model-pump-modes", settle: 2500,
-      async act(page) { await page.locator("button.gofr-link").click(); await wait(1000); } },
+    { file: "crisk-02-incidence.png", url: "/models/m/sample-model-pump-modes", settle: 2500 },
+    { file: "crisk-03-by-site.png", url: "/models/m/sample-model-pump-modes", settle: 2500,
+      async act(page) { await page.locator("button.gofr-link").click(); await wait(1500); } },
     // --- Covariates: ticking them, the PH coefficients, a changing-load schedule ---
-    { file: "cov-01-covariates.png", url: "/modelling/new?dataset=sample-ds-seal-alt", settle: 1500,
+    { file: "cov-01-covariates.png", url: "/models/new?dataset=sample-ds-seal-alt", settle: 1500,
       async act(page) {
         await page.getByText("Advanced (regression): covariates").click(); await wait(400);
         await page.locator(".cov-chip", { hasText: "temp_C" }).click();
@@ -748,18 +791,18 @@ async function main() {
         await page.locator(".cov-chip", { hasText: "temp_C" }).evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 420));
         await wait(500);
       } },
-    { file: "cov-02-coefficients.png", url: "/modelling/m/sample-model-seal-weibull-ph", settle: 2500,
-      async act(page) { await press(page, /^Coefficients$/); await wait(1200); } },
-    { file: "cov-03-schedule.png", url: "/modelling/m/sample-model-pump-load-weibull-ph", settle: 3000 },
+    { file: "cov-02-coefficients.png", url: "/models/m/sample-model-seal-weibull-ph", settle: 2500,
+      async act(page) { await press(page, /^Effects$/); await wait(1200); } },
+    { file: "cov-03-schedule.png", url: "/models/m/sample-model-pump-load-weibull-ph", settle: 3000 },
     // --- One-shot devices: the per-demand form, and a model made from it
     // (deleted straight after its shot) ---
-    { file: "demand-01-new.png", url: "/modelling/new?mode=perdemand", settle: 1200,
+    { file: "demand-01-new.png", url: "/models/new?mode=perdemand", settle: 1200,
       async act(page) { await fillPerDemand(page); } },
-    { file: "demand-02-result.png", url: "/modelling/new?mode=perdemand", settle: 1200,
+    { file: "demand-02-result.png", url: "/models/new?mode=perdemand", settle: 1200,
       async act(page) {
         await fillPerDemand(page);
         await page.getByRole("button", { name: /^Create model$/ }).click();
-        await page.waitForURL(/\/modelling\/m\//, { timeout: 20000 }); await wait(2000);
+        await page.waitForURL(/\/models\/m\//, { timeout: 20000 }); await wait(2000);
         this.modelId = new URL(page.url()).pathname.split("/").pop();
       },
       async cleanup() {
@@ -789,16 +832,107 @@ async function main() {
 
   // Shots needing purpose-built fixtures (created below, deleted afterwards).
   const fixtureShots = (fx) => [
-    // --- RCM study: deciding a failure mode, with the sample analysis as evidence ---
-    { file: "rcm-02-decision.png", url: `/rcm/studies/${fx.rcmStudyId}`, settle: 1500,
+    // --- RCM on the asset tree: the RCM tab of the sample UAV product's functional
+    // structure (the same Explorer, on the design), its top picked: its function top
+    // down, failures explained below, with the evidence checks; then the decision
+    // dialog on one of its modes (Propeller 1's blade fatigue: a fixed interval, 130
+    // hours, linked to the sample replacement analysis). Without MAINTENANCE_ENABLED on
+    // the server there is no product (fx.uav null) and both are skipped.
+    { file: "rcm-01-explorer.png", url: `/products/${fx.uav?.id}?view=rcm&sel=${fx.uav?.id}`, settle: 2500,
+      skip: () => (fx.uav ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=rcm on a server that has it."),
       async act(page) {
-        await page.getByText("+ Decision").first().click(); await wait(600);
-        const m = page.locator(".decision-modal");
-        await m.getByRole("button", { name: /^Operational$/ }).click(); await wait(300);
-        await m.getByRole("button", { name: /Fixed-interval replacement/ }).click(); await wait(800);
-        await m.getByPlaceholder("e.g. Replace brake pads").fill("Replace the gearbox input bearing");
-        await m.getByPlaceholder("Interval").fill("580");
-        await m.locator(".evidence-option", { hasText: /Bearing preventive replacement/ }).click(); await wait(500);
+        await page.getByRole("treegrid", { name: /and their RCM/ }).waitFor({ timeout: 20000 });
+        await page.getByText("Aircraft lost or crashes").first().waitFor({ timeout: 20000 });
+        // At this width the Evidence check column may be off by default: show it.
+        // Columns… is in the panel heading's "…" menu.
+        await page.locator(".tt-headslot").getByRole("button", { name: "More actions" }).click();
+        await page.locator(".tt-headslot").getByRole("button", { name: "Columns…" }).click(); await wait(300);
+        const check = page.getByRole("group", { name: "Columns to show" }).getByRole("checkbox", { name: "Evidence check" });
+        if (!(await check.isChecked())) await check.check();
+        await page.keyboard.press("Escape"); await wait(300);
+        await page.getByText(/inconclusive/i).first().waitFor({ timeout: 20000 }); await wait(600);
+      } },
+    { file: "rcm-02-decision.png", url: `/products/${fx.uav?.id}?view=rcm&sel=${fx.uav?.at?.["Propeller 1"]}`, settle: 2500,
+      skip: () => (fx.uav ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=rcm on a server that has it."),
+      async act(page) {
+        const table = page.getByRole("treegrid", { name: /and their RCM/ });
+        await table.waitFor({ timeout: 20000 });
+        // The row menu's Change the decision… (the Details edit step 3 in place and never open the dialog).
+        await table.getByRole("row", { name: /^Failure mode: Blade fatigue crack at the hub/ }).first().locator(".tt-tree, .tt-l1").first().click({ button: "right" }); await wait(400);
+        await page.getByRole("menu").getByRole("menuitem", { name: "Change the decision…" }).click();
+        await page.getByRole("dialog", { name: /^Decision/ }).waitFor({ timeout: 20000 }); await wait(800);
+      } },
+    // --- FME(C)A: the FME(C)A tab of the sample UAV product's functional
+    // structure (the same Explorer, on the design; its motor picked, so the worksheet columns show scored rows),
+    // then the root picked for the criticality matrix in its Details. Skipped,
+    // like the RCM shots, without Maintenance.
+    { file: "fmea-01-worksheet.png", url: `/products/${fx.uav?.id}?view=fmea&sel=${fx.uav?.id}`, settle: 2500,
+      skip: () => (fx.uav ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=fmea on a server that has it."),
+      async act(page) {
+        const table = page.getByRole("treegrid");
+        await table.waitFor({ timeout: 20000 });
+        await table.getByRole("row", { name: /^Motor/ }).first().locator(".tt-tree").click(); await wait(600);
+        await page.getByText("Bearing seizure").first().waitFor({ timeout: 20000 }); await wait(600);
+      } },
+    { file: "fmea-02-matrix.png", url: `/products/${fx.uav?.id}?view=fmea&sel=${fx.uav?.id}`, settle: 2500,
+      skip: () => (fx.uav ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=fmea on a server that has it."),
+      async act(page) {
+        await page.getByRole("treegrid").waitFor({ timeout: 20000 });
+        await page.getByRole("complementary", { name: "Details" }).getByText(/matrix/i).first().waitFor({ timeout: 20000 }); await wait(600);
+      } },
+    // --- Failure reports on the asset tree: the Explorer's Failure reports tab on
+    // a quadcopter built from the sample product (its tree, serial 0007, with a
+    // report filed on it in the fixture step, part way round the loop), then the
+    // report itself: its stage, facts, investigation and corrective action.
+    // Skipped, like the RCM shots, without Maintenance.
+    { file: "reports-01-list.png", url: `/asset-register/explorer?arrange=positions&root=${fx.report?.top}&tab=reports&sel=${fx.report?.top}`, settle: 2500,
+      skip: () => (fx.report ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=reports on a server that has it."),
+      async act(page) {
+        await page.getByRole("list", { name: "Failure reports" }).getByRole("button", { name: /Drifted and landed hard/ }).waitFor({ timeout: 20000 });
+        await wait(600);
+      } },
+    { file: "reports-02-report.png", url: `/asset-register/explorer?arrange=positions&root=${fx.report?.top}&tab=reports&sel=${fx.report?.top}&report=${fx.report?.id}`, settle: 2500,
+      skip: () => (fx.report ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=reports on a server that has it."),
+      async act(page) {
+        await page.getByRole("heading", { name: /Drifted and landed hard/ }).waitFor({ timeout: 20000 });
+        // The investigation beside the open corrective action: both cards open.
+        const fold = page.getByRole("button", { name: /^Investigation$/ });
+        if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+        await fold.evaluate((el) => el.blur());
+        await page.mouse.move(0, 0);
+        await wait(600);
+      } },
+    // --- Signal channels (a channel's own page): the spectrum, adding a snapshot from a file, editing a band.
+    { file: "signals-01-spectrum.png", url: `/asset-register/channels/${fx.signals?.channelId}`, settle: 2500,
+      skip: () => (fx.signals ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=signals on a server that has it."),
+      async act(page) {
+        const spectrum = page.getByRole("region", { name: "Spectrum" });
+        await spectrum.locator(".js-plotly-plot").waitFor({ timeout: 20000 });
+        await spectrum.getByLabel("From (Hz)").fill("45"); await spectrum.getByLabel("To (Hz)").fill("55");
+        await spectrum.getByRole("button", { name: "Watch this range" }).click();
+        await page.getByRole("region", { name: "Level over time" }).locator(".js-plotly-plot").waitFor({ timeout: 20000 }); await wait(1500);
+        await spectrum.evaluate((el) => el.scrollIntoView({ block: "start" })); await wait(600);
+      } },
+    { file: "signals-02-add.png", url: `/asset-register/channels/${fx.signals?.channelId}`, settle: 2500,
+      skip: () => (fx.signals ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=signals on a server that has it."),
+      async act(page) {
+        await page.getByRole("button", { name: "Add a snapshot from a file" }).click();
+        const rows = Array.from({ length: 2048 }, (_, k) => (0.4 * Math.sin((2 * Math.PI * 50 * k) / 3200)).toFixed(5)).join("\n");
+        await page.locator('input[type="file"]').setInputFiles({ name: "pump-burst.csv", mimeType: "text/csv", buffer: Buffer.from(rows) });
+        const form = page.getByRole("form", { name: "Add a snapshot" });
+        await form.getByText(/2,048 samples each/).waitFor({ timeout: 20000 });
+        await form.getByLabel(/^Axis names/).fill("X");
+        await form.getByLabel(/^Time taken/).fill("2026-10-30T10:00"); await wait(800);
+      } },
+    { file: "signals-03-edit-band.png", url: `/asset-register/channels/${fx.signals?.channelId}`, settle: 2500,
+      skip: () => (fx.signals ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=signals on a server that has it."),
+      async act(page) {
+        const bands = page.getByRole("region", { name: "Watch bands" });
+        await bands.getByRole("button", { name: "Edit" }).first().click();
+        const editor = bands.getByRole("form", { name: /Edit/ });
+        await editor.getByLabel(/^Warn above/).fill("0.3"); await editor.getByLabel(/^Alarm above/).fill("0.5");
+        await editor.getByLabel(/^To/).fill("60"); await wait(600);
+        await editor.scrollIntoViewIfNeeded(); await wait(500);
       } },
     // --- Teams: the workspace menu, then the team's settings (members, a pending invite) ---
     { file: "team-01-switcher.png", url: "/strategy/failure-finding", settle: 1200,
@@ -810,62 +944,61 @@ async function main() {
         await page.getByText("colleague@example.com").waitFor({ timeout: 20000 }); await wait(800);
       } },
     // --- Load-sharing ---
-    { file: "loadshare-01-config.png", url: `/rbds/b/${fx.loadshare.rbdId}`, settle: 1600,
+    { file: "loadshare-01-config.png", url: `/systems/b/${fx.loadshare.rbdId}`, settle: 1600,
       async act(page) { await page.locator(".rbd-loadshare").dblclick(); await wait(1500); } },
     // --- Build an RBD (the seeded sample diagram) ---
-    { file: "rbd-01-builder.png", url: "/rbds/b/sample-rbd-pump-station", settle: 2000, act: arrange },
-    { file: "rbd-02-results.png", url: "/rbds/b/sample-rbd-pump-station", settle: 1200, act: calculate },
+    { file: "rbd-01-builder.png", url: "/systems/b/sample-rbd-pump-station", settle: 2000, act: arrange },
+    { file: "rbd-02-results.png", url: "/systems/b/sample-rbd-pump-station", settle: 1200, act: calculate },
     // Availability guide.
-    { file: "availability-01-new.png", url: "/rbds/b", settle: 900 },
-    { file: "availability-02-system.png", url: `/rbds/b/${fx.repairableId}`, settle: 1200,
+    { file: "availability-01-new.png", url: "/systems/b", settle: 900 },
+    { file: "availability-02-system.png", url: `/systems/b/${fx.repairableId}`, settle: 1200,
       async act(page) { await page.locator(".rbd-mode-select .sel-trigger, .sel-trigger", { hasText: /^Repairable$/ }).first().click(); await wait(700); } },
-    { file: "availability-03-add.png", url: `/rbds/b/${fx.repairableId}`, settle: 1200,
+    { file: "availability-03-add.png", url: `/systems/b/${fx.repairableId}`, settle: 1200,
       async act(page) { await page.getByRole("button", { name: "Add block" }).click(); await wait(600); } },
-    { file: "availability-04-models.png", url: `/rbds/b/${fx.repairableId}`, settle: 1400,
+    { file: "availability-04-models.png", url: `/systems/b/${fx.repairableId}`, settle: 1400,
       async act(page) { await page.locator(".rbd-comp", { hasText: "Controller" }).dblclick(); await wait(900); } },
-    { file: "availability-05-wired.png", url: `/rbds/b/${fx.repairableId}`, settle: 1400, act: arrange },
-    { file: "availability-06-validate.png", url: `/rbds/b/${fx.repairableId}`, settle: 900, act: validateAndShowCheck },
-    { file: "availability-07-results.png", url: `/rbds/b/${fx.repairableId}`, settle: 900, act: calculate },
+    { file: "availability-05-wired.png", url: `/systems/b/${fx.repairableId}`, settle: 1400, act: arrange },
+    { file: "availability-06-validate.png", url: `/systems/b/${fx.repairableId}`, settle: 900, act: validateAndShowCheck },
+    { file: "availability-07-results.png", url: `/systems/b/${fx.repairableId}`, settle: 900, act: calculate },
     // Common-cause guide.
-    { file: "ccf-01-select.png", url: `/rbds/b/${fx.ccfUngroupedId}`, settle: 1400,
+    { file: "ccf-01-select.png", url: `/systems/b/${fx.ccfUngroupedId}`, settle: 1400,
       async act(page) { await arrange(page); await selectPumps(page); } },
-    { file: "ccf-02-beta.png", url: `/rbds/b/${fx.ccfUngroupedId}`, settle: 1400,
+    { file: "ccf-02-beta.png", url: `/systems/b/${fx.ccfUngroupedId}`, settle: 1400,
       async act(page) { await arrange(page); await selectPumps(page); await page.getByRole("button", { name: /Common-cause group/i }).click(); await wait(900); } },
-    { file: "ccf-03-grouped.png", url: `/rbds/b/${fx.ccfId}`, settle: 1400, act: arrange },
-    { file: "ccf-04-impact.png", url: `/rbds/b/${fx.ccfId}`, settle: 900, act: calculate },
+    { file: "ccf-03-grouped.png", url: `/systems/b/${fx.ccfId}`, settle: 1400, act: arrange },
+    { file: "ccf-04-impact.png", url: `/systems/b/${fx.ccfId}`, settle: 900, act: calculate },
     // Safety function: a second valve alongside the first, in a common-cause group.
-    { file: "sif-03-two-valves.png", url: `/rbds/b/${fx.sifId}`, settle: 1600, act: arrange },
+    { file: "sif-03-two-valves.png", url: `/systems/b/${fx.sifId}`, settle: 1600, act: arrange },
     // Condition-based risk: the new-model page with the demo fleet's two tables,
     // the risk table, one unit's view, and a unit as an RBD block.
-    { file: "cbr-01-new.png", url: "/modelling/joint/new", settle: 1500,
+    { file: "cbr-01-new.png", url: "/models/joint/new", settle: 1500,
       async act(page) {
-        await chooseOption(page, "Lifetimes: one row per unit", /^Pump lives/);
-        await chooseOption(page, "Readings: one row per reading", /^Pump vibration/);
+        await chooseOption(page, "Dataset", /^Pump lives/);
         await page.getByLabel("load changes the risk").check();
         await page.getByLabel("load changes the path").check();
         await wait(800);
       } },
-    { file: "cbr-02-risk.png", url: `/modelling/joint/${fx.joint.modelId}`, settle: 3000 },
-    { file: "cbr-03-unit.png", url: `/modelling/joint/${fx.joint.modelId}`, settle: 3000,
+    { file: "cbr-02-risk.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000 },
+    { file: "cbr-03-unit.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000,
       async act(page) {
-        await page.locator("#joint-unit-view").evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 80));
+        // Risk now shows the riskiest unit beside the table (no scrolling: the tab fits the screen).
         await page.locator(".joint-unit-sum").waitFor({ timeout: 20000 }); await wait(2000);
       } },
-    { file: "cbr-04-rbd.png", url: `/rbds/b/${fx.joint.rbdId}`, settle: 1600,
+    { file: "cbr-04-rbd.png", url: `/systems/b/${fx.joint.rbdId}`, settle: 1600,
       async act(page) { await page.locator(".rbd-comp", { hasText: "Pump P8" }).dblclick(); await wait(1500); } },
     // Sharing: the Share dialog on a model of your own.
-    { file: "share-01-dialog.png", url: `/modelling/m/${fx.ownModelId}`, settle: 2500,
+    { file: "share-01-dialog.png", url: `/models/m/${fx.ownModelId}`, settle: 2500,
       async act(page) {
-        await page.locator(".page-header .ovm button").first().click(); await wait(400);
-        await page.getByRole("button", { name: /^Share$/ }).click(); await wait(1200);
+        // Share is a button at the top right of a model's page.
+        await page.locator(".page-header").getByRole("button", { name: /^Share$/ }).click(); await wait(1200);
       } },
     // --- Outage history: a year of real outages on a saved pump station ---
-    { file: "outage-01-history.png", url: `/rbds/b/${fx.outageId}`, settle: 1600,
+    { file: "outage-01-history.png", url: `/systems/b/${fx.outageId}`, settle: 1600,
       async act(page) {
         await page.locator(".rbd-tabs .tab", { hasText: /^Outage history$/ }).click();
         await page.locator(".rbd-avail-hero").waitFor({ timeout: 30000 }); await wait(2500);
       } },
-    { file: "outage-02-fit.png", url: `/rbds/b/${fx.outageId}`, settle: 1600,
+    { file: "outage-02-fit.png", url: `/systems/b/${fx.outageId}`, settle: 1600,
       async act(page) {
         await page.locator(".rbd-tabs .tab", { hasText: /^Outage history$/ }).click();
         await page.locator(".rbd-avail-hero").waitFor({ timeout: 30000 }); await wait(1000);
@@ -875,29 +1008,29 @@ async function main() {
         await wait(800);
       } },
     // --- Network: the builder, then the Calculator at 10 years ---
-    { file: "network-01-builder.png", url: `/rbds/b/${fx.networkId}`, settle: 2000 },
-    { file: "network-02-result.png", url: `/rbds/b/${fx.networkId}`, settle: 1600,
+    { file: "network-01-builder.png", url: `/systems/b/${fx.networkId}`, settle: 2000 },
+    { file: "network-02-result.png", url: `/systems/b/${fx.networkId}`, settle: 1600,
       async act(page) {
         await page.locator(".rbd-tabs .tab", { hasText: /^Calculator$/ }).click(); await wait(600);
         await page.locator(".rbd-network-controls input[type=number]").fill("10");
         await page.getByText(/stay connected/).first().waitFor({ timeout: 30000 }); await wait(2000);
       } },
     // --- Targets and design (rbd-targets-and-design) ---
-    { file: "targets-01-allocate.png", url: `/rbds/b/${fx.design?.train}`, settle: 1600,
+    { file: "targets-01-allocate.png", url: `/systems/b/${fx.design?.train}`, settle: 1600,
       async act(page) {
         await rbdTab(page, "Targets");
         await page.getByLabel("Mission time (hours)").fill("500");
         await page.getByRole("button", { name: /^Allocate$/ }).click();
         await page.locator(".rbd-targets-result").waitFor({ timeout: 30000 }); await wait(800);
       } },
-    { file: "targets-02-availability.png", url: `/rbds/b/${fx.design?.repairable}`, settle: 1600,
+    { file: "targets-02-availability.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
       async act(page) {
         await rbdTab(page, "Targets");
         await page.getByRole("button", { name: /^Allocate$/ }).click();
         await page.locator(".rbd-targets-result").waitFor({ timeout: 30000 }); await wait(800);
         await scrollTo(page.locator(".rbd-targets-result"), 260);
       } },
-    { file: "targets-03-design.png", url: `/rbds/b/${fx.design?.train}`, settle: 1600,
+    { file: "targets-03-design.png", url: `/systems/b/${fx.design?.train}`, settle: 1600,
       async act(page) {
         await rbdTab(page, "Design");
         await press(page, "Cheapest to reach a target"); await wait(300);
@@ -907,7 +1040,7 @@ async function main() {
         await page.locator(".rbd-design-result").waitFor({ timeout: 60000 }); await wait(1500);
         await scrollTo(page.locator(".rbd-design-result"), 120);
       } },
-    { file: "targets-04-cheapest.png", url: `/rbds/b/${fx.design?.repairable}`, settle: 1600,
+    { file: "targets-04-cheapest.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
       async act(page) {
         await rbdTab(page, "Design");
         await page.getByRole("button", { name: /^Find the cheapest design$/ }).click();
@@ -915,12 +1048,12 @@ async function main() {
         await scrollTo(page.locator(".rbd-cheapest-result"), 120);
       } },
     // --- Phased missions ---
-    { file: "phases-01-editor.png", url: `/rbds/b/${fx.design?.flight}`, settle: 1600,
+    { file: "phases-01-editor.png", url: `/systems/b/${fx.design?.flight}`, settle: 1600,
       async act(page) {
         await builderMenu(page, /^Phased mission/); await wait(800);
         await page.locator(".rbd-phase-needs summary").nth(1).click(); await wait(500);
       } },
-    { file: "phases-02-result.png", url: `/rbds/b/${fx.design?.flight}`, settle: 1400,
+    { file: "phases-02-result.png", url: `/systems/b/${fx.design?.flight}`, settle: 1400,
       async act(page) {
         await calculate(page);
         await page.locator(".rbd-mission-body").waitFor({ timeout: 30000 }); await wait(1500);
@@ -928,7 +1061,7 @@ async function main() {
         await scrollTo(page.locator(".rbd-mission"), 40);
       } },
     // --- Production availability ---
-    { file: "production-01-capacity.png", url: `/rbds/b/${fx.design?.solar}`, settle: 1600,
+    { file: "production-01-capacity.png", url: `/systems/b/${fx.design?.solar}`, settle: 1600,
       async act(page) {
         await page.locator(".rbd-comp", { hasText: "Inverter 1" }).dblclick(); await wait(1200);
         // Scroll the dialog's body to its end, where the Capacity section is.
@@ -939,7 +1072,7 @@ async function main() {
         });
         await wait(500);
       } },
-    { file: "production-02-result.png", url: `/rbds/b/${fx.design?.solar}`, settle: 1400,
+    { file: "production-02-result.png", url: `/systems/b/${fx.design?.solar}`, settle: 1400,
       async act(page) {
         await calculate(page);
         await page.locator(".rbd-production-body").waitFor({ timeout: 30000 }); await wait(1000);
@@ -947,28 +1080,28 @@ async function main() {
         await scrollTo(page.locator(".rbd-production"), 40);
       } },
     // --- Costs, intervals and what to improve ---
-    { file: "costs-01-block.png", url: `/rbds/b/${fx.design?.repairable}`, settle: 1600,
+    { file: "costs-01-block.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
       async act(page) {
         await page.locator(".rbd-comp", { hasText: "Pump A" }).dblclick(); await wait(1000);
         await page.locator(".modal summary", { hasText: /^Costs/ }).first().evaluate((el) => el.scrollIntoView({ block: "center" }));
         await wait(500);
       } },
-    { file: "costs-02-diagram.png", url: `/rbds/b/${fx.design?.repairable}`, settle: 1600,
+    { file: "costs-02-diagram.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
       async act(page) { await builderMenu(page, /^Costs…/); await wait(800); } },
-    { file: "costs-03-ownership.png", url: `/rbds/b/${fx.design?.repairable}`, settle: 1400,
+    { file: "costs-03-ownership.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1400,
       async act(page) {
         await calculate(page);
         await page.locator("summary", { hasText: /^Details$/ }).last().click(); await wait(1500);
         await scrollTo(page.locator(".ds-section-h", { hasText: "Cost of ownership" }), 40);
       } },
-    { file: "costs-04-intervals.png", url: `/rbds/b/${fx.design?.repairable}`, settle: 1600,
+    { file: "costs-04-intervals.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
       async act(page) {
         await rbdTab(page, "Design");
         await page.getByRole("button", { name: /^Choose intervals$/ }).click();
         await page.locator(".rbd-intervals .rbd-compare-verdict").waitFor({ timeout: 90000 }); await wait(1000);
         await scrollTo(page.locator(".rbd-intervals"), 40);
       } },
-    { file: "costs-05-improve.png", url: `/rbds/b/${fx.design?.repairable}`, settle: 1400,
+    { file: "costs-05-improve.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1400,
       async act(page) {
         await calculate(page);
         await page.locator(".rbd-improve").getByRole("radio", { name: "Cost" }).click();
@@ -1040,9 +1173,11 @@ async function main() {
       outageId: await seedOutageRbd(),
       networkId: await seedNetworkRbd(),
       design: await seedDesignRbds(),
-      rcmStudyId: await seedRcmStudy(),
+      uav: await seedSampleProduct(config),
+      signals: await seedSignals(config),
       teamId: await seedTeam(),
     };
+    fx.report = await seedUavReport(fx.uav);
     try {
       await shoot(pick(fixtureShots(fx)));
     } finally {
@@ -1056,7 +1191,23 @@ async function main() {
         await fetch(`${BASE}/api/models/${id}`, { method: "DELETE" }).catch(() => {});
       }
       await fetch(`${BASE}/api/joint/models/${fx.joint.modelId}`, { method: "DELETE" }).catch(() => {});
-      await fetch(`${BASE}/api/rcm/studies/${fx.rcmStudyId}`, { method: "DELETE" }).catch(() => {});
+      if (fx.uav?.added) {
+        for (const id of [...fx.uav.tops, fx.uav.id]) {
+          await fetch(`${BASE}/api/maintenance/positions/${id}/retire`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: "guide capture", cascade: true }),
+          }).catch(() => {});
+        }
+        if (fx.uav.rbdId) await fetch(`${BASE}/api/rbds/${fx.uav.rbdId}`, { method: "DELETE" }).catch(() => {});
+      }
+      if (fx.signals) {
+        await fetch(`${BASE}/api/maintenance/signals/channels/${fx.signals.channelId}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag: "" }),
+        }).catch(() => {});
+        await fetch(`${BASE}/api/maintenance/positions/${fx.signals.positionId}/retire`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "guide capture" }),
+        }).catch(() => {});
+      }
       await fetch(`${BASE}/api/teams/${fx.teamId}`, { method: "DELETE" }).catch(() => {});
       for (const id of [fx.loadshare.datasetId, ...fx.joint.datasetIds]) {
         await fetch(`${BASE}/api/datasets/${id}`, { method: "DELETE" }).catch(() => {});

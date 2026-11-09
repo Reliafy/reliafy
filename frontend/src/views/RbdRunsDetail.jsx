@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { downloadRbdRun, getRbdRun, rerunRbdRun } from "../api.js";
+import LoadFailed from "../components/LoadFailed.jsx";
+import { cancelRbdJob, downloadRbdRun, getRbdRun, rerunRbdRun } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import { ResultDetails } from "../components/ui/ResultSummary.jsx";
@@ -10,6 +11,8 @@ import { unitInText } from "../components/unitText.js";
 import { formatNumber } from "../format.js";
 import { byText, jobStatusLine, runsPath, runtimeVsQuote, statusChip, viaText } from "../rbdRuns.js";
 import "../components/RbdRuns.css";
+import { RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const when = (iso) =>
   iso ? new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -54,12 +57,27 @@ export default function RbdRunsDetail() {
     };
   }, [runId]);
 
+  // The runner can cancel a run still queued or running (its result, if it
+  // still finishes, is thrown away).
+  const cancel = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await cancelRbdJob(run.run_id);
+      setRun((r) => ({ ...r, status: "cancelled", error: "Cancelled." }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const rerun = async () => {
     setBusy(true);
     setError(null);
     try {
       const out = await rerunRbdRun(runId);
-      navigate(`/rbds/runs/${out.run_id}`);
+      navigate(`/systems/runs/${out.run_id}`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -71,8 +89,8 @@ export default function RbdRunsDetail() {
   if (!run) {
     return (
       <div className="app rbd-runs">
-        <PageHeader crumbs={[{ label: "RBDs", to: "/rbds" }, { label: "Simulation runs", to: runsPath() }]} title="Simulation run" />
-        {error ? <div className="card error">{error}</div> : <div className="card empty">Loading…</div>}
+        <PageHeader crumbs={[{ label: SYSTEM_MODELS_LABEL, to: RBDS_PATH }, { label: "Simulation runs", to: runsPath() }]} title="Simulation run" />
+        {error ? <LoadFailed error={error} to={runsPath()} label="See all simulation runs" /> : <div className="card empty">Loading…</div>}
       </div>
     );
   }
@@ -103,8 +121,9 @@ export default function RbdRunsDetail() {
 
   return (
     <div className="app rbd-runs">
+      <PageTitle name={run?.rbd_name} />
       <PageHeader
-        crumbs={[{ label: "RBDs", to: "/rbds" }, { label: "Simulation runs", to: runsPath(run.rbd_id) }]}
+        crumbs={[{ label: SYSTEM_MODELS_LABEL, to: RBDS_PATH }, { label: "Simulation runs", to: runsPath(run.rbd_id) }]}
         title={run.rbd_name || "Simulation run"}
         badges={
           <>
@@ -120,7 +139,7 @@ export default function RbdRunsDetail() {
           </button>
         }
         actions={run.rbd_id ? (
-          <button type="button" className="secondary" onClick={() => navigate(`/rbds/b/${run.rbd_id}`)}>Open diagram</button>
+          <button type="button" className="secondary" onClick={() => navigate(`/systems/b/${run.rbd_id}`)}>Open diagram</button>
         ) : null}
         menu={
           done ? (
@@ -140,7 +159,17 @@ export default function RbdRunsDetail() {
       {error && <div className="card error">{error}</div>}
 
       {(run.status === "queued" || run.status === "running") && (
-        <div className="card rbd-runs-pending" role="status" aria-live="polite">{jobStatusLine(run)}</div>
+        <div className="card rbd-runs-pending" role="status" aria-live="polite">
+          {jobStatusLine(run)}
+          {run.by?.you && (
+            <div className="rbd-upgrade-actions">
+              <button type="button" className="secondary" onClick={cancel} disabled={busy}>Cancel this run</button>
+            </div>
+          )}
+        </div>
+      )}
+      {run.status === "cancelled" && (
+        <div className="card note" role="status">This run was cancelled before it finished, so it has no results.</div>
       )}
       {run.status === "failed" && <div className="card error">{run.error || "The calculation failed."}</div>}
 

@@ -5,14 +5,20 @@
 
 export const PLACE_KINDS = ["Position", "Location", "Item", "WorkOrder"];
 
-const WORDS = { Position: "position", Location: "location", Item: "item", WorkOrder: "work order" };
-const PATHS = { Position: "positions", Location: "locations", Item: "items", WorkOrder: "work-orders" };
+// A failure report (the Explorer's Failure reports tab) holds photos too, but
+// isn't a place a photo is linked or moved to from the picker.
+const WORDS = { Position: "position", Location: "location", Item: "item", WorkOrder: "work order", FailureReport: "failure report" };
+// Each kind's pages: the register's under Assets, work orders under Maintenance.
+const PATHS = {
+  Position: "/asset-register/positions/", Location: "/asset-register/locations/", Item: "/asset-register/items/",
+  WorkOrder: "/maintenance/work-orders/",
+};
 
 // "work order" for "WorkOrder"; also takes the lower-case kinds work order
 // subjects use ("position").
 export function placeKindWord(kind) {
   const k = normaliseKind(kind);
-  return WORDS[k] || String(kind || "").toLowerCase();
+  return WORDS[k] || WORDS[kind] || String(kind || "").toLowerCase();
 }
 
 export function normaliseKind(kind) {
@@ -24,7 +30,7 @@ export function normaliseKind(kind) {
 // The page a place is on, or null for a kind without one.
 export function placePath(place) {
   const k = normaliseKind(place?.kind);
-  return k && place.id ? `/maintenance/${PATHS[k]}/${place.id}` : null;
+  return k && place.id ? `${PATHS[k]}${place.id}` : null;
 }
 
 // "also on Pool pump and 2 more" under a thumbnail; "" when it's only here.
@@ -70,4 +76,20 @@ export function placeOptions(kind, lists) {
     }));
   }
   return [];
+}
+
+// The photo viewer's keys: ← and → step through the gallery, wrapping at the
+// ends; Home and End jump to the first and last. Any other key: null.
+export function photoStep(index, count, key) {
+  if (count < 2 || index < 0) return null;
+  if (key === "ArrowRight") return (index + 1) % count;
+  if (key === "ArrowLeft") return (index - 1 + count) % count;
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  return null;
+}
+
+// The words a thumbnail button reads out: "Open photo 2 of 5: Nameplate".
+export function photoLabel(index, count, caption) {
+  return `Open photo ${index + 1} of ${count}${caption ? `: ${caption}` : ""}`;
 }

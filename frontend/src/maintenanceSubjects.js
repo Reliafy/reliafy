@@ -12,10 +12,10 @@ export function taskUnits(kind) {
   return kind === "location" ? CALENDAR_UNITS : ALL_UNITS;
 }
 
-// The page a subject is on: /maintenance/items/<id>.
+// The page a subject is on: /asset-register/items/<id>.
 export function subjectPath(subject) {
   if (!subject?.id || !PATHS[subject.kind]) return null;
-  return `/maintenance/${PATHS[subject.kind]}/${subject.id}`;
+  return `/asset-register/${PATHS[subject.kind]}/${subject.id}`;
 }
 
 // The API path for a subject's tasks or points: /api/maintenance/items/<id>/tasks.
@@ -51,4 +51,29 @@ export function whileStoredText(task) {
 // The kinds of work a work order can record: a replacement only at a position.
 export function actionKinds(kinds, wo) {
   return wo?.can_replace === false ? kinds.filter((k) => k.id !== "replace") : kinds;
+}
+
+// Task kinds whose work is a check: it finds a problem, it doesn't replace anything.
+const CHECK_OUTCOMES = ["on_condition", "failure_finding"];
+
+// What a work order's close form starts at, from what the work is for. A round or an
+// inspection: "inspect". A check (an on-condition or failure-finding task, or a task
+// that asks for a reading): "checked" (sent as an inspection that found it OK). A
+// fixed-interval task: a replacement where one can be recorded. Otherwise as before:
+// a replacement at a position, a repair elsewhere. Only the form's starting point:
+// the user picks what was really done.
+export function defaultCloseKind(wo) {
+  const atPosition = wo?.can_replace !== false;
+  if (wo?.type === "inspection" || wo?.subject?.kind === "location") return "inspect";
+  const tasks = wo?.tasks?.length ? wo.tasks : wo?.task ? [wo.task] : [];
+  const read = new Set((wo?.reading_points || [])
+    .filter((p) => p.task_id && (p.why || []).some((w) => w === "tool" || w === "trigger")).map((p) => p.task_id));
+  const isCheck = (t) => CHECK_OUTCOMES.includes(t.outcome) || (!t.outcome && read.has(t.id));
+  if (tasks.length && tasks.every(isCheck)) return "checked";
+  return atPosition ? "replace" : "repair";
+}
+
+// A close form's action as the API takes it: "checked" is an inspection that found it OK.
+export function closeActionKind(kind) {
+  return kind === "checked" ? { kind: "inspect", finding: "ok" } : { kind };
 }

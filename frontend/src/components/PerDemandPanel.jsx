@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
+import { ErrorNotice } from "./StorageCap.jsx";
 import { createPerDemandModel, getDataset, listDatasets } from "../api.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
 
 const isCount = (v, min) => v !== "" && Number.isInteger(Number(v)) && Number(v) >= min;
 const pct = (v) => `${(v * 100).toFixed(v > 0.99 || v < 0.01 ? 2 : 1)}%`;
@@ -45,8 +48,9 @@ export default function PerDemandPanel({ onCreated, onBack }) {
     }
   };
 
-  const nc = Number(conf);
-  const confValid = conf !== "" && nc > 0 && nc < 100;
+  const confCheck = readPercents("perDemand", { confidence: conf }).checks.confidence;
+  const confValid = confCheck.state === "ok";
+  const nc = confValid ? confCheck.percent : Number(conf);
   const rowOk = (r) => isCount(r.demands, 1) && isCount(r.failures, 0) && Number(r.failures) <= Number(r.demands);
   const entered = source === "enter" && rows.every(rowOk);
   const fromData = source === "dataset" && datasetId && cols.demands && cols.failures;
@@ -71,7 +75,7 @@ export default function PerDemandPanel({ onCreated, onBack }) {
             ...(cols.batch ? { batch_column: cols.batch } : {}) };
       onCreated(await createPerDemandModel(name.trim(), body, nc / 100));
     } catch (err) {
-      setError(err.message);
+      setError(err);
       setBusy(false);
     }
   };
@@ -157,11 +161,9 @@ export default function PerDemandPanel({ onCreated, onBack }) {
         </div>
       )}
 
-      <label className="login-field" style={{ maxWidth: 200, marginTop: "0.8rem" }}>
-        <span>Confidence (%)</span>
-        <input type="number" inputMode="numeric" min="1" max="99" step="1" value={conf}
-               onChange={(e) => setConf(e.target.value)} />
-      </label>
+      <div style={{ marginTop: "0.8rem" }}>
+        <PercentField className="login-field" label="Confidence" value={conf} onChange={setConf} check={confCheck} />
+      </div>
 
       {entered && (rLower != null ? (
         <p className="muted-line" style={{ marginBottom: 0 }}>
@@ -175,7 +177,7 @@ export default function PerDemandPanel({ onCreated, onBack }) {
           come with the model.
         </p>
       ))}
-      {error && <div className="error">{error}</div>}
+      <ErrorNotice error={error} />
 
       <div className="fit-flow-foot">
         <span />

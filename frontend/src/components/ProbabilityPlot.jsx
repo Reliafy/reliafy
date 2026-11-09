@@ -5,7 +5,9 @@ import { GRID, band, dataPoints, fitLine } from "../plotTheme.js";
 // linearised both axes with the distribution's own probability-paper
 // transforms, so here we draw on plain linear axes and just position the
 // supplied tick values/labels.
-export default function ProbabilityPlot({ plot, unit, download = null }) {
+// ``bandName`` / ``lineName``: the legend's words (a Bayesian update's band is
+// a credible one, its line the updated model).
+export default function ProbabilityPlot({ plot, unit, download = null, fill = false, bandName = "95% CI", lineName = "Fit" }) {
   const { scatter, line, bounds, x_range, y_range, x_ticks, y_ticks } = plot;
   const xTitle = unit ? `Time (${unit})` : "Time";
 
@@ -15,9 +17,9 @@ export default function ProbabilityPlot({ plot, unit, download = null }) {
     ...(bounds ? [band({
       x: [...bounds.x, ...[...bounds.x].reverse()],
       y: [...bounds.upper, ...[...bounds.lower].reverse()],
-      name: "95% CI",
+      name: bandName,
     })] : []),
-    fitLine({ x: line.x, y: line.y, name: "Fit" }),
+    fitLine({ x: line.x, y: line.y, name: lineName }),
     dataPoints({ x: scatter.x, y: scatter.y, name: "Data" }),
   ];
 
@@ -52,5 +54,5 @@ export default function ProbabilityPlot({ plot, unit, download = null }) {
     },
   };
 
-  return <Plot data={traces} layout={layout} download={download} />;
+  return <Plot data={traces} layout={layout} download={download} fill={fill} />;
 }

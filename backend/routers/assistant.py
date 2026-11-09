@@ -31,6 +31,7 @@ from backend.db import get_session
 from backend.services import ai_relay
 from backend.services import assistant as assistant_service
 from backend.services import billing as billing_service
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -160,7 +161,7 @@ def _step(session, user: dict, messages: list) -> JSONResponse:
         try:
             result = assistant_service.step(system, messages, tools)
         except assistant_service.AssistantError as exc:
-            return JSONResponse(status_code=502, content={"detail": str(exc)})
+            return JSONResponse(status_code=502, content={"detail": client_message(exc)})
         usage = result["usage"]
         meter.cost_mc = _cost_mc(usage)
     finally:
@@ -218,7 +219,7 @@ def stream_relay(session, user: dict, messages: list) -> ai_relay.Relay | JSONRe
                         "credit_cents": balance,
                     })
         except assistant_service.AssistantError as exc:
-            emit({"type": "error", "detail": str(exc)})
+            emit({"type": "error", "detail": client_message(exc)})
         except Exception:  # noqa: BLE001
             logger.exception("assistant stream failed")
             emit({"type": "error", "detail": "The assistant hit an unexpected error. Please try again in a moment."})

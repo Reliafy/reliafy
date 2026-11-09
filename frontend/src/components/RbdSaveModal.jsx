@@ -1,8 +1,10 @@
 import { useState } from "react";
 import Modal from "./Modal.jsx";
+import { ErrorNotice } from "./StorageCap.jsx";
 
 // Name and save the current RBD — or (``asNew``) a copy of it under a new id.
-// ``initialError``: why a straight save of a named diagram failed (#303).
+// ``initialError``: why a straight save of a named diagram failed (#303) — the
+// Error itself, so a save refused at the Free limit shows the upgrade card.
 export default function RbdSaveModal({ initialName, onClose, onSubmit, asNew = false, initialError = null }) {
   const [name, setName] = useState(initialName || "");
   const [saving, setSaving] = useState(false);
@@ -15,7 +17,7 @@ export default function RbdSaveModal({ initialName, onClose, onSubmit, asNew = f
     try {
       await onSubmit(name.trim());
     } catch (e) {
-      setError(e.message);
+      setError(e);
       setSaving(false);
     }
   };
@@ -38,7 +40,7 @@ export default function RbdSaveModal({ initialName, onClose, onSubmit, asNew = f
 
   return (
     <Modal title={asNew ? "Save as new RBD" : "Save RBD"} onClose={onClose} locked={saving} footer={footer}>
-      {error && <div className="error">{error}</div>}
+      <ErrorNotice error={error} />
       <input
         className="save-name"
         type="text"

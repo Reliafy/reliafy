@@ -4,11 +4,14 @@ import RecurrentLibrary from "./RecurrentLibrary.jsx";
 import { listRecurrentModels, deleteRecurrentModel } from "../api.js";
 import { PlusIcon, itemName } from "../components/LibRows.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
+import { StorageCapNotice } from "../components/StorageCap.jsx";
 
 const HELP = { guide: "recurrent-events" };
 
-// Modelling › Recurrent: repairable-system models. The fit flow lives on its
-// own page (/modelling/recurrent/new).
+// Models › Repairable: repairable-system models. The fit flow lives on its
+// own page (/models/recurrent/new).
 export default function RecurrentHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
@@ -17,11 +20,9 @@ export default function RecurrentHome() {
   const refresh = () => listRecurrentModels().then((r) => setModels(r.models)).catch(() => setModels([]));
   useEffect(() => { refresh(); }, []);
 
+  const confirm = useConfirm();
   const onDelete = async (m) => {
-    const msg = m.is_sample
-      ? `Remove the sample “${itemName(m)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete “${m.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(m, "model", { name: itemName(m) })))) return;
     try {
       await deleteRecurrentModel(m.id);
       refresh();
@@ -30,11 +31,11 @@ export default function RecurrentHome() {
     }
   };
 
-  const newModel = <button onClick={() => navigate("/modelling/recurrent/new")}><PlusIcon /> New model</button>;
+  const newModel = <button onClick={() => navigate("/models/recurrent/new")}><PlusIcon /> New model</button>;
   return (
     <div className="app">
       <SectionHeader
-        section="modelling"
+        section="models"
         title="Repairable models"
         purpose="Repairable systems: is the failure rate improving or worsening?"
         help={HELP}
@@ -42,10 +43,11 @@ export default function RecurrentHome() {
       />
 
       {error && <div className="card error">{error}</div>}
+      <StorageCapNotice kind="models" one="saved model" many="saved models" refreshKey={models} />
 
       <RecurrentLibrary
         models={models}
-        onOpen={(id) => navigate(`/modelling/recurrent/${id}`)}
+        hrefFor={(id) => `/models/recurrent/${id}`}
         onDelete={onDelete}
         help={HELP}
         empty={{

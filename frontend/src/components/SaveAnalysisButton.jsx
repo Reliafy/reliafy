@@ -61,7 +61,7 @@ export default function SaveAnalysisButton({ kind, inputs, defaultName }) {
             <input type="text" value={name} autoFocus onChange={(e) => setName(e.target.value)} />
           </label>
           <p className="muted-line">
-            Saved analyses can be linked as evidence in RCM studies. The result
+            Saved analyses can be linked as evidence for RCM decisions. The result
             is recomputed on the server from your inputs when saved.
           </p>
           {error && <div className="error">{error}</div>}

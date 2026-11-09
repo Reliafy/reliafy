@@ -7,16 +7,17 @@ import { betaSource, bLabel } from "../requirement.js";
 import { formatNumber } from "../format.js";
 import { unitInText } from "./unitText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
 import { percentApiMessage } from "../percent.js";
 
 const num = (s) => (s === "" || s == null ? null : Number(s));
-const frac = (s) => (s === "" || s == null ? null : Number(s) / 100);
 
 // Demonstration test planner: how many units to test, for how long, with how
 // many failures allowed, to show a reliability (or a B-life) at a confidence
 // (SurPyval's test planning). Needs no saved model; ``initial`` (from
-// requirement.js's parseDemoPrefill) starts it from a model's requirement
-// (#295): the B-life, its life, the confidence, the model's unit and its β.
+// requirement.js's parseDemoPrefill) starts it from a link: a requirement
+// (#295: the B-life, its life, the confidence), the model's unit and its β.
 export default function DemonstrationTest({ initial = null }) {
   const [method, setMethod] = useState("attribute");
   const [solveFor, setSolveFor] = useState("units");
@@ -77,23 +78,30 @@ export default function DemonstrationTest({ initial = null }) {
   const shapeShown = betaSrc ? fmtBeta(betaValue) : shape;
   // Both risks (#223): the plan chooses the failures allowed.
   const twoRisk = producerRisk !== "" && producerRisk != null;
+  // The percentages on screen, typed as 95 and sent as 0.95 (percent.js).
+  const pcts = readPercents(
+    "demonstration",
+    { reliability, confidence, design, producerRisk, bLife },
+    ["confidence", "producerRisk", ...(attribute ? ["design", byB ? "bLife" : "reliability"] : [])],
+  );
+  const f = pcts.fractions;
 
   const buildBody = () => {
     const body = {
       method,
-      confidence: frac(confidence),
+      confidence: f.confidence,
       failures: num(failures) ?? 0,
       unit: unit.trim() || null,
     };
-    if (twoRisk) body.producer_risk = frac(producerRisk);
+    if (twoRisk) body.producer_risk = f.producerRisk;
     if (attribute) {
       Object.assign(body, {
         mission_time: num(missionTime),
         shape: betaSrc ? betaValue : num(shape),
-        design_reliability: frac(design),
+        design_reliability: f.design,
       });
       if (byB) body.b_life = num(bLife);
-      else body.reliability = frac(reliability);
+      else body.reliability = f.reliability;
       if (betaSrc) {
         body.shape_model = betaSrc.name;
         if (betaSrc.lower != null && betaSrc.upper != null) body.shape_interval = [betaSrc.lower, betaSrc.upper];
@@ -196,12 +204,12 @@ export default function DemonstrationTest({ initial = null }) {
 
         <div className="strategy-costs">
           {byB
-            ? field("B-life (% failed)", bLife, setBLife, { min: "0.001", max: "99.999" })
+            ? <PercentField label="B-life (% failed)" value={bLife} onChange={setBLife} check={pcts.checks.bLife} />
             : attribute
-            ? field("Target reliability (%)", reliability, setReliability, { min: "0.1", max: "99.999" })
+            ? <PercentField label="Target reliability" value={reliability} onChange={setReliability} check={pcts.checks.reliability} />
             : field("MTBF to demonstrate", mtbf, setMtbf, { min: "0" })}
           {byB && field("Life required", missionTime, setMissionTime, { min: "0" })}
-          {field("Confidence (%)", confidence, setConfidence, { min: "1", max: "99.999" })}
+          <PercentField label="Confidence" value={confidence} onChange={setConfidence} check={pcts.checks.confidence} />
           {attribute && !byB && field("Mission time (optional)", missionTime, setMissionTime, { min: "0" })}
           <label className="calc-t">
             <span>Unit</span>
@@ -227,21 +235,15 @@ export default function DemonstrationTest({ initial = null }) {
               placeholder: "e.g. 2",
             })}
           {attribute
-            ? field(twoRisk ? "Good design's reliability (%)" : "Design's true reliability (%, optional)", design, setDesign, {
-                min: "0.1",
-                max: "99.999",
-                placeholder: "e.g. 99",
-              })
+            ? <PercentField label={twoRisk ? "Good design's reliability" : "Design's true reliability (optional)"}
+                value={design} onChange={setDesign} check={pcts.checks.design} placeholder="e.g. 99" />
             : field(twoRisk ? "Good design's MTBF" : "Design's true MTBF (optional)", design, setDesign, {
                 min: "0",
                 placeholder: "e.g. 3000",
               })}
-          {field("Producer's risk (%, optional)", producerRisk, setProducerRisk, {
-            min: "0.1",
-            max: "99.9",
-            placeholder: "e.g. 20",
-          })}
-          <button onClick={run} disabled={loading}>
+          <PercentField label="Producer's risk (optional)" value={producerRisk} onChange={setProducerRisk}
+            check={pcts.checks.producerRisk} placeholder="e.g. 20" />
+          <button onClick={run} disabled={loading || !pcts.ready}>
             {loading ? "Computing…" : "Compute"}
           </button>
         </div>

@@ -242,7 +242,7 @@ export default function ChatPanel() {
               <p>The AI assistant isn't available yet. Please check back soon.</p>
             ) : (
               <>
-                <p>I can help with reliability engineering and act in Reliafy — fit models, build RBDs, run replacement and failure-finding calculations, track degradation, forecast fleet failures, and build evidence-linked RCM studies.</p>
+                <p>I can help with reliability engineering and act in Reliafy — fit models, build RBDs, run replacement and failure-finding calculations, track degradation, forecast fleet failures, and save the analyses your RCM decisions cite as evidence.</p>
                 <div className="chat-suggest">
                   {[
   "What can you do?",

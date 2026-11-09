@@ -10,6 +10,7 @@ import pytest
 from backend.maintenance.series import MongoSeries
 from backend.maintenance.service import PROJECTION_VERSION, PROJECTORS, Invalid, Maintenance
 from backend.maintenance.store import GraphStore, MongoEventLog
+from backend.tests.rcm_tree import position_with_rcm
 
 ORG = "user-f"
 
@@ -18,8 +19,8 @@ def _ts(days_ago: float) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
 
 
-class _Study:
-    id, name, system = "s1", "Pool RCM", "Pool pump"
+class _Rcm:
+    name = "Pool pump"
     functions = [{"id": "f", "text": "Circulate", "failures": [{"id": "ff", "text": "No flow", "modes": [
         {"id": "m1", "text": "Seal worn", "consequence": "operational",
          "decision": {"outcome": "fixed_interval", "interval": 500, "interval_unit": "hours",
@@ -34,7 +35,7 @@ def test_an_automated_counter_drives_a_task_by_use(backend):
     else:
         store = GraphStore(":memory:", PROJECTORS)
     m = Maintenance(store, ORG)
-    pos = m.position_from_rcm(_Study())["position"]
+    pos = position_with_rcm(m, _Rcm.functions, _Rcm.name)["position"]
     with pytest.raises(Invalid):
         m.add_point(pos["id"], "Run hours", kind="counter", unit="hours", source="automated")  # no tag
     point = m.add_point(pos["id"], "Run hours", kind="counter", unit="hours", source="automated",

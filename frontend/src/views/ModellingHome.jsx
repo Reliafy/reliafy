@@ -6,20 +6,21 @@ import { deleteModel } from "../api.js";
 import { PlusIcon, itemName } from "../components/LibRows.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import UnsavedFitReminder from "../components/UnsavedFitReminder.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
+import { StorageCapNotice } from "../components/StorageCap.jsx";
 
 const HELP = { walkthrough: "fit", guide: "fit-your-first-model" };
 
-// Modelling › Life models: the life-data models list.
+// Models › Non-repairable: the life-data models list.
 export default function ModellingHome() {
   const navigate = useNavigate();
   const { models, loading, refresh } = useModels();
   const [error, setError] = useState(null);
 
+  const confirm = useConfirm();
   const onDelete = async (m) => {
-    const msg = m.is_sample
-      ? `Remove the sample “${itemName(m)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete “${m.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(m, "model", { name: itemName(m) })))) return;
     try {
       await deleteModel(m.id);
       refresh();
@@ -28,12 +29,12 @@ export default function ModellingHome() {
     }
   };
 
-  const newModel = <button onClick={() => navigate("/modelling/new")}><PlusIcon /> New model</button>;
+  const newModel = <button onClick={() => navigate("/models/new")}><PlusIcon /> New model</button>;
   return (
     <div className="app">
       <SectionHeader
-        section="modelling"
-        title="Life models"
+        section="models"
+        title="Non-repairable models"
         purpose="Life distributions and proportional-hazards models fitted to failure and running times."
         help={HELP}
         primary={newModel}
@@ -42,14 +43,15 @@ export default function ModellingHome() {
       <UnsavedFitReminder />
 
       {error && <div className="card error">{error}</div>}
+      <StorageCapNotice kind="models" one="saved model" many="saved models" refreshKey={models} />
 
       <ModelLibrary
         models={loading ? null : models}
-        onOpen={(id) => navigate(`/modelling/m/${id}`)}
+        hrefFor={(id) => `/models/m/${id}`}
         onDelete={onDelete}
         help={HELP}
         empty={{
-          title: "No life models yet",
+          title: "No non-repairable models yet",
           body: "Upload or paste failure times, fit a distribution and save it to see it here.",
           action: newModel,
         }}

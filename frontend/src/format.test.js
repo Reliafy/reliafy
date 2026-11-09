@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatNumber, formatPercent, formatWithUnit } from "./format.js";
+import { formatCell, formatNumber, formatPercent, formatWithUnit, singularUnit } from "./format.js";
 
 test("formatNumber: three significant figures with separators", () => {
   assert.equal(formatNumber(4573.2), "4,570");
@@ -45,4 +45,38 @@ test("formatWithUnit", () => {
   assert.equal(formatWithUnit(4573.2, "hours"), "4,570 hours");
   assert.equal(formatWithUnit(12, ""), "12");
   assert.equal(formatWithUnit(null, "hours"), "—");
+});
+
+test("formatWithUnit: one of a unit reads singular", () => {
+  assert.equal(formatWithUnit(1, "hours"), "1 hour");
+  assert.equal(formatWithUnit(1, "cycles"), "1 cycle");
+  assert.equal(formatWithUnit(1, "flight hours"), "1 flight hour");
+  assert.equal(formatWithUnit(1, "Kilometres"), "1 Kilometre");
+  assert.equal(formatWithUnit(0.9996, "hours"), "1 hour"); // shown as 1, read as 1
+  assert.equal(formatWithUnit(1.5, "hours"), "1.5 hours");
+  assert.equal(formatWithUnit(0, "hours"), "0 hours");
+  assert.equal(formatWithUnit(2, "hours"), "2 hours");
+  assert.equal(formatWithUnit(1.04, "hours"), "1.04 hours");
+  assert.equal(formatWithUnit(1, "hour"), "1 hour");
+});
+
+test("singularUnit leaves anything that isn't a plain plural alone", () => {
+  for (const u of ["kWh", "km", "ms", "hrs", "MPa", "Celsius", "batteries", "boxes", "starts/day", "%", ""]) {
+    assert.equal(singularUnit(u), u, u);
+  }
+  assert.equal(singularUnit("Flights"), "Flight");
+  assert.equal(singularUnit("miles"), "mile");
+});
+
+test("formatCell: long fractions read at four figures; ids and text untouched", () => {
+  assert.equal(formatCell(3.438740588637919), "3.439");
+  assert.equal(formatCell("3.438740588637919"), "3.439");
+  assert.equal(formatCell(0.000123456789), "1.235e-4");
+  assert.equal(formatCell(1.5), "1.5");
+  assert.equal(formatCell("0.25"), "0.25");
+  assert.equal(formatCell(1200), "1200");
+  assert.equal(formatCell("HT-12"), "HT-12");
+  assert.equal(formatCell("2024-03-01"), "2024-03-01");
+  assert.equal(formatCell(null), "");
+  assert.equal(formatCell(0), "0");
 });

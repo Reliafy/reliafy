@@ -1,0 +1,104 @@
+/* The Explorer's LSA tab (LsaPanel.jsx, LsaTask.jsx). One column; rows wrap on a
+   phone so nothing scrolls sideways. */
+.pk-purpose { margin: 0 0 10px; }
+.pk-count { margin: 0; }
+.pk-members, .pk-pick { list-style: none; margin: 0; padding: 0; }
+.pk-member-name { font-weight: 600; overflow-wrap: anywhere; }
+.pk-sub { display: block; overflow-wrap: anywhere; }
+.pk-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.pk-when { white-space: nowrap; font-size: 13px; }
+.pk-empty p { margin: 0 0 6px; }
+.pk-back { margin: 0 0 8px; display: inline-block; }
+.pk-view-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
+.pk-view-head > div { min-width: 0; }
+.pk-view-name { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+.pk-view-head .pk-chips { margin-top: 4px; gap: 6px; }
+.pk-member { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.pk-member-main { flex: 1 1 200px; min-width: 0; }
+.pk-dialog-row { display: flex; flex-wrap: wrap; gap: 0 12px; }
+.pk-dialog-row > * { flex: 1 1 140px; min-width: 0; }
+.pk-proposal { list-style: none; margin: 8px 0 0; padding: 0; }
+.pk-prow { display: flex; gap: 8px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--border); }
+.pk-prow > input[type="checkbox"] { margin-top: 10px; }
+.pk-prow.pk-layer-row { padding-left: 22px; }
+.pk-prow-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pk-name-input { width: 100%; min-width: 0; box-sizing: border-box; }
+.pk-warn { display: block; color: var(--warning, inherit); }
+.pk-left-out { margin-top: 8px; font-size: 13px; }
+.pk-check { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; }
+.pk-pick { max-height: 280px; overflow-y: auto; margin-bottom: 8px; }
+
+/* The task table (formatted as the RCM table: RcmWorksheet.css's rw-*). */
+.pk-panel.rw { display: block; }
+.pk-bar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 8px; }
+.pk-filter { flex: 1 1 240px; max-width: 420px; min-width: 0; }
+.pk-filter input { padding: 5px 0; }
+.pk-cols { position: absolute; right: 0; top: 0; z-index: 20; }
+.pk-grid { max-height: calc(100vh - 260px); min-height: 120px; }
+.pk-table { position: relative; }
+.pk-trow { position: relative; min-height: 30px; }
+.pk-trow .rw-c { padding-top: 4px; padding-bottom: 4px; }
+.pk-tick { justify-content: center; padding: 0; }
+.rw-h.pk-tick { position: sticky; left: 0; z-index: 2; background: var(--surf-2); }
+.rw-c.pk-tick { position: sticky; left: 0; z-index: 1; background: inherit; }
+.pk-trow .rw-c.pk-tick { background: var(--surf); }
+.pk-trow.focus .rw-c.pk-tick, .pk-trow:hover .rw-c.pk-tick { background: linear-gradient(var(--acc-hover), var(--acc-hover)), var(--surf); }
+.pk-two { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.pk-two .rw-sum { white-space: nowrap; }
+.pk-kind { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.pk-overdue { color: var(--danger); font-weight: 600; }
+.pk-pkg-link { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; text-align: left; }
+.pk-none { padding: 10px 12px; margin: 0; }
+.pk-actions {
+  position: sticky; bottom: 0; z-index: 8; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+  margin-top: 8px; padding: 8px 12px; background: var(--surf-2); border: 1px solid var(--line); border-radius: var(--r-sm);
+  box-shadow: 0 -2px 8px -4px rgba(20, 23, 28, 0.18);
+}
+.pk-actions-n { font-weight: 600; }
+.pk-actions-note { flex-basis: 100%; }
+@media (max-width: 640px) {
+  .pk-grid { max-height: 60vh; }
+  .pk-filter input { padding: 9px 0; }
+}
+
+/* The LSA: counts and hours right-aligned; the task's name opens its LSA. */
+.pk-num { display: block; width: 100%; text-align: right; font-variant-numeric: tabular-nums; }
+.pk-task-link { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; text-align: left; }
+
+/* What the ticked tasks (or a package's visit) need together. */
+.lsa-rollup { flex-basis: 100%; font-size: 13px; min-width: 0; }
+.lsa-rollup-title { font-weight: 600; display: block; margin-bottom: 2px; }
+.lsa-rollup dl { margin: 0; display: grid; gap: 2px; }
+.lsa-rollup-line { display: flex; flex-wrap: wrap; gap: 0 6px; min-width: 0; }
+.lsa-rollup dt { color: var(--ink-2, inherit); font-weight: 600; }
+.lsa-rollup dt::after { content: ":"; }
+.lsa-rollup dd { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+.pk-view .lsa-rollup { margin: 12px 0; }
+
+/* One task's LSA. */
+.lsa-task { max-width: 820px; }
+.lsa-modes { margin: 0 0 8px; font-size: 13px; }
+.lsa-modes ul { margin: 2px 0 0; padding-left: 18px; }
+.lsa-total { margin: 4px 0 12px; font-weight: 600; }
+.lsa-sec { padding: 10px 0; border-top: 1px solid var(--border); }
+.lsa-sec-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin: 0 0 4px; }
+.lsa-state { font-size: 12px; font-weight: 400; }
+.lsa-saved { color: var(--ok, var(--acc)); }
+.lsa-err { color: var(--danger); }
+.lsa-hint { margin: 0 0 6px; }
+.lsa-rows { list-style: none; margin: 0 0 4px; padding: 0; }
+.lsa-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 4px 0; }
+.lsa-row input, .lsa-row select, .lsa-duration input { min-width: 0; box-sizing: border-box; }
+.lsa-wide { flex: 1 1 180px; }
+.lsa-row select { flex: 1 1 160px; max-width: 100%; }
+.lsa-num { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; }
+.lsa-num input { width: 72px; }
+.lsa-qty { width: 72px; }
+.lsa-unit { width: 70px; }
+.lsa-remove { min-width: 32px; min-height: 32px; }
+.lsa-add { margin-top: 2px; }
+.lsa-duration { display: flex; width: fit-content; margin-top: 8px; }
+.lsa-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 12px; }
+.lsa-field { display: flex; flex-direction: column; gap: 2px; font-size: 13px; min-width: 0; }
+.lsa-field input { min-width: 0; }
+.lsa-full { width: 100%; box-sizing: border-box; }

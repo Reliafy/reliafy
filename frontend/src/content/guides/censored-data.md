@@ -3,7 +3,7 @@ title: "Handle censored data (units that haven't failed)"
 task: "How do I include units that are still running, or failed between inspections?"
 category: "Life data modelling"
 prerequisites: "A dataset where not every unit has failed, or where failure times aren't exactly known."
-related_href: "/modelling/new"
+related_href: "/models/new"
 related_label: "Fit a model"
 order: 5
 ---

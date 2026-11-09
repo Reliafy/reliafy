@@ -22,6 +22,7 @@ from backend.db import get_session
 from backend.services import models as models_service
 from backend.services import rbd_tvc
 from backend.services.access import AccessCtx, get_access
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +50,9 @@ def tvc_preview(
     try:
         return JSONResponse(content=rbd_tvc.preview(entry, schedules, constants, t_max))
     except rbd_tvc.ScheduleError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     except ValueError as exc:  # the engine refusing the model along the path
-        return JSONResponse(status_code=422, content={"detail": str(exc) or "This schedule can't be evaluated."})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc, "This schedule can't be evaluated.")})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to preview a covariate schedule")
         return JSONResponse(status_code=500, content={"detail": "Couldn't preview the schedule. The error has "

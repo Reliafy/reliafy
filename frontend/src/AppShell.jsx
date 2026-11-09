@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { applyPageTitle } from "./components/usePageTitle.js";
 import NavBar from "./components/NavBar.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import Sidebar from "./components/Sidebar.jsx";
@@ -8,6 +9,8 @@ import VerifyEmailBanner from "./components/VerifyEmailBanner.jsx";
 import { WalkthroughProvider } from "./components/Walkthrough.jsx";
 const BillingPage = lazy(() => import("./views/BillingPage.jsx"));
 const HomePage = lazy(() => import("./views/HomePage.jsx"));
+const ReportsPage = lazy(() => import("./views/ReportsPage.jsx"));
+const PlannedPage = lazy(() => import("./views/PlannedPage.jsx"));
 const ModellingHome = lazy(() => import("./views/ModellingHome.jsx"));
 const AllModelsPage = lazy(() => import("./views/AllModelsPage.jsx"));
 const NewModelPage = lazy(() => import("./views/NewModelPage.jsx"));
@@ -21,6 +24,9 @@ const RecurrentHome = lazy(() => import("./views/RecurrentHome.jsx"));
 const RecurrentNewPage = lazy(() => import("./views/RecurrentNewPage.jsx"));
 const RecurrentModelPage = lazy(() => import("./views/RecurrentModelPage.jsx"));
 const AltHome = lazy(() => import("./views/AltHome.jsx"));
+const LibraryHome = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibraryHome })));
+const LibrarySource = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibrarySource })));
+const LibraryRecord = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibraryRecord })));
 const AltNewPage = lazy(() => import("./views/AltNewPage.jsx"));
 const AltModelPage = lazy(() => import("./views/AltModelPage.jsx"));
 const RbdHome = lazy(() => import("./views/RbdHome.jsx"));
@@ -28,6 +34,8 @@ const RbdBuilder = lazy(() => import("./views/RbdBuilder.jsx"));
 // Simulation run history (#112).
 const RbdRuns = lazy(() => import("./views/RbdRuns.jsx"));
 const RbdRunsDetail = lazy(() => import("./views/RbdRunsDetail.jsx"));
+const FaultTreeHome = lazy(() => import("./views/FaultTreeHome.jsx"));
+const FaultTreeEditor = lazy(() => import("./views/FaultTreeEditor.jsx"));
 const RbdRunsCompare = lazy(() => import("./views/RbdRunsCompare.jsx"));
 const DatasetsHome = lazy(() => import("./views/DatasetsHome.jsx"));
 const DatasetPage = lazy(() => import("./views/DatasetPage.jsx"));
@@ -41,28 +49,44 @@ const FleetForecasts = lazy(() => import("./views/FleetForecasts.jsx"));
 const FleetTrackingHome = lazy(() => import("./views/FleetTrackingHome.jsx"));
 const FleetForecastPage = lazy(() => import("./views/FleetForecastPage.jsx"));
 const StrategyAnalysisPage = lazy(() => import("./views/StrategyAnalysisPage.jsx"));
-const RcmHome = lazy(() => import("./views/RcmHome.jsx"));
-const RcmStudyPage = lazy(() => import("./views/RcmStudyPage.jsx"));
+// Reliability prediction: a parts count from handbook base rates.
+const ReliabilityPredictions = lazy(() => import("./views/ReliabilityPredictions.jsx"));
+const ReliabilityPredictionNew = lazy(() => import("./views/ReliabilityPredictionNew.jsx"));
+const ReliabilityPredictionPage = lazy(() => import("./views/ReliabilityPredictionPage.jsx"));
+// Maintainability prediction: the list, the calculator and a saved prediction.
+const MaintainabilityHome = lazy(() => import("./views/MaintainabilityHome.jsx"));
+const MaintainabilityNewPage = lazy(() => import("./views/MaintainabilityNewPage.jsx"));
+const MaintainabilityPage = lazy(() => import("./views/MaintainabilityPage.jsx"));
 const MaintenanceHome = lazy(() => import("./views/MaintenanceHome.jsx"));
+const MaintenanceAssets = lazy(() => import("./views/MaintenanceAssets.jsx"));
 const MaintenancePosition = lazy(() => import("./views/MaintenancePosition.jsx"));
+const FmeaPrint = lazy(() => import("./views/FmeaPrint.jsx"));
 const MaintenanceWorkOrder = lazy(() => import("./views/MaintenanceWorkOrder.jsx"));
 const MaintenanceItem = lazy(() => import("./views/MaintenanceItem.jsx"));
-const MaintenanceItems = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceItems })));
-const MaintenanceLocations = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceLocations })));
+const AssetExplorer = lazy(() => import("./views/AssetExplorer.jsx"));
+const MaintenanceProducts = lazy(() => import("./views/MaintenanceProducts.jsx"));
+const ProductDetail = lazy(() => import("./views/MaintenanceProducts.jsx").then((m) => ({ default: m.ProductDetail })));
+const MaintenanceItemsList = lazy(() => import("./views/MaintenanceItemsList.jsx"));
 const MaintenanceLocation = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceLocation })));
-const MaintenanceClasses = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceClasses })));
-const MaintenancePartsPage = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceParts })));
 const MaintenancePart = lazy(() => import("./views/MaintenancePart.jsx"));
+// A point's and a channel's earlier own pages: they open in the Explorer's Measurements tab now.
+const PointRedirect = lazy(() => import("./views/MeasurementRedirects.jsx").then((m) => ({ default: m.PointRedirect })));
+const ChannelRedirect = lazy(() => import("./views/MeasurementRedirects.jsx").then((m) => ({ default: m.ChannelRedirect })));
 const TeamSettingsPage = lazy(() => import("./views/TeamSettingsPage.jsx"));
 const SettingsPage = lazy(() => import("./views/SettingsPage.jsx"));
 const ApiDocsPage = lazy(() => import("./views/ApiDocsPage.jsx"));
 const ReliabilityAgent = lazy(() => import("./views/ReliabilityAgent.jsx"));
-const AdminPage = lazy(() => import("./views/AdminPage.jsx"));
+// Pages added by optional extensions (extensions.js).
+const ExtensionPage = lazy(() => import("./components/ExtensionPage.jsx"));
 // What changed in the workspace (#41).
 const ChangesPage = lazy(() => import("./views/ChangesPage.jsx"));
+const DataModelPage = lazy(() => import("./views/DataModelPage.jsx"));
 import { useAppConfig } from "./ConfigProvider.jsx";
 import { unmatchedRoute } from "./appConfig.js";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
+import { ExtensionsProvider, useExtensions } from "./ExtensionsProvider.jsx";
+import { RolesProvider } from "./RolesProvider.jsx";
+import { MOVED, fillMoved, movedHref } from "./redirects.js";
 
 // The authenticated app shell. This module is code-split: App.jsx
 // lazy-imports it, so the public/marketing pages ship without the app bundle.
@@ -71,26 +95,13 @@ import { useWorkspace } from "./WorkspaceProvider.jsx";
 // Flow) arrive with the pages that use them. The chart module is prefetched
 // once the browser is idle so the first chart page doesn't wait for it.
 
-// Old bookmarks carried MODEL ids; fleets are their own ids now, so the
-// safest landing is the tracking index.
-function TrackingRedirect() {
-  useParams();
-  return <Navigate to="/fleet/tracking" replace />;
-}
-
-// The Demonstration test page became Test planning's Demonstration tab: old
-// links (a model's "Plan a test", bookmarks) keep their query string.
-// Datasets moved into Modelling as "Data": old links (emails, shares, API
-// and MCP results saved before the move) keep their query string and hash.
-function DatasetRedirect() {
-  const { id } = useParams();
+// An earlier address (redirects.js): to the page's new place, with the same
+// ids, query, #hash and navigation state.
+function Moved({ to }) {
+  const params = useParams();
   const { search, hash, state } = useLocation();
-  return <Navigate to={`/modelling/data${id ? `/${encodeURIComponent(id)}` : ""}${search}${hash}`} state={state} replace />;
-}
-
-function DemonstrationTestRedirect() {
-  const { search } = useLocation();
-  return <Navigate to={`/strategy/test-planning${search}`} replace />;
+  const encoded = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, encodeURIComponent(v ?? "")]));
+  return <Navigate to={movedHref(fillMoved(to, encoded), search, hash)} state={state} replace />;
 }
 
 // The desktop rail's collapsed/expanded choice is remembered per device.
@@ -120,6 +131,14 @@ function usePhone() {
 }
 
 export default function AppShell() {
+  return (
+    <ExtensionsProvider>
+      <Shell />
+    </ExtensionsProvider>
+  );
+}
+
+function Shell() {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const phone = usePhone();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -139,6 +158,11 @@ export default function AppShell() {
   useEffect(() => {
     setMenuOpen(false);
   }, [pathname, phone]);
+  // Each page's own tab title ("RBDs · Reliafy"); a detail page adds its
+  // record's name with usePageTitle.
+  useEffect(() => {
+    applyPageTitle(pathname);
+  }, [pathname]);
   // Backdrop tap, Escape or the close button: focus returns to the menu button.
   const closeMenu = useCallback(() => {
     setMenuOpen(false);
@@ -151,6 +175,7 @@ export default function AppShell() {
   // Keying the routed content on the workspace remounts every view on switch,
   // so all lists refetch under the new X-Workspace-Id without any per-view code.
   const { workspace } = useWorkspace();
+  const { mounts: extensionMounts, loaded: extensionsLoaded } = useExtensions();
   useEffect(() => {
     const prefetch = () => import("./components/Plot.jsx").catch(() => {});
     if ("requestIdleCallback" in window) {
@@ -161,7 +186,14 @@ export default function AppShell() {
     return () => window.clearTimeout(id);
   }, []);
   return (
+    <RolesProvider>
     <WalkthroughProvider>
+      {/* The first Tab stop: past the bar and the menu to the page. Focused
+          by hand so the address keeps no #hash. */}
+      <a className="skip-link" href="#main-content"
+         onClick={(e) => { e.preventDefault(); document.getElementById("main-content")?.focus(); }}>
+        Skip to content
+      </a>
       <NavBar
         menuOpen={phone && menuOpen}
         onMenu={() => setMenuOpen((o) => !o)}
@@ -176,42 +208,71 @@ export default function AppShell() {
           open={phone && menuOpen}
           onClose={closeMenu}
         />
-        <main className="content" key={workspace}>
+        <main className="content" id="main-content" tabIndex={-1} key={workspace}>
           <ErrorBoundary>
           <Suspense fallback={<div className="card empty view-loading">Loading…</div>}>
           <Routes>
             <Route path="/" element={<Navigate to="/home" replace />} />
             <Route path="/home" element={<HomePage />} />
-            {/* Modelling opens on the full model list; "All models" was that list. */}
-            <Route path="/modelling" element={<AllModelsPage />} />
-            <Route path="/modelling/models" element={<Navigate to="/modelling" replace />} />
-            <Route path="/modelling/data" element={<DatasetsHome />} />
-            <Route path="/modelling/data/:id" element={<DatasetPage />} />
-            <Route path="/modelling/life" element={<ModellingHome />} />
-            <Route path="/modelling/new" element={<NewModelPage />} />
-            <Route path="/modelling/degradation" element={<DegradationHome />} />
-            <Route path="/modelling/degradation/:id" element={<DegradationModelPage />} />
-            <Route path="/modelling/recurrent" element={<RecurrentHome />} />
-            <Route path="/modelling/recurrent/new" element={<RecurrentNewPage />} />
-            <Route path="/modelling/recurrent/:id" element={<RecurrentModelPage />} />
-            <Route path="/modelling/alt" element={<AltHome />} />
-            <Route path="/modelling/alt/new" element={<AltNewPage />} />
-            <Route path="/modelling/alt/:id" element={<AltModelPage />} />
-            <Route path="/modelling/joint" element={<JointHome />} />
-            <Route path="/modelling/joint/new" element={<JointNewPage />} />
-            <Route path="/modelling/joint/:id" element={<JointModelPage />} />
-            <Route path="/modelling/m/:id" element={<ModelPage />} />
-            {/* Each section opens on its list (#312); the old list URLs redirect. */}
-            <Route path="/rbds" element={<RbdHome />} />
-            <Route path="/rbds/list" element={<Navigate to="/rbds" replace />} />
-            <Route path="/rbds/b" element={<RbdBuilder />} />
-            <Route path="/rbds/b/:id" element={<RbdBuilder />} />
-            <Route path="/rbds/runs" element={<RbdRuns />} />
-            <Route path="/rbds/runs/compare" element={<RbdRunsCompare />} />
-            <Route path="/rbds/runs/:runId" element={<RbdRunsDetail />} />
-            <Route path="/datasets" element={<DatasetRedirect />} />
-            <Route path="/datasets/list" element={<DatasetRedirect />} />
-            <Route path="/datasets/d/:id" element={<DatasetRedirect />} />
+
+            {/* Design: systems as designed. */}
+            <Route path="/systems/rbds" element={<RbdHome />} />
+            <Route path="/systems/b" element={<RbdBuilder />} />
+            <Route path="/systems/b/:id" element={<RbdBuilder />} />
+            <Route path="/systems/runs" element={<RbdRuns />} />
+            <Route path="/systems/runs/compare" element={<RbdRunsCompare />} />
+            <Route path="/systems/runs/:runId" element={<RbdRunsDetail />} />
+            <Route path="/systems/fault-trees" element={<FaultTreeHome />} />
+            <Route path="/systems/fault-trees/new" element={<FaultTreeEditor />} />
+            <Route path="/systems/fault-trees/:id" element={<FaultTreeEditor />} />
+
+            {/* Operate: the assets as maintained (Reliafy Maintenance), and
+                their maintenance. ("/assets" is where the server keeps the
+                build's files, so the register lives at /asset-register.) */}
+            {/* Products (the designs) and Items (every serial-numbered thing). */}
+            {maintenanceEnabled && <Route path="/products" element={<MaintenanceProducts />} />}
+            {maintenanceEnabled && <Route path="/products/:id" element={<ProductDetail />} />}
+            {maintenanceEnabled && <Route path="/items" element={<MaintenanceItemsList />} />}
+            {maintenanceEnabled && <Route path="/asset-register" element={<MaintenanceAssets />} />}
+            {maintenanceEnabled && <Route path="/asset-register/explorer" element={<AssetExplorer />} />}
+            {maintenanceEnabled && <Route path="/asset-register/positions/:id" element={<MaintenancePosition />} />}
+            {maintenanceEnabled && <Route path="/asset-register/positions/:id/fmea" element={<FmeaPrint />} />}
+            {maintenanceEnabled && <Route path="/asset-register/items/:id" element={<MaintenanceItem />} />}
+            {maintenanceEnabled && <Route path="/asset-register/locations/:id" element={<MaintenanceLocation />} />}
+            {maintenanceEnabled && <Route path="/asset-register/parts/:id" element={<MaintenancePart />} />}
+            {maintenanceEnabled && <Route path="/asset-register/points/:id" element={<PointRedirect />} />}
+            {maintenanceEnabled && <Route path="/asset-register/channels/:id" element={<ChannelRedirect />} />}
+            {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome />} />}
+            {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
+            <Route path="/data-model" element={<DataModelPage />} />
+            {/* Risk: models in use. Condition monitoring is the tracked items
+                against their degradation models. */}
+            <Route path="/risk" element={<FleetTrackingHome />} />
+            <Route path="/risk/:fleetId" element={<StrategyTracking />} />
+
+            {/* Analyse: the calculations. */}
+            <Route path="/data" element={<DatasetsHome />} />
+            <Route path="/data/:id" element={<DatasetPage />} />
+            {/* Models opens on every model; its children are the types. */}
+            <Route path="/models" element={<AllModelsPage />} />
+            <Route path="/models/life" element={<ModellingHome />} />
+            <Route path="/models/new" element={<NewModelPage />} />
+            <Route path="/models/m/:id" element={<ModelPage />} />
+            <Route path="/models/degradation" element={<DegradationHome />} />
+            <Route path="/models/degradation/:id" element={<DegradationModelPage />} />
+            <Route path="/models/recurrent" element={<RecurrentHome />} />
+            <Route path="/models/recurrent/new" element={<RecurrentNewPage />} />
+            <Route path="/models/recurrent/:id" element={<RecurrentModelPage />} />
+            <Route path="/models/alt" element={<AltHome />} />
+            <Route path="/models/alt/new" element={<AltNewPage />} />
+            <Route path="/models/alt/:id" element={<AltModelPage />} />
+            <Route path="/models/joint" element={<JointHome />} />
+            <Route path="/models/joint/new" element={<JointNewPage />} />
+            <Route path="/models/joint/:id" element={<JointModelPage />} />
+            {/* Maintainability prediction: Mct, M_max and availability from a parts list. */}
+            <Route path="/maintainability" element={<MaintainabilityHome />} />
+            <Route path="/maintainability/new" element={<MaintainabilityNewPage />} />
+            <Route path="/maintainability/:id" element={<MaintainabilityPage />} />
             <Route path="/strategy" element={<StrategyAnalyses />} />
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
@@ -221,31 +282,28 @@ export default function AppShell() {
             <Route path="/strategy/test-planning/life" element={<StrategyTestPlanning />} />
             <Route path="/strategy/test-planning/accelerated" element={<StrategyTestPlanning />} />
             <Route path="/strategy/test-planning/comparison" element={<StrategyTestPlanning />} />
-            <Route path="/strategy/demonstration-test" element={<DemonstrationTestRedirect />} />
-            <Route path="/strategy/tracking" element={<Navigate to="/fleet/tracking" replace />} />
-            <Route path="/strategy/tracking/:modelId" element={<TrackingRedirect />} />
-            <Route path="/fleet" element={<FleetForecasts />} />
-            <Route path="/fleet/tracking" element={<FleetTrackingHome />} />
-            <Route path="/fleet/tracking/:fleetId" element={<StrategyTracking />} />
-            <Route path="/fleet/forecasts" element={<Navigate to="/fleet" replace />} />
-            <Route path="/fleet/forecasts/:id" element={<FleetForecastPage />} />
-            <Route path="/strategy/analyses" element={<Navigate to="/strategy" replace />} />
             <Route path="/strategy/analyses/:id" element={<StrategyAnalysisPage />} />
+            {/* Reliability prediction: the saved parts counts, the builder and each one's page. */}
+            <Route path="/predictions" element={<ReliabilityPredictions />} />
+            <Route path="/predictions/new" element={<ReliabilityPredictionNew />} />
+            <Route path="/predictions/:id" element={<ReliabilityPredictionPage />} />
+            {/* The fleets' forecasts and (Reliafy Maintenance) the position classes'. */}
+            <Route path="/forecasts" element={<FleetForecasts />} />
+            <Route path="/forecasts/:id" element={<FleetForecastPage />} />
+
+            {/* Blank pages for menu entries not built yet (plannedPages.js). */}
+            <Route path="/requirements" element={<PlannedPage id="requirements" />} />
+            <Route path="/failures" element={<PlannedPage id="failures" />} />
+            <Route path="/asset-register/fleets" element={<PlannedPage id="fleets" />} />
+            <Route path="/maintenance/inbox" element={<PlannedPage id="inbox" />} />
+            <Route path="/models/library" element={<LibraryHome />} />
+            <Route path="/models/library/:source" element={<LibrarySource />} />
+            <Route path="/models/library/:source/:record" element={<LibraryRecord />} />
+
+            <Route path="/reports" element={<ReportsPage />} />
             {agentEnabled && <Route path="/agent" element={<ReliabilityAgent />} />}
-            <Route path="/rcm" element={<RcmHome />} />
-            <Route path="/rcm/studies" element={<Navigate to="/rcm" replace />} />
-            <Route path="/rcm/studies/:id" element={<RcmStudyPage />} />
-            {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome />} />}
-            {maintenanceEnabled && <Route path="/maintenance/positions/:id" element={<MaintenancePosition />} />}
-            {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
-            {maintenanceEnabled && <Route path="/maintenance/items" element={<MaintenanceItems />} />}
-            {maintenanceEnabled && <Route path="/maintenance/items/:id" element={<MaintenanceItem />} />}
-            {maintenanceEnabled && <Route path="/maintenance/locations" element={<MaintenanceLocations />} />}
-            {maintenanceEnabled && <Route path="/maintenance/locations/:id" element={<MaintenanceLocation />} />}
-            {maintenanceEnabled && <Route path="/maintenance/classes" element={<MaintenanceClasses />} />}
-            {maintenanceEnabled && <Route path="/maintenance/classes/:name" element={<MaintenanceClasses />} />}
-            {maintenanceEnabled && <Route path="/maintenance/parts" element={<MaintenancePartsPage />} />}
-            {maintenanceEnabled && <Route path="/maintenance/parts/:id" element={<MaintenancePart />} />}
+
+            {/* Account. */}
             <Route path="/team" element={<TeamSettingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/api-docs" element={<ApiDocsPage page="" />} />
@@ -257,16 +315,23 @@ export default function AppShell() {
             <Route path="/api-docs/files" element={<ApiDocsPage page="files" />} />
             <Route path="/api-docs/mcp" element={<ApiDocsPage page="mcp" />} />
             <Route path="/api-docs/v1-routes" element={<ApiDocsPage page="v1-routes" />} />
-            {/* API tokens moved into Settings; keep old links working. */}
-            <Route path="/tokens" element={<Navigate to="/settings?tab=api" replace />} />
-            <Route path="/admin" element={<AdminPage />} />
             <Route path="/changes" element={<ChangesPage />} />
             {billing && <Route path="/billing" element={<BillingPage />} />}
-            {/* Until the config loads, /billing and /agent aren't registered:
-                wait rather than redirect a direct load of them. */}
+
+            {/* Earlier addresses, each to its page's new place (redirects.js). */}
+            {MOVED.map((m) => <Route key={m.path} path={m.path} element={<Moved to={m.to} />} />)}
+            {/* API tokens moved into Settings; keep old links working. */}
+            <Route path="/tokens" element={<Navigate to="/settings?tab=api" replace />} />
+            {/* Pages added by optional extensions (extensions.js). */}
+            {extensionMounts.map((m) => (
+              <Route key={`${m.extension}/${m.id}`} path={`${m.path}/*`} element={<ExtensionPage mount={m} />} />
+            ))}
+            {/* Until the config and the extension pages load, /billing, /agent
+                and those pages aren't registered: wait rather than redirect a
+                direct load of them. */}
             <Route
               path="*"
-              element={unmatchedRoute(config) === "redirect"
+              element={unmatchedRoute(config, extensionsLoaded) === "redirect"
                 ? <Navigate to="/home" replace />
                 : <div className="card empty view-loading">Loading…</div>}
             />
@@ -277,5 +342,6 @@ export default function AppShell() {
         {ai && <ChatPanel />}
       </div>
     </WalkthroughProvider>
+    </RolesProvider>
   );
 }

@@ -14,7 +14,7 @@ import ScrollCue from "./ui/ScrollCue.jsx";
 // regression model's Validation tab: a plain verdict on each check first —
 // the proportional-hazards test, robust standard errors, ties and strata —
 // with the test table, the residual plots and the robust intervals in a
-// dialog. Every number is SurPyval's (check_ph, summary(robust=True),
+// dialog. Every number is SurPyval's (diagnose(), summary(robust=True),
 // compute_residuals); ``diagnostics`` is stored with the fit, or fetched for
 // a model saved before it (``modelId``).
 

@@ -2,13 +2,13 @@
 title: "Build a reliability block diagram"
 task: "How do I model a system of components and get its overall reliability?"
 category: "Reliability block diagrams"
-prerequisites: "Life models for the components — either saved fits or parameters you can type in."
-related_href: "/rbds/b"
+prerequisites: "Non-repairable models for the components — either saved fits or parameters you can type in."
+related_href: "/systems/b"
 related_label: "Open the RBD builder"
 order: 10
 ---
 
-A life model tells you about one component. A reliability block diagram tells you
+A non-repairable model tells you about one component. A reliability block diagram tells you
 about the **system** those components make up — and the answer is frequently not
 what people expect, because reliability composes in ways intuition handles badly.
 Ten components in series, each 99% reliable, gives a system that's 90% reliable.
@@ -23,7 +23,7 @@ pipework.
 
 ## Laying out the diagram
 
-Open **RBDs → New diagram**. Every diagram runs from an **input** node to an
+Open **Modelling → System models → RBDs → New diagram**. Every diagram runs from an **input** node to an
 **output** node, and the system works whenever there's a complete path between
 them.
 
@@ -65,14 +65,21 @@ different units. The menu beside it says what kind of diagram this is:
 (availability) or **Network**. The **⋯** menu at the right holds the rest,
 including **Auto-arrange** to tidy the layout.
 
-## Giving blocks their life models
+For a big diagram, press **Full screen** in the top-right corner of the canvas
+(or press `F`; on a phone it's the arrows icon there). The toolbar and canvas
+then fill the screen, and everything works as it does on the page, block dialogs
+included. The diagram's name and whether it's saved stay in the toolbar. **Exit
+full screen** at the toolbar's right end (or Escape) takes you back, with the
+diagram just as you left it. The results tabs stay on the page.
+
+## Giving blocks their non-repairable models
 
 Double-click a block to open it. **Name** comes first: call the block what your
 report will call it (a tag, or "Feed pump A"), because every result names the
 block by it. To rename without opening the block, double-click its name on the
 canvas, or select it and press F2.
 
-Then set its life model, as a **Mean** life, as **Parameters** or as a **Saved
+Then set its non-repairable model, as a **Mean** life, as **Parameters** or as a **Saved
 model**. The two sources are both legitimate:
 
 - **A saved model** — a fit from your own data. Best when you have it.
@@ -111,7 +118,7 @@ worth reading if you're relying on redundancy for anything that matters.
 
 Press **Validate** at the right of the toolbar. This is a genuine structural check, not a formality: it will
 tell you if the diagram has a loop, if blocks aren't wired to anything, if a
-component is missing its life model, or if a k-of-n setting leaves no path
+component is missing its non-repairable model, or if a k-of-n setting leaves no path
 through the system at all. It also tells you whether the diagram can be solved in
 closed form or needs simulation. Once it passes, the button becomes a status
 (**✓ Valid**, or the number of problems) that opens the full check, and it turns
@@ -168,9 +175,9 @@ swap in a different SurPyval) and run the file. The script's header
 lists the exact commands for the versions Reliafy runs:
 
 ```
-pip install "surpyval==0.25"
+pip install "surpyval==0.26"
 pip install networkx tqdm
-pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.15"
+pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.16"
 python my_diagram.py
 ```
 

@@ -1,0 +1,124 @@
+/* System models › Fault trees: the outline editor (rows with indent), the
+   selected node's panel beside it, and the analysis under both. */
+
+.ft-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .ft-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+.ft-outline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ft-unit { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-13); color: var(--muted); }
+.ft-unit input { width: 120px; }
+
+.ft-rows { list-style: none; margin: 8px 0 0; padding: 0; }
+.ft-row {
+  --depth: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: calc(var(--depth) * 18px);
+  border-radius: var(--r-sm);
+  position: relative;
+}
+/* A faint guide line for each level, so the nesting reads at a glance. */
+.ft-row::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--depth) * 18px - 10px);
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--line);
+  display: var(--guide, block);
+}
+.ft-row[style*="--depth: 0"]::before { display: none; }
+.ft-row.selected { background: var(--acc-t); }
+.ft-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  min-height: 44px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.ft-row-main:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+.ft-row-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ft-row-label { font-weight: 600; overflow-wrap: anywhere; }
+.ft-row-top { font-weight: 400; color: var(--muted); font-size: var(--fs-12); }
+.ft-row-sub { font-size: var(--fs-12); color: var(--muted); overflow-wrap: anywhere; }
+.ft-row-dots { min-width: 36px; min-height: 36px; padding: 0 6px; }
+.ft-row-menu .ovm-menu { min-width: 210px; }
+
+/* The row's mark: a gate's type, or a basic event's circle. */
+.ft-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  font-size: var(--fs-12);
+  font-weight: 700;
+  border: 1px solid var(--line);
+  background: var(--surf-2);
+  color: var(--ink);
+}
+.ft-mark-and { border-color: var(--acc); color: var(--acc); }
+.ft-mark-vote { border-style: dashed; }
+.ft-mark-event { min-width: 14px; width: 14px; height: 14px; padding: 0; border-radius: 50%; border: 2px solid var(--muted); background: transparent; margin: 0 12px; }
+.ft-issue {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-12);
+  font-weight: 700;
+  color: var(--surf);
+  background: var(--warn);
+}
+
+.ft-panel { display: flex; flex-direction: column; gap: 14px; }
+.ft-field { display: flex; flex-direction: column; gap: 6px; }
+.ft-field > span:first-child { font-size: var(--fs-13); color: var(--muted); }
+.ft-field .hint { margin: 0; }
+.ft-k { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ft-k > span:first-child { color: var(--ink); }
+.ft-k input { width: 72px; }
+.ft-check { display: flex; gap: 8px; align-items: flex-start; font-size: var(--fs-13); }
+.ft-panel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ft-plain { border: none; margin: 0; padding: 0; min-width: 0; }
+
+.ft-notes ul, .ft-todo ul { margin: 6px 0 0; padding-left: 20px; }
+.ft-head-note { margin: 6px 0 0; }
+.ft-results { margin-top: 20px; }
+.ft-results > h2 { margin: 0 0 8px; }
+/* The time to evaluate at sits above the answer (the shared result summary). */
+.ft-results .ft-controls { margin: 0 0 var(--sp-3); flex-wrap: wrap; }
+.ft-results .ft-controls .calc-t input { width: 8em; }
+.ft-stale { opacity: 0.6; transition: opacity 0.2s; }
+
+@media (min-width: 901px) {
+  .ft-side { position: sticky; top: 16px; }
+}

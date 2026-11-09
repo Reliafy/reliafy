@@ -133,9 +133,9 @@ def test_welcome_on_first_verified_sign_in_once(as_user, on, test_db):
     assert msg["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
     text = _text(msg)
     assert text.startswith("Hi Sam,\n")
-    assert f"/modelling/m/sample-model-bearings-weibull?{UTM_WELCOME}" in text
-    assert f"/modelling/new?mode=paste&{UTM_WELCOME}" in text
-    assert f"/rbds/b/sample-rbd-pump-station?{UTM_WELCOME}" in text
+    assert f"/models/m/sample-model-bearings-weibull?{UTM_WELCOME}" in text
+    assert f"/models/new?mode=paste&{UTM_WELCOME}" in text
+    assert f"/systems/b/sample-rbd-pump-station?{UTM_WELCOME}" in text
     assert f"/api-docs/mcp?{UTM_WELCOME}" in text
     assert "It comes to me." in text
     assert f"Unsubscribe: https://reliafy.com/unsubscribe?t={token}\n" in text
@@ -298,7 +298,7 @@ def test_day3_never_mentions_what_the_user_did(as_user, on, cron, test_db):
         assert "you saved" not in text.lower() and "you haven't" not in text.lower()
         assert f"/guides/build-an-rbd?{UTM_DAY3}" in text
         assert "Fault tree" in text and "What to improve" in text and "Download as Python" in text
-    assert f"/rbds/b/sample-rbd-instrument-air-availability?{UTM_DAY3}" in alice
+    assert f"/systems/b/sample-rbd-instrument-air-availability?{UTM_DAY3}" in alice
     # The body is one of two fixed texts: only the greeting and the
     # unsubscribe token differ between recipients.
     for variant in ("start", "further"):
@@ -358,46 +358,3 @@ def test_day3_without_smtp_sends_nothing(as_user, cron, test_db, monkeypatch):
 
 # ---- Email-campaign report (#269) --------------------------------------------
 
-def test_email_campaign_report(as_user, test_db, monkeypatch):
-    from backend import config
-
-    client, who = as_user
-    assert client.get("/api/admin/email-campaigns").status_code == 403
-
-    monkeypatch.setattr(config, "ADMIN_EMAILS", {NEW["email"].lower()})
-    now = _now()
-    sent = now - timedelta(days=2)
-    test_db.update_sends.insert_many([
-        {"_id": "nov:a", "update_slug": "nov", "uid": "a", "status": "sent", "sent_at": sent},
-        {"_id": "nov:b", "update_slug": "nov", "uid": "b", "status": "sent", "sent_at": sent},
-        {"_id": "nov:c", "update_slug": "nov", "uid": "c", "status": "failed", "sent_at": sent},
-    ])
-    test_db.lifecycle_emails.insert_one({"_id": "welcome:a", "kind": "welcome", "uid": "a",
-                                         "status": "sent", "sent_at": sent})
-    test_db.users.insert_many([
-        {"_id": "a", "last_login": sent - timedelta(days=1)},
-        {"_id": "b", "last_login": sent + timedelta(hours=5)},  # came back
-    ])
-    test_db.usage_events.insert_many([
-        {"uid": "a", "ts": sent + timedelta(days=4), "channel": "app"},  # too late
-    ])
-    ev = lambda **kw: {"name": "pageview", "path": "/whats-new/nov", "utm_source": "email",  # noqa: E731
-                       "utm_medium": "update", "utm_campaign": "nov", "visitor": "v1",
-                       "day": "2026-11-01", "created_at": now, **kw}
-    test_db.metrics_events.insert_many([
-        ev(), ev(path="/rbds/b"), ev(visitor="v2"),
-        ev(name="activated", path="/modelling"),
-        ev(utm_medium="social", utm_campaign="launch"),       # not an email
-        ev(utm_source="linkedin"),                            # not an email
-    ])
-
-    data = client.get("/api/admin/email-campaigns").json()
-    rows = {(r["medium"], r["campaign"]): r for r in data["campaigns"]}
-    assert set(rows) == {("update", "nov"), ("lifecycle", "welcome")}
-    nov = rows[("update", "nov")]
-    assert nov["sent"] == 2 and nov["pageviews"] == 3 and nov["visitors"] == 2
-    assert nov["top_pages"][0] == {"key": "/whats-new/nov", "count": 2}
-    assert nov["events"] == [{"key": "activated", "count": 1}]
-    assert nov["active"] == 1
-    assert rows[("lifecycle", "welcome")]["active"] is None
-    assert data["active_days"] == 3

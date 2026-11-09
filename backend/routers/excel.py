@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, Response
 
 from backend.auth import get_current_user
 from backend.services import excel, import_guard
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/excel")
@@ -42,9 +43,9 @@ def guarded(uid: str, fn, *args, **kwargs):
 def guard_error(exc: Exception) -> JSONResponse | None:
     """The response for the import guard's refusals (None for anything else)."""
     if isinstance(exc, import_guard.ImportBusy):
-        return JSONResponse(status_code=429, content={"detail": str(exc)}, headers={"Retry-After": "15"})
+        return JSONResponse(status_code=429, content={"detail": client_message(exc)}, headers={"Retry-After": "15"})
     if isinstance(exc, import_guard.ImportBudgetExceeded):
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return None
 
 
@@ -54,7 +55,7 @@ def excel_error(exc: Exception, what: str, data: bytes, filename: str) -> JSONRe
     if refused is not None:
         return refused
     if isinstance(exc, excel.ExcelError):
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     logger.exception("Excel %s failed: bytes=%d", what, len(data))
     return JSONResponse(
         status_code=422,
@@ -111,7 +112,8 @@ def workbook_table(
     target: str | None = Form(default=None),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
-    """One sheet's header and first rows (as text) for a column mapper.
+    """One sheet's header and first rows (as text) for a column mapper (or a
+    CSV file's: the import of an RCM worksheet onto a position takes CSV too).
 
     With ``target`` (``rcm``, ``rbd_blocks``, ``rbd_connections``, ``bom``) the
     response adds that importer's ``fields`` and a ``guess`` at the mapping
@@ -119,8 +121,11 @@ def workbook_table(
     notes)."""
     data = read_upload(file)
     try:
-        table = guarded(user["uid"], excel.read_table, data, sheet, header_row_param(header_row),
-                        file.filename or "")
+        if excel.is_excel(data, file.filename or ""):
+            table = guarded(user["uid"], excel.read_table, data, sheet, header_row_param(header_row),
+                            file.filename or "")
+        else:  # CSV text: one table, its header on the first line
+            table = guarded(user["uid"], excel.read_csv, data, file.filename or "")
     except Exception as exc:
         return excel_error(exc, "table", data, file.filename or "")
     extra: dict = {}

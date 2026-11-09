@@ -241,9 +241,10 @@ def list_models(db, owner_id: str | list[str], hidden=frozenset(), shared=frozen
 def get_model(db, model_id: str, owner_id: str | list[str] | None = None) -> Model | None:
     """Fetch a model by id. Shared sample models are visible to every owner.
     Ids are strings; anything else (e.g. from a JSON body) matches nothing."""
-    if not isinstance(model_id, str):
+    if not isinstance(model_id, str) or not model_id:
         return None
-    query = {"_id": model_id}
+    # ``$eq`` keeps the id a value to match, never an operator.
+    query = {"_id": {"$eq": str(model_id)}}
     if owner_id is not None:
         query["owner_id"] = {"$in": access.owner_in(owner_id)}
     return from_doc(Model, db.models.find_one(query))
@@ -367,6 +368,13 @@ def public_results(model: Model) -> dict:
     pointed at this saved model (so the calculator re-evaluates and recomputes
     confidence bounds via the persistent id)."""
     results = dict(model.results or {})
+    unc = rate_uncertainty_of(model)
+    if unc and not results.get("rate_uncertainty"):
+        # Saved from an NRC/INL rate record before models kept its gamma: shown from the record.
+        from backend.maintenance import library_models
+
+        results["rate_uncertainty"] = unc
+        results["ci_note"] = library_models.CI_NOTE
     if model.kind == "regression" and not results.get("metrics_note"):
         # #265: a model saved before says why it has no median / B10 / MTTF too.
         results["metrics_note"] = fitting.REGRESSION_METRICS_NOTE
@@ -377,7 +385,13 @@ def public_results(model: Model) -> dict:
         functions["evaluate_path"] = f"/api/models/{model.id}/evaluate"
         # A parametric regression model has bands at its covariates (#54);
         # Cox PH has none, and says why.
-        if model.kind in ("distribution", "discrete", "nonparametric", fitting.more_models.FLEXIBLE_KIND) or \
+        if results.get("method") == "bayesian_update":
+            # Credible intervals, not confidence bounds: the same paths answer with the posterior's
+            # cri / quantile_cri (life_bounds, fitting.confidence_bounds), and the note says what they are.
+            functions["bands_note"] = results.get("ci_note") or "A Bayesian update has credible intervals, not confidence bounds."
+            functions["confidence_path"] = f"/api/models/{model.id}/confidence"
+            functions["life_path"] = f"/api/models/{model.id}/life"
+        elif model.kind in ("distribution", "discrete", "nonparametric", fitting.more_models.FLEXIBLE_KIND) or \
                 regression_bands.result_has_bands(results):
             functions["confidence_path"] = f"/api/models/{model.id}/confidence"
             functions["life_path"] = f"/api/models/{model.id}/life"
@@ -387,6 +401,19 @@ def public_results(model: Model) -> dict:
             functions["residuals_path"] = f"/api/models/{model.id}/residuals"
         results["functions"] = functions
     return results
+
+
+def rate_uncertainty_of(model: Model) -> dict | None:
+    """The distribution on a library model's failure rate (NRC/INL give the rate as a gamma across
+    plants): as saved, or, for a model saved before models kept it, rebuilt from its record."""
+    results = model.results or {}
+    if results.get("rate_uncertainty"):
+        return results["rate_uncertainty"]
+    if results.get("method") != "library":
+        return None
+    from backend.maintenance import library_models
+
+    return library_models.reattach_rate_uncertainty(results, model.spec)
 
 
 def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
@@ -460,7 +487,7 @@ def _covariate_row(fields: list, values: dict | None) -> tuple[dict, list[dict]]
 
 
 def evaluate_at(db, model: Model, times, owner_id, covariates: dict | None = None) -> dict:
-    """Evaluate a saved life model's reliability functions at ``times``.
+    """Evaluate a saved non-repairable model's reliability functions at ``times``.
 
     Parametric models are evaluated from the distribution itself — plain and
     discrete ones rebuilt from their stored parameters, regression
@@ -603,6 +630,14 @@ def get_live_model(db, model_id: str, owner_id: str | list[str]) -> dict | None:
         from backend.services import joint as joint_service
 
         return joint_service.live_entry(model)
+    unc = rate_uncertainty_of(model)
+    if unc and (model.results or {}).get("params_only"):
+        # A library model (made from a record's rate, no data to refit): the exponential at its rate,
+        # with the distribution on that rate, which the RBD band draws from (rbd_uncertainty).
+        params = (model.results or {}).get("params") or []
+        rate = next((float(p["value"]) for p in params if p.get("name") == "failure_rate"), None)
+        if rate and rate > 0:
+            return {"model": surpyval.Exponential.from_params([rate]), "rate_uncertainty": unc}
     return fitting._MODEL_STORE.get(_live_cache_id(db, model_id, owner_id))
 
 
@@ -631,6 +666,11 @@ def _refit(model: Model) -> str:
     model."""
     from backend.db import get_db  # local import to avoid a cycle
 
+    if _spec(model).get("method") == "bayesian_update":
+        # A Bayesian update is rebuilt from its recipe (the data and the prior), not refitted by MLE.
+        from backend.services import bayes_life
+
+        return bayes_life.live_cache_id(_spec(model))
     dataset = datasets_service.get_dataset(
         get_db(), model.dataset_id, owner_id=model.owner_id
     )

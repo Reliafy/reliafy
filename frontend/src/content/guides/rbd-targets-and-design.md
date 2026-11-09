@@ -2,8 +2,8 @@
 title: "Set a system target and design to meet it"
 task: "My system must reach 99% at 500 hours: what does each block need, and where should the redundancy go?"
 category: "Reliability block diagrams"
-prerequisites: "A diagram whose blocks all have life models (and, for a repairable one, repair times)."
-related_href: "/rbds"
+prerequisites: "A diagram whose blocks all have non-repairable models (and, for a repairable one, repair times)."
+related_href: "/systems/rbds"
 related_label: "Open your RBDs"
 order: 34
 ---
@@ -25,8 +25,8 @@ heat exchanger, in series.
 
 ## Give each block a target (Targets tab)
 
-Open the diagram from **RBDs** and choose the **Targets** tab. Enter the
-**Target reliability (%)** and the **Mission time**, pick a **Method** and
+Open the diagram from **Modelling → System models → RBDs** and choose the **Targets** tab. Enter the
+**Target reliability** (a percentage, e.g. 99) and the **Mission time**, pick a **Method** and
 press **Allocate**.
 
 ![The Targets tab: a 99% target at 500 hours, and what each block needs](/guides/img/targets-01-allocate.png)

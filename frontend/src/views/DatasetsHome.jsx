@@ -4,12 +4,15 @@ import { listDatasets, deleteDataset, renameDataset } from "../api.js";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
-import { PlusIcon, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, itemName, rowOpen } from "../components/LibRows.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
-import { datasetPath } from "../sections.js";
+import { datasetPath } from "../navigation.js";
 import { fitOptions } from "../datasetFit.js";
 import useMenuDismiss from "../components/useMenuDismiss.js";
 import "../components/Datasets.css";
+import { StorageCapNotice } from "../components/StorageCap.jsx";
+import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
+import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 
 const HELP = { guide: "fit-your-first-model" };
 
@@ -24,14 +27,17 @@ function RowMenu({ d, onRename, onDelete }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const trigger = useRef(null);
   const closeMenu = useCallback(() => setOpen(false), []);
   const options = fitOptions(d);
   useMenuDismiss(open, closeMenu, ref);
-  const act = (fn) => (e) => { e.stopPropagation(); setOpen(false); fn(); };
+  // Focus goes back to the "More actions" button before the menu closes, so a
+  // dialog opened from it (rename, delete) returns focus there.
+  const act = (fn) => (e) => { e.stopPropagation(); trigger.current?.focus(); setOpen(false); fn(); };
   return (
     <td className="lib-actions">
       <div className="ds-acts" ref={ref} onClick={(e) => e.stopPropagation()}>
-        <button type="button" className="ds-more" aria-haspopup="menu" aria-expanded={open} aria-label="More actions"
+        <button type="button" ref={trigger} className="ds-more" aria-haspopup="menu" aria-expanded={open} aria-label="More actions"
           onClick={() => setOpen((o) => !o)}>
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3" /><circle cx="8" cy="8" r="1.3" /><circle cx="12.5" cy="8" r="1.3" /></svg>
         </button>
@@ -87,11 +93,10 @@ export default function DatasetsHome() {
     navigate(datasetPath(ds.id), ds.reused ? { state: { reused: true, name: typedName || null } } : undefined);
   };
 
+  const confirm = useConfirm();
+  const askText = useAskText();
   const onDelete = async (d) => {
-    const msg = d.is_sample
-      ? `Remove the sample “${itemName(d)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete dataset “${d.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(d, "dataset", { name: itemName(d) })))) return;
     try {
       await deleteDataset(d.id);
       refresh();
@@ -101,23 +106,21 @@ export default function DatasetsHome() {
   };
 
   const onRename = async (d) => {
-    const name = window.prompt("Dataset name", d.name);
-    if (!name || !name.trim() || name.trim() === d.name) return;
+    const name = changedText(await askText(renamePrompt({ kind: "dataset", name: d.name })), d.name);
+    if (!name) return;
     try {
-      await renameDataset(d.id, name.trim());
+      await renameDataset(d.id, name);
       refresh();
     } catch (err) {
       setError(err.message);
     }
   };
-
-  const open = (id) => navigate(datasetPath(id));
   const newDataset = <button onClick={() => setNewOpen(true)}><PlusIcon /> New dataset</button>;
 
   return (
     <div className="app">
       <SectionHeader
-        section="modelling"
+        section="data"
         title="Data"
         purpose="Your datasets, stored once and reused by every model fitted from them."
         help={HELP}
@@ -125,6 +128,7 @@ export default function DatasetsHome() {
       />
 
       {error && <div className="card error">{error}</div>}
+      <StorageCapNotice kind="datasets" one="saved dataset" many="saved datasets" refreshKey={datasets} />
 
       <SectionList
         rows={datasets}
@@ -146,12 +150,12 @@ export default function DatasetsHome() {
           <th key="a" style={{ width: 48 }}><span className="sr-only">Actions</span></th>,
         ]}
         render={(d) => (
-          <tr key={d.id} className="lib-row" onClick={() => open(d.id)}>
+          <tr key={d.id} className="lib-row" onClick={rowOpen(navigate, datasetPath(d.id))}>
             <td>
               <div className="ds-name">
                 <span className="ds-ic"><FileIcon /></span>
                 {/* A real link, so the row opens from the keyboard too. */}
-                <Link className="lib-name ds-row-link" to={datasetPath(d.id)} onClick={(e) => e.stopPropagation()}>
+                <Link className="lib-name ds-row-link lib-link" to={datasetPath(d.id)} onClick={(e) => e.stopPropagation()}>
                   {itemName(d)}
                 </Link>
                 {d.shared_by && <Chip title={`Shared by ${d.shared_by}`}>Shared</Chip>}

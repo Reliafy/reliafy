@@ -34,7 +34,7 @@ def test_workspace_changes_reports_the_callers_own_changes_with_links(env):
     _seed(env.db, PRO)
     _seed(env.db, FREE)
     out = _ok(_call(env.oauth[PRO], "list", {"kind": "workspace_changes", "days": 7}))
-    assert [(r["id"], r["url"]) for r in out["new"]] == [(f"{PRO}-m", f"{BASE}/modelling/m/{PRO}-m")]
+    assert [(r["id"], r["url"]) for r in out["new"]] == [(f"{PRO}-m", f"{BASE}/models/m/{PRO}-m")]
     assert [a["fleet"] for a in out["alerts"]] == ["Trucks"]
     assert out["sentence"] == "In the last 7 days: 1 fleet alert fired and 1 item was added."
     assert out["period"]["label"] == "in the last 7 days"

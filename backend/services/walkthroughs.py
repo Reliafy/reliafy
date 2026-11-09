@@ -16,7 +16,7 @@ the ids here are the allowlist for the events and must match it.
 
 from __future__ import annotations
 
-WALKTHROUGH_IDS = ("fit", "replacement", "rbd", "rcm", "fleet")
+WALKTHROUGH_IDS = ("fit", "replacement", "rbd", "fleet")
 # No walkthrough has more steps than this.
 MAX_STEPS = 10
 

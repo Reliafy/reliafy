@@ -2,20 +2,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { COLORWAY, DATA_INK, MUTED, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
-import { analyzeRbd, getActiveRbdJob, getRbdJob } from "../api.js";
+import { analyzeRbd, cancelRbdJob, getActiveRbdJob, getRbdJob } from "../api.js";
+import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import { graphSignature, resultIsStale } from "../rbdSignature.js";
 import RbdEmptyState from "./RbdEmptyState.jsx";
 import { diagramGap } from "../rbdReadiness.js";
 import CovariatesModal from "./CovariatesModal.jsx";
 import { covariateWords } from "../rbdTvc.js";
+import BoundCovariatesModal from "./BoundCovariatesModal.jsx";
+import { boundNodes } from "../covariate.js";
+import { getBoundBlocks } from "../api.js";
 import { BandControls, BandInterval, BandNote, BandTargets, bandTraces, hasBand } from "./RbdBand.jsx";
 import AvailabilityCompare from "./AvailabilityCompare.jsx";
 import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
 import AvailabilityPolicies, { SafetyNotes } from "./AvailabilityPolicies.jsx";
 import RbdSafetyShares from "./RbdSafetyShares.jsx";
 import RbdPfdChart from "./RbdPfdChart.jsx";
-import { pctAt, pctDigits, precisionNote } from "./availabilityPrecision.js";
+import { availabilityPct, downPct, HIGH_AVAILABILITY, pctAt, pctDigits, precisionNote } from "./availabilityPrecision.js";
 import MethodTag from "./MethodTag.jsx";
 import RbdNextFailure, { meanResidualLife } from "./RbdNextFailure.jsx";
 import RbdProduction from "./RbdProduction.jsx";
@@ -28,7 +32,11 @@ import Chip from "./ui/Chip.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatPercent } from "../format.js";
 import { hoursPerUnit } from "./rbdModelText.js";
+import { answerAtTime, formatReliability } from "../rbdCalcText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import ProTag from "./ProTag.jsx";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -47,12 +55,11 @@ function interp(x, y, xq) {
   return null;
 }
 
-const fmt = (v) =>
-  v == null
-    ? "—"
-    : Math.abs(v) >= 1e-4 || v === 0
-    ? v.toPrecision(5)
-    : v.toExponential(3);
+// Times and lives to four significant figures with separators (fmtLife,
+// below); importance measures to three ("∞" where a block's worth is
+// unbounded).
+const fmt = (v) => fmtLife(v);
+const fmtImp = (v) => (v === Infinity ? "∞" : formatNumber(v, { sig: 3 }));
 
 const FUNCS = [
   { id: "sf", label: "Reliability, R(t)" },
@@ -103,6 +110,74 @@ export function DesignLife({ result }) {
   );
 }
 
+// The answer at the time the user asked about (Evaluate at t), first: the
+// system's reliability over that time and its failure probability in words,
+// read off the same curve as the R(t) figure below.
+function AnswerAtTime({ result, t, now, survived }) {
+  if (t == null || t === "") return null;
+  const r = interp(result.time, result.system.sf, Number(t));
+  const a = answerAtTime({ r, t, unit: result.unit, now, survived });
+  if (!a) return null;
+  const band = result.band;
+  const lo = hasBand(band) ? interp(result.time, band.sf_lower, Number(t)) : null;
+  const hi = hasBand(band) ? interp(result.time, band.sf_upper, Number(t)) : null;
+  return (
+    <div className="rbd-answer" role="status">
+      <span className="rbd-answer-name">Reliability over {a.over}</span>
+      <span>
+        <b className="rbd-answer-value">{a.reliability}</b>
+        {lo != null && hi != null && band.level && (
+          <span className="muted"> ({Math.round(band.level * 100)}% CI {formatReliability(lo)}–{formatReliability(hi)})</span>
+        )}
+      </span>
+      <span className="rbd-answer-words">{a.failure}</span>
+    </div>
+  );
+}
+
+// The importance columns in words, under the table: on a phone there is no
+// hover to read the headers' titles.
+function ImportanceHelp({ structural }) {
+  return (
+    <details className="rbd-imp-help">
+      <summary>What these columns mean</summary>
+      <dl>
+        <dt>Birnbaum</dt>
+        <dd>How much the system's reliability moves with this block's. The highest is where an improvement counts most.</dd>
+        <dt>Fussell-Vesely</dt>
+        <dd>The share of the system's failure probability that involves this block failing.</dd>
+        <dt>Risk achievement</dt>
+        <dd>How many times more likely the system is to fail if this block has failed (1 means no change).</dd>
+        <dt>Risk reduction</dt>
+        <dd>How many times less likely the system is to fail if this block never failed.</dd>
+        <dt>Criticality</dt>
+        <dd>The share of system failures this block accounts for.</dd>
+        <dt>Improvement potential</dt>
+        <dd>How much the system's reliability would rise if this block never failed.</dd>
+        {structural && (
+          <>
+            <dt>Structural</dt>
+            <dd>From the wiring alone, how often this block decides whether the system works. Needs no failure data.</dd>
+          </>
+        )}
+      </dl>
+    </details>
+  );
+}
+
+// "As of now", said in words beside the box: tick it to give each block its
+// state today (its age, or that it has failed) and run the results from now
+// rather than from new.
+const AS_OF_HINT = "Start from today: give each block its age now (or mark it failed), and the results run from now instead of from new.";
+function AsOfToggle({ checked, onChange }) {
+  return (
+    <label className="rbd-asof-toggle" title={AS_OF_HINT}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span>As of now <small className="rbd-asof-sub">from today's ages</small></span>
+    </label>
+  );
+}
+
 // What "as of now" assumed (#173): the failed and running blocks, and the
 // system's reliability now.
 function AsOfNote({ result, idToLabel }) {
@@ -129,7 +204,7 @@ function JointAgesNote({ result }) {
   const unit = result.unit ? ` ${unitInText(result.unit)}` : "";
   return (
     <p className="muted-line rbd-joint-note" role="note">
-      Condition monitoring {blocks.length === 1 ? "block" : "blocks"}{" "}
+      Condition and life {blocks.length === 1 ? "block" : "blocks"}{" "}
       {blocks.map((b) => `${b.label} (runs from age ${fmtLife(b.joint_age)}${unit})`).join(", ")}:{" "}
       {blocks.length === 1 ? "its" : "their"} reliability is from now, given {blocks.length === 1 ? "its" : "their"} readings.
     </p>
@@ -212,6 +287,8 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
 
   const importance = result.importance || {};
   const impNodes = Object.keys(importance.birnbaum || {});
+  // The system's reliability at the time the importances are for.
+  const impR = importance.time == null ? null : interp(x, result.system.sf, Number(importance.time));
 
   return (
     <div className="calc">
@@ -231,6 +308,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
       ))}
       {now && <AsOfNote result={result} idToLabel={idToLabel} />}
       <JointAgesNote result={result} />
+      <AnswerAtTime result={result} t={t} now={now} survived={cond ? conditionalAge : 0} />
       <DesignLife result={result} />
       <div className="params">
         <div className="stat">
@@ -261,7 +339,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
           </>
         )}
         <div className="stat">
-          <div className="value">{fmt(sysAtT)}</div>
+          <div className="value">{active === "sf" ? formatReliability(sysAtT) : formatNumber(sysAtT, { sig: 3 })}</div>
           <div className="name">
             {active === "sf" ? "R" : "F"}(t={t ?? "—"}
             {cond ? ` | ${sLabel}` : ""})
@@ -290,8 +368,9 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
       {impNodes.length > 0 && (
         <div className="rbd-importance">
           <div className="rbd-section-head">
-            Importance at t = {fmt(importance.time)}
-            {unit ? ` ${unit}` : ""}
+            Importance at {fmt(importance.time)}
+            {unit ? ` ${unitInText(unit)}` : ""}
+            {impR != null && <span className="muted"> (system reliability {formatReliability(impR)} there)</span>}
           </div>
           {/* Scrolls sideways on a phone rather than widening the page,
               as the availability table already does. */}
@@ -302,12 +381,12 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
                 <th>Component</th>
                 <th title="Birnbaum importance — sensitivity of system reliability to this component">Birnbaum</th>
                 <th title={`Fussell-Vesely — fraction of system unreliability this component contributes to${importance.fussell_vesely_basis ? ` (from ${importance.fussell_vesely_basis}; this diagram has too many cut sets to derive them all)` : ""}`}>
-                  F-V{importance.fussell_vesely_basis ? "*" : ""}
+                  Fussell-Vesely{importance.fussell_vesely_basis ? "*" : ""}
                 </th>
-                <th title="Risk Achievement Worth — how much worse the system gets if this component fails">RAW</th>
-                <th title="Risk Reduction Worth — how much better the system gets if this component were perfect">RRW</th>
-                <th title="Criticality importance (failure-oriented) — the share of system failures this component accounts for">Crit.</th>
-                <th title="Improvement potential — gain available from perfecting this component">Improv.</th>
+                <th title="Risk achievement worth (RAW) — how much worse the system gets if this component fails">Risk achievement</th>
+                <th title="Risk reduction worth (RRW) — how much better the system gets if this component were perfect">Risk reduction</th>
+                <th title="Criticality importance (failure-oriented) — the share of system failures this component accounts for">Criticality</th>
+                <th title="Improvement potential — gain available from perfecting this component">Improvement potential</th>
                 {importance.structural && (
                   <th title="Structural importance — from the diagram's structure alone, the share of the other components' working/failed states in which this one decides whether the system works. Needs no failure data.">Structural</th>
                 )}
@@ -317,18 +396,19 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
               {impNodes.map((id) => (
                 <tr key={id}>
                   <td className="calc-row-label">{idToLabel[id] || id}</td>
-                  <td>{fmt(importance.birnbaum?.[id])}</td>
-                  <td>{fmt(importance.fussell_vesely?.[id])}</td>
-                  <td>{fmt(importance.risk_achievement_worth?.[id])}</td>
-                  <td>{fmt(importance.risk_reduction_worth?.[id])}</td>
-                  <td>{fmt(importance.criticality?.[id])}</td>
-                  <td>{fmt(importance.improvement_potential?.[id])}</td>
-                  {importance.structural && <td>{fmt(importance.structural[id])}</td>}
+                  <td>{fmtImp(importance.birnbaum?.[id])}</td>
+                  <td>{fmtImp(importance.fussell_vesely?.[id])}</td>
+                  <td>{fmtImp(importance.risk_achievement_worth?.[id])}</td>
+                  <td>{fmtImp(importance.risk_reduction_worth?.[id])}</td>
+                  <td>{fmtImp(importance.criticality?.[id])}</td>
+                  <td>{fmtImp(importance.improvement_potential?.[id])}</td>
+                  {importance.structural && <td>{fmtImp(importance.structural[id])}</td>}
                 </tr>
               ))}
             </tbody>
           </table>
           </ScrollCue>
+          <ImportanceHelp structural={!!importance.structural} />
         </div>
       )}
 
@@ -457,10 +537,14 @@ function availabilityRange(...curves) {
   return [Math.max(0, lo - pad), Math.min(1, hi) + pad];
 }
 
-// "99.968%": an availability to three decimals, or more when `spread` (a
+// "95.12%", "99.97% (down 0.0314%)": an availability to about four significant
+// figures, with the downtime above 99.9%; more decimals only when `spread` (a
 // difference to show) needs them.
-const pctOf = (v, spread = null) =>
-  v == null || !Number.isFinite(v) ? "—" : pctAt(v, spread == null ? 3 : Math.max(3, pctDigits(spread)));
+const pctOf = (v, spread = null) => {
+  if (v == null || !Number.isFinite(v)) return "—";
+  if (spread != null) return pctAt(v, Math.max(3, pctDigits(spread)));
+  return v > HIGH_AVAILABILITY ? `${availabilityPct(v)} (down ${downPct(v)})` : availabilityPct(v);
+};
 
 // "2.8 h", "17 min": downtime in hours, small values in minutes.
 function hoursText(h) {
@@ -738,7 +822,7 @@ const quickSeconds = (offer) => (offer ? Number(Number(offer.seconds).toPrecisio
 // ``primary``: the simulation is this view's next step (no exact figures).
 function SimulationActions({ canSimulate, onSimulate, simulating, graph, quick = null, capMessage = null,
                              onQuick = null, job = null, primary = false, tMax = null, currentState = null,
-                             rbdId = null }) {
+                             rbdId = null, onCancel = null }) {
   const [upgrade, setUpgrade] = useState(false);
   if (!onSimulate) return null;
   const canQuick = !canSimulate && !!onQuick && quick && quick.remaining_today > 0 && !capMessage;
@@ -752,7 +836,14 @@ function SimulationActions({ canSimulate, onSimulate, simulating, graph, quick =
         </p>
       )}
       {job ? (
-        <p className="rbd-job-status" role="status" aria-live="polite">{jobStatusText(job)}</p>
+        <div className="rbd-upgrade-actions">
+          <p className="rbd-job-status" role="status" aria-live="polite">{jobStatusText(job)}</p>
+          {onCancel && (
+            <button type="button" className="secondary" onClick={onCancel}>
+              Cancel
+            </button>
+          )}
+        </div>
       ) : (
         <div className="rbd-upgrade-actions">
           {canQuick && (
@@ -766,7 +857,7 @@ function SimulationActions({ canSimulate, onSimulate, simulating, graph, quick =
             disabled={simulating}
             onClick={() => (canSimulate ? onSimulate() : setUpgrade(true))}
           >
-            {simulating && canSimulate ? "Simulating…" : canSimulate ? "Run simulation" : "Run full simulation (Pro)"}
+            {simulating && canSimulate ? "Simulating…" : canSimulate ? "Run simulation" : <>Run full simulation<ProTag always /></>}
           </button>
           {canSimulate && !simulating && (
             <RbdRunsQuote graph={graph} tMax={tMax} currentState={currentState} rbdId={rbdId} />
@@ -813,7 +904,7 @@ function windowWords(window, unit, label = null) {
 export function AvailabilityView({ result, unit, graph = null, onSimulate = null, onCompute = null, busy = null,
                                   onQuick = null, capMessage = null, job = null, windowLabel = null, top = null,
                                   improve = null, more = null, production = null, tMax = null, currentState = null,
-                                  rbdId = null }) {
+                                  rbdId = null, onCancel = null }) {
   const u = unit ? ` ${unitInText(unit)}` : "";
   const hpu = hoursPerUnit(unit);
   // A result saved before #154 is a simulation result (no has_simulation flag).
@@ -850,6 +941,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
     capMessage,
     onQuick,
     job,
+    onCancel,
     // The quote beside "Run simulation" and the run history (#286, #112).
     tMax,
     currentState,
@@ -1307,7 +1399,7 @@ const WINDOW_PRESETS = [
 
 export default function RbdCalculator({
   graph, validation, stale: checkStale, onValidate = null, rbdId = null, name = null, onBuild, onProduction = null,
-  onNodeData = null,
+  onNodeData = null, onConditions = null,
 }) {
   const [result, setResult] = useState(null);
   // The diagram the shown result is for. A result is never shown as current
@@ -1323,6 +1415,10 @@ export default function RbdCalculator({
   const [capMessage, setCapMessage] = useState(null); // 429: today's free runs used
   const [retryable, setRetryable] = useState(null); // 503: the calculation service couldn't take it
   const [job, setJob] = useState(null); // {job_id, status, queue_position} while queued/running
+  // The simulation in flight, so Cancel can stop it (jobCancel.js).
+  const runGuard = useRef(null);
+  if (!runGuard.current) runGuard.current = createRunGuard();
+  const [cancelNote, setCancelNote] = useState(null);
   const [tMax, setTMax] = useState(""); // x-axis 'to' limit (blank = auto)
   const [evalT, setEvalT] = useState(""); // time at which R(t)/F(t) is read off
   // Whether "To" / "Evaluate at" hold the values a calculation filled in
@@ -1355,7 +1451,7 @@ export default function RbdCalculator({
   const blocked = !!validation && !checkStale && !validation.can_calculate;
   const hpu = hoursPerUnit(graph.unit);
 
-  // Blocks whose life model is a guessed starting point (the assistant marks
+  // Blocks whose non-repairable model is a guessed starting point (the assistant marks
   // them placeholder:true). The numbers run fine; the results just aren't real.
   const placeholderCount = useMemo(
     () => (graph.nodes || []).filter((n) => n.data?.model?.placeholder).length,
@@ -1383,6 +1479,22 @@ export default function RbdCalculator({
   );
 
   const covValue = (node, c) => covValues[node.id]?.[c.name] ?? c.default;
+
+  // Blocks whose covariates were left open at their positions (NSWC-11, ALT, PH): what each still
+  // needs, from the server, so the calculator says which blocks need what before it runs.
+  const bound = useMemo(() => boundNodes(graph), [graph]);
+  const [showBound, setShowBound] = useState(false);
+  const [boundNeeds, setBoundNeeds] = useState([]);
+  const boundSig = JSON.stringify([bound.map((n) => [n.id, n.data]), graph.conditions || []]);
+  useEffect(() => {
+    if (!bound.length) { setBoundNeeds([]); return undefined; }
+    let live = true;
+    const t = setTimeout(() => {
+      getBoundBlocks({ nodes: bound, conditions: graph.conditions || [] })
+        .then((d) => live && setBoundNeeds((d.blocks || []).map((b) => b.needs || b.problem).filter(Boolean)), () => {});
+    }, 250);
+    return () => { live = false; clearTimeout(t); };
+  }, [boundSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The covariate payload sent to the backend (filled with defaults).
   const covPayload = () => {
@@ -1429,11 +1541,9 @@ export default function RbdCalculator({
   };
 
   // The design life's target reliability (0–1), or null when blank or invalid.
-  const target = (() => {
-    if (graph.repairable || targetPct === "") return null;
-    const v = Number(targetPct);
-    return v > 0 && v < 100 ? v / 100 : null;
-  })();
+  // Typed as 90 (percent.js): 0.9 is asked about, not taken as 0.9%.
+  const targetCheck = readPercents("rbdDesignLife", { reliability: targetPct }).checks.reliability;
+  const target = graph.repairable ? null : targetCheck.state === "ok" ? targetCheck.fraction : null;
 
   // Signature of the calculation inputs, so we can tell when the shown result
   // is out of date with the current "To" / covariate / conditional selections.
@@ -1483,7 +1593,12 @@ export default function RbdCalculator({
     setNeedsPro(false);
     setCapMessage(null);
     setJob(null);
+    setCancelNote(null);
     const sentSig = graphSig;
+    // A simulation can take a while: a token lets Cancel stop it even while
+    // it computes in the request itself.
+    const token = graph.repairable && (simulate || force || quick) ? runGuard.current.start() : null;
+    const superseded = () => token != null && !runGuard.current.isCurrent(token);
     try {
       const cov = covPayload();
       // As of now replaces the whole-system "given survived to" age.
@@ -1509,10 +1624,13 @@ export default function RbdCalculator({
                 currentState: now,
                 // Keep large diagrams' exact figures once asked for.
                 exact: exact || result?.exact?.status === "ok",
+                runToken: token,
               }
             : { currentState: now, targetReliability: target }),
         }
       );
+      if (superseded()) return; // cancelled while it ran
+      runGuard.current.finish(token);
       setResult(res);
       setResultSig(sentSig);
       if (res.free_sims) setQuickOffer(res.free_sims);
@@ -1541,6 +1659,8 @@ export default function RbdCalculator({
         setBusy(null);
       }
     } catch (err) {
+      if (superseded()) return;
+      runGuard.current.finish(token);
       setBusy(null);
       if (err.status === 402 && err.code === "pro_required") {
         // A simulation-only diagram (no exact figures): the paywall — with
@@ -1591,6 +1711,18 @@ export default function RbdCalculator({
     runCalculation(force, opts);
   };
 
+  // Cancel the simulation: stop waiting now, and tell the server (the job,
+  // or the run computing in the request) so its result is thrown away.
+  const cancelSimulation = () => {
+    const id = job?.job_id || runGuard.current.cancel();
+    runGuard.current.cancel();
+    setJob(null);
+    setBusy(null);
+    setPhase("idle");
+    setCancelNote(CANCELLED_TEXT);
+    if (id) cancelRbdJob(id).catch(() => {}); // the page has stopped either way
+  };
+
   // Poll the in-flight job until it finishes. Survives transient network
   // errors (keeps trying, more slowly); gives up after a run of failures.
   const jobId = job?.job_id;
@@ -1622,6 +1754,13 @@ export default function RbdCalculator({
           finish();
           setError(view.error || "The calculation failed.");
           setPhase("error");
+          return;
+        }
+        if (view.status === "cancelled") {
+          // Cancelled elsewhere (another tab, the run history).
+          finish();
+          setCancelNote(CANCELLED_TEXT);
+          setPhase("idle");
           return;
         }
         setJob((prev) => (prev && prev.job_id === jobId ? { ...prev, ...view } : prev));
@@ -1695,6 +1834,11 @@ export default function RbdCalculator({
           ? "Recalculate"
           : "Calculate"}
       </button>
+      {phase === "calculating" && busy === "simulate" && !job && (
+        <button type="button" className="secondary" onClick={cancelSimulation}>
+          Cancel
+        </button>
+      )}
       {dirty && (
         <span className="hint">Recalculate to apply your changes.</span>
       )}
@@ -1714,6 +1858,18 @@ export default function RbdCalculator({
             ? "1 block uses placeholder parameters"
             : `${placeholderCount} blocks use placeholder parameters`}
           {" — results are illustrative until you set real values."}
+        </div>
+      )}
+
+      {bound.length > 0 && (
+        <div className="rbd-cov-bar rbd-bound-bar">
+          <button className="secondary" onClick={() => setShowBound(true)} disabled={!onNodeData}>
+            Covariates…
+          </button>
+          <span className="hint" role="status">
+            {bound.length} block{bound.length === 1 ? " takes" : "s take"} covariates set here (left open at {bound.length === 1 ? "its position" : "their positions"})
+            {boundNeeds.length ? `. Still needed: ${boundNeeds.join("; ")}.` : ": every one has a value."}
+          </span>
         </div>
       )}
 
@@ -1781,23 +1937,10 @@ export default function RbdCalculator({
               />
             </label>
           )}
-          <label className="calc-t" title="The design life: how long system reliability stays at or above this">
-            <span>Design life at R (%)</span>
-            <input
-              type="number" inputMode="decimal"
-              min="1"
-              max="99.9"
-              step="any"
-              placeholder="90"
-              value={targetPct}
-              onChange={(e) => setTargetPct(e.target.value)}
-            />
-          </label>
+          <PercentField label="Design life at R" title="The design life: how long system reliability stays at or above this"
+            value={targetPct} onChange={setTargetPct} check={targetCheck} placeholder="90" />
           <BandControls value={band} onChange={setBand} />
-          <label className="rbd-asof-toggle">
-            <input type="checkbox" checked={asOf} onChange={(e) => setAsOf(e.target.checked)} />
-            <span>As of now</span>
-          </label>
+          <AsOfToggle checked={asOf} onChange={setAsOf} />
           {!asOf && action}
         </div>
       )}
@@ -1813,7 +1956,7 @@ export default function RbdCalculator({
           />
           {jointBlocks.length > 0 && (
             <p className="hint" style={{ margin: "4px 0 0" }}>
-              Already as of now: {jointBlocks.join(", ")} (condition monitoring, at {jointBlocks.length === 1 ? "its" : "each"}{" "}
+              Already as of now: {jointBlocks.join(", ")} (condition and life, at {jointBlocks.length === 1 ? "its" : "each"}{" "}
               unit's age from its readings).
             </p>
           )}
@@ -1863,10 +2006,7 @@ export default function RbdCalculator({
                 {graph.unit && <span>{unitInText(graph.unit)}</span>}
               </label>
             )}
-            <label className="rbd-asof-toggle">
-              <input type="checkbox" checked={asOf} onChange={(e) => setAsOf(e.target.checked)} />
-              <span>As of now</span>
-            </label>
+            <AsOfToggle checked={asOf} onChange={setAsOf} />
             {!asOf && action}
           </div>
           {asOf && (
@@ -1890,6 +2030,10 @@ export default function RbdCalculator({
 
       {result && stale && phase !== "calculating" && !checking && (
         <p className="hint">The diagram has changed since these results: recalculate to update them.</p>
+      )}
+
+      {cancelNote && phase !== "calculating" && (
+        <p className="hint" role="status">{cancelNote}</p>
       )}
 
       {error && (
@@ -1949,6 +2093,7 @@ export default function RbdCalculator({
           onQuick={() => runCalculation(false, { quick: true })}
           capMessage={capMessage}
           job={job}
+          onCancel={cancelSimulation}
           windowLabel={sentWindowLabel}
           top={top}
           improve={<WhatToImprove graph={graph} rbdId={rbdId} result={result} onTop={setTop} />}
@@ -1985,6 +2130,14 @@ export default function RbdCalculator({
         <RbdProduction graph={graph} t={evalT === "" ? null : Number(evalT)} onProduction={onProduction} />
       )}
 
+      {showBound && (
+        <BoundCovariatesModal graph={graph} onClose={() => setShowBound(false)}
+                              onApply={({ conditions, nodeData }) => {
+                                onConditions?.(conditions);
+                                if (onNodeData && Object.keys(nodeData).length) onNodeData(nodeData);
+                                setShowBound(false);
+                              }} />
+      )}
       {showCov && (
         <CovariatesModal
           covNodes={covNodes}

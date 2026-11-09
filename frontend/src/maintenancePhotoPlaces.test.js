@@ -10,7 +10,7 @@ test("kinds read in words and link to their pages", () => {
   assert.equal(normaliseKind("work_order"), "WorkOrder");
   assert.equal(normaliseKind("nonsense"), null);
   assert.equal(placePath({ id: "w1", kind: "WorkOrder" }), "/maintenance/work-orders/w1");
-  assert.equal(placePath({ id: "l1", kind: "location" }), "/maintenance/locations/l1");
+  assert.equal(placePath({ id: "l1", kind: "location" }), "/asset-register/locations/l1");
   assert.equal(placePath({ id: "x", kind: "Document" }), null);
 });
 
@@ -46,4 +46,17 @@ test("picker options for each kind", () => {
   assert.deepEqual(placeOptions("Item", lists).map((o) => o.label), ["Motor (SN1)", "Fan"]);
   assert.deepEqual(placeOptions("WorkOrder", lists), [{ id: "w", label: "#7 Replace seal" }]);
   assert.deepEqual(placeOptions("Other", lists), []);
+});
+
+test("the photo viewer steps with the arrow keys and wraps", async () => {
+  const { photoStep, photoLabel } = await import("./maintenancePhotoPlaces.js");
+  assert.equal(photoStep(0, 5, "ArrowRight"), 1);
+  assert.equal(photoStep(4, 5, "ArrowRight"), 0);
+  assert.equal(photoStep(0, 5, "ArrowLeft"), 4);
+  assert.equal(photoStep(2, 5, "Home"), 0);
+  assert.equal(photoStep(2, 5, "End"), 4);
+  assert.equal(photoStep(2, 5, "Enter"), null);
+  assert.equal(photoStep(0, 1, "ArrowRight"), null);
+  assert.equal(photoLabel(1, 5, "Nameplate"), "Open photo 2 of 5: Nameplate");
+  assert.equal(photoLabel(0, 1, ""), "Open photo 1 of 1");
 });

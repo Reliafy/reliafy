@@ -3,12 +3,12 @@ title: "Fit a model with covariates (regression)"
 task: "How much do temperature, load or duty change how long my equipment lasts?"
 category: "Life data modelling"
 prerequisites: "Life data with one or more columns that might affect life: a temperature, a load, a duty, a site. For a load that changes during a unit's life, one row per stretch at each value."
-related_href: "/modelling/new"
+related_href: "/models/new"
 related_label: "Fit a model"
 order: 9
 ---
 
-A plain life model gives one answer for every unit. Real units don't all run
+A plain non-repairable model gives one answer for every unit. Real units don't all run
 the same way. Seals on a hot line fail sooner than seals on a cool one, and a
 pump at 90% duty wears faster than one at 60%. A regression model, also called
 a covariate model, measures how much each of those factors changes life. You
@@ -35,9 +35,9 @@ tested at 60, 80 and 100 °C and at two loads.
 
 ## Add the covariates
 
-Start a new model under **Modelling → Life models** and choose **Fit to data**.
+Start a new model under **Modelling → Models → Non-repairable** and choose **Fit to data**.
 Map the time and status columns in the **Data** step as usual (see
-[fit your first life model](/guides/fit-your-first-model)). Then open
+[fit your first non-repairable model](/guides/fit-your-first-model)). Then open
 **Advanced (regression): covariates** and tick each covariate column. Give each
 one a unit if you like (°C, kN); it's shown with its input and its coefficient.
 
@@ -65,11 +65,21 @@ distributions, in four families. They differ in *how* a covariate acts:
 - **Additive hazards (AH)**: a covariate adds a fixed amount to the failure
   rate rather than multiplying it.
 
+Each family comes with several baselines to pick from: Weibull, exponential,
+lognormal, gamma, **log-logistic** (a hazard that rises, then falls, with a
+heavier tail than the lognormal), normal, logistic and Gumbel. If you don't
+know which, fit two or three and compare them in the Diagnostics tab. For the
+log-logistic, proportional odds and accelerated failure time are the same
+model: they fit identically and only the coefficients are written differently.
+
 Under **More models** there are semi-parametric versions (Lin-Ying additive
 hazards, proportional odds, Buckley-James AFT) and **shared frailty** models.
 A frailty model is for units grouped by site or batch that share a hidden risk:
 choose its **Group by (site or batch)** column and the fit says how much the
-groups differ.
+groups differ. **Frailty distribution** sets how that hidden risk varies:
+**Gamma** is the usual choice, **Log-normal** has a heavier tail, so a few very
+frail sites stand out without dragging the rest (Cox PH with frailty takes the
+gamma only).
 
 For **Cox PH**, **Advanced Cox options** set how **Tied failure times** are
 handled (Efron by default), a column to **Stratify by** (each level gets its
@@ -84,14 +94,17 @@ in service.
 ## Read the effects
 
 Fit the seal data with **Weibull PH** (the sample model *Valve seal life —
-Weibull PH on temp & load* is this fit) and open the **Coefficients** tab:
+Weibull PH on temp & load* is this fit). It opens on the **Effects** tab: a
+chart of each covariate's hazard ratio with its 95% interval (1 means no
+effect), each effect in words, and the baseline beside them. The **Data** tab
+has every coefficient:
 
 | Covariate | β | 95% interval | Hazard ratio e^β |
 |---|---|---|---|
 | temp_C | 0.138 | 0.093 to 0.183 | 1.148 |
 | load | 5.32 | 3.02 to 7.63 | 205 |
 
-![The Coefficients tab: each covariate's β, its interval and its hazard ratio](/guides/img/cov-02-coefficients.png)
+![The Effects tab: each covariate's hazard ratio with its interval, and the effects in words](/guides/img/cov-02-coefficients.png)
 
 Read the **hazard ratio** as "per +1 of the covariate, the failure rate is
 multiplied by this". So each extra degree multiplies it by 1.148, and 10 °C
@@ -102,6 +115,13 @@ e^(5.32 × 0.4) ≈ 8.4.
 An interval for β that doesn't include 0 (a ratio that doesn't include 1) means
 the covariate clearly matters. Both do here.
 
+A proportional-odds model reports an **odds ratio**: per +1 of the covariate,
+the odds that a unit has already failed are multiplied by this number, and the
+effect fades as units age. An additive-hazards model reports an **added failure
+rate**: per +1 of the covariate, the failure rate rises by this amount per unit
+of time, whatever the age. It is not a ratio, so a negative number means the
+covariate lowers the failure rate.
+
 An AFT model reports a **time ratio** instead. For the same data, **Weibull
 AFT** gives temp_C a time ratio of 1.025: each extra degree makes the seal age
 2.5% faster. The two views agree. For a Weibull, the hazard ratio is the time
@@ -109,26 +129,43 @@ ratio raised to the shape β: 1.025^5.58 ≈ 1.148.
 
 ## Ask about one operating condition
 
-The **Calculator** tab answers for the covariate values you type under
-**Covariates**: reliability at a time, a time at a reliability, the B-lives and
-the MTTF, each with its bound. **+ Add combination** draws another set of
-values on the same chart, such as the same seal at 60 °C and at 100 °C.
+The **Calculator** tab answers for the covariate values you type in the row
+above its chart: reliability at a time, or a time at a reliability, each with
+its bound. **+ Compare another** draws another set of values on the same chart,
+such as the same seal at 60 °C and at 100 °C. The **Model characteristics** tab
+gives the B-lives and the MTTF at those values, with their bounds.
 
 ## Check the model holds
 
-The **Validation** tab asks two questions.
+The **Diagnostics** tab asks whether you can trust the model, in three groups.
 
-**How good is this model?** **Harrell's C** is how often the model ranks the
-unit that failed first as the riskier one (0.87 for the seals: strong). The
+**Assumptions.** *Does each effect stay constant over time?* For PH models, the
+**Grambsch-Therneau test** on the Schoenfeld residuals checks the core
+assumption: that each covariate's effect stays the same over time. A p-value
+above 0.05 (0.69 here) means one hazard ratio per covariate describes the data.
+Beside it, *Is each effect a straight line?* (the martingale residuals) and
+*Any odd units?* (the deviance residuals: units beyond ±2.5 are poorly
+predicted). **Test details and residuals** opens the per-covariate tests. If
+the assumption fails, try an AFT or PO model, or stratify a Cox model on the
+offending column.
+
+For the other families the card is **Do the model's own assumptions hold?**:
+a table of tests, each marked *Passes*, *Borderline* or *Fails*, with what to
+try under it. A proportional-odds or additive-hazards model is tested for an
+effect that changes with age. An AFT or PO model is also checked for its
+baseline (does another distribution fit more than 2 AIC points better?), for
+each covariate acting in a straight line, and for predicted survival matching
+what happened. A frailty model is tested for whether the groups differ at all.
+A "Fails" is a reason to try another family or baseline, not a verdict on your
+data. Buckley-James has no such checks; judge it by its ranking score.
+
+**Predictive accuracy.** **Harrell's C** is how often the model ranks the unit
+that failed first as the riskier one (0.87 for the seals: strong). The
 **integrated Brier score** is the prediction error, against one survival curve
 for every unit. Here the covariates cut it by 63%.
 
-**Does the model hold?** For PH models, the **Grambsch-Therneau test** checks
-the core assumption: that each covariate's effect stays the same over time. A
-p-value above 0.05 (0.69 here) means one hazard ratio per covariate describes
-the data. **Test details and residuals** opens the per-covariate tests and the
-Schoenfeld, martingale and deviance residual plots. If the assumption fails,
-try an AFT or PO model, or stratify a Cox model on the offending column.
+**Fit statistics.** The log-likelihood, AIC, AICc and BIC, to compare with
+another model fitted to the same data.
 
 ## Covariates that change over time
 
@@ -165,8 +202,9 @@ hours) = 36%, at least 26% at 90% confidence.
 
 ![A changing-load model's calculator: 60% load, then 90% from 4,800 hours](/guides/img/cov-03-schedule.png)
 
-Its **Coefficients** tab says it in words: *every +10% in load_pct multiplies
-the hazard by 1.74 (95% interval 1.19 to 2.55)*.
+Its **Effects** tab says it in words: *every +10% in load_pct multiplies
+the hazard by 1.74 (95% interval 1.19 to 2.55)*, and **Model characteristics**
+gives the B-lives and the mean life along the Calculator's schedule.
 
 ## Use it elsewhere
 

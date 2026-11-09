@@ -26,3 +26,9 @@ test("the MCP connector counts as on until the server says it's off", () => {
   assert.equal(settledConfig(null).mcp, true);
   assert.equal(settledConfig({ mcp: false }).mcp, false);
 });
+
+test("unknown paths also wait for the list of extension pages", () => {
+  const cfg = settledConfig({ auth: true });
+  assert.equal(unmatchedRoute(cfg, false), "wait");
+  assert.equal(unmatchedRoute(cfg, true), "redirect");
+});

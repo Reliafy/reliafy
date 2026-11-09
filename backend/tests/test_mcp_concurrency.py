@@ -303,13 +303,14 @@ def test_instance_heavy_cap_waits_then_refuses(monkeypatch):
 
 
 def test_inline_fit_data_is_capped_in_the_schema():
+    # tools/list carries an open `args`; each action's own schema (what calls
+    # are validated against) is where the inline rows are capped.
     from backend import mcp_server
 
-    tools = {t.name: t for t in anyio.run(mcp_server.mcp.list_tools)}
-    for name in ("life_data_analysis", "models"):  # fit, compare_groups; fit, fit_alt
-        prop = tools[name].input_schema["properties"]["data"]
+    for key in (("analyse", "fit"), ("analyse", "compare_groups"), ("change", "model_fit"), ("change", "model_fit_alt")):
+        prop = mcp_server.ACTION_SCHEMAS[key]["properties"]["data"]
         schemas = prop.get("anyOf", [prop])
-        assert any(s.get("maxItems") == mcp_server._INLINE_MAX_ROWS for s in schemas), name
+        assert any(s.get("maxItems") == mcp_server._INLINE_MAX_ROWS for s in schemas), key
 
 
 def test_file_reads_over_mcp_finish_within_the_request_cap(monkeypatch):

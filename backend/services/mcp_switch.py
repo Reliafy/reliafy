@@ -10,7 +10,7 @@ The switch is one document in ``app_settings``::
 
     {_id: "mcp", enabled, changed_at, changed_by, reason}
 
-set from the Admin page (``/api/admin/mcp``), or turned on by itself when a
+set by an operator (:func:`set_enabled`), or turned on by itself when a
 user newly subscribes to Pro (:func:`turn_on_for_first_pro`). With nothing
 stored it is off on the cloud (billing on) and on for a self-hosted install,
 so open-source users need no setup. ``MCP_ENABLED`` (config) overrides it
@@ -109,7 +109,7 @@ async def is_on() -> bool:
 
 
 def state(db) -> dict:
-    """What the Admin page shows: the effective value and where it comes from."""
+    """The effective value and where it comes from."""
     doc = _stored(db) or {}
     stored = doc.get("enabled") if isinstance(doc.get("enabled"), bool) else None
     changed_at = doc.get("changed_at")

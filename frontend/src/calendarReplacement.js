@@ -8,7 +8,7 @@ export const EVERY_UNITS = ["days", "weeks", "months", "years"];
 export const METHODS = [
   { value: "dp", label: "Exact, on a fine time grid", hint: "Free. Works for any calendar." },
   { value: "integration", label: "Exact, in continuous time", hint: "Free. Only with no replacement between shuts." },
-  { value: "sampling", label: "Sampled (Pro)", hint: "For calendars whose pattern takes very long to repeat." },
+  { value: "sampling", label: "Sampled", pro: true, hint: "For calendars whose pattern takes very long to repeat." },
 ];
 
 const ALIASES = {
@@ -58,7 +58,7 @@ const num = (v) => (v === "" || v == null ? null : Number(v));
 
 // The request body from the form, or { error } saying what's missing.
 export function buildRequest({ model, unit, today, shuts, failureCost, anytimeCost, maxAge, method }) {
-  if (!model || !model.distribution_id) return { error: "Choose a life model." };
+  if (!model || !model.distribution_id) return { error: "Choose a non-repairable model." };
   if (model.kind === "regression") return { error: "Pick a plain distribution: regression models aren't supported here." };
   if (!timeUnit(unit)) return { error: "Choose the model's time unit: the shut dates are turned into model time with it." };
   if (num(failureCost) == null || !(Number(failureCost) > 0)) return { error: "Enter what a failure costs." };

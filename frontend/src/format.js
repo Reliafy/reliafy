@@ -32,8 +32,38 @@ export function formatPercent(fraction, { sig = 2 } = {}) {
   return `${formatNumber(p, { sig })}%`;
 }
 
-// A value with its unit: (4573.2, "hours") → "4,570 hours".
+// A plural unit read for exactly one: "hours" → "hour", "flight hours" →
+// "flight hour", "Kilometres" → "Kilometre". Only the last word changes, and
+// only a plain word of four or more letters ending in a single "s"; anything
+// that might not be a plain plural ("kWh", "ms", "Celsius", "batteries",
+// "boxes") is left alone. The backend's twin is singular_unit in
+// backend/units.py.
+export function singularUnit(unit) {
+  const text = String(unit ?? "");
+  const m = text.match(/^(.*?)([A-Za-z]{4,})$/s);
+  if (!m) return text;
+  const word = m[2];
+  if (!/s$/i.test(word) || /(ss|us|is|ies|ses|xes|zes|ches|shes)$/i.test(word)) return text;
+  return m[1] + word.slice(0, -1);
+}
+
+// A value with its unit: (4573.2, "hours") → "4,570 hours"; (1, "hours") →
+// "1 hour" (only when the shown number is exactly "1").
 export function formatWithUnit(v, unit, opts) {
   const s = formatNumber(v, opts);
-  return unit && s !== MISSING ? `${s} ${unit}` : s;
+  if (!unit || s === MISSING) return s;
+  return `${s} ${s === "1" ? singularUnit(unit) : unit}`;
+}
+
+// A data cell for a preview table: a number with a long fraction reads at
+// four significant figures ("3.438740588637919" → "3.439"); whole numbers,
+// short decimals and text stay as they were, so ids and codes aren't touched.
+export function formatCell(cell) {
+  if (cell == null) return "";
+  const text = String(cell);
+  if (typeof cell !== "number" && !/^\s*-?\d*\.\d+(e-?\d+)?\s*$/i.test(text)) return text;
+  const n = Number(cell);
+  if (!Number.isFinite(n) || Number.isInteger(n)) return text;
+  const digits = text.replace(/e.*$/i, "").replace(/[-.\s]/g, "").replace(/^0+/, "");
+  return digits.length > 4 ? formatNumber(n, { sig: 4 }) : text;
 }

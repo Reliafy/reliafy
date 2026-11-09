@@ -1,0 +1,111 @@
+/* Reliability prediction: the builder, a saved prediction's page and the
+   shared result (PredictionResult.jsx). Tables scroll inside their card on a
+   phone; nothing scrolls the page sideways. */
+
+.pred-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-4);
+}
+@media (min-width: 960px) {
+  .pred-grid { grid-template-columns: minmax(240px, 280px) minmax(0, 1fr); align-items: start; }
+}
+.pred-setup { display: flex; flex-direction: column; gap: var(--sp-3); }
+.pred-setup h2, .pred-lines h2 { margin: 0; }
+.pred-lines .card-head { margin-bottom: var(--sp-3); }
+.pred-lines-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.pred-from-product { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+.pred-paste { margin: 0 0 var(--sp-3); padding: var(--sp-3); border: 1px dashed var(--line); border-radius: var(--r-sm); }
+.pred-paste-actions { justify-content: flex-end; margin: var(--sp-2) 0 0; }
+
+.pred-scroll { overflow-x: auto; position: relative; max-width: 100%; }
+.pred-table { min-width: 640px; }
+.pred-table th.num, .pred-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pred-table tbody td { padding: 10px 12px; border-bottom: 1px solid var(--line2); font-size: var(--fs-14); vertical-align: top; }
+.pred-table .lib-date { font-size: var(--fs-12); }
+.pred-unassigned td { color: var(--muted); }
+.pred-sub td:first-child { color: var(--muted); }
+
+/* The builder's rows: plain inputs in the cells (narrow enough to fit beside
+   the conditions on a laptop; the card scrolls sideways on a phone). */
+.pred-edit { min-width: 560px; }
+.pred-edit tbody td { vertical-align: middle; padding: 8px 6px; }
+.pred-edit thead th { padding-left: 6px; padding-right: 6px; }
+.pred-edit input[type="text"], .pred-edit input[type="number"] {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  padding: 0.4rem 0.5rem;
+  font-size: var(--fs-14);
+  font-family: inherit;
+}
+.pred-edit input[type="number"] { width: 4.5rem; text-align: right; }
+.pred-edit td:first-child input { min-width: 8rem; }
+.pred-edit td:nth-child(2) input { min-width: 6.5rem; }
+.pred-edit .ptp { min-width: 12rem; max-width: 18rem; }
+.pred-edit td.lib-actions { width: 2.5rem; }
+/* A chosen part type's name is long: one line, cut with an ellipsis (its
+   title has the whole name), so the column never stretches the table. */
+.pred-edit .ptp-name { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pred-edit input:disabled { opacity: 0.5; }
+.pred-count { margin: var(--sp-2) 0 0; }
+
+.pred-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin: var(--sp-4) 0; }
+.pred-result-card.is-stale { opacity: 0.6; }
+
+/* The part-type picker: an input with its matches under it. */
+.ptp { position: relative; min-width: 15rem; }
+.ptp input { width: 100%; }
+.ptp-chosen { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.ptp-name {
+  flex: 1 1 auto; min-width: 0; text-align: left; background: none; border: 0; padding: 0.2rem 0;
+  color: var(--ink); font: inherit; font-size: var(--fs-14); cursor: pointer; overflow-wrap: anywhere;
+}
+.ptp-name:hover { color: var(--acc); text-decoration: underline; }
+.ptp-clear {
+  flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%; border: 1px solid var(--line); background: var(--surf);
+  color: var(--muted); font-size: var(--fs-14); line-height: 1; padding: 0; cursor: pointer;
+}
+.ptp-clear:hover { color: var(--ink); border-color: var(--ink); }
+/* In a portal, fixed to the screen where PartTypePicker's listPlace says (its left, width, top or
+   bottom and max height), so a scrolling table or a pane can't cut it off. */
+.ptp-list {
+  position: fixed; z-index: 1100; margin: 0; padding: 4px 0; list-style: none; box-sizing: border-box;
+  max-height: 18rem; overflow-y: auto;
+  background: var(--surf); border: 1px solid var(--line); border-radius: var(--r-sm); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.ptp-item { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; cursor: pointer; }
+.ptp-item.is-active { background: var(--acc-t, rgba(47, 109, 246, 0.1)); }
+.ptp-item-name { font-size: var(--fs-14); color: var(--ink); }
+.ptp-item-meta { font-size: var(--fs-12); color: var(--muted); }
+.ptp-note { padding: 6px 10px; font-size: var(--fs-12); color: var(--muted); }
+.ptp-note button.link { font-size: inherit; }
+.ptp-group { padding: 6px 10px 2px; font-size: var(--fs-12); font-weight: 600; color: var(--muted); text-transform: none; border-top: 1px solid var(--line2); }
+.ptp-group:first-child { border-top: 0; }
+
+/* A line's type: the picker, a rate of the user's own, or "Not electronic". */
+.ptc { display: flex; flex-direction: column; gap: 4px; min-width: 12rem; }
+.ptc-rate { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ptc-rate input { width: 6.5rem; }
+.ptc-unit { font-size: var(--fs-12); color: var(--muted); }
+.ptc-exclude { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-12); color: var(--muted); cursor: pointer; min-height: 28px; }
+.ptc-exclude input { margin: 0; }
+
+/* The result. */
+.pred-result .pred-block { margin-top: var(--sp-5); }
+.pred-result .pred-block h3 { font-size: var(--fs-16); margin: 0 0 var(--sp-2); }
+.pred-pareto { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); align-items: start; }
+@media (min-width: 960px) {
+  .pred-pareto { grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); }
+}
+.pred-small { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
+.pred-small th, .pred-small td { padding: 6px 8px; border-bottom: 1px solid var(--line2); text-align: left; }
+.pred-small thead th { font-size: var(--fs-12); font-weight: 500; color: var(--muted); }
+.pred-small .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pred-source { margin-top: var(--sp-2); }
+.pred-source ul { margin: var(--sp-1) 0 0; padding-left: 1.2rem; }
+.pred-notes { white-space: pre-line; }

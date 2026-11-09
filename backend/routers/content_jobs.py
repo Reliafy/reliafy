@@ -13,6 +13,7 @@ from backend import config
 from backend.db import get_session
 from backend.services import content_jobs
 from backend.services import oidc
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -22,7 +23,7 @@ router = APIRouter()
 async def content_run(dry_run: bool = False, authorization: str | None = Header(default=None),
                       session=Depends(get_session)):
     """Send what's due: an approved What's new's test copy or list send, and
-    the operators' monthly content report on the 1st.
+    any steps installed extensions add.
 
     Accepted only with a Google-signed ID token of ``CONTENT_CRON_SA`` for
     ``CONTENT_CRON_AUDIENCE`` (Cloud Scheduler's OIDC token). Refuses (503)
@@ -38,5 +39,5 @@ async def content_run(dry_run: bool = False, authorization: str | None = Header(
         result = await run_in_threadpool(content_jobs.run, session, dry_run=dry_run)
     except content_jobs.EmailNotConfigured as exc:
         logger.error("Content job refused: %s", exc)
-        return JSONResponse(status_code=503, content={"ok": False, "detail": f"{exc} Nothing sent."})
+        return JSONResponse(status_code=503, content={"ok": False, "detail": f"{client_message(exc)} Nothing sent."})
     return JSONResponse(content=result)

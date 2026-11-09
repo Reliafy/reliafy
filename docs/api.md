@@ -23,8 +23,8 @@ Each token has **scopes**, chosen when you create it:
 | Scope | Allows |
 |---|---|
 | `ingest` (Push data) | the `/api/ingest/*` endpoints and `/api/import/models` |
-| `read` | `/api/v1` reads and calculations: the read-only tools (`guide`, `get`, `list`, `life_data_analysis`, `repairable_analysis`, `strategy`, `rbd_analysis`, `upgrade_link`, and Reliafy Maintenance's reads) |
-| `write` | `/api/v1` creates; every tool that saves, changes, deletes or shares (`models`, `datasets`, `rbd`, `uploads`, `rcm`, `sharing`, `fleet`, Reliafy Maintenance's writes), and photo uploads |
+| `read` | `/api/v1` reads and calculations: the read-only tools (`guide`, `get`, `list`, `analyse`, and Reliafy Maintenance's reads) |
+| `write` | `/api/v1` creates; every tool that saves, changes, deletes or shares (`change`, `report_problem`, Reliafy Maintenance's writes and `maintenance apply`), and photo uploads |
 
 A request outside the token's scopes gets `403`. A token that only has
 `ingest` can push data but can never read your analyses; no token can touch
@@ -41,7 +41,7 @@ Every action of every Reliafy MCP tool is also a REST call:
 
 ```
 POST /api/v1/{tool}/{action}     # a tool with actions (or kinds): body = the action's arguments
-POST /api/v1/{tool}              # a tool without actions (guide, upgrade_link, …)
+POST /api/v1/{tool}              # a tool without actions (guide)
 ```
 
 The body is a JSON object of the action's arguments, exactly as the MCP tool
@@ -49,7 +49,7 @@ takes them (the action itself is in the path). The answer is the tool's
 result, the same JSON an AI assistant gets.
 
 ```bash
-curl -X POST https://reliafy.com/api/v1/life_data_analysis/fit \
+curl -X POST https://reliafy.com/api/v1/analyse/fit \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"data": [120, 340, 510, 700, 980], "censored": [0, 0, 1, 0, 0]}'
 
@@ -78,7 +78,7 @@ The REST calls are gated exactly as over MCP:
 | Who | Gets |
 |---|---|
 | Pro, operators, self-hosted | every tool, no allowance |
-| A signed-in Free account (session) | the same monthly allowance of tool calls as over MCP, without fitting, fleets and simulations |
+| A signed-in Free account (session) | the same monthly allowance of tool calls as over MCP, without fitting, fleets and simulations; `guide`, `get account`, `get upgrade_link` and the data library's lookups (`list library`, `get library_record`, `list library_sources`) aren't counted |
 | An API token on an account without Pro | `402` |
 | Reliafy Maintenance tools | only accounts with Reliafy Maintenance (today: operators); everyone else gets `404` and doesn't see them in `/api/v1/tools` or the spec |
 
@@ -102,6 +102,356 @@ curl -X POST https://reliafy.com/api/v1/get/job -H "Authorization: Bearer $TOKEN
 until `status` is `done` (with the result) or `failed`. The Python client and
 the command line wait for you.
 
+### Many maintenance changes in one call
+
+Reliafy Maintenance's write actions can run as one batch, `POST
+/api/v1/maintenance/apply`: a list of the `maintenance` tool's actions (`positions.create` and so on) with
+their own arguments, in order, with `@ref`s between them (`"@p"` is op p's
+id; `"@p.fitted.item.id"` a field of its result). Every operation is first run
+on a throwaway copy of the workspace, so with any failure nothing is written
+and the answer names the operation. A delete-type operation (`retire`,
+`remove_*`, `void`, `cancel`, `merge`, `disconnect`, `unlink`,
+`clear_coordinates`) needs `confirm`: the thing's name as it is now. The
+answer has each operation's result, counts, the events written and `undo`,
+the reverse operations.
+
+```bash
+curl -X POST https://reliafy.com/api/v1/maintenance/apply \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"operations": [
+        {"ref": "p", "do": "positions.create", "args": {"name": "Feed pump A"}},
+        {"ref": "f", "do": "failure_modes.add_function", "args": {"position_id": "@p", "text": "Deliver 40 L/s"}},
+        {"ref": "ff", "do": "failure_modes.add_functional_failure", "args": {"function_id": "@f", "text": "No flow"}},
+        {"ref": "m", "do": "failure_modes.add", "args": {"position_id": "@p", "functional_failure_id": "@ff", "text": "Bearing worn"}},
+        {"do": "failure_modes.decide", "args": {"failure_mode_id": "@m", "consequence": "operational",
+             "decision": {"outcome": "on_condition", "task": "Vibration check", "interval": 3, "interval_unit": "months"}}}
+      ], "dry_run": false}'
+```
+
+A decision can combine tasks (RCM II's "combination of tasks": a regular
+inspection plus a fixed-time replacement). Send `decision.outcomes` in place of
+`outcome`, `task` and `interval`, one entry per task, and each one that
+schedules work gets a task of its own on the position:
+
+```json
+{"do": "failure_modes.decide", "args": {"failure_mode_id": "@m", "consequence": "safety",
+   "decision": {"outcomes": [
+     {"outcome": "on_condition", "task": "Vibration check", "interval": 1, "interval_unit": "months"},
+     {"outcome": "fixed_interval", "task": "Replace the bearing", "interval": 24, "interval_unit": "months"}]}}}
+```
+
+The entries are two or more tasks of `on_condition`, `fixed_interval` and
+`failure_finding` (one kind may come more than once, each with its own task:
+a weekly top-up and an annual deep clean), optionally with one `redesign`
+beside them as the interim measure; `rtf` and `accept` stand alone. Reads add
+`decision.outcomes` (each with its task, interval and `task_id`) beside the
+first entry's `outcome` and `task`. Entries are told apart by their task: to
+change a combination, send every entry back with the `task_id` it was read
+with; an entry left out has its task taken off.
+The app's own route takes the same body (`PUT
+/api/maintenance/failure-modes/{id}/decision`).
+
+An `on_condition` or `failure_finding` task says what's done when the check
+finds something: `decision.on_found` ("Replace the bearing within 2 weeks"), or
+a member's `on_found` in `decision.outcomes`. Left out of a `decide`, it is
+kept while the kind of task stays; `""` clears it; it's refused on any other
+kind of task. Reads return it in the same places. A failure mode's rationale
+has one place, its notes (`failure_modes.update notes`, or `PATCH
+/api/maintenance/failure-modes/{id}`): `decision.notes` on a `decide` is
+deprecated and is added to those notes, and reads give `decision.notes` as the
+mode's notes for older callers.
+
+`decide` follows the RCM decision diagram (SAE JA1011, RCM II). `hidden`
+(true or false) says whether the failure would go unnoticed in normal
+operation; `consequence` is one of `safety`, `environmental`, `operational` or
+`non_operational` (for a hidden failure, what the multiple failure would do).
+`consequence: "hidden"` is still accepted as a deprecated alias for `hidden:
+true`. A decision the diagram forbids is refused: `rtf` or `accept` on a safety
+or environmental consequence, `failure_finding` on an evident failure, a
+combination on an operational or non-operational one. Decisions saved before
+are kept; their reads carry `advice`.
+
+The evidence check covers every task of a combination. The decision's
+`evidence` counts for each entry it fits (a degradation model for
+`on_condition`, a replacement analysis for `fixed_interval`, a failure-finding
+analysis for `failure_finding`; a report or a function's notes for any), and an
+entry can link its own `evidence` where one piece can't cover them all:
+
+```json
+{"outcomes": [
+   {"outcome": "on_condition", "task": "Vibration check", "interval": 1, "interval_unit": "months"},
+   {"outcome": "fixed_interval", "task": "Replace the bearing", "interval": 24, "interval_unit": "months",
+    "evidence": {"type": "strategy_analysis", "id": "<analysis id>"}}],
+ "evidence": {"type": "degradation_model", "id": "<model id>"}}
+```
+
+The read's `status` is then `supported` (or `linked`) when every scheduled
+task is evidenced, `partly` when some are ("Partly evidenced: the
+fixed-interval task has none."), `unevidenced` when none are, or the worst
+task's (`contradicted`, `stale`, `inconclusive`, named in `reason`). Each entry
+of `decision.outcomes` carries its own check (`status`, `reason` or `summary`,
+`evidence_from`: `own` or `decision`).
+
+`dry_run` true checks and reports without writing; it's the default when a
+batch deletes or has over 25 operations. `on_error` (`stop`, the default, or
+`continue`) says what to do if an operation fails during the real run (rare:
+a change made meanwhile). `idempotency_key` (yours, up to 64 characters):
+the same key and operations within 24 hours answer with the first run's
+result. At most 200 operations and 50 deletes per batch; `fit_class_model`,
+`generate_rbd`, the imports and the workspace settings stay single calls.
+The Python client has `Client.apply(...)`, the command line
+`reliafy apply ops.json [--run]`, and `maintenance guide` topic `apply` the
+worked examples.
+
+A failure mode's FMEA and FMECA fields live on the same record as its RCM:
+`maintenance failure_modes.score` (`failure_mode_id` plus any of `severity`,
+`occurrence`, `detection` (whole numbers 1–10), `cause`, `effect_local`,
+`effect_next`, `effects` (the end effect, the RCM's failure effects),
+`detection_method`, `action`, `action_owner`, `action_due` (YYYY-MM-DD),
+`action_status` (open, in_progress, done), `failure_rate`, `time_unit`,
+`rate_source` (entered, model, data), `mode_ratio` and `loss_probability`
+(0–1), `operating_time`, `severity_class` (I–IV); `clear` lists fields to
+blank). Reads answer with the computed `rpn` (S × O × D), `ap` (the action
+priority, H, M or L) and `cm` (β × α × λ × t), never stored, and each position
+in `get.rcm` carries an `fmea` summary (scored, high, medium, low, max_rpn,
+cr). A mode may sit directly under a function with no functional failure yet
+(`function_id` on `failure_modes.add`, `assign` and `move`); the RCM reads list
+it in the function's `modes`. `products.add_sample` adds the sample
+quadcopter product, its design fully scored (on Products, not in the asset
+tree).
+
+How often to do a task: `maintenance rcm.pf_interval` needs only
+the P-F interval (`pf_interval` with `pf_unit`): it answers half the P-F
+interval, or the net P-F interval (less `act_time`, the time needed to act)
+when that's tighter. Costs are optional and never change it: with
+`inspection_cost`, `found_cost`, `failure_cost` and `onset_rate` (failures a
+year), `cost_optimal` adds the cheapest interval and whether the check pays.
+`maintenance rcm.ff_interval` (a protective device's
+`failure_rate` a year, a `model_id`, or `distribution_id` + `params` +
+`model_unit`) gives the longest test interval that meets
+`target_unavailability`; the costs `test_cost`, `repair_cost`, `demand_rate`,
+`consequence_cost` are optional and add `cost_optimal` (alone, they give the
+cheapest). Both take `current_interval` and `current_unit` for the task's
+numbers now, answer with `recommended` rounded down to hours, days, weeks,
+months or years, and are free on every plan. The fixed-interval one is `analyse optimal_replacement`. The
+app's own routes are `POST /api/maintenance/rcm/interval/on-condition` and
+`/failure-finding`; a saved strategy analysis of kind `on_condition_interval`
+or `failure_finding_interval` stands as an on-condition or failure-finding
+decision's evidence (contradicted when the task's interval is longer than the
+P-F interval, or than the longest that meets the target).
+
+```bash
+reliafy maintenance rcm.pf_interval --pf-interval 10 --pf-unit weeks --act-time 1
+reliafy maintenance rcm.ff_interval --failure-rate 0.1 --target-unavailability 0.01
+```
+
+(These two were `rcm.interval_on_condition` and `rcm.interval_failure_finding`
+until Nov 2026; `parts.build_positions` was `parts.positions_from_structure`.)
+
+Life models on positions (the Explorer's Modelling tab): `maintenance
+models.link` attaches a model to a position (a link, never a copy): a saved one
+(`model_id`, with `model_type` `model` (the default), `recurrent_model`,
+`degradation_model` or `alt_model`), the position class's (`from_class: true`)
+or a new fit from its failure history (`fit: true`, Pro; `distribution`,
+`scope` `auto` (its own, else its class's pooled history), `position` or
+`class`). `failure_mode_ids` names the failure modes it describes (none: every
+failure there; a fit then counts failures by other modes as suspensions);
+`replace_link_id` swaps one model for another. Accelerated-life and covariate
+models attach as they are (their stress is set where they're used, an RBD block
+or a calculation). `prediction: {environment?, mission_time?, assign?}` (an
+`assign` entry for an NSWC-11 part type carries `conditions` and, for a rate per
+cycle, `cycles_per_hour`) makes a
+parts-count prediction from the position's parts list (and those inside it; a
+product design's bill of materials where they list none), `assign` giving each
+part number a handbook `record_id` (and `quality_factor`): it's saved as a
+reliability prediction (its page links back to the position) and as an
+exponential model at its rate, and attached with role `prediction`. The app
+previews it with `POST /api/maintenance/positions/{id}/prediction`.
+
+`bind: {source: nswc | alt | ph, ref, fixed?: {input: value}, roles?: {input:
+design | use | environment}}` links a covariate model (an NSWC-11 record, an
+accelerated life model or a proportional-hazards model) with some, all or none
+of its covariates fixed at the position. An NSWC-11 model with every input
+fixed is saved as a constant-rate exponential; otherwise the link keeps the
+binding and an RBD built from the tree gets a bound block. A bound block takes
+each open input from its own `covariate_values`, else the diagram's
+`conditions` (`[{name, role: use | environment, unit, value}]`, matched by the
+input's key, symbol or label and unit, or named by the block's
+`covariate_map`), else a default the model gives; an analysis with one still
+missing is refused, naming each block and what it needs. `POST
+/api/rbds/binding-inputs {binding}` lists a model's inputs (the same shape for
+every source) and `POST /api/rbds/bound-blocks {graph}` each bound block's
+open inputs, the value each takes and where it came from.
+An RBD row: `rbd_id` links an existing diagram; `build_rbd: true` makes a new
+one from the positions one level inside (each block the child's model in use,
+or its own RBD as a sub-system; a flagged placeholder where it has none), wired
+by their connections and redundancy groups, in series where there are none,
+saved under Design › Systems as "<position> (from the tree)"; with
+`replace_link_id` (its RBD row) it's rebuilt into the same diagram, adding new
+positions and keeping edits. `use_link_id` makes one of the position's rows
+its model in use (by default its own life model, else its RBD, else its
+prediction): what its roll-up reports, what the RCM offers first and what a
+parent's RBD block takes. `GET /api/maintenance/position-models/{id}?age=`
+adds an RBD's system reliability at that age.
+`fit: true` with `data` (`position`, `class`, or `both`: the position's history
+with its class's other positions' history as the prior) and `method` (`mle`:
+a plain fit with 95% confidence bounds; `bayes`: with a `prior`, 90% credible
+intervals) is "Fit a life model…": `prior` is `{kind: class}` (the class's
+history as a power prior, SurPyval's `prior.from_data`, weighed by `trust`:
+`close` all of its evidence, `guide` half, `start` a fifth), `{kind: model,
+model_id}`, `{kind: params, distribution, params, unit}`, `{kind: around,
+distribution, unit, params: {alpha: {about: 4, between: [3, 6]}, beta:
+{between: [1.5, 3]}}}` (90% between the bounds, "about" optional; a parameter
+left out is the data's), `{kind: library, record_id, shape?: [low, high]}` (a
+data library failure rate: on an exponential the record's gamma is the prior
+exactly, a closed-form update; on a Weibull or lognormal a prior on the mean
+life, `around(1/rate, between=(1/p95, 1/p05))`, with the shape between the
+bounds, 0.5 to 5 by default; a per-demand record is refused) or
+`{kind: b10, …}`.
+`library_record_id` attaches a data library failure rate as the position's
+model (role `library`): an exponential at the record's mean rate per hour,
+saved in Models with the source's 5–95% range as its interval and the record
+id and citation kept. Per-demand probabilities and handbook base rates are
+refused in words.
+The class can't be both the data and the prior. The app previews with
+`POST /api/maintenance/positions/{id}/fit-preview` (a refusal comes back as
+`{refused: words}`). `analyse bayes_update` takes `baseline:
+{class_power_prior: true, position_id}` for the same prior.
+`fit: true` with `baseline` or
+`trust` saves a Bayesian update instead (below). `maintenance models.unlink`
+(`link_id`) takes one off; the model stays in Models. `get.position` lists
+them (`models`). A built item takes its product design's links when it's
+built, as it takes the RCM. The app's own routes:
+`GET /api/maintenance/position-models` (every link with its model's kind,
+headline numbers with bounds, data counts, a one-word quality and what uses
+it), `GET /api/maintenance/position-models/{id}`,
+`POST /api/maintenance/positions/{id}/models` and
+`DELETE /api/maintenance/position-models/{id}`. A failure mode's interval
+calculators start from the position's model for that mode (else one for every
+failure there) when the decision has no evidence of its own.
+
+```bash
+reliafy maintenance models.link --position-id P --model-id sample-model-bearings-weibull
+reliafy maintenance models.link --position-id P --fit --scope auto
+reliafy maintenance models.link --position-id P --library-record-id nrc-inl-2020:mov-sop
+reliafy maintenance models.unlink --link-id L
+```
+
+A Bayesian update of a baseline with a few failures: `analyse bayes_update`
+(Pro) takes a `baseline` (`{model_id}`, `{distribution, params, unit}` or a
+belief `{b10: {value, low, high}, shape: {low, high}, unit}`), `trust`
+(`close`, `guide` or `start`: each number within about 10, 30 or 60%; a
+fitted baseline counts as all, half or a fifth of its evidence), `x` and `c`
+in the baseline's unit, and optional `age`. It returns what the prior says,
+the posterior medians with 90% credible intervals, B10 and mean life, and what
+moved the baseline, in words; it saves nothing. With no data the baseline
+stands as given. On a position, `maintenance models.link` with `fit: true` and
+`baseline` / `trust` (and `exclude`: fitment ids to leave out) updates the
+baseline with the position's history, saves it as a non-repairable model
+(`method: "bayesian_update"`, its bounds credible intervals) and attaches it;
+the app previews with `POST /api/maintenance/positions/{id}/bayes` and saves
+with `/bayes/save`. It's computed by SurPyval's `fit_bayes`.
+
+```bash
+reliafy analyse bayes_update --baseline '{"model_id": "M"}' --trust guide --x 1400,1900,2500 --c 0,0,1
+```
+
+A function's notes and rationale (`notes` on `failure_modes.add_function` /
+`update_function`, up to 25,000 characters on a function) hold the working
+behind its performance standards. `standard_basis`, the separate working
+before Nov 2026, is still accepted but deprecated: it is added to the notes
+under a "Working" line. Reads keep `standard_basis`, `has_basis` and
+`basis_preview` describing the notes, and a working written before reads as
+part of the notes. Evidence `{type: "working", id}` on a decision links that
+function's notes and rationale.
+
+A functional failure's causes (`failure_modes.link_cause`,
+`functional_failure_id` the effect and `cause_id` the cause) may be on any
+position of the same tree: inside the effect's position, beside it or on the
+same one. A failure causing itself, a loop and a cause on another tree are
+refused; a move that takes either end to another tree drops the link and says
+so. Things put on the wrong position move with their history intact:
+`failure_modes.move`, `move_function`, `move_functional_failure`,
+`tasks.move` (a task's open work orders go with it, listed in
+`work_orders_moved`; a task with work done stays) and
+`measurements.move_point` (`point_id`, `position_id`: a position's
+measurement point with its readings and any open alarm work order; the app's
+route is `POST /api/maintenance/points/{id}/move`).
+
+A value someone sets rather than measures (a chlorinator's output %, a pump
+timer's hours a day) is a **setting**: `measurements.add_point` with
+`kind: "setting"` (optional `range_min` / `range_max`, a sanity check), or an
+existing point changed with `measurements.update_point` `kind: "setting"`. Its
+reads carry `changes` (each change, what it changed `from`, and the work order
+it was set at). Readings and settings taken during a work order go in
+`work_orders.close` or `work_orders.update` as `readings: [{point_id, value,
+unit?, on?, task_id?, note?}]`, or one at a time with `measurements.record`
+and `work_order_id` (`task_id`); readings read back with `work_order_id`,
+`task_id`, `work_order` and `task`. `get.work_order` lists what it asks for
+in `reading_points` and what was taken in `readings_taken`. Example: the
+seasonal change-over records the new chlorinator output with
+`reliafy maintenance work_orders.close --work-order-id W --actions '[{"kind":
+"other"}]' --readings '[{"point_id": "CHL", "value": 60}]'`.
+
+What doing a task needs (its LSA record: the how, where the RCM gives the what
+and why) is `tasks.set_resources` (`task_id`, `resources`): `labour`
+[{trade, people, hours}], `tools` [{name, qty?, note?, point_id?}] (point_id:
+the measuring point or signal channel an instrument reads), `spares`
+[{part_id? | name, qty}], `consumables` [{name, qty, unit, cost?}], `access`
+{downtime_hours?, permits, isolation?, access_equipment?}, `method` and
+`duration_hours`. Each section sent replaces that one; null clears it. Every
+task read carries `resources` (with `labour_hours`, `people`,
+`materials_cost`), and each package in `list packages` its `rollup` (labour by
+trade, tools, spares, consumables: what a visit brings). The app's routes are
+`PATCH /api/maintenance/tasks/{id}` with `resources`, and
+`GET /api/maintenance/tasks/{id}/lsa` (the task, the failure modes it serves,
+and the points, channels and parts its lines can pick from).
+
+When a calendar task first falls due is its `start`: `tasks.create`,
+`tasks.update` and `failure_modes.add_task` take `start` (a date like
+`2027-10-01`), and the task falls due then and every interval after (a
+12-monthly summer task made in November can first fall due next October).
+Left out, it falls due one interval from today (or from `last_done`);
+`tasks.update start ''` clears a date set. Task reads carry `next_due` and
+`first_due` (the date set, while it stands: until the task is done on or
+after the day it was set). The app's routes take `start` too:
+`POST /api/maintenance/positions/{id}/tasks`,
+`POST /api/maintenance/failure-modes/{id}/tasks` and
+`PATCH /api/maintenance/tasks/{id}` (null clears it).
+
+Everything in the tree can be taken out of use and brought back (`retire` /
+`restore` on positions, locations, items, parts, manufacturers, measurement
+points, tasks, failure modes, classes, conditions, groups, connections and
+document links): nothing is erased, and `maintenance list.events`
+shows what changed, with the ids to restore.
+
+Failure reports (the `failure_reports` area: `file`, `update`, `set_status`,
+`investigate`, `add_action`, `update_action`, `verify`; reads `get
+failure_report` and `list failure_reports`) record what failed at a position
+and what was done about it, from the report through investigation, corrective
+actions and verification to closure. A list is scoped to a position (and, by
+default, every position inside it), a location, an item or a part number, or
+the whole workspace, with filters by status, consequence, failure mode and
+date; `maintenance guide` topic `failures` has the loop.
+
+Work packages (the `packages` area: `propose`, `create`, `update`,
+`add_task`, `remove_task`, `pause`, `resume`, `retire`, `restore`; reads `get
+package` and `list packages`) bundle the tasks done on one visit, so each
+visit raises one work order. `packages.propose` drafts them from the tasks in
+no package (`position_id` or `location_id` for one branch or area); with
+`weekday` (`monday` … `sunday`) the drafts visit on that day and the longer
+cadences are layers on the shortest in each area and trade (monthly on the
+first Saturday, quarterly on the first Saturday of every 3 months). Each draft
+then has a `ref`, `layer_of` and `cadence_text`, and a layer's `create` has
+`parent_id: "@<its top's ref>"`, so the agreed drafts go straight into one
+`maintenance apply` (each operation's `ref` set to its draft's). The app's
+own routes do the same: `GET /api/maintenance/packages/propose?weekday=`,
+`POST /api/maintenance/packages/batch` (`packages`: the creates, all or
+nothing) and `GET /api/maintenance/packages?position_id=` (those there or
+inside it, or holding a task there). `GET /api/maintenance/task-table?position_id=` (or
+`location_id=`) is the Explorer's Packages tab: every task there and below, one
+row each, with its failure modes, kind, interval, trade, next due and package.
+
 ### Things only the API can do
 
 MCP tool calls carry JSON, not files. These have no MCP twin, on purpose:
@@ -109,7 +459,155 @@ MCP tool calls carry JSON, not files. These have no MCP twin, on purpose:
 | Call | Does |
 |---|---|
 | `POST /api/v1/maintenance/photos?target_id=…&caption=…` | Adds a photo to a maintenance position, item, location or work order. The body is the image (JPEG, PNG, WebP or HEIC; at most 20 MB), or multipart with a `file` field. Cleaned and stripped of camera and location metadata, like a photo added in the app. Reliafy Maintenance only; `write` scope. |
-| `PUT /api/uploads/{upload_id}?t=…` | Sends a file's bytes to the single-use link from `uploads create` (no other credentials; at most 30 MB). Then import it: `datasets upload`, `uploads import_rbd`, `uploads import_excel` or `rbd upload_outage_log` with that `upload_id`. |
+| `PUT /api/uploads/{upload_id}?t=…` | Sends a file's bytes to the single-use link from `change upload_create` (no other credentials; at most 30 MB). Then import it: `change dataset_upload`, `change import_rbd`, `change import_excel` or `change rbd_upload_outage_log` with that `upload_id`; a PDF (purpose `document`, at most 20 MB) goes on a maintenance item, position or class with `maintenance attachments.add_document`. |
+
+### Support replies (operators only)
+
+Operators (`ADMIN_EMAILS`, with a verified address) can answer mail sent to
+the support inbox as Reliafy, from a script or a scheduled agent. Anyone else
+gets `403`. It isn't an MCP tool and has no CLI command: it isn't a user
+feature.
+
+| Call | Does |
+|---|---|
+| `POST /api/v1/support/replies` | Sends one reply. `write` scope. |
+| `GET /api/v1/support/replies` | The last 50 sent, newest first: recipient, subject, a 120-character preview, who sent it. `read` scope. |
+
+```json
+{
+  "to": "customer@example.com",
+  "subject": "Re: Weibull fit question",
+  "text": "Hi, ...",
+  "html": "<p>Hi, ...</p>",
+  "in_reply_to": "<CAB123@mail.example.com>",
+  "references": ["<root456@mail.example.com>"]
+}
+```
+
+`to`, `subject` and `text` are required; `to` is one address. `in_reply_to`
+is the `Message-ID` of the mail being answered, and with `references` (the
+thread's earlier IDs) makes the reply thread in the recipient's mailbox.
+The reply comes from `SUPPORT_FROM` (default `hello@reliafy.com`, named by
+`SUPPORT_FROM_NAME`, default "Reliafy support"), with that address as
+Reply-To, a blind copy to `SUPPORT_COPY_TO` (default `hello@reliafy.com`;
+empty sends none) and an `X-Reliafy-Support-Reply` header carrying the log
+id, so an inbox reader can skip its own copies. It sends over the server's
+SMTP settings and answers once the mail server has taken it: `200` with the
+log entry (including the new `message_id`), `502` if the mail server refused,
+`503` if the server has no SMTP settings, `429` past
+`SUPPORT_REPLIES_PER_HOUR` (default 20, shared by every caller), `422` for a
+bad body. Every attempt is logged in `support_replies` without the message
+body.
+
+### The reliability data library
+
+Published generic failure data (failure rates and probabilities of failure
+on demand), each record cited with its source and licence. It's the same for
+everyone, so it's readable without an account:
+
+| Call | Does |
+|---|---|
+| `GET /api/library/search?q=…&source=…&equipment_type=…&kind=…&failure_mode=…&use=…&facets=true&page=1&page_size=25` | Matching records, best first, 25 a page (at most 100), with `total`, `pages` and `counts` by equipment type, kind and source. `kind` is `rate`, `per_demand`, `life` or `covariate_model`; `failure_mode` is a failure mode's name (any case). `facets=true` adds `facets`: for equipment type, failure mode and kind, how many records each choice would give with the other filters (and `use`) kept. `use` (`model` or `prior`) keeps only the records usable as that on their own (a failure rate counted from service; not a handbook base rate for a parts count, nor a probability per demand), and `left_out` counts what it hid, by why. |
+| `GET /api/library/records/{id}?environment=…` | One record in full (values, spread, evidence, conditions, citation, licence and notes) and `block_model`: the model an RBD block would use. A handbook rate (MIL-HDBK-217F) depends on the environment the part works in: give `environment` (e.g. `GF`, ground, fixed) for its block model; without it, `environments` lists the rate in each. |
+| `POST /api/library/records/{id}/evaluate` | A covariate model's rate (NSWC-11) under conditions: body `{values: {input: value}}` (a missing input takes the handbook's default). Answers `{ok: true, result: {total, unit, modes, derived}, warnings}` or `{ok: false, problems}`, each problem or warning naming the limit and the handbook's page. Saves nothing. |
+| `GET /api/library/sources` | The sources, their licences and what each holds. |
+
+The same reads are on the tools API: `POST /api/v1/list/library`
+(`query`, `source`, `equipment_type`, `record_kind`, `page`, `page_size`), `POST
+/api/v1/get/library_record` (`id`, `environment`, `conditions`: a covariate model's inputs, adding `evaluation`) and `POST
+/api/v1/list/library_sources`, and on the command line `reliafy list library --query "motor-driven pump"`. Library lookups are never counted against the
+Free plan's tool calls. These are generic estimates (today: U.S. nuclear
+power plant industry averages, and base failure rates for electronic parts
+from the MIL-HDBK-217F prediction handbook, and covariate models for mechanical
+parts from the U.S. Navy's NSWC-11 handbook: a base rate × condition factors,
+each input with the handbook's limits; CDNSWC and the Navy did not take part in
+or approve Reliafy), not your own equipment's data;
+show each record's `licence.attribution` with its numbers. In the app the
+library is under Models › Library (`/models/library`, one page per source and
+per record). Its **Use as a model…** is `POST /api/models/from-library`
+(`record_id`, `name?`: a rate as an exponential model, counted against the Free
+plan's saved models) and **Use as a prior…** on a dataset is `POST
+/api/models/fit-with-prior` (`dataset_id`, `time_column`, `censor_column`,
+`c_invert`, `unit`, `distribution`, `prior: {kind: library, record_id,
+shape?}`, `save` with `name` to keep it). `GET /api/library/used` lists the
+records behind the user's latest library models. The record format
+and the sources: [library.md](library.md).
+
+**Libraries of your own.** A saved model is in no library until it's added.
+A library (a name, one line on what it holds, notes or licence text shown
+with every record) belongs to the workspace like any saved item and counts
+as one item toward the Free plan's storage limit, whatever it holds. Adding
+a model takes a snapshot of it then (its distribution, parameters with their
+bounds, unit, sample sizes and how it was fitted) as a record of kind `life`,
+with `model_id` kept as a link: a later refit doesn't change the record. Only
+parametric non-repairable life models go in (Weibull, exponential,
+lognormal, normal, gamma; a Bayesian update of one too); anything else is
+refused in words. Signed-in reads of `/api/library/sources`, `/search` and
+`/records/{id}` include your libraries (marked `mine`), first on a tie, and
+aren't cached; a user record's `block_model` carries the parameters'
+`bounds`, and its detail a `library` and a `model_link`.
+
+| Call | Does |
+|---|---|
+| `GET /api/library/mine` | Your libraries, newest first, with record counts and the equipment types a record can take. |
+| `POST /api/library/mine` | Make one: `name`, `description?`, `notes?`. 402 past the Free limit. |
+| `PATCH /api/library/mine/{id}` | Rename it, or change `description` or `notes`. |
+| `DELETE /api/library/mine/{id}` | Delete it and its records (the models stay). |
+| `POST /api/library/mine/{id}/records` | Add a saved model: `model_id`, `label?` (default the model's name), `equipment_type?` (default `other`), `failure_mode?`, `notes?`. |
+| `DELETE /api/library/mine/{id}/records/{record_id}` | Take a record out (the model stays). |
+
+The same over MCP and `/api/v1`: `list kind libraries`, `get kind library`
+(`id`: the library with its records) and the `change` actions
+`library_create` (`name`, `description?`, `notes?`), `library_update`
+(`library_id`, `name?`, `description?`, `notes?`), `library_delete`
+(`library_id`), `library_add_model` (`library_id`, `model_id`, `label?`,
+`equipment_type?`, `failure_mode?`, `notes?`) and `library_remove_record`
+(`library_id`, `record_id`); on the command line
+`reliafy change library_create --name "Site pumps"` and
+`reliafy change library_add_model --library-id … --model-id …`. A user record works like any other in **Use as
+a model…** (a model of the record's family with its parameters and bounds)
+and **Use as a prior…** (each parameter about its value, between the record's
+bounds, or within about 30% when the record has none; the fit is in the
+record's family and unit).
+
+### Reliability prediction (a parts count)
+
+A design's failure rate from its parts list and the library's handbook base
+rates (MIL-HDBK-217F), before there's any failure data. Each line is a part,
+how many there are and its handbook part type (a library record id); its
+rate is λb × πE (the environment's factor) × πQ (a quality factor per line,
+1 unless given) × quantity, and the system is the sum: MTBF, R(t) at a
+mission time, the rate per assembly and a Pareto. Free and exact.
+
+| Call | Does |
+|---|---|
+| `POST /api/v1/analyse/prediction` | The parts count, saving nothing: `lines` (`[{name, record_id, quantity, quality_factor?, assembly?, reference?}]`; a mechanical part's NSWC-11 `record_id` takes `conditions` (its inputs) and, for a rate per cycle, `cycles_per_hour` instead of `quality_factor`, and a line still missing one is listed in `needs_conditions` and left out of the total), `environment` (`GB`, `GF`, `GM`, `NS`, `NU`, `AIC`, `AIF`, `AUC`, `AUF`, `ARW`, `SF`, `MF`, `ML`, `CL`), `mission_time` (hours, default 1,000). Reliafy Maintenance users may give `product_id` instead of lines: the product's bill of materials comes back as lines to assign. |
+| `POST /api/v1/change/prediction_save` | Save one: `name` and the same arguments; the results are computed on save and kept as they were. `change/prediction_update` (`prediction_id`, any of `name`, `lines`, `environment`, `mission_time`, `notes`) computes them again; `change/prediction_delete` deletes one of yours. |
+| `POST /api/v1/list/predictions`, `POST /api/v1/get/prediction` (`id`) | The saved predictions, and one in full (inputs and results). |
+
+On the command line: `reliafy analyse prediction --lines '[{"name": "Ceramic
+capacitors", "record_id": "mil-hdbk-217f-n2:10-1-ck-11015", "quantity": 48}]'
+--environment GF`. The app's own routes are `POST /api/predictions/compute`,
+`GET /api/predictions/from-product/{product_id}` and the saved predictions at
+`/api/predictions`.
+
+### Datasets: life data and measurements
+
+A dataset is one document holding its **life data** (one row per unit) and,
+when added, its **measurements**: readings on the same units at ages since
+new, one row per reading (unit id, age, value). A condition and life model is
+fitted to one such dataset; a degradation model reads its measurements. See
+[datasets.md](datasets.md).
+
+| Call | Does |
+|---|---|
+| `POST /api/v1/change/dataset_add_measurements` | `dataset_id` with `csv` (text), `upload_id` (a file sent to an upload link; `sheet` for a workbook) or `from_dataset_id` (another dataset's table, copied in). Adds the measurements, or replaces them; refused while a model reads them. |
+| `POST /api/v1/change/dataset_remove_measurements` | `dataset_id`: takes the measurements off (the life data stays). |
+| `POST /api/v1/change/dataset_split` | `dataset_id` whose one table holds life data and readings together (a reading per row, the censoring flag filled in once per unit): splits it into the two parts in place. Columns are guessed; `unit_column`, `age_column`, `censor_column`, `life_columns` and `measurement_columns` override them. |
+| `POST /api/v1/get/dataset` | `id` with `part: "measurements"` pages the readings; without it, the life data (and a `measurements` summary where there is one). `list/datasets` shows each dataset's `measurements`. |
+
+On the command line: `reliafy upload readings.csv --measurements-for
+DATASET_ID`; in Python, `rf.add_measurements(dataset_id, "readings.csv")`.
 
 ---
 
@@ -121,7 +619,7 @@ pip install reliafy-client
 
 The package is `reliafy-client`; you import it as `reliafy`, and it installs
 the `reliafy` command (also as `reliafy-client`, the same command, for when
-some other program called `reliafy` is already on your path). Version 0.3 needs a Reliafy server with the
+some other program called `reliafy` is already on your path). The client needs a Reliafy server with the
 tools API above (`GET /api/v1/tools` answers); against an older server it
 says so, and the 0.2 functions keep working.
 
@@ -130,30 +628,39 @@ from reliafy import Client
 
 rf = Client(token="rlf_...")                    # or RELIAFY_TOKEN, or `reliafy login`
 rf.call("list", "models")
-rf.call("life_data_analysis", "fit", data=[120, 340, 510], censored=[0, 0, 1])
-rf.call("rbd_analysis", "analyze", rbd_id="…", wait=True)   # waits for a job
+rf.call("analyse", "fit", data=[120, 340, 510], censored=[0, 0, 1])
+rf.call("analyse", "rbd", rbd_id="…", wait=True)   # waits for a job
 rf.upload_dataset("bearings.xlsx", name="Bearings")
 rf.add_photo("nameplate.jpg", target_id="…")
+rf.add_document("manual.pdf", target_id="…", kind="manual")
 rf.push_usage(fleet_id, [{"name": "Truck 01", "current_use": 5230}])
 ```
 
 ```bash
 reliafy login                                    # saves the token in your config folder
 reliafy tools                                    # every tool and action you may call
-reliafy life_data_analysis fit --help            # one action's arguments
-reliafy strategy optimal_replacement --distribution-id weibull \
+reliafy analyse fit --help            # one action's arguments
+reliafy analyse maintainability --unit minutes \
+    --lines '[{"name": "Motor", "quantity": 4, "failure_rate": 180, "elements": {"isolation": 10, "replace": 15}}]'
+reliafy analyse optimal_replacement --distribution-id weibull \
     --params '[{"name":"alpha","value":1200},{"name":"beta","value":2.5}]' \
     --planned-cost 200 --unplanned-cost 1500
 reliafy models list
 reliafy fit failures.csv --dist weibull --censor-column status
+reliafy fit failures.csv --dist best --criterion bic   # rank every distribution by BIC (aic, aic_c, bic, neg_ll)
 reliafy push model.json
 reliafy upload bearings.xlsx --name Bearings
 reliafy import rbd plant.xml
 reliafy photo add IMG_*.jpg --to POSITION_ID --caption "Nameplate"
 reliafy photo link PHOTO_ID --to LOCATION_ID      # show it there too
 reliafy photo move PHOTO_ID --to POSITION_ID      # only there
+reliafy document add manual.pdf --to ITEM_ID --kind manual
+reliafy document get DOCUMENT_ID -o manual.pdf
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest readings readings.csv
+reliafy ingest snapshot burst.json     # a signal channel's snapshot (Maintenance): see signal-snapshots.md
+reliafy maintenance progression.time_to_limit --point-id BAND_POINT_ID   # when a watched band reaches its limit, with the uncertainty
+reliafy maintenance progression.series --point-id BAND_POINT_ID --json   # the band as unit, age_days, value rows (and CSV)
 ```
 
 Add `--json` to any command for JSON instead of the readable summary. See
@@ -189,7 +696,7 @@ and **no changes**.
 
 Updates `current_use` (and optionally the per-item usage `rate`) on a
 failure-forecast fleet, then recomputes the forecast. The fleet id is in the
-app URL: `/fleet/forecasts/<fleet_id>`.
+app URL: `/forecasts/<fleet_id>`.
 
 CSV columns: `name` (or `id`), `current_use`, optional `rate`.
 
@@ -212,7 +719,7 @@ Response: `{"fleet": "...", "updated_items": 2, "forecast": {"status": "ok", "ex
 
 Appends `(time, value)` readings to items in a tracked fleet and re-predicts
 each item's remaining life. The id is in the app URL:
-`/fleet/tracking/<tracked_fleet_id>`.
+`/risk/<tracked_fleet_id>` (Decisions › Risk › Condition monitoring).
 
 CSV columns: `item` (name or `id`), `time`, `value`.
 

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { portalHost } from "../fullScreen.js";
 import { useLocation, useNavigate } from "react-router-dom";
 import { claimWalkthroughAutoStart } from "../api.js";
 import { trackEvent } from "../telemetry.js";
@@ -385,7 +386,7 @@ function WalkthroughCallout({ run, targetRef, onMove, onEnd, onShown }) {
         </div>
       </div>
     </>,
-    document.body
+    portalHost()
   );
 }
 

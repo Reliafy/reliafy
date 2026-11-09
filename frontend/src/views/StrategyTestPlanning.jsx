@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import PageHeader from "../components/ui/PageHeader.jsx";
+import { SectionHeader } from "../components/SectionPage.jsx";
+import { SavedOfKind } from "../components/StrategyTool.jsx";
+import { STRATEGY_TOOLS } from "../strategyTools.js";
 import Card from "../components/ui/Card.jsx";
 import Tabs from "../components/ui/Tabs.jsx";
 import DemonstrationTest from "../components/DemonstrationTest.jsx";
@@ -23,8 +25,8 @@ const INTRO = {
 // Strategy › Test planning: planning reliability tests before they're run,
 // one tab per kind of test (each tab its own path, so it can be linked).
 // The Demonstration tab keeps the old Demonstration test page's links: a
-// model's "Plan a test to demonstrate this" (#295) opens it with the
-// requirement in the query string.
+// requirement in the query string (b, life, conf, unit; #295) pre-fills it,
+// and "Use this model" (#294) brings a model's β and unit.
 export default function StrategyTestPlanning() {
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
@@ -32,12 +34,14 @@ export default function StrategyTestPlanning() {
   const initial = useMemo(() => parseDemoPrefill(search), [search]);
   const altModel = useMemo(() => new URLSearchParams(search).get("model"), [search]);
 
+  const tool = STRATEGY_TOOLS[tab === "accelerated" ? "accelerated" : "testPlanning"];
   return (
     <div className="app">
-      <PageHeader
-        crumbs={[{ label: "Strategy", to: "/strategy" }]}
+      <SectionHeader
+        section="strategy"
         title="Test planning"
-        meta={INTRO[tab]}
+        help={tool.help}
+        purpose={INTRO[tab]}
       />
       <Tabs
         label="Kind of test"
@@ -52,6 +56,7 @@ export default function StrategyTestPlanning() {
         {tab === "accelerated" && <AcceleratedTestPlan key={altModel || ""} modelId={altModel} />}
         {tab === "comparison" && <ComparisonPlan />}
       </Card>
+      {tab === "demonstration" && <SavedOfKind kind={tool.kind} noun={tool.noun} />}
     </div>
   );
 }

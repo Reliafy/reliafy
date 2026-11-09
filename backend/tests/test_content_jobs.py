@@ -76,13 +76,10 @@ def pushes(monkeypatch):
     return got
 
 
-def _run(db, when, report=False, **kw):
-    """One run; its update steps only unless ``report``."""
+def _run(db, when, **kw):
+    """One run (no extensions are installed in these tests)."""
     kw.setdefault("updates", UPDATES)
-    out = content_jobs.run(db, now=when, sleep=lambda s: None, **kw)
-    if not report:
-        out["actions"] = [a for a in out["actions"] if a["step"] != "monthly report"]
-    return out
+    return content_jobs.run(db, now=when, sleep=lambda s: None, **kw)
 
 
 def test_friday_before():

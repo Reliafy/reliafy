@@ -387,12 +387,15 @@ def set_plan(
     subscription_id: str | None = None,
 ) -> str:
     """Set the user's plan; returns the plan that was active before."""
+    if not isinstance(uid, str) or not uid:
+        raise ValueError("A user id is a non-empty string.")
     fields = {"plan": plan, "plan_until": until}
     if customer_id:
         fields["stripe_customer_id"] = customer_id
     if subscription_id:
         fields["stripe_subscription_id"] = subscription_id
-    before = db.users.find_one({"_id": uid}, {"plan": 1, "plan_until": 1}) or {}
+    # ``$eq`` keeps the id a value to match, never an operator.
+    before = db.users.find_one({"_id": {"$eq": str(uid)}}, {"plan": 1, "plan_until": 1}) or {}
     db.users.update_one({"_id": uid}, {"$set": fields}, upsert=True)
     # Usage logging: a move to Pro is a conversion (and, after an MCP plan
     # wall, the one the agent-plan question turns on).
@@ -441,13 +444,21 @@ def ai_cost_cents(model: str, input_tokens: int, output_tokens: int) -> int:
 
 # ---- Plan caps -----------------------------------------------------------
 
+# Every saved model kind counts toward the one "models" limit: non-repairable
+# (and joint) models, repairable (recurrent) models and accelerated-life models.
+MODEL_COLLECTIONS = ("models", "recurrent_models", "alt_models")
+
+
 def owned_count(db, uid: str, collection: str) -> int:
-    """Count items the user actually owns (shared samples don't count)."""
-    return db[collection].count_documents({"owner_id": uid})
+    """Count items the user actually owns (shared samples don't count). The
+    "models" kind is all three saved model kinds together."""
+    names = MODEL_COLLECTIONS if collection == "models" else (collection,)
+    return sum(db[name].count_documents({"owner_id": uid}) for name in names)
 
 
-CAPPED_KINDS = ("datasets", "models", "rbds", "degradation_models", "tracked_items", "rcm_studies", "fleets",
-                "outage_logs")
+CAPPED_KINDS = ("datasets", "models", "rbds", "degradation_models", "tracked_items", "fleets",
+                "outage_logs", "fault_trees", "reliability_predictions", "maintainability_predictions",
+                "libraries")
 
 
 def plan_caps(plan: str) -> dict | None:
@@ -471,9 +482,12 @@ _CAP_NOUNS = {
     "rbds": ("saved RBD", "saved RBDs"),
     "degradation_models": ("degradation model", "degradation models"),
     "tracked_items": ("tracked item", "tracked items"),
-    "rcm_studies": ("RCM study", "RCM studies"),
     "fleets": ("failure forecast", "failure forecasts"),
     "outage_logs": ("outage log", "outage logs"),
+    "fault_trees": ("saved fault tree", "saved fault trees"),
+    "reliability_predictions": ("saved reliability prediction", "saved reliability predictions"),
+    "maintainability_predictions": ("saved maintainability prediction", "saved maintainability predictions"),
+    "libraries": ("data library", "data libraries"),
 }
 
 

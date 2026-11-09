@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import Modal from "./Modal.jsx";
 import { listRbds, deleteRbd } from "../api.js";
 import { parseTimestamp } from "../instrument.js";
+import { useConfirm } from "./ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 // Library of saved RBDs: open one into the canvas, or delete.
 export default function RbdOpenModal({ onClose, onOpen }) {
@@ -16,9 +18,10 @@ export default function RbdOpenModal({ onClose, onOpen }) {
 
   useEffect(() => refresh(), [refresh]);
 
+  const confirm = useConfirm();
   const remove = async (e, r) => {
     e.stopPropagation();
-    if (!window.confirm(`Delete RBD “${r.name}”?`)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(r, "diagram")))) return;
     await deleteRbd(r.id);
     refresh();
   };

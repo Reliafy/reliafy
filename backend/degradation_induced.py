@@ -18,6 +18,7 @@ import math
 from typing import Optional
 
 import numpy as np
+from backend.errors import client_message
 
 N_SAMPLES = 10_000
 SEED = 0
@@ -65,7 +66,7 @@ def induced_life(live, times=None, reliability=None) -> dict:
     try:
         dist = live.induced_life(n_samples=N_SAMPLES, random_state=SEED)
     except Exception as exc:  # noqa: BLE001 - say why, never fail the page
-        return {"available": False, "reason": str(exc).strip() or type(exc).__name__}
+        return {"available": False, "reason": client_message(exc)}
 
     never = _f(getattr(dist, "prob_never_fails", 0.0)) or 0.0
     q = np.asarray(dist.qf(np.array([0.1, 0.5, 0.99])), dtype=float)

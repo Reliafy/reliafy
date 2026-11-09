@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { listStrategyAnalyses, deleteStrategyAnalysis } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import OverflowMenu from "../components/OverflowMenu.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
-import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { CompareIcon, CostIcon, StrategyIcon, TestIcon } from "../components/icons.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const KIND_LABEL = {
   optimal_replacement: "Optimal replacement",
   compare_two: "Two-model comparison",
   failure_finding: "Failure finding",
   demonstration_test: "Demonstration test",
+  on_condition_interval: "Check interval (P-F)",
+  failure_finding_interval: "Test interval",
 };
 
 const HELP = { walkthrough: "replacement", guide: "optimal-replacement-interval" };
@@ -32,6 +36,9 @@ const TOOLS = [
 // make them are its children in the menu, and under "New analysis".
 export default function StrategyAnalyses() {
   const navigate = useNavigate();
+  // A tool's "See all" opens the list filtered to its kind (?kind=).
+  const [params] = useSearchParams();
+  const kind = KIND_LABEL[params.get("kind")] ? params.get("kind") : "";
   const [analyses, setAnalyses] = useState(null);
   const [error, setError] = useState(null);
 
@@ -42,11 +49,9 @@ export default function StrategyAnalyses() {
   }, []);
   useEffect(() => refresh(), [refresh]);
 
+  const confirm = useConfirm();
   const onDelete = async (a) => {
-    const msg = a.is_sample
-      ? `Remove the sample “${itemName(a)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete analysis “${a.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(a, "analysis", { name: itemName(a) })))) return;
     try {
       await deleteStrategyAnalysis(a.id);
       refresh();
@@ -55,7 +60,7 @@ export default function StrategyAnalyses() {
     }
   };
 
-  const open = (id) => navigate(`/strategy/analyses/${id}`);
+  const pathOf = (id) => `/strategy/analyses/${id}`;
 
   const newAnalysis = (
     <OverflowMenu label={<><PlusIcon /> New analysis</>}>
@@ -69,7 +74,7 @@ export default function StrategyAnalyses() {
     <div className="app">
       <SectionHeader
         title="Strategy"
-        purpose="Turn fitted models into maintenance decisions. Saved analyses can be cited as evidence in RCM studies."
+        purpose="Turn fitted models into maintenance decisions. Saved analyses can be cited as evidence for RCM decisions."
         help={HELP}
         primary={newAnalysis}
       />
@@ -79,12 +84,14 @@ export default function StrategyAnalyses() {
       {error && <div className="card error">{error}</div>}
 
       <SectionList
+        key={kind}
         rows={analyses}
         noun={["saved analysis", "saved analyses"]}
         placeholder="Search analyses…"
         fields={(a) => [a.name, a.kind, KIND_LABEL[a.kind], a.headline]}
         types={Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }))}
         typeOf={(a) => a.kind}
+        initialType={kind}
         help={HELP}
         empty={{
           title: "No saved analyses yet",
@@ -101,17 +108,17 @@ export default function StrategyAnalyses() {
           <th key="a"><span className="sr-only">Actions</span></th>,
         ]}
         render={(a) => (
-          <tr key={a.id} className="lib-row" onClick={() => open(a.id)}>
+          <tr key={a.id} className="lib-row" onClick={rowOpen(navigate, pathOf(a.id))}>
             <td>
               <div className="lib-name">
-                {itemName(a)}
+                <RowLink to={pathOf(a.id)}>{itemName(a)}</RowLink>
                 {a.shared_by && <Chip title={`Shared by ${a.shared_by}`}>Shared</Chip>}
               </div>
             </td>
             <td className="lib-opt">{KIND_LABEL[a.kind] || a.kind}</td>
             <td className="lib-date">{a.headline}</td>
             <td className="lib-date lib-opt">{relativeTime(a.updated_at || a.created_at)}</td>
-            <RowActions item={a} onOpen={() => open(a.id)} onDelete={() => onDelete(a)} />
+            <RowActions item={a} to={pathOf(a.id)} onDelete={() => onDelete(a)} />
           </tr>
         )}
       />

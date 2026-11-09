@@ -1,4 +1,4 @@
-// Next steps from a fitted life model (#294): which tools can take it, the
+// Next steps from a fitted non-repairable model (#294): which tools can take it, the
 // links that open them with the model chosen, the model a Strategy tool
 // starts on, a saved model as a picker / RBD block value, and the block a
 // model becomes when it's added to a diagram. Pure functions (plus a guarded
@@ -26,6 +26,27 @@ export function nextStepsFor(result) {
   };
 }
 
+// Each tool's name, and what it gives you in a line (the "Use this model"
+// dialog lists both), in the order they're offered.
+export const STEP_LABELS = {
+  replacement: "Find the best replacement interval",
+  fleet: "Forecast a fleet",
+  test: "Plan a demonstration test",
+  rbd: "Add to an RBD",
+};
+export const STEP_WHAT = {
+  replacement: "The age to replace at for the lowest cost, from this model and your planned and failure costs.",
+  fleet: "How many failures a fleet will see over a horizon, and the spares to hold.",
+  test: "How many units to test, and for how long, to show a reliability target.",
+  rbd: "This model as a block in a reliability block diagram: a new one or one of yours.",
+};
+
+// The steps a result offers, in that order, less any in ``skip``.
+export function stepsFor(result, skip = []) {
+  const can = nextStepsFor(result);
+  return Object.keys(STEP_LABELS).filter((s) => can[s] && !skip.includes(s));
+}
+
 const withModel = (path, id, extra = {}) => {
   const q = new URLSearchParams({ ...extra, model: id });
   return `${path}?${q.toString()}`;
@@ -34,9 +55,21 @@ const withModel = (path, id, extra = {}) => {
 // The tool pages, opened with the saved model ``id`` chosen.
 export function nextStepLink(step, id, { unit = "" } = {}) {
   if (step === "replacement") return withModel("/strategy/replacement", id);
-  if (step === "fleet") return withModel("/fleet", id, { new: "1" });
+  if (step === "fleet") return withModel("/forecasts", id, { new: "1" });
   if (step === "test") return withModel("/strategy/test-planning", id, unit ? { unit } : {});
   return null;
+}
+
+// Only the latest of several requests counts: each call starts one and
+// returns a check that stays true until the next call. A saved model picked
+// while an earlier pick (the page's own first choice) is still loading must
+// not be overwritten when that earlier reply lands last.
+export function latestOnly() {
+  let n = 0;
+  return () => {
+    const mine = ++n;
+    return () => mine === n;
+  };
 }
 
 // The model id a link carries (``?model=``), or null.

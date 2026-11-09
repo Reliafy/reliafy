@@ -77,19 +77,27 @@ export function modelMedian(model) {
 const GREEK = { alpha: "α", beta: "β", mu: "μ", sigma: "σ", failure_rate: "λ" };
 const n3 = (v) => formatNumber(v, { sig: 3 });
 
-// One short line for a life model: "λ 1e-6/h", "Weibull · η 12,000 h · β 1.6",
+// One short line for a non-repairable model: "MTTF 1,000,000 h", "Weibull · η 12,000 h · β 1.6",
 // "Lognormal · mean 13.6 h". ``short`` leaves out the "Weibull" its η and β
 // already say ("η 12,000 h · β 1.6"), for a block's one line on the canvas.
-export function lifeLine(model, unit, { short = false } = {}) {
+// A constant rate reads as its mean ("MTBF" on a repairable diagram), which
+// engineers take in faster than "λ 1e-6/h"; with no unit set yet it says so.
+export function lifeLine(model, unit, { short = false, repairable = false } = {}) {
   if (!model) return "";
   const u = unitAbbr(unit);
   const withU = (v) => `${n3(v)}${u ? ` ${u}` : ""}`;
   if (model.kind === "regression") return `${model.distribution} · covariates`;
+  // Covariates left open at its position, set on the block or the diagram (covariate_binding.py).
+  if (model.kind === "bound") return `${model.name || "Covariate model"} · covariates set here`;
   if (model.kind === "joint") return jointBlockLine(model, u); // a condition-based unit
   const k = distKey(model);
   if (k === "mixture") return model.distribution || "Mixture of failure modes"; // #318
   if (k === "exponential") {
     const r = param(model, "failure_rate");
+    if (r > 0 && Number.isFinite(r)) {
+      // A no-break space keeps the unit with its number when the block wraps.
+      return `${repairable ? "MTBF" : "MTTF"} ${n3(1 / r)}${u ? `\u00a0${u}` : " · unit not set"}`;
+    }
     // "/h", "/cycle": a custom unit per one of it.
     const per = u.length > 3 ? u.replace(/s$/, "") : u;
     return `λ ${n3(r)}${per ? `/${per}` : ""}`;
@@ -112,7 +120,7 @@ export function repairLine(repair, unit) {
 
 // The block's one line: life, then (repairable) its repair.
 export function blockLine(data, unit, repairable) {
-  const life = lifeLine(data.model, unit);
+  const life = lifeLine(data.model, unit, { repairable });
   if (!repairable) return life;
   const rep = data.instant_repair ? "instant repair" : repairLine(data.repair, unit);
   return [life, rep].filter(Boolean).join(" · ");

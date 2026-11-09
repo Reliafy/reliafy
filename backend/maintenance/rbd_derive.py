@@ -2,7 +2,7 @@
 their connections say how the blocks are wired, and redundancy groups say where
 k of n is enough.
 
-* Each child position is a block. Its life model is its class's fitted model
+* Each child position is a block. Its non-repairable model is its class's fitted model
   (in days); with none, a placeholder, named in the notes.
 * A connection from A to B is an edge A -> B.
 * A redundancy group (k of its n members needed) becomes a vote node: each
@@ -28,8 +28,11 @@ def _bid(pid: str) -> str:
     return "p" + pid[:10]
 
 
-def build(m: Maintenance, scope_id: str) -> dict:
-    """The compact RBD graph for a position's children, and notes on how it was built."""
+def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days") -> dict:
+    """The compact RBD graph for a position's children, and notes on how it was built.
+    ``block_model(child) -> (node fields or None, note or None)`` gives each block its model
+    (the Modelling tab's "Build an RBD from what's inside": the child's model in use; None:
+    a placeholder); by default the child's class model, in days."""
     scope = m._get(scope_id, "Position")
     children = sorted([c for c in m.s.inn(m.org, scope_id, "PART_OF")
                        if c["label"] == "Position" and not c.get("retired")], key=lambda c: c["name"].lower())
@@ -39,17 +42,26 @@ def build(m: Maintenance, scope_id: str) -> dict:
     notes, placeholders = [], []
     nodes = [{"id": "in", "type": "input"}, {"id": "out", "type": "output"}]
     for c in children:
+        if block_model is not None:
+            fields, note = block_model(c)
+            if note:
+                notes.append(note)
+            if fields is None:
+                fields = {"model": dict(PLACEHOLDER)}
+                placeholders.append(c["name"])
+            nodes.append({"id": _bid(c["id"]), "type": "component", "label": c["name"], **fields})
+            continue
         cls = (c.get("position_class") or "").strip()
         model_node = m.s.node(m.org, class_id(m.org, cls)) if cls else None
         model = (model_node or {}).get("model")
         if model:
-            block_model = {"distribution_id": model["distribution"], "params": model["params"]}
+            fields = {"distribution_id": model["distribution"], "params": model["params"]}
             if model.get("extras"):
-                block_model["extras"] = model["extras"]
+                fields["extras"] = model["extras"]
         else:
-            block_model = dict(PLACEHOLDER)
+            fields = dict(PLACEHOLDER)
             placeholders.append(c["name"])
-        nodes.append({"id": _bid(c["id"]), "type": "component", "label": c["name"], "model": block_model})
+        nodes.append({"id": _bid(c["id"]), "type": "component", "label": c["name"], "model": fields})
 
     edges: set[tuple[str, str]] = set()
     for c in children:
@@ -97,9 +109,11 @@ def build(m: Maintenance, scope_id: str) -> dict:
         edges |= {(head, b) for b in sources} | {(b, "out") for b in sinks}
 
     if placeholders:
-        notes.append(f"No life model yet for {', '.join(placeholders)}: a placeholder is used. Fit one for "
-                     "the position's class, or give each block a model in the RBD builder.")
-    graph = {"nodes": nodes, "unit": "days",
+        notes.append(f"No non-repairable model yet for {', '.join(placeholders)}: a placeholder is used. Fit one for "
+                     "the position's class, or give each block a model in the RBD builder." if block_model is None else
+                     f"No model in use yet for {', '.join(placeholders)}: a placeholder (flagged) stands in. Give "
+                     "each a model on the Modelling tab and rebuild, or set one in the RBD builder.")
+    graph = {"nodes": nodes, "unit": unit,
              "edges": [{"source": s, "target": t} for (s, t) in sorted(edges)]}
     return {"graph": graph, "notes": notes, "placeholders": placeholders, "scope": scope}
 

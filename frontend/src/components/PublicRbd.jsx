@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import ReactFlow, { Background, Controls, ReactFlowProvider } from "reactflow";
+import { useEffect, useMemo, useRef, useState } from "react";
+import ReactFlow, { Background, Controls, ReactFlowProvider, useReactFlow } from "reactflow";
 import "reactflow/dist/style.css";
 import {
   RBD_NODE_TYPES,
@@ -11,6 +11,8 @@ import { AvailabilityView, Results, savedOn } from "./RbdCalculator.jsx";
 import { normalizeRbdGraph } from "../rbdGraph.js";
 import { isNetwork, undirectedEdges } from "../rbdMission.js";
 import { PYTHON_EXPORT_TIP, downloadPublicRbdPython } from "../api.js";
+import useFullScreen from "./useFullScreen.js";
+import FullScreenButton from "./FullScreenButton.jsx";
 
 // Read-only rendering of a publicly linked RBD: the diagram on a non-editable
 // React Flow canvas (pan/zoom only, no drag/connect/select) using the builder's
@@ -32,8 +34,19 @@ function canvasGraph(graph) {
   return norm;
 }
 
-function Canvas({ graph }) {
+function Canvas({ graph, full }) {
   const { nodes, edges } = useMemo(() => canvasGraph(graph), [graph]);
+  // Into or out of full screen: fit the diagram to the new size.
+  const { fitView } = useReactFlow();
+  const seen = useRef(full);
+  useEffect(() => {
+    if (seen.current === full) return undefined;
+    seen.current = full;
+    let id = window.requestAnimationFrame(() => {
+      id = window.requestAnimationFrame(() => fitView({ padding: 0.3, duration: 200 }));
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [full, fitView]);
   // A network's links work both ways: no arrows (#160).
   const shown = useMemo(() => (isNetwork(graph) ? undirectedEdges(edges) : edges), [graph, edges]);
   return (
@@ -83,6 +96,10 @@ function DownloadPython({ token, unlock }) {
 
 export default function PublicRbd({ a, token, unlock }) {
   const graph = a.graph || {};
+  // The diagram alone, full screen, for a big one (read only, as here).
+  const fullRef = useRef(null);
+  const fullBtnRef = useRef(null);
+  const { full, toggle } = useFullScreen(fullRef, { returnFocus: fullBtnRef });
   const unit = graph.unit || "";
   const repairable = !!graph.repairable;
   const analysis = a.analysis;
@@ -112,10 +129,13 @@ export default function PublicRbd({ a, token, unlock }) {
       <RbdRepairableContext.Provider value={repairable}>
         <RbdCcfContext.Provider value={ccfById}>
           <div className="card" style={{ padding: "0.9rem" }}>
-            <div className="rbd-canvas public-rbd-canvas">
-              <ReactFlowProvider>
-                <Canvas graph={graph} />
-              </ReactFlowProvider>
+            <div ref={fullRef} className={"public-rbd-canvas-wrap" + (full ? " is-full" : "")}>
+              <div className="rbd-canvas public-rbd-canvas">
+                <ReactFlowProvider>
+                  <Canvas graph={graph} full={full} />
+                </ReactFlowProvider>
+              </div>
+              <FullScreenButton ref={fullBtnRef} full={full} onClick={toggle} shortcut="" compact />
             </div>
             <div className="public-rbd-meta">
               <span>Time unit: <b>{unit || "unspecified"}</b></span>

@@ -20,6 +20,7 @@ from backend.services import report_draft
 from backend.services import report_facts
 from backend.services import report_view
 from backend.services import reports as reports_service
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/reports")
@@ -28,7 +29,7 @@ _NOT_FOUND = {"detail": "Report not found."}
 
 
 def _refuse(exc: reports_service.ReportError) -> JSONResponse:
-    return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+    return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
 
 
 @router.get("")
@@ -90,7 +91,7 @@ def draft_notes(
         try:
             result = assistant_service.step(report_draft.SYSTEM_PROMPT, messages, report_draft.TOOLS)
         except assistant_service.AssistantError as exc:
-            return JSONResponse(status_code=502, content={"detail": str(exc)})
+            return JSONResponse(status_code=502, content={"detail": client_message(exc)})
         meter.cost_mc = assistant_router._cost_mc(result["usage"])
     finally:
         balance = meter.finish()

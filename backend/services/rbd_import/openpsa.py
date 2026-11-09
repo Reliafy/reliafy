@@ -29,7 +29,7 @@ Supported:
   #84), with a note; other CCF models are skipped with a warning;
 * basic events with a fixed probability (a plain number, or an exponential
   over a fixed time rather than the mission time) -> a block *without* a
-  life model, listed in the import notes with its probability. Reliafy
+  non-repairable model, listed in the import notes with its probability. Reliafy
   blocks have no fixed-probability model, and inventing a failure rate would
   change the answer, so the user sets one before analysing (#188).
 
@@ -429,7 +429,7 @@ class _Converter:
             return ft.Leaf(name, constant=False)
         if p == 1:
             return ft.Leaf(name, constant=True)
-        # No time model: a block without a life model, which the user must
+        # No time model: a block without a non-repairable model, which the user must
         # set before analysing — never an invented rate (#188).
         self.fixed_prob[name] = (label or name, p)
         return ft.Leaf(name, {"type": "component"}, label=label)
@@ -715,6 +715,7 @@ def _convert(model: _Model, top: str) -> ImportedDiagram:
             f"{len(names)} basic event(s) have no data ({_names(names)}), so there's nothing to "
             "build their blocks from.")
     fixed = sorted(set(conv.fixed_prob) & used)
+    tree_notes = conv.all_warnings()  # the file's own notes, before the RBD-only ones
     if fixed:
         shown = [f"“{conv.fixed_prob[n][0]}” (p = {conv.fixed_prob[n][1]:.3g})" for n in fixed]
         more = f" and {len(shown) - 10} more" if len(shown) > 10 else ""
@@ -722,7 +723,7 @@ def _convert(model: _Model, top: str) -> ImportedDiagram:
             f"{len(fixed)} basic event(s) have a fixed probability and no failure-time model: "
             f"{', '.join(shown[:10])}{more}. Reliafy blocks need a life distribution, so "
             f"{'it was' if len(fixed) == 1 else 'they were'} imported as "
-            f"block{'' if len(fixed) == 1 else 's'} WITHOUT a life model — set one (e.g. an "
+            f"block{'' if len(fixed) == 1 else 's'} WITHOUT a non-repairable model — set one (e.g. an "
             "exponential failure rate) before analysing. Nothing was assumed for "
             f"{'it' if len(fixed) == 1 else 'them'}.")
 
@@ -749,7 +750,12 @@ def _convert(model: _Model, top: str) -> ImportedDiagram:
     ft_name = model.gate_ft.get(top)
     if ft_name and ft_name != top:
         name = f"{ft_name} — {top}"
-    return ImportedDiagram(name=name, graph=graph, warnings=conv.all_warnings() + more)
+    fixed_p = {n: conv.fixed_prob[n][1] for n in fixed}
+    if ccf:
+        tree_notes.append("The file's common-cause groups were left out: a fault tree here has no common-cause "
+                          "groups yet. Import it as an RBD to keep them.")
+    return ImportedDiagram(name=name, graph=graph, warnings=conv.all_warnings() + more,
+                           fault_tree=(tree, fixed_p, tree_notes))
 
 
 def _used_leaves(tree: ft.FaultTree) -> set[str]:

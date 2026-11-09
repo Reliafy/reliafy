@@ -6,9 +6,13 @@ import { listFleets, createFleet, deleteFleet, listModels, listAltModels, listRe
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
-import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { formatNumber } from "../format.js";
 import { modelFromSearch, plainName } from "../modelNext.js";
+import ClassForecastList from "../components/ClassForecastList.jsx";
+import { useRoles } from "../RolesProvider.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 // A forecast's row figure: "≈ 40.3 in 12 months", or why there isn't one.
 function expectedCell(f) {
@@ -26,10 +30,12 @@ function expectedCell(f) {
 
 const HELP = { walkthrough: "fleet", guide: "forecast-fleet-failures-and-spares" };
 
-// The Fleet section's landing page: the failure forecasts, one row per fleet
-// with its live expected-failure headline. Degradation tracking is its child.
+// Decisions › Forecasts: the failure forecasts, one row per fleet with its live
+// expected-failure headline, then (with Reliafy Maintenance) the position
+// classes' forecasts from their own pooled history.
 export default function FleetForecasts() {
   const navigate = useNavigate();
+  const { has } = useRoles();
   const [fleets, setFleets] = useState(null);
   const [error, setError] = useState(null);
   const [capHit, setCapHit] = useState(false);
@@ -88,13 +94,13 @@ export default function FleetForecasts() {
     }
   };
 
-  // Opened as /fleet?new=1&model=<id>: the new-forecast dialog, with the
+  // Opened as /forecasts?new=1&model=<id>: the new-forecast dialog, with the
   // model chosen. The query is dropped so a reload doesn't reopen it.
   const { search } = useLocation();
   useEffect(() => {
     const wanted = modelFromSearch(search);
     if (!wanted || new URLSearchParams(search).get("new") !== "1") return;
-    navigate("/fleet", { replace: true });
+    navigate("/forecasts", { replace: true });
     openCreate(wanted);
     // openCreate is this render's; it runs once per link.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -108,7 +114,7 @@ export default function FleetForecasts() {
       const alt = modelKind !== "recurrent" && modelId.startsWith("alt:");
       const fleet = await createFleet(
         name.trim(), alt ? modelId.slice(4) : modelId, modelKind === "recurrent" ? "recurrent" : alt ? "alt" : "life");
-      navigate(`/fleet/forecasts/${fleet.id}`);
+      navigate(`/forecasts/${fleet.id}`);
     } catch (err) {
       if (err.code === "cap") {
         setModalOpen(false);
@@ -121,11 +127,9 @@ export default function FleetForecasts() {
     }
   };
 
+  const confirm = useConfirm();
   const onDelete = async (f) => {
-    const msg = f.is_sample
-      ? `Remove the sample “${itemName(f)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete fleet “${f.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(f, "fleet", { name: itemName(f) })))) return;
     try {
       await deleteFleet(f.id);
       refresh();
@@ -134,14 +138,16 @@ export default function FleetForecasts() {
     }
   };
 
-  const open = (id) => navigate(`/fleet/forecasts/${id}`);
+  const pathOf = (id) => `/forecasts/${id}`;
   const newForecast = <button onClick={() => openCreate()}><PlusIcon /> New forecast</button>;
 
   return (
     <div className="app">
       <SectionHeader
-        title="Fleet"
-        purpose="Failure forecasts: how many failures a fleet will see over a horizon, from your fitted models."
+        title="Forecasts"
+        purpose={has.maintenance
+          ? "How many failures (or warranty returns) to expect: fleets from your fitted models, position classes from their own history."
+          : "How many failures (or warranty returns) a fleet will see over a horizon, from your fitted models."}
         help={HELP}
         primary={newForecast}
       />
@@ -156,13 +162,14 @@ export default function FleetForecasts() {
         </div>
       )}
 
+      {has.maintenance && <div className="recent-models-head home-card"><h2>Fleets</h2></div>}
       <SectionList
         rows={fleets}
         noun={["forecast", "forecasts"]}
         help={HELP}
         empty={{
           title: "No failure forecasts yet",
-          body: "Create one from a saved life model and list the items you have in service.",
+          body: "Create one from a saved non-repairable model and list the items you have in service.",
           action: newForecast,
         }}
         head={[
@@ -173,20 +180,22 @@ export default function FleetForecasts() {
           <th key="a"><span className="sr-only">Actions</span></th>,
         ]}
         render={(f) => (
-          <tr key={f.id} className="lib-row" onClick={() => open(f.id)}>
+          <tr key={f.id} className="lib-row" onClick={rowOpen(navigate, pathOf(f.id))}>
             <td>
               <div className="lib-name">
-                {itemName(f)}
+                <RowLink to={pathOf(f.id)}>{itemName(f)}</RowLink>
                 {f.shared_by && <Chip title={`Shared by ${f.shared_by}`}>Shared</Chip>}
               </div>
             </td>
             <td className="lib-n lib-opt">{f.n_items}</td>
             <td className="lib-n">{expectedCell(f)}</td>
             <td className="lib-date lib-opt">{relativeTime(f.updated_at || f.created_at)}</td>
-            <RowActions item={f} onOpen={() => open(f.id)} onDelete={() => onDelete(f)} />
+            <RowActions item={f} to={pathOf(f.id)} onDelete={() => onDelete(f)} />
           </tr>
         )}
       />
+
+      <ClassForecastList />
 
       {modalOpen && (
         <Modal
@@ -241,8 +250,8 @@ export default function FleetForecasts() {
             </label>
             <p className="muted-line">
               {modelKind === "recurrent"
-                ? "The forecast counts each item's repeat failures from its age (time since new) under this model — fit one under Modelling › Repairable models first if you don't have one yet."
-                : "The forecast evaluates this model at each item's age (and, for a regression or ALT model, at each item's own conditions) — fit one under Modelling first if you don't have one yet."}
+                ? "The forecast counts each item's repeat failures from its age (time since new) under this model — fit one under Modelling › Models › Repairable first if you don't have one yet."
+                : "The forecast evaluates this model at each item's age (and, for a regression or ALT model, at each item's own conditions) — fit one under Models first if you don't have one yet."}
             </p>
           </div>
         </Modal>

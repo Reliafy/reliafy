@@ -8,7 +8,7 @@ in-process). It must never import the DB layer — ``backend.db``,
 ``backend.services.models`` / ``rbds`` / ``access`` — and the tests check that.
 
 What can be inlined. A repairable (availability) diagram is component blocks
-— each a life model and a repair model — plus k-of-n voting gates (junctions
+— each a non-repairable model and a repair model — plus k-of-n voting gates (junctions
 since RePyability 0.12), and the diagram's own settings: common-cause groups
 (with their rate/probability basis), costs, repair crews, maintenance groups
 and a safety function (:data:`backend.services.rbd_graph.DIAGRAM_KEYS`; every

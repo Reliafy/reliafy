@@ -27,6 +27,7 @@ from backend.services import metrics as metrics_service
 from backend.services import models as models_service
 from backend.services import regression_diagnostics as checks_service
 from backend.services import strategy_store
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1")
@@ -51,7 +52,7 @@ def _model_brief(m) -> dict:
         "n": r.get("n"),
         "unit": r.get("unit") or (m.spec or {}).get("unit", ""),
         "created_at": m.created_at.isoformat(),
-        "url": f"/modelling/m/{m.id}",
+        "url": f"/models/m/{m.id}",
     }
 
 
@@ -145,7 +146,7 @@ def api_reliability(
         else:
             out["curves"] = fns["curves"]
     except (FitError, models_service.ModelNotFound) as exc:
-        return _err(422, str(exc))
+        return _err(422, client_message(exc))
     except (TypeError, ValueError):
         return _err(422, "t must be a number.")
     return JSONResponse(content=out)
@@ -188,14 +189,14 @@ async def api_create_dataset(
     try:
         ds = await run_in_threadpool(create)
     except (FitError, ValueError) as exc:
-        return _err(422, str(exc))
+        return _err(422, client_message(exc))
     metrics_service.record_event(session, name="api_dataset", path="/api/v1/datasets")
     return JSONResponse(content={
         "id": ds.id,
         "name": ds.name,
         "n_rows": ds.n_rows,
         "columns": [c["name"] for c in ds.columns],
-        "url": f"/modelling/data/{ds.id}",
+        "url": f"/data/{ds.id}",
     })
 
 
@@ -229,7 +230,7 @@ def api_fit(
             owner_id=user["uid"],
         )
     except FitError as exc:
-        return _err(422, str(exc))
+        return _err(422, client_message(exc))
     metrics_service.record_event(session, name="api_fit", path="/api/v1/fit")
     return JSONResponse(content=_model_brief(model))
 
@@ -263,7 +264,7 @@ def _strategy(kind: str, body: dict, uid: str) -> JSONResponse:
     try:
         results = strategy_store.compute(kind, inputs)
     except (strategy_store.StrategyError, FitError, ValueError, KeyError) as exc:
-        return _err(422, str(exc) or "Invalid inputs.")
+        return _err(422, client_message(exc, "Invalid inputs."))
     return JSONResponse(content=results)
 
 

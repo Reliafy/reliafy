@@ -34,9 +34,6 @@ before, as a plain ``NonRepairable``)::
                                                     #   the rest (#136)
         "maintenance_group": "north pumps",    # shares the group's set-up cost
         "crew_priority": 2,                    # its place in the repair-crew queue
-        "rcm_source": {"study_id", "mode_id", ...}, # where the schedule was filled
-                                                    #   from (display only: never
-                                                    #   analysed, not in the cache key)
     }
     graph["costs"] = {"downtime_rate": 500,    # per unit time the *system* is down
                       "horizon": 87600,        # ownership horizon for the total cost
@@ -71,6 +68,7 @@ from typing import Any, Optional
 
 import numpy as np
 
+from backend.errors import client_message
 from backend.services.rbd_analysis import AnalysisError
 
 #: Block cost fields -> RePyability component spec keys.
@@ -459,7 +457,7 @@ def validation_errors(graph: dict) -> list[str]:
         diagram_costs(graph)
         discount(graph)
     except AnalysisError as exc:
-        errors.append(str(exc).replace("“Diagram”: the ", "The "))
+        errors.append(client_message(exc).replace("“Diagram”: the ", "The "))
     for node in graph.get("nodes") or []:
         if node.get("type") != "component":
             continue
@@ -485,7 +483,7 @@ def validation_errors(graph: dict) -> list[str]:
 
             errors.extend(rbd_repair_quality.errors(data, label))
         except AnalysisError as exc:
-            errors.append(str(exc))
+            errors.append(client_message(exc))
         except Exception:  # noqa: BLE001 - a duration model that won't build
             errors.append(f"“{label}”: a maintenance or test duration model can't be built.")
     return errors

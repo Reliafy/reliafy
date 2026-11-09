@@ -1,0 +1,83 @@
+/* "Add a prediction…" (PredictionPane.jsx) in the Explorer's table area (TablePane.css). Wide
+   (1,100 px and over): the inputs and the parts table on the left, taking the width, the result on
+   the right; each column scrolls on its own. Narrower: the parts take the width and scroll, the
+   result kept in view under them with Save, so the total is seen while the parts change. On a
+   phone it takes the screen and scrolls as one, the parts table scrolling inside its card. */
+.pred-pane .pred2 { flex: 1 1 auto; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+.pred2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 270px); width: 100%; min-height: 0; }
+.pred2-in, .pred2-out { overflow: auto; padding: 12px 18px; min-height: 0; }
+.pred2-in { display: flex; flex-direction: column; gap: 10px; border-right: 1px solid var(--line2); }
+.pred2-in > * { flex: none; }
+.pred2-help { margin: 0; max-width: 72ch; }
+.pred2-set > .field { flex: 0 1 260px; }
+.pred2-out { display: flex; flex-direction: column; gap: 8px; padding-bottom: 0; }
+.pred2-out > * { flex: none; }
+.pred2-out .ml-h { margin: 0; }
+
+.pred2-lines { border: 1px solid var(--line2); border-radius: var(--r-sm); }
+.pred2-table { width: 100%; font-size: var(--fs-13); }
+.pred2-table th { white-space: nowrap; }
+.pred2-table th.pred2-wrap { white-space: normal; min-width: 4.5rem; line-height: 1.2; }
+.pred2-table td { vertical-align: middle; padding: 5px 8px; }
+.pred2-c-part { min-width: 8rem; }
+.pred2-name { display: block; }
+.pred2-ref { display: block; font-size: var(--fs-12); color: var(--muted); }
+.pred2-c-type { min-width: 12rem; }
+.pred2-c-type .ptp { min-width: 11rem; max-width: 13rem; }
+.pred2-c-type .ptp-name { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 15rem; }
+.pred2-totype { font-size: var(--fs-12); }
+.pred2-table input.pred2-q { width: 4rem; text-align: right; }
+th.pred2-c-ne, td.pred2-c-ne { text-align: center; }
+.pred2-c-ne input { width: 18px; height: 18px; margin: 0; }
+.pred2-c-rate .ptc-rate { flex-wrap: nowrap; white-space: nowrap; }
+.pred2-c-rate .ptc-rate input { width: 5rem; }
+.pred2-c-ne .ptc-exclude { justify-content: center; }
+.pred2-c-lambda { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pred2-table tr.is-off td:first-child .pred2-name { color: var(--muted); text-decoration: line-through; }
+/* A line left out of this prediction (still on its parts list): greyed, with Put back. */
+.pred2-table tr.pred2-out-row td { color: var(--muted); background: var(--surf2, transparent); }
+.pred2-table tr.pred2-out-row td:first-child .pred2-name { text-decoration: none; }
+.pred2-left { font-size: var(--fs-12); white-space: nowrap; }
+.pred2-left .link { font-size: var(--fs-12); }
+.pred2-table input.pred2-qty { width: 2.75rem; text-align: right; padding-left: 4px; padding-right: 6px; }
+.pred2-c-more { width: 1%; padding-left: 0 !important; padding-right: 4px !important; text-align: right; }
+.pred2-table tfoot td { border-top: 1px solid var(--line2); padding: 6px 8px; }
+.pred2-add-in { position: sticky; left: 8px; display: inline-flex; flex-wrap: wrap; row-gap: 4px; }
+.pred2-add .link { display: inline-flex; align-items: center; gap: 4px; margin-right: 16px; font-size: var(--fs-13); }
+.pred2-add .link svg { width: 14px; height: 14px; }
+.pred2-empty { display: flex; flex-direction: column; gap: 8px; }
+.pred2-empty p { margin: 0; }
+.pred2-empty .maint-row { flex-wrap: wrap; gap: 8px; margin: 0; }
+.pred2-toast { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; font-size: var(--fs-13);
+  border: 1px solid var(--line2); border-radius: var(--r-sm); background: var(--surf); }
+.pred2-toast > span { flex: 1 1 12rem; min-width: 0; }
+
+.pred2-status { display: flex; flex-direction: column; gap: 6px; }
+.pred2-big { margin: 0; font-size: var(--fs-14); }
+.pred2-big b { font-size: var(--fs-24, 1.5rem); font-variant-numeric: tabular-nums; margin-right: 4px; }
+.pred2-dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; margin: 0; font-size: var(--fs-13); }
+.pred2-dl dt { color: var(--muted); }
+.pred2-dl dd { margin: 0; }
+.pred2-none { margin: 0; font-size: var(--fs-13); }
+.pred2-sub { margin: 0; font-size: var(--fs-12); color: var(--muted); }
+.pred2-sub b { color: var(--ink); font-weight: 600; }
+.pred2-foot { position: sticky; bottom: 0; background: var(--surf); display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;
+  padding: 10px 0 14px; margin-top: auto; border-top: 1px solid var(--line2); }
+
+@container tablepane (max-width: 1100px) {
+  .pred-pane .pred2 { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .pred2-in { border-right: 0; border-bottom: 1px solid var(--line2); }
+  .pred2-out { max-height: 40vh; padding-top: 10px; }
+  .pred2-status { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: 18px; }
+  .pred2-how { display: none; }
+}
+.pred-pane.table-pane-phone .pred2 { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; overflow: visible; flex: none; }
+.table-pane-phone .pred2-in { border-right: 0; border-bottom: 1px solid var(--line2); }
+.table-pane-phone :is(.pred2-in, .pred2-out) { overflow: visible; padding: 12px 16px; }
+.table-pane-phone .pred2-in > * { min-width: 0; }
+.table-pane-phone .pred2-foot { padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+/* An NSWC-11 line's Conditions… (a covariate model takes conditions, not a quality factor). */
+.pred2-table .pred2-cond { white-space: nowrap; }
+.pred2-table .pred2-cond.is-needed { border-color: var(--warn-line); color: var(--warn); }
+.pred2-needs { color: var(--warn); font-size: var(--fs-12); white-space: nowrap; }
+.pred2-disclaimer { font-size: var(--fs-12); }

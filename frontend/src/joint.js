@@ -1,4 +1,4 @@
-// Condition monitoring: remaining life from condition readings (joint models of readings and failures): the pure
+// Condition and life: remaining life from condition readings (joint models of readings and failures): the pure
 // helpers behind the new-model page, the results page and the RBD block —
 // first guesses for the two tables' columns, the covariate parts, the risk
 // table's words and a block's one line. `node --test src/` covers them.
@@ -88,10 +88,45 @@ export const readingsText = (markers) => (markers || []).map(([a, v]) => `${a} $
 // mean (it can be infinite).
 export function medianText(row, unit = "") {
   if (!row || row.median_reached === false || row.median_remaining == null) return "not reached";
-  return `${formatNumber(row.median_remaining)}${unit ? ` ${unit.toLowerCase()}` : ""}`;
+  return `${lifeLeftNumber(row.median_remaining)}${unit ? ` ${unit.toLowerCase()}` : ""}`;
 }
 
-export const riskText = (p) => (p == null ? "—" : formatPercent(p));
+// A remaining life with the same decimals across a column: one decimal under
+// 100 ("10.0", "12.0", "22.4"), else three significant figures ("1,230").
+// formatNumber alone gives "9.99" beside "12", which reads as two precisions.
+export function lifeLeftNumber(v) {
+  const n = Number(v);
+  if (v == null || !Number.isFinite(n)) return "—";
+  return Math.abs(n) < 100 ? n.toFixed(1) : formatNumber(n);
+}
+
+// A model's chance of failing: never "100%" or "0%", which would read as
+// certainty. Above 99.9% it's "> 99.9%", below 0.1% "< 0.1%", and from 99%
+// one decimal so 99.6% doesn't round up to 100%.
+export function riskText(p) {
+  if (p == null || !Number.isFinite(Number(p))) return "—";
+  const v = Number(p);
+  if (v >= 0.999) return "> 99.9%";
+  if (v < 0.001) return "< 0.1%";
+  if (v >= 0.99) return `${(Math.floor(v * 1000) / 10).toFixed(1)}%`;
+  return formatPercent(v);
+}
+
+// The number riskText shows, for sorting: rows that show the same figure tie.
+function shownRisk(p) {
+  const t = riskText(p);
+  if (t === "—") return -1;
+  const n = parseFloat(t.replace(/[^\d.]/g, ""));
+  return t.startsWith(">") ? n + 0.01 : t.startsWith("<") ? n - 0.01 : n;
+}
+
+// The risk table's order, by one named column: the chance of failing over the
+// middle horizon (the one "Highest risk now" quotes), highest first; rows that
+// show the same figure there go shortest median life left first.
+export function sortRiskRows(rows, col = 1) {
+  const life = (r) => (r.median_reached === false || r.median_remaining == null ? Infinity : r.median_remaining);
+  return [...(rows || [])].sort((a, b) => shownRisk(b.risk?.[col]) - shownRisk(a.risk?.[col]) || life(a) - life(b));
+}
 
 // A risk's tone: high (≥ 50%), medium (≥ 10%), low.
 export function riskTone(p) {
@@ -101,16 +136,16 @@ export function riskTone(p) {
 
 export const isJointModel = (model) => model?.kind === "joint";
 
-// A joint block's one line on the canvas: "Condition monitoring · unit P12" or
-// "Condition monitoring · age 120 h, 3 readings".
+// A joint block's one line on the canvas: "Condition and life · unit P12" or
+// "Condition and life · age 120 h, 3 readings".
 export function jointBlockLine(model, unitAbbr = "") {
   const u = model?.joint_unit || {};
-  if (u.id != null && u.id !== "") return `Condition monitoring · unit ${u.id}`;
+  if (u.id != null && u.id !== "") return `Condition and life · unit ${u.id}`;
   if (u.age != null) {
     const n = (u.markers || []).length;
-    return `Condition monitoring · age ${formatNumber(u.age)}${unitAbbr ? ` ${unitAbbr}` : ""}, ${n} reading${n === 1 ? "" : "s"}`;
+    return `Condition and life · age ${formatNumber(u.age)}${unitAbbr ? ` ${unitAbbr}` : ""}, ${n} reading${n === 1 ? "" : "s"}`;
   }
-  return "Condition monitoring · pick a unit";
+  return "Condition and life · pick a unit";
 }
 
 // The RBD block's model for a joint model and a unit (a fitted running unit's
@@ -121,7 +156,7 @@ export function jointBlockModel(model, unit) {
     kind: "joint",
     modelId: model.id,
     name: model.name,
-    distribution: "Remaining life from condition",
+    distribution: "Condition and life",
     unit: model.unit || model.results?.unit || "",
     joint_unit: unit,
   };

@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  analysisName, graphWithModel, modelFromSearch, nextStepLink, nextStepsFor, plainName, preferredModel, savedModelRef,
+  STEP_LABELS, STEP_WHAT, analysisName, graphWithModel, modelFromSearch, nextStepLink, nextStepsFor, plainName,
+  latestOnly, preferredModel, savedModelRef, stepsFor,
 } from "./modelNext.js";
 
 test("nextStepsFor: which tools take which kind of model", () => {
@@ -16,9 +17,22 @@ test("nextStepsFor: which tools take which kind of model", () => {
   assert.equal(nextStepsFor({ kind: "regression", tvc: {} }).fleet, false);
 });
 
+test("stepsFor: the Use this model dialog's steps, in order, each named and described", () => {
+  assert.deepEqual(stepsFor({ kind: "distribution", distribution_id: "weibull" }), ["replacement", "fleet", "test", "rbd"]);
+  assert.deepEqual(stepsFor({ kind: "distribution", distribution_id: "exponential" }, ["replacement"]),
+                   ["fleet", "test", "rbd"]);
+  assert.deepEqual(stepsFor({ kind: "nonparametric" }), ["test"]);
+  assert.deepEqual(stepsFor({ kind: "regression", distribution_id: "weibull_ph" }), ["fleet", "rbd"]);
+  assert.deepEqual(stepsFor({ kind: "regression", tvc: {} }), []);
+  for (const step of Object.keys(STEP_LABELS)) {
+    assert.ok(STEP_WHAT[step], `${step} has a one-line description`);
+    assert.ok(STEP_WHAT[step].length <= 100, `${step}'s description fits on two lines`);
+  }
+});
+
 test("nextStepLink opens each tool with the model chosen", () => {
   assert.equal(nextStepLink("replacement", "m1"), "/strategy/replacement?model=m1");
-  assert.equal(nextStepLink("fleet", "m1"), "/fleet?new=1&model=m1");
+  assert.equal(nextStepLink("fleet", "m1"), "/forecasts?new=1&model=m1");
   assert.equal(nextStepLink("test", "m1", { unit: "Hours" }), "/strategy/test-planning?unit=Hours&model=m1");
   assert.equal(modelFromSearch("?model=m1&new=1"), "m1");
   assert.equal(modelFromSearch("?model=<x>"), null);
@@ -91,4 +105,22 @@ test("graphWithModel: an existing diagram keeps its wiring and unit; the block w
   assert.deepEqual(graph.nodes.at(-1).position, { x: 250, y: 310 });
   // The saved graph itself is untouched.
   assert.equal(saved.nodes.length, 4);
+});
+
+test("latestOnly: a pick made while the first choice loads isn't overwritten by it", async () => {
+  const start = latestOnly();
+  const chosen = [];
+  const pick = async (id, delay) => {
+    const current = start();
+    await new Promise((r) => setTimeout(r, delay));
+    if (current()) chosen.push(id);
+  };
+  // The page's own first choice (slow), then the user's pick (fast).
+  await Promise.all([pick("newest", 30), pick("sample", 5)]);
+  assert.deepEqual(chosen, ["sample"]);
+  // Each start makes the earlier checks false; the latest stays true.
+  const a = start();
+  const b = start();
+  assert.equal(a(), false);
+  assert.equal(b(), true);
 });

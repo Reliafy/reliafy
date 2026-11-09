@@ -33,7 +33,6 @@ refuse it, as RePyability does.
 from __future__ import annotations
 
 import math
-import re
 from typing import Optional
 
 MIXTURE_ID = "mixture"
@@ -41,7 +40,22 @@ MAX_MODES = 4
 #: How far the weights' sum may stray from 1 before it's refused.
 WEIGHT_TOLERANCE = 1e-6
 
-_NAME = re.compile(r"^(.+?)(\d+)$")
+
+def _numbered(name: str) -> tuple[str, str] | None:
+    """``("alpha", "1")`` for "alpha1": a name and its trailing mode number
+    (the name keeps at least one character, so "12" is ("1", "2")), or None
+    without one. Read by hand, so the time taken grows only with its length."""
+    if name.endswith("\n"):
+        name = name[:-1]
+    if "\n" in name:
+        return None
+    i = len(name)
+    while i > 0 and name[i - 1].isdecimal():
+        i -= 1
+    stem, digits = name[:i], name[i:]
+    if not stem:
+        stem, digits = digits[:1], digits[1:]
+    return (stem, digits) if stem and digits else None
 
 
 class MixtureError(ValueError):
@@ -49,7 +63,7 @@ class MixtureError(ValueError):
 
 
 def is_mixture(model) -> bool:
-    """Whether a block's life model is a mixture."""
+    """Whether a block's non-repairable model is a mixture."""
     return isinstance(model, dict) and model.get("distribution_id") == MIXTURE_ID
 
 
@@ -80,11 +94,11 @@ def modes(model: dict, where: str) -> tuple[str, list[list[float]], list[float]]
     for p in model.get("params") or []:
         if not isinstance(p, dict):
             raise MixtureError(f"{where}: params must be a list of {{name, value}}.")
-        match = _NAME.match(str(p.get("name") or ""))
+        match = _numbered(str(p.get("name") or ""))
         if not match:
             raise MixtureError(f"{where}: mixture parameter '{p.get('name')}' needs its mode's number, e.g. "
                                f"{names[0]}1, weight1.")
-        stem, j = match.group(1), int(match.group(2))
+        stem, j = match[0], int(match[1])
         if stem not in names and stem != "weight":
             raise MixtureError(f"{where}: '{p.get('name')}' isn't a parameter of a {entry['name']} mixture "
                                f"({', '.join(names)} and weight, numbered by mode).")

@@ -27,6 +27,7 @@ from backend.services import ingest as ingest_service
 from backend.services import metrics as metrics_service
 from backend.services import tokens as tokens_service
 from backend.services import usage as usage_service
+from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -104,7 +105,7 @@ def create_token(
     try:
         return JSONResponse(content=tokens_service.create_token(session, user["uid"], name, scopes))
     except tokens_service.TokenError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
 
 
 @router.get("/tokens")
@@ -133,7 +134,7 @@ async def _handle(request: Request, user: dict, op, *args) -> JSONResponse:
         # Off the event loop: ops are sync (DB, refits, alert emails over SMTP).
         result = await run_in_threadpool(op, request.headers.get("content-type", ""), body, *args)
     except ingest_service.IngestError as exc:
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     return JSONResponse(content=result)
 
 
@@ -217,11 +218,73 @@ async def ingest_maintenance_readings(
                             time_zone=time_zones.of_owner(session, user["uid"]))
             return m.ingest(rows)
         except LimitReached as err:
-            raise HTTPException(status_code=err.status, detail=str(err)) from None
+            raise HTTPException(status_code=err.status, detail=client_message(err)) from None
         except Invalid as err:
-            raise HTTPException(status_code=422, detail=str(err)) from None
+            raise HTTPException(status_code=422, detail=client_message(err)) from None
 
     return await _handle(request, user, op)
+
+
+@router.post("/ingest/maintenance/snapshots")
+async def ingest_maintenance_snapshots(
+    request: Request,
+    session=Depends(get_session),
+    user: dict = Depends(ingest_scope),
+) -> JSONResponse:
+    """Snapshots for Reliafy Maintenance's signal channels (a vibration burst, a device's
+    spectrum, a scalar). JSON: one snapshot ``{tag (or channel_id), time, axes, sample_rate,
+    ...}`` or ``{snapshots: [...]}``. Each is at most 5 MB; the same channel and time again
+    is reported as a duplicate. See docs/signal-snapshots.md."""
+    from backend.maintenance import signals
+    from backend.maintenance.access import allowed
+    from backend.maintenance.service import Invalid, LimitReached, Maintenance
+    from backend.routers.maintenance import get_store
+    from backend.services import time_zones
+
+    if not allowed(user):
+        raise HTTPException(status_code=404, detail="Not found.")
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > signals.MAX_SNAPSHOT_BYTES * 4:
+        raise HTTPException(status_code=413, detail=_snapshot_too_big())
+
+    def op(content_type, body):
+        import json as _json
+
+        if len(body) > signals.MAX_SNAPSHOT_BYTES * 4:
+            raise ingest_service.IngestError(_snapshot_too_big(), 413)
+        try:
+            payload = _json.loads(body or b"{}")
+        except _json.JSONDecodeError:
+            raise ingest_service.IngestError("Body must be JSON.") from None
+        items = payload.get("snapshots") if isinstance(payload, dict) and "snapshots" in payload else payload
+        items = items if isinstance(items, list) else [items]
+        if not items or not all(isinstance(i, dict) for i in items) or len(items) > 20:
+            raise ingest_service.IngestError("Send one snapshot object, or {snapshots: [up to 20 objects]}.")
+        results = []
+        m = Maintenance(get_store(), user["uid"], user["uid"], time_zone=time_zones.of_owner(session, user["uid"]))
+        for i, item in enumerate(items):
+            if len(_json.dumps(item)) > signals.MAX_SNAPSHOT_BYTES:
+                results.append({"index": i, "stored": False, "error": _snapshot_too_big()})
+                continue
+            try:
+                known = ("channel_id", "tag", "axes", "samples", "sample_rate", "unit", "spectrum", "value",
+                         "values", "running", "rpm", "note")
+                results.append({"index": i, **m.add_signal_snapshot(
+                    item.get("time"), **{k: item[k] for k in known if k in item})})
+            except LimitReached as err:
+                raise HTTPException(status_code=err.status, detail=client_message(err)) from None
+            except Invalid as err:
+                results.append({"index": i, "stored": False, "error": client_message(err)})
+        return {"stored": sum(1 for r in results if r.get("stored")),
+                "duplicates": sum(1 for r in results if r.get("duplicate")),
+                "errors": sum(1 for r in results if r.get("error")), "results": results}
+
+    return await _handle(request, user, op)
+
+
+def _snapshot_too_big() -> str:
+    return ("A snapshot can be at most 5 MB (about 500,000 numbers). Send long recordings in shorter bursts, "
+            "one snapshot each.")
 
 
 @router.post("/import/models")
@@ -266,10 +329,10 @@ async def import_model(
             extras=payload.get("extras"),
         )
     except ingest_service.IngestError as exc:  # pragma: no cover - defensive
-        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+        return JSONResponse(status_code=exc.status, content={"detail": client_message(exc)})
     except (ValueError, TypeError, KeyError, models_service.ModelNotFound) as exc:
         # fitting.FitError (a ValueError) and friends carry a user-facing message.
-        return JSONResponse(status_code=422, content={"detail": str(exc) or "Invalid model."})
+        return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid model.")})
     except Exception:
         logger.exception("Model import failed")
         return JSONResponse(status_code=500,
@@ -281,7 +344,7 @@ async def import_model(
         "name": model.name,
         "distribution": (model.results or {}).get("distribution", model.distribution_id),
         "params_only": bool((model.results or {}).get("params_only")),
-        "url": f"/modelling/m/{model.id}",
+        "url": f"/models/m/{model.id}",
     })
 
 

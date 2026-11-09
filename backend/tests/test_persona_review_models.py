@@ -159,7 +159,7 @@ def test_saved_regression_without_se_is_corrected_from_its_width():
 
 def test_mcp_fit_reports_log_scale_intervals_and_the_note(env):
     x, c = THREE_POINTS
-    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", "distribution": "weibull", "data": x,
+    out = _ok(_call(env.token[A], "analyse", {"action": "fit", "distribution": "weibull", "data": x,
                                                          "censored": c}))
     beta = next(p for p in out["params"] if p["name"] == "beta")
     assert beta["ci"][0] > 0
@@ -176,14 +176,14 @@ def test_alt_helper_is_the_shared_one():
 # ---- 4. the sample Crow-AMSAA model is projection-ready -----------------------------------------
 
 def test_sample_growth_projection_runs_with_its_defaults(samples):
-    out = _ok(_call(samples.token[A], "repairable_analysis", {"action": "growth_projection",
+    out = _ok(_call(samples.token[A], "analyse", {"action": "growth_projection",
                                                               "model_id": "sample-rec-compressors"}))
     assert out["projected"]["mtbf"] > out["demonstrated"]["mtbf"]
     assert out["growth_potential"]["mtbf"] >= out["projected"]["mtbf"]
     kinds = {m["label"]: m["kind"] for m in out["modes"]}
     assert kinds == {"valve": "BD", "seal": "BD", "bearing": "A", "electrical": "A"}
     # Other settings still work, including another BD fix.
-    custom = _ok(_call(samples.token[A], "repairable_analysis", {"action": "growth_projection",
+    custom = _ok(_call(samples.token[A], "analyse", {"action": "growth_projection",
         "model_id": "sample-rec-compressors", "fef": {"valve": 0.9}, "bd_modes": ["bearing"]}))
     assert {m["label"] for m in custom["modes"] if m["kind"] == "BD"} == {"valve", "bearing"}
 
@@ -270,15 +270,15 @@ def test_a_thermal_model_in_celsius_is_warned_about():
 
 def test_mcp_alt_stress_units(env):
     df = _fluid()
-    out = _ok(_call(env.token[A], "models", {"action": "fit_alt",
+    out = _ok(_call(env.token[A], "change", {"action": "model_fit_alt",
         "name": "Fluid", "life_model": "inverse_power", "data": df.minutes.tolist(),
         "stresses": [[v] for v in df.kV.tolist()], "stress_names": ["Voltage"], "stress_units": ["kV"],
         "unit": "minutes"}))
     assert out["stress_units"] == ["kV"]
-    use = _ok(_call(env.token[A], "life_data_analysis", {"action": "alt_use_level", "model_id": out["model_id"],
+    use = _ok(_call(env.token[A], "analyse", {"action": "alt_use_level", "model_id": out["model_id"],
                                                          "use_stress": [20.0]}))
     assert use["stress_units"] == ["kV"]
-    msg = _err(_call(env.token[A], "models", {"action": "fit_alt",
+    msg = _err(_call(env.token[A], "change", {"action": "model_fit_alt",
         "name": "Fluid", "life_model": "inverse_power", "data": df.minutes.tolist(),
         "stresses": [[v] for v in df.kV.tolist()], "stress_units": ["kV", "V"]}))
     assert "stress_units" in msg
@@ -323,17 +323,17 @@ def test_covariate_units_on_a_regression_fit_and_its_saved_model(env):
 def test_mcp_regression_covariate_units(env):
     from backend.services.samples import _SEAL_ALT_CSV
 
-    ds = _ok(_call(env.token[A], "datasets", {"action": "upload", "name": "Seal", "csv": _SEAL_ALT_CSV.decode()}))
+    ds = _ok(_call(env.token[A], "change", {"action": "dataset_upload", "name": "Seal", "csv": _SEAL_ALT_CSV.decode()}))
     dsid = ds.get("dataset_id") or ds.get("id")
     args = {"distribution": "weibull_ph", "dataset_id": dsid, "time_column": "hours",
             "censor_column": "censored", "covariates": ["temp_C", "load"]}
-    out = _ok(_call(env.token[A], "models", {"action": "fit", **args, "name": "Seal",
+    out = _ok(_call(env.token[A], "change", {"action": "model_fit", **args, "name": "Seal",
                                                          "covariate_units": {"temp_C": "°C"}}))
     assert out["covariate_units"] == {"temp_C": "°C"}
     got = _ok(_call(env.token[A], "get", {"kind": "model", "id": out["model_id"]}))
     assert got["covariate_units"] == {"temp_C": "°C"}
     assert {c["name"]: c.get("unit") for c in got["covariates"]}["temp_C"] == "°C"
-    msg = _err(_call(env.token[A], "life_data_analysis", {"action": "fit", **args,
+    msg = _err(_call(env.token[A], "analyse", {"action": "fit", **args,
                                                           "covariate_units": {"pressure": "bar"}}))
     assert "pressure" in msg
 
@@ -410,17 +410,17 @@ def test_mcp_regression_models_say_why_metrics_are_null(samples):
     again = _ok(_call(samples.token[A], "get", {"kind": "model", "id": "sample-model-seal-weibull-ph"}))
     assert again["metrics_note"] == fitting.REGRESSION_METRICS_NOTE
     assert again["at_covariate_means"]["median"] == pytest.approx(out["at_covariate_means"]["median"])
-    fit = _ok(_call(samples.token[A], "life_data_analysis", {"action": "fit",
+    fit = _ok(_call(samples.token[A], "analyse", {"action": "fit",
         "distribution": "weibull_ph", "dataset_id": "sample-ds-seal-alt", "time_column": "hours",
         "censor_column": "censored", "covariates": ["temp_C", "load"]}))
     assert fit["metrics_note"] and fit["at_covariate_means"]["b10"] > 0
 
 
-# ---- models delete covers ALT and degradation; the dataset guard covers every kind ----------------
+# ---- change model_delete covers ALT and degradation; the dataset guard covers every kind ----------------
 
 def _fluid_alt(env, name="Fluid ALT"):
     df = _fluid()
-    return _ok(_call(env.token[A], "models", {"action": "fit_alt",
+    return _ok(_call(env.token[A], "change", {"action": "model_fit_alt",
         "name": name, "life_model": "inverse_power", "data": df.minutes.tolist(),
         "stresses": [[v] for v in df.kV.tolist()], "unit": "minutes"}))
 
@@ -430,19 +430,19 @@ def test_mcp_delete_model_deletes_an_alt_model_unless_a_fleet_runs_on_it(env):
 
     out = _fluid_alt(env)
     fleet = fleet_service.create_fleet(env.db, "Transformers", out["model_id"], A, "alt")
-    msg = _err(_call(env.token[A], "models", {"action": "delete", "model_id": out["model_id"]}))
+    msg = _err(_call(env.token[A], "change", {"action": "model_delete", "model_id": out["model_id"]}))
     assert "Transformers" in msg and "fleet" in msg
     assert env.db.alt_models.find_one({"_id": out["model_id"]}) is not None
     fleet_service.delete_fleet(env.db, fleet.id, A)
-    done = _ok(_call(env.token[A], "models", {"action": "delete", "model_id": out["model_id"]}))
+    done = _ok(_call(env.token[A], "change", {"action": "model_delete", "model_id": out["model_id"]}))
     assert done["deleted"] is True and done["kind"] == "alt"
     assert env.db.alt_models.find_one({"_id": out["model_id"]}) is None
-    assert "not found" in _err(_call(env.token[A], "models", {"action": "delete", "model_id": out["model_id"]})).lower()
+    assert "not found" in _err(_call(env.token[A], "change", {"action": "model_delete", "model_id": out["model_id"]})).lower()
 
 
 def test_mcp_delete_model_refuses_samples_of_every_kind(samples):
     for model_id in ("sample-alt-fluid", "sample-deg-brake-wear"):
-        msg = _err(_call(samples.token[A], "models", {"action": "delete", "model_id": model_id}))
+        msg = _err(_call(samples.token[A], "change", {"action": "model_delete", "model_id": model_id}))
         assert "shared sample" in msg
     assert samples.db.alt_models.find_one({"_id": "sample-alt-fluid"}) is not None
     assert samples.db.degradation_models.find_one({"_id": "sample-deg-brake-wear"}) is not None
@@ -455,7 +455,7 @@ def test_mcp_delete_model_deletes_a_degradation_model_and_its_items(env):
 
     ds = datasets_service.create_dataset(env.db, "wear.csv", _BRAKE_WEAR_CSV, A)
     doc = degradation_service.save_model(env.db, "Wear", ds, dict(SAMPLE_DEGRADATION_MODELS[0]["spec"]), A)
-    done = _ok(_call(env.token[A], "models", {"action": "delete", "model_id": doc.id}))
+    done = _ok(_call(env.token[A], "change", {"action": "model_delete", "model_id": doc.id}))
     assert done["deleted"] is True and done["kind"] == "degradation"
     assert env.db.degradation_models.find_one({"_id": doc.id}) is None
 
@@ -469,7 +469,7 @@ def test_a_dataset_behind_any_model_kind_cant_be_deleted(env, monkeypatch):
     from backend.services import samples as samples_service
 
     out = _fluid_alt(env)
-    msg = _err(_call(env.token[A], "datasets", {"action": "delete", "dataset_id": out["dataset_id"]}))
+    msg = _err(_call(env.token[A], "change", {"action": "dataset_delete", "dataset_id": out["dataset_id"]}))
     assert "Fluid ALT" in msg and "ALT model" in msg
     assert env.db.datasets.find_one({"_id": out["dataset_id"]}) is not None
     # The app's route refuses too.
@@ -493,10 +493,10 @@ def test_an_alt_model_whose_dataset_is_gone_still_gives_wald_bounds(env):
     out = _fluid_alt(env)
     env.db.datasets.delete_one({"_id": out["dataset_id"]})  # deleted before the guard existed
     alt_service._LIVE.clear()
-    use = _ok(_call(env.token[A], "life_data_analysis", {"action": "alt_use_level", "model_id": out["model_id"],
+    use = _ok(_call(env.token[A], "analyse", {"action": "alt_use_level", "model_id": out["model_id"],
                                                          "use_stress": [25.0]}))
     assert use["metrics"] and use["bounds"]["reliability_band"]
-    msg = _err(_call(env.token[A], "life_data_analysis", {"action": "alt_use_level", "model_id": out["model_id"],
+    msg = _err(_call(env.token[A], "analyse", {"action": "alt_use_level", "model_id": out["model_id"],
                                                           "use_stress": [25.0],
                                                      "bounds_method": "lr"}))
     assert "dataset this model was fitted to was deleted" in msg

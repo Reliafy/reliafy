@@ -18,11 +18,10 @@ Pure standard library: no dependencies. You bring SurPyval to do your own fits.
 
 ## Which server
 
-Version 0.3 calls Reliafy's tools API (`POST /api/v1/{tool}/{action}`). It's
-on reliafy.com from the release that adds it; a self-hosted server needs a
-build that includes it (`GET /api/v1/tools` answers). Against an older server,
-the new calls stop with a clear message (`reliafy.ServerTooOld`), and
-everything from 0.2 (`reliafy.push`, `reliafy.models.*`, `reliafy.data.*`,
+The client calls Reliafy's tools API (`POST /api/v1/{tool}/{action}`), which
+reliafy.com serves; a self-hosted server needs a build that includes it
+(`GET /api/v1/tools` answers). Against an older server, the tool calls stop
+with a clear message (`reliafy.ServerTooOld`), and everything from 0.2 (`reliafy.push`, `reliafy.models.*`, `reliafy.data.*`,
 `reliafy.strategy.*`, `reliafy.fleet.*`) keeps working.
 
 ## Quick start
@@ -62,15 +61,27 @@ from reliafy import Client
 
 rf = Client()                                   # token from RELIAFY_TOKEN or `reliafy login`
 rf.call("list", "models")
-rf.call("life_data_analysis", "fit", data=[120, 340, 510, 700], censored=[0, 0, 1, 0])
-rf.call("strategy", "optimal_replacement", distribution_id="weibull",
+rf.call("analyse", "fit", data=[120, 340, 510, 700], censored=[0, 0, 1, 0])
+rf.call("analyse", "optimal_replacement", distribution_id="weibull",
         params=[{"name": "alpha", "value": 1200}, {"name": "beta", "value": 2.5}],
         planned_cost=200, unplanned_cost=1500)
+rf.call("analyse", "maintainability", unit="minutes", lines=[   # Mct, M_max, availability from a parts list
+    {"name": "Motor", "quantity": 4, "failure_rate": 180, "elements": {"isolation": 10, "replace": 15}, "maximum": 60},
+    {"name": "Flight controller", "failure_rate": 90, "mttr": 80}])
 rf.call("guide", topic="life_data")             # a tool without actions
-rf.call("rbd_analysis", "analyze", rbd_id="…", wait=True)   # waits for a long job
+rf.call("analyse", "rbd", rbd_id="…", wait=True)          # waits for a long job
 
 rf.tools()                                      # what you may call
 rf.spec()                                       # the OpenAPI spec
+```
+
+Published failure data from Reliafy's reliability data library, each record
+cited with its licence:
+
+```python
+found = rf.call("list", "library", query="motor-driven pump fails to start")
+record = rf.call("get", "library_record", id=found["results"][0]["id"])
+record["block_model"]                           # the model an RBD block would use
 ```
 
 Shortcuts for the common things: `rf.list(kind)`, `rf.get(kind, id)`,
@@ -85,9 +96,12 @@ and `detail` (what Reliafy said, in plain words).
 
 ```python
 rf.upload_dataset("bearings.xlsx", name="Bearings")      # CSV or .xlsx
+rf.add_measurements(dataset_id, "vibration.csv")         # readings on its units: unit id, age, value
 rf.import_rbd("plant.xml")                               # BlockSim, Open-PSA, Galileo, RePyability
-rf.import_excel("fmea.xlsx", target="rcm")
+rf.import_excel("fmea.xlsx", target="rcm", position_id="…")  # onto a position's RCM
 rf.add_photo("nameplate.jpg", target_id="…")             # Reliafy Maintenance
+rf.add_document("manual.pdf", target_id="…", kind="manual")  # a PDF, at most 20 MB
+rf.download_document(document_id, "manual.pdf")
 
 reliafy.push_usage(fleet_id, [{"name": "Truck 01", "current_use": 5230}])
 reliafy.push_readings([{"tag": "PT-101", "value": 4.2}])
@@ -95,6 +109,35 @@ reliafy.push_lives(dataset_id, file="new_failures.csv")
 ```
 
 Files are streamed from disk, not read into memory.
+
+## Many maintenance changes in one call
+
+Reliafy Maintenance's tools can run as a batch: a list of their actions, in
+order, with `@ref`s between them, checked on a copy of the workspace before
+anything is written. Build a position with its RCM, tasks and parts in one
+call:
+
+```python
+done = rf.apply([
+    {"ref": "p", "do": "positions.create", "args": {"name": "Feed pump A", "parent_id": "…"}},
+    {"ref": "f", "do": "failure_modes.add_function", "args": {"position_id": "@p", "text": "Deliver 40 L/s"}},
+    {"ref": "ff", "do": "failure_modes.add_functional_failure", "args": {"function_id": "@f", "text": "No flow"}},
+    {"ref": "m", "do": "failure_modes.add", "args": {"position_id": "@p", "functional_failure_id": "@ff",
+                                                     "text": "Bearing worn"}},
+    {"do": "failure_modes.decide", "args": {"failure_mode_id": "@m", "consequence": "operational",
+             "decision": {"outcome": "on_condition", "task": "Vibration check", "interval": 3,
+                          "interval_unit": "months"}}},
+    {"do": "tasks.create", "args": {"position_id": "@p", "name": "Grease bearings", "interval": 500,
+                                    "unit": "hours", "source": "oem"}},
+], dry_run=False)
+done["applied"], done["undo"]      # 6, and the operations that reverse it
+```
+
+A delete in a batch (`retire`, `remove_*`, `void`, `cancel`, `merge`,
+`disconnect`) names what it deletes with `confirm`; a batch that deletes, or
+has over 25 operations, is a dry run unless `dry_run=False`. From the command
+line, `reliafy apply ops.json` dry-runs a file of operations and
+`reliafy apply ops.json --run` writes them, leaving `ops.undo.json` beside it.
 
 ## The command line
 
@@ -104,21 +147,42 @@ reliafy tools                                    # every tool and action you may
 reliafy <tool> <action> --arg value …            # any of them; --help on each
 reliafy models list
 reliafy fit failures.csv --dist weibull --censor-column status --c-invert
+reliafy fit failures.csv --dist best --criterion bic   # Best fit ranked by aic (default), aic_c, bic or neg_ll
 reliafy push model.json                          # {distribution, params | data, name?, unit?}
 reliafy upload bearings.xlsx --name Bearings
 reliafy import rbd plant.xml
+reliafy analyse fault_tree --fault-tree-id TREE_ID  # a saved fault tree's top event, cut sets and importance
 reliafy photo add IMG_*.jpg --to POSITION_ID --caption Nameplate
 reliafy photo link PHOTO_ID --to LOCATION_ID      # show it there too
 reliafy photo move PHOTO_ID --to POSITION_ID      # only there
+reliafy document add manual.pdf --to ITEM_ID --kind manual
+reliafy document get DOCUMENT_ID -o manual.pdf
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest readings readings.csv
+reliafy ingest snapshot burst.json               # a signal channel's snapshot (JSON; docs/signal-snapshots.md)
+reliafy maintenance progression.time_to_limit --point-id BAND_POINT_ID   # when a watched band reaches its limit (a range, not a date)
+reliafy maintenance progression.series --point-id BAND_POINT_ID          # the band as a degradation series (rows and CSV)
+reliafy maintenance products.build --product-id PRODUCT_ID --serial 0007            # what it would make (a dry run)
+reliafy maintenance products.build --product-id PRODUCT_ID --serial 0007 --dry-run false   # build the item
+reliafy maintenance get.design_rollup --id DESIGN_POSITION_ID   # one design position across every item built
+reliafy apply ops.json --run                     # maintenance changes in one call (dry run without --run)
+reliafy list library --query "check valve" --record-kind rate   # published failure data
+reliafy get library_record --id nrc-inl-2020:ckv-fto
+reliafy get library_record --id mil-hdbk-217f-n2:9-1-rc-11 --environment GF   # a handbook rate, ground fixed
+reliafy change library_create --name "Site pumps" --description "Our fleet's fitted models"   # a library of your own
+reliafy change library_add_model --library-id LIBRARY_ID --model-id MODEL_ID --failure-mode "Bearing wear"
+reliafy list libraries
+reliafy analyse prediction --environment GF --mission-time 1000 \
+  --lines '[{"name": "Ceramic capacitors", "record_id": "mil-hdbk-217f-n2:10-1-ck-11015", "quantity": 48}]'   # a parts count
+reliafy change prediction_save --name "Controller box" --environment GF --lines @parts.json   # ... saved
+reliafy list predictions
 ```
 
 Values are read as their argument's type: text, numbers, `true`/`false`, JSON
 for lists and objects (`--times 100,500,1000` works too), and `@file` reads a
 file. `--args '{…}'` gives all the arguments as one JSON object. Add `--json`
-for JSON output. `reliafy photo add` reports each file and exits non-zero if
-any failed.
+for JSON output. `reliafy photo add` and `reliafy document add` report each
+file and exit non-zero if any failed.
 
 `reliafy fit` never guesses what a flag column means: Reliafy reads censoring
 as 0 = failed, 1 = still running; if yours is 1 = failed, add `--c-invert`.
