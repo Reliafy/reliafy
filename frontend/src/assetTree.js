@@ -483,7 +483,9 @@ export function clampWidth(width, windowWidth) {
 // character (the 13px font's average). A window narrower than TREE_FIT.from (a 1280 px
 // laptop, where the table already folds its Interval column: explorerRcm.js NARROW_TABLE)
 // keeps the usual width, so the columns keep theirs. rows: [{depth, text}].
-export const TREE_FIT = { charPx: 7, extraPx: 72, cap: 600, share: 0.36, from: 1400 };
+// (The second review, Nov 2026: at 1440 px the RCM's long failure-mode names were still
+// cut, so the share and the cap went up from 0.36 and 600.)
+export const TREE_FIT = { charPx: 7, extraPx: 72, cap: 660, share: 0.43, from: 1400 };
 export function fitTreeWidth(rows, windowWidth) {
   if (!(windowWidth >= TREE_FIT.from)) return PANE.initial;
   let need = 0;

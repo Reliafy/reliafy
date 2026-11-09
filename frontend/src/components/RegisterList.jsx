@@ -73,7 +73,7 @@ export default function RegisterList({
                     <tr key={r.id} className="lib-row" onClick={() => navigate(n.to)}>
                       <td>
                         <Link to={n.to} className="lib-name maint-node-name" onClick={(e) => e.stopPropagation()}>{n.label}</Link>
-                        {n.sub && <div className="lib-date">{n.sub}</div>}
+                        {n.sub && <div className="lib-date reg-sub" title={typeof n.sub === "string" ? n.sub : undefined}>{n.sub}</div>}
                       </td>
                       {columns.map((c) => (
                         <td key={c.key} className={c.num ? "num" : undefined} data-label={c.label}>{c.cell(r)}</td>

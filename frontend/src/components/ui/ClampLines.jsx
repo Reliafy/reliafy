@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import "./ClampLines.css";
 
 // Long free text kept to a few lines (#UI), with "Show all" under it when
 // there's more; "Show less" folds it again. The text keeps its line breaks.

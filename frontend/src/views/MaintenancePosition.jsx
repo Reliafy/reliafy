@@ -11,7 +11,6 @@ import {
   getMaintenanceOverview,
   getMaintenancePosition,
   listMaintenanceLocations,
-  openWorkOrder,
   addMeasurementPoint,
   addItemMeasurementPoint,
   recordMeasurementReading,
@@ -32,6 +31,8 @@ import {
   updatePositionPart,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import ClampLines from "../components/ui/ClampLines.jsx";
+import NewWorkOrderModal from "../components/NewWorkOrderModal.jsx";
 import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
 import {
   DocumentsCard, FailureModePicker, Field, FormModal, LifeTable, LocationPicker, OUTCOME_LABELS,
@@ -87,7 +88,7 @@ export default function MaintenancePosition() {
         crumbs={[{ label: "Assets", to: "/asset-register" }, ...p.path.map((a) => ({
           label: a.name, to: a.kind === "Item" ? `/asset-register/items/${a.id}` : `/asset-register/positions/${a.id}` }))]}
         title={p.name}
-        meta={[p.tag, p.position_class, p.description].filter(Boolean).join(" · ") || "Position"}
+        meta={[p.tag, p.position_class].filter(Boolean).join(" · ") || "Position"}
         id={p.id}
         menu={
           <>
@@ -101,7 +102,10 @@ export default function MaintenancePosition() {
           </>
         }
         primary={<button onClick={() => setModal("wo")}>New work order</button>}
-      />
+      >
+        {/* A long description folds to three lines, with Show all: the actions stay near the top. */}
+        {p.description && <ClampLines text={p.description} lines={3} what="the description" className="ph-desc" />}
+      </PageHeader>
       {error && <div className="card error">{error}</div>}
 
       <section className="card">
@@ -416,27 +420,6 @@ function PastFitmentModal({ p, onClose, onDone }) {
           <FailureModePicker modes={p.failure_modes} classModes={p.class_failure_modes} value={mode} onChange={setMode} />
         </Field>
       )}
-    </FormModal>
-  );
-}
-
-function NewWorkOrderModal({ positionId, onClose, onDone }) {
-  const [title, setTitle] = useState("");
-  const [type, setType] = useState("corrective");
-  const [due, setDue] = useState("");
-  return (
-    <FormModal title="New work order" submitLabel="Open work order" canSubmit={!!title.trim() && !tooLong(title)} onClose={onClose}
-               onSubmit={async () => onDone(await openWorkOrder({ position_id: positionId, title, type, due: due || null }))}>
-      <Field label="What needs doing" text={title} hint="add the detail to the notes once it's open"><input autoFocus value={title} placeholder="e.g. No hot water" onChange={(e) => setTitle(e.target.value)} /></Field>
-      <Field label="Type">
-        <select value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="corrective">Corrective (something's wrong)</option>
-          <option value="preventive">Preventive</option>
-          <option value="inspection">Inspection</option>
-          <option value="other">Other</option>
-        </select>
-      </Field>
-      <Field label="Due (optional)"><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></Field>
     </FormModal>
   );
 }

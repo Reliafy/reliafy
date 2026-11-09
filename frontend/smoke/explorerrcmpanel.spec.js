@@ -266,7 +266,7 @@ test("at 400 px Open… shows the details sheet, which fits; no Expand", async (
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, url(p));
   const fnRow = trow(page, `^Function: Pump water ${tag}`);
-  await fnRow.getByRole("button", { name: "Actions", exact: true }).click();
+  await fnRow.getByRole("button", { name: /^Actions for / }).click();
   await page.getByRole("menu", { name: new RegExp(`^Actions for Function: Pump water ${tag}`) }).getByRole("menuitem", { name: "Open…" }).click();
   const sheet = panel(page);
   await expect(sheet.getByRole("heading", { name: `Pump water ${tag}` })).toBeVisible();
@@ -313,7 +313,7 @@ test("screenshots of the panel side by side and expanded (SMOKE_SHOTS_DIR)", asy
       if (w > 600) await row.locator(".tp-nm").dblclick();
       else {
         await page.getByRole("button", { name: "Close the details" }).click();
-        await row.getByRole("button", { name: "Actions", exact: true }).click();
+        await row.getByRole("button", { name: /^Actions for / }).click();
         await page.getByRole("menuitem", { name: "Open…" }).click();
       }
       await settled(page);
@@ -368,7 +368,7 @@ test("one order at every level: its notes under the title and chips, what's insi
       if (w > 600) await row.locator(".tp-nm").click();
       else {
         if (await panel(page).count()) await panel(page).getByRole("button", { name: "Close the details" }).click();
-        await row.getByRole("button", { name: "Actions", exact: true }).click();
+        await row.getByRole("button", { name: /^Actions for / }).click();
         await page.getByRole("menuitem", { name: "Open…" }).click();
       }
     };

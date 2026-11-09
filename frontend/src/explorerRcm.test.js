@@ -833,3 +833,35 @@ test("opening the RCM tab on a position opens down to its failure modes, not the
   const o = openFor(d, "pump");
   assert.ok(o.has("x1") && !o.has("m1"));
 });
+
+import { phonePositionLine } from "./explorerRcm.js";
+import { decidedWords } from "./rcmWorksheet.js";
+
+test("the phone's position line uses the desktop's decided words, and stays quiet where no RCM is expected", () => {
+  const sum = { modes: 114, undecided: 0, review: 0 };
+  // A parent whose own RCM isn't marked done but everything inside is decided: "all decided", as on the desktop.
+  assert.equal(phonePositionLine({ rsum: sum, ref: { not_analysed: true } }), "114 failure modes · all decided");
+  assert.equal(phonePositionLine({ rsum: sum, ref: {} }), `114 failure modes · ${decidedWords(sum)}`);
+  assert.equal(phonePositionLine({ rsum: { ...sum, undecided: 2 }, ref: {} }), "114 failure modes · 2 to decide");
+  assert.equal(phonePositionLine({ rsum: { modes: 1, undecided: 0, review: 1 }, ref: {} }), "1 failure mode · 1 to review");
+  // No failure modes: "Not analysed yet" only with a class or a function.
+  assert.equal(phonePositionLine({ rsum: { modes: 0 }, ref: { not_analysed: true } }), "");
+  assert.equal(phonePositionLine({ rsum: { modes: 0 }, ref: { not_analysed: true, position_class: "Pump" } }), "Not analysed yet");
+  assert.equal(phonePositionLine({ rsum: { modes: 0 }, rcmKids: 1, ref: { not_analysed: true } }), "Not analysed yet");
+  assert.equal(phonePositionLine({ ref: { position_class: "Pump" } }), "");
+});
+
+import { onlyOnEvent } from "./rcmWorksheet.js";
+
+test("a decision whose task is done on an event (no interval, no task of its own) is a saved task, not a form", () => {
+  const d = { outcome: "on_condition", task: "Dose shock by the pool's volume", on_found: "Keep swimmers out" };
+  assert.equal(onlyOnEvent(d, []), true);
+  assert.equal(onlyOnEvent({ ...d, interval: "" }, []), true);
+  // With an interval, or a task of its own, or no words: not this case.
+  assert.equal(onlyOnEvent({ ...d, interval: 1, interval_unit: "weeks" }, []), false);
+  assert.equal(onlyOnEvent(d, [{ id: "t1", name: "Dose shock" }]), false);
+  assert.equal(onlyOnEvent({ outcome: "on_condition" }, []), false);
+  // Run to failure and combinations aren't scheduled tasks.
+  assert.equal(onlyOnEvent({ ...d, outcome: "rtf" }, []), false);
+  assert.equal(onlyOnEvent(null, []), false);
+});

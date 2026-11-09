@@ -684,6 +684,18 @@ export function failureSummary(x) {
   return x.ref.explained_below ? "explained below" : "no failure modes yet";
 }
 
+// A position's second line on a phone, on the RCM tab: its failure modes and how
+// far they're decided, in the same words as the desktop's Decision column
+// (decidedWords), so the two never disagree. With no failure modes: "Not analysed
+// yet" only where RCM is expected (the position has a class or a function); a
+// position nobody has started on stays quiet, as it does on the desktop.
+export function phonePositionLine(r) {
+  const s = r.rsum;
+  if (s?.modes) return `${s.modes.toLocaleString("en-AU")} failure mode${s.modes === 1 ? "" : "s"} · ${decidedWords(s)}`;
+  const expected = !!r.ref?.position_class || (r.rcmKids || 0) > 0;
+  return r.ref?.not_analysed && expected ? "Not analysed yet" : "";
+}
+
 // The groups narrowed to a typed filter (position, function or failure text):
 // a position whose own name matches keeps all its failures.
 export function filterChoices(groups, query) {

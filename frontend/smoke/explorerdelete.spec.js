@@ -96,7 +96,7 @@ test("Delete from the keyboard, Undo with Ctrl+Z; at 400 px the dialog fits", as
   // A phone: the ⋯ button, Delete…, the dialog fits; Backspace opens it too.
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}`);
-  await row(page, `Zdel propulsion ${tag}`).getByRole("button", { name: "Actions", exact: true }).click();
+  await row(page, `Zdel propulsion ${tag}`).getByRole("button", { name: /^Actions for / }).click();
   await rowMenu(page, `Zdel propulsion ${tag}`).getByRole("menuitem", { name: "Delete…" }).click();
   dialog = page.getByRole("dialog", { name: `Delete “Zdel propulsion ${tag}” and everything inside it?` });
   await expect(dialog.getByRole("button", { name: "Delete 3 positions" })).toBeVisible();

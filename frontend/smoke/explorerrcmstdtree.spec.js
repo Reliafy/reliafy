@@ -67,7 +67,7 @@ async function menuOf(page, row, { keyboard = false } = {}) {
     await row.press("Shift+F10");
   } else {
     await row.hover();
-    await row.getByRole("button", { name: "Actions", exact: true }).click();
+    await row.getByRole("button", { name: /^Actions for / }).click();
   }
   const menu = page.getByRole("menu");
   await expect(menu).toBeVisible();
@@ -382,7 +382,7 @@ test("at 400 px the standard rows, their menus and the details sheet fit", async
   await expect(trow(page, `^No performance standard`).first()).toBeVisible();
   expect(await overflow(page)).toBe(0);
   // The menu: no in-place edit on a phone (the details edit the text); Open… shows them.
-  await ca.getByRole("button", { name: "Actions", exact: true }).click();
+  await ca.getByRole("button", { name: /^Actions for / }).click();
   const menu = page.getByRole("menu");
   await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a functional failure…", "Move up", "Move down", "Move to…", "Isolate", "Delete performance standard…"]);
   await menu.getByRole("menuitem", { name: "Open…" }).click();
@@ -402,7 +402,7 @@ test("at 400 px the standard rows, their menus and the details sheet fit", async
   expect(await overflow(page)).toBe(0);
   // A standard with no limit as data: only the quiet "Make this checkable…" link.
   const ta = trow(page, `^Performance standard: Total alkalinity 80-120 ppm ${tag}`);
-  await ta.getByRole("button", { name: "Actions", exact: true }).click();
+  await ta.getByRole("button", { name: /^Actions for / }).click();
   await page.getByRole("menu").getByRole("menuitem", { name: "Open…" }).click();
   const tdlg = panel(page);
   await expect(tdlg.locator(".rw-checkable")).toHaveText("Make this checkable…");

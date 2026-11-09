@@ -4,10 +4,11 @@ import TreeControlsMenu from "./TreeControlsMenu.jsx";
 import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
 import { NotesMark, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
+import { tailFor } from "../outlineTree.js";
 import { ARRANGEMENTS, CHIP_MARK, PANE, chipsFor, TREE_ROW_MARKERS, clampWidth, markersOf, nextGutter } from "../assetTree.js";
-import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensPanel } from "../explorerRcm.js";
+import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensPanel, phonePositionLine } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
-import { LEVEL_OF, NAME_COLUMN, ROLE, decidedWords } from "../rcmWorksheet.js";
+import { LEVEL_OF, NAME_COLUMN, ROLE } from "../rcmWorksheet.js";
 import { isDeleteKey } from "../treeDelete.js";
 
 // The asset tree as a second-level menu beside the site menu: the outline
@@ -172,7 +173,7 @@ const menuLabel = (r) => `Actions for ${isRcmRow(r) ? `${LEVEL_OF[r.type]?.label
 function MoreButton({ r, open, onMenu }) {
   return (
     <button type="button" className={"tt-more" + (open ? " open" : "")} tabIndex={-1} aria-haspopup="menu" aria-expanded={open}
-            aria-label="Actions" title="Actions (or right-click the row)"
+            aria-label={menuLabel(r)} title="Actions (or right-click the row)"
             onDoubleClick={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
@@ -251,11 +252,7 @@ const NO_FUNCTIONS_PHONE = "No functions yet. Tap ⋯ to add one.";
 
 // A position's second line on a phone, on the RCM tab: its failure modes and those inside it.
 function posLine(r, hint) {
-  if (hint) return NO_FUNCTIONS_PHONE;
-  const s = r.rsum;
-  if (!s?.modes) return r.ref.not_analysed ? "Not analysed yet" : "";
-  const state = s.undecided || s.review ? decidedWords(s) : r.ref.not_analysed ? "not analysed yet" : "all decided";
-  return `${s.modes.toLocaleString("en-AU")} failure mode${s.modes === 1 ? "" : "s"} · ${state}`;
+  return hint ? NO_FUNCTIONS_PHONE : phonePositionLine(r);
 }
 
 // A reference row's tooltip: what it is and what a click does.
@@ -516,8 +513,9 @@ export default function TreePane({
   onToggle, onLevel, onCloseAll, level = null, changed = [], onReset, phone, width, onWidth, collapsed, onCollapse,
   addRow = null, canArrange = true, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table: tableIn = null,
   head = null, headTabs = null, phoneTabs = null, layoutKey = "", anchorKey = null, side = null, arrangeLocked = null,
-  rowMenu = null, branch = null, branchNote = null, fullScreenKey = false, design = false,
+  rowMenu = null, branch = null, branchNote = null, fullScreenKey = false, design = false, titleLevel = 2,
 }) {
+  const TitleTag = titleLevel === 1 ? "h1" : "h2";
   const H = phone ? (tableIn ? 54 : 44) : 30;
   const wide = !phone;
   const wideTable = !!tableIn && wide;
@@ -540,6 +538,18 @@ export default function TreePane({
     nameOf: (r) => label(r),
   });
   const pinnedKeys = useMemo(() => new Set(pins), [pins]);
+  // A little blank space at the end, so the furthest the tree scrolls is a whole number of
+  // rows: then a row brought into view at the end (reveal rounds to whole rows) sits on a
+  // row's edge too, and no half row peeks out under the rows pinned at the top.
+  const tail = useRef(null);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const t = tail.current;
+    if (!el || !t) return;
+    const now = t.offsetHeight;
+    const want = tailFor(el.scrollHeight - now - el.clientHeight, H);
+    if (want !== now) t.style.height = `${want}px`;
+  });
 
   // A row's menu (rowMenu: {actions(r, {keyboard}) → [{id, label}], onAction(r, id)}):
   // {key, at, keyboard} while it's open. Opening it picks the row; closing
@@ -604,13 +614,17 @@ export default function TreePane({
   // exactly where it was. The same when a read brings rows that come or go
   // above it (someone else's change, or a newer answer replacing an earlier
   // one) with nothing opened or closed: the row picked stays where it is.
-  const anchor = useRef({ key: null, offset: 0, layout: layoutKey, held: null, at: null, open: null });
+  // On a phone the rows are taller on a tab with cells (two lines), so the place kept
+  // is rounded to a whole row there: the rows pinned at the top then sit on a row's
+  // edge, with no half row peeking out under them.
+  const anchor = useRef({ key: null, offset: 0, layout: layoutKey, held: null, at: null, open: null, H });
   useLayoutEffect(() => {
     const el = scroller.current;
     const a = anchor.current;
     const shifted = a.layout === layoutKey && a.open === open && a.at != null && index.get(a.key) !== a.at;
     if (el && (a.layout !== layoutKey || shifted) && a.key != null && index.has(a.key)) {
-      const want = index.get(a.key) * H - a.offset;
+      const exact = index.get(a.key) * H - a.offset;
+      const want = a.H && a.H !== H ? Math.round(exact / H) * H : exact;
       el.scrollTop = Math.max(0, want);
       a.held = Math.abs(el.scrollTop - want) >= 1 ? { key: a.key, top: el.scrollTop } : null;
       a.at = index.get(a.key);
@@ -623,7 +637,7 @@ export default function TreePane({
     const a = anchor.current;
     if (!el || anchorKey == null || !index.has(anchorKey)) return;
     if (a.held && a.held.key === anchorKey && Math.abs(el.scrollTop - a.held.top) < 1) return;
-    anchor.current = { ...a, key: anchorKey, offset: index.get(anchorKey) * H - el.scrollTop, held: null, at: index.get(anchorKey), open };
+    anchor.current = { ...a, key: anchorKey, offset: index.get(anchorKey) * H - el.scrollTop, held: null, at: index.get(anchorKey), open, H };
   };
   useEffect(record);
 
@@ -721,7 +735,7 @@ export default function TreePane({
   const status = statusText ? <p className="tp-status" role="status" title={statusText}>{statusText}</p> : null;
   const titleRow = (
     <div className="tp-title-row">
-      {wide ? <div className="tt-title"><h2 className="tp-title">{title}</h2>{status}</div> : <h2 className="tp-title">{title}</h2>}
+      {wide ? <div className="tt-title"><TitleTag className="tp-title">{title}</TitleTag>{status}</div> : <TitleTag className="tp-title">{title}</TitleTag>}
       {canArrange && <ArrangeSwitch value={mode} options={ARRANGEMENTS} onChange={onMode} locked={arrangeLocked} />}
       {/* Folding is for the Summary tab; on the RCM and FME(C)A tabs the tree
           is the table's first column, so the button stays, greyed, and says
@@ -876,6 +890,7 @@ export default function TreePane({
             </div>
           )}
           {!list.length && <div className="tp-empty" style={wide && !table ? { width } : undefined}>{empty}</div>}
+          <div ref={tail} className="tp-tail" aria-hidden="true" />
         </div>
         )}
         {wideTable && (

@@ -57,7 +57,9 @@ export default function useOutlineNav({
   const pins = pinnedRows(display, list, index, scrollTop, H, maxPins);
   const rowsH = Math.max(H, viewH - headerHeight);
 
-  // Keep a row in view below the pinned rows (and the header, if any).
+  // Keep a row in view below the pinned rows (and the header, if any). The
+  // scroll lands on a whole row (a multiple of the row height), so the rows
+  // pinned at the top sit on a row's edge: no half row peeks out under them.
   const reveal = useCallback((key, middle = false) => {
     const el = scroller.current;
     const i = index.get(key);
@@ -65,11 +67,11 @@ export default function useOutlineNav({
     const room = el.clientHeight - headerHeight;
     const pinsH = Math.min(pins.length, maxPins) * H;
     if (middle && (i * H < el.scrollTop + pinsH || (i + 1) * H > el.scrollTop + room)) {
-      el.scrollTop = Math.max(0, i * H - room / 3);
+      el.scrollTop = Math.max(0, Math.round((i * H - room / 3) / H) * H);
     } else if (i * H < el.scrollTop + pinsH) {
       el.scrollTop = Math.max(0, i * H - pinsH - H);
     } else if ((i + 1) * H > el.scrollTop + room) {
-      el.scrollTop = (i + 1) * H - room;
+      el.scrollTop = Math.ceil(((i + 1) * H - room) / H) * H;
     }
     setScrollTop(el.scrollTop);
   }, [index, pins.length, maxPins, H, headerHeight]);

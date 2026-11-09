@@ -159,7 +159,7 @@ test("the RCM tab: isolate a function; inside a pinned branch; the mouse menus h
   await page.keyboard.press("Escape");
   // Its ⋯: the same.
   await fnRow.hover();
-  await fnRow.getByRole("button", { name: "Actions", exact: true }).click();
+  await fnRow.getByRole("button", { name: /^Actions for / }).click();
   await expect(fmenu.getByRole("menuitem", { name: /^Move/ })).toHaveText(["Move to…"]);
   await page.keyboard.press("Escape");
   // A failure mode with the mouse: Move to…, no Move up / down; a plain Isolate (nothing inside it).
@@ -247,7 +247,7 @@ test("at 400 px: Isolate opens in place in the ⋯ menu; the rest closes; the RC
   const treeTop = (await page.locator(".tp-scroll").boundingBox()).y;
   await row(page, `Works line B ${tag}`).locator(".tp-chev").click();
   await expect(row(page, `Works pump B ${tag}`)).toBeVisible();
-  await row(page, `Works line A ${tag}`).getByRole("button", { name: "Actions", exact: true }).click();
+  await row(page, `Works line A ${tag}`).getByRole("button", { name: /^Actions for / }).click();
   const menu = rowMenu(page, `Works line A ${tag}`);
   await menu.getByRole("menuitem", { name: "Isolate" }).click();
   await expect(menu.getByRole("menuitem", { name: "Isolate" })).toHaveAttribute("aria-expanded", "true");
@@ -267,7 +267,7 @@ test("at 400 px: Isolate opens in place in the ⋯ menu; the rest closes; the RC
   await page.getByRole("tab", { name: "RCM" }).click();
   const fnRow = page.getByRole("row", { name: new RegExp(`^Function: Pump water ${tag}`) });
   await expect(fnRow).toBeVisible(); // its pump was opened 2 levels below the line
-  await fnRow.getByRole("button", { name: "Actions", exact: true }).click();
+  await fnRow.getByRole("button", { name: /^Actions for / }).click();
   await expect(page.getByRole("menu").getByRole("menuitem", { name: "Move to…" })).toBeVisible();
   await expect(page.getByRole("menu").getByRole("menuitem", { name: "Move up" })).toBeVisible();
   await expect(page.getByRole("menu").getByRole("menuitem", { name: "Isolate", exact: true })).toBeVisible();

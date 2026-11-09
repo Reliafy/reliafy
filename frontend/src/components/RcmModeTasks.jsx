@@ -5,7 +5,7 @@ import { saveErrorText } from "../confirm.js";
 import { DEFAULT_OUTCOMES, INTERVAL_UNITS, TASK_ORDER, allowedChoices, modeAnswers, startUnit, worthLine } from "../decisionCheck.js";
 import {
   FOUND_EMPTY, OUTCOME_LABEL, ROLE, addableOutcomes, decisionCardLines, decisionRows, decisionWithKind, decisionWithMember, decisionWithNewFirst, isMemberTask, decisionWithoutMember,
-  decisionBody, decisionWithOnFound, decisionWithOutcome, everyText, findsSomething, isCombination, onEventOnly, roleLine, tasksDropped, tasksOf, taskServesTip, taskSharedText, triggerText,
+  decisionBody, decisionWithOnFound, decisionWithOutcome, everyText, findsSomething, isCombination, onEventOnly, onlyOnEvent, roleLine, tasksDropped, tasksOf, taskServesTip, taskSharedText, triggerText,
 } from "../rcmWorksheet.js";
 import { getTaskTriggerPoints, saveStrategyAnalysis } from "../api.js";
 import { appendNotes, calculatorFor, linksEvidence } from "../rcmIntervals.js";
@@ -84,6 +84,7 @@ export const StepLabel = ({ n = null, id, children, saved = 0 }) => (
 );
 
 const SCHEDULED = ["on_condition", "fixed_interval", "failure_finding"];
+const FINDS_HERE = ["on_condition", "failure_finding"];
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 // "every 6 months", or "on event: 120 mm on POOL-RAIN" for a task raised by an event.
 const every = (t) => everyText(t);
@@ -194,7 +195,7 @@ export default function RcmModeTasks({
   useEffect(() => {
     if (keyWas.current !== r.key) {
       keyWas.current = r.key;
-      setPick(fromDecision(d)); setEditing(null); setAdding(false); setFirst(false); setFailed(null); setSaved(0);
+      setPick(fromDecision(d)); setEditing(null); setAdding(false); setFirst(false); setFailed(null); setSaved(0); setScheduling(false);
       return;
     }
     setPick((p) => (d ? fromDecision(d) : { outcome: null, noTask: p.noTask && !TASK_ORDER.includes(p.outcome), rtfBasis: null, yes: p.yes }));
@@ -209,9 +210,14 @@ export default function RcmModeTasks({
     opened.current = addStart;
     if (canAdd) setAdding(true);
   }, [addStart, canAdd]);
+  // A decision whose task is done on an event, with no interval (e.g. "every manual shock
+  // dose"): its words are saved but no task is scheduled. Shown as the saved task it is, "on
+  // an event", with "Set how often…" opening the task form; not as a form left open.
+  const eventTask = onlyOnEvent(d, tasks);
+  const [scheduling, setScheduling] = useState(false);
   // A first task wanted: a scheduled decision whose task has gone, or "Task(s) worth doing"
   // picked on a mode with no task.
-  const needsFirst = can && ((d && !isCombination(d) && SCHEDULED.includes(d.outcome) && !tasks.some((t) => t.id))
+  const needsFirst = can && ((d && !isCombination(d) && SCHEDULED.includes(d.outcome) && !tasks.some((t) => t.id) && (!eventTask || scheduling))
     || (first && pick.yes && !scheduledDecision(d)));
   const kindsHere = allowedChoices(TASK_ORDER, answers.hidden, answers.consequence);
   const decide = (decision) => ops.decide(r, { consequence: r.ref.consequence || null, decision });
@@ -401,7 +407,7 @@ export default function RcmModeTasks({
   const yesNow = pick.yes && !pick.noTask;
   // Run to failure, accept or redesign on its own: its card sits under the chips, in step 3.
   const defaultCards = d && !scheduledDecision(d) ? carded : [];
-  const hasTasks = needsFirst || (yesNow && (listed.length > 0 || (scheduledDecision(d) && carded.length > 0) || canAdd))
+  const hasTasks = needsFirst || (eventTask && !scheduling) || (yesNow && (listed.length > 0 || (scheduledDecision(d) && carded.length > 0) || canAdd))
     || (!d && cards.length > 0);
   return (
     <div className={"rim-step rw-sg" + (editing ? " has-edit" : "")}>
@@ -416,14 +422,36 @@ export default function RcmModeTasks({
         <>
           <StepLabel>Tasks</StepLabel>
           <div className="rw-sc rim-tasks-cell">
+            {eventTask && !needsFirst && (
+              <ul className="rim-lines rim-cards" aria-label="The decision's task">
+                <li className="rim-line rim-card rim-one">
+                  <div className="rim-r1">
+                    <span className="rim-tname rim-r1-body">
+                      {ROLE[d.outcome]?.lead && <><span className="rim-trole">{ROLE[d.outcome].lead}</span>{" "}</>}
+                      {String(d.task).trim()} · <span className="rim-tevery" title="No interval: it's done each time the event happens, not on a schedule.">on an event</span>
+                    </span>
+                    {can && (
+                      <span className="rim-tacts">
+                        <button type="button" className="link" disabled={busy} aria-label={`Set how often to do “${String(d.task).trim()}”`}
+                                onClick={() => { setFailed(null); setScheduling(true); }}>Set how often…</button>
+                      </span>
+                    )}
+                  </div>
+                  {FINDS_HERE.includes(d.outcome) && (
+                    <FoundLine key={`${r.key}:event:found`} label={ROLE[d.outcome].then} value={d.on_found || ""} can={can}
+                               onSave={(text) => decide(decisionWithOnFound(d, 0, text)).then(() => onSaid?.("Saved what's done when it's found."))} />
+                  )}
+                </li>
+              </ul>
+            )}
             {needsFirst && (
               <div className="rim-card rim-one editing" role="group" aria-label="The decision's task">
                 <NewTaskCard key={`${r.key}:${d?.outcome || "first"}`} r={r} d={d} ops={ops}
                              kinds={kindsHere} kind={SCHEDULED.includes(d?.outcome) ? d.outcome : null}
                              start={{ name: SCHEDULED.includes(d?.outcome) ? d.task || "" : "", interval: SCHEDULED.includes(d?.outcome) ? d.interval ?? "" : "" }}
                              onSave={watching((member) => decide(decisionWithNewFirst(d, member)))}
-                             onCancel={first ? () => { setFirst(false); setPick(fromDecision(d)); } : null}
-                             onDone={(said) => { setFirst(false); setSaved((x) => x + 1); onSaid?.(said); }} />
+                             onCancel={first ? () => { setFirst(false); setPick(fromDecision(d)); } : eventTask ? () => setScheduling(false) : null}
+                             onDone={(said) => { setFirst(false); setScheduling(false); setSaved((x) => x + 1); onSaid?.(said); }} />
               </div>
             )}
             {d && listed.length > 0 && <TaskList r={r} lines={listed} label="The decision's tasks" onPick={onPick} ops={ops} can={can} onSaid={onSaid} />}

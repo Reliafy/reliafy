@@ -9,8 +9,11 @@ import {
   listMaintenanceLocations,
   listMaintenanceWorkOrders,
   setMaintenanceSettings,
+  setTeamTimeZone,
 } from "../api.js";
 import { SectionHeader } from "../components/SectionPage.jsx";
+import ListSearch, { matches } from "../components/ListSearch.jsx";
+import NewWorkOrderModal from "../components/NewWorkOrderModal.jsx";
 import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
 import {
   DueChip, Field, FormModal, LocationPicker, PositionPicker, Proposals, flatten, fmtDate,
@@ -21,20 +24,51 @@ import { itemAtText, subjectBadge, subjectPath } from "../maintenanceSubjects.js
 import "./Maintenance.css";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 
+const HELP = { guide: "maintenance-work-orders" };
+
 // One quiet line when the workspace has no time zone and this device isn't on
-// UTC: the dates here follow UTC until it's set.
-function TimeZoneNudge({ zone }) {
-  const { workspace, activeTeam } = useWorkspace();
+// UTC: the dates here follow UTC until it's set. One button sets this device's
+// zone (the same call as Settings, or Team settings for a team's owner).
+function TimeZoneNudge({ zone, onSet }) {
+  const { workspace, activeTeam, savePersonalTimeZone, refreshTeams } = useWorkspace();
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(null);
   const browser = browserTimeZone();
   if (!shouldSuggestTimeZone(zone, browser)) return null;
   const team = workspace !== "personal";
   if (team && activeTeam?.role !== "owner") return null;
+  const place = browser.replaceAll("_", " ");
+  const use = async () => {
+    setBusy(true);
+    setFailed(null);
+    try {
+      if (team) {
+        await setTeamTimeZone(activeTeam.id, browser);
+        refreshTeams();
+      } else {
+        await savePersonalTimeZone(browser);
+      }
+      onSet?.();
+    } catch (e) {
+      setFailed(e.message);
+      setBusy(false);
+    }
+  };
   return (
-    <p className="muted-line">
-      Dates here follow UTC, so today turns over at UTC midnight.{" "}
-      <Link to={team ? "/team" : "/settings"}>Set this workspace's time zone</Link> ({browser.replaceAll("_", " ")}?).
-    </p>
+    <div className="muted-line maint-tz">
+      <span>Dates here follow UTC: today ends at midnight UTC, not where you are.</span>{" "}
+      <button type="button" className="secondary sm" onClick={use} disabled={busy}>
+        {busy ? "Saving…" : `Use ${place}`}
+      </button>{" "}
+      <Link to={team ? "/team" : "/settings"}>Choose another time zone</Link>
+      {failed && <span className="field-error" role="alert"> {failed}</span>}
+    </div>
   );
+}
+
+// The due table's rows a search matches: the task's name or what it's on.
+function dueMatches(rows, query) {
+  return (rows || []).filter((t) => matches(query, t.name, t.subject?.name));
 }
 
 // Maintenance: proposed changes, critical spares short, what's due and
@@ -43,7 +77,8 @@ export default function MaintenanceHome() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [modal, setModal] = useState(null); // "position" | "import"
+  const [modal, setModal] = useState(null); // "position" | "import" | "wo"
+  const [dueQuery, setDueQuery] = useState("");
   const [generating, setGenerating] = useState(false);
 
   const [digest, setDigest] = useState(null);
@@ -88,16 +123,19 @@ export default function MaintenanceHome() {
 
   const positions = flatten(data?.tree);
   const unscheduled = (data?.due || []).filter((t) => !t.open_work_order);
+  const dueShown = dueMatches(data?.due, dueQuery);
 
   return (
     <div className="app">
       <SectionHeader
         title="Maintenance"
         purpose="What's due from your scheduled tasks, the work orders, and the changes proposed."
+        help={HELP}
+        primary={data?.tree?.length > 0 ? <button onClick={() => setModal("wo")}><PlusIcon /> New work order</button> : null}
         actions={<button className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>}
       />
       {error && <div className="card error">{error}</div>}
-      {data && <TimeZoneNudge zone={data.time_zone} />}
+      {data && <TimeZoneNudge zone={data.time_zone} onSet={refresh} />}
       {data === null ? (
         <div className="card empty">Loading…</div>
       ) : data.tree.length === 0 ? (
@@ -143,10 +181,17 @@ export default function MaintenanceHome() {
             {data.due.length === 0 ? (
               <p className="lib-date">Nothing due.</p>
             ) : (
+              <>
+              <div className="tablebar section-tablebar">
+                <span className="count">{dueQuery ? `${dueShown.length} of ${data.due.length} tasks` : `${data.due.length} ${data.due.length === 1 ? "task" : "tasks"}`}</span>
+                <span className="grow" />
+                <ListSearch value={dueQuery} onChange={setDueQuery} placeholder="Search what's due…" />
+              </div>
+              {dueShown.length === 0 ? <p className="lib-date">Nothing due matches.</p> : (
               <div className="maint-scroll"><table className="lib-table">
                 <thead><tr><th>Task</th><th>On</th><th>Due</th><th>Work order</th></tr></thead>
                 <tbody>
-                  {data.due.map((t) => (
+                  {dueShown.map((t) => (
                     <tr key={t.id}>
                       <td>{t.name}</td>
                       <td><SubjectCell subject={t.subject} at={t.at} /></td>
@@ -158,6 +203,8 @@ export default function MaintenanceHome() {
                   ))}
                 </tbody>
               </table></div>
+              )}
+              </>
             )}
           </section>
 
@@ -211,6 +258,10 @@ export default function MaintenanceHome() {
           onClose={() => setModal(null)}
           onCreated={(p) => navigate(`/asset-register/positions/${p.id}`)}
         />
+      )}
+      {modal === "wo" && (
+        <NewWorkOrderModal positions={positions} onClose={() => setModal(null)}
+                           onDone={(wo) => navigate(`/maintenance/work-orders/${wo.id}`)} />
       )}
       {modal === "import" && <ImportModal onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
     </div>

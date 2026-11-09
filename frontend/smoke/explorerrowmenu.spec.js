@@ -195,7 +195,7 @@ test("Locations: a location's menu has new inside, rename, move and delete; at 4
   // A phone: the ⋯ button opens the same menu; nothing scrolls sideways.
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}`);
-  const more = row(page, `Menu circulation ${tag}`).getByRole("button", { name: "Actions", exact: true });
+  const more = row(page, `Menu circulation ${tag}`).getByRole("button", { name: /^Actions for / });
   await more.click();
   menu = rowMenu(page, `Menu circulation ${tag}`);
   await expect(menu.getByRole("menuitem", { name: "Move to…" })).toBeVisible();

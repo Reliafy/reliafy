@@ -105,7 +105,7 @@ test("a phone: the row's ⋯ menu imports a workbook, and the dialog fits 400 px
   const pos = await postOk(request, `${M}/positions`, { name });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pos.id}&tab=rcm`);
   const row = page.getByRole("row", { name: new RegExp(`^${name}`) }).or(page.getByRole("treeitem", { name: new RegExp(`^${name}`) }));
-  await row.first().getByRole("button", { name: "Actions", exact: true }).click();
+  await row.first().getByRole("button", { name: /^Actions for / }).click();
   const menu = rowMenu(page, name);
   await expect(menu.getByRole("menuitem", { name: "Import worksheet…" })).toBeVisible();
   await shot(page, "rcm-import-4-row-menu-400");

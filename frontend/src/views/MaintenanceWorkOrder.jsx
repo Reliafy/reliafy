@@ -13,7 +13,7 @@ import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import WorkOrderReadings from "../components/WorkOrderReadings.jsx";
 import { mergeValues, progressText, readingRows, readingsToSend } from "../workOrderReadings.js";
 import { partChoices, stockText } from "../maintenanceSpares.js";
-import { actionKinds, itemAtText, subjectPath } from "../maintenanceSubjects.js";
+import { actionKinds, closeActionKind, defaultCloseKind, itemAtText, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
 import { tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
@@ -23,6 +23,8 @@ const STATUS_LABELS = {
 };
 
 const KINDS = [
+  // A check that found nothing to do: sent as an inspection that found it OK.
+  { id: "checked", label: "Checked, nothing done" },
   { id: "replace", label: "Replaced it" },
   { id: "repair", label: "Repaired it" },
   { id: "inspect", label: "Inspected it" },
@@ -167,8 +169,8 @@ function CloseForm({ wo, onClosed, readings }) {
   const kinds = actionKinds(KINDS, wo);
   // A replacement can only be recorded at a position (an item's: where it's fitted now).
   const atPosition = wo.can_replace !== false;
-  const [actions, setActions] = useState([{ kind: wo.type === "inspection" || wo.subject?.kind === "location" ? "inspect"
-    : atPosition ? "replace" : "repair" }]);
+  // Starts from the task's kind: a check is "Checked, nothing done", a fixed-interval task a replacement.
+  const [actions, setActions] = useState([{ kind: defaultCloseKind(wo) }]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -186,9 +188,9 @@ function CloseForm({ wo, onClosed, readings }) {
     setError(null);
     try {
       const body = actions.map((a) => ({
-        kind: a.kind,
-        ...(a.kind === "other" ? {} : failureModeBody(a.mode)),
+        ...(a.kind === "other" || a.kind === "checked" ? {} : failureModeBody(a.mode)),
         finding: a.kind === "inspect" ? a.finding || null : null,
+        ...closeActionKind(a.kind),
         notes: a.notes || "",
         new_item: a.kind === "replace" && a.new_name ? { name: a.new_name, serial: a.new_serial || "" } : null,
         ...(a.kind === "replace" && a.part_id ? { part_id: a.part_id, from_location_id: a.from || null } : {}),
@@ -229,7 +231,7 @@ function CloseForm({ wo, onClosed, readings }) {
                 </select>
               </Field>
             )}
-            {a.kind !== "other" && atPosition && (
+            {a.kind !== "other" && a.kind !== "checked" && atPosition && (
               <Field label={a.kind === "replace" ? "Did it fail? Which way" : "Failure mode (optional)"}>
                 <FailureModePicker modes={wo.failure_modes} classModes={wo.class_failure_modes || []} value={a.mode}
                                    onChange={(mode) => update(i, { mode })}
@@ -282,7 +284,7 @@ function CloseForm({ wo, onClosed, readings }) {
         <Field label="Closing notes (optional; the notes above are kept)"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
       <div className="maint-row">
-        <button onClick={submit} disabled={busy || !actions.every((a) => failureModeReady(a.mode))}>
+        <button onClick={submit} disabled={busy || !actions.every((a) => a.kind === "checked" || failureModeReady(a.mode))}>
           {busy ? "Closing…" : "Close work order"}
         </button>
         {wo.subject && <Link to={subjectPath(wo.subject)} className="lib-date">Back to {wo.subject.name}</Link>}

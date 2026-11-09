@@ -20,6 +20,16 @@
   min-width: 11rem;
 }
 
+/* The quiet line under a name (a description, a part number): two lines at
+   most, then "…"; the whole text is its tooltip. */
+.reg-table .reg-sub {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
 /* Assets' last row, the positions at no place. */
 .reg-table .maint-not-placed td {
   border-top: 2px solid var(--line);
@@ -58,6 +68,20 @@
 
   .reg-table .num {
     text-align: left;
+  }
+
+  /* The bin sits in the card's header row, at the end of the name's line (the
+     name keeps room for it), not among the numbers. */
+  .reg-table tr:has(> td.lib-actions) > td:first-child {
+    grid-row: 1;
+    padding-right: 2.75rem;
+  }
+
+  .reg-table td.lib-actions {
+    grid-row: 1;
+    grid-column: 3;
+    justify-self: end;
+    align-self: start;
   }
 
   .reg-table td[data-label]::before {

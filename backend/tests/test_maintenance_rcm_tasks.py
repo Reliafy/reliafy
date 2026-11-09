@@ -411,3 +411,20 @@ def test_a_task_the_position_has_is_linked_not_made_again_and_keeps_its_interval
     bad = rcm_sheet.run(m, m.create_position("Pool 3")["id"], _sheet(rows), OPTIONS, dry_run=False)
     assert not bad["ok"] and "the task row 2 makes" in bad["errors"][0]
     _rebuilds_the_same(m)
+
+
+# ---- a work order says what kind of task it's for -----------------------------------
+
+def test_a_work_order_names_its_tasks_kind_so_closing_a_check_starts_at_checked(m):
+    """The close form starts from the task's kind (a check isn't a replacement): the
+    work order's task carries its outcome. A read only: no event changes."""
+    pool, cell, acid, cya, salt = _pool(m)
+    own = _decision(m, acid["id"])["task_id"]
+    plain = m.create_task(pool["id"], "Backwash the filter", 1, "months")
+    events_before = len(m.s.events(ORG, 5000))
+    check = m.work_order(m.open_work_order(pool["id"], "Weekly pH check", type="preventive", task_id=own)["id"])
+    assert check["task"] == {"id": own, "name": "Weekly pH check", "outcome": "on_condition"}
+    other = m.work_order(m.open_work_order(pool["id"], "Backwash", type="preventive", task_id=plain["id"])["id"])
+    assert other["task"]["outcome"] is None
+    assert len(m.s.events(ORG, 5000)) == events_before + 2  # the two work orders opened, nothing else
+    _rebuilds_the_same(m)
