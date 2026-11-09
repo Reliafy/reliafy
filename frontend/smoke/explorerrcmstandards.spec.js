@@ -200,7 +200,7 @@ test("at 400 px the standards list and its forms fit the sheet", async ({ page, 
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&tab=rcm`);
   const fnRow = trow(page, `^Function: Keep the water balanced ${tag}`);
-  await fnRow.getByRole("button", { name: "Actions", exact: true }).click();
+  await fnRow.getByRole("button", { name: /^Actions for / }).click();
   await page.getByRole("menu").getByRole("menuitem", { name: "Open…" }).click();
   const dlg = panel(page);
   await expect(dlg).toBeVisible();
@@ -246,7 +246,7 @@ test("screenshots of the function's standards list in its details (SMOKE_SHOTS_D
     const row = trow(page, `^Function: Keep the water balanced ${tag}`).first();
     if (w > 600) await row.locator(".tp-nm").dblclick();
     else {
-      await row.getByRole("button", { name: "Actions", exact: true }).click();
+      await row.getByRole("button", { name: /^Actions for / }).click();
       await page.getByRole("menuitem", { name: "Open…" }).click();
     }
     await expect(panel(page)).toBeVisible();

@@ -254,7 +254,7 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   await expect(inPlace).toHaveCount(0);
   // The ⋯ button: hidden until the row is hovered; it opens the same menu.
   const mode = trow(page, `^Failure mode: Bearing seizes No flow Pump water ${tag}`);
-  const more = mode.getByRole("button", { name: "Actions", exact: true });
+  const more = mode.getByRole("button", { name: /^Actions for / });
   await expect(more).toHaveCSS("opacity", "0");
   await mode.hover();
   await expect(more).toHaveCSS("opacity", "1");
@@ -283,7 +283,7 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   // The heading of failure modes under no functional failure: its menu adds one there, in its
   // details, on their add row (typed in place).
   const loose = trow(page, "Not under a functional failure").first();
-  await loose.getByRole("button", { name: "Actions", exact: true }).click();
+  await loose.getByRole("button", { name: /^Actions for / }).click();
   await page.getByRole("menu").getByRole("menuitem", { name: "Add a failure mode…" }).click();
   const looseBox = page.getByRole("complementary", { name: "Details" }).getByRole("textbox", { name: "New failure mode" });
   await expect(looseBox).toBeFocused();
@@ -324,7 +324,7 @@ test("at 400 px each row shows its ⋯: a tap opens the menu, and adding works",
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
   await expect(table(page)).toBeVisible();
   const fnName = `Function: Contain the water ${tag}`;
-  const more = trow(page, `^${fnName}`).getByRole("button", { name: "Actions", exact: true });
+  const more = trow(page, `^${fnName}`).getByRole("button", { name: /^Actions for / });
   await expect(more).toHaveCSS("opacity", "1");
   const size = await more.boundingBox();
   expect(Math.min(size.width, size.height)).toBeGreaterThanOrEqual(32);

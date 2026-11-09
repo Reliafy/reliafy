@@ -251,7 +251,7 @@ test("at 400 px a standard's Move to… carries its failures too, with Undo", as
   const p = await plant(request, tag);
   await openPlant(page, p, 400);
   const row = trow(page, `^Performance standard: At 4 bar ${tag}`);
-  await row.getByRole("button", { name: "Actions", exact: true }).click();
+  await row.getByRole("button", { name: /^Actions for / }).click();
   await page.getByRole("menu").getByRole("menuitem", { name: "Move to…" }).click();
   const dlg = page.getByRole("dialog", { name: `Move the performance standard “At 4 bar ${tag}” and its functional failure` });
   await expect(dlg).toBeVisible();
@@ -270,7 +270,7 @@ test("at 400 px a standard's Move to… carries its failures too, with Undo", as
   await expect.poll(async () => (await rcmOf(request, p.a.id)).functions[0].failures.map((f) => [f.text, f.standard?.text]))
     .toEqual([[`No flow ${tag}`, `At least 50 L/s ${tag}`], [`Low pressure ${tag}`, `At 4 bar ${tag}`]]);
   // The other way too: the refused one says why before Move.
-  await trow(page, `^Performance standard: At least 50 L/s ${tag}`).getByRole("button", { name: "Actions", exact: true }).click();
+  await trow(page, `^Performance standard: At least 50 L/s ${tag}`).getByRole("button", { name: /^Actions for / }).click();
   await page.getByRole("menu").getByRole("menuitem", { name: "Move to…" }).click();
   const dlg2 = page.getByRole("dialog", { name: /Move the performance standard “At least 50 L\/s/ });
   await pickPlace(dlg2, p.more.id, `Pump more water ${tag}`);
@@ -374,7 +374,7 @@ test("at 400 px there's no dragging: the row menu's Move to… moves it, with Un
   await openPlant(page, p, 400);
   await expect(table(page).locator(".tt-grip")).toHaveCount(0);
   const row = trow(page, `^Function: Contain the water ${tag}`);
-  await row.getByRole("button", { name: "Actions", exact: true }).click();
+  await row.getByRole("button", { name: /^Actions for / }).click();
   const menu = page.getByRole("menu");
   await expect(menu.getByRole("menuitem", { name: "Move up" })).toBeVisible();
   await menu.getByRole("menuitem", { name: "Move to…" }).click();
@@ -399,7 +399,7 @@ test("at 400 px there's no dragging: the row menu's Move to… moves it, with Un
 async function moveVia(page, rowName, { item = "Move to…", width = 1280 } = {}) {
   const row = typeof rowName === "string" ? trow(page, rowName) : rowName;
   if (width > 600) await row.hover();
-  await row.getByRole("button", { name: "Actions", exact: true }).click();
+  await row.getByRole("button", { name: /^Actions for / }).click();
   await page.getByRole("menu").getByRole("menuitem", { name: item }).click();
   const dlg = page.getByRole("dialog", { name: /^Move / });
   await expect(dlg).toBeVisible();

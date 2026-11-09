@@ -532,3 +532,12 @@ button.maint-toggle {
 .wor-other summary { cursor: pointer; padding: 0.3rem 0; }
 .wor-taken-head { font-size: 0.95rem; margin: 0.75rem 0 0.25rem; }
 .maint-line-readings { margin-left: 0.5rem; }
+
+/* The Maintenance page's time-zone line: the sentence, then "Use <zone>" and the
+   link to choose another, wrapping on a phone. */
+.maint-tz {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+}

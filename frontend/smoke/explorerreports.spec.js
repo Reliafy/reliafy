@@ -165,7 +165,7 @@ test("Failure reports at 400 px: the ⋯ button offers Add failure report…, th
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.circ.id}`);
-  const more = row(page, `Report circulation ${tag}`).getByRole("button", { name: "Actions", exact: true });
+  const more = row(page, `Report circulation ${tag}`).getByRole("button", { name: /^Actions for / });
   await more.click();
   const menu = rowMenu(page, `Report circulation ${tag}`);
   await expect(menu.getByRole("menuitem", { name: "Add failure report…" })).toBeVisible();

@@ -13621,7 +13621,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             **self._wo_brief(w), "notes": w.get("notes", ""), "note_history": w.get("note_history") or [],
             "close_notes": w.get("close_notes", ""), "cancel_reason": w.get("cancel_reason", ""),
             "actions": actions,
-            "task": {"id": task[0]["id"], "name": task[0]["name"]} if task else None,
+            # Its kind (on_condition, fixed_interval, failure_finding...): what closing it
+            # most likely records (a check finds; a fixed-interval task replaces).
+            "task": {"id": task[0]["id"], "name": task[0]["name"], "outcome": task[0].get("outcome")} if task else None,
             "fitted": position["fitted"] if position else None,
             "failure_modes": position["failure_modes"] if position else [],
             "class_failure_modes": position["class_failure_modes"] if position else [],
@@ -13652,7 +13654,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # One work order for many tasks: tasks (every one it's for), not task.
             out |= self._package_wo_view(w)
             out["task"] = None
-            out["tasks"] = [{"id": t["id"], "name": t["name"]} for t in task]
+            out["tasks"] = [{"id": t["id"], "name": t["name"], "outcome": t.get("outcome")} for t in task]
             out["can_replace"] = bool(position_id or out["line_positions"])
         return out
 

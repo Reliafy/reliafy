@@ -368,7 +368,7 @@ test("at 400 px the decision's tasks, the Add a task form and a task's own sheet
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&tab=rcm`);
   const row = trow(page, `^Failure mode: Acid under-dosed ${tag}`);
   await expect(row).toContainText("+1 task");
-  await row.getByRole("button", { name: "Actions", exact: true }).click();
+  await row.getByRole("button", { name: /^Actions for / }).click();
   await page.getByRole("menu").getByRole("menuitem", { name: "Add a task…" }).click();
   const dlg = panel(page);
   await expect(dlg).toBeVisible();
@@ -520,7 +520,7 @@ test("screenshots of a failure mode with several tasks and the table rows (SMOKE
     await page.screenshot({ path: `${SHOTS}/rcm-tasks-rows-${w}.png` });
     if (w > 600) await row.locator(".tp-nm").dblclick();
     else {
-      await row.getByRole("button", { name: "Actions", exact: true }).click();
+      await row.getByRole("button", { name: /^Actions for / }).click();
       await page.getByRole("menuitem", { name: "Open…" }).click();
     }
     await expect(panel(page)).toBeVisible();

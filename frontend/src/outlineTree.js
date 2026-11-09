@@ -149,3 +149,11 @@ export function visiblePick(display, shownIndex, key) {
   while (k != null && !shownIndex.has(k)) k = display.rows.get(k)?.parent ?? null;
   return k;
 }
+
+// The blank space after the rows that makes the furthest scroll a whole number of
+// rows (`overflow`: how far it scrolls without it), so a scroll to the end sits on a
+// row's edge: 0 when it doesn't scroll at all or already ends on one.
+export function tailFor(overflow, rowHeight) {
+  if (!(overflow > 0) || !(rowHeight > 0)) return 0;
+  return (rowHeight - (Math.round(overflow) % rowHeight)) % rowHeight;
+}

@@ -5,7 +5,9 @@
 // "Its tree" the Explorer on the tree it heads or sits in.
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getItemClasses, listItemsOverview, listProducts } from "../api.js";
+import { getItemClasses, listItemsOverview, listMaintenanceLocations, listProducts } from "../api.js";
+import { PlusIcon } from "../components/LibRows.jsx";
+import { NewItemModal } from "./MaintenanceLists.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import ListSearch from "../components/ListSearch.jsx";
 import { ClassPicker } from "../components/MaintenanceItemClasses.jsx";
@@ -32,6 +34,9 @@ export default function MaintenanceItemsList() {
   const [sent, setSent] = useState("");
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  // New item: where it can be put, read when the form opens.
+  const [newItem, setNewItem] = useState(null); // null, or the locations (an array)
+  const openNew = () => listMaintenanceLocations().then((d) => setNewItem(d.locations || [])).catch(() => setNewItem([]));
   useEffect(() => {
     listProducts().then((d) => setProducts(d.products || [])).catch(() => {});
     getItemClasses().then((d) => setClasses(d.classes || [])).catch(() => {});
@@ -56,7 +61,9 @@ export default function MaintenanceItemsList() {
   return (
     <div className="app">
       <SectionHeader title="Items" purpose="Every serial-numbered thing: what it is, where it is, and its open failure reports."
-                     help={{ guide: PRODUCTS_GUIDE }} primary={<button onClick={() => navigate(PRODUCTS_PATH)}>Build from a product</button>} />
+                     help={{ guide: PRODUCTS_GUIDE }} primary={<button onClick={openNew}><PlusIcon /> New item</button>}
+                     actions={<button className="secondary" onClick={() => navigate(PRODUCTS_PATH)}>Build from a product</button>} />
+      {newItem && <NewItemModal locations={newItem} onClose={() => setNewItem(null)} onDone={(it) => navigate(itemPagePath(it.id))} />}
       {error && <div className="card error">The items didn't load: {error}</div>}
       {!data ? (
         !error && <div className="card empty">Loading…</div>

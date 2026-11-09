@@ -94,7 +94,7 @@ test("at 400 px, moving RCM whose task counts the old truck's hours asks, and Un
   const tag = `n${Date.now()}`;
   const p = await fleet(request, tag);
   await openFleet(page, p, 400);
-  await trow(page, `^Function: Haul ore ${tag}`).getByRole("button", { name: "Actions", exact: true }).click();
+  await trow(page, `^Function: Haul ore ${tag}`).getByRole("button", { name: /^Actions for / }).click();
   await page.getByRole("menu").getByRole("menuitem", { name: "Move to…" }).click();
   const move = page.getByRole("dialog", { name: `Move “Haul ore ${tag}”` });
   await pickPlace(move, p.t14.id, `Truck 14 ${tag}`);

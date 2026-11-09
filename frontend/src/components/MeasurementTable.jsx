@@ -125,7 +125,7 @@ export function RecordBox({ row, onSaved }) {
   return (
     <span className="ms-rec" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
       <input type="text" inputMode="decimal" className="ms-rec-input" value={text} disabled={busy}
-             placeholder={used ? `Add${p.unit ? ` ${p.unit}` : ""}…` : setting ? "Set to…" : "Record…"}
+             placeholder={used ? "Add" : setting ? "Set to…" : "Record…"}
              aria-label={used ? `Quantity of ${p.name} added${p.unit ? ` (${p.unit})` : ""}` : `${setting ? "New setting" : "New reading"} for ${p.name}${p.unit ? ` (${p.unit})` : ""}`}
              title={used ? `Type how much was added${p.unit ? ` in ${p.unit}` : ""} and press Enter: recorded today. ${row.stock}`
                : `Type a value${p.unit ? ` in ${p.unit}` : ""} and press Enter to record it now`}

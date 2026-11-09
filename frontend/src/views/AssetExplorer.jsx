@@ -457,7 +457,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const { list: rows } = flatten(shown, openBy[mode] || levelSet(fitTree, 2));
     return fitTreeWidth(rows.map((v) => {
       const r = shown.rows.get(v.key);
-      return { depth: v.depth, text: (isRcmRow(r) ? r?.ref?.text : r?.ref?.name) || "" };
+      // A reference row's "on <position>" after its name counts too.
+      const on = r?.type === "cause" && r.ref?.on ? `   on ${r.ref.on}` : "";
+      return { depth: v.depth, text: ((isRcmRow(r) ? r?.ref?.text : r?.ref?.name) || "") + on };
     }), window.innerWidth);
   }, [fitTree, pinKey, openBy, mode]);
   const shownWidth = fitWidth ?? width;
@@ -1986,6 +1988,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       + (full ? " is-full" : "") + (tableOn ? " tx-table" : "")}>
       <TreePane
         title={title}
+        // On a phone the tree is the page until a row's details take its place: its title is
+        // the page's h1 then (on a wide screen the picked row's name in the panel is).
+        titleLevel={phone && heading === 1 && !(detailKey && !tableOn) ? 1 : 2}
         treeLabel={treeLabel}
         display={display}
         list={list}

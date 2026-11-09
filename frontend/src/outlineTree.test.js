@@ -88,3 +88,14 @@ test("keepLevel: rows that arrive after a level was chosen open to it; nothing o
   assert.equal(keepLevel(after, all, Infinity), all);
   assert.equal(keepLevel(after, open, 0), open);
 });
+
+import { tailFor } from "./outlineTree.js";
+
+test("the tree's tail makes the furthest scroll a whole number of rows", () => {
+  assert.equal(tailFor(0, 30), 0);
+  assert.equal(tailFor(-50, 30), 0);
+  assert.equal(tailFor(300, 30), 0);
+  assert.equal(tailFor(310, 30), 20); // 310 + 20 = 330: 11 rows
+  assert.equal(tailFor(1110, 54), 24); // 1110 + 24 = 1134: 21 rows
+  assert.equal((1110 + tailFor(1110, 54)) % 54, 0);
+});

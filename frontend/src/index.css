@@ -1940,6 +1940,9 @@ header p {
   max-width: 72ch;
 }
 .ph-meta a { color: var(--acc); }
+/* A page's description under its meta line (a position's): folded, with Show all. */
+.page-header .ph-desc { margin-top: 6px; max-width: 72ch; }
+.page-header .ph-desc .clampl-text { font-size: var(--fs-14); line-height: 1.5; color: var(--muted); }
 .crumb-sep { color: var(--subtle); }
 .ph-chips { margin-top: var(--sp-2); }
 

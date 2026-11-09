@@ -182,6 +182,13 @@ export function tasksOf(x) {
   return [];
 }
 
+// A plain scheduled decision whose task is named but has no interval and no task of its own
+// (a task done on an event, e.g. "every manual shock dose"): saved, just not on a schedule.
+export function onlyOnEvent(d, tasks) {
+  return !!d && !isCombination(d) && SCHEDULED_OUTCOMES.has(d.outcome) && !(tasks || []).some((t) => t?.id)
+    && !!String(d.task || "").trim() && (d.interval == null || d.interval === "");
+}
+
 // "+1 task" / "+2 tasks": the tasks beyond the decision's own.
 export function moreTasks(d) {
   const n = tasksOf(d).length - 1;

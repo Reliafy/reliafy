@@ -240,7 +240,7 @@ test("at 400 px: the pinned row carries the pin and an easy-to-tap ✕; the row'
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}`);
   const treeTop = (await page.locator(".tp-scroll").boundingBox()).y;
-  const more = row(page, `Works line A ${tag}`).getByRole("button", { name: "Actions", exact: true });
+  const more = row(page, `Works line A ${tag}`).getByRole("button", { name: /^Actions for / });
   await expect(more).toHaveCSS("opacity", "1");
   await more.click();
   await rowMenu(page, `Works line A ${tag}`).getByRole("menuitem", { name: "Pin this branch" }).click();
