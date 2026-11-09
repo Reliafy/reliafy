@@ -114,15 +114,28 @@ function LibraryList() {
     getLibraryUsed().then((d) => setUsed(d.records || []), () => {});
   }, []);
   if (!sources?.length) return null;
+  const mine = sources.filter((s) => s.mine);
+  const published = sources.filter((s) => !s.mine);
   return (
     <section className="card" aria-labelledby="models-library">
       <div className="maint-head">
         <h2 id="models-library">Library</h2>
         <Link to={LIBRARY_PATH}>Open the library</Link>
       </div>
-      <p className="hint">Published failure rates and probabilities with their uncertainty, to use as a model or a prior.</p>
+      <p className="hint">Published failure rates and probabilities with their uncertainty, and libraries of your own models, to use as a model or a prior.</p>
+      {mine.length > 0 && (
+        <>
+          <h3 className="lib-h">Yours</h3>
+          <ul className="lib-list">
+            {mine.map((s) => (
+              <li key={s.id}><Link to={sourcePath(s.id)}>{s.name}</Link> <span className="lib-date">{s.records} {s.records === 1 ? "record" : "records"}</span></li>
+            ))}
+          </ul>
+          <h3 className="lib-h">Published</h3>
+        </>
+      )}
       <ul className="lib-list">
-        {sources.map((s) => (
+        {published.map((s) => (
           <li key={s.id}><Link to={sourcePath(s.id)}>{s.name}</Link> <span className="lib-date">{s.records} records</span></li>
         ))}
       </ul>

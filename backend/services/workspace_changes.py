@@ -70,6 +70,7 @@ COLLECTIONS = {
     "strategy_analyses": ("Strategy analysis", "/strategy/analyses/"),
     "reliability_predictions": ("Reliability prediction", "/predictions/"),
     "maintainability_predictions": ("Maintainability prediction", "/maintainability/"),
+    "libraries": ("Data library", "/models/library/"),
 }
 
 # Where a position's RCM opens: the Explorer's RCM tab, on that position.

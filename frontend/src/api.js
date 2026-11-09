@@ -3410,3 +3410,29 @@ export function fitDatasetWithPrior(body) {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
 }
+
+// ---- The user's own data libraries (backend/library/user.py) ------------------------------
+const libJson = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export function listMyLibraries() {
+  return request("/api/library/mine");
+}
+export function createLibrary({ name, description = "", notes = "" }) {
+  return request("/api/library/mine", libJson("POST", { name, description, notes }));
+}
+export function updateLibrary(libraryId, changes) {
+  return request(`/api/library/mine/${encodeURIComponent(libraryId)}`, libJson("PATCH", changes));
+}
+export function deleteLibrary(libraryId) {
+  return request(`/api/library/mine/${encodeURIComponent(libraryId)}`, { method: "DELETE" });
+}
+// A saved life model added to a library as a record (a snapshot of it now, the model linked).
+export function addModelToLibrary(libraryId, { modelId, label, equipmentType, failureMode, notes }) {
+  return request(`/api/library/mine/${encodeURIComponent(libraryId)}/records`, libJson("POST", {
+    model_id: modelId, label: label || null, equipment_type: equipmentType || "other", failure_mode: failureMode || "",
+    notes: notes || "",
+  }));
+}
+export function removeLibraryRecord(libraryId, recordId) {
+  return request(`/api/library/mine/${encodeURIComponent(libraryId)}/records/${encodeURIComponent(recordId)}`,
+    { method: "DELETE" });
+}

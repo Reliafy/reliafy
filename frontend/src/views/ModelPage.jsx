@@ -4,6 +4,7 @@ import ErrorBoundary from "../components/ErrorBoundary.jsx";
 import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import ResultView from "../components/ResultView.jsx";
 import EditFitModal from "../components/EditFitModal.jsx";
+import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { compareModel, getModel, deleteModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
@@ -32,6 +33,7 @@ export default function ModelPage() {
   // Not on this list (404): ModelNotFound looks in the others.
   const [missing, setMissing] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [tab, setTab] = useTabParam();
 
   useEffect(() => {
@@ -59,6 +61,9 @@ export default function ModelPage() {
 
   // A competing-risks fit (#177) is refitted from the wizard, not edited here.
   const canEdit = model && !model.read_only && model.dataset_id && model.kind !== "competing_risks";
+  // A parametric life model can be added to one of the user's data libraries (a snapshot of it now);
+  // the server says why not for anything else (an offset, a mixture, covariates).
+  const canAddToLibrary = model && model.kind === "distribution";
   const results = model?.results;
   const split = results?.split || null;
   const title = model ? itemName(model) : "Model";
@@ -90,6 +95,7 @@ export default function ModelPage() {
       menu={model && (
         <>
           {canEdit && <button className="ovm-item" onClick={() => setEditing(true)}>Edit fit</button>}
+          {canAddToLibrary && <button className="ovm-item" onClick={() => setAdding(true)}>Add to a library…</button>}
           <button className="ovm-item danger" onClick={onDelete}>
             {model.read_only ? "Remove from my view" : "Delete"}
           </button>
@@ -114,6 +120,7 @@ export default function ModelPage() {
       ) : missing ? <ModelNotFound id={id} kind="life" />
         : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
       {editModal}
+      {adding && model && <AddToLibraryDialog modelId={model.id} modelName={itemName(model)} onClose={() => setAdding(false)} />}
       <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );

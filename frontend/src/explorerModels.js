@@ -220,9 +220,22 @@ export function rowActions(r, { viewOnly = null } = {}) {
     // lognormal model can be the baseline of one (bayesUpdate.js).
     link.role === "bayesian" ? { id: "model-bayes", label: "Update with new failures…", ...off }
       : link.model && /^(Weibull|Exponential|Lognormal)$/.test(link.model.kind || "") ? { id: "model-bayes", label: "Update with this position's history…", ...off } : null,
+    // A life model (not an RBD or a prediction) can be snapshotted into one of the user's data libraries.
+    isLifeModelLink(link) ? { id: "model-to-library", label: "Add to a library…", ...off } : null,
     rbd ? null : { id: "model-replace", label: "Replace with…", ...off },
     { id: "model-unlink", label: "Unlink…", ...off },
   ].filter(Boolean);
+}
+
+// A link to a saved life model (a parametric non-repairable one): what a data library record is made from.
+export function isLifeModelLink(link) {
+  return !!link && !!link.model_id && !!link.model && link.model_type !== "rbd" && link.role !== "prediction";
+}
+
+// The position's life model to add to a library: the one in use, else its first life model.
+export function lifeModelOf(links, positionId) {
+  const mine = (links || []).filter((l) => l.position_id === positionId && isLifeModelLink(l));
+  return mine.find((l) => l.in_use) || mine[0] || null;
 }
 
 // The tab's chip: models behind their history or gone.
@@ -301,8 +314,9 @@ export function predictionWords(source = {}) {
 // The Modelling tab's menus for a position (its row's ⋯ and the heading's "…"), two levels
 // (Derryn, 9 Nov 2026: "two levels with logical groups"): Life model ›, RBD ›, Prediction ›.
 // Ids start "model-attach-" (the kind of dialog after it) or "model-refresh-predict".
-// `positionClass`: its class (From the class… needs one); `hasPrediction`: Refresh is offered.
-export function attachGroups({ positionClass = "", hasPrediction = false, viewOnly = null } = {}) {
+// `positionClass`: its class (From the class… needs one); `hasPrediction`: Refresh is offered;
+// `hasLifeModel`: the position has a life model to add to one of the user's data libraries.
+export function attachGroups({ positionClass = "", hasPrediction = false, hasLifeModel = false, viewOnly = null } = {}) {
   const off = viewOnly ? { disabled: true, reason: viewOnly } : {};
   return [
     { id: "model-group-life", label: "Life model", items: [
@@ -313,6 +327,9 @@ export function attachGroups({ positionClass = "", hasPrediction = false, viewOn
       { id: "model-attach-class", label: "From the class…", ...off,
         ...(positionClass || viewOnly ? {} : { disabled: true, reason: "This position has no class" }) },
       { id: "model-attach-params", label: "Enter parameters…", ...off },
+      // The position's life model (the one in use) snapshotted into one of the user's own libraries.
+      { id: "model-attach-to-library", label: "Add to a library…", ...off,
+        ...(hasLifeModel || viewOnly ? {} : { disabled: true, reason: "This position has no life model yet" }) },
     ] },
     { id: "model-group-rbd", label: "RBD", items: [
       { id: "model-attach-rbd-build", label: "Build from what's inside…", ...off },

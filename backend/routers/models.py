@@ -660,7 +660,7 @@ def create_from_library(record_id: str = Body(..., embed=True), name: str | None
     if denied is not None:
         return denied
     try:
-        model, _ = library_models.save_record_model(session, ctx.write_owner, record_id, name)
+        model, _ = library_models.save_record_model(session, ctx.write_owner, record_id, name, owners=ctx.read_owners)
         access_service.stamp_editor(session, "models", model.id, ctx)
     except ValueError as exc:  # Invalid
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})

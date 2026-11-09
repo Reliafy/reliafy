@@ -71,6 +71,9 @@ NEW_ACTIONS = {
     # Reliability prediction: a parts count from handbook base rates (Nov 2026).
     ("analyse", "prediction"), ("get", "prediction"), ("list", "predictions"),
     ("change", "prediction_save"), ("change", "prediction_update"), ("change", "prediction_delete"),
+    # A user's own data libraries: saved life models as records (Nov 2026).
+    ("get", "library"), ("list", "libraries"), ("change", "library_create"), ("change", "library_update"),
+    ("change", "library_delete"), ("change", "library_add_model"), ("change", "library_remove_record"),
     # Fault trees built by hand (Nov 2026).
     ("get", "fault_tree"), ("list", "fault_trees"), ("analyse", "fault_tree"), ("change", "fault_tree_save"),
     ("change", "fault_tree_delete"),
@@ -78,6 +81,8 @@ NEW_ACTIONS = {
 NEW_HEAVY = {"analyse.fault_tree"}
 NEW_TEXT = {"get.maintainability_prediction", "list.maintainability_predictions",
             "list.fault_trees", "get.fault_tree", "analyse.fault_tree",
+            # A user library's name, notes and record labels are the user's words.
+            "get.library", "list.libraries",
             # A reliability prediction's lines and assemblies are named by people (or a product's parts list).
             "list.predictions", "get.prediction", "analyse.prediction"}
 
@@ -217,7 +222,8 @@ def test_the_listed_tools_are_small(env):
     context: under 8,000 characters for the six tools (192,060 as 16 tools with
     full schemas; 7,914 with the maintainability prediction, fault tree and
     reliability prediction actions, Nov 2026, after shortening the shared
-    args and guide text) and
+    args and guide text; 7,972 with the user libraries' seven actions, after
+    trimming the tool intros, titles and the replacement one-liners) and
     about 1,000 for the instructions (3,663 before)."""
     from backend import mcp_server
 

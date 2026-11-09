@@ -329,6 +329,7 @@ export const COLLECTION_PATHS = {
   fleets: "/forecasts/",
   tracked_fleets: "/risk/",
   reliability_predictions: "/predictions/",
+  libraries: "/models/library/",
 };
 
 export function itemPath(collection, id) {

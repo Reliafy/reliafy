@@ -207,6 +207,34 @@ you give. A probability per demand isn't a life over time, and a handbook
 base rate needs the environment and quality factors of a prediction, so
 neither can be a model on its own: the page says so and why.
 
+## Build your own library
+
+A model you fit is in no library until you put it there. Open a saved
+non-repairable model and choose **Add to a library…** from its ⋯ menu (or,
+in the Explorer's Modelling tab, **Life model › Add to a library…** for a
+position's life model). Pick one of your libraries or make a new one there
+(a name and one line on what it holds), then give the record a label (the
+model's name to start with), its equipment type, the failure mode it's for
+and any notes; the time unit comes from the model.
+
+Adding takes a snapshot: the distribution, its parameters with their bounds,
+the unit, how many units were observed and how the model was fitted. The
+record links back to the model, but a later refit doesn't change the record,
+so a library stays what you reviewed. Your libraries show first under
+**Yours** on the [Library page](/models/library), with **New library…**,
+and in the library pickers; a library's page has **Edit…** and **Delete…**
+(deleting a library never deletes the models), and a record's page has
+**Remove from library**. A library's notes or licence text shows with every
+record in it.
+
+A record of yours works like a published one: **Use as a model…** saves a
+model of the same family with the record's parameters and bounds, and **Use
+as a prior…** (or **A library record** in the Fit dialog) fits your data in
+the record's family with each parameter about the record's value, between
+its bounds (within about 30% when the record has none, and the result says
+so). One library counts as one saved item on the Free plan, however many
+records it holds.
+
 ## Where to go next
 
 Name the model in the "This fit isn't saved yet" bar above the result and

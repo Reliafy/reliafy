@@ -114,3 +114,84 @@ test("attach a library record to a position, then fit with a library prior", asy
   await expect(fit).toHaveCount(0);
   await expectHealthy(page, problems, { label: "library models on a position" });
 });
+
+// A library of the user's own (Derryn, 9 Nov 2026: "allow a model to be added to one"): made on the
+// Library page, a saved model added from its ⋯ menu, the record in the pickers and usable as a prior.
+test("build a library: a model added to it, found in the picker, used as a prior", async ({ page, request, problems }) => {
+  const tag = `ul${Date.now()}`;
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // A saved parametric model to add.
+  const model = await postOk(request, "/api/models/from-params", {
+    name: `Gearbox ${tag}`, distribution: "weibull", params: [{ name: "alpha", value: 2400 }, { name: "beta", value: 2.1 }], unit: "hours",
+  });
+
+  // The Library page: "Yours" above "Published", with New library….
+  await open(page, "/models/library");
+  await expect(page.getByRole("heading", { name: "Yours" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Published" })).toBeVisible();
+  await page.getByRole("button", { name: "New library…" }).first().click();
+  const form = page.getByRole("dialog", { name: "New library" });
+  await form.getByLabel("Name").fill(`Site gearboxes ${tag}`);
+  await form.getByLabel("What it holds (one line)").fill("Fitted models for the mill's gearboxes");
+  await form.getByLabel("Notes or licence text").fill("Internal use only.");
+  await form.getByRole("button", { name: "Create the library" }).click();
+  await expect(page).toHaveURL(/\/models\/library\/[0-9a-f]{32}$/);
+  const libraryUrl = page.url();
+  await expect(page.getByRole("heading", { name: `Site gearboxes ${tag}` })).toBeVisible();
+  await expect(page.locator("body")).toContainText("No records yet");
+
+  // The model's page: ⋯ › Add to a library…, into the library just made.
+  await open(page, `/models/m/${model.id}`);
+  await page.getByRole("button", { name: "More actions" }).first().click();
+  await page.getByRole("button", { name: "Add to a library…" }).click();
+  const add = page.getByRole("dialog", { name: "Add to a library" });
+  await add.getByRole("combobox", { name: "Library" }).selectOption({ label: `Site gearboxes ${tag}` });
+  await add.getByLabel("Failure mode").fill("Bearing wear");
+  await add.getByRole("combobox", { name: "Equipment type" }).selectOption("rotating");
+  await add.getByRole("button", { name: "Add to the library" }).click();
+  await expect(add.getByRole("status")).toContainText("Added");
+  await add.getByRole("link", { name: "Open the record" }).click();
+  await expect(page).toHaveURL(/\/models\/library\/[0-9a-f]{32}\/[0-9a-f]{32}$/);
+  await expect(page.getByRole("heading", { name: `Gearbox ${tag}: Bearing wear` })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Source and licence" })).toBeVisible();
+  await expect(page.locator("body")).toContainText("Internal use only.");
+  await expect(page.getByRole("link", { name: `Gearbox ${tag}` })).toBeVisible(); // From the model …
+  await expect(page.getByRole("button", { name: "Remove from library" })).toBeVisible();
+
+  // The library's table has the record as a life model; the Models landing lists the library under Yours.
+  await open(page, libraryUrl.replace(/^https?:\/\/[^/]+/, ""));
+  await expect(page.locator(".lib-table tr", { hasText: "Bearing wear" })).toHaveCount(1);
+  await expect(page.locator(".lib-table")).toContainText("Life model");
+  await open(page, "/models");
+  const lib = page.getByRole("region", { name: "Library" });
+  await expect(lib.getByRole("heading", { name: "Yours" })).toBeVisible();
+  await expect(lib.getByRole("link", { name: `Site gearboxes ${tag}` })).toBeVisible();
+
+  // In the Explorer's Fit dialog, the library is in the picker's dropdown (first) and the record is a prior.
+  const ago = (d) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
+  const box = await postOk(request, `${M}/positions`, { name: `Gearbox position ${tag}` });
+  await postOk(request, `${M}/positions/${box.id}/fit`, { new_item: { name: `G1 ${tag}` }, on: ago(900) });
+  await postOk(request, `${M}/positions/${box.id}/remove`, { on: ago(300), reason: "failure" });
+  await postOk(request, `${M}/positions/${box.id}/fit`, { new_item: { name: `G2 ${tag}` }, on: ago(300) });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${box.id}&tab=models`);
+  await headPick(page, "Life model", "Fit a life model…");
+  const fit = page.getByRole("dialog", { name: "Fit a life model" });
+  await fit.getByRole("radio", { name: "With a prior" }).click();
+  await fit.getByRole("combobox", { name: "Prior", exact: true }).selectOption("library");
+  const dropdown = fit.getByRole("combobox", { name: "Library" });
+  await expect(dropdown.locator("option").nth(1)).toHaveText(`Site gearboxes ${tag} (yours)`);
+  await dropdown.selectOption({ label: `Site gearboxes ${tag} (yours)` });
+  await fit.getByRole("radio", { name: new RegExp(`Gearbox ${tag}: Bearing wear`) }).first().check();
+  await expect(fit.getByRole("status")).toContainText("The record's Weibull is the prior", { timeout: 60_000 });
+  const fitted = page.waitForResponse((r) => r.url().includes(`${M}/positions/${box.id}/models`) && r.request().method() === "POST",
+    { timeout: 60_000 });
+  await fit.getByRole("button", { name: "Save as this position's model" }).click();
+  expect((await fitted).status()).toBe(200);
+  await expect(fit).toHaveCount(0);
+  // Life model › Add to a library… is on now that the position has a life model.
+  await headMenu(page);
+  await page.getByRole("menuitem", { name: "Life model", exact: true }).click();
+  await expect(page.getByRole("menu", { name: "Life model" }).getByRole("menuitem", { name: "Add to a library…" })).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expectHealthy(page, problems, { label: "a library of the user's own" });
+});

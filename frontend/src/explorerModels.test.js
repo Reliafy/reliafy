@@ -5,6 +5,7 @@ import { positionOf } from "./explorerRcm.js";
 import {
   MODEL_CHIPS, MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, attachedFor, b10Text, boundsLabel, countsText, inUseWords, fmt, graftModels, headline, isModelRow, meanText, modelKey,
   openForModels, predictionAssign, predictionWords, rollupText, rowActions, usedText, withBounds,
+  isLifeModelLink, lifeModelOf,
 } from "./explorerModels.js";
 
 const DATA = {
@@ -84,9 +85,9 @@ test("the cells: headline with bounds, mean, B10, counts, used by", () => {
 test("the row's actions: Refit only for a fitted model, Open in Models only when it's there", () => {
   const g = graftModels(buildDisplay(DATA, "positions"), LINKS);
   assert.deepEqual(rowActions(g.rows.get(modelKey("a"))).map((a) => a.id),
-    ["model-open", "model-page", "model-bayes", "model-replace", "model-unlink"]);
+    ["model-open", "model-page", "model-bayes", "model-to-library", "model-replace", "model-unlink"]);
   assert.deepEqual(rowActions(g.rows.get(modelKey("b"))).map((a) => a.id),
-    ["model-open", "model-page", "model-use", "model-refit", "model-bayes", "model-replace", "model-unlink"]);
+    ["model-open", "model-page", "model-use", "model-refit", "model-bayes", "model-to-library", "model-replace", "model-unlink"]);
   const bayes = graftModels(buildDisplay(DATA, "positions"), [link("q", "pump", { role: "bayesian", model: { ...WEIBULL, kind: "Weibull (Bayesian)" } })]);
   assert.equal(rowActions(bayes.rows.get(modelKey("q"))).find((a) => a.id === "model-bayes").label, "Update with new failures…");
   assert.deepEqual(rowActions(g.rows.get(modelKey("c"))).map((a) => a.id), ["model-open", "model-replace", "model-unlink"]);
@@ -189,11 +190,19 @@ test("the Modelling tab's position menu: three groups, two levels", () => {
   const g = attachGroups({ positionClass: "Pump", hasPrediction: true });
   assert.deepEqual(g.map((x) => x.label), ["Life model", "RBD", "Prediction"]);
   assert.deepEqual(g[0].items.map((x) => x.label), ["Fit a life model…", "Assign a saved model…", "From the data library…",
-    "From the class…", "Enter parameters…"]);
+    "From the class…", "Enter parameters…", "Add to a library…"]);
   assert.deepEqual(g[1].items.map((x) => x.label), ["Build from what's inside…", "Link an existing RBD…"]);
   assert.deepEqual(g[2].items.map((x) => x.id), ["model-attach-predict", "model-refresh-predict"]);
   const bare = attachGroups();
   assert.equal(bare[0].items.find((x) => x.id === "model-attach-class").reason, "This position has no class");
+  // Add to a library… needs a life model on the position (the one in use, else its first).
+  assert.equal(bare[0].items.find((x) => x.id === "model-attach-to-library").reason, "This position has no life model yet");
+  assert.ok(!attachGroups({ hasLifeModel: true })[0].items.find((x) => x.id === "model-attach-to-library").disabled);
+  const links = [link("p1", "pump", { model_id: "m1", model: WEIBULL }), link("p2", "pump", { model_id: "m2", model: WEIBULL, in_use: true }),
+    link("p3", "pump", { model_id: "r", model: WEIBULL, model_type: "rbd", in_use: true }), link("p4", "pump", { model_id: "gone", model: null })];
+  assert.equal(lifeModelOf(links, "pump").model_id, "m2");
+  assert.equal(lifeModelOf([links[2], links[3]], "pump"), null);
+  assert.ok(isLifeModelLink(links[0]) && !isLifeModelLink(links[2]) && !isLifeModelLink({ model_id: "x", model: WEIBULL, role: "prediction" }));
   assert.equal(bare[2].items.length, 1);
   assert.ok(attachGroups({ viewOnly: "View only" }).every((grp) => grp.items.every((x) => x.disabled)));
   assert.deepEqual(MODEL_POSITION_ITEMS, ["tree-rename"]);

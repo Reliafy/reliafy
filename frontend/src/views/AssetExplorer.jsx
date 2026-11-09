@@ -9,10 +9,12 @@ import {
   LibraryAttachModal, MODEL_COLUMNS, MODEL_TREE_HEAD, ModelCell, ModelDialogs, ModelSide, ParamsModal, RbdBuildModal, RbdLinkModal, modelPhoneRow, modelRowActions,
   unlinkModel, useTreeModels,
 } from "../components/ModelTable.jsx";
+import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import BayesUpdateModal from "../components/BayesUpdateModal.jsx";
 import FitModal from "../components/FitModal.jsx";
 import PredictionModal from "../components/PredictionModal.jsx";
-import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, graftModels, inUseWords, isModelRow, openForModels, rollupText as modelRollup } from "../explorerModels.js";
+import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, graftModels, inUseWords, isModelRow, openForModels, rollupText as modelRollup, lifeModelOf,
+} from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   addSampleProduct, getFmeaExcelBlob, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
@@ -1077,11 +1079,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   };
   // The Modelling tab's attach groups for a position (explorerModels.attachGroups), and what each item opens.
   const predictionOf = (pid) => (pmodels.links || []).find((l) => l.position_id === pid && l.role === "prediction") || null;
-  const modelGroups = (pid, positionClass) => attachGroups({ positionClass: positionClass || "", hasPrediction: !!predictionOf(pid), viewOnly });
+  const modelGroups = (pid, positionClass) => attachGroups({ positionClass: positionClass || "", hasPrediction: !!predictionOf(pid),
+    hasLifeModel: !!lifeModelOf(pmodels.links, pid), viewOnly });
   const attachAt = (pid, id) => {
     const rr = whole.rows.get(pid);
     const position = { id: pid, name: rr?.ref.name || "(no name)", position_class: rr?.ref.position_class || "" };
     if (id === "model-refresh-predict") return setModelModal({ kind: "predict", position, link: predictionOf(pid) });
+    // Add to a library…: the position's life model in use (else its first) snapshotted into a data library.
+    if (id === "model-attach-to-library") return setModelModal({ kind: "to-library", position, link: lifeModelOf(pmodels.links, pid) });
     return setModelModal({ kind: id.slice(13), position });
   };
   // A model row's details spread across the table (a double-click, Open, Enter), as a measurement row's.
@@ -1101,6 +1106,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         link, start: { data: scope === "class" ? "class" : "position" } });
     }
     else if (id === "model-predict") setModelModal({ kind: "predict", position, link });
+    else if (id === "model-to-library") setModelModal({ kind: "to-library", position, link });
     else if (id === "model-rebuild") setModelModal({ kind: "rbd-build", position, link });
     else if (id === "model-use") {
       linkPositionModel(position.id, { use_link_id: link.id }).then(() => {
@@ -2103,6 +2109,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <LibraryAttachModal position={modelModal.position} onClose={() => setModelModal(null)}
                             onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       )}
+      {modelModal?.kind === "to-library" && modelModal.link && (
+        <AddToLibraryDialog modelId={modelModal.link.model_id} modelName={modelModal.link.model?.name || modelModal.link.name || "this model"}
+                            onClose={() => setModelModal(null)} />
+      )}
       {modelModal?.kind === "params" && (
         <ParamsModal position={modelModal.position} onClose={() => setModelModal(null)}
                      onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
@@ -2115,7 +2125,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <PredictionModal position={modelModal.position} link={modelModal.link || null} onClose={() => setModelModal(null)}
                          onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       )}
-      <ModelDialogs modal={["bayes", "predict", "rbd-build", "rbd-link", "params", "fit-life", "library"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
+      <ModelDialogs modal={["bayes", "predict", "rbd-build", "rbd-link", "params", "fit-life", "library", "to-library"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
                     onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       <MeasDialogs modal={measModal} onClose={() => setMeasModal(null)} onSaid={(text) => say(text)}
                    onDone={() => { setMeasModal(null); meas.load(); }} />

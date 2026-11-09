@@ -67,7 +67,7 @@ test("freeStorageLines names every capped kind once, in plain words", () => {
   assert.deepEqual(lines, [
     "Save 3 datasets and 3 models",
     "1 RBD, 1 fault tree and 1 outage log",
-    "1 reliability prediction and 1 maintainability prediction",
+    "1 reliability prediction, 1 maintainability prediction and 1 data library",
     "Degradation tracking: 1 degradation model and 3 tracked items",
     "1 fleet failure forecast",
   ]);

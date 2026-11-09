@@ -52,10 +52,15 @@ def hours_per_unit(time_unit: str) -> float:
 
 def _origin(rec: dict) -> dict:
     return {"id": rec["id"], "version": rec["version"], "label": rec["label"],
-            "citation": rec["citation"], "licence": rec["licence"]}
+            "citation": rec.get("citation"), "licence": rec.get("licence"),
+            **({"model": rec["model"], "library_id": rec["source"]} if rec.get("basis") == "fitted" else {})}
 
 
 def _badge(rec: dict) -> str:
+    if rec.get("basis") == "fitted":
+        m = rec.get("model") or {}
+        return (f"From your data library: a snapshot of the model “{m.get('name') or rec['label']}” when it was added, "
+                "not this equipment's own failure data.")
     where = f"{rec['citation'].get('report') or rec['source']}, {rec['citation']['table']}"
     if rec.get("basis") == "prediction_model":
         return (f"Handbook prediction ({where}), not failures counted in service or your equipment's own: "
@@ -290,13 +295,20 @@ def demand_to_per_demand(rec: dict, demands_per_year: Optional[float] = None, ti
 
 
 def life_to_model(rec: dict) -> dict:
-    """A Weibull record as a Weibull model, in the record's own time unit."""
+    """A life record (a Weibull table's beta and eta, or a saved model's
+    snapshot) as a model of its own family, in the record's own unit, with
+    the parameters' bounds where the record has them."""
     if rec["kind"] != "life":
         raise ConversionError(f"'{rec['label']}' isn't a life distribution.")
-    family = rec["distribution"]["family"]
+    d = rec["distribution"]
+    params = [{"name": p["name"], "value": p["value"]} for p in d["params"]]
+    bounds = {p["name"]: list(p["ci"]) for p in d["params"] if p.get("ci")}
+    s = rec.get("summary") or {}
     return {
-        "model": {"distribution_id": family, "params": [dict(p) for p in rec["distribution"]["params"]]},
+        "model": {"distribution_id": d["family"], "params": params},
         "unit": units_mod.canonical_unit(rec["units"]["value"]),
+        **({"bounds": bounds, "bounds_level": d.get("level")} if bounds else {}),
+        "mean_life": s.get("mean"), "b10": s.get("b10"),
         "assumptions": [],
         "badge": _badge(rec),
         "source": _origin(rec),

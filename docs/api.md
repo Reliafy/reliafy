@@ -513,6 +513,43 @@ shape?}`, `save` with `name` to keep it). `GET /api/library/used` lists the
 records behind the user's latest library models. The record format
 and the sources: [library.md](library.md).
 
+**Libraries of your own.** A saved model is in no library until it's added.
+A library (a name, one line on what it holds, notes or licence text shown
+with every record) belongs to the workspace like any saved item and counts
+as one item toward the Free plan's storage limit, whatever it holds. Adding
+a model takes a snapshot of it then (its distribution, parameters with their
+bounds, unit, sample sizes and how it was fitted) as a record of kind `life`,
+with `model_id` kept as a link: a later refit doesn't change the record. Only
+parametric non-repairable life models go in (Weibull, exponential,
+lognormal, normal, gamma; a Bayesian update of one too); anything else is
+refused in words. Signed-in reads of `/api/library/sources`, `/search` and
+`/records/{id}` include your libraries (marked `mine`), first on a tie, and
+aren't cached; a user record's `block_model` carries the parameters'
+`bounds`, and its detail a `library` and a `model_link`.
+
+| Call | Does |
+|---|---|
+| `GET /api/library/mine` | Your libraries, newest first, with record counts and the equipment types a record can take. |
+| `POST /api/library/mine` | Make one: `name`, `description?`, `notes?`. 402 past the Free limit. |
+| `PATCH /api/library/mine/{id}` | Rename it, or change `description` or `notes`. |
+| `DELETE /api/library/mine/{id}` | Delete it and its records (the models stay). |
+| `POST /api/library/mine/{id}/records` | Add a saved model: `model_id`, `label?` (default the model's name), `equipment_type?` (default `other`), `failure_mode?`, `notes?`. |
+| `DELETE /api/library/mine/{id}/records/{record_id}` | Take a record out (the model stays). |
+
+The same over MCP and `/api/v1`: `list kind libraries`, `get kind library`
+(`id`: the library with its records) and the `change` actions
+`library_create` (`name`, `description?`, `notes?`), `library_update`
+(`library_id`, `name?`, `description?`, `notes?`), `library_delete`
+(`library_id`), `library_add_model` (`library_id`, `model_id`, `label?`,
+`equipment_type?`, `failure_mode?`, `notes?`) and `library_remove_record`
+(`library_id`, `record_id`); on the command line `reliafy change
+library_create --name "Site pumps"` and `reliafy change library_add_model
+--library-id … --model-id …`. A user record works like any other in **Use as
+a model…** (a model of the record's family with its parameters and bounds)
+and **Use as a prior…** (each parameter about its value, between the record's
+bounds, or within about 30% when the record has none; the fit is in the
+record's family and unit).
+
 ### Reliability prediction (a parts count)
 
 A design's failure rate from its parts list and the library's handbook base
