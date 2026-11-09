@@ -1,0 +1,1126 @@
+{
+ "schema": 1,
+ "data_version": 1,
+ "source": {
+  "id": "nswc-11",
+  "name": "NSWC-11: covariate models for mechanical parts (base rate × condition factors)",
+  "short_name": "NSWC-11",
+  "publisher": "Naval Surface Warfare Center, Carderock Division (U.S. Navy)",
+  "title": "Handbook of Reliability Prediction Procedures for Mechanical Equipment",
+  "report": "CARDEROCKDIV, NSWC-11",
+  "edition": "May 2011",
+  "year": 2011,
+  "url": "https://www.navsea.navy.mil/Home/Warfare-Centers/NSWC-Carderock/",
+  "home": "https://www.navsea.navy.mil/Home/Warfare-Centers/NSWC-Carderock/",
+  "basis": "prediction_model",
+  "licence": {
+   "id": "us-government-work",
+   "name": "U.S. Government work (no copyright asserted)",
+   "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document.",
+   "note": "A U.S. Navy handbook marked \"Approved for Public Release; Distribution is Unlimited\". Its preface asks that equations are never used without their procedures and parameter limits, and that any product using it states that CDNSWC and the Navy have not participated in its development or approved it. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
+  },
+  "description": "Covariate models for mechanical parts: each part's failure rate is a base rate scaled by factors for the conditions it works in (load, speed, temperature, pressure, contamination, material and more), with the handbook's limits on every input. Seals, springs, solenoids, valves, bearings, gears, actuators, pumps, filters, brakes and clutches, compressors, electric motors, accumulators, fasteners, couplings, slider cranks, sensors, shafts, belt and chain drives, fluid conductors and miscellaneous parts.",
+  "caveats": [
+   "CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document.",
+   "A handbook prediction model, not failures counted in service: never mix it with field data.",
+   "Each model is only as good as the conditions you give it. Outside the handbook's limits Reliafy refuses or warns, and says which limit and on which page.",
+   "The handbook says its equations were validated only in part, with limited funding: use it to compare designs and find the weak parts, not as a measure of how your equipment will fail.",
+   "Some rates are per million cycles or operations, not hours: a prediction needs how many there are an hour."
+  ],
+  "retrieved": "2026-11-09",
+  "sha256": {
+   "nswc11.pdf": "942867dee3ac372b554b93fc596b6443984c516521c5fc95dcdd875017a59fc2"
+  },
+  "table": "Chapters 3 to 23: each component's failure rate model, its multiplying factors and their limits",
+  "disclaimer": "CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
+ },
+ "skipped": [],
+ "records": [
+  {
+   "id": "nswc-11:bearing-rolling-load-rating",
+   "version": 1,
+   "source": "nswc-11",
+   "source_code": "Eq. 7-4",
+   "name": "Bearing, rolling element (from its load rating)",
+   "label": "Bearing, rolling element (from its load rating) (NSWC-11 Eq. 7-4)",
+   "equipment_type": "bearing",
+   "kind": "covariate_model",
+   "basis": "prediction_model",
+   "failure_mode": {
+    "code": "ALL",
+    "name": "Any failure",
+    "meaning": "Its failure rate as the handbook models it: a base rate scaled by its conditions."
+   },
+   "failure_modes": [
+    "Fatigue damage: spalling, brinelling, smearing (heavy or prolonged load, excessive speed, shock, vibration)",
+    "Noisy bearing: surface fatigue, glazing, microspalling (loss of lubricant, housing out of round, corrosion)",
+    "Seizure: cracked rings or rolling elements, skidding (poor heat removal, loss of lubricant, high temperature)",
+    "Vibration: scuffing, fretting, pitting (misalignment, unbalanced or excessive load, poor housing support)",
+    "Electric currents: pits on raceways and balls"
+   ],
+   "units": {
+    "value": "per_million_hours",
+    "time_basis": "operating",
+    "as_given": "failures per million hours"
+   },
+   "summary": {
+    "mean": null
+   },
+   "covariate_model": {
+    "equation": "7-4",
+    "page": "7-11",
+    "formula": "λ_BE = λ_BE,B · C_R · C_ν · C_CW · C_t · C_SF · C_C, with λ_BE,B = 10⁶ / L10h and L10h = (10⁶ / 60n) · (L_S / L_A)^y",
+    "words": "A rolling bearing's failure rate starts at one over its L10 life, the hours 90 % of bearings last at the load and speed it runs at (from its catalogue load rating). That is scaled by the reliability its life is quoted at, its lubricant's viscosity, water in the lubricant, its temperature, shock in service and dirt in its lubricant.",
+    "rate_unit": "per_million_hours",
+    "combine": "sum",
+    "inputs": [
+     {
+      "name": "L_S",
+      "kind": "number",
+      "label": "Dynamic load rating (catalogue)",
+      "unit": "lbf",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a load rating is more than zero"
+       }
+      ],
+      "symbol": "L_S",
+      "page": "7-9"
+     },
+     {
+      "name": "F_R",
+      "kind": "number",
+      "label": "Radial load",
+      "unit": "lbf",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "the bearing needs a radial load"
+       }
+      ],
+      "symbol": "F_R",
+      "page": "7-10"
+     },
+     {
+      "name": "F_A",
+      "kind": "number",
+      "label": "Axial (thrust) load",
+      "unit": "lbf",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "a load can't be negative",
+        "min": 0
+       }
+      ],
+      "default": 0,
+      "default_basis": "handbook",
+      "symbol": "F_A",
+      "page": "7-10",
+      "help": "0 for a pure radial load: L_A is then the radial load."
+     },
+     {
+      "name": "X",
+      "kind": "number",
+      "label": "Radial factor (catalogue)",
+      "unit": "",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "the radial factor is more than zero"
+       }
+      ],
+      "default": 1.0,
+      "default_basis": "handbook",
+      "symbol": "X",
+      "page": "7-10",
+      "help": "1 for a pure radial load."
+     },
+     {
+      "name": "Y",
+      "kind": "number",
+      "label": "Thrust factor (catalogue)",
+      "unit": "",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "the thrust factor can't be negative",
+        "min": 0
+       }
+      ],
+      "default": 0,
+      "default_basis": "handbook",
+      "symbol": "Y",
+      "page": "7-10"
+     },
+     {
+      "name": "n",
+      "kind": "number",
+      "label": "Operating speed",
+      "unit": "rpm",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "the bearing must turn"
+       }
+      ],
+      "symbol": "n",
+      "page": "7-9"
+     },
+     {
+      "name": "R",
+      "kind": "number",
+      "label": "Reliability the life is quoted at",
+      "unit": "%",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "a reliability is between 0 and 100 %",
+        "min": 0,
+        "max": 100,
+        "exclusive": true
+       },
+       {
+        "severity": "warn",
+        "why": "Table 7-2 covers 50 % (L50) to 99 % (L1)",
+        "min": 50,
+        "max": 99,
+        "page": "7-18"
+       }
+      ],
+      "default": 50,
+      "default_basis": "handbook",
+      "symbol": "R",
+      "page": "7-10",
+      "help": "The handbook: use 50 % (the L50 life) to combine with other parts' MTBF-based rates."
+     },
+     {
+      "name": "nu_ratio",
+      "kind": "number",
+      "label": "Viscosity of the specified lubricant ÷ viscosity of the one used",
+      "unit": "",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a ratio of viscosities is more than zero"
+       },
+       {
+        "severity": "warn",
+        "why": "Figure 7.3 covers νO/νL up to 2.0",
+        "max": 2.0,
+        "page": "7-15"
+       }
+      ],
+      "default": 1.0,
+      "default_basis": "neutral",
+      "symbol": "νO/νL",
+      "page": "7-12",
+      "help": "1 when the bearing runs on the lubricant it was specified for (factor 1)."
+     },
+     {
+      "name": "CW",
+      "kind": "number",
+      "label": "Water in the lubricant",
+      "unit": "%",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "a percentage of water is 0 to 100",
+        "min": 0,
+        "max": 100
+       },
+       {
+        "severity": "warn",
+        "why": "Figure 7.4 covers 0 to 1 % water",
+        "max": 1.0,
+        "page": "7-16"
+       }
+      ],
+      "default": 0,
+      "default_basis": "neutral",
+      "symbol": "CW",
+      "page": "7-12",
+      "help": "0 for a bearing designed for a water-based lubricant (the handbook: then C_CW = 1)."
+     },
+     {
+      "name": "T_O",
+      "kind": "number",
+      "label": "Bearing operating temperature",
+      "unit": "°C",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "below absolute zero",
+        "min": -273.15
+       },
+       {
+        "severity": "warn",
+        "why": "Figure 7.5 covers 60 to 260 °C",
+        "min": 60,
+        "max": 260,
+        "page": "7-17"
+       }
+      ],
+      "default": 60,
+      "default_basis": "neutral",
+      "symbol": "T_O",
+      "page": "7-13",
+      "help": "Up to 183 °C the factor is 1."
+     },
+     {
+      "name": "bearing_type",
+      "kind": "choice",
+      "label": "Bearing type",
+      "choices": [
+       {
+        "code": "ball",
+        "label": "Ball bearing"
+       },
+       {
+        "code": "roller",
+        "label": "Roller bearing"
+       }
+      ],
+      "default": "ball",
+      "default_basis": "typical",
+      "page": "7-9",
+      "help": "Sets the load-life exponent y: 3.0 for ball, 3.3 for roller."
+     },
+     {
+      "name": "service",
+      "kind": "choice",
+      "label": "Type of application (service factor)",
+      "choices": [
+       {
+        "code": "uniform",
+        "label": "Uniform and steady load, free from shock"
+       },
+       {
+        "code": "light_shock",
+        "label": "Normal operation, light shock load"
+       },
+       {
+        "code": "moderate_shock",
+        "label": "Moderate shock load"
+       },
+       {
+        "code": "heavy_shock",
+        "label": "Heavy shock load"
+       },
+       {
+        "code": "extreme_shock",
+        "label": "Extreme and indeterminate shock load"
+       },
+       {
+        "code": "precision_gearing",
+        "label": "Precision gearing (ball bearings)"
+       },
+       {
+        "code": "commercial_gearing",
+        "label": "Commercial gearing (ball bearings)"
+       },
+       {
+        "code": "toothed_belt",
+        "label": "Toothed belts (roller bearings)"
+       },
+       {
+        "code": "vee_belt",
+        "label": "Vee belts (roller bearings)"
+       },
+       {
+        "code": "flat_belt",
+        "label": "Flat belts (roller bearings)"
+       }
+      ],
+      "default": "uniform",
+      "default_basis": "neutral",
+      "symbol": "C_SF",
+      "page": "7-18"
+     },
+     {
+      "name": "contamination",
+      "kind": "choice",
+      "label": "Lubricant cleanliness",
+      "choices": [
+       {
+        "code": "extreme_clean",
+        "label": "Extreme cleanliness: particles about the oil film thickness (laboratory)"
+       },
+       {
+        "code": "high_clean",
+        "label": "High cleanliness: oil through a fine filter (10 micron or finer)"
+       },
+       {
+        "code": "normal",
+        "label": "Normal cleanliness: slight contamination in the lubricant"
+       },
+       {
+        "code": "slight",
+        "label": "Slight contamination: hard particles over 10 micron"
+       },
+       {
+        "code": "severe",
+        "label": "Severe contamination: coarse filtering, no integral seals"
+       }
+      ],
+      "default": "normal",
+      "default_basis": "typical",
+      "symbol": "C_C",
+      "page": "7-19"
+     },
+     {
+      "name": "diameter",
+      "kind": "choice",
+      "label": "Bearing diameter",
+      "choices": [
+       {
+        "code": "under_100mm",
+        "label": "Under 100 mm"
+       },
+       {
+        "code": "over_100mm",
+        "label": "Over 100 mm"
+       }
+      ],
+      "default": "under_100mm",
+      "default_basis": "typical",
+      "page": "7-19"
+     }
+    ],
+    "derived": [
+     {
+      "name": "y",
+      "label": "Load-life exponent",
+      "expr": "3.0 if bearing_type == 'ball' else 3.3",
+      "unit": "",
+      "symbol": "y",
+      "page": "7-9",
+      "equation": "7-1"
+     },
+     {
+      "name": "L_A",
+      "label": "Equivalent radial load",
+      "expr": "X * F_R + Y * F_A",
+      "unit": "lbf",
+      "symbol": "L_A",
+      "page": "7-10",
+      "equation": "7-3"
+     },
+     {
+      "name": "load_ratio",
+      "label": "Applied load ÷ load rating",
+      "expr": "L_A / L_S",
+      "unit": "",
+      "symbol": "L_A/L_S",
+      "page": "7-14",
+      "limits": [
+       {
+        "severity": "warn",
+        "why": "Figure 7.2 covers L_A/L_S up to 1.4",
+        "max": 1.4,
+        "page": "7-14"
+       }
+      ]
+     },
+     {
+      "name": "L10h",
+      "label": "L10 life",
+      "expr": "1e6 / (60 * n) * (L_S / L_A) ** y",
+      "unit": "hours",
+      "symbol": "L10h",
+      "page": "7-9",
+      "equation": "7-2"
+     }
+    ],
+    "checks": [
+     {
+      "expr": "F_A <= 0.3 * F_R",
+      "why": "The axial load F_A should not exceed 30 % of the radial load F_R",
+      "severity": "warn",
+      "page": "7-10"
+     }
+    ],
+    "modes": [
+     {
+      "key": "bearing",
+      "name": "Bearing (fatigue, wear and what shortens its life)",
+      "base": {
+       "symbol": "λ_BE,B",
+       "name": "Base failure rate (10⁶ ÷ the L10 life in hours)",
+       "expr": "1e6 / L10h",
+       "page": "7-11",
+       "equation": "7-2"
+      },
+      "factors": [
+       {
+        "symbol": "C_R",
+        "name": "Reliability (life adjustment)",
+        "expr": "0.223 / ln(100 / R) ** (2 / 3)",
+        "page": "7-18",
+        "source": "Table 7-2",
+        "words": "the reliability its life is quoted at"
+       },
+       {
+        "symbol": "C_ν",
+        "name": "Lubricant viscosity",
+        "expr": "nu_ratio ** 0.54",
+        "page": "7-12",
+        "equation": "7-6",
+        "source": "Figure 7.3",
+        "words": "its lubricant's viscosity"
+       },
+       {
+        "symbol": "C_CW",
+        "name": "Water in the lubricant",
+        "expr": "1.0 + 25.50 * CW - 16.25 * CW ** 2 if CW <= 0.8 else 11.0",
+        "page": "7-12",
+        "equation": "7-7",
+        "source": "Figure 7.4",
+        "words": "water in its lubricant"
+       },
+       {
+        "symbol": "C_t",
+        "name": "Operating temperature",
+        "expr": "1.0 if T_O < 183 else (T_O / 183) ** 3",
+        "page": "7-17",
+        "source": "Figure 7.5",
+        "words": "its temperature"
+       },
+       {
+        "symbol": "C_SF",
+        "name": "Service (shock and load)",
+        "table": {
+         "by": [
+          "service",
+          "bearing_type"
+         ],
+         "values": {
+          "uniform": {
+           "ball": 1.0,
+           "roller": 1.0
+          },
+          "light_shock": {
+           "ball": 1.5,
+           "roller": 1.0
+          },
+          "moderate_shock": {
+           "ball": 2.0,
+           "roller": 1.3
+          },
+          "heavy_shock": {
+           "ball": 2.5,
+           "roller": 1.7
+          },
+          "extreme_shock": {
+           "ball": 3.0,
+           "roller": 2.0
+          },
+          "precision_gearing": {
+           "ball": 1.2,
+           "roller": null
+          },
+          "commercial_gearing": {
+           "ball": 1.3,
+           "roller": null
+          },
+          "toothed_belt": {
+           "ball": null,
+           "roller": 1.2
+          },
+          "vee_belt": {
+           "ball": null,
+           "roller": 1.8
+          },
+          "flat_belt": {
+           "ball": null,
+           "roller": 3.0
+          }
+         }
+        },
+        "page": "7-18",
+        "source": "Table 7-3",
+        "words": "shock in service"
+       },
+       {
+        "symbol": "C_C",
+        "name": "Lubricant contamination",
+        "table": {
+         "by": [
+          "contamination",
+          "diameter"
+         ],
+         "values": {
+          "extreme_clean": {
+           "under_100mm": 1.0,
+           "over_100mm": 1.0
+          },
+          "high_clean": {
+           "under_100mm": 1.4,
+           "over_100mm": 1.2
+          },
+          "normal": {
+           "under_100mm": 1.8,
+           "over_100mm": 1.4
+          },
+          "slight": {
+           "under_100mm": 2.5,
+           "over_100mm": 2.0
+          },
+          "severe": {
+           "under_100mm": 5.0,
+           "over_100mm": 3.3
+          }
+         }
+        },
+        "page": "7-19",
+        "source": "Table 7-4",
+        "words": "dirt in its lubricant"
+       }
+      ],
+      "symbol": "λ_BE"
+     }
+    ]
+   },
+   "conditions": {
+    "industry": "Mechanical equipment (handbook prediction)",
+    "chapter": "Chapter 7: Bearings",
+    "section": "7.6 Bearing failure rate prediction"
+   },
+   "source_text": "Bearings: 7.6 Bearing failure rate prediction",
+   "citation": {
+    "title": "Handbook of Reliability Prediction Procedures for Mechanical Equipment",
+    "publisher": "Naval Surface Warfare Center, Carderock Division (U.S. Navy)",
+    "report": "CARDEROCKDIV, NSWC-11",
+    "year": 2011,
+    "table": "Chapter 7, section 7.6, Eq. 7-4",
+    "page": "7-11",
+    "chapter": 7,
+    "equation": "7-4",
+    "url": "https://www.navsea.navy.mil/Home/Warfare-Centers/NSWC-Carderock/",
+    "retrieved": "2026-11-09"
+   },
+   "licence": {
+    "id": "us-government-work",
+    "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
+   }
+  },
+  {
+   "id": "nswc-11:bearing-rolling-known-l10",
+   "version": 1,
+   "source": "nswc-11",
+   "source_code": "Eq. 7-5",
+   "name": "Bearing, rolling element (from a known L10 life)",
+   "label": "Bearing, rolling element (from a known L10 life) (NSWC-11 Eq. 7-5)",
+   "equipment_type": "bearing",
+   "kind": "covariate_model",
+   "basis": "prediction_model",
+   "failure_mode": {
+    "code": "ALL",
+    "name": "Any failure",
+    "meaning": "Its failure rate as the handbook models it: a base rate scaled by its conditions."
+   },
+   "failure_modes": [
+    "Fatigue damage: spalling, brinelling, smearing (heavy or prolonged load, excessive speed, shock, vibration)",
+    "Noisy bearing: surface fatigue, glazing, microspalling (loss of lubricant, housing out of round, corrosion)",
+    "Seizure: cracked rings or rolling elements, skidding (poor heat removal, loss of lubricant, high temperature)",
+    "Vibration: scuffing, fretting, pitting (misalignment, unbalanced or excessive load, poor housing support)",
+    "Electric currents: pits on raceways and balls"
+   ],
+   "units": {
+    "value": "per_million_hours",
+    "time_basis": "operating",
+    "as_given": "failures per million hours"
+   },
+   "summary": {
+    "mean": null
+   },
+   "covariate_model": {
+    "equation": "7-5",
+    "page": "7-11",
+    "formula": "λ_BE = λ_BE,B · C_Y · C_R · C_ν · C_CW · C_t · C_SF · C_C, with λ_BE,B = 10⁶ / L10h and C_Y = (L_A / L_S)^y",
+    "words": "When the maker gives the bearing's rated L10 life (tested at its rated load, 90 % reliability), its failure rate starts at one over that life and is scaled by the load it really carries against its rating, then by the reliability its life is quoted at, its lubricant's viscosity, water in the lubricant, its temperature, shock in service and dirt in its lubricant.",
+    "rate_unit": "per_million_hours",
+    "combine": "sum",
+    "inputs": [
+     {
+      "name": "L10h",
+      "kind": "number",
+      "label": "Rated L10 life",
+      "unit": "hours",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a life is more than zero"
+       }
+      ],
+      "symbol": "L10h",
+      "page": "7-11"
+     },
+     {
+      "name": "L_A",
+      "kind": "number",
+      "label": "Equivalent radial load in service",
+      "unit": "lbf",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "the bearing needs a load"
+       }
+      ],
+      "symbol": "L_A",
+      "page": "7-14"
+     },
+     {
+      "name": "L_S",
+      "kind": "number",
+      "label": "Dynamic load rating (catalogue)",
+      "unit": "lbf",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a load rating is more than zero"
+       }
+      ],
+      "symbol": "L_S",
+      "page": "7-14"
+     },
+     {
+      "name": "R",
+      "kind": "number",
+      "label": "Reliability the life is quoted at",
+      "unit": "%",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "a reliability is between 0 and 100 %",
+        "min": 0,
+        "max": 100,
+        "exclusive": true
+       },
+       {
+        "severity": "warn",
+        "why": "Table 7-2 covers 50 % (L50) to 99 % (L1)",
+        "min": 50,
+        "max": 99,
+        "page": "7-18"
+       }
+      ],
+      "default": 50,
+      "default_basis": "handbook",
+      "symbol": "R",
+      "page": "7-10",
+      "help": "The handbook: use 50 % (the L50 life) to combine with other parts' MTBF-based rates."
+     },
+     {
+      "name": "nu_ratio",
+      "kind": "number",
+      "label": "Viscosity of the specified lubricant ÷ viscosity of the one used",
+      "unit": "",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a ratio of viscosities is more than zero"
+       },
+       {
+        "severity": "warn",
+        "why": "Figure 7.3 covers νO/νL up to 2.0",
+        "max": 2.0,
+        "page": "7-15"
+       }
+      ],
+      "default": 1.0,
+      "default_basis": "neutral",
+      "symbol": "νO/νL",
+      "page": "7-12",
+      "help": "1 when the bearing runs on the lubricant it was specified for (factor 1)."
+     },
+     {
+      "name": "CW",
+      "kind": "number",
+      "label": "Water in the lubricant",
+      "unit": "%",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "a percentage of water is 0 to 100",
+        "min": 0,
+        "max": 100
+       },
+       {
+        "severity": "warn",
+        "why": "Figure 7.4 covers 0 to 1 % water",
+        "max": 1.0,
+        "page": "7-16"
+       }
+      ],
+      "default": 0,
+      "default_basis": "neutral",
+      "symbol": "CW",
+      "page": "7-12",
+      "help": "0 for a bearing designed for a water-based lubricant (the handbook: then C_CW = 1)."
+     },
+     {
+      "name": "T_O",
+      "kind": "number",
+      "label": "Bearing operating temperature",
+      "unit": "°C",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "below absolute zero",
+        "min": -273.15
+       },
+       {
+        "severity": "warn",
+        "why": "Figure 7.5 covers 60 to 260 °C",
+        "min": 60,
+        "max": 260,
+        "page": "7-17"
+       }
+      ],
+      "default": 60,
+      "default_basis": "neutral",
+      "symbol": "T_O",
+      "page": "7-13",
+      "help": "Up to 183 °C the factor is 1."
+     },
+     {
+      "name": "bearing_type",
+      "kind": "choice",
+      "label": "Bearing type",
+      "choices": [
+       {
+        "code": "ball",
+        "label": "Ball bearing"
+       },
+       {
+        "code": "roller",
+        "label": "Roller bearing"
+       }
+      ],
+      "default": "ball",
+      "default_basis": "typical",
+      "page": "7-9",
+      "help": "Sets the load-life exponent y: 3.0 for ball, 3.3 for roller."
+     },
+     {
+      "name": "service",
+      "kind": "choice",
+      "label": "Type of application (service factor)",
+      "choices": [
+       {
+        "code": "uniform",
+        "label": "Uniform and steady load, free from shock"
+       },
+       {
+        "code": "light_shock",
+        "label": "Normal operation, light shock load"
+       },
+       {
+        "code": "moderate_shock",
+        "label": "Moderate shock load"
+       },
+       {
+        "code": "heavy_shock",
+        "label": "Heavy shock load"
+       },
+       {
+        "code": "extreme_shock",
+        "label": "Extreme and indeterminate shock load"
+       },
+       {
+        "code": "precision_gearing",
+        "label": "Precision gearing (ball bearings)"
+       },
+       {
+        "code": "commercial_gearing",
+        "label": "Commercial gearing (ball bearings)"
+       },
+       {
+        "code": "toothed_belt",
+        "label": "Toothed belts (roller bearings)"
+       },
+       {
+        "code": "vee_belt",
+        "label": "Vee belts (roller bearings)"
+       },
+       {
+        "code": "flat_belt",
+        "label": "Flat belts (roller bearings)"
+       }
+      ],
+      "default": "uniform",
+      "default_basis": "neutral",
+      "symbol": "C_SF",
+      "page": "7-18"
+     },
+     {
+      "name": "contamination",
+      "kind": "choice",
+      "label": "Lubricant cleanliness",
+      "choices": [
+       {
+        "code": "extreme_clean",
+        "label": "Extreme cleanliness: particles about the oil film thickness (laboratory)"
+       },
+       {
+        "code": "high_clean",
+        "label": "High cleanliness: oil through a fine filter (10 micron or finer)"
+       },
+       {
+        "code": "normal",
+        "label": "Normal cleanliness: slight contamination in the lubricant"
+       },
+       {
+        "code": "slight",
+        "label": "Slight contamination: hard particles over 10 micron"
+       },
+       {
+        "code": "severe",
+        "label": "Severe contamination: coarse filtering, no integral seals"
+       }
+      ],
+      "default": "normal",
+      "default_basis": "typical",
+      "symbol": "C_C",
+      "page": "7-19"
+     },
+     {
+      "name": "diameter",
+      "kind": "choice",
+      "label": "Bearing diameter",
+      "choices": [
+       {
+        "code": "under_100mm",
+        "label": "Under 100 mm"
+       },
+       {
+        "code": "over_100mm",
+        "label": "Over 100 mm"
+       }
+      ],
+      "default": "under_100mm",
+      "default_basis": "typical",
+      "page": "7-19"
+     }
+    ],
+    "derived": [
+     {
+      "name": "y",
+      "label": "Load-life exponent",
+      "expr": "3.0 if bearing_type == 'ball' else 3.3",
+      "unit": "",
+      "symbol": "y",
+      "page": "7-9",
+      "equation": "7-1"
+     },
+     {
+      "name": "load_ratio",
+      "label": "Applied load ÷ load rating",
+      "expr": "L_A / L_S",
+      "unit": "",
+      "symbol": "L_A/L_S",
+      "page": "7-14",
+      "limits": [
+       {
+        "severity": "warn",
+        "why": "Figure 7.2 covers L_A/L_S up to 1.4",
+        "max": 1.4,
+        "page": "7-14"
+       }
+      ]
+     }
+    ],
+    "checks": [],
+    "modes": [
+     {
+      "key": "bearing",
+      "name": "Bearing (fatigue, wear and what shortens its life)",
+      "base": {
+       "symbol": "λ_BE,B",
+       "name": "Base failure rate (10⁶ ÷ the rated L10 life in hours)",
+       "expr": "1e6 / L10h",
+       "page": "7-11"
+      },
+      "factors": [
+       {
+        "symbol": "C_Y",
+        "name": "Applied load",
+        "expr": "load_ratio ** y",
+        "page": "7-14",
+        "source": "Figure 7.2",
+        "words": "the load it carries against its rating"
+       },
+       {
+        "symbol": "C_R",
+        "name": "Reliability (life adjustment)",
+        "expr": "0.223 / ln(100 / R) ** (2 / 3)",
+        "page": "7-18",
+        "source": "Table 7-2",
+        "words": "the reliability its life is quoted at"
+       },
+       {
+        "symbol": "C_ν",
+        "name": "Lubricant viscosity",
+        "expr": "nu_ratio ** 0.54",
+        "page": "7-12",
+        "equation": "7-6",
+        "source": "Figure 7.3",
+        "words": "its lubricant's viscosity"
+       },
+       {
+        "symbol": "C_CW",
+        "name": "Water in the lubricant",
+        "expr": "1.0 + 25.50 * CW - 16.25 * CW ** 2 if CW <= 0.8 else 11.0",
+        "page": "7-12",
+        "equation": "7-7",
+        "source": "Figure 7.4",
+        "words": "water in its lubricant"
+       },
+       {
+        "symbol": "C_t",
+        "name": "Operating temperature",
+        "expr": "1.0 if T_O < 183 else (T_O / 183) ** 3",
+        "page": "7-17",
+        "source": "Figure 7.5",
+        "words": "its temperature"
+       },
+       {
+        "symbol": "C_SF",
+        "name": "Service (shock and load)",
+        "table": {
+         "by": [
+          "service",
+          "bearing_type"
+         ],
+         "values": {
+          "uniform": {
+           "ball": 1.0,
+           "roller": 1.0
+          },
+          "light_shock": {
+           "ball": 1.5,
+           "roller": 1.0
+          },
+          "moderate_shock": {
+           "ball": 2.0,
+           "roller": 1.3
+          },
+          "heavy_shock": {
+           "ball": 2.5,
+           "roller": 1.7
+          },
+          "extreme_shock": {
+           "ball": 3.0,
+           "roller": 2.0
+          },
+          "precision_gearing": {
+           "ball": 1.2,
+           "roller": null
+          },
+          "commercial_gearing": {
+           "ball": 1.3,
+           "roller": null
+          },
+          "toothed_belt": {
+           "ball": null,
+           "roller": 1.2
+          },
+          "vee_belt": {
+           "ball": null,
+           "roller": 1.8
+          },
+          "flat_belt": {
+           "ball": null,
+           "roller": 3.0
+          }
+         }
+        },
+        "page": "7-18",
+        "source": "Table 7-3",
+        "words": "shock in service"
+       },
+       {
+        "symbol": "C_C",
+        "name": "Lubricant contamination",
+        "table": {
+         "by": [
+          "contamination",
+          "diameter"
+         ],
+         "values": {
+          "extreme_clean": {
+           "under_100mm": 1.0,
+           "over_100mm": 1.0
+          },
+          "high_clean": {
+           "under_100mm": 1.4,
+           "over_100mm": 1.2
+          },
+          "normal": {
+           "under_100mm": 1.8,
+           "over_100mm": 1.4
+          },
+          "slight": {
+           "under_100mm": 2.5,
+           "over_100mm": 2.0
+          },
+          "severe": {
+           "under_100mm": 5.0,
+           "over_100mm": 3.3
+          }
+         }
+        },
+        "page": "7-19",
+        "source": "Table 7-4",
+        "words": "dirt in its lubricant"
+       }
+      ],
+      "symbol": "λ_BE"
+     }
+    ]
+   },
+   "conditions": {
+    "industry": "Mechanical equipment (handbook prediction)",
+    "chapter": "Chapter 7: Bearings",
+    "section": "7.6 Bearing failure rate prediction"
+   },
+   "source_text": "Bearings: 7.6 Bearing failure rate prediction",
+   "citation": {
+    "title": "Handbook of Reliability Prediction Procedures for Mechanical Equipment",
+    "publisher": "Naval Surface Warfare Center, Carderock Division (U.S. Navy)",
+    "report": "CARDEROCKDIV, NSWC-11",
+    "year": 2011,
+    "table": "Chapter 7, section 7.6, Eq. 7-5",
+    "page": "7-11",
+    "chapter": 7,
+    "equation": "7-5",
+    "url": "https://www.navsea.navy.mil/Home/Warfare-Centers/NSWC-Carderock/",
+    "retrieved": "2026-11-09"
+   },
+   "licence": {
+    "id": "us-government-work",
+    "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
+   }
+  }
+ ]
+}

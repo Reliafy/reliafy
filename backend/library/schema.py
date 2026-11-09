@@ -28,6 +28,8 @@ KINDS = {
     "rate": "A failure rate: failures per unit of exposure (usually per hour).",
     "per_demand": "A probability of failure on demand (each start, opening or trip).",
     "life": "A life distribution in time (e.g. Weibull beta and eta), or a saved parametric life model.",
+    "covariate_model": ("A covariate model: a base failure rate scaled by factors for the conditions a part works "
+                        "in (load, speed, temperature...), each with the handbook's limits."),
 }
 
 #: Where the numbers come from. Never mixed: a record has one basis.
@@ -121,6 +123,21 @@ EQUIPMENT_TYPES = {
     "switch": "Switches (electronic)",
     "connector": "Connectors, sockets and connections",
     "electronic_other": "Other electronic parts (crystals, lamps, lasers, filters, microwave parts)",
+    "seal": "Seals and gaskets",
+    "spring": "Springs",
+    "solenoid": "Solenoids and contactors",
+    "bearing": "Bearings",
+    "gear": "Gears and splines",
+    "actuator": "Actuators",
+    "brake_clutch": "Brakes and clutches",
+    "compressor": "Compressors",
+    "electric_motor": "Electric motors",
+    "fastener": "Threaded fasteners",
+    "coupling": "Mechanical couplings and joints",
+    "mechanism": "Mechanisms (slider cranks, cams, screws)",
+    "sensor": "Sensors and transducers",
+    "shaft": "Shafts and axles",
+    "belt_chain": "Belt and chain drives",
     "other": "Other equipment",
 }
 
@@ -262,6 +279,16 @@ def problems(rec: dict) -> list[str]:
         bad("licence has no attribution text")
 
     units = rec.get("units") or {}
+    if kind == "covariate_model":
+        # Its model is checked by covariate.problems (with the records it uses, by the importer and
+        # the tests: here without them); it has no distribution.
+        from backend.library import covariate
+
+        if units.get("value") not in covariate.RATE_UNITS:
+            bad(f"unknown units {units.get('value')!r} for a covariate model")
+        if rec.get("basis") != "prediction_model":
+            bad("a covariate model is a prediction model")
+        return out + covariate.problems(rec)
     if kind in VALUE_UNITS and units.get("value") not in VALUE_UNITS[kind]:
         bad(f"unknown units {units.get('value')!r} for a {kind}")
     if kind == "life" and not (isinstance(units.get("value"), str) and units["value"].strip()):
