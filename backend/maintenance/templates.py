@@ -15,10 +15,17 @@ a decision (on condition, scheduled discard or restoration, failure finding
 for the hidden protective functions, redesign, run to failure, or risk
 accepted); and the tasks those decisions schedule, read together as the
 aircraft's maintenance programme (the pre-flight check, the flight log
-review, the 25-hour, 100-hour and annual inspections, the failsafe function
-tests, and the propeller and battery limits). The higher positions' functional
-failures are explained by those on the positions inside them (linked causes),
-so the RCM tab reads top down.
+review, the 25-hour, 100-hour and annual inspections, the monthly failsafe
+function tests, the three-monthly battery storage check, and the propeller and
+battery limits). The higher positions' functional failures are explained by
+those on the positions inside them (linked causes), so the RCM tab reads top
+down. Each programme task carries its LSA record (who does it and for how
+long, the tools, spares and consumables, access and the method), which the
+items built from the design copy; the calendar tasks (the failsafe tests, the
+battery storage check and the annual inspection) are packaged into one
+monthly visit on the first item built. The motors, propellers, battery pack
+and radio carry life models: shared samples, invented like the rest, each
+link saying so.
 
 Some decisions link the evidence behind them, saved analyses and models every
 account can read, so the evidence check shows each case: the propeller
@@ -89,12 +96,16 @@ SAMPLE_PRODUCT_DESCRIPTION = (
     "the conductors at 5 m/s, with a 4K camera and a thermal imager on a gimbal; about 150 flight hours a year per "
     "aircraft. Each position carries its functions with their performance standards (numbers from the mission), "
     "the ways each fails, the failure modes that cause them, and a decision for each: the checks before every "
-    "flight, the flight log review, the 25-hour, 100-hour and annual inspections, the failsafe function tests, the "
-    "propeller and battery limits, and the things to redesign, run to failure or accept. Some decisions link the "
+    "flight, the flight log review, the 25-hour, 100-hour and annual inspections, the monthly failsafe function "
+    "tests, the three-monthly battery storage check, the propeller and battery limits, and the things to redesign, "
+    "run to failure or accept. Each programme task has its LSA record (labour, tools, spares, method). Some "
+    "decisions link the "
     "analysis or model behind them: the legacy run-to-failure plan on the motor bearings is contradicted on purpose "
     "(their life model shows wear-out), the battery retirement can't be checked until its units agree, and two "
-    "failure modes still need a decision. With its part and bill of materials, three items built from it, a "
-    "replaced motor and two failure reports. Entirely invented: no real product, company or operator."
+    "failure modes still need a decision. The motors, propellers, battery pack and radio carry sample life models. "
+    "With its part and bill of materials, three items built from it (the first with its calendar tasks in a "
+    "monthly work package), a replaced motor and two failure reports. Entirely invented: no real product, company "
+    "or operator."
 )
 
 # The top position's operating context: the mission every performance standard
@@ -140,7 +151,11 @@ UAV_GIMBAL_ANALYSIS = "sample-strategy-quad-gimbal-replacement"
 # "check": the line it adds to the task's checklist). A task on a position may serve
 # the failure modes on the positions inside it, so these read as one schedule on each
 # aircraft built from the design: before every flight, every 10 flight hours (the log),
-# every 25 and 100 flight hours, once a year, and the failsafe tests every 25 hours.
+# every 25 and 100 flight hours, and by the calendar: the failsafe tests every month,
+# the battery storage check every three months and the annual inspection. The use-based
+# tasks go by flight hours or flights because wear does; the calendar ones go by the
+# calendar because what they find doesn't come from flying (a configuration change, a
+# pack draining in storage, rubber and memory cards ageing).
 SAMPLE_UAV_PROGRAMME = {
     "pre_flight": {
         "name": "Pre-flight check", "interval": 1, "unit": "flights", "outcome": "on_condition",
@@ -167,9 +182,15 @@ SAMPLE_UAV_PROGRAMME = {
                         "replaced, and the aircraft's logs reviewed for the year.",
     },
     "failsafe": {
-        "name": "Failsafe function tests", "interval": 25, "unit": "hours", "outcome": "failure_finding",
-        "instructions": "Every 25 flight hours and after any firmware or configuration change: each protective "
-                        "function tested over the pad, so a hidden failure is found before it is needed.",
+        "name": "Failsafe function tests", "interval": 1, "unit": "months", "outcome": "failure_finding",
+        "instructions": "Every month, before the month's survey flying, and after any firmware or configuration "
+                        "change: each protective function tested over the pad, so a hidden failure is found "
+                        "before it is needed.",
+    },
+    "battery": {
+        "name": "Battery storage check", "interval": 3, "unit": "months", "outcome": "on_condition",
+        "instructions": "Every three months, on every pack, flown or not: packs drain in storage whether the "
+                        "aircraft flies or not.",
     },
 }
 SAMPLE_UAV_PROGRAMME_NAMES = tuple(spec["name"] for spec in SAMPLE_UAV_PROGRAMME.values())
@@ -577,7 +598,7 @@ SAMPLE_UAV_RCM = [
                     "severity": 4, "occurrence": 7, "detection": 2,  # RPN 56, AP M
                     "action": "Retire packs at 300 charge cycles; redo the retirement analysis in cycles",
                     "action_owner": "Operations", "action_due": "2026-11-10", "action_status": "open",
-                    "failure_rate": 3e-4, "mode_ratio": 0.5, "loss_probability": 0.05, "severity_class": "III",
+                    "failure_rate": 3e-4, "mode_ratio": 0.4, "loss_probability": 0.05, "severity_class": "III",
                     "consequence": "operational",
                     "decision": {"outcome": "fixed_interval", "task": "Retire the battery pack", "interval": 300,
                                  "interval_unit": "cycles",
@@ -600,6 +621,24 @@ SAMPLE_UAV_RCM = [
                                  "check": "Packs: flat-sided, no puffing; a swollen pack is retired on the spot",
                                  "notes": "A swollen pack shows days before it fails; the look before each flight, "
                                           "and the 50 % storage rule, cover it."}},
+                   {"text": "Stored pack self-discharges below its safe voltage",
+                    "cause": "Spare packs left for weeks between the monthly survey days; the BMS draws a small "
+                             "standby current",
+                    "effect_local": "Cells fall below 3.0 V in storage",
+                    "effect_next": "Capacity lost for good; a deeply discharged pack is unsafe to charge",
+                    "effects": "Shorter flights or a pack retired early; a charging fire if one is charged anyway.",
+                    "detection_method": "Cell voltages read on every pack at the battery storage check",
+                    "severity": 7, "occurrence": 3, "detection": 3,  # RPN 63, AP L
+                    "action": "Store packs at 3.8 V a cell; a BMS that sleeps when the pack is unplugged",
+                    "action_owner": "Operations", "action_due": "2026-12-01", "action_status": "open",
+                    "failure_rate": 3e-4, "mode_ratio": 0.1, "loss_probability": 0.1, "severity_class": "II",
+                    "consequence": "safety",
+                    "decision": {"outcome": "on_condition", "programme": "battery",
+                                 "check": "Every pack: cells at 3.75 to 3.85 V; a pack below 3.6 V a cell is set "
+                                          "aside and checked before it is charged",
+                                 "notes": "P-F interval: a stored pack drains over months, not days, so a check "
+                                          "every three months finds it before a cell reaches 3.0 V. By the "
+                                          "calendar, not flight hours: the pack drains while it sits."}},
                ]},
               {"text": "Power lost in flight",
                "modes": [
@@ -1224,16 +1263,16 @@ SAMPLE_UAV_RCM = [
                     "effects": "A fly-away: the aircraft is lost, and may come down on people or the line.",
                     "detection_method": "None in normal flying (hidden): only a deliberate link-loss test shows it",
                     "severity": 10, "occurrence": 2, "detection": 9,  # RPN 180, AP H
-                    "action": "Failsafe test after every firmware update and every 25 flight hours",
+                    "action": "Failsafe test after every firmware update and every month",
                     "action_owner": "Software lead", "action_due": "2026-11-15", "action_status": "done",
                     "failure_rate": 1e-5, "mode_ratio": 0.15, "loss_probability": 0.8, "severity_class": "I",
                     "consequence": "safety", "hidden": True,
                     "decision": {"outcome": "failure_finding", "programme": "failsafe",
                                  "check": "Link loss: switch the transmitter off in a hover at 3 m over the pad; "
                                           "the aircraft returns and lands within 3 s of the loss",
-                                 "notes": "Failure-finding on a hidden function, tested every 25 hours (about 60 "
-                                          "sorties) and after any firmware change; at the fleet's failure rate that "
-                                          "keeps the chance of flying with a dead failsafe under 2 %."}},
+                                 "notes": "Failure-finding on a hidden function, tested every month (about 12 "
+                                          "flight hours) and after any firmware change. By the calendar, not flight "
+                                          "hours: a configuration change defeats it, not flying."}},
                ]},
               {"text": "Does not land before the pack runs out",
                "standard": "Lands with at least 15 % charge left in the pack",
@@ -1253,8 +1292,8 @@ SAMPLE_UAV_RCM = [
                     "decision": {"outcome": "failure_finding", "programme": "failsafe",
                                  "check": "Low battery: on the bench supply, bring the pack voltage down to the 20 % "
                                           "point; the land warning and the landing come within 3 s",
-                                 "notes": "Failure-finding on a hidden function; done with the link-loss test at "
-                                          "the same 25 hours."}},
+                                 "notes": "Failure-finding on a hidden function; done with the link-loss test "
+                                          "every month."}},
                ]},
           ]},
          {"text": "Hold the aircraft inside the geofence and under the height limit",
@@ -1302,7 +1341,7 @@ SAMPLE_UAV_RCM = [
                     "decision": {"outcome": "failure_finding", "programme": "failsafe",
                                  "check": "Height limit: climb over the pad; the aircraft stops at 120 m above "
                                           "take-off",
-                                 "notes": "Failure-finding, with the other failsafe tests at 25 hours."}},
+                                 "notes": "Failure-finding, with the other failsafe tests every month."}},
                ]},
           ]},
          {"text": "Record every flight for the log review",
@@ -1444,7 +1483,7 @@ def _decision_for(decision: dict, programme: dict[str, str]) -> tuple[dict, str 
     return given, programme[decision["programme"]]
 
 
-def _add_uav_rcm(m, at_of: dict[str, list[str]], counts: dict) -> None:
+def _add_uav_rcm(m, at_of: dict[str, list[str]], counts: dict) -> dict[str, str]:
     """The sample quadcopter's RCM on every position a template name maps to (at_of:
     name -> position ids; "" is the product itself): the maintenance programme's
     shared tasks on the product, then, position by position, its operating context,
@@ -1509,6 +1548,43 @@ def _add_uav_rcm(m, at_of: dict[str, list[str]], counts: dict) -> None:
     # the RCM reads; its kind is the programme's, whatever mode joined it first.
     for key, tid in programme.items():
         m.update_task(tid, checklist=checks[key], outcome=SAMPLE_UAV_PROGRAMME[key]["outcome"])
+    return programme
+
+
+def _add_uav_lsa(m, programme: dict[str, str], counts: dict) -> None:
+    """Each programme task's LSA record (task.resources_set), its spares named by part
+    number taken from the parts register."""
+    for key, record in SAMPLE_UAV_LSA.items():
+        given = dict(record)
+        if record.get("spares"):
+            given["spares"] = [{"part_id": _part(m, line["part_number"], "")["id"], "qty": line["qty"]}
+                               if line.get("part_number") else line for line in record["spares"]]
+        m.set_task_resources(programme[key], given)
+        counts["lsa_records"] += 1
+
+
+def _add_uav_models(m, at_of: dict[str, list[str]], counts: dict) -> None:
+    """The life models on the design's positions, each for the failure mode it describes."""
+    for name, model_id, model_name, mode_text, note in SAMPLE_PRODUCT_MODELS:
+        for at in at_of[name]:
+            modes = [fm["id"] for fm in m._modes_on(at) if fm.get("text") == mode_text]
+            m.link_position_model(at, "model", model_id, failure_mode_ids=modes, name=model_name, note=note)
+            counts["models_linked"] += 1
+
+
+def _add_uav_package(m, top_id: str) -> dict:
+    """The calendar tasks on a built item, packaged into one monthly visit."""
+    spec = SAMPLE_UAV_PACKAGE
+    tasks = {t["name"]: t["id"] for t in m.s.inn(m.org, top_id, "ON")
+             if t.get("label") == "Task" and not t.get("retired")}
+    members = []
+    for key, nth in spec["tasks"]:
+        tid = tasks[SAMPLE_UAV_PROGRAMME[key]["name"]]
+        members.append({"task_id": tid, "visit_rule": "nth", "every_nth": nth} if nth else {"task_id": tid})
+    pkg = m.create_package(spec["name"], position_id=top_id, timing="fixed", every=spec["every"], unit=spec["unit"],
+                           weekday=spec["weekday"], nth=spec["nth"], tolerance=spec["tolerance"],
+                           tolerance_unit="days", trade=spec["trade"], notes=spec["notes"], tasks=members)
+    return {"id": pkg["id"], "name": pkg["name"]}
 
 
 # ---- the sample product: a quadcopter design and three items built from it ---------
@@ -1579,6 +1655,118 @@ SAMPLE_PRODUCT_ITEMS = [("0007", "C", 212.0, 553), ("0008", "C", 31.0, 81), ("00
 # (placeholder=true on every block: no real data).
 SAMPLE_RBD_RATES = {"Battery pack": 1e-4, "BMS": 5e-5, "Flight controller": 2e-5, "IMU": 1e-4, "GPS": 5e-5,
                     "ESC": 3e-5, "Motor": 4e-5, "Propeller": 2e-5}
+
+# Each programme task's LSA record (task.resources_set): who does it and for how long, the
+# tools, the spares and consumables to bring, access and downtime, and the method. The task
+# names say what is done; this says how. Invented, like the rest of the sample: the times
+# are a plausible plan for a small drone, not measured. A spare with a part_number is the
+# catalogue part of the bill of materials; the items built from the design copy the lot.
+SAMPLE_UAV_LSA = {
+    "pre_flight": {
+        "labour": [{"trade": "Pilot", "people": 1, "hours": 0.25}, {"trade": "Observer", "people": 1, "hours": 0.25}],
+        "tools": [{"name": "Propeller go/no-go gauge"}, {"name": "Hex driver set, 1.5 to 3 mm"},
+                  {"name": "Ground station tablet"}],
+        "spares": [{"part_number": "SQ-P1045", "qty": 4}],
+        "consumables": [{"name": "Lens cleaning wipes", "qty": 2, "unit": "wipes"}],
+        "access": {"downtime_hours": 0.25, "access_equipment": "Marked take-off pad, clear of people"},
+        "method": "On the pad before each sortie: the observer reads the checklist aloud and the pilot does each "
+                  "item; then power up, wait for the arming checks and hover at 2 m.",
+        "duration_hours": 0.25,
+    },
+    "log_review": {
+        "labour": [{"trade": "Technician", "people": 1, "hours": 0.5}],
+        "tools": [{"name": "Laptop with the flight log viewer"}],
+        "method": "Download the logs since the last review; plot each motor's temperature, each speed controller's "
+                  "temperature rise, RPM and watchdog events against their limits, and note the trend.",
+        "duration_hours": 0.5,
+    },
+    "25h": {
+        "labour": [{"trade": "Technician", "people": 1, "hours": 1.5}],
+        "tools": [{"name": "Torque driver, 0.5 to 3 N·m"}, {"name": "Magnifier, 10×"},
+                  {"name": "Gimbal levelling reference"}],
+        "consumables": [{"name": "Isopropyl alcohol", "qty": 0.05, "unit": "L"},
+                        {"name": "Cable sleeve", "qty": 0.2, "unit": "m"}],
+        "access": {"downtime_hours": 2, "isolation": "Battery pack out and propellers off before any work"},
+        "method": "On the bench: clean each arm root and motor mount and look at it under the magnifier; check the "
+                  "antenna cables where they pass the arm roots; then level the gimbal against the reference.",
+        "duration_hours": 1.5,
+    },
+    "100h": {
+        "labour": [{"trade": "Technician", "people": 1, "hours": 3}],
+        "tools": [{"name": "Torque driver, 0.5 to 3 N·m"}, {"name": "Magnifier, 10×"},
+                  {"name": "Hex driver set, 1.5 to 3 mm"}],
+        "consumables": [{"name": "Torque seal", "qty": 2, "unit": "g"},
+                        {"name": "Isopropyl alcohol", "qty": 0.05, "unit": "L"}],
+        "access": {"downtime_hours": 4, "isolation": "Battery pack out and propellers off before any work"},
+        "method": "The 25-hour items first; then take the arms off and look at every arm bolt hole in the centre "
+                  "plates under the magnifier; refit the arms, torque the clamp bolts to 2.5 N·m in a cross "
+                  "pattern and renew the stripes.",
+        "duration_hours": 3,
+    },
+    "annual": {
+        "labour": [{"trade": "Service centre technician", "people": 1, "hours": 6}],
+        "tools": [{"name": "Torque driver, 0.5 to 3 N·m"}, {"name": "Magnifier, 10×"},
+                  {"name": "Motor and speed controller run-up bench"}],
+        "spares": [{"name": "Memory card, 128 GB (approved type)", "qty": 1}, {"name": "Gimbal damper ball", "qty": 4}],
+        "consumables": [{"name": "Isopropyl alcohol", "qty": 0.1, "unit": "L"}],
+        "access": {"downtime_hours": 120, "access_equipment": "Shipping case to and from the maker's service centre"},
+        "method": "At the maker's service centre: the 100-hour items, then the memory card and the four damper "
+                  "balls replaced, the age-limited parts replaced, and the year's logs reviewed.",
+        "duration_hours": 6,
+    },
+    "failsafe": {
+        "labour": [{"trade": "Pilot", "people": 1, "hours": 1}, {"trade": "Observer", "people": 1, "hours": 1}],
+        "tools": [{"name": "Bench power supply, 0 to 30 V, 10 A"}, {"name": "Ground station tablet"},
+                  {"name": "Radio transmitter"}],
+        "access": {"downtime_hours": 1, "access_equipment": "Marked take-off pad, clear of people, inside the "
+                                                            "geofence"},
+        "method": "Over the pad, with the observer watching the airspace: the link-loss test in a 3 m hover, the "
+                  "geofence at 10 m and the height-limit climb; then, with the propellers off, the low-battery "
+                  "test on the bench supply.",
+        "duration_hours": 1,
+    },
+    "battery": {
+        "labour": [{"trade": "Technician", "people": 1, "hours": 0.5}],
+        "tools": [{"name": "Battery analyser (cell voltages and internal resistance)"},
+                  {"name": "Charger with a storage mode"}],
+        "access": {"isolation": "Packs handled and charged in a fire-resistant bag"},
+        "method": "Read every pack's cell voltages and internal resistance on the analyser and log them against the "
+                  "pack's serial; bring a pack outside 3.75 to 3.85 V a cell to storage charge; set aside a pack "
+                  "below 3.6 V a cell.",
+        "duration_hours": 0.5,
+    },
+}
+
+# The calendar tasks, packaged into one monthly visit on the first item built (a design's
+# tasks are never due; the items' copies are): the failsafe tests on every visit, the
+# battery storage check on every third and the annual inspection on every twelfth.
+SAMPLE_UAV_PACKAGE = {
+    "name": "Monthly maintenance visit", "every": 1, "unit": "months", "weekday": "Monday", "nth": 1,
+    "tolerance": 3, "trade": "Technician",
+    "notes": "The calendar tasks in one visit on the first Monday of the month, before the month's survey "
+             "flying: the failsafe tests every visit, the battery storage check every third visit and the annual "
+             "inspection every twelfth.",
+    "tasks": [("failsafe", None), ("battery", 3), ("annual", 12)],
+}
+
+# Life models on the design's positions (copied to the items built from it): (template
+# position, saved model id, its name, the failure mode it describes). Shared samples every
+# account can read, in flight hours, invented like the rest (backend/services/samples.py).
+UAV_PROPELLER_MODEL = "sample-model-quad-propeller-weibull"
+UAV_BATTERY_MODEL = "sample-model-quad-battery-weibull"
+SAMPLE_PRODUCT_MODELS = [
+    ("Motor", UAV_BEARING_MODEL, "Bearing life — Weibull (sample)", "Bearing seizure",
+     "Sample values, not field data: a Weibull fitted to invented bench-test bearing lives, in hours."),
+    ("Propeller", UAV_PROPELLER_MODEL, "Quadcopter propeller — Weibull (sample)", "Blade fatigue crack at the hub",
+     "Sample values, not field data: an invented Weibull in flight hours (scale 400, shape 3), the same as the "
+     "propeller replacement analysis."),
+    ("Battery pack", UAV_BATTERY_MODEL, "Quadcopter battery pack — Weibull (sample)", "Cell capacity fade",
+     "Sample values, not field data: an invented Weibull in flight hours (scale 600, shape 3), the same as the "
+     "battery retirement analysis."),
+    ("Comms link", UAV_AVIONICS_MODEL, "Quadcopter avionics — Exponential (sample)",
+     "Radio module fails (electronic)",
+     "Sample values, not field data: an exponential fitted to invented avionics board lives, in hours."),
+]
 
 
 def sample_products(m) -> list[dict]:
@@ -1686,7 +1874,8 @@ def add_sample_product(m, db, again: bool = False) -> dict:
 
     at: dict[str, str] = {"": pid}
     counts = {"positions": 1, "functions": 0, "standards": 0, "functional_failures": 0, "failure_modes": 0,
-              "scored": 0, "decisions": 0, "causes_linked": 0, "tasks": 0, "locations": 0}
+              "scored": 0, "decisions": 0, "causes_linked": 0, "tasks": 0, "locations": 0, "lsa_records": 0,
+              "models_linked": 0}
     # Its physical layout first, so each position is made where it sits.
     places: dict[str, str] = {}
     placed_at: dict[str, str] = {}
@@ -1703,7 +1892,11 @@ def add_sample_product(m, db, again: bool = False) -> dict:
             at[child] = m.create_position(child, parent_id=at[group], position_class=child_cls,
                                           location_id=placed_at.get(child))["id"]
             counts["positions"] += 1
-    _add_uav_rcm(m, {k: [at[n] for n in names] for k, names in SAMPLE_PRODUCT_MODES_AT.items()}, counts)
+    at_of = {k: [at[n] for n in names] for k, names in SAMPLE_PRODUCT_MODES_AT.items()}
+    programme = _add_uav_rcm(m, at_of, counts)
+    # Before any item is built, so each item's copies carry them.
+    _add_uav_lsa(m, programme, counts)
+    _add_uav_models(m, at_of, counts)
 
     today = date.fromisoformat(m.today())
 
@@ -1744,6 +1937,7 @@ def add_sample_product(m, db, again: bool = False) -> dict:
                               failure_mode_text="Antenna connector works loose"),
     ]
     m.set_failure_report_status(reports[0]["id"], "investigating", note="Bearing sent for teardown.")
+    package = _add_uav_package(m, first["top_position_id"])
     rbd = _save_sample_rbd(m, db, f"{name}: flight-critical RBD (placeholder failure rates)")
     undecided = counts["failure_modes"] - counts["decisions"]
     return {
@@ -1753,6 +1947,7 @@ def add_sample_product(m, db, again: bool = False) -> dict:
         "items": [{k: it[k] for k in ("serial", "rev", "item_id", "top_position_id")} for it in items],
         "reports": [{"id": r["id"], "label": r.get("label") or r["title"]} for r in reports],
         "rbd": rbd,
+        "package": package,
         **counts,
         "message": (f"Added “{name}”: a design of {_n(counts['positions'], 'position')} with a complete RCM study "
                     f"for its inspection mission ({_n(counts['functions'], 'function')} with "
@@ -1761,14 +1956,18 @@ def add_sample_product(m, db, again: bool = False) -> dict:
                     f"{_n(counts['failure_modes'], 'failure mode')}, each scored as an FME(C)A and all but "
                     f"{undecided} decided) and the maintenance programme those decisions make "
                     f"({_n(counts['tasks'], 'task')}: the pre-flight check, the flight log review, the 25-hour, "
-                    "100-hour and annual inspections, the failsafe function tests, and the propeller and battery "
-                    "limits). The evidence check shows each case: the motor bearings' legacy run-to-failure "
+                    "100-hour and annual inspections, the monthly failsafe function tests, the three-monthly "
+                    "battery storage check, and the propeller and battery limits; each programme task with its "
+                    "LSA record). The evidence check shows "
+                    "each case: the motor bearings' legacy run-to-failure "
                     "decision is contradicted on purpose (their life model shows wear-out), the battery retirement "
                     "can't be checked until its units agree, and the rest with evidence are supported. Its physical "
                     f"layout ({_n(counts['locations'], 'design location')}: four arms, the centre body with its "
                     f"battery bay, and the payload bay), its part with a bill of materials, {_n(len(items), 'item')} "
-                    f"built from it (serials {', '.join(it['serial'] for it in items)}), a replaced motor and two "
-                    f"failure reports. The RBD “{rbd['name']}” is in your RBDs: its failure rates are placeholders, "
+                    f"built from it (serials {', '.join(it['serial'] for it in items)}), the work package "
+                    f"“{package['name']}” on {items[0]['serial']} for the calendar tasks, a replaced motor and two "
+                    f"failure reports. Life models on {_n(counts['models_linked'], 'position')} (motors, propellers, "
+                    f"battery pack and radio) are shared samples, not field data. The RBD “{rbd['name']}” is in your RBDs: its failure rates are placeholders, "
                     "not data. Each arm's ESC, motor and propeller are in series there: the design has one ESC per "
                     "motor."),
     }
