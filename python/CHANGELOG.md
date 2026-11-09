@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.5.2)
+## 0.5.2 (10 Nov 2026)
 
 - **Libraries of your own**: `list kind libraries`, `get kind library`
   (`id`) and the `change` actions `library_create`, `library_update`,
