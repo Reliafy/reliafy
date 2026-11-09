@@ -110,16 +110,20 @@ test("attach a library record to a position, then fit with a library prior", asy
   await expect(attach).toHaveCount(0);
   await expect(page.locator(".tp-row", { hasText: "Library: NRC/INL 2020, Motor-operated valve spurious operation" })).toHaveCount(1);
 
-  // Fit a life model… with "A library record" as the prior: choosing it opens the picker over the Fit
-  // dialog; Escape closes only the picker, and the dialog keeps one Pick a library record… button.
+  // Fit a life model… with "A library record" as the prior: the fit is in the table area (not a dialog);
+  // choosing it opens the picker, a dialog over the pane; Escape closes only the picker, focus goes back
+  // to the pane's one Pick a library record… button.
   await headPick(page, "Life model", "Fit a life model…");
-  const fit = page.getByRole("dialog", { name: "Fit a life model" });
+  const fit = page.getByRole("region", { name: "Fit a life model" });
   await fit.getByRole("radio", { name: "With a prior" }).click();
+  await expect(page.getByRole("dialog", { name: "Fit a life model" })).toHaveCount(0);
   await fit.getByRole("combobox", { name: "Prior", exact: true }).selectOption("library");
   await expect(picker).toBeVisible();
+  await expect(fit).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(picker).toHaveCount(0);
   await expect(fit).toBeVisible();
+  await expect(fit.getByRole("button", { name: "Pick a library record…" })).toBeFocused();
   await fit.getByRole("button", { name: "Pick a library record…" }).click();
   await expect(picker).toBeVisible();
   await search.fill("Motor-operated valve spurious");
@@ -140,6 +144,7 @@ test("attach a library record to a position, then fit with a library prior", asy
   await page.keyboard.press("Escape");
   await expect(picker).toHaveCount(0);
   await expect(fit).toBeVisible();
+  await expect(fit.getByRole("button", { name: "Change the library record" })).toBeFocused();
   await expect(picked).toContainText(SOP);
   // The prior shows beside the fit: its mean life and B10 as numbers, not "—".
   const numbers = fit.locator(".fit2-numbers");
@@ -213,7 +218,7 @@ test("build a library: a model added to it, found in the picker, used as a prior
   await expect(lib.getByRole("heading", { name: "Yours" })).toBeVisible();
   await expect(lib.getByRole("link", { name: `Site gearboxes ${tag}` })).toBeVisible();
 
-  // In the Explorer's Fit dialog, the library is in the picker's dropdown (first) and the record is a prior.
+  // In the Explorer's fit pane, the library is in the picker's dropdown (first) and the record is a prior.
   const ago = (d) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
   const box = await postOk(request, `${M}/positions`, { name: `Gearbox position ${tag}` });
   await postOk(request, `${M}/positions/${box.id}/fit`, { new_item: { name: `G1 ${tag}` }, on: ago(900) });
@@ -221,7 +226,7 @@ test("build a library: a model added to it, found in the picker, used as a prior
   await postOk(request, `${M}/positions/${box.id}/fit`, { new_item: { name: `G2 ${tag}` }, on: ago(300) });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${box.id}&tab=models`);
   await headPick(page, "Life model", "Fit a life model…");
-  const fit = page.getByRole("dialog", { name: "Fit a life model" });
+  const fit = page.getByRole("region", { name: "Fit a life model" });
   await fit.getByRole("radio", { name: "With a prior" }).click();
   await fit.getByRole("combobox", { name: "Prior", exact: true }).selectOption("library");
   const picker = page.getByRole("dialog", { name: "Pick a library record" });
