@@ -4,6 +4,7 @@
 // list draws (components/WhatChanged.jsx), so the three lists look alike.
 import { rcmDetail } from "./changes.js";
 import { datasetPath } from "./navigation.js";
+import { partsPath } from "./redirects.js";
 
 // Most rows each list shows (the counts above them are complete).
 export const ATTENTION_ROWS = 6;
@@ -157,7 +158,7 @@ export function sparesRows(maintenance) {
     kind: v.usable_on_hand > 0 ? "Low" : "None left",
     tone: v.usable_on_hand > 0 ? "warning" : "danger",
     name: `${v.part.part_number} ${v.part.name}`,
-    url: v.part.id ? `/asset-register/parts/${v.part.id}` : "/asset-register/parts",
+    url: v.part.id ? `/asset-register/parts/${v.part.id}` : partsPath(),
     detail: `${v.usable_on_hand} usable, keep ${v.min_on_hand}${v.position?.name ? ` · ${v.position.name}` : ""}`,
     at: null,
   }));

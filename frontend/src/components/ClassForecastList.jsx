@@ -4,8 +4,7 @@ import { getClassForecast, getPositionClasses } from "../api.js";
 import { useRoles } from "../RolesProvider.jsx";
 import { formatNumber } from "../format.js";
 import { EXPLORER_PARTS_CLASSES_TABS } from "../explorerTabs.js";
-
-const classPath = (name) => `/asset-register/classes/${encodeURIComponent(name)}`;
+import { classesPath } from "../redirects.js";
 
 // The position classes with a fitted life model, each with its expected
 // failures over the next 12 months, under Forecasts. Each opens
@@ -52,14 +51,14 @@ export default function ClassForecastList() {
     <section className="home-card" aria-labelledby="class-forecasts">
       <div className="recent-models-head">
         <h2 id="class-forecasts">Position classes</h2>
-        {linked && <Link to="/asset-register/classes">All classes →</Link>}
+        {linked && <Link to={classesPath()}>All classes →</Link>}
       </div>
       {classes === null ? (
         <div className="card empty">Loading…</div>
       ) : classes.length === 0 ? (
         <div className="card empty">
           {linked
-            ? <p>No class has a fitted life model yet. Fit one from a class's pooled life data on its <Link to="/asset-register/classes">Classes</Link> page.</p>
+            ? <p>No class has a fitted life model yet. Fit one from a class's pooled life data on its <Link to={classesPath()}>Classes</Link> page.</p>
             : <p>No class has a fitted life model yet. Fit one from a class's pooled life data in the Explorer's Modelling tab.</p>}
         </div>
       ) : (
@@ -76,10 +75,10 @@ export default function ClassForecastList() {
             <tbody>
               {classes.map((c) => (
                 <tr key={c.position_class} className={linked ? "lib-row" : undefined}
-                    onClick={linked ? () => navigate(classPath(c.position_class)) : undefined}>
+                    onClick={linked ? () => navigate(classesPath(c.position_class)) : undefined}>
                   <td>
                     {linked ? (
-                      <Link className="lib-name lib-link" to={classPath(c.position_class)} onClick={(e) => e.stopPropagation()}>
+                      <Link className="lib-name lib-link" to={classesPath(c.position_class)} onClick={(e) => e.stopPropagation()}>
                         {c.position_class}
                       </Link>
                     ) : <span className="lib-name">{c.position_class}</span>}

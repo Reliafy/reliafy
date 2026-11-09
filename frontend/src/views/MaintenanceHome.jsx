@@ -23,6 +23,7 @@ import { browserTimeZone, shouldSuggestTimeZone } from "../workspaceDate.js";
 import { itemAtText, subjectBadge, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
+import { partsPath } from "../redirects.js";
 
 const HELP = { guide: "maintenance-work-orders" };
 
@@ -156,7 +157,7 @@ export default function MaintenanceHome() {
             <section className="card">
               <div className="maint-head">
                 <h2>Critical spares short</h2>
-                <Link to="/asset-register/parts" className="lib-date">Parts and stock</Link>
+                <Link to={partsPath()} className="lib-date">Parts and stock</Link>
               </div>
               <ul className="maint-list">
                 {data.critical_spares.map((v) => (
