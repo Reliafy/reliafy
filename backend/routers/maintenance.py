@@ -1033,8 +1033,10 @@ def failure_mode_interval_inputs(mode_id: str, session=Depends(get_session), ctx
 def add_sample_product(body: dict | None = Body(None), session=Depends(get_session),
                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Add the sample product: a quadcopter's design (its RCM, some decisions linked to sample evidence, and
-    every failure mode scored as an FME(C)A), its part with
-    a bill of materials, three items built from it with two failure reports, and a flight-critical RBD with
+    every failure mode scored as an FME(C)A; its maintenance programme with each task's LSA record; sample
+    life models on its motors, propellers, battery pack and radio), its part with a bill of materials, three
+    items built from it with two failure reports (the first with its calendar tasks in a monthly work
+    package), and a flight-critical RBD with
     placeholder failure rates. When a copy is there already nothing is added (added false) unless again is
     true."""
     from backend.maintenance import templates

@@ -1,8 +1,6 @@
-// "Update a baseline with this position's history…" (the Explorer's Modelling tab): a
-// Bayesian update of a baseline life model with a few failures (backend/services/bayes_life.py,
-// SurPyval's fit_bayes). The baseline is the prior, weighed by how much it's trusted; the
-// position's own failures and suspensions move it. These are the dialog's choices and the
-// request it sends; the arithmetic is the server's.
+// The prior of a fit with a prior ("Fit a life model…" on the Explorer's Modelling tab,
+// fitDialog.js): how much to trust it, and a saved model, typed numbers or a B10 as the request
+// takes them. The arithmetic is the server's (backend/services/bayes_life.py, SurPyval's fit_bayes).
 
 // How much to trust the baseline: the words, and the prior width each means (the server's TRUST).
 export const TRUST_CHOICES = [
@@ -10,19 +8,10 @@ export const TRUST_CHOICES = [
   { value: "guide", label: "Use it as a guide", within: 0.3, weight: 0.5 },
   { value: "start", label: "Only a starting point", within: 0.6, weight: 0.2 },
 ];
-export const trustWords = (t) => `each number within about ${Math.round(t.within * 100)}%; a fitted baseline counts as ${t.weight === 1 ? "all" : t.weight === 0.5 ? "half" : "a fifth"} of its evidence`;
-
-// Where the baseline comes from.
-export const BASELINE_KINDS = [
-  { value: "class", label: "Its class's model" },
-  { value: "model", label: "A saved model" },
-  { value: "params", label: "Numbers I know" },
-  { value: "b10", label: "A B10 I believe" },
-];
 
 const n = (v) => (v === "" || v == null ? null : Number(v));
 
-// The baseline the server takes, from the dialog's state; null while it's incomplete.
+// The baseline the server takes, from the form's state; null while it's incomplete.
 export function baselineOf(s) {
   if (s.kind === "class") return null; // the server's default: the position class's model
   if (s.kind === "model") return s.modelId ? { model_id: s.modelId } : null;
@@ -34,36 +23,4 @@ export function baselineOf(s) {
   const v = n(s.b10?.value), lo = n(s.b10?.low), hi = n(s.b10?.high);
   if (![v, lo, hi].every(Number.isFinite) || !(lo < v && v < hi)) return null;
   return { b10: { value: v, low: lo, high: hi }, shape: { low: n(s.shape?.low) ?? 1.2, high: n(s.shape?.high) ?? 4 }, unit: s.unit };
-}
-
-// Is the dialog ready to ask the server?
-export const ready = (s) => s.kind === "class" || baselineOf(s) !== null;
-
-// The request: {baseline?, trust, exclude, age?}.
-export function bodyOf(s) {
-  const base = baselineOf(s);
-  return { ...(base ? { baseline: base } : {}), trust: s.trust, exclude: [...(s.exclude || [])],
-    ...(Number.isFinite(n(s.age)) && n(s.age) > 0 ? { age: n(s.age) } : {}) };
-}
-
-// A history row in words: "Failed at 1,440 hours", "Still running at 900 hours".
-export function rowWords(r, unit) {
-  const u = String(unit || "").toLowerCase();
-  const f = (v) => Number(Number(v).toPrecision(4)).toLocaleString("en-AU");
-  if (r.c === 2) return `Failed between ${f(r.xl)} and ${f(r.xr)} ${u}`.trim();
-  return `${r.c === 0 ? "Failed" : r.status === "removed" ? "Removed" : "Still running"} at ${f(r.x)} ${u}`.trim();
-}
-
-// When the preview is asked again: whenever the chosen baseline's kind or the request changes.
-// The kind is part of it because "Its class's model" and an unfinished "Numbers I know" send the
-// same request (neither names a baseline): without it, a class-model refusal would stay on
-// screen after switching to numbers.
-export const previewKey = (s) => JSON.stringify({ kind: s.kind, ready: ready(s), body: bodyOf(s) });
-
-// What the dialog says while the chosen baseline is incomplete (null once it can be asked).
-export function waitingWords(s) {
-  if (ready(s)) return null;
-  if (s.kind === "model") return "Pick the baseline model to see the update.";
-  if (s.kind === "params") return "Give the baseline's numbers to see the update.";
-  return "Give the B10 with the values you'd be surprised under and over to see the update.";
 }

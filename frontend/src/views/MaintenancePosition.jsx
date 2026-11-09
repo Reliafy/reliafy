@@ -55,6 +55,7 @@ import { PageTitle } from "../components/usePageTitle.js";
 import { productPath } from "../products.js";
 import { DeleteTreeModal } from "../components/DeleteTree.jsx";
 import { explorerPath } from "../assetTree.js";
+import { partsPath } from "../redirects.js";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
 // here), its work orders, and the life data its fitments give.
@@ -516,7 +517,7 @@ function PartsListCard({ p, onChanged }) {
       {error && <div className="card error">{error}</div>}
       {list.length === 0 ? (
         <p className="lib-date">No parts listed. Add the part that replaces what's fitted, and the kits and
-          consumables its maintenance uses, from the <Link to="/asset-register/parts">parts catalogue</Link>.</p>
+          consumables its maintenance uses, from the <Link to={partsPath()}>parts catalogue</Link>.</p>
       ) : (
         <div className="maint-scroll"><table className="lib-table">
           <thead><tr><th>Part</th><th>Role</th><th>Per job</th><th>Stock</th><th>Compatibility notes</th><th><span className="sr-only">Change</span></th></tr></thead>

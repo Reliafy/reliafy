@@ -15,6 +15,7 @@ import {
   subtreeIds, viaText,
 } from "../maintenanceItemClasses.js";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
+import { partsPath } from "../redirects.js";
 
 // ---- pickers ---------------------------------------------------------------------------
 
@@ -98,7 +99,7 @@ export function ItemKindCard({ item, kinds, onChanged }) {
         <dd>{item.item_class ? <>{item.item_class.display}
           {viaText(item.item_class.via) && <span className="lib-date"> ({viaText(item.item_class.via)})</span>}</> : "—"}</dd>
         <dt>Model (part)</dt>
-        <dd>{item.part ? <Link to="/asset-register/parts">{item.part.part_number}</Link> : "—"}
+        <dd>{item.part ? <Link to={partsPath()}>{item.part.part_number}</Link> : "—"}
           {item.part && <span className="lib-date"> · {item.part.name}</span>}</dd>
         <dt>Manufacturer</dt>
         <dd>{item.manufacturer_entry ? <>{item.manufacturer_entry.name}

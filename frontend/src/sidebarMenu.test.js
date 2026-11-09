@@ -33,7 +33,7 @@ test("a group lists its entries; an entry lists exactly its children, never its 
     "Condition and life", "Library"]);
   assert.deepEqual(labels(subItems(find(live, "strategy"))), ["Optimal replacement", "Compare two models", "Failure finding",
     "Test planning"]);
-  assert.deepEqual(labels(subItems(find(live, "maintenance"))), ["Field inbox"]);
+  assert.deepEqual(labels(subItems(find(live, "maintenance"))), ["Requests"]);
   assert.deepEqual(labels(subItems(find(live, "systems"))), ["RBDs", "Fault trees", "Simulation runs"]);
   assert.deepEqual(labels(subItems(find(live, "risk"))), ["Condition monitoring"]);
   // The landing pages that drop out of the full menu (still pages, reached by breadcrumbs and links).
@@ -48,7 +48,7 @@ test("a group lists its entries; an entry lists exactly its children, never its 
 });
 
 test("an entry whose landing page isn't available opens on its first child; with nothing left under it, it's a link", () => {
-  // Maintenance without Reliafy Maintenance opens on the preview's Field inbox.
+  // Maintenance without Reliafy Maintenance opens on the preview's Requests page.
   const m = find(liveEntries({ preview: true }), "maintenance");
   assert.equal(m.to, "/maintenance/inbox");
   assert.equal(toggles(m), false);

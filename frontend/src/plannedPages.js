@@ -1,7 +1,7 @@
 // Blank pages for things not built yet, each saying what it will hold. They
 // show only where the deployment turns the menu preview on (MENU_PREVIEW, from
 // /api/config); everywhere else a visit says the page isn't available. Library
-// (under Data) and Field inbox (under Maintenance) are in the preview menu;
+// (under Data) and Requests (under Maintenance) are in the preview menu;
 // Requirements, Failures and Fleets have no place in the menu for now and are
 // opened by address only.
 export const PLANNED = {
@@ -35,12 +35,12 @@ export const PLANNED = {
   },
   inbox: {
     section: "maintenance",
-    title: "Field inbox",
-    purpose: "Field reports sent from the mobile app: notes, photos and recordings to read and act on.",
+    title: "Requests",
+    purpose: "Someone asking for work to be done, or for a record to be corrected, to review and act on.",
     will: [
-      "Newest first, with status, author and what each report points at",
-      "A report's notes, photos and audio side by side",
-      "Mark a report handled and link what was made from it",
+      "Newest first, with status, who asked and what each request points at",
+      "A request's notes, photos and the data it says is wrong, side by side",
+      "Accept or decline a request, and link the work or correction made from it",
     ],
   },
 };

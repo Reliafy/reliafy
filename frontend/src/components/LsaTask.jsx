@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getTaskLsa, listMaintenanceParts, updateMaintenanceTask } from "../api.js";
 import { cleanSection, kindText, modeLine, num, sectionDraft } from "../lsaTab.js";
 import { whenText } from "../rcmWorksheet.js";
+import { formatCost, workspaceCurrency } from "../money.js";
 import { Link, useLocation } from "react-router-dom";
 import { explorerHere } from "../products.js";
 import { taskKey } from "../explorerRcm.js";
@@ -156,10 +157,10 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
         </div>
       ) : <p className="lib-date">Serves no failure mode (a task added directly).</p>}
       <p className="lsa-total" aria-live="polite">
-        {r.labour_hours ? `${num(r.labour_hours)} labour hours` : "No labour set yet"}
+        {r.labour_hours ? `${num(r.labour_hours)} h labour` : "No labour set yet"}
         {r.people ? ` · ${r.people} ${r.people === 1 ? "person" : "people"}` : ""}
         {r.duration_hours != null ? ` · ${num(r.duration_hours)} h elapsed` : ""}
-        {r.materials_cost != null ? ` · materials ${num(r.materials_cost)}` : ""}
+        {r.materials_cost != null ? ` · materials ${formatCost(r.materials_cost)}` : ""}
       </p>
 
       <Section title="Labour" hint="Who does it: each trade, how many people and the hours each." state={saved.labour} onLeave={() => leave(["labour", "duration_hours"])}>
@@ -180,7 +181,7 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
         <Rows label="Tool lines" rows={draft.tools} onRows={(v, now) => set("tools", v, now)} blank={{ name: "", qty: "", note: "", point_id: "" }} addLabel="+ Add a tool"
               render={(x, patch, i) => (
                 <>
-                  <input className="lsa-wide" aria-label={`Tool, line ${i + 1}`} placeholder="e.g. Photometer" value={x.name} maxLength={200} onChange={(e) => patch({ name: e.target.value })} />
+                  <input className="lsa-wide" aria-label={`Tool, line ${i + 1}`} placeholder="e.g. Torque wrench" value={x.name} maxLength={200} onChange={(e) => patch({ name: e.target.value })} />
                   <label className="lsa-num"><input type="number" min="0" step="1" inputMode="numeric" aria-label={`How many, line ${i + 1}`} value={x.qty} onChange={(e) => patch({ qty: e.target.value })} /> off</label>
                   {data.points.length > 0 && (
                     <select aria-label={`Reads, line ${i + 1}`} value={x.point_id} onChange={(e) => patch({ point_id: e.target.value })}>
@@ -214,10 +215,10 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
         <Rows label="Consumable lines" rows={draft.consumables} onRows={(v, now) => set("consumables", v, now)} blank={{ name: "", qty: "1", unit: "", cost: "" }} addLabel="+ Add a consumable"
               render={(x, patch, i) => (
                 <>
-                  <input className="lsa-wide" aria-label={`Consumable, line ${i + 1}`} placeholder="e.g. DPD tablets" value={x.name} maxLength={200} onChange={(e) => patch({ name: e.target.value })} />
+                  <input className="lsa-wide" aria-label={`Consumable, line ${i + 1}`} placeholder="e.g. Grease" value={x.name} maxLength={200} onChange={(e) => patch({ name: e.target.value })} />
                   <input className="lsa-qty" type="number" min="0" step="any" inputMode="decimal" aria-label={`Quantity, line ${i + 1}`} value={x.qty} onChange={(e) => patch({ qty: e.target.value })} />
                   <input className="lsa-unit" aria-label={`Unit, line ${i + 1}`} placeholder="unit" value={x.unit} maxLength={20} onChange={(e) => patch({ unit: e.target.value })} />
-                  <label className="lsa-num">cost <input type="number" min="0" step="any" inputMode="decimal" aria-label={`Cost, line ${i + 1}`} value={x.cost} onChange={(e) => patch({ cost: e.target.value })} /></label>
+                  <label className="lsa-num">cost ({workspaceCurrency()}) <input type="number" min="0" step="any" inputMode="decimal" aria-label={`Cost, line ${i + 1}`} value={x.cost} onChange={(e) => patch({ cost: e.target.value })} /></label>
                 </>
               )} />
       </Section>
@@ -235,7 +236,7 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
         </div>
       </Section>
 
-      <Section title="Method" hint="How it's done, in a line: “Shop sample to the pool shop”, “Home kit”." state={saved.method} onLeave={() => leave(["method"])}>
+      <Section title="Method" hint="How it's done, in a line: “On site with a test kit”, “Sent to the workshop”." state={saved.method} onLeave={() => leave(["method"])}>
         <input className="lsa-full" aria-label="Method" value={draft.method} maxLength={500} onChange={(e) => set("method", e.target.value)} />
       </Section>
 

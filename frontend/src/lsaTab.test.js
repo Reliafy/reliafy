@@ -143,8 +143,17 @@ const clean1 = {
     access: { permits: ["Chemical handling", "Isolation"] } }),
 };
 
-test("the LSA columns show hours, people, counts and method, and sort as numbers", () => {
-  assert.deepEqual(["hours", "people", "tools", "spares", "consumables", "method"].map((c) => cellText(clean1, c)), ["2", "2", "2", "2", "2", ""]);
+test("the LSA columns name what's needed, labour by trade with its unit, and sort hours as numbers", () => {
+  assert.deepEqual(["hours", "people", "tools", "spares", "consumables", "method"].map((c) => cellText(clean1, c)),
+    ["Pool technician 2 h", "2", "Photometer, Brush", "Chlorinator cell, O-ring", "DPD tablets, Acid", ""]);
+  // A line with no trade takes the task's; past two names, how many more.
+  assert.equal(cellText(test1, "hours"), "Pool technician 0.5 h");
+  const many = { ...clean1, resources: res({ labour_hours: 1.5, labour: [{ trade: "", people: 1, hours: 1.5 }],
+    tools: [{ name: "Torque wrench" }, { name: "Multimeter" }, { name: "Torch" }], spares: [{ part_number: "CELL-1", qty: 1 }] }) };
+  assert.equal(cellText(many, "hours"), "1.5 h");
+  assert.equal(cellText(many, "tools"), "Torque wrench, Multimeter +1");
+  assert.equal(cellText(many, "spares"), "CELL-1");
+  assert.equal(countTitle(clean1, "hours"), "2 × Pool technician for 1 h");
   assert.equal(cellText(test1, "method"), "Home kit");
   assert.equal(cellText({ id: "x" }, "hours"), "");
   assert.equal(countTitle(clean1, "tools"), "2 × Photometer\nBrush");
@@ -203,9 +212,15 @@ test("a section is saved cleaned: empty rows dropped, numbers as numbers, nothin
 
 test("the CSV names the tools, spares and consumables and gives the labour in full", () => {
   const csv = lsaCsv([{ ...clean1, subject: { name: "Chlorinator" }, modes: [] }]).split("\n");
-  assert.match(csv[0], /^Position,Failure mode,Task,Kind,Interval,Trade,Next due,Package,Hours,People,Method,Labour,Tools,Spares,Consumables,/);
+  assert.match(csv[0], /^Position,Failure mode,Task,Kind,Interval,Trade,Next due,Package,Labour \(h\),People,Method,Labour,Tools,Spares,Consumables,/);
   assert.match(csv[1], /^Chlorinator,,Clean the cell,/);
   assert.match(csv[1], /,2,2,,2 × Pool technician for 1 h,2 × Photometer; Brush,1 × CELL-1 Chlorinator cell; 2 × O-ring,/);
+});
+
+test("the CSV's Instructions column carries each task's instructions (the task-table rows have them)", () => {
+  const csv = lsaCsv([{ ...clean1, subject: { name: "Chlorinator" }, modes: [], instructions: "Isolate, then lift the cell out." }]).split("\n");
+  assert.match(csv[0], /,Instructions$/);
+  assert.match(csv[1], /,"Isolate, then lift the cell out\."$/);
 });
 
 test("a design's LSA table leaves out Next due and Package: they belong to the built items", () => {

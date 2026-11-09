@@ -32,10 +32,21 @@ test("putting a pane in the address takes any other out", () => {
 });
 
 test("each pane has its address and its words for leaving it changed", () => {
-  assert.deepEqual(PANE_PARAMS, ["fit", "predict", "bind", "on", "mission", "rbd"]);
+  assert.deepEqual(PANE_PARAMS, ["fit", "from", "predict", "bind", "on", "mission", "rbd"]);
   assert.equal(TABLE_PANES.predict.discard.title, "Discard this prediction?");
   assert.equal(TABLE_PANES.rbd.discard.title, "Discard your changes to this RBD?");
   for (const p of Object.values(TABLE_PANES)) {
     for (const k of ["title", "body", "confirmLabel", "cancelLabel"]) assert.ok(p.discard[k], k);
   }
+});
+
+test("a fit that starts from a model row: the row in the address, taken out with the pane", () => {
+  assert.deepEqual(paneFromQuery(new URLSearchParams("tab=models&fit=p1&from=l1")), { kind: "fit", id: "p1", from: "l1" });
+  assert.equal(paneFromQuery(new URLSearchParams("from=l1")), null);
+  const q = new URLSearchParams("tab=models&sel=p1");
+  assert.equal(setPaneQuery(q, "fit", "p1", { from: "l1" }).toString(), "tab=models&sel=p1&fit=p1&from=l1");
+  // Another fit (no row) or another pane drops it.
+  assert.equal(setPaneQuery(q, "fit", "p1").toString(), "tab=models&sel=p1&fit=p1");
+  setPaneQuery(q, "fit", "p1", { from: "l1" });
+  assert.equal(setPaneQuery(q, "predict", "p1", { from: "l1" }).toString(), "tab=models&sel=p1&predict=p1");
 });

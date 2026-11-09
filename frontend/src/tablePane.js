@@ -8,8 +8,10 @@
 // position (?rbd=<RBD id>&on=<position id>): `on` names the position whose row it opens beside.
 
 export const TABLE_PANES = {
+  // A fit can start from a model row as its prior (&from=<row>: fitDialog.priorFrom).
   fit: {
     param: "fit",
+    extra: ["from"],
     discard: {
       title: "Discard this fit?", body: "What you've chosen in Fit a life model isn't saved.",
       confirmLabel: "Discard the fit", cancelLabel: "Keep fitting",
@@ -57,7 +59,10 @@ export function paneFromQuery(params) {
   for (const [kind, p] of Object.entries(TABLE_PANES)) {
     const value = params?.get?.(p.param);
     if (!value) continue;
-    if (!p.on) return { kind, id: value };
+    if (!p.on) {
+      const more = Object.fromEntries((p.extra || []).map((k) => [k, params.get(k)]).filter(([, v]) => v));
+      return { kind, id: value, ...more };
+    }
     const on = params.get(p.on);
     if (on) return { kind, id: on, [p.param]: value };
   }
@@ -65,11 +70,11 @@ export function paneFromQuery(params) {
 }
 
 // Every pane's address parameters, for clearing them all.
-export const PANE_PARAMS = [...new Set(Object.values(TABLE_PANES).flatMap((p) => (p.on ? [p.param, p.on] : [p.param])))];
+export const PANE_PARAMS = [...new Set(Object.values(TABLE_PANES).flatMap((p) => [p.param, ...(p.on ? [p.on] : []), ...(p.extra || [])]))];
 
 // Put the pane `kind` for `positionId` in the address `q` (URLSearchParams), any other pane's
-// taken out; an RBD's `rbd`, the diagram.
-export function setPaneQuery(q, kind, positionId, { rbd = null } = {}) {
+// taken out; an RBD's `rbd`, the diagram; a fit's `from`, the model row it starts from.
+export function setPaneQuery(q, kind, positionId, { rbd = null, from = null } = {}) {
   for (const k of PANE_PARAMS) q.delete(k);
   const p = TABLE_PANES[kind];
   if (p.on) {
@@ -78,5 +83,6 @@ export function setPaneQuery(q, kind, positionId, { rbd = null } = {}) {
   } else {
     q.set(p.param, positionId);
   }
+  if (from && (p.extra || []).includes("from")) q.set("from", from);
   return q;
 }
