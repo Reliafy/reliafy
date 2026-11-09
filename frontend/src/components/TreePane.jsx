@@ -113,6 +113,15 @@ const MODEL_ICON = {
 };
 
 export function RowIcon({ r }) {
+  // The Missions tab's rows: a route through phases (dots along a path).
+  if (r.type === "mission") {
+    return (
+      <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
+        <path d="M2.5 12.5c2-5 4-5 5.5-2.5s3.5 2.5 5.5-5" strokeWidth="1.4" strokeLinecap="round" />
+        <circle cx="2.5" cy="12.5" r="1.3" fill="currentColor" /><circle cx="13.5" cy="5" r="1.3" fill="currentColor" />
+      </svg>
+    );
+  }
   if (r.type === "pmodel") {
     return (
       <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
@@ -356,7 +365,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, underPin = false, 
     // details across the table; not on a data cell (an editable one's own
     // double-click edits it in place), a control or the chevron.
     // A measurement row (the Measurements tab) spreads its details the same way.
-    onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas" || r.type === "pmodel") ? (e) => {
+    onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas" || r.type === "pmodel" || r.type === "mission") ? (e) => {
       if (e.target.closest("input, select, textarea, a, button, .tp-chev, .rw-c, [contenteditable='true']")) return;
       e.preventDefault();
       window.getSelection?.()?.removeAllRanges?.();

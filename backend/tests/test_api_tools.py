@@ -623,3 +623,25 @@ def test_rbd_rows_and_the_model_in_use_over_rest(maint):
     assert built.json()["role"] == "rbd" and built.json()["placeholders"] == ["Pump 1", "Pump 2"]
     used = maint.post("/api/v1/maintenance/models.link", {"position_id": top["id"], "use_link_id": built.json()["id"]})
     assert used.status_code == 200 and used.json()["in_use"] is True
+
+
+def test_missions_over_the_tools(env):
+    """change rbd_mission adds, changes and deletes a named mission; analyse rbd_mission works it out
+    (one, or every mission's chance of completing); get rbd lists them."""
+    rid = env.post("/api/v1/change/rbd_create", {"name": "Two pumps", **GRAPH}).json()["id"]
+    made = env.post("/api/v1/change/rbd_mission", {"rbd_id": rid, "name": "Duty", "phases": [
+        {"name": "Start", "duration": 10, "not_needed": ["p2"]}, {"name": "Run", "duration": 100}]})
+    assert made.status_code == 200, made.text
+    mid = made.json()["mission_id"]
+    got = env.post("/api/v1/analyse/rbd_mission", {"rbd_id": rid, "mission_id": mid}).json()
+    assert got["name"] == "Duty" and 0 < got["result"]["mission_reliability"] < 1
+    assert [p["name"] for p in got["result"]["phases"]] == ["Start", "Run"]
+    assert got["result"]["phases"][1]["weakest_block"] in ("P1", "P2")  # Start can't fail: P2 stands in as working
+    every = env.post("/api/v1/analyse/rbd_mission", {"rbd_id": rid}).json()
+    assert [m["name"] for m in every["missions"]] == ["Duty"]
+    assert env.post("/api/v1/get/rbd", {"id": rid}).json()["missions"] == [{"id": mid, "name": "Duty", "phases": 2}]
+    bad = env.post("/api/v1/change/rbd_mission", {"rbd_id": rid, "mission_id": mid,
+                                                  "phases": [{"name": "X", "duration": -1}]})
+    assert bad.status_code in (400, 422)
+    gone = env.post("/api/v1/change/rbd_mission", {"rbd_id": rid, "mission_id": mid, "delete": True}).json()
+    assert gone["deleted"] == mid and gone["missions"] == []

@@ -31,6 +31,15 @@ export const TABLE_PANES = {
       confirmLabel: "Discard them", cancelLabel: "Keep fixing",
     },
   },
+  // A mission on a position's RBD (?mission=<RBD id>:<mission id>&on=<position id>; the Missions tab).
+  mission: {
+    param: "mission",
+    on: "on",
+    discard: {
+      title: "Discard your changes to this mission?", body: "The mission has changes that aren't saved.",
+      confirmLabel: "Discard the changes", cancelLabel: "Keep editing",
+    },
+  },
   rbd: {
     param: "rbd",
     on: "on",

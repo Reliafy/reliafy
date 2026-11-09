@@ -70,6 +70,10 @@ export const TABS = [
   // The life models on each position (Derryn, 9 Nov 2026): a design's positions carry them too
   // (a built item inherits its design's), so no `asset`. Drawn as a tree-table (explorerModels.js).
   { id: "models", label: "Modelling", title: "The life models on this position and the positions inside it: what each says, where it came from and what uses it", kinds: ["pos"] },
+  // The missions flown on each position's RBD (Derryn, 9 Nov 2026: "Products need an RBD tab,
+  // called Missions"; "Missions are RBDs, so they belong to positions"): a design's positions too,
+  // so no `asset`. Drawn as a tree-table (explorerMissions.js); a mission opens in the table area.
+  { id: "missions", label: "Missions", title: "The missions flown on this position's RBD and the positions inside it: each mission's phases and its chance of completing", kinds: ["pos"] },
   { id: "measurements", label: "Measurements", title: "Every measuring point here and inside it: the latest reading, its limits and whether it's past them", kinds: ["pos", "loc", "item"], asset: true },
   {
     id: "lsa", label: "LSA", title: "Logistic support analysis: what each task needs to be done, and how the tasks are packaged into visits",

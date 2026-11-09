@@ -293,6 +293,8 @@ export function positionOf(r) {
   if (r.type === "meas") return r.ref.position_id;
   // A model row (the Modelling tab): the position it's attached to.
   if (r.type === "pmodel") return r.ref.position_id;
+  // A mission row (the Missions tab): the position whose RBD it's flown on.
+  if (r.type === "mission") return r.ref.position_id;
   return isRcmRow(r) ? r.ref.position_id : null;
 }
 

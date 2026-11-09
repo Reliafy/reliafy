@@ -24,6 +24,17 @@ test("the mission keys ride with the graph only when set", () => {
   assert.deepEqual(missionFields({ phases: [{ name: "A", duration: 1 }], network: { source: "a" } }),
     { phases: [{ name: "A", duration: 1 }], network: { source: "a" } });
   assert.deepEqual(terminals({ network: {} }), { source: "input", target: "output" });
+  // The Missions tab's named missions, and the name of the diagram's own, ride through the builder.
+  const missions = [{ id: "m1", name: "Survey", phases: [] }];
+  assert.deepEqual(missionFields({ phases: [{ name: "A", duration: 1 }], missions, mission_name: "Delivery" }),
+    { phases: [{ name: "A", duration: 1 }], missions, mission_name: "Delivery" });
+  assert.deepEqual(missionFields({ missions: [], mission_name: "Orphan" }), {});
+});
+
+test("editing phases in the builder keeps the values the Missions tab set", () => {
+  const { phases } = cleanPhases([{ name: "Climb", duration: 1, values: { "Air temperature": 35 },
+    block_values: { c1: { temp_C: 50 }, gone: { x: 1 } } }], nodes);
+  assert.deepEqual(phases, [{ name: "Climb", duration: 1, values: { "Air temperature": 35 }, block_values: { c1: { temp_C: 50 } } }]);
 });
 
 test("a network's links lose their arrows", () => {
