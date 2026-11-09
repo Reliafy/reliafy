@@ -1,7 +1,7 @@
 // The one details panel on the Explorer's RCM tab (Assets ›
 // Explorer › RCM). A click on a row shows its details beside the table; a
 // double-click on its name (not on a data cell, which edits in place, nor the
-// chevron), Open… first in its row menu, or Expand in the panel spreads them
+// chevron), Open… in its row menu (after the adds), or Expand in the panel spreads them
 // across the table, the tree column kept on the left: another row picked there
 // shows in the panel. Back to table and Esc return; the focus goes into the
 // heading and back to the row. Everything the old dialog had is here, kept as
@@ -224,7 +224,11 @@ test("Open… and Add a task… in the row menu expand the details; Enter shows 
   await ffRow.locator(".tp-nm").click();
   await page.keyboard.press("Shift+F10");
   const menu = page.getByRole("menu", { name: new RegExp(`^Actions for Functional failure: No flow ${tag}`) });
-  await expect(menu.getByRole("menuitem").first()).toHaveText("Open…");
+  // Adding inside the row leads its menu; Open… comes straight after.
+  await expect(menu.getByRole("menuitem").first()).toHaveText("Add failure mode");
+  await expect(menu.getByRole("menuitem").nth(1)).toHaveText("Open…");
+  await expect(menu.getByRole("menuitem", { name: "Add failure mode" })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Open…" })).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(panel(page).getByRole("heading", { name: `No flow ${tag}` })).toBeFocused();
