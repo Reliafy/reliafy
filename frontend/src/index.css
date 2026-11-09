@@ -592,30 +592,45 @@ h6 {
   margin-top: 8px;
 }
 
-/* "More" is a button drawn as a menu entry. */
-.sidebar-nav button.side-more {
+/* An entry that opens its list in place (Modelling, More) is a button drawn
+   as a menu entry, with a chevron at the end that turns down while open. */
+.sidebar-nav button.side-toggle {
   box-shadow: none;
   gap: 11px;
   font-weight: 500;
+  white-space: normal;
+  transition: none;
 }
 
-.sidebar-nav button.side-more:not(.active) {
+.sidebar-nav button.side-toggle:not(.active) {
   background: transparent;
 }
 
-.sidebar-nav button.side-more:hover:not(:disabled) {
+.sidebar-nav button.side-toggle:hover:not(:disabled) {
   background: var(--surf-2);
   color: var(--ink);
 }
 
-.sidebar-nav button.side-more .side-icon svg {
+.sidebar-nav button.side-toggle .side-icon svg {
   width: 17px;
   height: 17px;
 }
 
-.side-more-caret {
-  font-size: var(--fs-12);
+.sidebar-nav .side-chevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  margin-left: auto;
   color: var(--muted);
+  transition: transform 0.15s;
+}
+
+.sidebar-nav .side-chevron.open {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-nav .side-chevron { transition: none; }
 }
 
 .side-more-list {
@@ -658,6 +673,38 @@ h6 {
 .side-subitem.active {
   color: var(--acc-d);
   font-weight: 600;
+}
+
+/* A group's entry with sub-pages (Models, Strategy): a button drawn as a
+   sub-item, its chevron at the end. */
+.sidebar-nav button.side-subtoggle {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 6px;
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  font-family: inherit;
+  font-weight: 400;
+  text-align: left;
+  white-space: normal;
+  transition: none;
+}
+
+.sidebar-nav button.side-subtoggle:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--surf-2);
+}
+
+.sidebar-nav button.side-subtoggle.active {
+  color: var(--acc-d);
+  font-weight: 600;
+}
+
+.side-subtoggle-label {
+  flex: 1;
+  min-width: 0;
 }
 
 /* The third level: a group's current entry's children (Models › Repairable). */

@@ -68,6 +68,11 @@ export const STRUCTURE_PATH = "/systems/structure";
 // more specific one. A child is current on its own page and the pages under
 // it, or under any of its `also` (a non-repairable model's page is under
 // /models/m, not /models/life).
+//
+// In the full menu an entry with children (or a group) opens its list in
+// place rather than navigating (sidebarMenu.js), so its own landing page,
+// when that isn't one of its children (/models, /strategy), isn't in the
+// menu: it's reached from breadcrumbs, links and the collapsed rail.
 const ASSETS_PATH = "/asset-register";
 
 export const ENTRIES = [
