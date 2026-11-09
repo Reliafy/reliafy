@@ -2,6 +2,17 @@
 
 ## Unreleased (0.5.2)
 
+- **Missions on an RBD**: `change rbd_mission` adds, changes or deletes a
+  named phased mission (`rbd_id`, `mission_id` to change one, `name`,
+  `phases`, `delete`); each phase takes `values` (a Use or Environment
+  covariate's value for the phase, set once for every block it feeds) and
+  `block_values` (one block's own). `analyse rbd_mission` works one out
+  (`mission_id`) or every mission on the RBD: the chance of completing it,
+  per phase, each phase's weakest block, and the covariates its phases can
+  set. `get kind rbd` lists the missions. Over REST `POST
+  /api/v1/change/rbd_mission` and `/api/v1/analyse/rbd_mission`; on the
+  command line `reliafy analyse rbd_mission --rbd-id … --mission-id …`.
+
 - **Libraries of your own**: `list kind libraries`, `get kind library`
   (`id`) and the `change` actions `library_create`, `library_update`,
   `library_delete`, `library_add_model` (a saved Weibull, exponential,

@@ -112,6 +112,8 @@ export function graftMissions(display, links = []) {
   return out;
 }
 
+// Positions inside it to build an RBD from (a leaf has none: its own life model is what it has).
+const hasInside = (r) => (r?.kids || []).some((k) => !String(k).startsWith("MS:"));
 const count = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 
 // A position row's roll-up: open, its own ("No RBD yet · Build from what's inside…", "No missions
@@ -120,7 +122,7 @@ export function rollupText(r, open = false) {
   if (!r?.msum) return "";
   const own = r.msum;
   if (open) {
-    if (!own.rbds) return "No RBD yet · Build from what's inside…";
+    if (!own.rbds) return hasInside(r) ? "No RBD yet · Build from what's inside…" : "No RBD yet";
     return own.missions ? count(own.missions, "mission") : "No missions yet · Add a mission";
   }
   const all = r.mall || own;

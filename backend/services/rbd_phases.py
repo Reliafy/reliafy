@@ -523,7 +523,7 @@ def analyze_phases(
                       "share": riskiest["share"]} if riskiest else None),
         "notes": ([SCHEDULE_NOTE, *schedule_notes] if any((n.get("data") or {}).get("covariate_schedules")
                                                           for n in graph.get("nodes") or [] if n.get("id") not in varying)
-                  else [STRESS_NOTE]) + ([PHASE_VALUES_NOTE, *schedule_notes] if varying else []),
+                  else [] if varying else [STRESS_NOTE]) + ([PHASE_VALUES_NOTE, *schedule_notes] if varying else []),
     }
     if interval is not None:
         out["interval"] = interval

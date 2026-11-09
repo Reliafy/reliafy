@@ -12,6 +12,8 @@ const DATA = {
     { id: "drone", name: "Survey drone", parent_id: null },
     { id: "gimbal", name: "Gimbal", parent_id: "drone" },
     { id: "battery", name: "Battery", parent_id: "drone" },
+    { id: "arm", name: "Arm", parent_id: "drone" },
+    { id: "arm-motor", name: "Arm motor", parent_id: "arm" },
   ],
   locations: [], spares: [], unhomed: [],
 };
@@ -33,7 +35,8 @@ test("missions hang under their own position, never a parent's", () => {
   assert.equal(d.rows.get(missionKey("r1", "m1")).ref.position_id, "drone");
   assert.equal(rollupText(drone, true), "2 missions");
   assert.equal(rollupText(d.rows.get("gimbal"), true), "No missions yet · Add a mission");
-  assert.equal(rollupText(d.rows.get("battery"), true), "No RBD yet · Build from what's inside…");
+  assert.equal(rollupText(d.rows.get("battery"), true), "No RBD yet");
+  assert.equal(rollupText(d.rows.get("arm"), true), "No RBD yet · Build from what's inside…");
   assert.equal(rollupText(d.rows.get("battery"), false), "No RBD yet");
   assert.ok(!d.rows.get("gimbal").kids.some((k) => k.startsWith("MS:")));
 });

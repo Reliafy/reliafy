@@ -340,47 +340,73 @@ function MissionAnswer({ result, busy, error, stale, total, unit }) {
 // for a block's own value in this phase.
 function PhaseCovariates({ rows, phase, idPrefix, readOnly, onChange }) {
   const [own, setOwn] = useState(() => new Set());
+  // A default only where every block it feeds has one (the same): else the phase needs a value.
+  const shared = (r) => {
+    const ds = r.blocks.map((b) => b.default);
+    return ds.length && ds.every((d) => d != null && d === ds[0]) ? ds[0] : null;
+  };
   const inputs = rows.map((r) => ({ key: r.name, label: r.name, unit: r.unit, role: r.role, kind: r.kind, choices: r.choices,
-    limits: r.limits, help: r.help, symbol: null, default: null }));
+    limits: r.limits, help: r.help, symbol: null, default: shared(r) }));
   const values = Object.fromEntries(rows.map((r) => [r.name, phase.values?.[r.name] ?? ""]));
   const sources = Object.fromEntries(rows.filter((r) => r.value == null && r.diagram != null && r.diagram !== "")
     .map((r) => [r.name, { value: r.diagram, words: "the RBD's value" }]));
   const extra = (input) => {
     const row = rows.find((r) => r.name === input.key);
     if (!row) return null;
+    // Blocks that take the phase's value (or the RBD's, or the default) are one line; a block with
+    // its own value, or none, gets its own line; "Set a block's own…" adds one for this phase.
+    const shown = row.blocks.filter((b) => b.missing || b.source === "override" || b.source === "own"
+      || own.has(`${b.id}:${b.key}`));
+    const rest = row.blocks.filter((b) => !shown.includes(b));
+    const common = rest.length ? rest[0] : null;
+    const same = common && rest.every((b) => b.source === common.source && b.used === common.used);
+    const pickable = row.blocks.filter((b) => !shown.includes(b));
     return (
       <div className="mission-feeds">
         <span className="mission-feeds-what">{feedsText(row)}</span>
         <ul>
-          {row.blocks.map((b) => {
-            const editing = own.has(`${b.id}:${b.key}`) || b.override != null;
-            return (
-              <li key={`${b.id}:${b.key}`} className={b.missing ? "is-missing" : ""}>
-                <span className="mission-feed-label">{b.label}</span>
-                {b.missing ? (
-                  <span className="field-error mission-needs">needs a value</span>
-                ) : (
-                  <span className="mission-feed-uses">
-                    {b.source === "override" ? "its own: " : "uses "}{valueText(b.used, row.unit)}
-                    {b.source !== "override" && <span className="mission-sub"> ({SOURCE_WORDS[b.source]})</span>}
-                  </span>
-                )}
-                {!readOnly && !editing && (
-                  <button type="button" className="link mission-own-btn" onClick={() => setOwn((s) => new Set([...s, `${b.id}:${b.key}`]))}>
-                    Set its own
-                  </button>
-                )}
-                {editing && (
-                  <CovariateInputs bare readOnly={readOnly} idPrefix={`${idPrefix}-${b.id}`}
-                                   inputs={[{ ...input, key: b.key, label: `${b.label}'s own in this phase` }]}
-                                   values={{ [b.key]: phase.block_values?.[b.id]?.[b.key] ?? "" }}
-                                   sources={{ [b.key]: { value: row.value ?? row.diagram ?? b.default, words: "this phase" } }}
-                                   onChange={(v) => onChange(withBlockValue(phase, b.id, b.key, v[b.key]))} />
-                )}
-              </li>
-            );
-          })}
+          {rest.length > 0 && same && (
+            <li>
+              <span className="mission-feed-uses">
+                {rest.length === row.blocks.length ? (row.blocks.length > 1 ? "Each uses " : "Uses ") : `The other${rest.length > 1 ? "s use" : " uses"} `}
+                {valueText(common.used, row.unit)}<span className="mission-sub"> ({SOURCE_WORDS[common.source]})</span>
+              </span>
+            </li>
+          )}
+          {rest.length > 0 && !same && rest.map((b) => (
+            <li key={`${b.id}:${b.key}`}>
+              <span className="mission-feed-label">{b.label}</span>
+              <span className="mission-feed-uses">uses {valueText(b.used, row.unit)}<span className="mission-sub"> ({SOURCE_WORDS[b.source]})</span></span>
+            </li>
+          ))}
+          {shown.map((b) => (
+            <li key={`${b.id}:${b.key}`} className={b.missing ? "is-missing" : ""}>
+              <span className="mission-feed-label">{b.label}</span>
+              {b.missing ? (
+                <span className="field-error mission-needs">needs a value</span>
+              ) : b.source === "override" ? null : b.source === "own" ? (
+                <span className="mission-feed-uses">uses {valueText(b.used, row.unit)}<span className="mission-sub"> ({SOURCE_WORDS.own})</span></span>
+              ) : null}
+              {(b.source === "override" || own.has(`${b.id}:${b.key}`)) && (
+                <CovariateInputs bare readOnly={readOnly} idPrefix={`${idPrefix}-${b.id}`}
+                                 inputs={[{ ...input, key: b.key, label: `${b.label}'s own in this phase` }]}
+                                 values={{ [b.key]: phase.block_values?.[b.id]?.[b.key] ?? "" }}
+                                 sources={{ [b.key]: { value: row.value ?? row.diagram ?? b.default, words: "this phase" } }}
+                                 onChange={(v) => onChange(withBlockValue(phase, b.id, b.key, v[b.key]))} />
+              )}
+            </li>
+          ))}
         </ul>
+        {!readOnly && pickable.length > 0 && (
+          <select className="mission-own-pick" aria-label={`Set a block's own ${row.name} in this phase`} value=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) setOwn((s) => new Set([...s, v]));
+                  }}>
+            <option value="">Set a block's own…</option>
+            {pickable.map((b) => <option key={`${b.id}:${b.key}`} value={`${b.id}:${b.key}`}>{b.label}</option>)}
+          </select>
+        )}
         {row.missing.length > 0 && (
           <p className="field-error mission-row-needs">Needs a value for {row.missing.join(", ")}: set it for the phase, or on each block.</p>
         )}
