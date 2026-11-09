@@ -6,8 +6,9 @@ industry-average parameters (failure rates per hour with a gamma uncertainty dis
 probabilities per demand with a beta) and handbook base rates. A record can be used two ways:
 
 * **as a position's model** (Life model › From the data library…): a rate becomes an exponential
-  model at the record's mean rate, its 5–95% range kept as the interval (labelled as the
-  source's uncertainty, not a fit's confidence). The saved model and the link keep the record id
+  model at the record's mean rate, keeping the record's gamma on that rate (``rate_uncertainty``)
+  and its 5–95% range as the interval (labelled as the spread across plants from the source, not
+  a fit's confidence). A rate per foot of pipe takes a length. The saved model and the link keep the record id
   and its citation: the licence asks for the record to be cited wherever it's used. A probability
   per demand isn't a life over time, and Reliafy's per-demand models are fitted from counts of
   demands and failures, which a record doesn't give: that's refused in words.
@@ -101,12 +102,16 @@ def why_not(rec: dict, use: str = "model") -> str | None:
     return None
 
 
-def save_record_model(db, owner_id: str, record_id: str, name: str | None = None, owners=None):
-    """A rate record saved as an exponential model in the owner's models (the record's mean rate per
-    hour; its 5–95% range as the interval, labelled as the source's uncertainty; the record id and
-    citation kept). A life record is saved as a model of its own family with the record's parameters
-    and bounds. ``owners``: the principals whose own libraries the record may come from (the owner
-    alone by default)."""
+def save_record_model(db, owner_id: str, record_id: str, name: str | None = None, owners=None,
+                      length_ft: float | None = None):
+    """A rate record saved as an exponential model in the owner's models: the record's mean rate per
+    hour, with the record's distribution on that rate kept (``results.rate_uncertainty``: NRC/INL give
+    the rate as a gamma across plants) and its 5–95% range as the interval, labelled as the source's
+    spread, not a fit's confidence; the record id and citation kept. A rate per foot of pipe takes
+    ``length_ft`` (one foot when it's left out, and the notes say so). A life record is saved as a
+    model of its own family with the record's parameters and bounds. ``owners``: the principals whose
+    own libraries the record may come from (the owner alone by default)."""
+    from backend.library import convert
     from backend.services import models as models_service
 
     mine = mine_for(db, owners if owners is not None else [owner_id])
@@ -117,23 +122,90 @@ def save_record_model(db, owner_id: str, record_id: str, name: str | None = None
     b = brief(rec, mine)
     if rec.get("kind") == "life":
         return _save_life_model(db, owner_id, rec, b, name, mine), rec
-    rate = float(b["mean"])
-    name = (name or f"{b['label']} ({b['source']})")[:200]
+    per_foot = (rec.get("units") or {}).get("value") == "per_hour_per_foot"
+    if length_ft is not None and not per_foot:
+        raise _sv().Invalid(f"“{b['label']}” isn't a rate per foot of pipe: leave out the length.")
+    if length_ft is not None:
+        try:
+            length_ft = float(length_ft)
+        except (TypeError, ValueError):
+            length_ft = -1.0
+        if not 0 < length_ft < 1e9:
+            raise _sv().Invalid("The pipe's length must be a number of feet above 0.")
+    feet = (length_ft or 1.0) if per_foot else None
+    try:
+        made = convert.rate_to_exponential(rec, "hours", length_ft=feet)
+    except convert.ConversionError as exc:
+        raise _sv().Invalid(str(exc)) from None
+    rate = float(made["failure_rate"])
+    lo, hi = made["bounds"]["p05"], made["bounds"]["p95"]
+    default = f"{b['label']} ({b['source']})"
+    if per_foot and length_ft:
+        default = f"{b['label']}, {length_ft:g} ft ({b['source']})"
+    name = (name or default)[:200]
+    notes = f"From the reliability data library: {cite(rec)}."
+    if per_foot:
+        notes += (f" The source's rate is per foot of pipe; this model is for {length_ft:g} feet." if length_ft else
+                  " The source's rate is per foot of pipe and no length was given, so this model is for one foot.")
     model = models_service.import_model(db, owner_id, name, "exponential", unit="Hours",
-                                        params=[{"name": "failure_rate", "value": rate}],
-                                        notes=f"From the reliability data library: {cite(rec)}.")
-    note_ci = ("The interval is the source's 5–95% uncertainty range on the rate (the industry-average spread), not "
-               "a confidence bound from a fit.")
-    db.models.update_one({"_id": model.id}, {"$set": {
+                                        params=[{"name": "failure_rate", "value": rate}], notes=notes)
+    changes = {
         "results.method": "library",
-        "results.params.0.ci": [b.get("p05"), b.get("p95")],
-        "results.ci_note": note_ci,
+        "results.params.0.ci": [lo, hi],
+        "results.ci_note": CI_NOTE,
         "results.library": {"record_id": rec["id"], "source": b.get("source"), "label": b.get("label"),
                             "citation": b.get("citation"), "units": b.get("units"), "distribution": b.get("distribution"),
-                            "mean": b.get("mean"), "p05": b.get("p05"), "p95": b.get("p95")},
+                            "mean": b.get("mean"), "p05": b.get("p05"), "p95": b.get("p95"),
+                            **({"length_ft": feet} if per_foot else {})},
         "spec.library_record_id": rec["id"],
-    }})
+    }
+    unc = made.get("rate_uncertainty")
+    if unc:
+        changes["results.rate_uncertainty"] = with_source(unc, b)
+    db.models.update_one({"_id": model.id}, {"$set": changes})
     return models_service.get_model(db, model.id), rec
+
+
+#: What a library model's interval is, on the model page.
+CI_NOTE = ("5–95% across plants (from the source): the record's spread of the failure rate from plant to plant, "
+           "not a confidence bound from a fit.")
+
+
+def with_source(unc: dict, b: dict) -> dict:
+    """The rate's distribution with the record's source name and citation, for the model page's words."""
+    return {**unc, "source": {**(unc.get("source") or {}), "name": b.get("source"), "citation": b.get("citation")}}
+
+
+def reattach_rate_uncertainty(results: dict, spec: dict | None) -> dict | None:
+    """The rate distribution of a model saved from a published NRC/INL-style rate record before
+    models kept it: rebuilt from the record, scaled by the model's rate over the record's mean (so a
+    length or unit already applied carries over). None when the model isn't one, already has it,
+    or the record is gone. Read-only: nothing is written back."""
+    if not isinstance(results, dict) or results.get("rate_uncertainty") or results.get("method") != "library":
+        return None
+    lib = results.get("library") or {}
+    record_id = lib.get("record_id") or (spec or {}).get("library_record_id")
+    if not record_id or (results.get("distribution_id") or "exponential") != "exponential":
+        return None
+    try:
+        from backend.library import convert
+        from backend.library import service as library_service
+
+        rec = library_service.get(str(record_id))
+        if rec.get("kind") != "rate":
+            return None
+        rate = next(float(p["value"]) for p in results.get("params") or [] if p.get("name") == "failure_rate")
+        mean = convert.spread(rec)["mean"]
+        if not (rate > 0 and mean and mean > 0):
+            return None
+        per_foot = (rec.get("units") or {}).get("value") == "per_hour_per_foot"
+        feet = lib.get("length_ft") or (1.0 if per_foot else None)  # saved before lengths: for one foot
+        unc = convert.rate_uncertainty(rec, rate / mean, rate, feet, results.get("unit") or "hours")
+        if unc is None:
+            return None
+        return with_source(unc, brief(rec))
+    except Exception:  # noqa: BLE001 - an unknown record or an odd old model: show it as it was
+        return None
 
 
 def _save_life_model(db, owner_id: str, rec: dict, b: dict, name: str | None, mine: dict | None):
@@ -168,12 +240,12 @@ def _save_life_model(db, owner_id: str, rec: dict, b: dict, name: str | None, mi
 
 
 def attach(m, db, owner_id: str, position_id: str, record_id: str, failure_mode_ids=None, note: str = "",
-           replace_link_id: str | None = None, owners=None) -> dict:
+           replace_link_id: str | None = None, owners=None, length_ft: float | None = None) -> dict:
     """A library record as the position's model: an exponential at the record's mean rate (per hour),
     the record's 5–95% range as its interval (a life record: a model of its own family with the
     record's parameters); the link's source names the record and cites it."""
     modes = m._mode_ids_on(position_id, failure_mode_ids)
-    model, rec = save_record_model(db, owner_id, record_id, owners=owners)
+    model, rec = save_record_model(db, owner_id, record_id, owners=owners, length_ft=length_ft)
     b = brief(rec, mine_for(db, owners if owners is not None else [owner_id]))
     source = {"library": {"record_id": rec["id"], "source": b.get("source"), "label": b.get("label"),
                           "citation": b.get("citation")}}

@@ -6,7 +6,11 @@ no database, no RBD code.
   (fails to run) are different numbers for a component that doesn't run all
   year: converting one to the other needs the hours it runs a year.
 - A gamma (or lognormal) spread on a rate gives the point value and its 5th
-  and 95th percentiles (:func:`spread`), from the parameters themselves.
+  and 95th percentiles (:func:`spread`), from the parameters themselves. The
+  model keeps that distribution on its failure rate (:func:`rate_uncertainty`):
+  times to failure are exponential given the rate, and the gamma says how the
+  rate varies from plant to plant. It is never turned into a gamma *life*
+  distribution: the gamma is on the rate, not on the time.
 - A probability per demand stays a probability per demand
   (:func:`demand_to_per_demand`): the per-demand reliability, the start-success
   probability of a cold-standby spare, and, given how often it's demanded, an
@@ -90,6 +94,43 @@ def spread(rec: dict, point: Point = "mean") -> dict:
         "mean": mean, "median": median, "p05": p05, "p95": p95,
         "error_factor": (p95 / median) if (p95 is not None and median) else None,
     }
+
+
+def rate_uncertainty(rec: dict, scale: float, point: Optional[float] = None,
+                     length_ft: Optional[float] = None, time_unit: str = "hours") -> Optional[dict]:
+    """The record's distribution on its rate, carried onto a model whose rate
+    is ``scale`` times the record's (length, environment, clock and time unit
+    all multiply the rate, so they all go into ``scale``).
+
+    A gamma (shape α, rate β) on λ becomes a gamma with the same shape and
+    rate β / scale on scale × λ; a lognormal (mu, sigma on log λ) moves its
+    mu by log(scale). The 5th and 95th percentiles are the record's, scaled.
+    None for a record with no spread (a point value)."""
+    import math
+
+    family = rec["distribution"]["family"]
+    params = schema.param_dict(rec["distribution"])
+    if family == "gamma":
+        out = {"distribution": "gamma", "shape": params["alpha"], "rate": params["beta"] / scale}
+    elif family == "lognormal":
+        out = {"distribution": "lognormal", "mu": params["mu"] + math.log(scale), "sigma": params["sigma"]}
+    else:
+        return None
+    sp = spread(rec)
+    out.update({
+        "mean": sp["mean"] * scale,
+        "point": (point if point is not None else sp["mean"] * scale),
+        "p05": None if sp["p05"] is None else sp["p05"] * scale,
+        "p95": None if sp["p95"] is None else sp["p95"] * scale,
+        "unit": units_mod.canonical_unit(time_unit),
+        "record": {"family": family, "params": dict(params), "units": (rec.get("units") or {}).get("as_given")
+                   or (rec.get("units") or {}).get("value"),
+                   "time_basis": (rec.get("units") or {}).get("time_basis")},
+        "source": {"record_id": rec["id"], "label": rec["label"]},
+    })
+    if length_ft:
+        out["length_ft"] = length_ft
+    return out
 
 
 def _hours_rate(rec: dict, value: Optional[float], length_ft: Optional[float]) -> Optional[float]:
@@ -233,6 +274,7 @@ def rate_to_exponential(rec: dict, time_unit: str = "hours", time_basis: Optiona
         return None if v is None else v * factor * per_unit
 
     rate = scale(sp["point"])
+    unc = rate_uncertainty(rec, (length_ft or 1.0) * factor * per_unit, rate, length_ft, time_unit)
     out = {
         "model": {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": rate}]},
         "unit": units_mod.canonical_unit(time_unit),
@@ -245,6 +287,8 @@ def rate_to_exponential(rec: dict, time_unit: str = "hours", time_basis: Optiona
         "badge": _badge(rec),
         "source": _origin(rec),
     }
+    if unc:
+        out["rate_uncertainty"] = unc
     if env:
         out["environment"] = env
     return out

@@ -10,6 +10,7 @@ import { unitInText } from "./unitText.js";
 import { paramView } from "./LifeSummary.jsx";
 import { intervalLevel } from "../modelFrame.js";
 import { withUnit as covariateWithUnit } from "./stressName.js";
+import { SPREAD_LABEL, rateSpread, spreadMean, spreadTime, spreadWords } from "../rateSpread.js";
 
 // The Model characteristics tab's mean life: the MTTF with its one-sided
 // lower bound at the page's confidence (shared with the calculator), and for
@@ -85,14 +86,20 @@ const B_NAMES = { B50: "B50 (median)" };
 
 // The B-lives card: each with its one-sided lower bound at the page's
 // confidence, from the same life answer as the mean.
-function BLivesCard({ life, level, pending, unit, noun = "time", credible = false }) {
+function BLivesCard({ life, level, pending, unit, noun = "time", credible = false, spread = null }) {
   const u = unit ? ` ${unit}` : "";
   const rows = (life?.b_lives || []).filter((b) => B_LABELS.some(([l]) => l === b.label));
+  // A library model: each B-life's range across plants, from the rate's 5% and 95% (no fit, no lower bound).
+  const across = (b) => {
+    const r = spreadTime(spread, 1 - b.p);
+    return r ? `${formatNumber(r.lower)} – ${r.upper == null ? "no limit" : formatNumber(r.upper)}` : "";
+  };
   return (
     <section className="gof-card model-chars-card" aria-labelledby="model-chars-blives">
       <div className="gofh life-card-head">
         <h3 id="model-chars-blives" className="model-chars-h">B-lives</h3>
-        {rows.some((b) => b.lower != null) && <span className="gof-sub">≥ lower bound at {formatNumber(level)}%{credible ? " credible" : ""}</span>}
+        {spread ? <span className="gof-sub">{SPREAD_LABEL}</span>
+          : rows.some((b) => b.lower != null) && <span className="gof-sub">≥ lower bound at {formatNumber(level)}%{credible ? " credible" : ""}</span>}
       </div>
       {!rows.length && <p className="mf-note">{pending ? "Working out the B-lives…" : "This model gives no B-lives."}</p>}
       {rows.map((b) => (
@@ -100,7 +107,7 @@ function BLivesCard({ life, level, pending, unit, noun = "time", credible = fals
              title={`${b.label}: the ${noun} by which ${Math.round(b.p * 100)}% have failed`}>
           <span className="gk">{B_NAMES[b.label] || b.label}</span>
           <span className="gv">{b.value != null ? `${formatNumber(b.value)}${u}` : "—"}</span>
-          <span className="life-lo">{b.lower != null ? `≥ ${formatNumber(b.lower)}` : pending ? "…" : ""}</span>
+          <span className="life-lo">{spread ? across(b) : b.lower != null ? `≥ ${formatNumber(b.lower)}` : pending ? "…" : ""}</span>
         </div>
       ))}
       <p className="mf-note">
@@ -142,6 +149,9 @@ function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
   const levelText = `${formatNumber(shownLevel)}%${lv.credible ? " credible" : ""}`;
   const discrete = result.kind === "discrete";
   const noun = discrete ? "count" : "time";
+  // A library model (NRC/INL): its rate's spread across plants, said in words first.
+  const spread = rateSpread(result);
+  const spreadLife = spreadMean(spread);
 
   // The rows of the mean-life section: [key, label, value, note under it].
   let rows;
@@ -150,7 +160,9 @@ function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
   } else if (answer.kind === "none") {
     rows = [["mean", "Mean life (MTTF)", "None", answer.why]];
   } else {
-    const lower = answer.lower != null ? `≥ ${withUnit(answer.lower)} at ${levelText}` : pending ? "…" : null;
+    const lower = spreadLife
+      ? `${SPREAD_LABEL}: ${withUnit(spreadLife.lower)} to ${spreadLife.upper == null ? "no upper limit" : withUnit(spreadLife.upper)}`
+      : answer.lower != null ? `≥ ${withUnit(answer.lower)} at ${levelText}` : pending ? "…" : null;
     rows = [[
       "mean",
       answer.kind === "restricted" ? `Mean to ${withUnit(answer.tau)}` : "Mean life (MTTF)",
@@ -162,6 +174,17 @@ function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
 
   return (
     <div className="detail-panel mf-l6 model-chars">
+      {spread && (
+        <section className="gof-card model-chars-card" aria-labelledby="model-chars-rate">
+          <div className="gofh life-card-head"><h3 id="model-chars-rate" className="model-chars-h">Failure rate</h3></div>
+          <p className="mf-note model-chars-spread">{spreadWords(spread)}</p>
+          <p className="mf-note">
+            The ranges here are that spread from plant to plant, as the source gives it, not confidence or credible
+            intervals from a fit: reliability at a time lies between e<sup>−λ95·t</sup> and e<sup>−λ5·t</sup>, the mean
+            life between 1/λ95 and 1/λ5.
+          </p>
+        </section>
+      )}
       <section className="gof-card model-chars-card" aria-labelledby="model-chars-mean">
         <div className="gofh life-card-head">
           <h3 id="model-chars-mean" className="model-chars-h">Mean life</h3>
@@ -203,7 +226,7 @@ function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
             )}
             {answer.caveat && <p className="hint">{answer.caveat}</p>}
             {unavailable && <p className="hint">{unavailable}</p>}
-            {life.bounds_note && <p className="muted-line">{life.bounds_note}</p>}
+            {life.bounds_note && !spread && <p className="muted-line">{life.bounds_note}</p>}
           </div>
         )}
         {onBLives && (
@@ -212,7 +235,8 @@ function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
           </button>
         )}
       </section>
-      <BLivesCard life={life} level={shownLevel} pending={pending} unit={unit} noun={noun} credible={lv.credible} />
+      <BLivesCard life={life} level={shownLevel} pending={pending} unit={unit} noun={noun} credible={lv.credible}
+                  spread={spread} />
       {lv.credible && <CredibleParams result={result} label={lv.label} />}
     </div>
   );

@@ -63,10 +63,15 @@ export function UseAsModelDialog({ record, onClose }) {
   const [name, setName] = useState(`${record.label} (${record.source})`);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
+  // A pipe's rate is per foot: the model is for the length given.
+  const perFoot = /per foot/i.test(String(record.units || ""));
+  const [feet, setFeet] = useState("");
+  const feetNum = Number(feet);
+  const feetOk = !perFoot || (feet.trim() !== "" && Number.isFinite(feetNum) && feetNum > 0);
   const save = async () => {
     setBusy(true);
     try {
-      const model = await createModelFromLibrary(record.id, name.trim());
+      const model = await createModelFromLibrary(record.id, name.trim(), perFoot ? feetNum : null);
       navigate(`/models/m/${model.id}`);
     } catch (e) {
       setBusy(false);
@@ -78,7 +83,7 @@ export function UseAsModelDialog({ record, onClose }) {
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-               <button type="button" onClick={save} disabled={busy || !name.trim()} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save the model"}</button>
+               <button type="button" onClick={save} disabled={busy || !name.trim() || !feetOk} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save the model"}</button>
              </>
            )}>
       {isLife(record) ? (
@@ -89,9 +94,16 @@ export function UseAsModelDialog({ record, onClose }) {
         </p>
       ) : (
         <p className="rw-fhelp">
-          Saves an exponential model at the record’s mean rate ({sig(record.mean)} {record.units}), with its 5–95% range
-          ({rangeText(record)}) as the interval: the source’s uncertainty, not a fit’s. The record is cited on the model.
+          Saves an exponential model at the record’s mean rate ({sig(record.mean)} {record.units}). The model keeps
+          the source’s {String(record.distribution || "").startsWith("lognormal") ? "lognormal" : "gamma"} on that rate
+          (how it varies from plant to plant), so its page shows the 5–95% range across plants ({rangeText(record)})
+          on the reliability and the mean life: the source’s spread, not a fit’s confidence. The record is cited on the model.
         </p>
+      )}
+      {perFoot && (
+        <Field label="Pipe length (feet)" help="The source’s rate is per foot of pipe: the model is for this length.">
+          <TextInput type="number" inputMode="decimal" min="0" step="any" value={feet} onChange={(e) => setFeet(e.target.value)} />
+        </Field>
       )}
       <Field label="Name"><TextInput value={name} onChange={(e) => setName(e.target.value)} /></Field>
       {failed && <p className="field-error" role="alert">{failed}</p>}

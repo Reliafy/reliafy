@@ -653,18 +653,21 @@ def save_model(
 
 @router.post("/models/from-library")
 def create_from_library(record_id: str = Body(..., embed=True), name: str | None = Body(default=None, embed=True),
+                        length_ft: float | None = Body(default=None, embed=True),
                         session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
     """A record of the reliability data library saved as a model in the user's models: a failure rate
-    per hour as an exponential, its 5–95% range as the interval (the source's uncertainty), the record
-    id and citation kept. A per-demand probability or a handbook base rate is refused in words. Counts
-    against the model cap."""
+    per hour as an exponential that keeps the record's gamma (or lognormal) on the rate, its 5–95%
+    range as the interval (the spread across plants), the record id and citation kept. A rate per
+    foot of pipe takes ``length_ft``. A per-demand probability or a handbook base rate is refused in
+    words. Counts against the model cap."""
     from backend.maintenance import library_models
 
     denied = _creation_denied(session, ctx, "models")
     if denied is not None:
         return denied
     try:
-        model, _ = library_models.save_record_model(session, ctx.write_owner, record_id, name, owners=ctx.read_owners)
+        model, _ = library_models.save_record_model(session, ctx.write_owner, record_id, name, owners=ctx.read_owners,
+                                                    length_ft=length_ft)
         access_service.stamp_editor(session, "models", model.id, ctx)
     except ValueError as exc:  # Invalid
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})

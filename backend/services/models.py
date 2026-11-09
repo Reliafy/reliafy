@@ -368,6 +368,13 @@ def public_results(model: Model) -> dict:
     pointed at this saved model (so the calculator re-evaluates and recomputes
     confidence bounds via the persistent id)."""
     results = dict(model.results or {})
+    unc = rate_uncertainty_of(model)
+    if unc and not results.get("rate_uncertainty"):
+        # Saved from an NRC/INL rate record before models kept its gamma: shown from the record.
+        from backend.maintenance import library_models
+
+        results["rate_uncertainty"] = unc
+        results["ci_note"] = library_models.CI_NOTE
     if model.kind == "regression" and not results.get("metrics_note"):
         # #265: a model saved before says why it has no median / B10 / MTTF too.
         results["metrics_note"] = fitting.REGRESSION_METRICS_NOTE
@@ -394,6 +401,19 @@ def public_results(model: Model) -> dict:
             functions["residuals_path"] = f"/api/models/{model.id}/residuals"
         results["functions"] = functions
     return results
+
+
+def rate_uncertainty_of(model: Model) -> dict | None:
+    """The distribution on a library model's failure rate (NRC/INL give the rate as a gamma across
+    plants): as saved, or, for a model saved before models kept it, rebuilt from its record."""
+    results = model.results or {}
+    if results.get("rate_uncertainty"):
+        return results["rate_uncertainty"]
+    if results.get("method") != "library":
+        return None
+    from backend.maintenance import library_models
+
+    return library_models.reattach_rate_uncertainty(results, model.spec)
 
 
 def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
@@ -610,6 +630,14 @@ def get_live_model(db, model_id: str, owner_id: str | list[str]) -> dict | None:
         from backend.services import joint as joint_service
 
         return joint_service.live_entry(model)
+    unc = rate_uncertainty_of(model)
+    if unc and (model.results or {}).get("params_only"):
+        # A library model (made from a record's rate, no data to refit): the exponential at its rate,
+        # with the distribution on that rate, which the RBD band draws from (rbd_uncertainty).
+        params = (model.results or {}).get("params") or []
+        rate = next((float(p["value"]) for p in params if p.get("name") == "failure_rate"), None)
+        if rate and rate > 0:
+            return {"model": surpyval.Exponential.from_params([rate]), "rate_uncertainty": unc}
     return fitting._MODEL_STORE.get(_live_cache_id(db, model_id, owner_id))
 
 

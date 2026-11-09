@@ -55,6 +55,31 @@ test("the library's three levels, then a record used as a model", async ({ page,
   await expectHealthy(page, problems, { label: "the data library" });
 });
 
+// Derryn, 9 Nov: a pipe record "explicitly says a gamma model with the two parameters": the model keeps
+// the gamma on its failure rate, and its page shows the 5–95% range across plants.
+test("a pipe's rate record as a model keeps its gamma across plants", async ({ page, problems }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, "/models/library/nrc-inl-2020/pipe-other-ell");
+  await expect(page.getByRole("heading", { name: "Pipe: external leak, large (not service water)" })).toBeVisible();
+  await expect(page.locator("body")).toContainText("keeps this gamma on the rate");
+  await page.getByRole("button", { name: "Use as a model…" }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Use as a model" });
+  const save = dialog.getByRole("button", { name: "Save the model" });
+  await expect(save).toBeDisabled(); // a rate per foot needs the pipe's length
+  await dialog.getByLabel("Pipe length (feet)").fill("100");
+  await save.click();
+  await expect(page).toHaveURL(/\/models\/m\//);
+  await page.getByRole("tab", { name: "Model characteristics" }).click();
+  const words = page.locator(".model-chars-spread");
+  await expect(words).toContainText("for 100 feet of pipe");
+  await expect(words).toContainText("give it as a gamma across plants (shape 0.3");
+  await expect(words).toContainText("90% of plants lie between");
+  await expect(page.locator("body")).toContainText("5–95% across plants (from the source)");
+  await page.getByRole("tab", { name: "Calculator" }).click();
+  await expect(page.locator(".calc-answer-ci")).toContainText("5–95% across plants (from the source)");
+  await expectHealthy(page, problems, { label: "a library model's page" });
+});
+
 test("attach a library record to a position, then fit with a library prior", async ({ page, request, problems }) => {
   const tag = `lib${Date.now()}`;
   const ago = (d) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);

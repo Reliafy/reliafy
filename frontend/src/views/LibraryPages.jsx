@@ -340,6 +340,14 @@ export function LibraryRecord() {
                 </>
               )}
               <dt>Units</dt><dd>{valueUnits}: {unitsMeaning(rec.kind, valueUnits)}</dd>
+              {rec.kind === "rate" && ["gamma", "lognormal"].includes(rec.distribution?.family) && (
+                <><dt>As a model</dt><dd>
+                  Use as a model… saves an exponential at the mean rate and keeps this {rec.distribution.family} on the
+                  rate (times to failure are exponential at a plant’s rate; the {rec.distribution.family} is how that rate
+                  varies from plant to plant). The model’s page shows the 5–95% range across plants beside each value.
+                  {/per foot/i.test(valueUnits) ? " Give the pipe’s length: the model is for that length." : ""}
+                </dd></>
+              )}
               {life && evidenceWords(rec.evidence) && <><dt>Evidence</dt><dd>{evidenceWords(rec.evidence)}</dd></>}
               {!life && rec.evidence?.failures != null && <><dt>Evidence</dt><dd>{[rec.evidence.failures != null && `${rec.evidence.failures} failures`,
                 rec.evidence.demands && `${Number(rec.evidence.demands).toLocaleString("en-AU")} demands`,

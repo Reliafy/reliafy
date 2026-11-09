@@ -100,6 +100,13 @@ export function BandNote({ band }) {
           {[...byModel].map(([model, labels]) => `${labels.join(", ")} (${model})`).join(" · ")}.
         </p>
       )}
+      {uncertain.some((b) => b.from_source) && (
+        <p>
+          Library models ({uncertain.filter((b) => b.from_source).map((b) => b.label).join(", ")}) have no fit: each
+          draw takes their failure rate from the source's spread across plants (the record's gamma), not from a
+          fit's confidence.
+        </p>
+      )}
       {fixed.length > 0 && (
         <p>
           Treated as fixed: {fixed.map((b) => `${b.label} — ${b.reason}`).join(" · ")}.
