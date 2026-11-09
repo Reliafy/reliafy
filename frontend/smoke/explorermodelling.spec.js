@@ -16,6 +16,17 @@ const sideways = (page) => page.evaluate(() => document.documentElement.scrollWi
 
 // The heading's "…" on the Modelling tab is two levels (Life model ›, RBD ›, Prediction ›): open
 // it, open the group, pick the item.
+// Saving a fit refits it on the server (a fit with a prior on SurPyval's grid, then the save and
+// the link): on a shared CI runner that can take longer than an expect's 10 s. Wait for the save's
+// own answer, then check it worked and the dialog closed.
+async function saveFit(page, dialog, positionId) {
+  const saved = page.waitForResponse((r) => r.url().includes(`/api/maintenance/positions/${positionId}/models`)
+    && r.request().method() === "POST", { timeout: 60_000 });
+  await dialog.getByRole("button", { name: "Save as this position's model" }).click();
+  expect((await saved).status()).toBe(200);
+  await expect(dialog).toHaveCount(0);
+}
+
 async function headPick(page, group, item) {
   await headMenu(page);
   await page.getByRole("menuitem", { name: group, exact: true }).click();
@@ -40,9 +51,9 @@ test("attach a sample model to a position, see its row and its details, then unl
     "Assign a saved model…", "From the class…", "Enter parameters…"]);
   await page.getByRole("menu", { name: "Life model" }).getByRole("menuitem", { name: "Assign a saved model…" }).click();
   const dialog = page.getByRole("dialog", { name: "Assign a saved model" });
-  // The radio's accessible name carries the model's kind and figures after its name:
-  // a plain-string name match is a substring match, with nothing to escape.
-  await dialog.getByRole("radio", { name: SAMPLE }).check();
+  // The radio's accessible name is the model's name, then its kind and unit. Matched exactly (no
+  // regex to escape), because saved updates of it (other tests, repeats) carry its name inside theirs.
+  await dialog.getByRole("radio", { name: `${SAMPLE} Weibull · Hours`, exact: true }).check();
   await dialog.getByRole("button", { name: "Attach" }).click();
   await expect(dialog).toHaveCount(0);
 
@@ -106,8 +117,7 @@ test("update a baseline with a position's one failure, and save it as the positi
   await expect(dialog.getByRole("status")).toContainText("90% chance it lies between");
   await expect(dialog.locator(".js-plotly-plot")).toBeVisible();
   await expect(dialog.getByRole("checkbox")).toHaveCount(2);
-  await dialog.getByRole("button", { name: "Save as this position's model" }).click();
-  await expect(dialog).toHaveCount(0);
+  await saveFit(page, dialog, pump.id);
   const model = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Bayesian update of" }) });
   await expect(model.locator(".mt-c-kind")).toHaveText("Weibull (Bayesian)");
   await expect(model.locator(".mt-c-source")).toContainText(/^Bayesian update of .* · 1 failure, 1 suspension/);
@@ -315,8 +325,7 @@ test("Fit a life model… through each Data choice on a class of two positions",
   await expect(dialog.getByRole("status")).toContainText("counted as half of its evidence");
   await expect(dialog.locator(".fit2-numbers thead")).toContainText("90% credible interval");
   await expect(dialog.locator(".js-plotly-plot")).toBeVisible();
-  await dialog.getByRole("button", { name: "Save as this position's model" }).click();
-  await expect(dialog).toHaveCount(0);
+  await saveFit(page, dialog, b.id);
   const model = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Bayesian update of the class" }) });
   await expect(model.locator(".mt-c-kind")).toHaveText("Weibull (Bayesian)");
   await expectHealthy(page, problems, { label: "Fit a life model" });
