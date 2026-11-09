@@ -72,6 +72,9 @@ export function graftFmea(display, rcm) {
 // a failure mode directly under itself (no functional failure yet: the RCM
 // tab shows it as such). `canRename`: the description is edited in the table
 // (not on a phone, where the details panel edits it).
+// What a row's menu offers on the FME(C)A tab: adding inside it first (a
+// position's Add function, a function's Add failure mode), then Open… and the
+// rest; a failure mode (nothing goes under it here) starts with Open…, Score….
 export function rowActions(r, { canRename = true, viewOnly = null } = {}) {
   if (!r) return [];
   const open = r.type === "fn" || r.type === "mode" ? [{ id: "open", label: "Open…" }] : [];
@@ -87,8 +90,8 @@ export function rowActions(r, { canRename = true, viewOnly = null } = {}) {
   }
   if (r.type === "fn") {
     return [
-      ...open,
       { id: "add-mode", label: "Add failure mode" },
+      ...open,
       ...rename,
       { id: "delete", label: "Delete function…", danger: true },
     ];

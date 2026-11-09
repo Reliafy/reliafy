@@ -7,6 +7,11 @@
 // its own rows ("4 points · 1 needs attention"), and a closed one what's inside
 // it too. Pure functions, tested in explorerMeasurements.test.js; the rows'
 // cells are measurementsTable.js's (tableRows), drawn by MeasurementCells.jsx.
+//
+// What can be added under a position on this tab (measAddActions): one list,
+// used by both the heading's "…" and a position row's menu (right-click, ⋯,
+// Shift+F10), where it comes first, before the tree's own items (New position
+// inside, Rename…, …) after a line.
 
 import { sortRows, tableRows } from "./measurementsTable.js";
 
@@ -15,6 +20,20 @@ export const isMeasRow = (r) => r?.type === MEAS_TYPE;
 
 // A measurement row's key in the tree (a point's id could be any row's key).
 export const measKey = (rowKey) => `M:${rowKey}`;
+
+// Adding under a position: a measuring point, a setting, a consumable, a sensor
+// channel ([] for any other row). `viewOnly`: the reason the workspace can't be
+// changed (each greyed with it), else null.
+export const MEAS_ADDS = [
+  { id: "meas-add-point", label: "Add a measuring point…" },
+  { id: "meas-add-setting", label: "Add a setting…" },
+  { id: "meas-add-consumable", label: "Add a consumable…" },
+  { id: "meas-add-channel", label: "Add a sensor channel…" },
+];
+export function measAddActions(r, { viewOnly = null } = {}) {
+  if (r?.type !== "pos") return [];
+  return MEAS_ADDS.map((a) => (viewOnly ? { ...a, disabled: true, reason: viewOnly } : { ...a }));
+}
 
 const noStatus = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null, not_analysed: 0, positions: 0, empty: 0 });
 const blank = () => ({ n: 0, attention: 0 });

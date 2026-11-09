@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay } from "./assetTree.js";
-import { isolateItems, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "./treeRowMenu.js";
+import { TAB_LEADS, addsFirst, isolateItems, leadWith, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "./treeRowMenu.js";
+import { measAddActions } from "./explorerMeasurements.js";
 
 const DATA = {
   positions: [
@@ -118,4 +119,26 @@ test("Log an event…: positions only, greyed when the team is view only", () =>
   assert.ok(!summaryActions(buildDisplay(DATA, "locations").rows.get("shed"), opts("locations")).some((i) => i.id === "event-log"));
   const viewOnly = summaryActions(d.rows.get("pump"), opts("positions", { viewOnly: "View only." })).find((i) => i.id === "event-log");
   assert.equal(viewOnly.disabled, true);
+});
+
+test("New position inside is first on the Summary tab only: another tab's adds come first, then a line", () => {
+  const d = buildDisplay(DATA, "positions");
+  const skim = summaryActions(d.rows.get("skim"), opts("positions"));
+  // Summary: unchanged.
+  assert.equal(skim[0].id, "tree-new");
+  // Failure reports: Add failure report… first, a line, then the rest as they were (New position inside kept).
+  const reports = leadWith(skim, TAB_LEADS.reports);
+  assert.deepEqual(ids(reports), ["report-new", undefined, "tree-new", "event-log", "tree-rename", "tree-move", "tree-delete"]);
+  assert.equal(reports[1].separator, true);
+  // A location on that tab has no report to add: its menu as on Summary.
+  const shed = summaryActions(buildDisplay(DATA, "locations").rows.get("shed"), opts("locations"));
+  assert.deepEqual(leadWith(shed, TAB_LEADS.reports), shed);
+  // The tabs with no adds of their own here (LSA): the menu as on Summary.
+  assert.equal(TAB_LEADS.lsa, undefined);
+  // Measurements: its four adds, a line, then the Summary menu.
+  const meas = addsFirst(measAddActions(d.rows.get("skim")), skim);
+  assert.deepEqual(ids(meas).slice(0, 6), ["meas-add-point", "meas-add-setting", "meas-add-consumable", "meas-add-channel", undefined, "tree-new"]);
+  // Pin this branch still goes before Delete….
+  assert.deepEqual(ids(withPin(meas, [{ id: "pin", label: "Pin this branch" }])).slice(-2), ["pin", "tree-delete"]);
+  assert.deepEqual(addsFirst([], skim), skim);
 });

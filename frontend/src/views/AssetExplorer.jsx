@@ -3,7 +3,7 @@ import { VIEW_PARAMS } from "../measurementsTab.js";
 import {
   MEAS_TABLE_COLS, MEAS_TREE_HEAD, MeasCell, MeasDialogs, MeasSide, measPhoneRow, measRowActions, retireMeasurement, useTreeMeasurements,
 } from "../components/MeasurementTable.jsx";
-import { graftMeasurements, isMeasRow, measKey, openForMeasurements, rollupText as measRollup } from "../explorerMeasurements.js";
+import { graftMeasurements, isMeasRow, measAddActions, measKey, openForMeasurements, rollupText as measRollup } from "../explorerMeasurements.js";
 import { measurementsCsv } from "../measurementsTable.js";
 import {
   LibraryAttachModal, MODEL_COLUMNS, MODEL_TREE_HEAD, ModelCell, ModelDialogs, ModelSide, ParamsModal, RbdLinkModal, modelPhoneRow, modelRowActions,
@@ -16,8 +16,8 @@ import RbdPane from "../components/RbdPane.jsx";
 import MissionPane from "../components/MissionPane.jsx";
 import { MISSION_COLUMNS, MISSION_TREE_HEAD, MissionCell, missionPhoneRow, useTreeMissions } from "../components/MissionTable.jsx";
 import {
-  graftMissions, isMissionRow, missionKey, missionParam, missionRowActions, openForMissions, parseMissionParam,
-  positionMissionActions, rollupText as missionRollup,
+  changedPhases, graftMissions, isMissionRow, isPhaseRow, missionKey, missionParam, missionRowActions, movePhase, openForMissions,
+  parseMissionParam, phaseKey, positionMissionActions, rollupText as missionRollup, withNewPhase, withoutPhase,
 } from "../explorerMissions.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
 import { bindingFromParam, bindingParam } from "../covariate.js";
@@ -28,7 +28,7 @@ import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, graftModels, inUseWord
 } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  addSampleProduct, createMission, deleteMission, getFmeaExcelBlob, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
+  addSampleProduct, createMission, deleteMission, getMission, updateMission, getFmeaExcelBlob, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
   hasFmeaExcel, linkPositionModel, makeSampleOwn, restoreRcm, restoreTree,
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
@@ -88,7 +88,7 @@ import {
 import { keepLevel } from "../outlineTree.js";
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL, EXPLORER_PATH } from "../navigation.js";
-import { isolateItems, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
+import { TAB_LEADS, addsFirst, isolateItems, leadWith, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
 import { canIsolate, depthWords, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen, levelsBelow } from "../treeIsolate.js";
 import { removeTaskFromMode } from "../components/RcmModeTasks.jsx";
 import { MoveModal, RenameModal } from "../components/TreeRowModals.jsx";
@@ -1210,7 +1210,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (!phone) setExpanded(true);
     setTimeout(() => detailsHeading.current?.focus(), 0);
   };
+  // Adding under a position (its row's menu, or the heading's "…": explorerMeasurements.js measAddActions).
+  const measAdd = (r, id) => {
+    const target = { kind: "position", id: r.key };
+    if (id === "add-point") setMeasModal({ kind: "add", target, preset: "condition" });
+    else if (id === "add-setting") setMeasModal({ kind: "add", target, preset: "setting" });
+    else if (id === "add-consumable") setMeasModal({ kind: "consumable", position: { id: r.key, name: r.ref.name || "(no name)" } });
+    else if (id === "add-channel") setMeasModal({ kind: "channel", target });
+  };
   const measAction = (r, id) => {
+    if (id.startsWith("add-")) return measAdd(r, id);
     const row = r.ref.row;
     if (id === "page" || id === "bands") openMeas(r.key);
     else if (id === "record") setMeasModal({ kind: "read", item: row.item });
@@ -1276,10 +1285,70 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     else if (id === "model-unlink") unlinkModel(confirm, link, (text) => { say(text); setPanel(false); setRcmFocus(null); pmodels.load(); });
   };
   // The Missions tab: a mission opens in the table area (?mission=<RBD id>:<mission id>&on=<position>).
-  const openMission = async (positionId, rbdId, missionId) => {
+  // `phase`: the phase to open it on (its index: a phase row's), its name field focused.
+  const openMission = async (positionId, rbdId, missionId, phase = null) => {
     if (!(await leavePane())) return;
     const pr = whole.rows.get(positionId);
-    openPane("mission", { id: positionId, name: pr?.ref.name || "(no name)" }, { rbd: missionParam(rbdId, missionId) });
+    openPane("mission", { id: positionId, name: pr?.ref.name || "(no name)" }, { rbd: missionParam(rbdId, missionId), start: phase == null ? {} : { phase } });
+  };
+  // A mission or phase row opened (a double-click, Enter, Open…): a phase opens the mission on it.
+  const openMissionRow = (r) => openMission(r.ref.position_id, r.ref.rbd.id, r.ref.mission.id, isPhaseRow(r) ? r.ref.phase.index : null);
+  // A phase added, moved or deleted from the tree: the saved mission read, changed with the pane's
+  // phase helpers (changedPhases) and saved through the mission's update route. `change`: editable
+  // rows in, rows out. Resolves with the phases saved, or null (nothing saved; said why).
+  const changeMissionPhases = async (r, change, done) => {
+    if (!(await leavePane())) return null;
+    const { rbd, mission } = r.ref;
+    try {
+      const detail = await getMission(rbd.id, mission.id);
+      if (detail.rbd?.read_only) {
+        say("This RBD is view only here: its missions can't be changed.", "error");
+        return null;
+      }
+      const { phases, errors } = changedPhases(detail, change);
+      if (errors.length) {
+        say(`Not saved: ${errors[0]} Open the mission to put it right.`, "error");
+        return null;
+      }
+      await updateMission(rbd.id, mission.id, { phases, expected_updated_at: detail.rbd?.updated_at });
+      say(done(phases));
+      pmissions.load();
+      return phases;
+    } catch (e) {
+      say(saveErrorText(e, { offline: navigator.onLine === false }), "error");
+      return null;
+    }
+  };
+  const addPhase = async (r) => {
+    const phases = await changeMissionPhases(r, withNewPhase, (ps) => `Added ${ps[ps.length - 1].name} to ${r.ref.mission.name}: give it its name and duration.`);
+    if (!phases) return;
+    pending.current = phaseKey(r.ref.rbd.id, r.ref.mission.id, phases.length - 1);
+    openMission(r.ref.position_id, r.ref.rbd.id, r.ref.mission.id, phases.length - 1);
+  };
+  // The mission open in the pane changed from the tree: the pane opened on it again, fresh.
+  const reopenIfShown = (r, phase) => {
+    if (paneKind === "mission" && paneAt?.mission === missionParam(r.ref.rbd.id, r.ref.mission.id)) {
+      openMission(r.ref.position_id, r.ref.rbd.id, r.ref.mission.id, phase);
+    }
+  };
+  const stepPhase = async (r, by) => {
+    const { index } = r.ref.phase;
+    const phases = await changeMissionPhases(r, (rows) => movePhase(rows, index, by), () => `Moved ${r.ref.name} ${by < 0 ? "earlier" : "later"}.`);
+    if (!phases) return;
+    pending.current = phaseKey(r.ref.rbd.id, r.ref.mission.id, index + by);
+    reopenIfShown(r, index + by);
+  };
+  const removePhase = async (r) => {
+    const ok = await confirm({
+      title: `Delete ${r.ref.name}?`, body: `The phase goes from ${r.ref.mission.name}; its other phases and the RBD stay as they are.`,
+      confirmLabel: "Delete the phase", cancelLabel: "Keep it", destructive: true,
+    });
+    if (!ok) return;
+    const { index } = r.ref.phase;
+    const phases = await changeMissionPhases(r, (rows) => withoutPhase(rows, index), () => `Deleted ${r.ref.name}.`);
+    if (!phases) return;
+    pending.current = phases.length ? phaseKey(r.ref.rbd.id, r.ref.mission.id, Math.min(index, phases.length - 1)) : missionKey(r.ref.rbd.id, r.ref.mission.id);
+    reopenIfShown(r, null);
   };
   const removeMission = async (positionId, rbdId, mission) => {
     const ok = await confirm({
@@ -1312,7 +1381,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const pid = r.type === "pos" ? r.key : r.ref.position_id;
     const pr = whole.rows.get(pid);
     const position = { id: pid, name: pr?.ref.name || "(no name)", position_class: pr?.ref.position_class || "" };
-    if (id === "mission-open") return openMission(pid, r.ref.rbd.id, r.ref.mission.id);
+    if (id === "mission-open" || id === "mission-phase-open") return openMissionRow(r);
+    if (id === "mission-phase-add") return addPhase(r);
+    if (id === "mission-phase-earlier" || id === "mission-phase-later") return stepPhase(r, id === "mission-phase-earlier" ? -1 : 1);
+    if (id === "mission-phase-delete") return removePhase(r);
     if (id === "mission-rbd") return openRbd(position, r.ref.rbd.id);
     if (id === "mission-delete") return removeMission(pid, r.ref.rbd.id, r.ref.mission);
     if (id.startsWith("mission-add:")) return addMission(pid, id.slice(12));
@@ -1323,12 +1395,15 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const rowMenu = {
     // The moves a drag does: on a phone, or from the keyboard (no dragging there).
     actions: (r, { keyboard = false } = {}) => {
-      if (!tableOn) return withPin(designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), [...isolateItem(r), ...pinItem(r)]);
+      // The plain tree's tabs: the Summary menu; on a tab with adds of its own (Failure reports), those first.
+      if (!tableOn) return withPin(leadWith(designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), TAB_LEADS[tab] || []), [...isolateItem(r), ...pinItem(r)]);
       // The Measurements tab: a measurement row's own (Open, Record…, Edit…, Move…, Retire…);
-      // a position's as on Summary, with isolating and pinning.
+      // a position's: its adds (a measuring point, a setting, a consumable, a sensor channel), a
+      // line, then the Summary menu, with isolating and pinning.
       if (modelsOn && isModelRow(r)) return modelRowActions(r, { viewOnly });
-      // The Missions tab: a mission's own (Open, Show the RBD, Delete…); a position's: add a mission to
-      // its RBD (or build one), then Rename…, Focus ›, Pin this branch.
+      // The Missions tab: a mission's own (Add a phase, Open, Show the RBD, Delete…), a phase's (Open…,
+      // Move earlier / later, Delete…); a position's: add a mission to its RBD (or build one), then
+      // Rename…, Focus ›, Pin this branch.
       if (missionsOn && isMissionRow(r)) return missionRowActions(r, { viewOnly });
       if (missionsOn && r.type === "pos") {
         const own = summaryActions(r, { mode, viewOnly }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id));
@@ -1343,6 +1418,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       }
       if (measOn || modelsOn) {
         if (isMeasRow(r)) return measRowActions(r);
+        if (measOn) {
+          return withPin(addsFirst(measAddActions(r, { viewOnly }), designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly })),
+            [...isolateItem(r), ...pinItem(r)]);
+        }
         return withPin(designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), [...isolateItem(r), ...pinItem(r)]);
       }
       if (!rcm) return [...isolateItem(r), ...pinItem(r)];
@@ -1907,7 +1986,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     renderCell: (r, c) => (isMissionRow(r) ? <MissionCell r={r} col={c} /> : null),
     onOpen: (key) => {
       const r = display.rows.get(key);
-      return isMissionRow(r) ? openMission(r.ref.position_id, r.ref.rbd.id, r.ref.mission.id) : undefined;
+      return isMissionRow(r) ? openMissionRow(r) : undefined;
     },
     rollupOf: (r, isOpen) => (r.type === "pos" ? missionRollup(r, isOpen) : null),
     phoneRow: (r, isOpen) => missionPhoneRow(r, r.type === "pos" ? missionRollup(r, isOpen) : ""),
@@ -1995,12 +2074,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     saveText(measurementsCsv(out), exportFilename(r.ref.name, { what: "measurements" }));
     say("Downloaded the measurements as CSV.", "ok", { fade: true });
   };
-  const measTarget = posRow?.type === "pos" ? { kind: "position", id: posRow.key } : null;
-  const measMenu = measOn && measTarget ? [
-    { id: "m-point", label: "Add a measuring point…", onSelect: () => setMeasModal({ kind: "add", target: measTarget, preset: "condition" }) },
-    { id: "m-setting", label: "Add a setting…", onSelect: () => setMeasModal({ kind: "add", target: measTarget, preset: "setting" }) },
-    { id: "m-consumable", label: "Add a consumable…", onSelect: () => setMeasModal({ kind: "consumable", position: { id: posRow.key, name: posRow.ref.name || "(no name)" } }) },
-    { id: "m-channel", label: "Add a sensor channel…", onSelect: () => setMeasModal({ kind: "channel", target: measTarget }) },
+  // The adds are the ones a position row's menu starts with (one list: measAddActions).
+  const measMenu = measOn && posRow?.type === "pos" ? [
+    ...measAddActions(posRow, { viewOnly }).map((a) => ({ ...a, title: a.reason, onSelect: () => measAdd(posRow, a.id.slice(5)) })),
     !phone && { id: "m-columns", label: "Columns…", onSelect: () => setColsOpen(true) },
     { id: "m-csv", label: "Export CSV", onSelect: () => exportMeas(posRow) },
     ...(isMeasRow(focusRow) && panel ? tabMenu || [] : []),
@@ -2243,6 +2319,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     <div className="rw tt-side">
       <MissionPane key={`${paneAt.mission}:${seed?.n || 0}`} rbdId={parseMissionParam(paneAt.mission).rbdId}
                    missionId={parseMissionParam(paneAt.mission).missionId} position={panePosition} phone={phone}
+                   phase={seed?.start?.phase ?? null}
                    headingRef={paneHeading} onClose={() => leavePane().then((ok) => ok && closePane())}
                    onDirty={(d) => { paneDirty.current = d; }}
                    onSaved={(text) => { if (text) say(text); pmissions.load(); }}
@@ -2348,7 +2425,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           const r = display.rows.get(key);
           if (isMeasRow(r)) return openMeas(key);
           if (isModelRow(r)) return openModel(key);
-          if (isMissionRow(r)) return openMission(r.ref.position_id, r.ref.rbd.id, r.ref.mission.id);
+          if (isMissionRow(r)) return openMissionRow(r);
           if (isRcmRow(r)) {
             setPanel(true);
             return setTimeout(() => detailsHeading.current?.focus(), 0);
