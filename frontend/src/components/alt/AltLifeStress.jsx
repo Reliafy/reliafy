@@ -121,6 +121,15 @@ function useLifeAtUse(modelId, use) {
   return state;
 }
 
+// The range on the life at the use stress from the calculator's answer:
+// { level, lower, upper }, or null where the answer has none (it says why).
+function lifeRange(ev) {
+  const ci = ev?.bounds?.characteristic_life?.ci;
+  if (!Array.isArray(ci) || ci.length !== 2 || !ci.every((v) => Number.isFinite(v))) return null;
+  const level = Number(ev.bounds.confidence);
+  return { level: Number.isFinite(level) ? level : null, lower: ci[0], upper: ci[1] };
+}
+
 function UseInputs({ results, use, onUse }) {
   return (
     <div className="alt-use-inputs">
@@ -142,6 +151,7 @@ function Side({ results, modelId, use, onUse, edited, state }) {
   const shape = shapeParam(r);
   const ev = state?.ev;
   const lifeUse = ev?.metrics?.characteristic_life;
+  const range = Number.isFinite(lifeUse) ? lifeRange(ev) : null;
   const rows = accelerationRows(r.levels, modelId ? lifeUse : null);
   return (
     <>
@@ -161,6 +171,11 @@ function Side({ results, modelId, use, onUse, edited, state }) {
             <span className="gk">Life at use stress</span>
             <span className="gv" aria-live="polite">
               {Number.isFinite(lifeUse) ? `${formatNumber(lifeUse)}${unit ? ` ${unit}` : ""}` : state?.busy ? "…" : "—"}
+              {range && (
+                <span className="gof-sub alt-ci">
+                  {" "}{range.level == null ? "" : `${formatNumber(range.level * 100)}% `}{formatNumber(range.lower)}–{formatNumber(range.upper)}
+                </span>
+              )}
             </span>
           </div>
         )}

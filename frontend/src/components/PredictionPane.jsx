@@ -223,7 +223,7 @@ export default function PredictionPane({ position, link = null, phone = false, h
               </Select>
             </Field>
             <Field label="Mission time (hours)" optional help="For the chance of getting through it with no failure.">
-              <TextInput inputMode="decimal" value={mission} onChange={(e) => setMission(e.target.value)} placeholder="1000" />
+              <TextInput inputMode="decimal" value={mission} onChange={(e) => setMission(e.target.value)} placeholder="e.g. 1000" />
             </Field>
           </div>
           {error && <p className="field-error" role="alert">{error}</p>}
