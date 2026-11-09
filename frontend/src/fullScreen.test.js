@@ -62,7 +62,7 @@ test("Escape waits for an open dialog, list or menu", () => {
   const seen = [];
   const root = { querySelector: (sel) => (seen.push(sel), null) };
   assert.equal(hasOpenLayer(root), false);
-  for (const s of [".overlay", ".sel-menu", ".ovm-menu:not([hidden])"]) assert.ok(seen[0].includes(s));
+  for (const s of [".overlay", ".sel-menu", ".ptp-list", ".ovm-menu:not([hidden])"]) assert.ok(seen[0].includes(s));
   assert.ok(seen[0].includes(":not(.rbd-valid-pop)"), "the validation check doesn't hold full screen");
   assert.equal(hasOpenLayer({ querySelector: () => ({}) }), true);
   assert.equal(hasOpenLayer(null), false);

@@ -14,7 +14,7 @@ import {
   fitChanged, fitTitle, initialFit, libraryPriorWords, priorChoices, problem, refusalSwitch, refusalWords, showsTrust,
 } from "../fitDialog.js";
 import { fmt } from "../explorerModels.js";
-import { CloseIcon } from "./icons.jsx";
+import TablePane from "./TablePane.jsx";
 import LibraryRecordPicker, { PickedRecord } from "./LibraryRecordPicker.jsx";
 import { rowFromDetail } from "../libraryPicker.js";
 import "./RcmWorksheet.css";
@@ -88,26 +88,11 @@ function ForPicker({ modes, value, onChange }) {
 export function FitPane({ position, start = {}, link = null, phone = false, headingRef = null, onClose, onDone, onDirty, onSaving }) {
   const [saving, setSavingState] = useState(false);
   const setSaving = (v) => { setSavingState(v); onSaving?.(v); };
-  const title = fitTitle(link);
   return (
-    <section className={"rw-panel fit-pane is-expanded" + (phone ? " fit-pane-phone" : "")} aria-label={title}>
-      <div className="rw-panel-head fit-pane-head">
-        {phone && (
-          <button type="button" className="ghost sm fit-pane-back" onClick={onClose} disabled={saving}
-                  aria-label="Back to the table">‹ Back</button>
-        )}
-        <h2 className="fit-pane-title" tabIndex={-1} ref={headingRef}>
-          {title} <span className="fit-pane-pos">· {position.name}</span>
-        </h2>
-        {!phone && (
-          <div className="rw-panel-btns">
-            <button type="button" className="ghost sm rw-x" onClick={onClose} disabled={saving}
-                    aria-label={`Close ${title.toLowerCase()}`} title="Back to the table (Esc)"><CloseIcon /></button>
-          </div>
-        )}
-      </div>
+    <TablePane title={fitTitle(link)} subject={position.name} phone={phone} busy={saving} headingRef={headingRef} onClose={onClose}
+               className="fit-pane">
       <FitLifeModel position={position} start={start} link={link} onClose={onClose} onDone={onDone} onDirty={onDirty} onSaving={setSaving} />
-    </section>
+    </TablePane>
   );
 }
 

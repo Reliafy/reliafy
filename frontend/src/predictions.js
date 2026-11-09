@@ -38,6 +38,14 @@ export function blankLine(over = {}) {
   };
 }
 
+// What a parts-list line uses (PartTypeCell.jsx's three controls): "excluded" (not electronic, left
+// out), "rate" (a rate of the user's own) or "type" (a handbook part type, chosen or to choose).
+export function partTypeMode({ record = null, rate = "", rateMode = false, excluded = false } = {}) {
+  if (excluded) return "excluded";
+  if (!record?.id && (rateMode || String(rate ?? "").trim() !== "")) return "rate";
+  return "type";
+}
+
 // What the "no match" note of the part-type search says: the handbook's gaps and what to do instead.
 export const NO_PART_TYPE_HINT = "MIL-HDBK-217F covers electronic parts only: it has no batteries and no mechanical "
   + "parts. Give a battery a rate of your own, and tick “Not electronic” for a mechanical part to leave it out.";

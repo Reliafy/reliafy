@@ -13,6 +13,11 @@ const SAMPLE = "Bearing life — Weibull (sample)";
 const row = (page, key) => page.locator(`.tp-row[data-key="${key}"]`);
 const side = (page) => page.locator(".ml-panel");
 const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth);
+// With SMOKE_SHOTS_DIR set, screenshots for the pull request.
+const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
+const shot = async (page, name) => {
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: false });
+};
 
 // The heading's "…" on the Modelling tab is two levels (Life model ›, RBD ›, Prediction ›): open
 // it, open the group, pick the item.
@@ -163,13 +168,16 @@ test("an ALT model attached as fitted, and a prediction row from the parts list"
   await pred.locator(".tp-nm").click();
   await expect(side(page).getByRole("link", { name: "Open in Predictions" })).toBeVisible();
   await expect(side(page)).toContainText(`Bypass capacitor ${tag}`);
-  // Refresh the prediction…: the dialog lists the part with its part type.
+  // Refresh the prediction…: in the table area (not a dialog), the part listed with its part type.
   await pred.locator(".tp-nm").click({ button: "right" });
   await page.getByRole("menu").last().getByRole("menuitem", { name: "Refresh the prediction…" }).click();
-  const pd = page.getByRole("dialog", { name: "Refresh the prediction" });
-  await expect(pd.locator(".ml-lines tbody tr")).toHaveCount(1);
+  const pd = page.getByRole("region", { name: "Refresh the prediction" });
+  await expect(page.getByRole("dialog", { name: "Refresh the prediction" })).toHaveCount(0);
+  await expect(pd.locator(".table-pane-title")).toHaveText(`Refresh the prediction · Controller ${tag}`);
+  await expect(pd.locator(".pred2-table tbody tr")).toHaveCount(1);
   await expect(pd.getByRole("status")).toContainText("failures per million hours");
   await pd.getByRole("button", { name: "Cancel" }).click();
+  await expect(pd).toHaveCount(0);
   await expectHealthy(page, problems, { label: "ALT and prediction rows" });
 });
 
@@ -382,7 +390,7 @@ test("Fit a life model… with a prior around a value, between two bounds", asyn
   await expect(dialog).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Fit a life model" })).toHaveCount(0);
   await expect(page.locator(".tt-main .tt-side .fit-pane")).toBeVisible();
-  await expect(dialog.locator(".fit-pane-title")).toHaveText(`Fit a life model · Around pump ${tag}`);
+  await expect(dialog.locator(".table-pane-title")).toHaveText(`Fit a life model · Around pump ${tag}`);
   await expect(row(page, pump.id)).toBeVisible();
   await expect(row(page, other.id)).toBeVisible();
   await expect(row(page, pump.id)).toHaveAttribute("aria-selected", "true");
@@ -486,7 +494,7 @@ test("a product's Modelling tab: Fit a life model… in the table area", async (
   await open(page, `/products/${product.id}?view=models&sel=${motor.id}`);
   await headPick(page, "Life model", "Fit a life model…");
   const pane = page.getByRole("region", { name: "Fit a life model" });
-  await expect(pane.locator(".fit-pane-title")).toHaveText(`Fit a life model · Fit motor ${tag}`);
+  await expect(pane.locator(".table-pane-title")).toHaveText(`Fit a life model · Fit motor ${tag}`);
   await expect(page.getByRole("dialog", { name: "Fit a life model" })).toHaveCount(0);
   await expect(row(page, motor.id)).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/products/${product.id}\\?.*view=models.*fit=${motor.id}`));
@@ -497,4 +505,212 @@ test("a product's Modelling tab: Fit a life model… in the table area", async (
   await expect(row(page, motor.id)).toHaveAttribute("aria-selected", "true");
   await expect(page).not.toHaveURL(/[?&]fit=/);
   await expectHealthy(page, problems, { label: "a product's fit pane" });
+});
+
+// "Add a prediction (parts count)…" in the table area, as Fit a life model… is: beside the tree,
+// the parts table across it with its result beside it, live; the part-type list over the pane,
+// not cut off; Esc and × back to the table; another row asks first only when something changed;
+// ?predict= survives a reload; Save picks the new row.
+async function predictedController(request, tag) {
+  const ctl = await postOk(request, `${M}/positions`, { name: `Prediction board ${tag}` });
+  for (const [pn, name, quantity] of [[`C-${tag}`, `Bypass capacitor ${tag}`, 4], [`R-${tag}`, `Chip resistor ${tag}`, 12], [`AF-${tag}`, `Enclosure ${tag}`, 1]]) {
+    const part = await postOk(request, `${M}/parts`, { part_number: pn, name });
+    await postOk(request, `${M}/positions/${ctl.id}/parts`, { part_id: part.id, role: "component", quantity });
+  }
+  return ctl;
+}
+
+test("Add a prediction… opens in the table area: live result, the part-type list not cut off, Esc, discard, reload, save", async ({ page, request, problems }) => {
+  const tag = `pr${Date.now()}`;
+  const ctl = await predictedController(request, tag);
+  const other = await postOk(request, `${M}/positions`, { name: `Prediction neighbour ${tag}` });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${ctl.id}&tab=models`);
+  await headPick(page, "Prediction", "Add a prediction (parts count)…");
+  const pane = page.getByRole("region", { name: "Add a prediction" });
+  await expect(pane).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Add a prediction" })).toHaveCount(0);
+  await expect(page.locator(".tt-main .tt-side .pred-pane")).toBeVisible();
+  await expect(pane.locator(".table-pane-title")).toHaveText(`Add a prediction · Prediction board ${tag}`);
+  await expect(row(page, ctl.id)).toHaveAttribute("aria-selected", "true");
+  await expect(row(page, other.id)).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`[?&]predict=${ctl.id}`));
+  const treeBox = await page.locator(".tp-scroll").boundingBox();
+  const paneBox = await pane.boundingBox();
+  expect(paneBox.x).toBeGreaterThanOrEqual(treeBox.x + treeBox.width - 2);  // beside the tree
+  expect(paneBox.width).toBeGreaterThan(800);  // the table's room
+  // The parts across the pane, every column in view; at this width the result under them, in view
+  // with Save (side by side on a wider screen: the product test below).
+  await expect(pane.locator(".pred2-table tbody tr")).toHaveCount(3);
+  await expect(pane.locator(".pred2-table thead th")).toHaveText(["Part", "Qty", "Handbook part type", "Quality factor", "Not electronic", "Your own rate", "λ per 10⁶ h"]);
+  const inBox = await pane.locator(".pred2-in").boundingBox();
+  const outBox = await pane.locator(".pred2-out").boundingBox();
+  expect(outBox.y).toBeGreaterThan(inBox.y + inBox.height - 2);
+  expect(outBox.y + outBox.height).toBeLessThanOrEqual(900);
+  const lines = pane.locator(".pred2-lines");
+  expect(await lines.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  await expect(pane.locator(".pred2-ref").first()).toHaveText(`C-${tag}`);
+  await expect(pane.getByRole("status")).toContainText("Give the parts their handbook part types");
+  await expect(pane.getByRole("button", { name: "Save as this position's model" })).toBeDisabled();
+
+  // Esc: the table again, the row still picked and focused, the address back as it was.
+  await page.keyboard.press("Escape");
+  await expect(pane).toHaveCount(0);
+  await expect(row(page, ctl.id)).toHaveAttribute("aria-selected", "true");
+  await expect(row(page, ctl.id)).toBeFocused();
+  await expect(page).not.toHaveURL(/[?&]predict=/);
+  // ×: the same. Nothing changed, so picking another row just closes it.
+  await headPick(page, "Prediction", "Add a prediction (parts count)…");
+  await pane.getByRole("button", { name: "Close add a prediction" }).click();
+  await expect(pane).toHaveCount(0);
+  await expect(row(page, ctl.id)).toBeFocused();
+  await headPick(page, "Prediction", "Add a prediction (parts count)…");
+  await expect(pane.locator(".pred2-table tbody tr")).toHaveCount(3);
+  await row(page, other.id).locator(".tp-nm").click();
+  await expect(pane).toHaveCount(0);
+  await expect(page.getByRole("alertdialog", { name: "Discard this prediction?" })).toHaveCount(0);
+  await row(page, ctl.id).locator(".tp-nm").click();
+
+  // A reload keeps it open.
+  await headPick(page, "Prediction", "Add a prediction (parts count)…");
+  await page.reload();
+  await expect(pane).toBeVisible();
+  await expect(pane.locator(".pred2-table tbody tr")).toHaveCount(3);
+
+  // A part type from the search: the list shows whole over the pane, not cut off by the table.
+  const picker = pane.getByRole("combobox", { name: `Handbook part type of Bypass capacitor ${tag}` });
+  await picker.fill("capacitor");
+  const list = page.getByRole("listbox", { name: `Handbook part type of Bypass capacitor ${tag} matches` });
+  await expect(list.getByRole("option").first()).toBeVisible();
+  const lb = await list.boundingBox();
+  expect(lb.y + lb.height).toBeLessThanOrEqual(900);
+  expect(lb.height).toBeGreaterThan(100);
+  const onTop = await list.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return el.contains(document.elementFromPoint(r.left + r.width / 2, r.bottom - 6));
+  });
+  expect(onTop).toBe(true);
+  // Esc closes the list first, the pane stays.
+  await page.keyboard.press("Escape");
+  await expect(list).toHaveCount(0);
+  await expect(pane).toBeVisible();
+  // ↓ opens it again on the same words.
+  await picker.press("ArrowDown");
+  await list.getByRole("option").first().click();
+  // The live result: the rate, the MTBF, the line's own λ, and what's left out.
+  const status = pane.getByRole("status");
+  await expect(status).toContainText("failures per million hours");
+  await expect(status).toContainText(/about [\d,.]+ hours/);
+  await expect(status).toContainText("1 of 3 lines counted");
+  await expect(status).toContainText(`Left out, no part type yet: Chip resistor ${tag} ×12, Enclosure ${tag}`);
+  await expect(pane.locator(".pred2-c-lambda").first()).not.toHaveText("—");
+  await pane.getByRole("checkbox", { name: `Enclosure ${tag} is not electronic: leave it out` }).check();
+  await expect(status).toContainText(`Left out, not electronic: Enclosure ${tag}`);
+  await pane.getByLabel(`Your own failure rate for Chip resistor ${tag}, per million hours`).fill("0.5");
+  await expect(status).toContainText("2 of 3 lines counted");
+  await pane.getByLabel("Mission time (hours)").fill("500");
+  await expect(status).toContainText("chance of no failure in 500 hours");
+
+  // Changed: picking another row asks first; keeping it leaves everything as it was.
+  await row(page, other.id).locator(".tp-nm").click();
+  const discard = page.getByRole("alertdialog", { name: "Discard this prediction?" });
+  await expect(discard).toBeVisible();
+  await discard.getByRole("button", { name: "Keep predicting" }).click();
+  await expect(pane).toBeVisible();
+  await expect(pane.getByLabel("Mission time (hours)")).toHaveValue("500");
+  await expect(row(page, ctl.id)).toHaveAttribute("aria-selected", "true");
+
+  // Saved: the table again, the new prediction row picked.
+  await pane.getByRole("button", { name: "Save as this position's model" }).click();
+  await expect(pane).toHaveCount(0);
+  const picked = page.locator(`.tp-row[aria-selected="true"][data-key^="L:"]`);
+  await expect(picked).toHaveCount(1);
+  await expect(picked.locator(".mt-c-kind")).toHaveText("Prediction (parts count)");
+  await expectHealthy(page, problems, { label: "the prediction pane" });
+});
+
+test("the prediction at 400 px takes the screen: the parts, then the result, nothing sideways, Save in reach, Back", async ({ page, request }) => {
+  const tag = `pn${Date.now()}`;
+  const ctl = await predictedController(request, tag);
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${ctl.id}&tab=models`);
+  await row(page, ctl.id).locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Prediction", exact: true }).click();
+  await page.getByRole("group", { name: "Prediction" }).getByRole("menuitem", { name: "Add a prediction (parts count)…" }).click();
+  const pane = page.getByRole("region", { name: "Add a prediction" });
+  await expect(pane.locator(".pred2-table tbody tr")).toHaveCount(3);
+  await expect(page.getByRole("dialog", { name: "Add a prediction" })).toHaveCount(0);
+  const paneBox = await pane.boundingBox();
+  expect(Math.round(paneBox.width)).toBe(400);
+  const inBox = await pane.locator(".pred2-in").boundingBox();
+  const outBox = await pane.locator(".pred2-out").boundingBox();
+  expect(outBox.y).toBeGreaterThan(inBox.y);  // stacked: the parts first
+  expect(await sideways(page)).toBeLessThanOrEqual(400);
+  expect(await pane.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  // The part-type list stays on the screen.
+  await pane.getByRole("combobox", { name: `Handbook part type of Bypass capacitor ${tag}` }).fill("capacitor");
+  const list = page.getByRole("listbox", { name: `Handbook part type of Bypass capacitor ${tag} matches` });
+  await expect(list.getByRole("option").first()).toBeVisible();
+  const lb = await list.boundingBox();
+  expect(lb.x).toBeGreaterThanOrEqual(0);
+  expect(lb.x + lb.width).toBeLessThanOrEqual(400);
+  await list.getByRole("option").first().click();
+  await expect(pane.getByRole("status")).toContainText("failures per million hours");
+  await pane.getByRole("button", { name: "Save as this position's model" }).scrollIntoViewIfNeeded();
+  await expect(pane.getByRole("button", { name: "Save as this position's model" })).toBeEnabled();
+  expect(await sideways(page)).toBeLessThanOrEqual(400);
+  await pane.getByRole("button", { name: "Back to the table" }).click();
+  await expect(pane).toHaveCount(0);
+  await expect(row(page, ctl.id)).toBeVisible();
+});
+
+test("a product's Modelling tab: Add a prediction… in the table area, on the sample quadcopter", async ({ page, request, problems }) => {
+  const { products } = await (await request.get(`${M}/products`)).json();
+  const quad = products.find((p) => /^Survey quadcopter/.test(p.name));
+  expect(quad, "the seeded sample product").toBeTruthy();
+  for (const [width, height] of [[1920, 1080], [1440, 900], [400, 860]]) {
+    await page.setViewportSize({ width, height });
+    // The address alone opens it (a link, or a reload).
+    await open(page, `/products/${quad.id}?view=models&sel=${quad.id}&predict=${quad.id}`);
+    const pane = page.getByRole("region", { name: /^(Add a prediction|Refresh the prediction)$/ });
+    await expect(pane).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(pane.locator(".table-pane-title")).toContainText("Survey quadcopter");
+    await expect(pane.locator(".pred2-table tbody tr").first()).toBeVisible();
+    await expect(pane.getByRole("status")).toBeVisible();
+    // A few parts given their types, the mechanical ones left out, the battery a rate of its own.
+    for (const [part, words] of [["Flight controller", "microprocessor"], ["Brushless motor 2210", "motor"]]) {
+      await pane.getByRole("combobox", { name: `Handbook part type of ${part}` }).fill(words);
+      await page.getByRole("listbox", { name: `Handbook part type of ${part} matches` }).getByRole("option").first().click();
+    }
+    for (const part of ["Airframe kit, carbon arms", "Propeller 10x4.5"]) {
+      await pane.getByRole("checkbox", { name: `${part} is not electronic: leave it out` }).check();
+    }
+    await pane.getByLabel("Your own failure rate for Battery pack 6S 10 Ah, per million hours").fill("5");
+    await pane.getByLabel("Mission time (hours)").fill("100");
+    await expect(pane.getByRole("status")).toContainText("chance of no failure in 100 hours");
+    await pane.locator(".table-pane-title").scrollIntoViewIfNeeded();
+    expect(await sideways(page)).toBeLessThanOrEqual(width);
+    if (width >= 1920) {
+      // Wide: the result beside the parts.
+      const inBox = await pane.locator(".pred2-in").boundingBox();
+      const outBox = await pane.locator(".pred2-out").boundingBox();
+      expect(outBox.x).toBeGreaterThan(inBox.x + inBox.width - 2);
+    }
+    await shot(page, `${width}-quadcopter-prediction`);
+    if (width < 600) {
+      await pane.getByRole("region", { name: "The prediction" }).scrollIntoViewIfNeeded();
+      await shot(page, `${width}-quadcopter-prediction-result`);
+    }
+    if (width < 600) {
+      await pane.getByRole("button", { name: "Back to the table" }).click();
+    } else {
+      await expect(row(page, quad.id)).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(row(page, quad.id)).toHaveAttribute("aria-selected", "true");
+    }
+    await expect(pane).toHaveCount(0);
+    await expect(page).not.toHaveURL(/[?&]predict=/);
+  }
+  await expectHealthy(page, problems, { label: "a product's prediction pane" });
 });

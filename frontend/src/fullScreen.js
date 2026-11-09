@@ -70,6 +70,7 @@ export function movePortalHost(el, doc = typeof document === "undefined" ? null 
 export const OPEN_LAYERS = [
   ".overlay",
   ".sel-menu",
+  ".ptp-list",
   ".help-drawer",
   ".rbd-menu",
   ".ovm-menu:not([hidden]):not(.rbd-valid-pop)",

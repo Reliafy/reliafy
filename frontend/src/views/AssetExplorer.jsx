@@ -12,7 +12,8 @@ import {
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import BayesUpdateModal from "../components/BayesUpdateModal.jsx";
 import { FitPane } from "../components/FitLifeModel.jsx";
-import PredictionModal from "../components/PredictionModal.jsx";
+import PredictionPane from "../components/PredictionPane.jsx";
+import { PANE_PARAMS, TABLE_PANES, paneFromQuery } from "../tablePane.js";
 import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, graftModels, inUseWords, isModelRow, modelKey, openForModels, rollupText as modelRollup, lifeModelOf,
 } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
@@ -311,16 +312,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     try { localStorage.setItem("reliafy.models.treecols", JSON.stringify(next)); } catch { /* not kept */ }
   };
   const [modelModal, setModelModal] = useState(null);
-  // "Fit a life model…" fills the table area (?fit=<position id>, so a reload keeps it open), the
-  // tree kept beside it (Derryn, 9 Nov 2026: "It shouldn't be a modal itself"). `fitSeed`: what
-  // the opener chose for it ({id, start, link, n}); a reload opens it fresh. `fitDirty`: whether
-  // anything in it has been changed (leaving it for another row asks first only then).
-  const [fitSeed, setFitSeed] = useState(null);
-  const fitDirty = useRef(false);
-  const fitSaving = useRef(false);
-  const fitHeading = useRef(null);
+  // "Fit a life model…" and "Add a prediction…" fill the table area (?fit= / ?predict=<position
+  // id>, so a reload keeps it open; tablePane.js), the tree kept beside it (Derryn, 9 Nov 2026: "It
+  // shouldn't be a modal itself"). `paneSeed`: what the opener chose for it ({kind, id, start,
+  // link, n}); a reload opens it fresh. `paneDirty`: whether anything in it has been changed
+  // (leaving it for another row asks first only then).
+  const [paneSeed, setPaneSeed] = useState(null);
+  const paneDirty = useRef(false);
+  const paneSaving = useRef(false);
+  const paneHeading = useRef(null);
   const { full, toggle: toggleFull } = useFullScreen(frame, { returnFocus: fullBtn });
-  const pending = useRef(params.get("sel") || params.get("fit") || location.state?.treeReveal || null);
+  const pending = useRef(params.get("sel") || paneFromQuery(params)?.id || location.state?.treeReveal || null);
 
   const load = useCallback(() => {
     setError(null);
@@ -501,12 +503,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (params.get("sel") === selPos) return;
     // Another row: a report open in the Failure reports tab was the last row's.
     // A point or channel open in full in the Measurements tab was the last row's too, and so was
-    // a fit open in the Modelling tab's table area.
+    // a fit or a prediction open in the Modelling tab's table area.
     setQuery_((q) => {
       q.set("sel", selPos);
       q.delete("report");
       for (const k of VIEW_PARAMS) q.delete(k);
-      if (q.get("fit") && q.get("fit") !== selPos) q.delete("fit");
+      for (const k of PANE_PARAMS) if (q.get(k) && q.get(k) !== selPos) q.delete(k);
     });
   }, [data, selPos, params, setQuery_, tab]);
 
@@ -752,39 +754,44 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (phone && opts.go && !tableOn) navigate(location.pathname + location.search, { state: { treeDetail: key } });
   };
 
-  // The fit in the table area: the position it's for (from the address), opened and closed.
-  const fitId = modelsOn ? params.get("fit") : null;
-  const fitRow = fitId && whole.rows.has(fitId) ? whole.rows.get(fitId) : null;
-  const fitPosition = fitRow?.type === "pos"
-    ? { id: fitRow.key, name: fitRow.ref.name || "(no name)", position_class: fitRow.ref.position_class || "" } : null;
+  // The fit or the prediction in the table area: which, and the position it's for (from the
+  // address), opened and closed.
+  const paneAt = modelsOn ? paneFromQuery(params) : null;
+  const paneRow = paneAt && whole.rows.has(paneAt.id) ? whole.rows.get(paneAt.id) : null;
+  const panePosition = paneRow?.type === "pos"
+    ? { id: paneRow.key, name: paneRow.ref.name || "(no name)", position_class: paneRow.ref.position_class || "" } : null;
+  const paneKind = panePosition ? paneAt.kind : null;
   // An address for a position that isn't in the tree (deleted, or another tree): the table as usual.
   useEffect(() => {
-    if (fitId && data && !fitPosition) setQuery_((q) => q.delete("fit"));
-  }, [fitId, data, !!fitPosition]); // eslint-disable-line react-hooks/exhaustive-deps
-  const openFit = (position, { start = {}, link = null, query = null } = {}) => {
-    fitDirty.current = false;
-    setFitSeed((s) => ({ id: position.id, start, link, n: (s?.n || 0) + 1 }));
+    if (paneAt && data && !panePosition) setQuery_((q) => { for (const k of PANE_PARAMS) q.delete(k); });
+  }, [paneAt?.id, data, !!panePosition]); // eslint-disable-line react-hooks/exhaustive-deps
+  const openPane = (kind, position, { start = {}, link = null, query = null } = {}) => {
+    paneDirty.current = false;
+    setPaneSeed((s) => ({ kind, id: position.id, start, link, n: (s?.n || 0) + 1 }));
     setPanel(false);
     if (selPos !== position.id && display.rows.has(position.id)) reveal(position.id);
-    setQuery_((q) => { q.set("fit", position.id); query?.(q); });
-    setTimeout(() => fitHeading.current?.focus({ preventScroll: true }), 0);
+    setQuery_((q) => {
+      for (const k of PANE_PARAMS) q.delete(k);
+      q.set(TABLE_PANES[kind].param, position.id);
+      query?.(q);
+    });
+    setTimeout(() => paneHeading.current?.focus({ preventScroll: true }), 0);
   };
+  const openFit = (position, opts) => openPane("fit", position, opts);
+  const openPredict = (position, link = null) => openPane("predict", position, { link });
   // Back to the table, the row picked as it was (focus on it); `focusRow`: false when another row is being picked.
-  const closeFit = ({ focusRow = true } = {}) => {
-    fitDirty.current = false;
-    fitSaving.current = false;
-    setFitSeed(null);
-    setQuery_((q) => q.delete("fit"));
+  const closePane = ({ focusRow = true } = {}) => {
+    paneDirty.current = false;
+    paneSaving.current = false;
+    setPaneSeed(null);
+    setQuery_((q) => { for (const k of PANE_PARAMS) q.delete(k); });
     if (focusRow) setTimeout(() => document.getElementById(`tp-${focus}`)?.focus({ preventScroll: true }), 0);
   };
-  // Picking another row with the fit open closes it, asking first only if something was changed.
+  // Picking another row with the pane open closes it, asking first only if something was changed.
   const pickRow = async (key, opts = {}) => {
-    if (fitPosition && key !== fitPosition.id) {
-      if (fitDirty.current && !(await confirm({
-        title: "Discard this fit?", body: "What you've chosen in Fit a life model isn't saved.",
-        confirmLabel: "Discard the fit", cancelLabel: "Keep fitting",
-      }))) return;
-      closeFit({ focusRow: false });
+    if (panePosition && key !== panePosition.id) {
+      if (paneDirty.current && !(await confirm(TABLE_PANES[paneKind].discard))) return;
+      closePane({ focusRow: false });
     }
     pick(key, opts);
   };
@@ -1138,7 +1145,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const rr = whole.rows.get(pid);
     const position = { id: pid, name: rr?.ref.name || "(no name)", position_class: rr?.ref.position_class || "" };
     if (id === "model-attach-fit-life") return openFit(position);
-    if (id === "model-refresh-predict") return setModelModal({ kind: "predict", position, link: predictionOf(pid) });
+    if (id === "model-attach-predict") return openPredict(position);
+    if (id === "model-refresh-predict") return openPredict(position, predictionOf(pid));
     // Add to a library…: the position's life model in use (else its first) snapshotted into a data library.
     if (id === "model-attach-to-library") return setModelModal({ kind: "to-library", position, link: lifeModelOf(pmodels.links, pid) });
     return setModelModal({ kind: id.slice(13), position });
@@ -1159,7 +1167,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       openFit({ ...position, position_class: whole.rows.get(r.ref.position_id)?.ref.position_class || "" },
         { link, start: { data: scope === "class" ? "class" : "position" } });
     }
-    else if (id === "model-predict") setModelModal({ kind: "predict", position, link });
+    else if (id === "model-predict") openPredict(position, link);
     else if (id === "model-to-library") setModelModal({ kind: "to-library", position, link });
     else if (id === "model-rebuild") setModelModal({ kind: "rbd-build", position, link });
     else if (id === "model-use") {
@@ -1365,22 +1373,22 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [wideOn]);
-  // Esc with the fit open: back to the table, unless a dialog, list or menu is open over it (Esc
-  // closes that first). Capture phase, so the picker over the pane is still seen before its own
-  // Escape takes it away.
-  const closeFitRef = useRef(null);
-  closeFitRef.current = closeFit;
-  const fitOpen = !!fitPosition;
+  // Esc with the fit or the prediction open: back to the table, unless a dialog, list or menu is
+  // open over it (Esc closes that first). Capture phase, so a picker or list over the pane is still
+  // seen before its own Escape takes it away.
+  const closePaneRef = useRef(null);
+  closePaneRef.current = closePane;
+  const paneOpen = !!panePosition;
   useEffect(() => {
-    if (!fitOpen) return undefined;
+    if (!paneOpen) return undefined;
     const onKey = (e) => {
       if (e.key !== "Escape" || e.defaultPrevented || hasOpenLayer(document)) return;
-      if (fitSaving.current) return; // saving: it closes itself once saved
-      closeFitRef.current?.();
+      if (paneSaving.current) return; // saving: it closes itself once saved
+      closePaneRef.current?.();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [fitOpen]);
+  }, [paneOpen]);
   // The dialog stays open (Apply saying "Saving…") until the server has it;
   // a refusal shows in the dialog, with everything as it was typed.
   const saveDecision = async (answer) => {
@@ -1708,9 +1716,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const colMap = fmeaOn ? FMEA_COLUMN : COLUMN;
   const prefsW = fmeaOn ? fprefs.widths : rprefs.widths;
   // The details expanded (a wide screen, the details shown): only the tree column beside them.
-  // The fit open (a wide screen): the same, the fit in the table's room.
-  const fitWide = !!fitPosition && !phone;
-  const wideDetails = wideOn || fitWide;
+  // The fit or the prediction open (a wide screen): the same, it in the table's room.
+  const paneWide = !!panePosition && !phone;
+  const wideDetails = wideOn || paneWide;
   const cols = wideDetails ? [] : shownCols.map((id) => colMap[id]).filter(Boolean);
   const widths = {};
   for (const c of cols) widths[c.id] = prefsW[c.id] ?? c.width;
@@ -2024,23 +2032,35 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                  onClose={closeDetails} headingRef={detailsHeading} onMenu={setTabMenu} onAction={modelAction} />
     </div>
   ) : null;
-  // The fit in the table area (a wide screen), or the whole screen with Back (a phone).
-  const seed = fitPosition && fitSeed?.id === fitPosition.id ? fitSeed : null;
-  const fitSide = fitPosition ? (
+  // The fit or the prediction in the table area (a wide screen), or the whole screen with Back (a
+  // phone). A reloaded "Refresh the prediction…" (no seed) refreshes the position's prediction
+  // rather than adding a second one.
+  const seed = panePosition && paneSeed?.id === panePosition.id && paneSeed.kind === paneKind ? paneSeed : null;
+  const paneProps = panePosition ? {
+    position: panePosition, phone, headingRef: paneHeading, onClose: () => closePane(),
+    onDirty: (d) => { paneDirty.current = d; }, onSaving: (b) => { paneSaving.current = b; },
+    onDone: (made, text) => {
+      closePane({ focusRow: false });
+      say(text);
+      // The new row picked and brought into view once the models are read again.
+      if (made?.id) pending.current = modelKey(made.id);
+      pmodels.load();
+    },
+  } : null;
+  const predictLink = seed ? seed.link : panePosition ? predictionOf(panePosition.id) : null;
+  const paneSide = !panePosition ? null : paneKind === "predict" ? (
+    // Waits for the models, so a reload knows whether it refreshes one.
+    seed || pmodels.links ? (
+      <div className="rw tt-side">
+        <PredictionPane key={`${panePosition.id}:${seed?.n || 0}:${predictLink?.id || ""}`} link={predictLink} {...paneProps} />
+      </div>
+    ) : null
+  ) : (
     <div className="rw tt-side">
-      <FitPane key={`${fitPosition.id}:${seed?.n || 0}`} position={fitPosition} start={seed?.start || {}} link={seed?.link || null}
-               phone={phone} headingRef={fitHeading} onClose={() => closeFit()} onDirty={(d) => { fitDirty.current = d; }}
-               onSaving={(b) => { fitSaving.current = b; }}
-               onDone={(made, text) => {
-                 closeFit({ focusRow: false });
-                 say(text);
-                 // The new row picked and brought into view once the models are read again.
-                 if (made?.id) pending.current = modelKey(made.id);
-                 pmodels.load();
-               }} />
+      <FitPane key={`${panePosition.id}:${seed?.n || 0}`} start={seed?.start || {}} link={seed?.link || null} {...paneProps} />
     </div>
-  ) : null;
-  const side = rcmOn ? rcmSide : measOn ? measSide : modelsOn ? fitSide || modelSide : phone ? null : summary;
+  );
+  const side = rcmOn ? rcmSide : measOn ? measSide : modelsOn ? paneSide || modelSide : phone ? null : summary;
 
   // The tree's quiet last row: a new position (or location) at the top level.
   // Inside a pinned branch, or one tree on show (a product's structure, an
@@ -2207,11 +2227,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <RbdLinkModal position={modelModal.position} onClose={() => setModelModal(null)}
                       onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       )}
-      {modelModal?.kind === "predict" && (
-        <PredictionModal position={modelModal.position} link={modelModal.link || null} onClose={() => setModelModal(null)}
-                         onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
-      )}
-      <ModelDialogs modal={["bayes", "predict", "rbd-build", "rbd-link", "params", "library", "to-library"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
+      <ModelDialogs modal={["bayes", "rbd-build", "rbd-link", "params", "library", "to-library"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
                     onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       <MeasDialogs modal={measModal} onClose={() => setMeasModal(null)} onSaid={(text) => say(text)}
                    onDone={() => { setMeasModal(null); meas.load(); }} />
