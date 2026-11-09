@@ -512,6 +512,8 @@ def _availability(
 ) -> JSONResponse:
     # The exact figures (free) unless the simulation runs or meets the paywall.
     usage_service.set_feature("availability_exact")
+    # Blocks with covariates left open at their positions, made concrete (covariate_binding.py).
+    graph, _ = rbds_service.bind_covariates(session, resolve_owners, graph)
     status, payload = availability_payload(
         session, ctx, graph, t_max, rbd, force, resolve_owners,
         simulate=simulate, current_state=current_state, exact=exact, quick=quick, surface="app",
@@ -520,6 +522,35 @@ def _availability(
     if status in (202, 402) or sim_state == "done":
         usage_service.set_feature("availability_sim")
     return JSONResponse(status_code=status, content=payload)
+
+
+@router.post("/rbds/binding-inputs")
+def binding_inputs(binding: dict = Body(..., embed=True), session=Depends(get_session),
+                   ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """A covariate model's inputs (NSWC-11, ALT or PH; covariate_binding.py), the same shape for
+    each: what a position fixes and what a bound RBD block or the diagram sets. Also says which the
+    binding fixes and which it leaves open."""
+    from backend.services import covariate_binding as cb
+
+    try:
+        b = cb.normalise(binding, session, ctx.read_owners)
+        inputs = cb.inputs_of(b, session, ctx.read_owners)
+    except cb.BindingError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    return JSONResponse(content={"binding": b, "inputs": inputs,
+                                 "open": [i["key"] for i in inputs if i["key"] not in b["fixed"]]})
+
+
+@router.post("/rbds/bound-blocks")
+def bound_blocks(graph: dict = Body(..., embed=True), session=Depends(get_session),
+                 ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """The blocks whose covariates were left open at their positions: for each, the inputs still
+    open, the value each takes and where it came from (the block, the diagram's Use or Environment
+    value, a default), and what's missing (covariate_binding.py)."""
+    from backend.services import covariate_binding as cb
+
+    blocks = cb.bound_blocks(graph or {}, lambda b: cb.inputs_of(b, session, ctx.read_owners))
+    return JSONResponse(content={"blocks": blocks, "conditions": (graph or {}).get("conditions") or []})
 
 
 @router.post("/rbds/analyze")

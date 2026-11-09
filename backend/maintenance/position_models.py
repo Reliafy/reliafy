@@ -53,7 +53,9 @@ from backend.maintenance.store import GraphStore
 
 #: Where a linked model lives: the saved non-repairable models (also condition and
 #: life, regression and competing risks), repairable, degradation and accelerated life.
-MODEL_TYPES = ("model", "recurrent_model", "degradation_model", "alt_model", "rbd")
+#: covariate_record: an NSWC-11 covariate model with covariates left open at the position
+#: (covariate_positions.py).
+MODEL_TYPES = ("model", "recurrent_model", "degradation_model", "alt_model", "rbd", "covariate_record")
 #: How a model came to the position: chosen from the library, fitted from history,
 #: the position class's model, copied from the product design it was built from, or a
 #: Bayesian update of a baseline with its history (backend/services/bayes_life.py).
@@ -312,9 +314,11 @@ def fetcher(db, owners, hidden=frozenset()):
 
     from backend.services import rbds as rbds_service
 
+    from backend.maintenance import covariate_positions
+
     getters = {"model": models_service.get_model, "recurrent_model": recurrent_service.get_model,
                "degradation_model": degradation_service.get_model, "alt_model": alt_service.get_model,
-               "rbd": rbds_service.get_rbd}
+               "rbd": rbds_service.get_rbd, "covariate_record": covariate_positions.record_doc}
     memo: dict = {}
 
     def fetch(model_type, model_id):
@@ -374,6 +378,10 @@ DIST_LABELS = {"weibull": "Weibull", "exponential": "Exponential", "lognormal": 
 def summary(model_type: str, doc) -> dict:
     """A saved model in a row: its kind in words, family, unit, the headline numbers
     (with bounds where it has them), the data behind it and a one-word quality."""
+    if model_type == "covariate_record":
+        from backend.maintenance import covariate_positions
+
+        return covariate_positions.summary(doc)
     r = dict(getattr(doc, "results", None) or {})
     unit = r.get("unit") or ""
     out = {"name": doc.name, "unit": unit, "family": "life", "kind": "", "numbers": [], "counts": {},
@@ -586,6 +594,8 @@ def describe(m, db, owners, hidden, links: list[dict], age: float | None = None)
         else:
             model = summary(link["model_type"], doc) if doc is not None else None
         text = (model or {}).get("bayes_source") or source_text(link)
+        if (link.get("source") or {}).get("binding_words"):  # covariates fixed here (covariate_positions.py)
+            text = f"{text} ({link['source']['binding_words']})"
         if link["model_type"] == "rbd":
             text = rbd_source(link, model)
         if model and model.get("covariate_words") and link.get("role") in ("assigned", "design"):
@@ -840,9 +850,11 @@ def detail(m, db, owners, hidden, link_id: str, age: float | None = None) -> dic
             "curves": _curves(link["model_type"], doc, db, owners) if doc is not None else None,
             "origin": origin_text(link, doc), "model_notes": notes[:2000],
             # A covariate model is shown as fitted: the stress is set where it's used.
-            "stress_note": ("Shown as fitted. The stress (or covariates) at this position is set where the model is "
-                            "used: an RBD block or a calculation." if (row.get("model") or {}).get("covariate_words")
-                            else None),
+            "stress_note": (f"Covariates: {(link.get('source') or {})['binding_words']}." if (
+                link.get("source") or {}).get("binding_words") else
+                "Shown as fitted. The stress (or covariates) at this position is set where the model is "
+                "used: an RBD block or a calculation." if (row.get("model") or {}).get("covariate_words")
+                else None),
             "prediction": prediction_detail(db, owners, link) if link.get("role") == "prediction" else None}
 
 
@@ -1027,7 +1039,7 @@ def bayes_position(m, db, owners, hidden, position_id: str, baseline: dict | Non
 # go"): the parts listed at the position and every position inside it (replacement parts and
 # components; consumables aren't in it), or a product design's bill of materials where its
 # positions list none. Each part takes a handbook part type (MIL-HDBK-217F base rate) and a
-# quality factor; the environment is set once on the position (default: the nearest position
+# quality factor, or an NSWC-11 mechanical component with its conditions (a covariate model); the environment is set once on the position (default: the nearest position
 # above with a prediction, else the handbook's ground fixed). The parts count itself is
 # backend/services/reliability_prediction.py. It's saved as a reliability prediction (on the
 # Predictions page, linked back to the position) and as an exponential model at its rate, so
@@ -1056,9 +1068,14 @@ def _assigned(assign: dict | None, previous: dict, part_id, reference) -> dict:
 
 def _line_type(a: dict) -> dict:
     """What a line takes from its assignment: a handbook part type (and a quality factor, or
-    None for the part type's default), a rate of the user's own per part, or left out as not an
+    None for the part type's default; an NSWC-11 part type: its conditions and, for a rate per
+    cycle, its cycles an hour), a rate of the user's own per part, or left out as not an
     electronic part."""
     out = {"record_id": a.get("record_id") or None, "quality_factor": a.get("quality_factor") or None}
+    if a.get("record_id") and isinstance(a.get("conditions"), dict) and a["conditions"]:
+        out["conditions"] = dict(a["conditions"])
+    if a.get("record_id") and a.get("cycles_per_hour") not in (None, ""):
+        out["cycles_per_hour"] = a["cycles_per_hour"]
     if a.get("rate_per_million_hours") not in (None, ""):
         out["rate_per_million_hours"] = a["rate_per_million_hours"]
     if a.get("excluded"):
@@ -1097,6 +1114,14 @@ def prediction_lines(m, position_id: str, assign: dict | None = None, previous: 
             part = view["part"]
             ref = part.get("part_number") or ""
             a = _assigned(assign, previous, part["id"], ref)
+            if a.get("record_id") and not a.get("conditions"):
+                # A part on an NSWC-11 model its position fixes covariates of starts from them.
+                from backend.maintenance import covariate_positions
+
+                fixed = covariate_positions.prediction_conditions(m, pid, a["record_id"])
+                if fixed:
+                    a = {**a, "conditions": {k: v for k, v in fixed.items() if k != "cycles_per_hour"},
+                         **({"cycles_per_hour": fixed["cycles_per_hour"]} if "cycles_per_hour" in fixed else {})}
             lines.append({"part_id": part["id"], "listing_id": view["id"], "position": dict(here), "role": view["role"],
                           "name": part.get("name") or ref or "Part", "reference": ref,
                           "quantity": view.get("quantity") or 1, "assembly": list(path), **_line_type(a),
@@ -1228,7 +1253,7 @@ def predict_position(m, db, owners, hidden, position_id: str, environment: str |
     model = models_service.import_model(
         db, owner, f"{p['name']} (predicted, parts count)"[:200], "exponential", unit="Hours",
         params=[{"name": "failure_rate", "value": float(rate)}],
-        notes=f"A MIL-HDBK-217F parts count of {p['name']}'s parts list in {env_info.get('name') or inputs['environment']}.")
+        notes=_model_note(p["name"], results, env_info.get("name") or inputs["environment"]))
     db.models.update_one({"_id": model.id}, {"$set": {"results.method": "parts_count",
                                                       "results.prediction_id": pred.id}})
     old = replace_link_id or next((x["id"] for x in _prediction_links(m, position_id)), None)
@@ -1240,6 +1265,16 @@ def predict_position(m, db, owners, hidden, position_id: str, environment: str |
               "parts_source": got["source"]}
     link = m.link_position_model(position_id, "model", model.id, "prediction", None, model.name, note, source, old)
     return {**link, "prediction": {"id": pred.id, "results": results}}
+
+
+def _model_note(name: str, results: dict, environment: str) -> str:
+    """The saved model's note: which handbooks its parts count used (and the Navy's statement when
+    NSWC-11 is one)."""
+    books = [h["short_name"] for h in results.get("handbooks") or []] or ["MIL-HDBK-217F"]
+    note = f"A {' and '.join(books)} parts count of {name}'s parts list in {environment}."
+    if results.get("disclaimer"):
+        note += " " + results["disclaimer"]
+    return note
 
 
 def prediction_detail(db, owners, link: dict) -> dict | None:
@@ -1348,6 +1383,11 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
         x, d = in_use.get(child["id"]), docs.get(child["id"])
         if x is None or d is None:
             return None, None
+        from backend.maintenance import covariate_positions
+
+        bound = covariate_positions.block_model(x)
+        if bound is not None:  # covariates left open at the position: set on the block or the diagram
+            return bound, None
         if x["model_type"] == "rbd":
             return {"subsystem_rbd_id": d.id}, None
         if x["model_type"] != "model" or d.kind not in ("distribution", "regression"):

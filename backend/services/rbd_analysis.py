@@ -182,6 +182,47 @@ def _ph_reliability(model: dict, where: str, resolve_model, cov_values):
         raise AnalysisError(f"{where}: {exc}") from exc
 
 
+class _ALTStress:
+    """A block on a saved accelerated life model at one set of stresses (fixed at its position or
+    set in the RBD): the model's reliability at that stress, closed form like a PH node."""
+
+    def __init__(self, model, Z, name: str, scale: float = 1.0):
+        self.model = model
+        self.Z = np.atleast_2d(np.asarray(Z, dtype=float))
+        self.dist = _DistName(name or "Accelerated life")
+        self.scale = scale  # model time units per diagram time unit
+
+    def sf(self, x) -> np.ndarray:
+        x = np.atleast_1d(np.asarray(x, dtype=float)) * self.scale
+        with np.errstate(all="ignore"):
+            return np.clip(np.asarray(self.model.sf(x, np.repeat(self.Z, x.size, axis=0)), dtype=float).ravel(), 0, 1)
+
+    def ff(self, x) -> np.ndarray:
+        return 1.0 - self.sf(x)
+
+    def cs(self, x, X) -> np.ndarray:
+        return conditional_survival(self, x, X)
+
+
+def _alt_stress_reliability(model: dict, where: str, resolve_model):
+    """An accelerated life model at the block's stress (``kind: alt_stress``)."""
+    if resolve_model is None:
+        return PerfectReliability
+    entry = resolve_model(f"alt:{model.get('model_id')}")
+    if not entry:
+        raise AnalysisError(f"{where}: its accelerated life model wasn't found (deleted?).")
+    from backend.services.covariate_binding import BindingError, _hours_per
+
+    try:
+        scale = _hours_per(model.get("diagram_unit") or "hours") / _hours_per(entry.get("unit") or "hours")
+    except BindingError as exc:
+        raise AnalysisError(f"{where}: {exc}") from None
+    try:
+        return _ALTStress(entry["model"], model.get("stress") or [], entry.get("name") or "Accelerated life", scale)
+    except Exception as exc:  # noqa: BLE001 - a stress row the model can't take
+        raise AnalysisError(f"{where}: {exc}") from None
+
+
 #: Why a repairable diagram (or a block of several units) takes no
 #: condition-based block, for the user.
 JOINT_REPAIRABLE = (
@@ -290,6 +331,15 @@ def _build_distribution(
         return _nonparametric_reliability(model, where, resolve_model)
     if model.get("kind") == "joint":
         return _joint_reliability(model, where, resolve_model)
+    if model.get("kind") == "bound":
+        # Covariates left open at its position (covariate_binding.py): made concrete before the
+        # analysis from the block's and the diagram's values. Still bound here: they're not all set.
+        if resolve_model is None:
+            return PerfectReliability  # structural check: the values are asked for at calculation
+        raise AnalysisError(f"{where}: set its covariates first (on the block, or the diagram's Use and "
+                            "Environment values).")
+    if model.get("kind") == "alt_stress":
+        return _alt_stress_reliability(model, where, resolve_model)
     from backend.services import rbd_mixture
 
     if rbd_mixture.is_mixture(model):

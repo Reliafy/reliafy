@@ -189,6 +189,7 @@ export default function PredictionResult({ results, name = "Reliability predicti
 
       <ResultDetails summary="How it was worked out">
         <p>{r.method}</p>
+        {r.disclaimer && <p className="pred-disclaimer"><b>NSWC-11:</b> {r.disclaimer}</p>}
         <p>{factorsText(r.factors)}</p>
         {r.factors?.note && <p className="hint">{r.factors.note}</p>}
         {(r.sources || []).map((s) => (

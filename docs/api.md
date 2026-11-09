@@ -258,13 +258,30 @@ or a new fit from its failure history (`fit: true`, Pro; `distribution`,
 failure there; a fit then counts failures by other modes as suspensions);
 `replace_link_id` swaps one model for another. Accelerated-life and covariate
 models attach as they are (their stress is set where they're used, an RBD block
-or a calculation). `prediction: {environment?, mission_time?, assign?}` makes a
+or a calculation). `prediction: {environment?, mission_time?, assign?}` (an
+`assign` entry for an NSWC-11 part type carries `conditions` and, for a rate per
+cycle, `cycles_per_hour`) makes a
 parts-count prediction from the position's parts list (and those inside it; a
 product design's bill of materials where they list none), `assign` giving each
 part number a handbook `record_id` (and `quality_factor`): it's saved as a
 reliability prediction (its page links back to the position) and as an
 exponential model at its rate, and attached with role `prediction`. The app
 previews it with `POST /api/maintenance/positions/{id}/prediction`.
+
+`bind: {source: nswc | alt | ph, ref, fixed?: {input: value}, roles?: {input:
+design | use | environment}}` links a covariate model (an NSWC-11 record, an
+accelerated life model or a proportional-hazards model) with some, all or none
+of its covariates fixed at the position. An NSWC-11 model with every input
+fixed is saved as a constant-rate exponential; otherwise the link keeps the
+binding and an RBD built from the tree gets a bound block. A bound block takes
+each open input from its own `covariate_values`, else the diagram's
+`conditions` (`[{name, role: use | environment, unit, value}]`, matched by the
+input's key, symbol or label and unit, or named by the block's
+`covariate_map`), else a default the model gives; an analysis with one still
+missing is refused, naming each block and what it needs. `POST
+/api/rbds/binding-inputs {binding}` lists a model's inputs (the same shape for
+every source) and `POST /api/rbds/bound-blocks {graph}` each bound block's
+open inputs, the value each takes and where it came from.
 An RBD row: `rbd_id` links an existing diagram; `build_rbd: true` makes a new
 one from the positions one level inside (each block the child's model in use,
 or its own RBD as a sub-system; a flagged placeholder where it has none), wired
@@ -490,18 +507,22 @@ everyone, so it's readable without an account:
 
 | Call | Does |
 |---|---|
-| `GET /api/library/search?q=…&source=…&equipment_type=…&kind=…&failure_mode=…&use=…&facets=true&page=1&page_size=25` | Matching records, best first, 25 a page (at most 100), with `total`, `pages` and `counts` by equipment type, kind and source. `kind` is `rate`, `per_demand` or `life`; `failure_mode` is a failure mode's name (any case). `facets=true` adds `facets`: for equipment type, failure mode and kind, how many records each choice would give with the other filters (and `use`) kept. `use` (`model` or `prior`) keeps only the records usable as that on their own (a failure rate counted from service; not a handbook base rate for a parts count, nor a probability per demand), and `left_out` counts what it hid, by why. |
+| `GET /api/library/search?q=…&source=…&equipment_type=…&kind=…&failure_mode=…&use=…&facets=true&page=1&page_size=25` | Matching records, best first, 25 a page (at most 100), with `total`, `pages` and `counts` by equipment type, kind and source. `kind` is `rate`, `per_demand`, `life` or `covariate_model`; `failure_mode` is a failure mode's name (any case). `facets=true` adds `facets`: for equipment type, failure mode and kind, how many records each choice would give with the other filters (and `use`) kept. `use` (`model` or `prior`) keeps only the records usable as that on their own (a failure rate counted from service; not a handbook base rate for a parts count, nor a probability per demand), and `left_out` counts what it hid, by why. |
 | `GET /api/library/records/{id}?environment=…` | One record in full (values, spread, evidence, conditions, citation, licence and notes) and `block_model`: the model an RBD block would use. A handbook rate (MIL-HDBK-217F) depends on the environment the part works in: give `environment` (e.g. `GF`, ground, fixed) for its block model; without it, `environments` lists the rate in each. |
+| `POST /api/library/records/{id}/evaluate` | A covariate model's rate (NSWC-11) under conditions: body `{values: {input: value}}` (a missing input takes the handbook's default). Answers `{ok: true, result: {total, unit, modes, derived}, warnings}` or `{ok: false, problems}`, each problem or warning naming the limit and the handbook's page. Saves nothing. |
 | `GET /api/library/sources` | The sources, their licences and what each holds. |
 
 The same reads are the `library` tool: `POST /api/v1/library/search`
 (`query`, `source`, `equipment_type`, `kind`, `page`, `page_size`), `POST
-/api/v1/library/get` (`id`, `environment`) and `POST
+/api/v1/library/get` (`id`, `environment`, `conditions`: a covariate model's inputs, adding `evaluation`) and `POST
 /api/v1/library/sources`, and on the command line `reliafy list kind library
 --query "motor-driven pump"`. Library lookups are never counted against the
 Free plan's tool calls. These are generic estimates (today: U.S. nuclear
 power plant industry averages, and base failure rates for electronic parts
-from the MIL-HDBK-217F prediction handbook), not your own equipment's data;
+from the MIL-HDBK-217F prediction handbook, and covariate models for mechanical
+parts from the U.S. Navy's NSWC-11 handbook: a base rate × condition factors,
+each input with the handbook's limits; CDNSWC and the Navy did not take part in
+or approve Reliafy), not your own equipment's data;
 show each record's `licence.attribution` with its numbers. In the app the
 library is under Models › Library (`/models/library`, one page per source and
 per record). Its **Use as a model…** is `POST /api/models/from-library`
@@ -561,7 +582,7 @@ mission time, the rate per assembly and a Pareto. Free and exact.
 
 | Call | Does |
 |---|---|
-| `POST /api/v1/analyse/prediction` | The parts count, saving nothing: `lines` (`[{name, record_id, quantity, quality_factor?, assembly?, reference?}]`), `environment` (`GB`, `GF`, `GM`, `NS`, `NU`, `AIC`, `AIF`, `AUC`, `AUF`, `ARW`, `SF`, `MF`, `ML`, `CL`), `mission_time` (hours, default 1,000). Reliafy Maintenance users may give `product_id` instead of lines: the product's bill of materials comes back as lines to assign. |
+| `POST /api/v1/analyse/prediction` | The parts count, saving nothing: `lines` (`[{name, record_id, quantity, quality_factor?, assembly?, reference?}]`; a mechanical part's NSWC-11 `record_id` takes `conditions` (its inputs) and, for a rate per cycle, `cycles_per_hour` instead of `quality_factor`, and a line still missing one is listed in `needs_conditions` and left out of the total), `environment` (`GB`, `GF`, `GM`, `NS`, `NU`, `AIC`, `AIF`, `AUC`, `AUF`, `ARW`, `SF`, `MF`, `ML`, `CL`), `mission_time` (hours, default 1,000). Reliafy Maintenance users may give `product_id` instead of lines: the product's bill of materials comes back as lines to assign. |
 | `POST /api/v1/change/prediction_save` | Save one: `name` and the same arguments; the results are computed on save and kept as they were. `change/prediction_update` (`prediction_id`, any of `name`, `lines`, `environment`, `mission_time`, `notes`) computes them again; `change/prediction_delete` deletes one of yours. |
 | `POST /api/v1/list/predictions`, `POST /api/v1/get/prediction` (`id`) | The saved predictions, and one in full (inputs and results). |
 

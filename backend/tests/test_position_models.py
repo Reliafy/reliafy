@@ -277,6 +277,35 @@ def test_a_prediction_row_from_the_parts_list(m, db):
     _same_after_rebuild(m)
 
 
+def test_a_prediction_line_on_an_nswc_model_keeps_its_conditions(m, db):
+    """A mechanical part takes an NSWC-11 covariate model with its conditions: counted under them,
+    saved with the prediction, and a refresh (no assign given) keeps them."""
+    from backend.services import reliability_prediction as rp
+
+    ctl, psu = _board(m)
+    bearing = "nswc-11:bearing-rolling-load-rating"
+    cond = {"L_S": 5000, "F_R": 1000, "n": 1800}
+    # Without its conditions the line is listed and left out, so the preview still works.
+    first = pm.predict_position(m, db, OWNERS, set(), ctl, assign={"C-100": {"record_id": CAP}, "U-7": {"record_id": bearing}})
+    assert first["results"]["counts"]["needs_conditions"] == 1
+    assert first["results"]["needs_conditions"][0]["reference"] == "U-7"
+    assign = {"C-100": {"record_id": CAP}, "U-7": {"record_id": bearing, "conditions": cond}}
+    link = pm.predict_position(m, db, OWNERS, set(), ctl, assign=assign, save=True)
+    res = link["prediction"]["results"]
+    line = next(ln for ln in res["lines"] if ln["reference"] == "U-7")
+    assert line["handbook"] == "NSWC-11" and line["rate_per_million_hours"] > 0 and line["quality_factor"] is None
+    assert [h["short_name"] for h in res["handbooks"]] == ["MIL-HDBK-217F N2", "NSWC-11"]
+    assert "NSWC-11 lines (Opto-isolator)" in res["method"] and "did not take part" in res["disclaimer"]
+    model = db.models.find_one({"_id": link["model_id"]})
+    assert "NSWC-11" in model["spec"]["notes"] and "did not take part" in model["spec"]["notes"]
+    saved = rp.get_prediction(db, link["source"]["prediction_id"], OWNERS)
+    kept = next(ln for ln in saved.inputs["lines"] if ln["reference"] == "U-7")
+    assert kept["conditions"] == {k: float(v) for k, v in cond.items()}
+    again = pm.predict_position(m, db, OWNERS, set(), ctl)
+    assert again["results"]["failure_rate_per_hour"] == pytest.approx(res["failure_rate_per_hour"])
+    _same_after_rebuild(m)
+
+
 def test_lines_left_out_of_a_prediction_stay_on_the_list_and_are_kept(m, db):
     """"Leave out of this prediction": the line stays on the parts list but isn't counted; the saved
     prediction keeps it (with its part type), so refreshing it leaves it out again."""

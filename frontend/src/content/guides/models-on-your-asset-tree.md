@@ -97,6 +97,20 @@ an RBD block or a calculation.
 ## Predict the failure rate from the parts list
 
 Reliability predictions live here, on the position they're for.
+**Covariate models at a position.** An NSWC-11 covariate model (from **Life
+model › From the data library…**), an accelerated life model or a
+proportional-hazards model opens **Fix covariates** beside the tree. Each
+covariate is grouped Design, Use or Environment, with **Fix at this position**
+and a value. Design inputs start ticked for an NSWC-11 model; an accelerated
+life model's stresses and a covariate model's covariates start open, and you
+say what each one is. What you leave open is set where the model is used: in
+an RBD built from the tree, on each block, or once for the whole diagram under
+the calculator's **Covariates…** (its Use and Environment values, which every
+block with a covariate of that name and unit takes unless it sets its own).
+Until every block has its values, the calculator says which blocks need what.
+Fix every covariate and it's a constant-rate model at that position. Change
+them later with **Fix covariates at this position…** on the row's ⋯ menu.
+
 **Prediction › Add a prediction (parts count)…** works
 out a parts count from the position's parts list and those of the positions
 inside it (on a product's design, its bill of materials where they list
@@ -104,9 +118,11 @@ none). Set the environment once, the place the equipment works; the next
 prediction below it starts from the same one. Give each part a handbook part
 type (and a quality factor where the handbook has one): each part's rate is
 its base rate times the factors, and the rates add up as if every part were
-needed. The handbook covers electronic parts only: tick **Not electronic** on
-a mechanical part (an airframe, a propeller) to leave it out, and give a part
-it doesn't have (a battery) a rate of your own. It opens in the table area
+needed. A mechanical part (a bearing, a seal, a pump) takes an NSWC-11 part
+type and its **Conditions…**, the conditions it works in, in place of a
+quality factor. Tick **Not electronic** on a part neither handbook has (an
+airframe) to leave it out, and give a part they don't have (a battery) a rate
+of your own. It opens in the table area
 beside the tree, the parts table across it, and the result beside the parts
 updates as you go: the failure rate per million hours, the MTBF, the chance of
 getting through the mission time with no failure (when you give one), and the

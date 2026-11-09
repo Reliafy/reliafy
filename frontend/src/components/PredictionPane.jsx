@@ -13,12 +13,13 @@ import { useKinds } from "./MaintenanceItemClasses.jsx";
 import Field from "./ui/Field.jsx";
 import { Select, TextInput } from "./ui/Controls.jsx";
 import { NotElectronic, OwnRate, PartTypeChoice } from "./PartTypeCell.jsx";
+import ConditionsModal from "./ConditionsModal.jsx";
 import { saveErrorText } from "../confirm.js";
 import { defaultQuality, fmtPerMillion, fmtQuantity, qualityHint } from "../predictions.js";
 import { predictionAssign } from "../explorerModels.js";
 import {
-  branchPositions, leftOutKeys, lineChange, lineFromPreview, lineKey, lineMenu, lineMode, mergeLines, noPartsText,
-  predictionKey, predictionResult, predictionTitle, quantityTyped, removeQuestion, resultLines,
+  branchPositions, conditionsLabel, isCovariateLine, leftOutKeys, lineChange, lineFromPreview, lineKey, lineMenu, lineMode,
+  mergeLines, noPartsText, predictionKey, predictionResult, predictionTitle, quantityTyped, removeQuestion, resultLines,
 } from "../predictionPane.js";
 import "./ModelTable.css";
 import "./PredictionPane.css";
@@ -57,7 +58,7 @@ export default function PredictionPane({ position, link = null, phone = false, h
   const [saving, setSavingState] = useState(false);
   const [branch, setBranch] = useState([]); // the position and those inside it, for "On"
   const [menu, setMenu] = useState(null); // {i, at}
-  const [modal, setModal] = useState(null); // "new" | "existing" | "bom" | {remove: line}
+  const [modal, setModal] = useState(null); // "new" | "existing" | "bom" | {remove: line} | {conditions: i}
   const [toast, setToast] = useState(null); // {text, undo?}
   const [reload, setReload] = useState(0); // read the parts lists again
   const [kinds] = useKinds();
@@ -207,8 +208,9 @@ export default function PredictionPane({ position, link = null, phone = false, h
         <div className="pred2-in">
           <p className="rw-fhelp pred2-help">
             A parts count predicts {position.name}’s failure rate from its parts, before there’s failure data: each
-            part’s handbook base rate (MIL-HDBK-217F), times factors for the environment and its quality, added up as if
-            every part were needed. It compares designs early; it doesn’t say how it will fail in service.
+            electronic part’s handbook base rate (MIL-HDBK-217F), times factors for the environment and its quality, and
+            each mechanical part’s NSWC-11 model under its conditions, added up as if every part were needed. It compares
+            designs early; it doesn’t say how it will fail in service.
           </p>
           <div className="ml-row pred2-set">
             <Field label="Environment" help="Where it works: one for the whole position.">
@@ -240,7 +242,7 @@ export default function PredictionPane({ position, link = null, phone = false, h
                     <th>Part</th>
                     <th className="num">Qty</th>
                     <th>Handbook part type</th>
-                    <th className="num pred2-wrap" title="πQ: left blank, the part type's default grade (1, or the lowest grade for a parts-count type such as a commercial microcircuit)">Quality factor</th>
+                    <th className="num pred2-wrap" title="πQ: left blank, the part type's default grade (1, or the lowest grade for a parts-count type such as a commercial microcircuit). An NSWC-11 part takes its conditions instead.">Quality or conditions</th>
                     <th className="pred2-c-ne pred2-wrap" title="Not an electronic part (an airframe, a propeller): the handbook has no rate for it, so it's left out of the total and the result says so.">Not electronic</th>
                     <th className="pred2-wrap">Your own rate</th>
                     <th className="num">λ per 10⁶ h</th>
@@ -292,11 +294,19 @@ export default function PredictionPane({ position, link = null, phone = false, h
                             )}
                         </td>
                         <td className="num">
+                          {isCovariateLine(l) && !off ? (
+                            <button type="button" className={"secondary sm pred2-cond" + (r?.needs_conditions ? " is-needed" : "")}
+                                    aria-label={`Conditions of ${l.name}`} title="The conditions it works in: the NSWC-11 model's inputs"
+                                    onClick={() => setModal({ conditions: i })}>
+                              {conditionsLabel(l)}
+                            </button>
+                          ) : (
                           <TextInput inputMode="decimal" className="pred2-q" aria-label={`Quality factor of ${l.name}`}
                                      value={l.quality_factor == null ? "" : String(l.quality_factor)}
                                      placeholder={hasType ? defaultQuality(l.record) : "—"} title={qualityHint(l.record)}
                                      disabled={off || !hasType || mode === "excluded"}
                                      onChange={(e) => setLine(i, { quality_factor: e.target.value })} />
+                          )}
                         </td>
                         <td className="pred2-c-ne">
                           {off ? null : <NotElectronic name={l.name} excluded={l.excluded} onChange={change}>{null}</NotElectronic>}
@@ -307,7 +317,8 @@ export default function PredictionPane({ position, link = null, phone = false, h
                                    disabled={off || mode === "excluded" || hasType}
                                    why={hasType ? "Clear the part type to give a rate of your own" : "A rate of your own, for a part the handbook doesn't have (a battery)"} />
                         </td>
-                        <td className="num pred2-c-lambda">{r?.rate_per_million_hours != null ? fmtPerMillion(r.rate_per_million_hours) : "—"}</td>
+                        <td className="num pred2-c-lambda">{r?.rate_per_million_hours != null ? fmtPerMillion(r.rate_per_million_hours)
+                          : r?.needs_conditions ? <span className="pred2-needs" title={(r.line_warnings || []).join(" ")}>Needs conditions</span> : "—"}</td>
                         <td className="pred2-c-more">
                           <button type="button" className="ghost sm more-btn" aria-label={`Actions for ${l.name}`} title={`Actions for ${l.name}`}
                                   aria-haspopup="menu" aria-expanded={menu?.i === i}
@@ -353,14 +364,19 @@ export default function PredictionPane({ position, link = null, phone = false, h
                   </dl>
                 </>
               ) : (
-                <p className="pred2-none">Give the parts their handbook part types to see the predicted failure rate. The handbook
-                  covers electronic parts only: tick “Not electronic” for mechanical parts.</p>
+                <p className="pred2-none">Give the parts their handbook part types to see the predicted failure rate:
+                  MIL-HDBK-217F for electronic parts, NSWC-11 (with its conditions) for mechanical ones.</p>
               )}
               {out.rate && !out.reliability && <p className="pred2-sub">Give a mission time to see the chance of getting through it with no failure.</p>}
               <p className="pred2-sub">{out.counted}{out.environment ? ` · ${out.environment}` : ""}</p>
               {out.notElectronic.length > 0 && (
                 <p className="pred2-sub"><b>Left out, not electronic:</b> {out.notElectronic.join(", ")}. The total is for the electronics.</p>
               )}
+              {out.needsConditions.length > 0 && (
+                <p className="pred2-sub"><b>Left out, needs its conditions:</b> {out.needsConditions.join(", ")}. Open Conditions… on the line.</p>
+              )}
+              {out.handbooks && <p className="pred2-sub"><b>Handbooks:</b> {out.handbooks}.</p>}
+              {out.disclaimer && <p className="pred2-sub pred2-disclaimer">NSWC-11: {out.disclaimer}</p>}
               {out.noType.length > 0 && (
                 <p className="pred2-sub"><b>Left out, no part type yet:</b> {out.noType.join(", ")}.</p>
               )}
@@ -402,6 +418,10 @@ export default function PredictionPane({ position, link = null, phone = false, h
                         onDone={() => { setModal(null); refresh(); }} />
       )}
       {modal === "bom" && <ImportBomModal onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
+      {modal?.conditions != null && lines?.[modal.conditions] && (
+        <ConditionsModal line={lines[modal.conditions]} onClose={() => setModal(null)}
+                         onDone={(c) => { setLine(modal.conditions, c); setModal(null); }} />
+      )}
       {modal?.remove && (
         <FormModal title="Remove from the parts list" submitLabel="Remove" pendingLabel="Removing…" danger
                    onClose={() => setModal(null)} onSubmit={() => removeLine(modal.remove)}>

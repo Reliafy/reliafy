@@ -186,6 +186,14 @@ library_record with environment (GB ground, benign; GF ground, fixed; GM ground,
 airborne, inhabited, cargo; and so on: the record's environments list each with its rate) gives the block model, \
 base rate x the environment factor. Ask the user which environment; never guess. Say plainly that the handbook's \
 other factors (temperature, stress, quality: prediction.not_applied) aren't applied and can move the rate a lot.
+- NSWC-11 (source nswc-11, kind covariate_model: the U.S. Navy's mechanical handbook) is a library of covariate \
+models for mechanical parts (bearings, seals, springs, pumps, gears, valves, motors...): a base rate scaled by \
+factors for the conditions. get kind library_record lists covariate.inputs (unit, default and where it comes from, \
+limits with the handbook's page); give conditions to evaluate: the rate per mode and in total (per million hours, \
+or cycles or operations), or the problems (an input missing or past a limit). Ask the user for the conditions; \
+never guess. Outside a warn limit it still computes: relay the warning. It's never a block model on its own; \
+use it in a prediction. Always say that CDNSWC and the Navy did not take part in or approve Reliafy, and that \
+the handbook is a research result, not an official DoD document.
 - These are generic estimates (NRC/INL: U.S. nuclear power plants; MIL-HDBK-217F: a 1995 prediction handbook), \
 never the user's own data: say so, cite the record (licence.attribution), put the source in the block's label \
 and suggest replacing it with their own data.
@@ -215,9 +223,13 @@ part category.
 board". Only handbook records (basis prediction_model) count; a field-data record (NRC / INL) is refused. \
 Microcircuits, motors, synchros, circuit boards, crystals, lamps and laser diodes are parts-count records \
 (generic_rates: a rate per environment, environment included; πQ defaults to the lowest grade, e.g. 10 for a \
-commercial microcircuit, unless quality_factor is given). The handbook has no batteries and no mechanical parts: \
-a battery takes rate_per_million_hours only if the user gives one (shown as user-given); a mechanical part \
-(airframe, propeller) takes excluded true (left out, and the result names it). A line with neither and no \
+commercial microcircuit, unless quality_factor is given). A mechanical part takes an NSWC-11 record (source \
+nswc-11: "bearing", "seal", "pump", "spring", "gear") with conditions (its covariate inputs, guide topic library) \
+and, for a rate per cycle or operation, cycles_per_hour; no quality factor or environment. A line missing a \
+condition is listed (needs_conditions) and left out of the total until it has it. The result's method and \
+handbooks say which lines used which handbook; quote its disclaimer with any NSWC-11 result. Neither handbook has \
+batteries: a battery takes rate_per_million_hours only if the user gives one (shown as user-given); a part neither \
+covers (airframe) takes excluded true (left out, and the result names it). A line with neither and no \
 record_id is listed and left out of the total. Never invent a part type or a rate.
 - The environment is one symbol for the whole prediction (GB, GF, GM, NS, NU, AIC, AIF, AUC, AUF, ARW, SF, MF, ML, \
 CL): ask the user where the equipment works; never guess. A record's prediction.quality_factor_range is the \

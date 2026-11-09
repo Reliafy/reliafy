@@ -370,4 +370,8 @@ def to_block_model(rec: dict, **options) -> dict:
         return demand_to_per_demand(rec, **options)
     if rec["kind"] == "life":
         return life_to_model(rec, **options)
+    if rec["kind"] == "covariate_model":
+        raise ConversionError(f"'{rec['label']}' is a covariate model: its rate depends on the conditions the part "
+                              "works in. Use it in a reliability prediction (a parts-list line's Conditions…), or "
+                              "try it on its library page.")
     raise ConversionError(f"Unknown kind '{rec['kind']}'.")
