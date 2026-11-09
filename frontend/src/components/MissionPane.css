@@ -1,0 +1,45 @@
+/* MissionPane.jsx: a mission in the Explorer's table area (TablePane.css). The phases as rows that
+   open to their covariates; everything wraps, nothing scrolls sideways at 400 px. */
+.mission { padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 12px; overflow: auto; min-width: 0; }
+.mission-head { display: flex; flex-direction: column; gap: 6px; }
+.mission-name { display: flex; flex-direction: column; gap: 4px; max-width: 28rem; font-size: var(--fs-13); font-weight: 600; }
+.mission-name input { font-weight: 400; }
+.mission-on { margin: 0; }
+.mission-wait { margin: 0; }
+.mission-phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mission-phase { border: 1px solid var(--line); border-radius: var(--r-sm, 8px); padding: 8px 10px; min-width: 0; background: var(--surf); }
+.mission-phase.is-open { border-color: var(--line2, var(--line)); box-shadow: 0 1px 0 var(--line); }
+.mission-phase-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.mission-phase-toggle { min-width: 44px; min-height: 36px; font-variant-numeric: tabular-nums; }
+.mission-phase-n { font-weight: 600; }
+.mission-phase-name { flex: 1 1 10rem; min-width: 0; }
+.mission-phase-name input { width: 100%; }
+.mission-phase-duration { display: inline-flex; align-items: center; gap: 6px; flex: 0 1 9rem; min-width: 0; }
+.mission-phase-duration input { width: 6.5rem; min-width: 0; }
+.mission-phase-result { flex: 1 1 12rem; font-size: var(--fs-13); font-variant-numeric: tabular-nums; min-width: 0; }
+.mission-phase-tools { display: inline-flex; gap: 2px; margin-left: auto; }
+.mission-phase-tools button { min-width: 36px; min-height: 36px; }
+.mission-phase-line { margin: 4px 0 0; font-size: var(--fs-12, 12px); color: var(--muted); overflow-wrap: anywhere; }
+.mission-sub { color: var(--muted); font-weight: 400; }
+.mission-phase-body { margin-top: 10px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; min-width: 0; }
+.mission-phase-body > * { max-width: 100%; }
+.mission-phase-body > section { width: 100%; }
+.mission-k { margin: 0 0 6px; font-size: var(--fs-13); font-weight: 600; }
+.mission-feeds { font-size: var(--fs-12, 12px); display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mission-feeds-what { color: var(--muted); }
+.mission-feeds ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mission-feeds li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.mission-feed-label { font-weight: 600; overflow-wrap: anywhere; }
+.mission-feeds li > .cov-inputs { flex: 1 1 100%; }
+.mission-needs, .mission-row-needs { margin: 0; font-size: var(--fs-12, 12px); }
+.mission-own-btn { font-size: var(--fs-12, 12px); }
+.cov-bare .cov-group { border: 0; padding: 0; }
+.cov-bare .cov-grid { grid-template-columns: minmax(0, 18rem); }
+.mission-rbd { margin: 0; width: 100%; }
+.mission-rbd .rbd-diagram-view { height: 280px; border: 1px solid var(--line); border-radius: var(--r-sm, 8px); }
+.mission-rbd figcaption { margin-top: 4px; }
+.react-flow__node.rbd-node-dim { opacity: 0.32; filter: grayscale(1); }
+.mission-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mission-foot-gap { flex: 1 1 auto; }
+.mission-answer { margin: 0; }
+.mission-own-pick { align-self: flex-start; max-width: 100%; font-size: var(--fs-12, 12px); padding: 2px 6px; min-height: 32px; }

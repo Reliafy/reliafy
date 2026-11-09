@@ -204,8 +204,96 @@ class _ALTStress:
         return conditional_survival(self, x, X)
 
 
+class _ALTSteps:
+    """A block on a saved accelerated life model whose stresses change at set times of the
+    diagram's clock (a mission's phases, rbd_missions.py): RePyability's regression node along a
+    SurPyval step schedule, so its life follows Nelson's cumulative exposure, the wear done at one
+    stress carried into the next."""
+
+    def __init__(self, model, times, rows, name: str, scale: float = 1.0):
+        from repyability import RegressionNode
+        from surpyval import StepSchedule
+
+        self.scale = scale  # model time units per diagram time unit
+        self.dist = _DistName(name or "Accelerated life")
+        schedule = StepSchedule.from_changepoints([float(t) * scale for t in times],
+                                                  np.atleast_2d(np.asarray(rows, dtype=float)))
+        self.node = RegressionNode(model, schedule=schedule)
+
+    def sf(self, x) -> np.ndarray:
+        x = np.atleast_1d(np.asarray(x, dtype=float)) * self.scale
+        with np.errstate(all="ignore"):
+            return np.clip(np.asarray(self.node.sf(x), dtype=float).ravel(), 0, 1)
+
+    def ff(self, x) -> np.ndarray:
+        return 1.0 - self.sf(x)
+
+    def random(self, size) -> np.ndarray:
+        return np.asarray(self.node.random(size), dtype=float) / self.scale
+
+    def cs(self, x, X) -> np.ndarray:
+        return conditional_survival(self, x, X)
+
+
+class _PhaseRates:
+    """A constant failure rate that changes at set times of the diagram's clock (an NSWC-11
+    covariate model under a mission's phases, rbd_missions.py): its cumulative hazard is the sum
+    of each rate times the time spent at it, so R(t) = exp(-Σ λᵢ·Δtᵢ). The last rate holds on."""
+
+    def __init__(self, starts, rates, name: str = "Exponential"):
+        self.starts = np.asarray(starts, dtype=float)
+        self.rates = np.asarray(rates, dtype=float)
+        self.dist = _DistName(name)
+        # The cumulative hazard at each step's start.
+        widths = np.diff(self.starts)
+        self.H0 = np.concatenate([[0.0], np.cumsum(self.rates[:-1] * widths)])
+
+    def _H(self, x) -> np.ndarray:
+        x = np.atleast_1d(np.asarray(x, dtype=float))
+        i = np.clip(np.searchsorted(self.starts, x, side="right") - 1, 0, len(self.starts) - 1)
+        return self.H0[i] + self.rates[i] * np.maximum(x - self.starts[i], 0.0)
+
+    def sf(self, x) -> np.ndarray:
+        return np.exp(-self._H(x))
+
+    def ff(self, x) -> np.ndarray:
+        return -np.expm1(-self._H(x))
+
+    def hf(self, x) -> np.ndarray:
+        x = np.atleast_1d(np.asarray(x, dtype=float))
+        i = np.clip(np.searchsorted(self.starts, x, side="right") - 1, 0, len(self.starts) - 1)
+        return self.rates[i]
+
+    def random(self, size) -> np.ndarray:
+        # Inverse of the cumulative hazard at an exponential(1) draw.
+        e = np.random.standard_exponential(size)
+        i = np.clip(np.searchsorted(self.H0, e, side="right") - 1, 0, len(self.H0) - 1)
+        rate = self.rates[i]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t = self.starts[i] + np.where(rate > 0, (e - self.H0[i]) / np.where(rate > 0, rate, 1.0), np.inf)
+        return t
+
+    def cs(self, x, X) -> np.ndarray:
+        return conditional_survival(self, x, X)
+
+
+def _phase_rates_reliability(model: dict, where: str):
+    """``kind: phase_rates`` — {steps: [{t, rate}]} from time 0, the rate per diagram time unit."""
+    steps = model.get("steps") or []
+    try:
+        starts = [float(s["t"]) for s in steps]
+        rates = [float(s["rate"]) for s in steps]
+    except (KeyError, TypeError, ValueError):
+        raise AnalysisError(f"{where}: its rates by phase can't be read.") from None
+    if not steps or starts[0] != 0 or any(b < a for a, b in zip(starts, starts[1:])) or \
+            any(not np.isfinite(r) or r < 0 for r in rates):
+        raise AnalysisError(f"{where}: its rates by phase can't be read.")
+    return _PhaseRates(starts, rates, model.get("name") or "Exponential")
+
+
 def _alt_stress_reliability(model: dict, where: str, resolve_model):
-    """An accelerated life model at the block's stress (``kind: alt_stress``)."""
+    """An accelerated life model at the block's stress (``kind: alt_stress``); with ``steps``
+    ([{t, stress}] from time 0) its stresses change at those times (a mission's phases)."""
     if resolve_model is None:
         return PerfectReliability
     entry = resolve_model(f"alt:{model.get('model_id')}")
@@ -217,7 +305,11 @@ def _alt_stress_reliability(model: dict, where: str, resolve_model):
         scale = _hours_per(model.get("diagram_unit") or "hours") / _hours_per(entry.get("unit") or "hours")
     except BindingError as exc:
         raise AnalysisError(f"{where}: {exc}") from None
+    steps = model.get("steps") or []
     try:
+        if len(steps) > 1:
+            return _ALTSteps(entry["model"], [s["t"] for s in steps], [s["stress"] for s in steps],
+                             entry.get("name") or "Accelerated life", scale)
         return _ALTStress(entry["model"], model.get("stress") or [], entry.get("name") or "Accelerated life", scale)
     except Exception as exc:  # noqa: BLE001 - a stress row the model can't take
         raise AnalysisError(f"{where}: {exc}") from None
@@ -340,6 +432,8 @@ def _build_distribution(
                             "Environment values).")
     if model.get("kind") == "alt_stress":
         return _alt_stress_reliability(model, where, resolve_model)
+    if model.get("kind") == "phase_rates":  # a mission's phases (rbd_missions.py)
+        return _phase_rates_reliability(model, where)
     from backend.services import rbd_mixture
 
     if rbd_mixture.is_mixture(model):

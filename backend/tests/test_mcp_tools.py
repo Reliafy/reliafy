@@ -77,6 +77,8 @@ NEW_ACTIONS = {
     # Fault trees built by hand (Nov 2026).
     ("get", "fault_tree"), ("list", "fault_trees"), ("analyse", "fault_tree"), ("change", "fault_tree_save"),
     ("change", "fault_tree_delete"),
+    # Named phased missions on an RBD, with covariate values per phase (Nov 2026).
+    ("analyse", "rbd_mission"), ("change", "rbd_mission"),
 }
 NEW_HEAVY = {"analyse.fault_tree"}
 NEW_TEXT = {"get.maintainability_prediction", "list.maintainability_predictions",
@@ -84,7 +86,9 @@ NEW_TEXT = {"get.maintainability_prediction", "list.maintainability_predictions"
             # A user library's name, notes and record labels are the user's words.
             "get.library", "list.libraries",
             # A reliability prediction's lines and assemblies are named by people (or a product's parts list).
-            "list.predictions", "get.prediction", "analyse.prediction"}
+            "list.predictions", "get.prediction", "analyse.prediction",
+            # A mission's and its phases' names, the blocks' labels.
+            "analyse.rbd_mission"}
 
 # The earlier tools' sets (to 1 Nov 2026), by their old keys: the new sets must be these, renamed.
 OLD_PRO_ONLY = {"life_data_analysis.fit", "models.fit", "models.fit_alt", "models.fit_recurrent", "list.fleets",
@@ -223,7 +227,8 @@ def test_the_listed_tools_are_small(env):
     full schemas; 7,914 with the maintainability prediction, fault tree and
     reliability prediction actions, Nov 2026, after shortening the shared
     args and guide text; 7,972 with the user libraries' seven actions, after
-    trimming the tool intros, titles and the replacement one-liners) and
+    trimming the tool intros, titles and the replacement one-liners; 7,988 with the missions' analyse and
+    change rbd_mission, after shortening the analyse and guide intros) and
     about 1,000 for the instructions (3,663 before)."""
     from backend import mcp_server
 

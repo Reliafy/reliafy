@@ -13,6 +13,8 @@ test("the pane the address asks for", () => {
 
 test("an RBD's pane: the diagram, and the position it opens beside", () => {
   assert.deepEqual(paneFromQuery(new URLSearchParams("tab=models&rbd=r9&on=p3")), { kind: "rbd", id: "p3", rbd: "r9" });
+  // A mission on a position's RBD (the Missions tab): the RBD and the mission in one value.
+  assert.deepEqual(paneFromQuery(new URLSearchParams("tab=missions&mission=r9:m1&on=p3")), { kind: "mission", id: "p3", mission: "r9:m1" });
   // No position: not one for the Explorer.
   assert.equal(paneFromQuery(new URLSearchParams("rbd=r9")), null);
   assert.equal(paneFromQuery(new URLSearchParams("on=p3")), null);
@@ -30,7 +32,7 @@ test("putting a pane in the address takes any other out", () => {
 });
 
 test("each pane has its address and its words for leaving it changed", () => {
-  assert.deepEqual(PANE_PARAMS, ["fit", "from", "predict", "bind", "on", "rbd"]);
+  assert.deepEqual(PANE_PARAMS, ["fit", "from", "predict", "bind", "on", "mission", "rbd"]);
   assert.equal(TABLE_PANES.predict.discard.title, "Discard this prediction?");
   assert.equal(TABLE_PANES.rbd.discard.title, "Discard your changes to this RBD?");
   for (const p of Object.values(TABLE_PANES)) {

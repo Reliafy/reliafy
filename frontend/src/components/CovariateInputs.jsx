@@ -16,17 +16,21 @@ import "./CovariateCalculator.css";
 //   conditions [{name, role, unit, value}] with map {key: name} and onMap(key, name): take the
 //            diagram's value of another name
 //   readOnly true: shown, not changed
+//   extra    (input) => what goes under an input's field (a mission phase: the blocks it feeds and
+//            their own values)
+//   bare     the inputs alone, not grouped under Design / Use / Environment (one block's override)
 
 export default function CovariateInputs({
   inputs = [], values = {}, onChange, idPrefix = "cov", fix = null, onRole = null, sources = null, conditions = null,
-  map = {}, onMap = null, readOnly = false,
+  map = {}, onMap = null, readOnly = false, extra = null, bare = false,
 }) {
   const set = (key, v) => onChange?.({ ...values, [key]: v });
+  const groups = bare ? [{ role: "all", label: "", what: "", inputs }] : groupInputs(inputs);
   return (
-    <div className="cov-inputs">
-      {groupInputs(inputs).map((g) => (
+    <div className={"cov-inputs" + (bare ? " cov-bare" : "")}>
+      {groups.map((g) => (
         <fieldset key={g.role} className="cov-group">
-          <legend className="cov-legend">{g.label}</legend>
+          {!bare && <legend className="cov-legend">{g.label}</legend>}
           {g.what && <p className="cov-what">{g.what}</p>}
           <div className="cov-grid">
             {g.inputs.map((i) => {
@@ -86,6 +90,7 @@ export default function CovariateInputs({
                       )}
                     </div>
                   )}
+                  {extra?.(i)}
                 </div>
               );
             })}

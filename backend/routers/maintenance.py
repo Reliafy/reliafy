@@ -1218,6 +1218,18 @@ def position_models(position_ids: str | None = None, session=Depends(get_session
     return _run(lambda: {"links": pm.describe(m, session, ctx.read_owners, ctx.hidden, m.all_position_models(ids))})
 
 
+@router.get("/position-missions")
+def position_missions(position_ids: str | None = None, session=Depends(get_session),
+                      ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The missions on each position: for every RBD linked to a position (position_ids: only these,
+    comma-separated), its missions with their phases, length and last result (rbd_missions.py).
+    A position has its own RBDs' missions; nothing comes from the position above it."""
+    from backend.services import rbd_missions
+
+    ids = [x for x in (position_ids or "").split(",") if x] or None
+    return _run(lambda: {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids)})
+
+
 @router.get("/position-models/{link_id}")
 def position_model(link_id: str, age: float | None = None, session=Depends(get_session),
                    ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
