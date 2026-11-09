@@ -6,14 +6,25 @@ import { listPlace } from "../listPlace.js";
 import "../views/Predictions.css";
 import { NO_PART_TYPE_HINT, fmtPerMillion } from "../predictions.js";
 
-// The handbook source a parts count draws on (backend/services/reliability_prediction.py).
+// The handbook sources a parts count draws on (backend/services/reliability_prediction.py):
+// MIL-HDBK-217F for electronic parts, NSWC-11 (covariate models) for mechanical ones.
 export const HANDBOOK_SOURCE = "mil-hdbk-217f-n2";
-const PAGE = 8;
+export const MECHANICAL_SOURCE = "nswc-11";
+export const BOOKS = [
+  { source: HANDBOOK_SOURCE, label: "MIL-HDBK-217F N2 · electronic parts", kind: "rate" },
+  { source: MECHANICAL_SOURCE, label: "NSWC-11 · mechanical parts (with conditions)" },
+];
+const PAGE = 10;
 const SECTION = /Section [\d.]+/;
 
 // A search row's rate in words: a part stress type's base rate, or a parts-count type's
 // generic rates (environment included) from the lowest to the highest environment.
 export function rateMeta(r) {
+  if (r.covariate) {
+    const c = r.covariate;
+    const f = c.modes?.length > 1 ? `${c.modes.length} parts` : `base × ${c.factors} factor${c.factors === 1 ? "" : "s"}`;
+    return `Eq. ${c.equation} · ${f} · ${c.rate_unit === "per_million_hours" ? "per 10⁶ h" : c.rate_unit === "per_million_cycles" ? "per 10⁶ cycles" : "per 10⁶ operations"} · needs conditions`;
+  }
   const g = r.generic_rates && Object.values(r.generic_rates);
   if (g && g.length) {
     const lo = Math.min(...g);
@@ -25,7 +36,8 @@ export function rateMeta(r) {
 
 // Choose a handbook part type for one line of a parts list: type to search
 // the reliability data library's handbook records (MIL-HDBK-217F base failure
-// rates, and its parts-count generic rates), pick one. ``value`` is the chosen
+// rates and its parts-count generic rates for electronic parts; NSWC-11's
+// covariate models for mechanical ones, each handbook a group), pick one. ``value`` is the chosen
 // record ({ id, name, ... }) or null. ``onUseRate``, when given, offers "Give a
 // rate of your own" for a part the handbook has no type for (a battery).
 export default function PartTypePicker({ value, onChange, onUseRate = null, label = "Handbook part type", placeholder = "Search part types…" }) {
@@ -65,10 +77,12 @@ export default function PartTypePicker({ value, onChange, onUseRate = null, labe
     let live = true;
     setBusy(true);
     const t = setTimeout(() => {
-      searchLibrary({ q, source: HANDBOOK_SOURCE, kind: "rate", pageSize: PAGE })
+      // Both handbooks in one search, each its own group in the list (electronic first, then mechanical).
+      searchLibrary({ q, source: BOOKS.map((b) => b.source).join(","), pageSize: PAGE })
         .then((d) => {
           if (!live) return;
-          setRows(d.results || []);
+          const all = (d.results || []).map((r) => ({ ...r, book: r.id.split(":")[0] }));
+          setRows(BOOKS.flatMap((b) => all.filter((r) => r.book === b.source)));
           setTotal(d.total || 0);
           setActive(0);
           setError(null);
@@ -101,6 +115,7 @@ export default function PartTypePicker({ value, onChange, onUseRate = null, labe
       id: r.id, name: r.name, label: r.label, mean: r.mean, quality_factor_range: r.quality_factor_range || null,
       quality_factor_default: r.quality_factor_default ?? null, quality_factors: r.quality_factors || null,
       generic_rates: r.generic_rates || null,
+      ...(r.covariate ? { kind: r.kind, covariate: { rate_unit: r.covariate.rate_unit, per_cycle: r.covariate.per_cycle, equation: r.covariate.equation } } : {}),
     });
     setOpen(false);
     setQuery("");
@@ -162,10 +177,13 @@ export default function PartTypePicker({ value, onChange, onUseRate = null, labe
           {error && <li className="ptp-note" role="presentation">{error}</li>}
           {!error && !rows.length && (
             <li className="ptp-note" role="presentation">
-              {busy ? "Searching…" : `No handbook part type matches. Try another word: microprocessor, memory, motor, crystal, circuit board, capacitor, resistor, connector, transistor. ${NO_PART_TYPE_HINT}`}
+              {busy ? "Searching…" : `No handbook part type matches. Try another word: microprocessor, motor, capacitor, connector; bearing, seal, pump, spring, gear. ${NO_PART_TYPE_HINT}`}
             </li>
           )}
-          {rows.map((r, i) => (
+          {rows.map((r, i) => [
+            (i === 0 || rows[i - 1].book !== r.book) && (
+              <li key={`h-${r.book}`} className="ptp-group" role="presentation">{BOOKS.find((b) => b.source === r.book)?.label || r.book}</li>
+            ),
             <li
               key={r.id}
               role="option"
@@ -181,8 +199,8 @@ export default function PartTypePicker({ value, onChange, onUseRate = null, labe
               <span className="ptp-item-meta">
                 {rateMeta(r)}{SECTION.test(r.citation || "") ? ` · ${SECTION.exec(r.citation)[0]}` : ""}
               </span>
-            </li>
-          ))}
+            </li>,
+          ])}
           {total > rows.length && (
             <li className="ptp-note" role="presentation">{total - rows.length} more match: add a word to narrow it.</li>
           )}

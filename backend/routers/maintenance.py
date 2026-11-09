@@ -1316,8 +1316,8 @@ def preview_position_prediction(position_id: str, body: dict = Body(default={}),
     """A parts-count prediction of this position from its parts list (and those of the positions inside
     it; a product design's bill of materials where they list none), previewed: environment (a handbook
     symbol; default this position's last, else the nearest above, else GF), mission_time (hours), assign
-    ({part id or part number: {record_id, quality_factor} or {rate_per_million_hours} or {excluded: true}}),
-    left_out ([parts-list entry id]: lines kept on the parts list but left out of this prediction; omitted,
+    ({part id or part number: {record_id, quality_factor} (an NSWC-11 record: {record_id, conditions,
+    cycles_per_hour}) or {rate_per_million_hours} or {excluded: true}}), left_out ([parts-list entry id]: lines kept on the parts list but left out of this prediction; omitted,
     the last prediction's). Saves nothing; save with POST
     /positions/{id}/models {prediction: {...}}."""
     from backend.maintenance import position_models as pm

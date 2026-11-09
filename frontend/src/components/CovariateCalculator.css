@@ -1,0 +1,28 @@
+/* A covariate model's inputs and its rate (CovariateCalculator.jsx). */
+.cov { display: grid; grid-template-columns: minmax(0, 1fr) minmax(14rem, 20rem); gap: 1rem; align-items: start; }
+.cov-inputs { min-width: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.cov-group { border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.75rem 0.75rem; margin: 0; min-width: 0; }
+.cov-legend { font-weight: 600; padding: 0 0.25rem; }
+.cov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.5rem 0.75rem; }
+.cov-field { min-width: 0; }
+.cov-num { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.cov-num input { min-width: 0; flex: 1 1 auto; }
+.cov-unit { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+.cov-warn .field-help { color: var(--warn); }
+.cov-out { position: sticky; top: 0.5rem; border: 1px solid var(--line); border-radius: 8px; padding: 0.75rem; min-width: 0; overflow-wrap: anywhere; }
+.cov-big { font-size: 1.1rem; margin: 0 0 0.25rem; }
+.cov-sub { margin: 0.25rem 0; color: var(--muted); font-size: 0.9rem; }
+.cov-head { margin: 0.5rem 0 0.25rem; font-weight: 600; font-size: 0.9rem; }
+.cov-problems ul, .cov-warnings ul { margin: 0; padding-left: 1.1rem; font-size: 0.9rem; }
+.cov-warnings { color: var(--warn); }
+.cov-modes { list-style: none; margin: 0.5rem 0; padding: 0; font-size: 0.9rem; }
+.cov-modes li { display: flex; justify-content: space-between; gap: 0.5rem; border-bottom: 1px solid var(--line2); padding: 0.15rem 0; }
+@media (max-width: 760px) {
+  .cov { grid-template-columns: minmax(0, 1fr); }
+  .cov-out { position: static; }
+  .cov-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.modal.cov-modal { width: min(64rem, calc(100vw - 32px)); max-width: none; }
+.cov-intro { margin-top: 0; }
+.cov-note { margin-bottom: 0; }
+.cov-what { margin: 0 0 0.5rem; color: var(--muted); font-size: var(--fs-12); }

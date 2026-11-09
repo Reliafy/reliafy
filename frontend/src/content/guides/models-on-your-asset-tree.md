@@ -104,9 +104,11 @@ none). Set the environment once, the place the equipment works; the next
 prediction below it starts from the same one. Give each part a handbook part
 type (and a quality factor where the handbook has one): each part's rate is
 its base rate times the factors, and the rates add up as if every part were
-needed. The handbook covers electronic parts only: tick **Not electronic** on
-a mechanical part (an airframe, a propeller) to leave it out, and give a part
-it doesn't have (a battery) a rate of your own. It opens in the table area
+needed. A mechanical part (a bearing, a seal, a pump) takes an NSWC-11 part
+type and its **Conditions…**, the conditions it works in, in place of a
+quality factor. Tick **Not electronic** on a part neither handbook has (an
+airframe) to leave it out, and give a part they don't have (a battery) a rate
+of your own. It opens in the table area
 beside the tree, the parts table across it, and the result beside the parts
 updates as you go: the failure rate per million hours, the MTBF, the chance of
 getting through the mission time with no failure (when you give one), and the

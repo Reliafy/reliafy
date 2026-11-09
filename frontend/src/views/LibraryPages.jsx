@@ -10,6 +10,8 @@ import { StorageCapNotice } from "../components/StorageCap.jsx";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { ACCENT } from "../plotTheme.js";
+import CovariateCalculator from "../components/CovariateCalculator.jsx";
+import { isCovariate, modeRows, modelShape, modelWords, unitShort } from "../covariate.js";
 import {
   BASIS_LABEL as BASIS, KIND_LABEL as KIND, LIBRARY_PATH, curve, distributionWords, evidenceWords, isLife, lifeCurve, lifeWords,
   asGivenWords, rangeText, recordIdOf, recordPath, sig, sourcePath, unitsMeaning, whyNot,
@@ -171,6 +173,8 @@ export function LibrarySource() {
   }, [shown]);
   const mine = !!source?.mine;
   const canEdit = mine && !source.read_only;
+  // A library of covariate models (NSWC-11) lists each component's parts or failure modes instead.
+  const covariateRows = useMemo(() => (shown.some(isCovariate) ? modeRows(shown.filter(isCovariate)) : null), [shown]);
   const onDelete = async () => {
     const ok = await confirm({
       title: `Delete ${source.name}?`,
@@ -200,6 +204,7 @@ export function LibrarySource() {
       {error && <div className="card error">{error}</div>}
       {deleteError && <div className="card error" role="alert">{deleteError}</div>}
       {mine && source.notes && <section className="card"><h2 className="lib-h">Notes</h2><p className="lib-notes">{source.notes}</p></section>}
+      {!mine && source?.disclaimer && <CovariateSourceIntro source={source} />}
       {mine && rows !== null && rows.length === 0 && (
         <div className="card empty">
           <p>No records yet. Open one of your <Link to="/models/life">non-repairable models</Link> and choose <strong>Add to a library…</strong> from its ⋯ menu,
@@ -216,14 +221,16 @@ export function LibrarySource() {
             <option value="">Every failure mode</option>{modes.map((x) => <option key={x} value={x}>{x}</option>)}
           </Select>
           <Select aria-label="Kind" value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="">Every kind</option><option value="rate">Failure rates</option><option value="per_demand">Per demand</option><option value="life">Life models</option>
+            <option value="">Every kind</option><option value="rate">Failure rates</option><option value="per_demand">Per demand</option><option value="life">Life models</option><option value="covariate_model">Covariate models</option>
           </Select>
           <Select aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value)}>
             <option value="name">By name</option><option value="mean">By mean, lowest first</option>
           </Select>
         </div>
-        {offWhy.length > 0 && <p className="lib-why">{offWhy.length === 1 && offWhy[0].all ? "Every record here: " : "Some records here: "}{offWhy.map((w) => w.text).join(" ")}</p>}
-        {rows === null ? <p className="rim-tquiet">Loading the records…</p> : (
+        {offWhy.length > 0 && !covariateRows && <p className="lib-why">{offWhy.length === 1 && offWhy[0].all ? "Every record here: " : "Some records here: "}{offWhy.map((w) => w.text).join(" ")}</p>}
+        {rows !== null && covariateRows ? (
+          <CovariateTable rows={covariateRows} total={rows.length} shown={shown.length} />
+        ) : rows === null ? <p className="rim-tquiet">Loading the records…</p> : (
           <div className="maint-scroll lib-scroll">
             <table className="lib-table">
               <thead><tr><th>Record</th><th>Equipment</th><th>Failure mode</th><th>Kind</th><th className="num">Mean</th><th className="num">5–95%</th><th>Units</th><th /></tr></thead>
@@ -243,6 +250,108 @@ export function LibrarySource() {
         )}
       </section>
       {editing && <LibraryFormDialog library={source} onClose={() => setEditing(false)} onDone={() => { setEditing(false); reload(); }} />}
+    </div>
+  );
+}
+
+// A covariate source's page intro (NSWC-11): what its models are, in words, and the Navy's statement.
+function CovariateSourceIntro({ source }) {
+  return (
+    <section className="card lib-cov-intro" aria-label="About these models">
+      <h2 className="lib-h">Covariate models: base rate × condition factors</h2>
+      <p>Each component’s failure rate starts at a base rate and is scaled by factors for the conditions it works in:
+        load, speed, temperature, pressure, contamination, material and more. Open a component to see its model in words,
+        its factors and the handbook’s limits on every input, and try it with your own conditions. In a reliability
+        prediction, a mechanical part can take one of these with its conditions.</p>
+      <p className="lib-disclaimer"><strong>Not endorsed by the Navy.</strong> {source.disclaimer}</p>
+    </section>
+  );
+}
+
+// The components' parts or failure modes, one row each: the component (a link to its record), the
+// part, its base rate with the unit, and how many condition factors scale it.
+function CovariateTable({ rows, total, shown }) {
+  return (
+    <div className="maint-scroll lib-scroll">
+      <table className="lib-table">
+        <thead><tr><th>Component</th><th>Part or failure mode</th><th>Base rate</th><th className="num">Factors</th><th>Equation</th></tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id}>
+              <td><Link to={recordPath(r.recordId)}>{r.component}</Link></td>
+              <td>{r.mode}</td><td>{r.base}</td><td className="num">{r.factors}</td><td>Eq. {r.equation}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="rim-tquiet">{rows.length} parts and failure modes in {shown} of {total} components.</p>
+    </div>
+  );
+}
+
+// A covariate record's own sections (NSWC-11): the model in words first, then the formula with
+// each factor (what it's for, its figure or table and page), the inputs with their units, defaults
+// and limits, Try it, the failure modes it covers, and the citation with the Navy's statement.
+function CovariateRecord({ rec, d, source }) {
+  const m = rec.covariate_model || {};
+  const cov = d.covariate || {};
+  const [values, setValues] = useState({});
+  const cite = rec.citation || {};
+  return (
+    <div className="lib-record">
+      <section className="card">
+        <h2 className="lib-h">The model in words</h2>
+        <p>{modelWords(rec)}</p>
+        <dl className="ml-dl">
+          <dt>Rate</dt><dd>{(rec.units?.as_given || "").replace(/^./, (c) => c.toUpperCase())} ({unitShort(m.rate_unit)}){cov.per_cycle ? ". In a prediction it needs how many cycles it makes an hour." : "."}</dd>
+          <dt>Shape</dt><dd>{modelShape(cov)}</dd>
+          {rec.notes && <><dt>Notes</dt><dd className="lib-notes">{rec.notes}</dd></>}
+        </dl>
+      </section>
+      <section className="card">
+        <h2 className="lib-h">The formula</h2>
+        <p className="lib-formula"><code>{m.formula}</code> <span className="rim-tquiet">(Eq. {m.equation}, p. {m.page})</span></p>
+        {(m.modes || []).map((mode) => (
+          <div key={mode.key} className="lib-cov-mode">
+            <h3 className="lib-h3">{mode.name}{mode.symbol ? ` (${mode.symbol})` : ""}{mode.count ? " × how many there are" : ""}</h3>
+            {mode.uses ? (
+              <p>Its own model: <Link to={recordPath(mode.uses)}>{(cov.modes || []).find((x) => x.key === mode.key)?.uses_name || mode.uses}</Link>{mode.note ? `. ${mode.note}` : "."}</p>
+            ) : (
+              <div className="maint-scroll">
+                <table className="lib-table lib-cov-factors">
+                  <thead><tr><th>Symbol</th><th>Factor</th><th>From</th><th>Page</th></tr></thead>
+                  <tbody>
+                    <tr><td>{mode.base.symbol}</td><td>{mode.base.name}{"value" in mode.base ? `: ${mode.base.value} ${unitShort(m.rate_unit)}` : ""}</td><td>{mode.base.equation ? `Eq. ${mode.base.equation}` : mode.base.source || "—"}</td><td>{mode.base.page}</td></tr>
+                    {(mode.factors || []).map((f) => (
+                      <tr key={f.symbol}><td>{f.symbol}</td><td>{f.name}{f.words ? <span className="rim-tquiet"> · {f.words}</span> : null}</td>
+                        <td>{[f.equation ? `Eq. ${f.equation}` : null, f.source].filter(Boolean).join(", ") || "—"}</td><td>{f.page}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {mode.note && !mode.uses && <p className="rim-tquiet">{mode.note}</p>}
+          </div>
+        ))}
+      </section>
+      <section className="card" aria-labelledby="cov-try">
+        <h2 id="cov-try" className="lib-h">Try it</h2>
+        <p className="rim-tquiet">Change the conditions to see the rate. Blank inputs take the default shown; the handbook’s limits are under each one.</p>
+        <CovariateCalculator recordId={rec.id} inputs={cov.inputs || []} unit={m.rate_unit} values={values} onChange={setValues} idPrefix="try" />
+      </section>
+      {(rec.failure_modes || []).length > 0 && (
+        <section className="card">
+          <h2 className="lib-h">Failure modes it covers</h2>
+          <ul>{rec.failure_modes.map((f) => <li key={f}>{f}</li>)}</ul>
+        </section>
+      )}
+      <section className="card">
+        <h2 className="lib-h">Source and licence</h2>
+        <p>{cite.title}{cite.report ? ` (${cite.report})` : ""}, {cite.table}, p. {cite.page}, {cite.year}.</p>
+        {d.disclaimer && <p className="lib-disclaimer"><strong>Not endorsed by the Navy.</strong> {d.disclaimer}</p>}
+        {source?.licence && <p className="rim-tquiet">{source.licence.name}.</p>}
+        {(d.caveats || []).length > 0 && <ul>{d.caveats.filter((c) => c !== d.disclaimer).map((c) => <li key={c}>{c}</li>)}</ul>}
+      </section>
     </div>
   );
 }
@@ -275,7 +384,7 @@ export function LibraryRecord() {
   const brief = rec && { id: rec.id, label: rec.label, kind: rec.kind, basis: rec.basis, mean: summary.mean, p05: summary.p05,
     p95: summary.p95, b10: summary.b10, units: valueUnits, source: source?.short_name || sourceId,
     family: rec.distribution?.family, params: rec.distribution?.params, level: rec.distribution?.level };
-  const pts = rec ? (life ? lifeCurve(rec.distribution, summary) : curve(rec.distribution, summary.p05, summary.p95)) : null;
+  const pts = rec && !isCovariate(rec) ? (life ? lifeCurve(rec.distribution, summary) : curve(rec.distribution, summary.p05, summary.p95)) : null;
   // The log axis's ticks: a decade apart, as powers of ten; a narrow range (under 2.5 decades) adds the 2s and 5s.
   const decades = pts && !life ? Math.log10(pts.x[pts.x.length - 1] / pts.x[0]) : 0;
   const cite = rec?.citation || {};
@@ -318,7 +427,8 @@ export function LibraryRecord() {
                   ) : null} />
       {error && <div className="card error" role="alert">{error}</div>}
       {!rec && !error && <div className="card empty">Loading…</div>}
-      {rec && (
+      {rec && isCovariate(rec) && <CovariateRecord rec={rec} d={d} source={source} />}
+      {rec && !isCovariate(rec) && (
         <div className="lib-record">
           <section className="card">
             <h2 className="lib-h">What it is</h2>

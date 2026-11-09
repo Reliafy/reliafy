@@ -8,6 +8,8 @@
 // what's inside it too. Pure functions, tested in explorerModels.test.js; the cells are
 // drawn by ModelTable.jsx. The links come from GET /api/maintenance/position-models.
 
+import { isCovariateId, lineConditions } from "./covariate.js";
+
 export const MODEL_TYPE = "pmodel";
 export const isModelRow = (r) => r?.type === MODEL_TYPE;
 
@@ -302,6 +304,10 @@ export function predictionAssign(lines = []) {
     }
     if (!record) {
       out[key] = { record_id: null };
+      continue;
+    }
+    if (isCovariateId(record) || l.record?.kind === "covariate_model") {
+      out[key] = { record_id: record, ...lineConditions(l) }; // NSWC-11: its conditions, no quality factor
       continue;
     }
     const qs = String(l.quality_factor ?? "").trim();

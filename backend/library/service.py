@@ -28,7 +28,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
 
-from backend.library import schema
+from backend.library import covariate, schema
 from backend.errors import client_message
 
 logger = logging.getLogger(__name__)
@@ -130,7 +130,7 @@ def _check_choice(name: str, value: Optional[str], allowed) -> None:
 def units_text(rec: dict) -> str:
     """The value's unit in words: 'per hour (calendar)', 'per demand'."""
     u = rec.get("units") or {}
-    if rec.get("kind") == "life":
+    if rec.get("kind") in ("life", "covariate_model"):
         return str(u.get("as_given") or u.get("value") or "")
     text = {"per_hour": "per hour", "per_hour_per_foot": "per hour per foot of pipe",
             "per_demand": "per demand"}.get(u.get("value"), u.get("value") or "")
@@ -148,6 +148,8 @@ def _sig(x: Optional[float], digits: int = 4) -> Optional[float]:
 
 
 def distribution_text(rec: dict) -> str:
+    if rec.get("kind") == "covariate_model":
+        return f"covariate model ({covariate.rate_unit_words(rec)})"
     d = rec["distribution"]
     args = ", ".join(f"{p['name']}={_sig(p['value'])}" for p in d["params"])
     return f"{d['family']}({args})"
@@ -167,6 +169,61 @@ def _citation_text(rec: dict) -> Optional[str]:
     return f"{c.get('report') or c['title']}, {c['table']}, p. {c['page']}"
 
 
+def resolve(record_id: str) -> dict:
+    """A published record by id, for a covariate model's ``uses`` (LookupError when unknown)."""
+    return get(record_id)
+
+
+def covariate_brief(rec: dict) -> dict:
+    """A covariate model in a few fields, for a list row: its rate unit, its modes (each with its
+    base rate in words and how many condition factors it has), and how many inputs it reads."""
+    m = covariate.model_of(rec)
+    modes = []
+    for mode in m.get("modes") or []:
+        sub = get(mode["uses"]) if mode.get("uses") else None
+        modes.append({"key": mode["key"], "name": mode.get("name"), "symbol": mode.get("symbol"),
+                      "base": covariate.base_text(mode),
+                      "base_symbol": (mode.get("base") or {}).get("symbol"),
+                      "factors": len(mode.get("factors") or []),
+                      **({"uses": mode["uses"], "uses_name": sub.get("name")} if sub else {})})
+    try:
+        n_inputs = len(covariate.inputs(rec, resolve))
+    except (LookupError, covariate.CovariateError):
+        n_inputs = len(m.get("inputs") or [])
+    return {"rate_unit": covariate.rate_unit(rec), "rate_unit_words": covariate.rate_unit_words(rec),
+            "per_cycle": covariate.per_cycle(rec), "equation": m.get("equation"), "formula": m.get("formula"),
+            "modes": modes, "factors": covariate.factor_count(rec), "inputs": n_inputs,
+            "chapter": (rec.get("conditions") or {}).get("chapter")}
+
+
+def covariate_inputs(rec: dict) -> list[dict]:
+    """Every input a covariate model reads (its own and its parts'), as the Conditions editor
+    shows them."""
+    keep = ("key", "name", "group", "role", "kind", "label", "symbol", "unit", "default", "default_basis", "limits",
+            "choices", "page", "help")
+    return [{k: i[k] for k in keep if k in i} for i in covariate.inputs(rec, resolve)]
+
+
+def evaluate(record_id: str, values: Optional[dict] = None) -> dict:
+    """A covariate model's rate under ``values`` (by input key; a missing one takes the handbook's
+    default): {ok, result, warnings} or {ok: false, problems} when an input is missing, not a
+    number, or past a limit the handbook sets (each said with its page). Raises LibraryNotFound,
+    or ValueError for a record that isn't a covariate model or values that aren't an object."""
+    rec = get(record_id)
+    if rec.get("kind") != "covariate_model":
+        raise ValueError(f"'{rec['label']}' isn't a covariate model: only those take conditions.")
+    if values is not None and not isinstance(values, dict):
+        raise ValueError("values must be an object of input name to value.")
+    src = _source_of(rec)
+    try:
+        result = covariate.evaluate(rec, values or {}, resolve)
+    except covariate.CovariateError as exc:
+        return {"ok": False, "record_id": rec["id"], "problems": exc.problems, "missing": exc.missing,
+                "disclaimer": src.get("disclaimer")}
+    return {"ok": True, "record_id": rec["id"], "result": result, "warnings": result.pop("warnings"),
+            "disclaimer": src.get("disclaimer")}
+
+
 def brief(rec: dict, mine: Optional[dict] = None) -> dict:
     """A record as a search result row."""
     src = _source_of(rec, mine)
@@ -176,6 +233,7 @@ def brief(rec: dict, mine: Optional[dict] = None) -> dict:
         "equipment_type": rec["equipment_type"], "kind": rec["kind"],
         "failure_mode": rec["failure_mode"]["name"],
         "mean": s.get("mean"), "p05": s.get("p05"), "p95": s.get("p95"),
+        **({"covariate": covariate_brief(rec)} if rec.get("kind") == "covariate_model" else {}),
         "units": units_text(rec), "distribution": distribution_text(rec),
         "basis": rec["basis"], "source": src.get("short_name", rec["source"]),
         "citation": _citation_text(rec),
@@ -241,7 +299,10 @@ def search(query: Optional[str] = None, source: Optional[str] = None, equipment_
     ``use``) kept: the app's record picker fills its dropdowns from them."""
     lib = _library()
     own = mine or {"sources": {}, "records": []}
-    _check_choice("source", source, {**own["sources"], **lib["sources"]})
+    # Several sources, comma-separated (the parts-count picker searches both handbooks at once).
+    picked = [x.strip() for x in str(source).split(",") if x.strip()] if source else []
+    for one in picked:
+        _check_choice("source", one, {**own["sources"], **lib["sources"]})
     _check_choice("equipment_type", equipment_type, schema.EQUIPMENT_TYPES)
     _check_choice("kind", kind, schema.KINDS)
     _check_choice("use", use, USES)
@@ -267,7 +328,12 @@ def search(query: Optional[str] = None, source: Optional[str] = None, equipment_
     mode = " ".join(str(failure_mode or "").split()).lower() or None
     wanted = {"source": source, "equipment_type": equipment_type, "kind": kind, "failure_mode": mode}
 
+    if len(picked) > 1:
+        wanted["source"] = None
+
     def keeps(rec: dict, skip: Optional[str] = None) -> bool:
+        if len(picked) > 1 and rec["source"] not in picked:
+            return False
         return all(v is None or k == skip or _facet_value(rec, k) == v for k, v in wanted.items())
 
     hits = [m for m in matched if keeps(m[2])]
@@ -344,6 +410,9 @@ def detail(record_id: str, environment: Optional[str] = None, mine: Optional[dic
             model = {"needs": client_message(exc)}
     src = _source_of(rec, mine)
     out = {"record": rec, "units": units_text(rec), "block_model": model, "caveats": src.get("caveats") or []}
+    if rec.get("kind") == "covariate_model":
+        out["covariate"] = {**covariate_brief(rec), "inputs": covariate_inputs(rec)}
+        out["disclaimer"] = src.get("disclaimer")
     if src.get("mine"):
         out["library"] = {k: src.get(k) for k in ("id", "name", "description", "notes", "read_only", "records")}
         out["model_link"] = model_link
@@ -375,7 +444,7 @@ def sources(mine: Optional[dict] = None) -> dict:
         out.append({k: s.get(k) for k in (
             "id", "name", "short_name", "publisher", "title", "report", "edition", "year", "url", "home",
             "basis", "licence", "description", "caveats", "retrieved", "records", "components", "kinds",
-            "equipment_types", "skipped", "data_version")})
+            "equipment_types", "skipped", "data_version", "disclaimer")})
     return {
         "sources": out,
         "total_records": len(lib["records"]) + len((mine or {}).get("records", [])),

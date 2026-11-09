@@ -116,8 +116,23 @@ def chapter_modules(lenient: bool = False) -> list:
     return out
 
 
+def _with_roles(slug: str, m: dict) -> dict:
+    """The model with each input's role (design, use or environment) from roles.py, where every
+    input's is said once, reviewed in one place rather than scattered through the chapters."""
+    from backend.scripts.nswc11.roles import ROLES
+
+    mine = ROLES.get(slug) or {}
+    inputs = []
+    for i in m["inputs"]:
+        role = i.get("role") or mine.get(i["name"])
+        if role is None:
+            raise ValueError(f"{slug}: input {i['name']} has no role in backend/scripts/nswc11/roles.py")
+        inputs.append({**i, "role": role})
+    return {**m, "inputs": inputs}
+
+
 def _record(raw: dict) -> dict:
-    m = raw["covariate_model"]
+    m = _with_roles(raw["slug"], raw["covariate_model"])
     chapter = raw["chapter"]
     title = CHAPTERS[chapter]
     n_modes = len(m["modes"])
@@ -158,12 +173,13 @@ def build(lenient: bool = False) -> dict:
     out and reported instead of stopping the build."""
     records = []
     for mod in chapter_modules(lenient):
-        try:
-            records.extend(_record(r) for r in mod.RECORDS)
-        except Exception as exc:  # noqa: BLE001
-            if not lenient:
-                raise
-            print(f"Left out {mod.__name__}: {type(exc).__name__}: {exc}", file=sys.stderr)
+        for r in getattr(mod, "RECORDS", []):
+            try:
+                records.append(_record(r))
+            except Exception as exc:  # noqa: BLE001
+                if not lenient:
+                    raise
+                print(f"Left out {mod.__name__} {r.get('slug')}: {type(exc).__name__}: {exc}", file=sys.stderr)
     by_id = {r["id"]: r for r in records}
     if len(by_id) != len(records):
         raise SystemExit("Two records share an id.")

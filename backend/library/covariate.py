@@ -76,11 +76,21 @@ _CMPOPS = {ast.Lt: lambda a, b: a < b, ast.LtE: lambda a, b: a <= b, ast.Gt: lam
 
 class CovariateError(ValueError):
     """Inputs the model can't use (or a model that's wrong), said for the user.
-    ``problems`` lists every reason; the message joins them."""
+    ``problems`` lists every reason; the message joins them. ``missing``: the keys
+    of the inputs still needed (no value and no default), so a caller holding a
+    partial set (a position that fixes some covariates) knows what's left."""
 
-    def __init__(self, problems: list[str]):
+    def __init__(self, problems: list[str], missing: Optional[list[str]] = None):
         self.problems = list(problems)
+        self.missing = list(missing or [])
         super().__init__(" ".join(self.problems))
+
+
+#: What a covariate is (Derryn, 9 Nov 2026): fixed by the design (material, geometry, finish, type,
+#: how many), set by how it's used (load, speed, pressure, duty, cycles), or by where it works
+#: (temperature, contamination, humidity, vibration). A position may fix some, all or none; use and
+#: environment can be set per block (or for the whole diagram) in an RBD.
+ROLES = {"design": "Design", "use": "Use", "environment": "Environment"}
 
 
 class ExpressionError(ValueError):
@@ -187,6 +197,13 @@ def per_cycle(rec: dict) -> bool:
 Resolver = Callable[[str], dict]
 
 
+def open_inputs(rec: dict, values: Optional[dict] = None, resolve: Optional[Resolver] = None) -> list[dict]:
+    """The inputs ``values`` leaves open (not given), by role: what a position that fixes some
+    covariates still needs set (an input with a default is open too, at its default, until fixed)."""
+    given = {k for k, v in (values or {}).items() if v is not None and v != ""}
+    return [i for i in inputs(rec, resolve) if i["key"] not in given]
+
+
 def inputs(rec: dict, resolve: Optional[Resolver] = None, prefix: str = "", group: Optional[str] = None,
            _depth: int = 0) -> list[dict]:
     """Every input the model reads, its own and (prefixed) those of the
@@ -215,7 +232,9 @@ def defaults(rec: dict, resolve: Optional[Resolver] = None) -> dict[str, Any]:
 
 def _fmt(x: Any) -> str:
     if isinstance(x, (int, float)) and not isinstance(x, bool):
-        if x == 0 or not math.isfinite(x):
+        if x == 0:
+            return "0"
+        if not math.isfinite(x):
             return str(x)
         return f"{float(f'{x:.4g}'):g}"
     return str(x)
@@ -249,7 +268,8 @@ def _limit_words(inp: dict, value: float, limit: dict, side: str) -> str:
     return f"{label}{group} is {_fmt(value)}{unit}; {rel} {_fmt(bound)}{unit}{why}{_page_text(limit.get('page'))}."
 
 
-def _read_inputs(rec: dict, values: dict, prefix: str, refused: list, warnings: list, group: Optional[str]) -> dict:
+def _read_inputs(rec: dict, values: dict, prefix: str, refused: list, warnings: list, group: Optional[str],
+                 missing: Optional[list] = None) -> dict:
     """The record's own inputs from ``values`` (by prefixed key) or their
     defaults, checked against their limits. Problems go on ``refused`` and
     ``warnings``; the scope (by plain name) is returned."""
@@ -265,6 +285,8 @@ def _read_inputs(rec: dict, values: dict, prefix: str, refused: list, warnings: 
         if raw is None or raw == "":
             unit = f", in {inp['unit']}" if inp.get("unit") else ""
             refused.append(f"{label}{where} is needed{unit}: the handbook gives no default{_page_text(inp.get('page'))}.")
+            if missing is not None:
+                missing.append(key)
             continue
         if inp.get("kind") == "choice":
             codes = [c["code"] for c in inp.get("choices") or []]
@@ -327,10 +349,10 @@ def _term(spec: dict, scope: dict, what: str) -> float:
 
 
 def _evaluate(rec: dict, values: dict, resolve: Optional[Resolver], prefix: str, group: Optional[str],
-              refused: list, warnings: list, depth: int) -> Optional[dict]:
+              refused: list, warnings: list, depth: int, missing: Optional[list] = None) -> Optional[dict]:
     model = model_of(rec)
     before = len(refused)
-    scope = _read_inputs(rec, values, prefix, refused, warnings, group)
+    scope = _read_inputs(rec, values, prefix, refused, warnings, group, missing)
     own_ok = len(refused) == before
     # The modes that use other records read their own inputs; do them even when this record's
     # inputs are refused, so every missing input is listed at once.
@@ -340,9 +362,15 @@ def _evaluate(rec: dict, values: dict, resolve: Optional[Resolver], prefix: str,
             if resolve is None or depth >= MAX_DEPTH:
                 raise CovariateError([f"{rec.get('id')}: can't read the record its mode '{mode['key']}' uses."])
             sub = resolve(mode["uses"])
+            if mode.get("count") and scope.get(mode["count"]) == 0:
+                # None of this part (a compressor with no valves): it adds nothing and needs no inputs.
+                subs[mode["key"]] = {"id": sub.get("id"), "name": sub.get("name"), "unit": rate_unit(sub),
+                                     "unit_words": rate_unit_words(sub), "total": 0.0, "modes": [], "derived": [],
+                                     "inputs": {}, "none": True}
+                continue
             label = mode.get("name") or sub.get("name")
             subs[mode["key"]] = _evaluate(sub, values, resolve, f"{prefix}{mode.get('prefix') or mode['key']}.",
-                                          f"{group} › {label}" if group else label, refused, warnings, depth + 1)
+                                          f"{group} › {label}" if group else label, refused, warnings, depth + 1, missing)
     if not own_ok or any(v is None for v in subs.values()):
         return None  # something this record or a part of it needs is missing (already said)
     try:
@@ -437,9 +465,10 @@ def evaluate(rec: dict, values: Optional[dict] = None, resolve: Optional[Resolve
     if unknown:
         refused.append(f"Unknown input{'s' if len(unknown) != 1 else ''} {', '.join(unknown)}: "
                        f"{rec.get('name')} reads {', '.join(sorted(known)) or 'none'}.")
-    out = _evaluate(rec, values, resolve, "", None, refused, warnings, 0)
+    missing: list[str] = []
+    out = _evaluate(rec, values, resolve, "", None, refused, warnings, 0, missing)
     if refused or out is None:
-        raise CovariateError(refused or ["Can't compute this model."])
+        raise CovariateError(refused or ["Can't compute this model."], missing)
     out["warnings"] = warnings
     return out
 
@@ -468,6 +497,8 @@ def problems(rec: dict, resolve: Optional[Resolver] = None) -> list[str]:
     names: dict[str, dict] = {}
     for inp in m.get("inputs") or []:
         n = inp.get("name")
+        if inp.get("role") not in ROLES:
+            bad(f"input {n} needs a role: design, use or environment")
         if not isinstance(n, str) or not n.isidentifier():
             bad(f"input name {n!r} must be an identifier")
             continue

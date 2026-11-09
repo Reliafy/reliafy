@@ -13,6 +13,8 @@ import InputGroup, { Addon } from "../components/ui/InputGroup.jsx";
 import Select from "../components/Select.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import PartTypeCell from "../components/PartTypeCell.jsx";
+import ConditionsModal from "../components/ConditionsModal.jsx";
+import { conditionsLabel, isCovariateLine } from "../predictionPane.js";
 import PredictionResult from "../components/PredictionResult.jsx";
 import { TrashIcon } from "../components/LibRows.jsx";
 import { ShowMe } from "../components/SectionPage.jsx";
@@ -60,6 +62,7 @@ export default function ReliabilityPredictionNew() {
   const [computing, setComputing] = useState(false);
   const [error, setError] = useState(null);
   const [capError, setCapError] = useState(null); // a save refused at the Free storage limit
+  const [conditionsOf, setConditionsOf] = useState(null); // the line whose NSWC-11 conditions are open
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -281,16 +284,22 @@ export default function ReliabilityPredictionNew() {
                     <td>
                       <PartTypeCell name={`part ${i + 1}`} record={l.record} rate={l.user_rate} rateMode={l.rate_mode} excluded={l.excluded}
                                     onChange={(c) => setLine(i, {
-                                      ...("record" in c ? { record: c.record, record_id: c.record ? c.record.id : null } : {}),
+                                      ...("record" in c ? { record: c.record, record_id: c.record ? c.record.id : null, conditions: {}, cycles_per_hour: "" } : {}),
                                       ...("rate" in c ? { user_rate: c.rate } : {}),
                                       ...("rateMode" in c ? { rate_mode: c.rateMode } : {}),
                                       ...("excluded" in c ? { excluded: c.excluded } : {}),
                                     })} />
                     </td>
                     <td className="num">
-                      <input type="number" inputMode="decimal" min="0" step="any" value={l.quality_factor} placeholder={defaultQuality(l.record)} aria-label={`Quality factor of part ${i + 1}`}
-                             title={qualityHint(l.record)}
-                             disabled={!l.record_id || l.excluded} onChange={(e) => setLine(i, { quality_factor: e.target.value })} />
+                      {isCovariateLine(l) ? (
+                        <button type="button" className="secondary sm" aria-label={`Conditions of part ${i + 1}`} onClick={() => setConditionsOf(i)}>
+                          {conditionsLabel(l)}
+                        </button>
+                      ) : (
+                        <input type="number" inputMode="decimal" min="0" step="any" value={l.quality_factor} placeholder={defaultQuality(l.record)} aria-label={`Quality factor of part ${i + 1}`}
+                               title={qualityHint(l.record)}
+                               disabled={!l.record_id || l.excluded} onChange={(e) => setLine(i, { quality_factor: e.target.value })} />
+                      )}
                     </td>
                     <td className="lib-actions">
                       <div className="lib-acts">
@@ -323,6 +332,11 @@ export default function ReliabilityPredictionNew() {
         <section className={"card pred-result-card" + (stale ? " is-stale" : "")} aria-live="polite">
           <PredictionResult results={results} name={name || "Reliability prediction"} />
         </section>
+      )}
+      {conditionsOf != null && lines[conditionsOf] && (
+        <ConditionsModal line={{ ...lines[conditionsOf], name: lines[conditionsOf].name || `part ${conditionsOf + 1}` }}
+                         onClose={() => setConditionsOf(null)}
+                         onDone={(c) => { setLine(conditionsOf, c); setConditionsOf(null); }} />
       )}
     </div>
   );

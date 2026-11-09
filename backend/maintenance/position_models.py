@@ -1027,7 +1027,7 @@ def bayes_position(m, db, owners, hidden, position_id: str, baseline: dict | Non
 # go"): the parts listed at the position and every position inside it (replacement parts and
 # components; consumables aren't in it), or a product design's bill of materials where its
 # positions list none. Each part takes a handbook part type (MIL-HDBK-217F base rate) and a
-# quality factor; the environment is set once on the position (default: the nearest position
+# quality factor, or an NSWC-11 mechanical component with its conditions (a covariate model); the environment is set once on the position (default: the nearest position
 # above with a prediction, else the handbook's ground fixed). The parts count itself is
 # backend/services/reliability_prediction.py. It's saved as a reliability prediction (on the
 # Predictions page, linked back to the position) and as an exponential model at its rate, so
@@ -1056,9 +1056,14 @@ def _assigned(assign: dict | None, previous: dict, part_id, reference) -> dict:
 
 def _line_type(a: dict) -> dict:
     """What a line takes from its assignment: a handbook part type (and a quality factor, or
-    None for the part type's default), a rate of the user's own per part, or left out as not an
+    None for the part type's default; an NSWC-11 part type: its conditions and, for a rate per
+    cycle, its cycles an hour), a rate of the user's own per part, or left out as not an
     electronic part."""
     out = {"record_id": a.get("record_id") or None, "quality_factor": a.get("quality_factor") or None}
+    if a.get("record_id") and isinstance(a.get("conditions"), dict) and a["conditions"]:
+        out["conditions"] = dict(a["conditions"])
+    if a.get("record_id") and a.get("cycles_per_hour") not in (None, ""):
+        out["cycles_per_hour"] = a["cycles_per_hour"]
     if a.get("rate_per_million_hours") not in (None, ""):
         out["rate_per_million_hours"] = a["rate_per_million_hours"]
     if a.get("excluded"):
@@ -1228,7 +1233,7 @@ def predict_position(m, db, owners, hidden, position_id: str, environment: str |
     model = models_service.import_model(
         db, owner, f"{p['name']} (predicted, parts count)"[:200], "exponential", unit="Hours",
         params=[{"name": "failure_rate", "value": float(rate)}],
-        notes=f"A MIL-HDBK-217F parts count of {p['name']}'s parts list in {env_info.get('name') or inputs['environment']}.")
+        notes=_model_note(p["name"], results, env_info.get("name") or inputs["environment"]))
     db.models.update_one({"_id": model.id}, {"$set": {"results.method": "parts_count",
                                                       "results.prediction_id": pred.id}})
     old = replace_link_id or next((x["id"] for x in _prediction_links(m, position_id)), None)
@@ -1240,6 +1245,16 @@ def predict_position(m, db, owners, hidden, position_id: str, environment: str |
               "parts_source": got["source"]}
     link = m.link_position_model(position_id, "model", model.id, "prediction", None, model.name, note, source, old)
     return {**link, "prediction": {"id": pred.id, "results": results}}
+
+
+def _model_note(name: str, results: dict, environment: str) -> str:
+    """The saved model's note: which handbooks its parts count used (and the Navy's statement when
+    NSWC-11 is one)."""
+    books = [h["short_name"] for h in results.get("handbooks") or []] or ["MIL-HDBK-217F"]
+    note = f"A {' and '.join(books)} parts count of {name}'s parts list in {environment}."
+    if results.get("disclaimer"):
+        note += " " + results["disclaimer"]
+    return note
 
 
 def prediction_detail(db, owners, link: dict) -> dict | None:

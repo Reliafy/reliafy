@@ -2371,7 +2371,8 @@ def register() -> None:
                            prediction: Annotated[dict[str, Any] | None, Field(description=(
                                "A parts-count prediction: {environment? (handbook symbol, e.g. GF; default the "
                                "position's last, else the nearest above), mission_time? (hours), assign? {part number "
-                               "or part id: {record_id (a handbook record: list kind library), quality_factor?}, {rate_per_million_hours} (the "
+                               "or part id: {record_id (a handbook record: list kind library), quality_factor? (MIL-HDBK-217F), "
+                               "conditions? and cycles_per_hour? (NSWC-11: the record's covariate inputs)}, {rate_per_million_hours} (the "
                                "user's own rate, e.g. a battery) or {excluded: true} (not electronic: left out)}, left_out? "
                                "[parts-list entry id] (kept on the list, left out of this prediction)}."))]
                            = None, rbd_id: str | None = None, build_rbd: bool | None = None,

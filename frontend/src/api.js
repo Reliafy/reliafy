@@ -3398,6 +3398,12 @@ export function getLibrarySources() {
 export function getLibraryRecord(recordId) {
   return request(`/api/library/records/${encodeURIComponent(recordId)}`);
 }
+// A covariate model's rate (NSWC-11) under some conditions: {ok, result, warnings} or {ok: false, problems}.
+export function evaluateLibraryRecord(recordId, values) {
+  return request(`/api/library/records/${encodeURIComponent(recordId)}/evaluate`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values }),
+  });
+}
 // A record saved as a model in the user's models (a rate → an exponential, cited).
 export function createModelFromLibrary(recordId, name) {
   return request("/api/models/from-library", {

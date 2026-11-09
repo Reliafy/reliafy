@@ -3,6 +3,7 @@
 // numbers as shown. Pure functions; the pages only display.
 import { formatNumber, formatPercent } from "./format.js";
 import { toCsv } from "./csv.js";
+import { isCovariateId, lineConditions } from "./covariate.js";
 
 export const PREDICTIONS_PATH = "/predictions";
 export const PREDICTIONS_GUIDE = "reliability-prediction";
@@ -47,8 +48,9 @@ export function partTypeMode({ record = null, rate = "", rateMode = false, exclu
 }
 
 // What the "no match" note of the part-type search says: the handbook's gaps and what to do instead.
-export const NO_PART_TYPE_HINT = "MIL-HDBK-217F covers electronic parts only: it has no batteries and no mechanical "
-  + "parts. Give a battery a rate of your own, and tick “Not electronic” for a mechanical part to leave it out.";
+export const NO_PART_TYPE_HINT = "MIL-HDBK-217F covers electronic parts and NSWC-11 mechanical ones (bearings, seals, "
+  + "pumps, springs…); neither has batteries. Give a battery a rate of your own, and tick “Not electronic” to leave "
+  + "out a part neither handbook has.";
 
 // The quality factor a part type takes when the line gives none, for the box's placeholder: its
 // default grade (a parts-count type: commercial or non-MIL), else 1; "default" when the record
@@ -83,6 +85,8 @@ export function lineFromServer(line) {
     quality_factor: line.quality_factor != null && line.quality_factor !== DEFAULT_QUALITY_FACTOR ? line.quality_factor : "",
     user_rate: line.rate_per_million_hours != null ? line.rate_per_million_hours : "",
     excluded: Boolean(line.excluded),
+    conditions: line.conditions || {},
+    cycles_per_hour: line.cycles_per_hour ?? "",
   });
 }
 
@@ -107,8 +111,10 @@ export function linesForServer(lines) {
         out.excluded = true;
         return out;
       }
-      if (l.record_id) out.record_id = l.record_id;
-      else if (String(l.user_rate ?? "").trim() !== "") {
+      if (l.record_id) {
+        out.record_id = l.record_id;
+        if (isCovariateId(l.record_id) || l.record?.kind === "covariate_model") return { ...out, ...lineConditions(l) };
+      } else if (String(l.user_rate ?? "").trim() !== "") {
         out.rate_per_million_hours = Number(l.user_rate);
         return out;
       }

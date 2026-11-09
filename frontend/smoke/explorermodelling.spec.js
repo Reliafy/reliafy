@@ -697,7 +697,7 @@ test("Add a prediction… opens in the table area: live result, the part-type li
   // The parts across the pane, every column in view; at this width the result under them, in view
   // with Save (side by side on a wider screen: the product test below).
   await expect(pane.locator(".pred2-table tbody tr")).toHaveCount(3);
-  await expect(pane.locator(".pred2-table thead th")).toHaveText(["Part", "Qty", "Handbook part type", "Quality factor", "Not electronic", "Your own rate", "λ per 10⁶ h", "Actions"]);
+  await expect(pane.locator(".pred2-table thead th")).toHaveText(["Part", "Qty", "Handbook part type", "Quality or conditions", "Not electronic", "Your own rate", "λ per 10⁶ h", "Actions"]);
   const inBox = await pane.locator(".pred2-in").boundingBox();
   const outBox = await pane.locator(".pred2-out").boundingBox();
   expect(outBox.y).toBeGreaterThan(inBox.y + inBox.height - 2);

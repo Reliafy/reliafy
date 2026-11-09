@@ -3,6 +3,7 @@
 // result in the words the result panel shows. The arithmetic is the server's
 // (reliability_prediction.py); these only read it.
 import { predictionAssign } from "./explorerModels.js";
+import { isCovariateId } from "./covariate.js";
 import { fmtHours, fmtPerMillion, fmtQuantity, fmtReliability, partTypeMode } from "./predictions.js";
 
 export const predictionTitle = (link = null) => (link ? "Refresh the prediction" : "Add a prediction");
@@ -39,7 +40,13 @@ export function resultLines(lines = [], results = null) {
 
 // A line as the pane first keeps it, from the server's (its chosen part type named from the result).
 export function lineFromPreview(line, result = null) {
-  return { ...line, record: line.record_id ? { id: line.record_id, name: result?.part_type || line.record_id } : null };
+  return {
+    ...line,
+    record: line.record_id ? {
+      id: line.record_id, name: result?.part_type || line.record_id,
+      ...(result?.covariate ? { kind: "covariate_model" } : {}),
+    } : null,
+  };
 }
 
 // The parts list read again (after a part was added, removed or its quantity changed): the
@@ -116,6 +123,8 @@ export const lineMode = (l = {}) => partTypeMode({
 export function lineChange(c = {}) {
   return {
     ...("record" in c ? { record: c.record, record_id: c.record ? c.record.id : null } : {}),
+    // A new part type clears the last one's conditions.
+    ...("record" in c && (c.record?.kind === "covariate_model" || isCovariateId(c.record?.id)) ? { conditions: {}, cycles_per_hour: "" } : {}),
     ...("rate" in c ? { rate_per_million_hours: c.rate } : {}),
     ...("rateMode" in c ? { rate_mode: c.rateMode } : {}),
     ...("excluded" in c ? { excluded: c.excluded } : {}),
@@ -143,5 +152,22 @@ export function predictionResult(result, mission = "") {
     notElectronic: (result.excluded || []).map(named),
     noType: (result.unassigned || []).map(named),
     leftOut: (result.left_out || []).map(named),
+    needsConditions: (result.needs_conditions || []).map(named),
+    handbooks: handbooksText(result.handbooks),
+    disclaimer: result.disclaimer || null,
   };
+}
+
+// Which lines used which handbook, in a line: "MIL-HDBK-217F N2: 3 lines · NSWC-11: 1 line".
+export function handbooksText(handbooks = []) {
+  return (handbooks || []).map((h) => `${h.short_name}: ${h.lines.length} line${h.lines.length === 1 ? "" : "s"}`).join(" · ");
+}
+
+// A line on an NSWC-11 part type (a covariate model: it takes conditions, not a quality factor).
+export const isCovariateLine = (l = {}) => l.record?.kind === "covariate_model" || isCovariateId(l.record?.id || l.record_id);
+
+// The Conditions… button's words for a line: "Conditions…" or "Conditions (3 set)…".
+export function conditionsLabel(l = {}) {
+  const n = Object.values(l.conditions || {}).filter((v) => String(v ?? "").trim() !== "").length;
+  return n ? `Conditions (${n} set)…` : "Conditions…";
 }

@@ -36,6 +36,7 @@ percentile that disagrees with its parameters, fails the build.
 |---|---|---|---|
 | `nrc-inl-2020`: NRC / INL industry-average parameter estimates, 2020 update (INL/EXT-21-65055, Table 1) | 300 | field data | U.S. Government work |
 | `mil-hdbk-217f-n2`: MIL-HDBK-217F with Notice 2, base failure rates and environment factors, and Appendix A's parts-count generic rates | 236 | prediction model | U.S. Government work (Distribution Statement A) |
+| `nswc-11`: NSWC-11, the Navy's mechanical handbook, as covariate models (base rate × condition factors) | see the data file | prediction model | U.S. Government work (approved for public release) |
 
 ### NRC / INL industry averages (2020 update)
 
@@ -135,6 +136,44 @@ benign to cannon, launch).
   only: it has no batteries and no mechanical parts.
 - The handbook's spelling and words stay in `source_text`; names are in
   British spelling.
+
+### NSWC-11: covariate models for mechanical parts
+
+*Handbook of Reliability Prediction Procedures for Mechanical Equipment*
+(CARDEROCKDIV, NSWC-11, May 2011, Naval Surface Warfare Center Carderock
+Division), "Approved for Public Release; Distribution is Unlimited". Each
+component's failure rate is a base rate scaled by factor functions of the
+conditions it works in: λ = λ_base × C₁(x₁) × C₂(x₂) × …, summed over the
+component's parts or failure modes. That's a covariate model, so the source is
+one record kind, `covariate_model`, not a special case per chapter.
+
+- Build: `python -m backend.scripts.build_nswc11` (`--check` in the tests).
+  Nothing is parsed from the PDF: each chapter's models are written by hand in
+  `backend/scripts/nswc11/chNN_*.py` from the rendered pages, each factor and
+  limit cited by page and equation, and each input's role (design, use or
+  environment) in `roles.py`. The PDF isn't committed; its SHA-256 is in the
+  data file.
+- A record's `covariate_model` holds `inputs` (numbers with a unit, limits and
+  maybe a default, saying whether the default is the handbook's, neutral, or a
+  typical value; or choices), `derived` values, `checks` across inputs, and
+  `modes`: a base (a constant, an expression or a table) times its factors, or
+  another record it `uses` (a pump uses a bearing record), times a count.
+  Expressions are a small arithmetic language parsed with `ast` and walked by
+  `covariate.py`; nothing is `eval`ed.
+- The preface's conditions: no equation without its procedure and limits, so
+  every number carries its range; outside a physical limit the evaluation
+  refuses, outside the handbook's range (or its figure's axis) it warns, each
+  time naming the limit and the page. Any product using the handbook must say
+  that CDNSWC and the Navy did not take part in or approve it: the source's
+  `disclaimer` is in its licence note and caveats, every record's attribution,
+  the library pages, and a prediction's result when an NSWC-11 line is in it.
+- Where the handbook is ambiguous (a scrambled equation, units that don't add
+  up, a table that disagrees with its formula), each chapter module says what
+  was read and why, with the page, and its tests pin it.
+- A covariate record is never a block model on its own (its rate depends on
+  conditions): it's tried on its library page (`POST
+  /api/library/records/{id}/evaluate`) and used in a reliability prediction
+  with each line's `conditions`.
 
 ## A record
 

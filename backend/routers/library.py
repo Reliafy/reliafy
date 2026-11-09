@@ -37,13 +37,15 @@ from backend.services.access import AccessCtx, get_access
 router = APIRouter(prefix="/api/library")
 
 _LIMIT = SlidingWindowLimiter(120)
+#: Try it asks again a moment after each change, so it has its own allowance.
+_EVAL_LIMIT = SlidingWindowLimiter(600)
 _CACHE = {"Cache-Control": "public, max-age=3600"}
 _PRIVATE = {"Cache-Control": "private, no-store"}
 NOT_FOUND = {"detail": "Library not found."}
 
 
-def _limited(request: Request) -> Optional[JSONResponse]:
-    if not _LIMIT.allow(client_ip(request) or "unknown"):
+def _limited(request: Request, limit: Optional[SlidingWindowLimiter] = None) -> Optional[JSONResponse]:
+    if not (limit or _LIMIT).allow(client_ip(request) or "unknown"):
         return JSONResponse(status_code=429, content={"detail": "Too many requests. Try again in a minute."},
                             headers={"Retry-After": "60"})
     return None
@@ -136,6 +138,22 @@ def library_record(
             link = user_lib.model_link(session, rec, ctx.read_owners)
         out = service.detail(record_id, environment=environment, mine=mine, model_link=link)
         return JSONResponse(content=out, headers=_PRIVATE if mine else _CACHE)
+    except service.LibraryNotFound as exc:
+        return JSONResponse(status_code=404, content={"detail": client_message(exc)})
+    except ValueError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+
+
+@router.post("/records/{record_id}/evaluate")
+def library_evaluate(record_id: str, request: Request, values: dict = Body(default={}, embed=True)) -> JSONResponse:
+    """A covariate model's rate under some conditions (the record page's Try it; the same as get kind
+    library_record with conditions): {ok, result, warnings} or {ok: false, problems}, each problem
+    naming the limit and the handbook's page. Published records only; nothing is saved."""
+    limited = _limited(request, _EVAL_LIMIT)
+    if limited:
+        return limited
+    try:
+        return JSONResponse(content=service.evaluate(record_id, values))
     except service.LibraryNotFound as exc:
         return JSONResponse(status_code=404, content={"detail": client_message(exc)})
     except ValueError as exc:

@@ -8546,8 +8546,9 @@ def library_search(
     source: Annotated[Optional[str], Field(description="A source id (list kind library_sources).")] = None,
     equipment_type: Annotated[Optional[str], Field(description="e.g. pump, valve (list kind library_sources lists "
                                                                "them).")] = None,
-    kind: Annotated[Optional[Literal["rate", "per_demand", "life"]], Field(
-        description="rate (per hour), per_demand (probability per demand) or life (e.g. Weibull).")] = None,
+    kind: Annotated[Optional[Literal["rate", "per_demand", "life", "covariate_model"]], Field(
+        description="rate (per hour), per_demand (probability per demand), life (e.g. Weibull) or covariate_model "
+                    "(NSWC-11 mechanical parts: a base rate × condition factors).")] = None,
     page: Annotated[int, Field(ge=1)] = 1,
     page_size: Annotated[int, Field(ge=1, le=library_service.MAX_PAGE_SIZE)] = library_service.DEFAULT_PAGE_SIZE,
 ) -> dict[str, Any]:
@@ -8562,10 +8563,23 @@ def library_get(
     environment: Annotated[Optional[str], Field(
         description="For a handbook rate (MIL-HDBK-217F): where the part works, e.g. GB (ground, benign), GF "
                     "(ground, fixed), NS (naval, sheltered); the record lists them.")] = None,
+    conditions: Annotated[Optional[dict[str, Any]], Field(description=(
+        "For a covariate model (NSWC-11): its inputs by key (the record's covariate.inputs: units, defaults, "
+        "limits), e.g. {\"L_S\": 5000, \"F_R\": 1000, \"n\": 1800}; the answer adds evaluation: the rate per "
+        "mode and in total, or the problems (a missing input, a limit and its page). Missing ones take the "
+        "handbook's default. Never guess conditions: ask the user."))] = None,
 ) -> dict[str, Any]:
     """One record in full: citation, licence, the block model to use (a user library's record: its library and the
     model it was taken from)."""
     mine = _my_libraries(ctx)
+    if conditions is not None:
+        try:
+            out = library_service.detail(record_id)
+            return {**out, "evaluation": library_service.evaluate(record_id, conditions)}
+        except library_service.LibraryNotFound as exc:
+            raise ToolError(str(exc)) from None
+        except ValueError as exc:
+            raise ToolError(str(exc)) from None
     try:
         link = None
         if mine and record_id.split(":", 1)[0] in mine["sources"]:
@@ -8708,9 +8722,15 @@ class PredictionLine(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(max_length=prediction_service.NAME_LENGTH, description="The part, as the parts list names it.")
     record_id: Optional[str] = Field(None, max_length=prediction_service.NAME_LENGTH, description=(
-        "Its handbook part type: a library record id (list kind library, source mil-hdbk-217f-n2, e.g. query "
-        "'capacitor ceramic', 'microprocessor MOS', 'motor'). Omit for a part the handbook has no type for: it's "
-        "listed and left out of the total."))
+        "Its handbook part type: a library record id (list kind library, source mil-hdbk-217f-n2 for electronic "
+        "parts, e.g. query 'capacitor ceramic', 'motor'; source nswc-11 for mechanical parts: bearings, seals, "
+        "pumps...). Omit for a part the handbook has no type for: it's listed and left out of the total."))
+    conditions: Optional[dict[str, Any]] = Field(None, description=(
+        "With an nswc-11 record_id: its inputs by key (get kind library_record lists them with units, defaults "
+        "and limits). Missing ones take the handbook's default; a line still missing one is listed and left out "
+        "of the total with what it needs. Ask the user; never guess."))
+    cycles_per_hour: Optional[float] = Field(None, gt=0, le=prediction_service.MAX_CYCLES_PER_HOUR, description=(
+        "With an nswc-11 record whose rate is per million cycles or operations: how many it makes an hour."))
     quantity: float = Field(1, gt=0, le=prediction_service.MAX_QUANTITY, description="How many in the system.")
     quality_factor: Optional[float] = Field(None, gt=0, description=(
         "πQ for this line (default: the record's prediction.quality_factor_default, else 1). The record's "
