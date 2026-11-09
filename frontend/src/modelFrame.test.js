@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   answerParts, countsSummary, curveSummary, dataWords, effectText, forestRows, hazardShape, modelTabs,
-  nextTabIndex, oddUnits, ppSummary, resolveTab,
+  intervalLevel, listN, nextTabIndex, oddUnits, ppSummary, resolveTab,
 } from "./modelFrame.js";
 
 const labels = (tabs) => tabs.map((t) => t.label);
@@ -194,4 +194,34 @@ test("a discrete model's chance at each count, read off its curve", async () => 
   const ff = x.map((v) => (v < 1 ? 0 : 1 - 0.5 ** Math.floor(v)));
   assert.deepEqual(pmfFromCurves({ x, ff }), [{ k: 1, p: 0.5 }, { k: 2, p: 0.25 }, { k: 3, p: 0.125 }, { k: 4, p: 0.0625 }]);
   assert.deepEqual(pmfFromCurves(null), []);
+});
+
+// A Bayesian update (saved from the Fit dialog) says what it is on every tab: 90% credible
+// intervals, never 95% confidence (UX review, Nov 2026).
+const bayes = {
+  ...weibull, method: "bayesian_update", credible_level: 0.9, gof: [], plot: null,
+  params: [{ name: "alpha", value: 5.12, ci: [3.99, 6.6] }, { name: "beta", value: 3.03, ci: [2.33, 3.93] }],
+  life: { confidence: 0.9, b_lives: [{ label: "B10", value: 2.5, lower: 1.9 }], mttf: { value: 4.6, lower: 3.9 } },
+  split: { failed: 1, running: 1, other: 0 },
+};
+
+test("a Bayesian update: credible intervals at its level, Model characteristics, no Diagnostics", () => {
+  assert.deepEqual(intervalLevel(bayes), { pct: 90, label: "90% credible", credible: true });
+  assert.deepEqual(intervalLevel(weibull), { pct: 95, label: "95%", credible: false });
+  assert.equal(intervalLevel({ method: "library" }).label, "Source's 5–95%");
+  assert.deepEqual(labels(modelTabs(bayes)), ["Calculator", "Model characteristics", "Data"]);
+  assert.deepEqual(labels(modelTabs({ ...bayes, plot: { scatter: {} } })),
+    ["Probability plot", "Calculator", "Model characteristics", "Data"]);
+  // Saved before it carried its life figures: the tab still shows (they come from the life path).
+  assert.ok(labels(modelTabs({ ...bayes, life: undefined })).includes("Model characteristics"));
+  const parts = answerParts(bayes);
+  assert.ok(parts.includes("β 3.03 (90% credible 2.33–3.93)"), parts.join(" | "));
+  assert.ok(parts.some((p) => /B10 .* at 90% credible\)/.test(p)), parts.join(" | "));
+});
+
+test("the model list's n: none for a model made from parameters, data plus prior for an update", () => {
+  assert.equal(listN({ n: 0, params_only: true }).text, "—");
+  assert.equal(listN({ n: 1, method: "bayesian_update" }).text, "1 + prior");
+  assert.equal(listN({ n: 1200 }).text, "1,200");
+  assert.equal(listN({ n: 1200 }).title, undefined);
 });

@@ -36,6 +36,10 @@ NO_MAXIMUM_NOTE = "No confidence bounds: the fit has no finite maximum, so its c
 # A model that bounds its curve but not its quantiles (Royston-Parmar, #179).
 CURVE_ONLY_NOTE = ("No bounds on the B-lives: this model's confidence bounds are on its curve (the calculator's "
                    "band), not on its quantiles.")
+# A Bayesian update's bounds are credible intervals (SurPyval's quantile_cri and mean_cri), so the
+# card says so rather than calling them confidence bounds.
+CREDIBLE_NOTE = ("The bounds are credible intervals from a Bayesian update: there's that chance the value lies "
+                 "beyond the bound, given the baseline and the data. They aren't confidence bounds.")
 
 
 def _num(v) -> Optional[float]:
@@ -61,13 +65,19 @@ def _is_nonparametric(model) -> bool:
     return hasattr(model, "R") and hasattr(model, "quantile_cb") and not hasattr(model, "dist")
 
 
+def is_bayesian(model) -> bool:
+    """A SurPyval Bayesian fit (``fit_bayes``): its intervals are credible ones, from ``cri``,
+    ``quantile_cri`` and ``mean_cri``; its ``cb`` refuses."""
+    return hasattr(model, "posterior") and hasattr(model, "quantile_cri") and hasattr(model, "cri")
+
+
 def _no_bounds_reason(model) -> Optional[str]:
     """Why ``model`` can't bound a quantile, or None when it can."""
     if not hasattr(model, "quantile_cb"):
         if hasattr(model, "m") and hasattr(model, "w"):
             return MIXTURE_NOTE
         return CURVE_ONLY_NOTE if hasattr(model, "cb") and hasattr(model, "knots") else NO_COVARIANCE
-    if _is_nonparametric(model):
+    if _is_nonparametric(model) or is_bayesian(model):
         return None
     method = getattr(model, "method", "MLE")
     if method == "given parameters":
@@ -83,7 +93,16 @@ def _quantile_bounds(model, probs: np.ndarray, alpha: float, bound: str):
     with np.errstate(all="ignore"), warnings.catch_warnings():
         # An undefined bound comes back nan, and is shown as none.
         warnings.simplefilter("ignore", RuntimeWarning)
-        if _is_nonparametric(model):
+        if is_bayesian(model):
+            # Credible intervals of the quantiles, from the posterior draws.
+            cri = np.asarray(model.quantile_cri(probs, alpha_ci=alpha, bound=bound), dtype=float)
+            if bound == "two-sided":
+                cri = cri.reshape(-1, 2)
+                lo, hi = cri[:, 0], cri[:, 1]
+            else:
+                cri = cri.reshape(-1)
+                lo, hi = (cri, None) if bound == "lower" else (None, cri)
+        elif _is_nonparametric(model):
             # Two-sided only: a one-sided 1 − α bound is one end of 1 − 2α.
             two = np.asarray(model.quantile_cb(probs, alpha_ci=alpha if bound == "two-sided" else 2 * alpha),
                              dtype=float).reshape(-1, 2)
@@ -117,7 +136,11 @@ def _quantile_bounds(model, probs: np.ndarray, alpha: float, bound: str):
 def _quantiles(model, probs: np.ndarray) -> list[Optional[float]]:
     with np.errstate(all="ignore"):
         try:
-            q = np.asarray(model.qf(probs), dtype=float).reshape(-1)
+            if is_bayesian(model):
+                # The posterior median of each quantile: the B10 the Bayesian panel quotes.
+                q = np.asarray(model.quantile_cri(probs, point=True), dtype=float).reshape(-1)
+            else:
+                q = np.asarray(model.qf(probs), dtype=float).reshape(-1)
         except Exception:  # noqa: BLE001 - one at a time (a mixture's bisection, say)
             q = np.array([_num(np.ravel(np.asarray(model.qf(float(p)), dtype=float))[0]) or np.nan
                           for p in probs])
@@ -151,6 +174,9 @@ def time_at_reliability(model, reliability, confidence: float = DEFAULT_CONFIDEN
         except Exception as exc:  # noqa: BLE001 - the values stand without their bounds
             note = f"No confidence bounds: {client_reason(exc)}."
             lo = hi = None
+        else:
+            if is_bayesian(model):
+                note = CREDIBLE_NOTE
     points = []
     for i, r in enumerate(rs):
         points.append({
@@ -180,8 +206,10 @@ def _mttf(model, alpha: float, with_bounds: bool, tau=None) -> dict:
     try:
         with np.errstate(all="ignore"), warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
-            out["lower"] = _num(np.ravel(np.asarray(model.mean_cb(alpha_ci=alpha, bound="lower"),
-                                                    dtype=float))[0])
+            # A Bayesian update's mean has a credible bound, not a confidence bound.
+            bound = model.mean_cri(alpha_ci=alpha, bound="lower") if is_bayesian(model) \
+                else model.mean_cb(alpha_ci=alpha, bound="lower")
+            out["lower"] = _num(np.ravel(np.asarray(bound, dtype=float))[0])
     except Exception:  # noqa: BLE001 - the value stands without its bound
         pass
     return out
@@ -206,7 +234,7 @@ def life_summary(model, confidence: float = DEFAULT_CONFIDENCE, with_bounds: boo
         "confidence": confidence,
         "bound": "lower",
         "b_lives": b_lives,
-        "mttf": _mttf(model, 1.0 - confidence, with_bounds and at["bounds_note"] is None, tau),
+        "mttf": _mttf(model, 1.0 - confidence, with_bounds and at["bounds_note"] in (None, CREDIBLE_NOTE), tau),
         "bounds_note": at["bounds_note"],
     }
 

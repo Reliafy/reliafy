@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatNumber, formatPercent, formatWithUnit, singularUnit } from "./format.js";
+import { formatCell, formatNumber, formatPercent, formatWithUnit, singularUnit } from "./format.js";
 
 test("formatNumber: three significant figures with separators", () => {
   assert.equal(formatNumber(4573.2), "4,570");
@@ -66,4 +66,17 @@ test("singularUnit leaves anything that isn't a plain plural alone", () => {
   }
   assert.equal(singularUnit("Flights"), "Flight");
   assert.equal(singularUnit("miles"), "mile");
+});
+
+test("formatCell: long fractions read at four figures; ids and text untouched", () => {
+  assert.equal(formatCell(3.438740588637919), "3.439");
+  assert.equal(formatCell("3.438740588637919"), "3.439");
+  assert.equal(formatCell(0.000123456789), "1.235e-4");
+  assert.equal(formatCell(1.5), "1.5");
+  assert.equal(formatCell("0.25"), "0.25");
+  assert.equal(formatCell(1200), "1200");
+  assert.equal(formatCell("HT-12"), "HT-12");
+  assert.equal(formatCell("2024-03-01"), "2024-03-01");
+  assert.equal(formatCell(null), "");
+  assert.equal(formatCell(0), "0");
 });

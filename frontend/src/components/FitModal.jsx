@@ -12,7 +12,7 @@ import { saveErrorText } from "../confirm.js";
 import { TRUST_CHOICES } from "../bayesUpdate.js";
 import {
   AROUND_PARAMS, METHOD_CHOICES, METHOD_LINE, bodyOf, countsWords, dataOptions, effective, forWords, historyRow, previewKey,
-  libraryPriorWords, priorChoices, problem, refusalSwitch, showsTrust,
+  libraryPriorWords, priorChoices, problem, refusalSwitch, refusalWords, showsTrust,
 } from "../fitDialog.js";
 import { fmt } from "../explorerModels.js";
 import { LibraryPicker } from "./LibraryParts.jsx";
@@ -278,7 +278,7 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
           {!preview.busy && wanting && <p className="rim-tquiet">{wanting}</p>}
           {!preview.busy && preview.refused && (
             <p className="field-error" role="alert">
-              {preview.refused.refused}
+              {refusalWords(preview.refused.refused)}
               {way && <> <button type="button" className="link" onClick={() => set("method", way.to)}>{way.label}</button></>}
             </p>
           )}

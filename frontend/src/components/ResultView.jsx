@@ -18,7 +18,7 @@ import Effects from "./model/Effects.jsx";
 import Diagnostics from "./model/Diagnostics.jsx";
 import DataTab from "./model/DataTab.jsx";
 import { COLORWAY } from "../plotTheme.js";
-import { modelTabs, pmfFromCurves, resolveTab } from "../modelFrame.js";
+import { intervalLevel, modelTabs, pmfFromCurves, resolveTab } from "../modelFrame.js";
 import { unitInText } from "./unitText.js";
 
 const pct = (v) => `${(v * 100).toFixed(v < 0.1 ? 2 : 1)}%`;
@@ -213,7 +213,8 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
     case "plot":
       body = (
         <PlotPanel
-          plot={<PlotCard><ProbabilityPlot fill plot={result.plot} unit={result.unit} download={`${label} — probability plot`} /></PlotCard>}
+          plot={<PlotCard><ProbabilityPlot fill plot={result.plot} unit={result.unit} download={`${label} — probability plot`}
+                                                  {...(intervalLevel(result).credible ? { bandName: `${intervalLevel(result).label} band`, lineName: "Updated model" } : {})} /></PlotCard>}
           side={<LifeAside result={result} split={split} bestFit={bestFit} compare={compare} onPick={onPick}
                            modelId={modelId} onStats={onStats} showUse={false} />}
         />
@@ -249,8 +250,9 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
           nextIdRef={calcNextId}
           name={label}
           paramLabel={isRegression ? (p) => paramView(baselineOf(result), p).label : null}
-          ciLabel={result.method === "library" ? "Source's 5–95%" : "95%"}
-          ciNote={result.method === "library" ? result.ci_note : null}
+          ciLabel={intervalLevel(result).label}
+          ciNote={result.method === "library" || intervalLevel(result).credible ? result.ci_note : null}
+          credible={intervalLevel(result).credible}
         />
       );
       break;

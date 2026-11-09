@@ -62,7 +62,7 @@ export function dataOptions({ positionCounts = null, cls = null, hasClass = true
   return [
     { value: "position", label: `This position's history${tail(positionCounts)}` },
     ...(hasClass ? [
-      { value: "class", label: `The class's pooled history${cls ? ` (${cls.positions} positions, ${countsWords(cls)})` : ""}` },
+      { value: "class", label: `The class's pooled history${cls ? ` (${cls.positions} position${cls.positions === 1 ? "" : "s"}, ${countsWords(cls)})` : ""}` },
       { value: "both", label: "Both: this position's, with the class's as a prior" },
     ] : []),
   ];
@@ -156,6 +156,14 @@ export function historyRow(r, unit = "") {
   const what = r.c === 1 ? (r.status === "removed" ? "Removed" : "Still running") : (r.failure_mode || "Failed");
   return { when: r.to || r.from || "", what: [what, r.item, r.position].filter(Boolean).join(" · "), age: `${age}${u ? ` ${u}` : ""}`,
     kind: r.c === 1 ? "Suspension" : "Failure" };
+}
+
+// A refusal's words as shown: the distribution named as everywhere else in the
+// app ("a plain weibull fit" → "a plain Weibull fit"), the server's id
+// otherwise left as it came.
+export function refusalWords(text) {
+  return String(text ?? "").replace(/\b(plain|a|an) (weibull|exponential|lognormal|normal|gamma|gumbel|logistic|loglogistic|beta|uniform)( fit| model)\b/g,
+    (_, pre, d, post) => `${pre} ${d[0].toUpperCase()}${d.slice(1)}${post}`);
 }
 
 // The link a refusal offers: a plain fit that can't be done switches to a fit with a prior.

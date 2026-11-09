@@ -132,8 +132,30 @@ def test_a_saved_update_is_a_normal_model_that_rebuilds(db):
     assert doc.name.startswith("Bayesian update of Bearing life") and doc.name.endswith("1 failure, 1 suspension")
     saved = models_service.get_model(db, doc.id, OWNERS)
     assert saved.results["method"] == "bayesian_update" and saved.results["params"][0]["ci"][0] is not None
+    # The page reads how it was fitted and at what level from the doc itself (UX review, Nov 2026).
+    assert saved.results["credible_level"] == 0.9 and saved.results["options"]["how"] == bl.HOW
+    assert "90% credible" in saved.results["ci_note"]
+    life = saved.results["life"]
+    b10 = next(b for b in life["b_lives"] if b["label"] == "B10")
+    assert life["confidence"] == 0.9 and b10["value"] > 0 and 0 < b10["lower"] < b10["value"]
+    assert life["mttf"]["value"] > 0 and life["mttf"]["lower"] is not None and "credible" in life["bounds_note"]
+    # One failure can't place probability-plot points: the doc says why instead of hiding the tab.
+    assert saved.results["plot"] is None and "at least two failures" in saved.results["plot_note"]
+    # The model list says what n means: data added to a prior (UX review, Nov 2026).
+    from types import SimpleNamespace
+
+    from backend.routers.models import _model_summary
+    ctx = SimpleNamespace(write_owner=ORG, frozen=False, member_view_only=False)
+    summary = _model_summary(saved, ctx)
+    assert summary["method"] == "bayesian_update" and "params_only" not in summary
     public = models_service.public_results(saved)
-    assert "confidence_path" not in public["functions"] and "credible" in public["functions"]["bands_note"]
+    assert "credible" in public["functions"]["bands_note"]
+    # The calculator's bands and B-lives come from the posterior's credible intervals.
+    assert public["functions"]["confidence_path"].endswith("/confidence")
+    band = models_service.confidence(db, doc.id, {"on": "sf", "alpha_ci": 0.1, "bound": "lower"}, OWNERS)
+    assert band["upper"] is None and any(v is not None and 0 < v < 1 for v in band["lower"])
+    at = models_service.life(db, doc.id, {"reliability": [0.9], "confidence": 0.9, "bound": "lower"}, OWNERS)
+    assert at["points"][0]["lower"] is not None and "credible" in at["bounds_note"]
     # The calculator's live model is the rebuilt posterior: its reliability matches the saved curve.
     out = models_service.evaluate_at(db, saved, [500.0], OWNERS)
     assert out is not None
@@ -142,8 +164,13 @@ def test_a_saved_update_is_a_normal_model_that_rebuilds(db):
     # An update of an update keeps the earlier prior and takes the new history.
     again = bl.baseline_from(db, OWNERS, set(), {"model_id": doc.id})
     assert again["source"] == "update"
-    _, r2, _ = bl.update(again, "guide", bl.given_rows([300.0, 700.0, 900.0], [0, 0, 1]))
+    m2, r2, p2 = bl.update(again, "guide", bl.given_rows([300.0, 700.0, 900.0], [0, 0, 1]))
     assert r2["counts"]["failures"] == 2 and r2["trust"]["id"] == "kept"
+    # Two failures place the points: the plot's line and band are the updated model's, on Weibull paper.
+    plot = bl.save(db, ORG, m2, r2, p2).results["plot"]
+    assert len(plot["scatter"]["x"]) == 2 and len(plot["line"]["x"]) == len(plot["bounds"]["lower"]) > 10
+    assert all(lo <= hi for lo, hi in zip(plot["bounds"]["lower"], plot["bounds"]["upper"]) if lo is not None and hi is not None)
+    assert plot["empirical"]["method"] == "Nelson-Aalen" and len(plot["empirical"]["x"]) == 2
 
 
 def test_the_position_flow_previews_saves_and_attaches(db):
@@ -190,3 +217,18 @@ def test_the_position_flow_previews_saves_and_attaches(db):
 def test_a_unit_of_use_baseline_refuses_the_position_history():
     with pytest.raises(bl.BayesError, match="unit of use"):
         bl.time_factor("cycles")
+
+
+def test_the_calculators_grid_survives_a_quantile_that_wont_converge():
+    # A long-tailed posterior (shape well below 1) can make the predictive quantile's root search
+    # fail; the grid then ends at the posterior medians' own 99% time (UX review, Nov 2026).
+    class Stubborn:
+        params = np.array([2.35e6, 0.445])
+
+        def qf(self, p):
+            raise RuntimeError("Failed to converge after 100 iterations.")
+
+    t = bl._upper_time(Stubborn(), "weibull")
+    assert t == pytest.approx(float(sp.Weibull.qf(0.99, 2.35e6, 0.445)))
+    with pytest.raises(ValueError):
+        bl._upper_time(Stubborn(), None)

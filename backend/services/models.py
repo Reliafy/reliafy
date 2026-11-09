@@ -379,8 +379,11 @@ def public_results(model: Model) -> dict:
         # A parametric regression model has bands at its covariates (#54);
         # Cox PH has none, and says why.
         if results.get("method") == "bayesian_update":
-            # Credible intervals, not confidence bounds: SurPyval's cb refuses on a Bayesian model.
+            # Credible intervals, not confidence bounds: the same paths answer with the posterior's
+            # cri / quantile_cri (life_bounds, fitting.confidence_bounds), and the note says what they are.
             functions["bands_note"] = results.get("ci_note") or "A Bayesian update has credible intervals, not confidence bounds."
+            functions["confidence_path"] = f"/api/models/{model.id}/confidence"
+            functions["life_path"] = f"/api/models/{model.id}/life"
         elif model.kind in ("distribution", "discrete", "nonparametric", fitting.more_models.FLEXIBLE_KIND) or \
                 regression_bands.result_has_bands(results):
             functions["confidence_path"] = f"/api/models/{model.id}/confidence"

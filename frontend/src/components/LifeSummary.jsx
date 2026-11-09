@@ -218,7 +218,8 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
   const data = dataText(result, split);
   const reading = verdict(result);
   // Maximum likelihood goes without saying; another method is named.
-  const method = result.options?.how && result.options.how !== "MLE" ? result.options.how : null;
+  // A Bayesian update says so above its parameters already.
+  const method = result.options?.how && result.options.how !== "MLE" && result.method !== "bayesian_update" ? result.options.how : null;
   const caveat = result.fit_warning && !result.no_finite_maximum;
   const nonparametric = result.kind === "nonparametric";
   return (
@@ -243,7 +244,7 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
           </div>
         )}
         {result.method === "bayesian_update" && result.bayes?.label && (
-          <p className="muted life-bayes">{result.bayes.label}. {result.bayes.words}</p>
+          <p className="muted life-bayes" title={result.bayes.words || undefined}>{result.bayes.label}. {result.bayes.words}</p>
         )}
         {params.map((p) => {
           const v = paramView(result, p);

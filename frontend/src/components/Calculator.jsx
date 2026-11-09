@@ -215,7 +215,8 @@ function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, lab
 // each re-evaluated by the backend and overlaid on the chart. ``fill``: the
 // chart fills the tab's height (the model page's frame).
 export default function Calculator({ functions, unit, params, state, setState, nextIdRef, name = null,
-                                     paramLabel = null, fill = false, ciLabel = "95%", ciNote = null }) {
+                                     paramLabel = null, fill = false, ciLabel = "95%", ciNote = null,
+                                     credible = false }) {
   const { meta, evaluate_path: evaluatePath } = functions;
   const tLabel = unit ? `t (${unit})` : "t";
   const covariates = functions.covariates || [];
@@ -552,7 +553,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
       {curveWarning && <p className="calc-warn">⚠ {curveWarning}</p>}
       {confidencePath && ci.bound !== "none" && bandError && (
         <p className="hint" style={{ margin: "0 0 0.4rem" }}>
-          Couldn't compute confidence bounds: {bandError}
+          Couldn't compute {credible ? "credible intervals" : "confidence bounds"}: {bandError}
         </p>
       )}
       {confidencePath && cond > 0 && (
@@ -709,12 +710,13 @@ export default function Calculator({ functions, unit, params, state, setState, n
                       />
                     </label>
                     {ci.bound !== "none" && (
-                      <PercentField label="Confidence level" value={String(ci.level ?? "")}
+                      <PercentField label={credible ? "Credible level" : "Confidence level"} value={String(ci.level ?? "")}
                         onChange={(v) => setCi({ level: v })} check={pcts.checks.level} />
                     )}
                   </>
                 )}
-                {!confidencePath && functions.bands_note && (
+                {/* A Bayesian update's bounds are credible intervals: say so beside the level. */}
+                {(!confidencePath || credible) && functions.bands_note && (
                   <p className="calc-note">{functions.bands_note}</p>
                 )}
                 <div className="calc-axis">

@@ -2960,6 +2960,8 @@ h1 .chip,
   .calc-eval-body .calc-mode .seg-btn { min-height: 44px; }
   .calc-eval-body .calc-blives .chip-btn { min-height: 40px; min-width: 52px; }
 }
+/* A Bayesian update's words in the parameters panel: four lines, the rest on hover (in full on Model characteristics). */
+.life-bayes { font-size: var(--fs-13); margin: 0 0 6px; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .detail-panel .life-help { font-size: var(--fs-12); font-weight: 400; }
 /* A card's heading with a control or a note at its right, and rows of a
    value with its bound (a recurrent model's MTBF, a failure mode's share). */

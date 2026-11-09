@@ -19,6 +19,16 @@ def test_life_data_with_and_without_covariates():
     assert cov["use_for"][0] == "Non-repairable model with covariates"
 
 
+def test_interval_data_has_two_time_columns_and_no_covariates():
+    # A saved Bayesian update's dataset (shortest / longest / censored), and SurPyval's xl / xr:
+    # the second column is the interval's end, not a covariate.
+    out = tags([[3.4387, 3.4387, 1], [1.2, 1.8, 2]], ["shortest", "longest", "censored"])
+    assert out["tags"] == ["Non-repairable"]
+    assert out["use_for"][0] == "Non-repairable model"
+    out = tags([[100, 120, 2], [150, 150, 1], [90, 110, 2]], ["xl", "xr", "c"])
+    assert out["tags"] == ["Non-repairable"]
+
+
 def test_recurrent_events():
     rows = [[f"HT-{u}", 1000 * k + 37 * u, 0 if k < 3 else 1, 180 + 40 * (u % 2)] for u in range(4) for k in range(1, 4)]
     out = tags(rows, ["truck", "engine_hours", "censored", "payload_t"])

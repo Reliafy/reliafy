@@ -551,6 +551,49 @@ def curves(model, base: dict, dist_id: str, x_max: float | None = None) -> dict:
     return out
 
 
+#: How a saved update was fitted, for the model page's "How it was fitted" and the API.
+HOW = "Bayesian update"
+
+
+def plot_for(model, dist_id: str, x, c) -> dict | None:
+    """The probability plot of a saved update: the data's own points (Nelson-Aalen plotting
+    positions, as a plain fit places them) with the updated model's line and its credible band on
+    the distribution's paper. None when the points can't be placed (fewer than two failures: the
+    prior is doing the work), and the page says so instead."""
+    from backend import fitting
+
+    if int(np.sum(np.asarray(c) != 1)) < 2:
+        return None
+    dist = DISTS[dist_id]
+    try:
+        plain = dist.fit(x, c)
+        data = plain.get_plot_data(heuristic="Nelson-Aalen")
+        shaped = fitting._shape_plot(plain, dist)
+        params = list(np.ravel(model.params))
+        grid = np.asarray(data["x_model"], dtype=float)
+        eps = 1e-9
+
+        def ty(pv):
+            return dist.mpp_y_transform(np.clip(np.asarray(pv, dtype=float), eps, 1 - eps), *params)
+
+        tx = dist.mpp_x_transform(grid)
+        with np.errstate(all="ignore"):
+            band = np.asarray(model.cri(grid, on="ff", alpha_ci=ALPHA), dtype=float).reshape(-1, 2)
+            shaped["line"] = {"x": tx.tolist(), "y": ty(model.ff(grid)).tolist()}
+            shaped["bounds"] = {"x": tx.tolist(), "lower": ty(band[:, 0]).tolist(), "upper": ty(band[:, 1]).tolist()}
+        keep = fitting.failure_positions_mask(plain, len(data["x_"]))
+        shaped["empirical"] = fitting._empirical_points(model, data, keep, "Nelson-Aalen")
+        return shaped
+    except Exception:  # noqa: BLE001 - a plot is a convenience, never a reason not to save
+        return None
+
+
+def plot_note(failures: int) -> str:
+    """Why a saved update has no probability plot."""
+    return (f"No probability plot: placing the points needs at least two failures, and this update has "
+            f"{failures}. Until then the prior does the work; the Calculator draws the curve with its credible band.")
+
+
 def label_for(base: dict, failures: int, suspensions: int) -> str:
     return (f"Bayesian update of {base['name']} with {failures} failure{'s' if failures != 1 else ''}, "
             f"{suspensions} suspension{'s' if suspensions != 1 else ''}")
@@ -560,7 +603,7 @@ def save(db, owner_id: str, model, result: dict, priors, name: str | None = None
     """Save an update as a non-repairable model (the usual shape, so RBD blocks, evidence links
     and the calculators use it): its parameters are the posterior medians with 90% credible
     intervals, its curves the predictive ones, and its recipe (the data and the prior) rebuilds it."""
-    from backend import fitting
+    from backend import fitting, life_bounds
     from backend.db import to_doc
     from backend.schema import Model
     from backend.services import datasets as datasets_service
@@ -591,10 +634,20 @@ def save(db, owner_id: str, model, result: dict, priors, name: str | None = None
         # model_id: any value, so the reads point the calculator at the saved model (public_results).
         "functions": {"meta": fitting.FUNCTIONS, "curves": curves_all, "model_id": "saved"},
         "gof": [], "method": METHOD, "credible_level": LEVEL, "ci_note": ci_note,
+        # The page's "How it was fitted" and the API read these; the plot is the data's points under
+        # the updated line (None, with the reason, under two failures); the life card's B-lives and
+        # mean carry their credible lower bounds (life_bounds knows a Bayesian fit).
+        "options": {"how": HOW},
+        "plot": plot_for(model, dist_id, xs, cs),
         "split": {"failed": result["counts"]["failures"], "running": result["counts"]["suspensions"], "other": 0},
         "bayes": {"label": result["label"], "baseline": result["baseline"], "trust": result["trust"],
                   "prior": result["prior"], "b10": b10, "mean": mean, "words": result.get("words", "")},
     }
+    if results["plot"] is None:
+        results["plot_note"] = plot_note(result["counts"]["failures"])
+    life = life_bounds.life_for(model)
+    if life:
+        results["life"] = life
     spec = {"method": METHOD, "distribution_id": dist_id, "unit": unit,
             "mapping": {"xl": "shortest", "xr": "longest", "c": "censored"},
             "notes": notes or "",
@@ -620,5 +673,20 @@ def live_cache_id(spec: dict) -> str:
     from backend import fitting
 
     model = rebuild(spec)
-    grid = np.linspace(0, float(np.ravel(model.qf(0.99))[0]), 300)
-    return fitting._store_model(model, grid, [])
+    return fitting._store_model(model, np.linspace(0, _upper_time(model, spec.get("distribution_id")), 300), [])
+
+
+def _upper_time(model, dist_id: str | None) -> float:
+    """The time 99% have failed by, for the calculators' grid. The predictive quantile is a root
+    search that can fail to converge on a long-tailed posterior (a shape well below 1), so it falls
+    back to the posterior medians' own quantile."""
+    try:
+        t = float(np.ravel(model.qf(0.99))[0])
+        if np.isfinite(t) and t > 0:
+            return t
+    except Exception:  # noqa: BLE001 - fall back below
+        pass
+    dist = DISTS.get(dist_id) if dist_id else None
+    if dist is None:
+        raise ValueError("Couldn't place this update's time range.")
+    return float(np.ravel(dist.qf(0.99, *np.ravel(model.params)))[0])

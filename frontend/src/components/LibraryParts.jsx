@@ -58,7 +58,17 @@ export function LibraryPicker({ value, onPick, use = "model", label = "Data libr
           {sources.map((s) => <option key={s.id} value={s.id}>{s.mine ? `${s.name} (yours)` : s.short_name || s.name}</option>)}
         </Select>
       </div>
-      {rows === null ? <p className="rim-tquiet">Searching…</p> : rows.length === 0 ? <p className="rim-tquiet">No records match.</p> : (
+      {rows === null ? <p className="rim-tquiet">Searching…</p> : rows.length === 0 ? <p className="rim-tquiet">No records match.</p> : !filtered ? (
+        // Looking a record up (the library's own page): each result is a plain link to it, nothing to pick.
+        <ul className="lib-look" aria-label={label}>
+          {rows.map((r) => (
+            <li key={r.id}>
+              <Link to={recordPath(r.id)}>{r.label}</Link>
+              <span className="evidence-meta">{pickerDetail(r)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
         <div className="evidence-picker lib-records" role="radiogroup" aria-label={label}>
           {rows.map((r) => {
             const why = filtered ? whyNot(r, use) : null;

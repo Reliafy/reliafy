@@ -31,7 +31,8 @@ export default function RecurrentLibrary({ models, hrefFor, onDelete, help, empt
         <th key="a"><span className="sr-only">Actions</span></th>,
       ]}
       render={(m) => {
-        const g = GROWTH[m.growth] || { label: m.growth || "—", tone: "neutral" };
+        // No verdict (an imperfect-repair model, say): an empty cell, not a "—" chip.
+        const g = m.growth ? GROWTH[m.growth] || { label: m.growth, tone: "neutral" } : null;
         return (
           <tr key={m.id} className="lib-row" onClick={rowOpen(navigate, hrefFor(m.id))}>
             <td>
@@ -40,7 +41,7 @@ export default function RecurrentLibrary({ models, hrefFor, onDelete, help, empt
                 {m.shared_by && <Chip title={`Shared by ${m.shared_by}`}>Shared</Chip>}
               </div>
             </td>
-            <td><Chip tone={g.tone}>{g.label}</Chip></td>
+            <td>{g && <Chip tone={g.tone}>{g.label}</Chip>}</td>
             <td className="lib-n lib-opt">{(m.n_systems ?? 0).toLocaleString()}</td>
             <td className="lib-n lib-opt">{m.n_events != null ? m.n_events.toLocaleString() : "—"}</td>
             <td className="lib-date lib-opt">{relativeTime(m.created_at)}</td>

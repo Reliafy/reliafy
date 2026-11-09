@@ -7,6 +7,8 @@ import { formatNumber } from "../format.js";
 import { boundWords, timeAtValue } from "../lifeResults.js";
 import { boundUnavailable, meanLevels, meanLifeAnswer, medianOf } from "../meanLife.js";
 import { unitInText } from "./unitText.js";
+import { paramView } from "./LifeSummary.jsx";
+import { intervalLevel } from "../modelFrame.js";
 import { withUnit as covariateWithUnit } from "./stressName.js";
 
 // The Model characteristics tab's mean life: the MTTF with its one-sided
@@ -83,14 +85,14 @@ const B_NAMES = { B50: "B50 (median)" };
 
 // The B-lives card: each with its one-sided lower bound at the page's
 // confidence, from the same life answer as the mean.
-function BLivesCard({ life, level, pending, unit, noun = "time" }) {
+function BLivesCard({ life, level, pending, unit, noun = "time", credible = false }) {
   const u = unit ? ` ${unit}` : "";
   const rows = (life?.b_lives || []).filter((b) => B_LABELS.some(([l]) => l === b.label));
   return (
     <section className="gof-card model-chars-card" aria-labelledby="model-chars-blives">
       <div className="gofh life-card-head">
         <h3 id="model-chars-blives" className="model-chars-h">B-lives</h3>
-        {rows.some((b) => b.lower != null) && <span className="gof-sub">≥ lower bound at {formatNumber(level)}%</span>}
+        {rows.some((b) => b.lower != null) && <span className="gof-sub">≥ lower bound at {formatNumber(level)}%{credible ? " credible" : ""}</span>}
       </div>
       {!rows.length && <p className="mf-note">{pending ? "Working out the B-lives…" : "This model gives no B-lives."}</p>}
       {rows.map((b) => (
@@ -135,7 +137,9 @@ function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
   const canPick = !!result.functions?.life_path && !!onLevel;
   const horizon = np ? (tau ?? life?.mttf?.tau ?? null) : null;
   const unavailable = boundUnavailable(error, result.life?.confidence);
-  const levelText = `${formatNumber(shownLevel)}%`;
+  // A Bayesian update's bounds are credible ones, and its parameters are shown here (it may have no plot tab).
+  const lv = intervalLevel(result);
+  const levelText = `${formatNumber(shownLevel)}%${lv.credible ? " credible" : ""}`;
   const discrete = result.kind === "discrete";
   const noun = discrete ? "count" : "time";
 
@@ -208,8 +212,38 @@ function LifeCharacteristics({ result, level, onLevel, onBLives = null }) {
           </button>
         )}
       </section>
-      <BLivesCard life={life} level={shownLevel} pending={pending} unit={unit} noun={noun} />
+      <BLivesCard life={life} level={shownLevel} pending={pending} unit={unit} noun={noun} credible={lv.credible} />
+      {lv.credible && <CredibleParams result={result} label={lv.label} />}
     </div>
+  );
+}
+
+// A Bayesian update's parameters (posterior medians) with their credible
+// intervals, and why there's no probability plot when there isn't one.
+function CredibleParams({ result, label }) {
+  const params = result.params || [];
+  if (!params.length) return null;
+  return (
+    <section className="gof-card model-chars-card" aria-labelledby="model-chars-params">
+      <div className="gofh life-card-head">
+        <h3 id="model-chars-params" className="model-chars-h">Parameters</h3>
+        <span className="gof-sub">median, {label} interval</span>
+      </div>
+      {params.map((p) => {
+        const v = paramView(result, p);
+        return (
+          <div className="gofr" key={p.name}>
+            <span className="gk">{v.label}</span>
+            <span className="gv-col">
+              <span className="gv">{v.value}</span>
+              {v.ci && <span className="param-ci">{label} {v.ci}</span>}
+            </span>
+          </div>
+        );
+      })}
+      {result.bayes?.label && <p className="mf-note">{result.bayes.label}. {result.bayes.words}</p>}
+      {result.plot_note && <p className="mf-note">{result.plot_note}</p>}
+    </section>
   );
 }
 
