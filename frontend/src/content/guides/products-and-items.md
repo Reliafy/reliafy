@@ -25,8 +25,11 @@ On **Products**, press **Add the sample UAV product**. It adds a small
 inspection quadcopter (entirely invented): its design with a complete RCM
 study and every failure mode scored, its part with a short bill of materials,
 three items built from it, each with its flight hours and flights counted, a
-motor replaced on one of them, two failure reports, and a flight-critical RBD
-whose failure rates are placeholders.
+motor replaced on one of them, two failure reports, a flight-critical RBD
+whose failure rates are placeholders, and a
+[maintainability prediction](/guides/maintainability-prediction) for the
+product, saved with your own predictions under the product's name (its repair
+times and failure rates are invented too).
 
 To keep it and build on it, pick **Make this my own…** in the **⋯** menu of
 the product's own row (the top of its tree). It stays exactly as it is, with

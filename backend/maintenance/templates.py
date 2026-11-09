@@ -37,8 +37,10 @@ contradicted on purpose (the bearing life model shows wear-out); the battery
 retirement can't be checked yet (its task counts charge cycles, its analysis
 flight hours). Two modes still need a decision, on purpose, and eight are
 hidden failures with failure-finding tasks. It comes with a part and bill of
-materials, three items built from it, failure reports and a flight-critical
-RBD. Entirely invented: no real product, company, operator or partner.
+materials, three items built from it, failure reports, a flight-critical
+RBD and a maintainability prediction attached to the product (the shared
+sample prediction's lines). Entirely invented: no real product, company,
+operator or partner.
 (Earlier samples, "Delivery truck (sample)" and the asset-tree "Quadcopter UAV
 (sample)", are no longer offered; copies already in a workspace stay as they
 are.)
@@ -1863,25 +1865,49 @@ def _save_sample_rbd(m, db, name: str) -> dict:
     return {"id": rbd.id, "name": rbd.name}
 
 
+def _sample_maintainability(m, db, product: dict) -> dict:
+    """The sample product's maintainability prediction, in the workspace's saved
+    predictions and attached to the product (its inputs' product_id): the shared
+    sample's lines (backend/services/samples.py), so the numbers are the same. Made
+    only when the workspace has none for this product, so asking twice adds one. A
+    saved document like the RBD, not an event: it stays if the product is retired."""
+    from backend.services import maintainability, samples
+
+    have = db[maintainability.COLLECTION].find_one({"owner_id": m.org, "inputs.product_id": product["id"]})
+    if have is not None:
+        return {"id": have["_id"], "name": have["name"], "added": False}
+    inputs = samples.sample_maintainability_inputs({"id": product["id"], "name": product["name"]})
+    doc = maintainability.save_prediction(db, f"{product['name']} — maintainability", inputs, m.org)
+    return {"id": doc.id, "name": doc.name, "added": True}
+
+
 def add_sample_product(m, db, again: bool = False) -> dict:
     """Add the sample product to ``m``'s workspace: a quadcopter's design tree with the
     sample RCM on it (its mission as the operating context, every failure mode scored,
     the decisions' tasks as its maintenance programme), its physical layout (design
     locations, the positions placed on them), its part with a small bill of materials,
     three items built from it (each with flight-hours and flights counters), a replaced
-    motor on one, two failure reports, and a flight-critical RBD in the RBDs
-    (placeholder failure rates, said so in its name). Once only, unless ``again``."""
+    motor on one, two failure reports, a flight-critical RBD in the RBDs
+    (placeholder failure rates, said so in its name) and a maintainability prediction
+    attached to the product. Once only, unless ``again``. A copy of the sample that is
+    there already and has no maintainability prediction (one added before the sample
+    had one) is given it here; one the user made their own is left as it is."""
     existing = sample_products(m)
     # One made the user's own counts too: the sample is never added again beside it unless asked.
     owned = [] if existing else own_sample_products(m)
     if (existing or owned) and not again:
         have = (existing or owned)[0]
+        predictions = {p["id"]: _sample_maintainability(m, db, p) for p in existing}
+        mine = predictions.get(have["id"])
+        topped_up = (f" Added its maintainability prediction, “{mine['name']}”: invented repair times and failure "
+                     "rates, the same as the shared sample's.") if mine and mine["added"] else ""
         return {
             "added": False,
             "product": {"id": have["id"], "name": have["name"]},
             "position": {"id": have["id"], "name": have["name"]},
+            **({"maintainability": mine} if mine else {}),
             "message": (f"The sample product is already in your workspace as “{have['name']}”. "
-                        "Ask again to add another copy.") if existing else
+                        f"Ask again to add another copy.{topped_up}") if existing else
                        (f"You made the sample product your own as “{have['name']}”. Ask again to add a fresh copy "
                         "of the sample beside it."),
         }
@@ -1966,6 +1992,7 @@ def add_sample_product(m, db, again: bool = False) -> dict:
     m.set_failure_report_status(reports[0]["id"], "investigating", note="Bearing sent for teardown.")
     package = _add_uav_package(m, first["top_position_id"])
     rbd = _save_sample_rbd(m, db, f"{name}: flight-critical RBD (placeholder failure rates)")
+    prediction = _sample_maintainability(m, db, {"id": pid, "name": name})
     undecided = counts["failure_modes"] - counts["decisions"]
     return {
         "added": True,
@@ -1974,6 +2001,7 @@ def add_sample_product(m, db, again: bool = False) -> dict:
         "items": [{k: it[k] for k in ("serial", "rev", "item_id", "top_position_id")} for it in items],
         "reports": [{"id": r["id"], "label": r.get("label") or r["title"]} for r in reports],
         "rbd": rbd,
+        "maintainability": prediction,
         "package": package,
         **counts,
         "message": (f"Added “{name}”: a design of {_n(counts['positions'], 'position')} with a complete RCM study "
@@ -1996,5 +2024,6 @@ def add_sample_product(m, db, again: bool = False) -> dict:
                     f"failure reports. Life models on {_n(counts['models_linked'], 'position')} (motors, propellers, "
                     f"battery pack and radio) are shared samples, not field data. The RBD “{rbd['name']}” is in your RBDs: its failure rates are placeholders, "
                     "not data. Each arm's ESC, motor and propeller are in series there: the design has one ESC per "
-                    "motor."),
+                    f"motor. The maintainability prediction “{prediction['name']}” is in your maintainability "
+                    "predictions, attached to the product: its repair times and failure rates are invented."),
     }

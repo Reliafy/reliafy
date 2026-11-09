@@ -16,6 +16,7 @@ on every startup and against either real Atlas or the in-memory simulator.
 
 from __future__ import annotations
 
+import copy
 import logging
 
 from backend import config, fitting, storage
@@ -1703,17 +1704,19 @@ def _seed_reliability_prediction(db) -> None:
 
 
 def _seed_maintainability_predictions(db) -> None:
-    """The sample maintainability prediction: the sample survey quadcopter's
-    parts list (backend/maintenance/templates.py, SAMPLE_PRODUCT_BOM) with
-    invented repair times and failure rates. It stands alone (a sample product
-    is added per workspace, so it links no product id)."""
+    """The shared sample maintainability prediction: the sample survey
+    quadcopter's parts list (backend/maintenance/templates.py,
+    SAMPLE_PRODUCT_BOM) with invented repair times and failure rates. It is the
+    example for every account, so it names no product: a workspace that adds
+    the sample product gets its own prediction beside it, from the same lines
+    and attached to that product (templates.add_sample_product)."""
     from backend.schema import MaintainabilityPrediction
     from backend.services import maintainability
 
     spec = {
         "id": "sample-maintainability-quadcopter",
         "name": "Survey quadcopter — maintainability prediction (sample)",
-        "inputs": SAMPLE_MAINTAINABILITY_INPUTS,
+        "inputs": sample_maintainability_inputs(),
     }
     try:
         if db.maintainability_predictions.find_one({"_id": spec["id"]}) is not None:
@@ -1755,6 +1758,17 @@ SAMPLE_MAINTAINABILITY_INPUTS = {
         _mline("SQ-GB2", "Camera gimbal, 2 axis", "Payload gimbal", 1, 150, 15, 10, 20, 10, 15, 140),
     ],
 }
+
+
+def sample_maintainability_inputs(product: dict | None = None) -> dict:
+    """The sample quadcopter's maintainability inputs, a fresh copy each time:
+    as the shared sample has them, or for a workspace's copy of the sample
+    product (``product``: its {id, name}), attached to it. One set of lines for
+    both, so their numbers agree."""
+    inputs = copy.deepcopy(SAMPLE_MAINTAINABILITY_INPUTS)
+    if product:
+        inputs |= {"product_id": product["id"], "product_name": product["name"]}
+    return inputs
 
 
 # ---------------------------------------------------------------------------
