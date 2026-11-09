@@ -181,22 +181,53 @@ test("an ALT model attached as fitted, and a prediction row from the parts list"
   await expectHealthy(page, problems, { label: "ALT and prediction rows" });
 });
 
-// An RBD row: built from the two positions inside (one with a model, one a flagged placeholder),
-// its panel's blocks, then made the position's model in use over its own life model.
-test("build an RBD from what's inside, see its blocks, and make it the model in use", async ({ page, request, problems }) => {
-  const tag = `r${Date.now()}`;
-  const station = await postOk(request, `${M}/positions`, { name: `Station ${tag}` });
-  const a = await postOk(request, `${M}/positions`, { name: `Pump A ${tag}`, parent_id: station.id });
-  await postOk(request, `${M}/positions`, { name: `Pump B ${tag}`, parent_id: station.id });
+// An RBD row: built from the two positions inside (one with a model, one a flagged placeholder).
+// Build from what's inside… opens the RBD builder itself in the table area, beside the tree (no
+// dialog): what it made said over it, the canvas with a block per position. Esc goes back to the
+// table, the row still picked; the row's panel lists its blocks; Use this one makes it the model
+// in use over the position's own life model.
+const rbdPane = (page) => page.getByRole("region", { name: "RBD", exact: true });
+const rbdOf = (page) => new URL(page.url()).searchParams.get("rbd");
+async function station(request, tag) {
+  const st = await postOk(request, `${M}/positions`, { name: `Station ${tag}` });
+  const a = await postOk(request, `${M}/positions`, { name: `Pump A ${tag}`, parent_id: st.id });
+  await postOk(request, `${M}/positions`, { name: `Pump B ${tag}`, parent_id: st.id });
   await postOk(request, `${M}/positions/${a.id}/models`, { model_id: "sample-model-bearings-weibull" });
-  await postOk(request, `${M}/positions/${station.id}/models`, { model_id: "sample-model-bearings-lognormal" });
+  return st;
+}
+
+test("build an RBD from what's inside: the builder in the table area, its row, and the model in use", async ({ page, request, problems }) => {
+  const tag = `r${Date.now()}`;
+  const st = await station(request, tag);
+  await postOk(request, `${M}/positions/${st.id}/models`, { model_id: "sample-model-bearings-lognormal" });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${station.id}&tab=models`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${st.id}&tab=models`);
   await headPick(page, "RBD", "Build from what's inside…");
-  const dialog = page.getByRole("dialog", { name: "Build an RBD from what's inside" });
-  await expect(dialog.locator("li")).toHaveCount(2);
-  await dialog.getByRole("button", { name: "Build", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
+  const pane = rbdPane(page);
+  await expect(pane).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator(".tt-main .tt-side .rbd-pane")).toBeVisible();
+  await expect(pane.locator(".table-pane-title")).toHaveText(`RBD · Station ${tag}`);
+  await expect(page).toHaveURL(new RegExp(`[?&]rbd=[\\w-]+&on=${st.id}`));
+  const treeBox = await page.locator(".tp-scroll").boundingBox();
+  const paneBox = await pane.boundingBox();
+  expect(paneBox.x).toBeGreaterThanOrEqual(treeBox.x + treeBox.width - 2);  // beside the tree
+  expect(paneBox.width).toBeGreaterThan(800);  // the table's room
+  // What it made, then the builder: a block per position inside, the placeholder flagged.
+  await expect(pane.getByRole("region", { name: "What was built" })).toContainText(`Built Station ${tag} (from the tree) from the 2 positions inside Station ${tag}`);
+  await expect(pane.getByRole("region", { name: "What was built" })).toContainText("One block is a placeholder");
+  await expect(pane.getByRole("tab", { name: "Builder" })).toHaveAttribute("aria-selected", "true");
+  await expect(pane.locator(".react-flow__node").filter({ hasText: `Pump A ${tag}` })).toBeVisible();
+  await expect(pane.locator(".react-flow__node").filter({ hasText: `Pump B ${tag}` })).toBeVisible();
+  await expect(pane.locator(".rbd-full-status")).toContainText("Saved");
+  await expect(pane.getByRole("link", { name: "Open full page" })).toHaveAttribute("href", `/systems/b/${rbdOf(page)}`);
+  await shot(page, "1440-rbd-built");
+
+  // Esc: the table again, the position still picked, the address as it was.
+  await page.keyboard.press("Escape");
+  await expect(pane).toHaveCount(0);
+  await expect(row(page, st.id)).toHaveAttribute("aria-selected", "true");
+  await expect(page).not.toHaveURL(/[?&](rbd|on)=/);
   const rbd = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Station ${tag} (from the tree)` }) });
   await expect(rbd.locator(".mt-c-kind")).toContainText("RBD");
   await expect(rbd.locator(".mt-c-source")).toHaveText("Built from 2 positions inside · 1 placeholder");
@@ -209,14 +240,133 @@ test("build an RBD from what's inside, see its blocks, and make it the model in 
   await expect(side(page).locator(".ml-blocks tbody tr")).toHaveCount(2);
   await expect(side(page).locator(".ml-blocks")).toContainText("Placeholder");
   await expect(side(page).locator(".ml-blocks")).toContainText(`Pump A ${tag}`);
+  await expect(side(page).getByRole("link", { name: "Open full page" })).toBeVisible();
   // Use this one: the RBD becomes the model in use.
   await page.keyboard.press("Escape");
   await rbd.locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menu").last().getByRole("menuitem", { name: "Use this one" }).click();
+  const menu = page.getByRole("menu").last();
+  await expect(menu.getByRole("menuitem").first()).toHaveText("Open in the pane");
+  await expect(menu.getByRole("menuitem", { name: "Open full page" })).toBeVisible();
+  await menu.getByRole("menuitem", { name: "Use this one" }).click();
   await expect(rbd.locator(".ml-inuse")).toHaveText("In use");
   await expect(life.locator(".ml-inuse")).toHaveCount(0);
-  await expect(row(page, station.id).locator(".tt-rollup-t")).toContainText("in use: RBD");
+  await expect(row(page, st.id).locator(".tt-rollup-t")).toContainText("in use: RBD");
   await expectHealthy(page, problems, { label: "an RBD row" });
+});
+
+// An RBD row opens in the table area (a double-click, Enter, Open in the pane): the address keeps
+// it over a reload; an edit saved goes to the diagram (the same save as its page); unsaved, ×
+// and another row ask first; Rebuild from what's inside… reopens it; Link an existing RBD… is a
+// picker, then the linked one opens.
+test("an RBD row opens in the table area: reload, edit and save, unsaved changes, rebuild, link another", async ({ page, request, problems }) => {
+  const tag = `ro${Date.now()}`;
+  const st = await station(request, tag);
+  const other = await postOk(request, `${M}/positions`, { name: `Neighbour ${tag}` });
+  const built = await postOk(request, `${M}/positions/${st.id}/models`, { build_rbd: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${st.id}&tab=models`);
+  const rbd = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Station ${tag} (from the tree)` }) });
+  await rbd.locator(".tp-nm").dblclick();
+  const pane = rbdPane(page);
+  await expect(pane).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`[?&]rbd=${built.model_id}&on=${st.id}`));
+  const nodes = pane.locator(".react-flow__node");
+  await expect(nodes.filter({ hasText: `Pump B ${tag}` })).toBeVisible();
+  // No "what was built" note when only opened.
+  await expect(pane.getByRole("region", { name: "What was built" })).toHaveCount(0);
+
+  // A reload keeps it open, the builder on the canvas.
+  await page.reload();
+  await expect(pane).toBeVisible();
+  await expect(nodes.filter({ hasText: `Pump B ${tag}` })).toBeVisible();
+  const count = await nodes.count();
+
+  // An edit: unsaved, so × asks; keeping it leaves the edit there.
+  await pane.getByRole("button", { name: "Add block" }).click();
+  await pane.locator(".ovm-item", { hasText: /^Component$/ }).click();
+  await expect(nodes).toHaveCount(count + 1);
+  await expect(pane.locator(".rbd-full-status")).toContainText("Unsaved changes");
+  await pane.getByRole("button", { name: "Close the RBD" }).click();
+  const discard = page.getByRole("alertdialog", { name: "Discard your changes to this RBD?" });
+  await expect(discard).toBeVisible();
+  await discard.getByRole("button", { name: "Keep editing" }).click();
+  await expect(pane).toBeVisible();
+  await expect(nodes).toHaveCount(count + 1);
+  // Another row asks too.
+  await row(page, other.id).locator(".tp-nm").click();
+  await expect(discard).toBeVisible();
+  await discard.getByRole("button", { name: "Keep editing" }).click();
+  await expect(pane).toBeVisible();
+  // Esc in the block's name box is the builder's (the rename stops), not the pane's.
+  await nodes.filter({ hasText: `Pump B ${tag}` }).click();
+  await page.keyboard.press("F2");
+  await expect(pane.locator(".react-flow__node input")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(pane.locator(".react-flow__node input")).toHaveCount(0);
+  await expect(pane).toBeVisible();
+
+  // Saved the same way as the RBD's page: the diagram has the new block.
+  await pane.locator(".rbd-tb-trigger", { hasText: "Save" }).click();
+  await pane.locator(".ovm-item", { hasText: /^Save$/ }).click();
+  await expect(pane.locator(".rbd-full-status")).toContainText("Saved");
+  await expect.poll(async () => ((await (await request.get(`/api/rbds/${built.model_id}`)).json()).graph.nodes || []).length).toBe(count + 1);
+  // Saved: × closes without asking, the position picked.
+  await pane.getByRole("button", { name: "Close the RBD" }).click();
+  await expect(pane).toHaveCount(0);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(row(page, st.id)).toHaveAttribute("aria-selected", "true");
+
+  // Rebuild from what's inside…: run again into the same diagram, reopened with what it did.
+  await rbd.locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menu").last().getByRole("menuitem", { name: "Rebuild from what's inside…" }).click();
+  await expect(pane).toBeVisible();
+  await expect(pane.getByRole("region", { name: "What was built" })).toContainText(`Rebuilt Station ${tag} (from the tree)`);
+  await expect(page).toHaveURL(new RegExp(`[?&]rbd=${built.model_id}&on=${st.id}`));
+  await expect(nodes).toHaveCount(count + 1);  // the saved edit kept
+
+  // Link an existing RBD…: a picker, then the linked diagram in the pane (a sample: read only).
+  await page.keyboard.press("Escape");
+  await headPick(page, "RBD", "Link an existing RBD…");
+  const picker = page.getByRole("dialog", { name: "Link an existing RBD" });
+  await picker.getByText("Pump station — 1 controller, 2 pumps (sample)").click();
+  await picker.getByRole("button", { name: "Link", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await expect(pane).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`[?&]rbd=sample-rbd-pump-station&on=${st.id}`));
+  await expect(nodes.filter({ hasText: "PLC controller" })).toBeVisible();
+  await expect(pane.locator(".rbd-full-status")).toContainText("Read only");
+  await expectHealthy(page, problems, { label: "the RBD pane" });
+});
+
+// At 400 px the RBD takes the screen with ‹ Back: the builder fits, its toolbar on one row (the
+// settings in ⋯), nothing sideways. The address alone opens it (a link, or a reload).
+test("an RBD at 400 px takes the screen: the builder fits, nothing sideways, Back", async ({ page, request }) => {
+  const tag = `rn${Date.now()}`;
+  const st = await station(request, tag);
+  const built = await postOk(request, `${M}/positions/${st.id}/models`, { build_rbd: true });
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${st.id}&tab=models&rbd=${built.model_id}&on=${st.id}`);
+  const pane = rbdPane(page);
+  await expect(pane.locator(".react-flow__node").filter({ hasText: `Pump A ${tag}` })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(Math.round((await pane.boundingBox()).width)).toBe(400);
+  expect(await sideways(page)).toBeLessThanOrEqual(400);
+  expect(await pane.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  // The narrow toolbar: the unit and kind in ⋯, + Add, Validate and Save on one row.
+  await expect(pane.locator(".rbd-builder")).toHaveClass(/is-narrow/);
+  await expect(pane.locator(".rbd-tb-settings")).toBeHidden();
+  const add = await pane.getByRole("button", { name: "Add block" }).boundingBox();
+  const save = await pane.locator(".rbd-tb-trigger", { hasText: "Save" }).boundingBox();
+  expect(Math.abs(add.y - save.y)).toBeLessThan(4);
+  const canvas = await pane.locator(".rbd-canvas").boundingBox();
+  expect(canvas.height).toBeGreaterThan(300);
+  expect(canvas.x + canvas.width).toBeLessThanOrEqual(400.5);
+  await shot(page, "400-rbd-pane");
+  await pane.getByRole("button", { name: "Back to the table" }).click();
+  await expect(pane).toHaveCount(0);
+  await expect(row(page, st.id)).toBeVisible();
+  await expect(page).not.toHaveURL(/[?&](rbd|on)=/);
 });
 
 // "Numbers I know" as the baseline on a position whose class has no model: the class message
@@ -713,4 +863,40 @@ test("a product's Modelling tab: Add a prediction… in the table area, on the s
     await expect(page).not.toHaveURL(/[?&]predict=/);
   }
   await expectHealthy(page, problems, { label: "a product's prediction pane" });
+});
+
+// A product's Modelling tab: Build from what's inside… opens the builder in the table area too.
+test("a product's Modelling tab: Build from what's inside… opens the RBD builder in the table area", async ({ page, request, problems }) => {
+  const tag = `rp${Date.now()}`;
+  const product = await postOk(request, `${M}/products`, { name: `RBD drone ${tag}`, part_number: `RD-${tag}` });
+  const motor = await postOk(request, `${M}/positions`, { name: `Drone motor ${tag}`, parent_id: product.id });
+  await postOk(request, `${M}/positions`, { name: `Drone battery ${tag}`, parent_id: product.id });
+  await postOk(request, `${M}/positions/${motor.id}/models`, { model_id: "sample-model-bearings-weibull" });
+  for (const [width, height] of [[1440, 900], [400, 860]]) {
+    await page.setViewportSize({ width, height });
+    await open(page, `/products/${product.id}?view=models&sel=${product.id}`);
+    if (width < 600) {
+      await row(page, product.id).locator(".tp-nm").click({ button: "right" });
+      await page.getByRole("menuitem", { name: "RBD", exact: true }).click();
+      await page.getByRole("group", { name: "RBD" }).getByRole("menuitem", { name: "Build from what's inside…" }).click();
+    } else {
+      await headPick(page, "RBD", "Build from what's inside…");
+    }
+    const pane = rbdPane(page);
+    await expect(pane.locator(".react-flow__node").filter({ hasText: `Drone battery ${tag}` })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(pane.locator(".table-pane-title")).toContainText(`RBD drone ${tag}`);
+    await expect(page).toHaveURL(new RegExp(`/products/${product.id}\\?.*view=models.*rbd=[\\w-]+&on=${product.id}`));
+    expect(await sideways(page)).toBeLessThanOrEqual(width);
+    await shot(page, `${width}-product-rbd`);
+    if (width < 600) {
+      await pane.getByRole("button", { name: "Back to the table" }).click();
+    } else {
+      await page.keyboard.press("Escape");
+      await expect(row(page, product.id)).toHaveAttribute("aria-selected", "true");
+    }
+    await expect(pane).toHaveCount(0);
+    await expect(page).not.toHaveURL(/[?&](rbd|on)=/);
+  }
+  await expectHealthy(page, problems, { label: "a product's RBD pane" });
 });

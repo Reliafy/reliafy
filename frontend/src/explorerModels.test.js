@@ -6,6 +6,7 @@ import {
   MODEL_CHIPS, MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, attachedFor, b10Text, boundsLabel, countsText, inUseWords, fmt, graftModels, headline, isModelRow, meanText, modelKey,
   openForModels, predictionAssign, predictionWords, rollupText, rowActions, usedText, withBounds,
   isLifeModelLink, lifeModelOf,
+  opensInPane,
 } from "./explorerModels.js";
 
 const DATA = {
@@ -172,8 +173,14 @@ test("one model in use per position: its chip, its actions, the roll-up and the 
   const pump = g.rows.get("pump");
   assert.equal(rollupText(pump, true), "2 models · in use: Weibull");
   const rbdRow = g.rows.get(modelKey("r"));
-  assert.deepEqual(rowActions(rbdRow).map((a) => a.id), ["model-open", "model-page", "model-use", "model-rebuild", "model-unlink"]);
-  assert.equal(rowActions(rbdRow).find((a) => a.id === "model-page").label, "Open the RBD");
+  assert.deepEqual(rowActions(rbdRow).map((a) => a.id), ["model-rbd-pane", "model-page", "model-use", "model-rebuild", "model-unlink"]);
+  assert.equal(rowActions(rbdRow).find((a) => a.id === "model-rbd-pane").label, "Open in the pane");
+  assert.equal(rowActions(rbdRow).find((a) => a.id === "model-page").label, "Open full page");
+  assert.equal(opensInPane(rbdLink), true);
+  // A diagram that's gone opens its details (which say so); a life model never opens the builder.
+  assert.equal(opensInPane({ ...rbdLink, model: null }), false);
+  assert.equal(opensInPane(life), false);
+  assert.equal(rowActions({ ref: { ...rbdRow.ref, link: { ...rbdLink, model: null } } })[0].id, "model-open");
   assert.ok(!rowActions(g.rows.get(modelKey("l"))).some((a) => a.id === "model-use"));
   assert.equal(headline(rbdLink.model), "MTBF 849 hours");
   assert.equal(countsText(rbdLink.model), "2 blocks, 1 placeholder");

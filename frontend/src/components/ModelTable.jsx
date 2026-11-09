@@ -198,7 +198,13 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
             </p>
             {link.stale && <p className="ml-stale" role="note">{link.stale}.</p>}
             <p className="rim-tquiet">{link.source_text}. For: {forText(link)}.{" "}
-              {model.path && <Link to={model.path}>Open in Models</Link>}</p>
+              {link.model_type === "rbd" ? (
+                // The diagram in the RBD builder: in the table area, or on its own page.
+                <>
+                  <button type="button" className="link sm" onClick={() => onAction(r, "model-rbd-pane")}>Open in the pane</button>
+                  {model.path && <> · <Link to={model.path}>Open full page</Link></>}
+                </>
+              ) : model.path && <Link to={model.path}>Open in Models</Link>}</p>
             {state.error && <p className="field-error">Couldn't read it: {state.error}</p>}
             {!d && !state.error && <p className="rim-tquiet">Reading the model…</p>}
             {d?.stress_note && <p className="rim-tquiet ml-stress">{d.stress_note}</p>}
@@ -306,47 +312,7 @@ function RbdDetails({ d, model, age, onAge }) {
   );
 }
 
-// "Build an RBD from what's inside…": what it will make (the positions inside, each with the
-// model it takes), then Build. Rebuild (`link`): adds the positions inside that aren't blocks
-// yet, keeping the diagram's edits.
-export function RbdBuildModal({ position, kids = [], link = null, onClose, onDone }) {
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(null);
-  const build = async () => {
-    setBusy(true);
-    try {
-      const made = await linkPositionModel(position.id, { build_rbd: true, ...(link ? { replace_link_id: link.id } : {}) });
-      const ph = made.placeholders?.length || 0;
-      onDone(made, `${link ? "Rebuilt" : "Built"} ${made.name}${ph ? `: ${ph} placeholder${ph === 1 ? "" : "s"} to give a model` : ""}.`);
-    } catch (e) {
-      setBusy(false);
-      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
-    }
-  };
-  return (
-    <Modal title={link ? "Rebuild the RBD from what's inside" : "Build an RBD from what's inside"} onClose={onClose} locked={busy} trapFocus className="ml-dialog"
-           footer={(
-             <>
-               <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-               <button type="button" onClick={build} disabled={busy || !kids.length} aria-busy={busy || undefined}>{busy ? "Building…" : link ? "Rebuild" : "Build"}</button>
-             </>
-           )}>
-      <p className="rw-fhelp">
-        {link
-          ? <>Adds the positions inside {position.name} that aren’t blocks yet, in series before the output. Everything else in the diagram stays as you left it.</>
-          : <>Makes a reliability block diagram (under Design › Systems) whose blocks are the positions one level inside {position.name}, each taking its model in use. They’re wired by their connections and redundancy groups, in series where there are none. Positions with no model get a placeholder, flagged, never a made-up figure.</>}
-      </p>
-      {kids.length === 0 ? <p className="field-error">There are no positions inside {position.name} to make blocks from.</p> : (
-        <ul className="ml-used">
-          {kids.map((k) => <li key={k.id}>{k.name}: {k.model || <Chip tone="warning">Placeholder</Chip>}</li>)}
-        </ul>
-      )}
-      {failed && <p className="field-error" role="alert">{failed}</p>}
-    </Modal>
-  );
-}
-
-// "Link an existing RBD…": the user's diagrams and the samples.
+// "Link an existing RBD…": the user's diagrams and the samples. Linked, it opens in the table area.
 export function RbdLinkModal({ position, onClose, onDone }) {
   const [list, setList] = useState(null);
   const [chosen, setChosen] = useState(null);

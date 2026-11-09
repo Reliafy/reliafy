@@ -202,15 +202,16 @@ export function inUseWords(link) {
   return link.model?.kind || link.name || "life model";
 }
 
-// A row's ⋯: Open, Open in Models (Open the RBD), Use this one (where the position has
-// several rows), Refit… / Rebuild from what's inside… / Refresh…, Replace with…, Unlink….
+// A row's ⋯: Open, Open in Models, Use this one (where the position has several rows), Refit… /
+// Rebuild from what's inside… / Refresh…, Replace with…, Unlink…. An RBD's opens in the builder in
+// the table area (Open in the pane) or on its own page (Open full page).
 export function rowActions(r, { viewOnly = null } = {}) {
   const link = r.ref.link;
   const off = viewOnly ? { disabled: true, title: viewOnly } : {};
   const rbd = link.model_type === "rbd";
   return [
-    { id: "model-open", label: "Open" },
-    link.model?.path ? { id: "model-page", label: rbd ? "Open the RBD" : "Open in Models" } : null,
+    opensInPane(link) ? { id: "model-rbd-pane", label: "Open in the pane" } : { id: "model-open", label: "Open" },
+    link.model?.path ? { id: "model-page", label: rbd ? "Open full page" : "Open in Models" } : null,
     r.ref.many && !link.in_use ? { id: "model-use", label: "Use this one", ...off,
       title: viewOnly || "Make this the position's model in use: what its roll-up, the RCM and a parent's RBD take" } : null,
     rbd && link.source?.built_from != null ? { id: "model-rebuild", label: "Rebuild from what's inside…", ...off } : null,
@@ -225,6 +226,12 @@ export function rowActions(r, { viewOnly = null } = {}) {
     rbd ? null : { id: "model-replace", label: "Replace with…", ...off },
     { id: "model-unlink", label: "Unlink…", ...off },
   ].filter(Boolean);
+}
+
+// An RBD row whose diagram is there: opening it (a double-click, Enter, Open in the pane) shows the
+// RBD builder in the table area (?rbd=); a missing one opens its details, which say so.
+export function opensInPane(link) {
+  return !!link && link.model_type === "rbd" && !!link.model_id && !!link.model;
 }
 
 // A link to a saved life model (a parametric non-repairable one): what a data library record is made from.
