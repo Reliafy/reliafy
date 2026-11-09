@@ -5,7 +5,10 @@ import { useAppConfig } from "../ConfigProvider.jsx";
 import Modal from "./Modal.jsx";
 import { publicUrl } from "../firebase.js";
 import { useRoles } from "../RolesProvider.jsx";
-import { activeTrail, childActive } from "../navigation.js";
+import { activeTrail } from "../navigation.js";
+import {
+  OPEN_STORAGE_KEY, menuKey, parseStored, startOpen, subItemLit, subItems, toggleKey, toggles, withOpen,
+} from "../sidebarMenu.js";
 import ExtensionNavItems from "./ExtensionNavItems.jsx";
 import { SidebarIcon } from "./icons.jsx";
 
@@ -74,29 +77,55 @@ const ICONS = {
 };
 const MoreIcon = () => icon(<><circle cx="6" cy="12" r="1.2" fill="currentColor" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /><circle cx="18" cy="12" r="1.2" fill="currentColor" /></>);
 
-// An entry's children (or a group's entries), each linked and lit when it's
-// where the page is. `trail` is activeTrail's answer for the page.
-function SubList({ items, trail, pathname, level = 2 }) {
+// The chevron on an entry that opens in place: points right while closed,
+// down while open.
+const Chevron = ({ open }) => (
+  <svg className={"side-chevron" + (open ? " open" : "")} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M9 6l6 6-6 6" />
+  </svg>
+);
+
+const listId = (key) => "side-list-" + String(key).replace(/[^a-z0-9-]/gi, "-");
+
+// What's under an entry (sidebarMenu.subItems): a group's entries, or an
+// entry's children. Sub-pages are links; a group's entry
+// with children of its own is a toggle with its list beneath it.
+function SubList({ items, trail, pathname, open, onToggle, id, level = 2 }) {
   return (
-    <div className={"side-children" + (level === 3 ? " side-grandchildren" : "")}>
+    <div id={id} className={"side-children" + (level === 3 ? " side-grandchildren" : "")}>
       {items.map((c) => {
-        const isEntry = !!c.id;
-        const here = isEntry ? trail.entry === c : trail.child === c;
-        // An entry is lit on its pages that no child of it names (its landing
-        // page, a detail page); otherwise the child is.
-        const lit = here && !(isEntry && trail.child);
+        const key = menuKey(c);
+        if (c.id && toggles(c)) {
+          const isOpen = open.includes(key);
+          return (
+            <div key={key}>
+              <button
+                type="button"
+                className={"side-subitem side-subtoggle" + (subItemLit(c, trail, isOpen) ? " active" : "")}
+                aria-expanded={isOpen}
+                aria-controls={listId(key)}
+                onClick={() => onToggle(key)}
+              >
+                <span className="side-subtoggle-label">{c.label}</span>
+                <Chevron open={isOpen} />
+              </button>
+              {isOpen && (
+                <SubList items={subItems(c)} trail={trail} pathname={pathname} open={open} onToggle={onToggle}
+                  id={listId(key)} level={3} />
+              )}
+            </div>
+          );
+        }
         return (
-          <div key={c.id || c.to}>
+          <div key={key}>
             <Link
               to={c.to}
-              className={"side-subitem" + (lit ? " active" : "")}
-              aria-current={pathname === c.to && (!isEntry || !trail.child || trail.child.to !== c.to) ? "page" : undefined}
+              className={"side-subitem" + (subItemLit(c, trail) ? " active" : "")}
+              aria-current={pathname === c.to ? "page" : undefined}
             >
               {c.label}
             </Link>
-            {isEntry && here && c.children?.length > 0 && (
-              <SubList items={c.children} trail={trail} pathname={pathname} level={3} />
-            )}
           </div>
         );
       })}
@@ -104,14 +133,36 @@ function SubList({ items, trail, pathname, level = 2 }) {
   );
 }
 
-// One top-level entry, with what's under it while it's the current one: a
-// group's entries (and the current entry's children), or an entry's children.
-// The entry is lit when nothing under it is (and always on the collapsed rail,
-// where what's under it is hidden).
-function MenuEntry({ entry, collapsed, pathname, trail }) {
+// One top-level entry. With sub-pages (a group, or an entry with children) it
+// opens or closes its list in place; without, it's a link. On the collapsed
+// rail every entry is a link to where it opens, lit while the page is under it.
+function MenuEntry({ entry, collapsed, pathname, trail, open, onToggle }) {
   const active = trail.top === entry;
-  const below = entry.entries || entry.children || [];
-  const lit = active && (collapsed || (!entry.entries && !trail.child));
+  const key = menuKey(entry);
+  if (!collapsed && toggles(entry)) {
+    const isOpen = open.includes(key);
+    return (
+      <div>
+        <button
+          type="button"
+          className={"side-item side-toggle" + (active && (!isOpen || (!entry.entries && !trail.child)) ? " active" : "")}
+          aria-expanded={isOpen}
+          aria-controls={listId(key)}
+          onClick={() => onToggle(key)}
+          title={entry.label}
+        >
+          <span className="side-icon">{ICONS[entry.id]}</span>
+          <span className="side-label">{entry.label}</span>
+          <Chevron open={isOpen} />
+        </button>
+        {isOpen && (
+          <SubList items={subItems(entry)} trail={trail} pathname={pathname} open={open} onToggle={onToggle}
+            id={listId(key)} />
+        )}
+      </div>
+    );
+  }
+  const lit = active && (collapsed || !trail.child);
   return (
     <div>
       <Link
@@ -123,18 +174,36 @@ function MenuEntry({ entry, collapsed, pathname, trail }) {
         <span className="side-icon">{ICONS[entry.id]}</span>
         {!collapsed && <span className="side-label">{entry.label}</span>}
       </Link>
-      {!collapsed && active && below.length > 0 && <SubList items={below} trail={trail} pathname={pathname} />}
     </div>
   );
 }
 
 // The entries, in one flat list (no section headings).
-function MenuGroups({ entries, collapsed, pathname, trail }) {
+function MenuGroups({ entries, collapsed, pathname, trail, open, onToggle }) {
   return (
     <div className="side-group">
-      {entries.map((e) => <MenuEntry key={e.id} entry={e} collapsed={collapsed} pathname={pathname} trail={trail} />)}
+      {entries.map((e) => (
+        <MenuEntry key={e.id} entry={e} collapsed={collapsed} pathname={pathname} trail={trail} open={open} onToggle={onToggle} />
+      ))}
     </div>
   );
+}
+
+// What's open, kept for the session; storage can be missing or refuse (a
+// private window), and the menu works the same without it.
+function readOpen() {
+  try {
+    return parseStored(window.sessionStorage.getItem(OPEN_STORAGE_KEY));
+  } catch {
+    return [];
+  }
+}
+function writeOpen(open) {
+  try {
+    window.sessionStorage.setItem(OPEN_STORAGE_KEY, JSON.stringify(open));
+  } catch {
+    /* the menu still works; it just won't remember */
+  }
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -154,7 +223,17 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
   const navigate = useNavigate();
   const { pathname } = useLocation();
   // Where the page is in the menu (the longest match over everything shown).
-  const trail = activeTrail([...menu.main, ...menu.more], pathname);
+  const shownEntries = [...menu.main, ...menu.more];
+  const trail = activeTrail(shownEntries, pathname);
+  // Which entries have their list open: the current page's entry and its
+  // group from the start, plus whatever was opened this session.
+  const hereKeys = startOpen(shownEntries, pathname).join("|");
+  const [openKeys, setOpenKeys] = useState(() => withOpen(readOpen(), hereKeys ? hereKeys.split("|") : []));
+  useEffect(() => {
+    if (hereKeys) setOpenKeys((o) => withOpen(o, hereKeys.split("|")));
+  }, [hereKeys, pathname]);
+  useEffect(() => writeOpen(openKeys), [openKeys]);
+  const onToggleKey = (key) => setOpenKeys((o) => toggleKey(o, key));
   // "More" opens by itself when the page shown is one of its entries.
   const moreActive = menu.more.includes(trail.top);
   const [moreOpen, setMoreOpen] = useState(moreActive);
@@ -200,7 +279,8 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
     };
   }, [drawerOpen, onClose]);
   // Any link closes the drawer, including one to the page already shown
-  // (which doesn't change the route).
+  // (which doesn't change the route). An entry that opens in place is a
+  // button, so it leaves the drawer open.
   const onDrawerClick = (e) => {
     if (e.target.closest("a[href]")) onClose?.();
   };
@@ -250,12 +330,12 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
         )}
       </div>
       <nav className="sidebar-nav" aria-label="Main">
-        <MenuGroups entries={menu.main} collapsed={collapsed} pathname={pathname} trail={trail} />
+        <MenuGroups entries={menu.main} collapsed={collapsed} pathname={pathname} trail={trail} open={openKeys} onToggle={onToggleKey} />
         {menu.more.length > 0 && (
           <>
             <button
               type="button"
-              className={"side-item side-more" + (moreActive && !moreOpen ? " active" : "")}
+              className={"side-item side-toggle side-more" + (moreActive && !moreOpen ? " active" : "")}
               aria-expanded={moreOpen}
               aria-controls="side-more"
               onClick={() => setMoreOpen((o) => !o)}
@@ -264,11 +344,11 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
             >
               <span className="side-icon"><MoreIcon /></span>
               {!collapsed && <span className="side-label">More</span>}
-              {!collapsed && <span className="side-more-caret" aria-hidden="true">{moreOpen ? "▴" : "▾"}</span>}
+              {!collapsed && <Chevron open={moreOpen} />}
             </button>
             {moreOpen && (
               <div id="side-more" className="side-more-list">
-                <MenuGroups entries={menu.more} collapsed={collapsed} pathname={pathname} trail={trail} />
+                <MenuGroups entries={menu.more} collapsed={collapsed} pathname={pathname} trail={trail} open={openKeys} onToggle={onToggleKey} />
               </div>
             )}
           </>
