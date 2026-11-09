@@ -207,20 +207,26 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
   await expect(pane).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator(".tt-main .tt-side .rbd-pane")).toBeVisible();
-  await expect(pane.locator(".table-pane-title")).toHaveText(`RBD · Station ${tag}`);
+  // No heading row on a wide screen (it took too much room): the region keeps the name for screen readers.
+  await expect(pane.locator(".table-pane-title")).toHaveCount(0);
+  await expect(pane.locator("h2.sr-only")).toHaveText(`RBD · Station ${tag}`);
   await expect(page).toHaveURL(new RegExp(`[?&]rbd=[\\w-]+&on=${st.id}`));
   const treeBox = await page.locator(".tp-scroll").boundingBox();
   const paneBox = await pane.boundingBox();
   expect(paneBox.x).toBeGreaterThanOrEqual(treeBox.x + treeBox.width - 2);  // beside the tree
   expect(paneBox.width).toBeGreaterThan(800);  // the table's room
-  // What it made, then the builder: a block per position inside, the placeholder flagged.
-  await expect(pane.getByRole("region", { name: "What was built" })).toContainText(`Built Station ${tag} (from the tree) from the 2 positions inside Station ${tag}`);
-  await expect(pane.getByRole("region", { name: "What was built" })).toContainText("One block is a placeholder");
+  // Straight into the builder (no note over it): a block per position inside.
+  await expect(pane.getByRole("region", { name: "What was built" })).toHaveCount(0);
   await expect(pane.getByRole("tab", { name: "Builder" })).toHaveAttribute("aria-selected", "true");
   await expect(pane.locator(".react-flow__node").filter({ hasText: `Pump A ${tag}` })).toBeVisible();
   await expect(pane.locator(".react-flow__node").filter({ hasText: `Pump B ${tag}` })).toBeVisible();
   await expect(pane.locator(".rbd-full-status")).toContainText("Saved");
+  // Open full page is the builder's ⋯ menu's last item; × ends its toolbar.
+  await pane.getByRole("button", { name: "More diagram settings" }).click();
   await expect(pane.getByRole("link", { name: "Open full page" })).toHaveAttribute("href", `/systems/b/${rbdOf(page)}`);
+  await pane.getByRole("button", { name: "More diagram settings" }).click();  // closes the menu
+  await expect(pane.getByRole("link", { name: "Open full page" })).toHaveCount(0);
+  await expect(pane.getByRole("button", { name: "Close the RBD" })).toBeVisible();
   await shot(page, "1440-rbd-built");
 
   // Esc: the table again, the position still picked, the address as it was.
@@ -321,7 +327,6 @@ test("an RBD row opens in the table area: reload, edit and save, unsaved changes
   await rbd.locator(".tp-nm").click({ button: "right" });
   await page.getByRole("menu").last().getByRole("menuitem", { name: "Rebuild from what's inside…" }).click();
   await expect(pane).toBeVisible();
-  await expect(pane.getByRole("region", { name: "What was built" })).toContainText(`Rebuilt Station ${tag} (from the tree)`);
   await expect(page).toHaveURL(new RegExp(`[?&]rbd=${built.model_id}&on=${st.id}`));
   await expect(nodes).toHaveCount(count + 1);  // the saved edit kept
 
@@ -885,7 +890,8 @@ test("a product's Modelling tab: Build from what's inside… opens the RBD build
     const pane = rbdPane(page);
     await expect(pane.locator(".react-flow__node").filter({ hasText: `Drone battery ${tag}` })).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(pane.locator(".table-pane-title")).toContainText(`RBD drone ${tag}`);
+    // The heading row shows on a phone (for ‹ Back); on a wide screen it is for screen readers only.
+    await expect(pane.locator(width < 600 ? ".table-pane-title" : "h2.sr-only")).toContainText(`RBD drone ${tag}`);
     await expect(page).toHaveURL(new RegExp(`/products/${product.id}\\?.*view=models.*rbd=[\\w-]+&on=${product.id}`));
     expect(await sideways(page)).toBeLessThanOrEqual(width);
     await shot(page, `${width}-product-rbd`);
