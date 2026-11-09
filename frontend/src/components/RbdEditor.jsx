@@ -215,10 +215,11 @@ const EDGE_OPTIONS = {
 // that a large diagram is a pan away.
 const FIT_OPTIONS = { padding: 0.02, minZoom: 0.45, maxZoom: 0.75, duration: 300 };
 // On a phone the whole diagram fits on load, however small that makes it: a
-// diagram cut off at both edges looks broken, and a pinch zooms in.
+// diagram cut off at both edges looks broken, and a pinch zooms in. The same
+// in a pane beside the tree (``whole``), which is narrow at any screen width.
 const PHONE_CANVAS = 600;
-function fitOptionsFor(width) {
-  return width && width <= PHONE_CANVAS ? { ...FIT_OPTIONS, minZoom: 0.2 } : FIT_OPTIONS;
+function fitOptionsFor(width, whole = false) {
+  return whole || (width && width <= PHONE_CANVAS) ? { ...FIT_OPTIONS, minZoom: 0.2 } : FIT_OPTIONS;
 }
 // The sized canvas (see sizeCanvas): its least height (the unsized canvas's
 // own) and the frame below it (the page's bottom padding).
@@ -510,18 +511,43 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         sizedRef.current = sizeCanvas();
         // Fit once React Flow has seen the canvas's new height.
         window.requestAnimationFrame(() => window.requestAnimationFrame(
-          () => fitViewRef.current(fitOptionsFor(wrapper.current?.clientWidth))));
+          () => fitViewRef.current(fitOptionsFor(wrapper.current?.clientWidth, embedded))));
       } else {
         frames += 1;
         window.requestAnimationFrame(attempt);
       }
     };
     window.requestAnimationFrame(attempt);
-  }, [getNodes, sizeCanvas]);
+  }, [getNodes, sizeCanvas, embedded]);
   // A diagram loaded while another tab showed is sized when the canvas is.
   useEffect(() => {
     if (tab === "builder" && !sizedRef.current) fitWhenMeasured();
   }, [tab, fitWhenMeasured]);
+  // In a pane beside the tree the canvas changes size after the diagram is first fitted (the tree
+  // takes its width once its rows are read), which left the diagram fitted to a canvas that was
+  // no longer there: part of it off one side. So there it is fitted again whenever the canvas
+  // changes size, until the reader moves the view themselves.
+  const movedRef = useRef(false);
+  useEffect(() => {
+    const el = wrapper.current;
+    if (!embedded || !el || typeof ResizeObserver === "undefined") return undefined;
+    let w = el.clientWidth;
+    let h = el.clientHeight;
+    let timer = 0;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth === w && el.clientHeight === h) return;
+      w = el.clientWidth;
+      h = el.clientHeight;
+      if (movedRef.current || !w || !h) return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => fitViewRef.current({ ...fitOptionsFor(w, true), duration: 0 }), 60);
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      window.clearTimeout(timer);
+    };
+  }, [embedded]);
   const nodeTypes = useMemo(
     () => ({
       component: ComponentNode,
@@ -1743,14 +1769,17 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         onNodeDoubleClick={onNodeDoubleClick}
         onEdgeContextMenu={onEdgeContextMenu}
         onPaneClick={closeMenu}
-        onMoveStart={closeMenu}
+        onMoveStart={(e) => {
+          if (e) movedRef.current = true; // a drag, wheel or pinch (a fit has no event)
+          closeMenu();
+        }}
         deleteKeyCode={embedded ? null : ["Backspace", "Delete"]}
         // Shift-click adds to the selection (as the hints/guides say), alongside
         // the platform Cmd/Ctrl. Shift-drag still box-selects.
         multiSelectionKeyCode={["Meta", "Control", "Shift"]}
         defaultEdgeOptions={EDGE_OPTIONS}
         fitView
-        fitViewOptions={fitOptionsFor(typeof window !== "undefined" ? window.innerWidth : 0)}
+        fitViewOptions={fitOptionsFor(typeof window !== "undefined" ? window.innerWidth : 0, embedded)}
         minZoom={0.2}
         proOptions={{ hideAttribution: true }}
       >
@@ -2224,7 +2253,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         onView={() => {
           setTab("builder");
           // Once the canvas is shown again (it can't be fitted while hidden).
-          window.setTimeout(() => fitView(fitOptionsFor(wrapper.current?.clientWidth || window.innerWidth)), 60);
+          window.setTimeout(() => fitView(fitOptionsFor(wrapper.current?.clientWidth || window.innerWidth, embedded)), 60);
         }}
       />
       )}

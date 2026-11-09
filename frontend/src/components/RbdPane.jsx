@@ -16,16 +16,33 @@ const RbdEditor = lazy(() => import("./RbdEditor.jsx"));
 //   rbdId     the diagram           position  {id, name}: the position it's linked to
 //   built     just built or rebuilt from what's inside: no note any more (the builder's blocks show
 //             their placeholders); kept so callers needn't change
+//   onRebuild  Rebuild from what's inside… was chosen: the question is asked here, over the diagram
+//             it would change (no dialog), and nothing happens until Rebuild is pressed. Cancel
+//             leaves the diagram open as it is.
 //   onDirty(changed)   onSaved(id)   onOpenFull(event, path): may stop the link (unsaved changes)
 //   phone, headingRef, onClose: TablePane's
-export default function RbdPane({ rbdId, position, built = null, phone = false, headingRef = null, onClose, onDirty, onSaved, onOpenFull }) {
+export default function RbdPane({ rbdId, position, built = null, onRebuild = null, phone = false, headingRef = null, onClose, onDirty, onSaved, onOpenFull }) {
   const [failed, setFailed] = useState(null);
+  const [asking, setAsking] = useState(!!onRebuild);
   const path = `/systems/b/${encodeURIComponent(rbdId)}`;
   return (
     <TablePane title="RBD" subject={position.name} phone={phone} headingRef={headingRef} onClose={onClose}
                className="rbd-pane" closeLabel="Close the RBD" bare
                actions={<Link to={path} className="rbd-pane-full" onClick={(e) => onOpenFull?.(e, path)}>Open full page</Link>}>
       <div className="rbd-pane-body">
+        {asking && onRebuild && !failed && (
+          <div className="rbd-pane-ask" role="group" aria-label="Rebuild from what's inside">
+            <p>
+              <strong>Rebuild from what’s inside {position.name}?</strong>{" "}
+              Each position inside that the diagram has no block for is added, in series before the output.
+              Everything else in the diagram stays as it is.
+            </p>
+            <div className="rbd-pane-ask-btns">
+              <button type="button" className="sm" onClick={onRebuild}>Rebuild</button>
+              <button type="button" className="secondary sm" onClick={() => setAsking(false)}>Cancel</button>
+            </div>
+          </div>
+        )}
         {failed ? (
           <div className="rbd-pane-failed" role="alert">
             <p>

@@ -1319,14 +1319,17 @@ def _label_stem(label: str) -> tuple[str, Optional[str]]:
 
 
 def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> list:
-    """Warn (never block) when two blocks wired directly in series look like
-    a redundant pair — labels that differ only by a trailing A/B, 1/2, i/ii,
+    """Warn (never block) when blocks wired directly in series look like
+    redundant units — labels that differ only by a trailing A/B, 1/2, i/ii,
     left/right…, or that call one of them duty/standby/spare/backup/redundant.
     Redundancy wired in series makes the system look far less reliable than
     it is. Only directly adjacent series blocks (the one's sole output feeding
     the other's sole input) are compared, to keep false positives low; and a
     standby, parallel or load-sharing block's own "duty/standby" label
-    describes its units, so it doesn't count (#183)."""
+    describes its units, so it doesn't count (#183).
+
+    One warning per run of like blocks: "Motor 1" to "Motor 4" in a row is one
+    thing to check, not three pairs."""
     nodes = {n.get("id"): n for n in graph.get("nodes") or []}
     edges = [(e.get("source"), e.get("target")) for e in graph.get("edges") or []
              if e.get("source") in nodes and e.get("target") in nodes]
@@ -1339,27 +1342,41 @@ def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> li
     def label(nid):
         return (labels or {}).get(nid) or (nodes[nid].get("data") or {}).get("label") or str(nid)
 
-    out, seen = [], set()
+    # Each flagged pair, by its first block: (second block, why, what makes a run of it).
+    flagged: dict = {}
     for s, t in edges:
-        if (s, t) in seen or outdeg.get(s) != 1 or indeg.get(t) != 1:
+        if s in flagged or outdeg.get(s) != 1 or indeg.get(t) != 1:
             continue
         if nodes[s].get("type") not in _BLOCK_TYPES or nodes[t].get("type") not in _BLOCK_TYPES:
             continue
-        seen.add((s, t))
         la, lb = label(s), label(t)
         auto = bool(_AUTO_LABEL.match(la) or _AUTO_LABEL.match(lb))
         (stem_a, tok_a), (stem_b, tok_b) = _label_stem(la), _label_stem(lb)
         if not auto and stem_a and stem_a == stem_b and tok_a != tok_b:
-            why = "the same item with a different unit suffix"
+            flagged[s] = (t, "the same item with a different unit suffix", ("stem", stem_a))
         elif any(_REDUNDANCY_WORDS.search(lab) and nodes[nid].get("type") not in _REDUNDANT_TYPES
                  for nid, lab in ((s, la), (t, lb))):
-            why = "one is labelled duty/standby/spare/backup/redundant"
+            flagged[s] = (t, "one is labelled duty/standby/spare/backup/redundant", ("word",))
+
+    out = []
+    follows = {(t, kind) for t, _, kind in flagged.values()}
+    for s, (t, why, kind) in flagged.items():
+        if (s, kind) in follows:
+            continue  # inside a run: told from its first block
+        run = [s, t]
+        while run[-1] in flagged and flagged[run[-1]][2] == kind and flagged[run[-1]][0] not in run:
+            run.append(flagged[run[-1]][0])
+        names = [f"“{label(nid)}”" for nid in run]
+        if len(run) == 2:
+            out.append(
+                f"{names[0]} and {names[1]} are wired in series but look like a redundant pair ({why}). If either "
+                "one can do the job, put them in parallel (or use a standby or k-of-n node); keep them in series "
+                "only if both must work.")
         else:
-            continue
-        out.append(
-            f"“{la}” and “{lb}” are wired in series but look like a redundant pair ({why}). If either one "
-            "can do the job, put them in parallel (or use a standby or k-of-n node); keep them in series "
-            "only if both must work.")
+            out.append(
+                f"{', '.join(names[:-1])} and {names[-1]} are wired in series but look like redundant units ({why}). "
+                "If fewer than all of them can do the job, put them in parallel (or use a standby or k-of-n node); "
+                "keep them in series only if every one must work.")
     return out
 
 

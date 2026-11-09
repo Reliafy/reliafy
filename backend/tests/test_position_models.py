@@ -506,6 +506,72 @@ def test_an_rbd_built_from_whats_inside_with_placeholders_then_rebuilt(m, db):
     _same_after_rebuild(m)
 
 
+def test_building_again_opens_the_diagram_already_built(m, db):
+    """One built diagram per position: a second build (no replace_link_id) saves and links nothing."""
+    plant = m.create_position("Pump station")["id"]
+    m.create_position("Pump A", parent_id=plant)
+    first = pm.build_rbd(m, db, OWNERS, set(), plant)
+    assert "existing" not in first
+    events = m.s.event_count(m.org)
+    m.create_position("Pump B", parent_id=plant)  # even with something new inside: that's Rebuild's job
+    after_new = m.s.event_count(m.org)
+    again = pm.build_rbd(m, db, OWNERS, set(), plant)
+    assert again["existing"] is True and (again["id"], again["model_id"]) == (first["id"], first["model_id"])
+    assert again["notes"] == [] and again["placeholders"] == []
+    assert m.s.event_count(m.org) == after_new > events  # nothing written by the second build
+    assert db.rbds.count_documents({"name": "Pump station (from the tree)"}) == 1
+    assert [x["model_id"] for x in m.position_models(plant)] == [first["model_id"]]
+    rbd = db.rbds.find_one({"_id": first["model_id"]})
+    assert [n["data"]["label"] for n in rbd["graph"]["nodes"] if n["type"] == "component"] == ["Pump A"]
+    # A linked diagram (not built here) doesn't stand in for one: Build still builds, once.
+    other = m.create_position("Line 2")["id"]
+    m.create_position("Motor", parent_id=other)
+    pm.link_rbd(m, db, OWNERS, set(), other, "sample-rbd-pump-station")
+    built = pm.build_rbd(m, db, OWNERS, set(), other)
+    assert "existing" not in built and pm.build_rbd(m, db, OWNERS, set(), other)["model_id"] == built["model_id"]
+    assert len(m.position_models(other)) == 2
+    _same_after_rebuild(m)
+
+
+def test_building_where_the_built_diagram_was_deleted_builds_into_the_same_row(m, db):
+    plant = m.create_position("Pump station")["id"]
+    m.create_position("Pump A", parent_id=plant)
+    first = pm.build_rbd(m, db, OWNERS, set(), plant)
+    db.rbds.delete_one({"_id": first["model_id"]})
+    again = pm.build_rbd(m, db, OWNERS, set(), plant)
+    assert "existing" not in again and again["model_id"] != first["model_id"]
+    assert [x["model_id"] for x in m.position_models(plant)] == [again["model_id"]]  # still one row
+    assert db.rbds.count_documents({"name": "Pump station (from the tree)"}) == 1
+    _same_after_rebuild(m)
+
+
+def test_a_long_built_diagram_is_folded_to_fit_a_pane(m, db):
+    """Twelve positions in series would be one row fourteen columns wide: folded into bands of five."""
+    from backend.services.rbd_graph import COL_GAP, wrap_layout
+
+    top = m.create_position("Propulsion")["id"]
+    for i in range(12):
+        m.create_position(f"Part {i:02d}", parent_id=top)
+    rbd = db.rbds.find_one({"_id": pm.build_rbd(m, db, OWNERS, set(), top)["model_id"]})
+    nodes = rbd["graph"]["nodes"]
+    xs = sorted({n["position"]["x"] for n in nodes})
+    assert xs == [i * COL_GAP for i in range(5)]
+    rows = sorted({n["position"]["y"] for n in nodes})
+    assert len(rows) == 3 and len({(n["position"]["x"], n["position"]["y"]) for n in nodes}) == 14
+    # Reading order is kept: along a band, then the next one down.
+    order = {n["id"]: (n["position"]["y"], n["position"]["x"]) for n in nodes}
+    chain, at = [], "in"
+    nxt = {e["source"]: e["target"] for e in rbd["graph"]["edges"]}
+    while at is not None:
+        chain.append(order[at])
+        at = nxt.get(at)
+    assert chain == sorted(chain) and len(chain) == 14
+    # A short diagram, or one with no layout, is left as it is.
+    short = [{"id": str(i), "position": {"x": i * COL_GAP, "y": 0}} for i in range(5)]
+    assert wrap_layout(short) == short
+    assert wrap_layout([{"id": "a"}, {"id": "b"}]) == [{"id": "a"}, {"id": "b"}]
+
+
 def test_one_model_in_use_per_position(m, db):
     pump = m.create_position("Pump")["id"]
     inner = m.create_position("Impeller", parent_id=pump)["id"]

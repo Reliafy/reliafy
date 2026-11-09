@@ -1413,12 +1413,17 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
     else a placeholder, flagged, never invented), wired by their connections and redundancy
     groups (in series with none), saved under Design › Systems and linked here (role rbd).
     ``replace_link_id`` (the position's built RBD row): rebuild into the same diagram, adding the
-    positions inside that aren't blocks yet and keeping every edit made to it."""
+    positions inside that aren't blocks yet and keeping every edit made to it.
+
+    One built diagram per position: asked to build where there is one already (no
+    ``replace_link_id``), nothing is made or saved and that row comes back with ``existing``
+    true, so building twice never leaves two diagrams. Where its diagram has since been deleted,
+    the row is built again in place."""
     from collections import Counter
 
     from backend.maintenance import rbd_derive
     from backend.services import rbds as rbds_service
-    from backend.services.rbd_graph import GraphError, normalize_graph
+    from backend.services.rbd_graph import GraphError, normalize_graph, wrap_layout
     from backend.units import canonical_unit
 
     sv = _sv()
@@ -1458,6 +1463,12 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
                 f"{child['name']}'s model ({d.name}) is in {r.get('unit')}: its numbers were put in {unit}.")
 
     old_link = None
+    if not replace_link_id:
+        had = built_rbd_link(m.position_models(position_id))
+        if had is not None and fetch("rbd", had["model_id"]) is not None:
+            return {**had, "existing": True, "notes": [], "placeholders": []}
+        if had is not None:  # its diagram is gone: built again into the same row
+            replace_link_id = had["id"]
     if replace_link_id:
         old_link = next((x for x in m.position_models(position_id) if x["id"] == replace_link_id), None)
         if old_link is None or old_link["model_type"] != "rbd":
@@ -1466,6 +1477,7 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
     resolve = lambda mid: fetch("model", mid)  # noqa: E731
     try:
         graph = normalize_graph(built["graph"], resolve_saved_model=resolve)
+        graph["nodes"] = wrap_layout(graph["nodes"])  # a long chain folds to fit the pane it opens in
         existing = None
         if old_link is not None:
             existing = fetch("rbd", old_link["model_id"])
@@ -1484,10 +1496,16 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
     return {**link, "notes": built["notes"], "placeholders": built["placeholders"]}
 
 
+def built_rbd_link(links: list) -> dict | None:
+    """Of a position's model rows, its RBD built from what's inside (the one in use first), or None."""
+    built = [x for x in links or [] if x.get("model_type") == "rbd" and (x.get("source") or {}).get("built_from") is not None]
+    return next((x for x in built if x.get("in_use")), built[0] if built else None)
+
+
 def _add_new_blocks(old: dict, fresh: dict, resolve) -> dict:
     """The diagram as it was, with the positions inside that aren't blocks yet added in series
     before the output (their models as built); every edit to the rest is kept."""
-    from backend.services.rbd_graph import normalize_graph
+    from backend.services.rbd_graph import normalize_graph, wrap_layout
 
     have = {n.get("id") for n in old.get("nodes") or []}
     new = [n for n in fresh.get("nodes") or [] if n.get("type") == "component" and n["id"] not in have]
@@ -1499,8 +1517,10 @@ def _add_new_blocks(old: dict, fresh: dict, resolve) -> dict:
         into_out = [e for e in edges if e["target"] == "out"]
         edges = [e for e in edges if e["target"] != "out"] + [{"source": e["source"], "target": b["id"]} for e in into_out]
         edges.append({"source": b["id"], "target": "out"})
-    return normalize_graph({**{k: v for k, v in old.items() if k not in ("nodes", "edges")}, "nodes": nodes,
-                            "edges": edges}, resolve_saved_model=resolve)
+    out = normalize_graph({**{k: v for k, v in old.items() if k not in ("nodes", "edges")}, "nodes": nodes,
+                           "edges": edges}, resolve_saved_model=resolve)
+    out["nodes"] = wrap_layout(out["nodes"])
+    return out
 
 
 def link_rbd(m, db, owners, hidden, position_id: str, rbd_id: str, note: str = "",

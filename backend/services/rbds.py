@@ -342,6 +342,14 @@ def validate_graph(db, graph: dict, owner_id: str) -> dict:
     return {**out, "warnings": [*(out.get("warnings") or []), *extra]} if extra else out
 
 
+def with_series_hints(check: dict, graph: dict) -> dict:
+    """A check plus ``series_hints``: which of its warnings are the "like blocks wired in series"
+    hints, so the app can fold several of them into one line. Left out where there are none."""
+    hints = set(rbd_analysis.series_redundancy_warnings(graph or {}))
+    found = [w for w in check.get("warnings") or [] if w in hints]
+    return {**check, "series_hints": found} if found else check
+
+
 def validate_rbd(db, rbd_id: str, owner_id: str) -> dict:
     """Load a saved owned RBD and validate it."""
     rbd = get_rbd(db, rbd_id, owner_id)
