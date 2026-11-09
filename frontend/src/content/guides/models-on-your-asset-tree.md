@@ -194,8 +194,9 @@ hours; the shape barely moved". Then the numbers before and after, each with
 a **90% credible interval**: there's a 90% chance the value lies in it, given
 the baseline and the data. The plot shows the baseline dashed and the update
 with its band. **Save as this position's model** keeps it in Models and
-attaches it; later, **Update with new failures…** on its row adds the
-failures recorded since.
+attaches it; later, **Update with new failures…** on its row opens the same
+fit with that model as the prior (its own prior and trust kept), adds the
+failures recorded since, and saving replaces the row.
 
 Use it when the data are sparse and the baseline is credible. With plenty of
 failures, fit the history instead: the data then speak for themselves. With no
