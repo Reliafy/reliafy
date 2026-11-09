@@ -115,3 +115,39 @@ test("the fit opens as its opener asked, and counts as changed only when a choic
   assert.equal(fitTitle(), "Fit a life model");
   assert.equal(fitTitle({ id: "l1" }), "Refit the life model");
 });
+
+test("a model row as the prior: an earlier update is updated in place, any other starts a new fit", async () => {
+  const { bodyOf: body, fitTitle, initialFit, keepsOwnPrior, priorFrom } = await import("./fitDialog.js");
+  const update = { id: "l1", role: "bayesian", model_id: "m1", failure_modes: [{ id: "fm1" }] };
+  const plain = { id: "l2", role: "fitted", model_id: "m2" };
+  assert.deepEqual(priorFrom(update), { start: { method: "bayes", priorKind: "model", modelId: "m1", update: true }, link: update });
+  assert.deepEqual(priorFrom(plain), { start: { method: "bayes", priorKind: "model", modelId: "m2" }, link: null });
+  assert.equal(fitTitle(update, priorFrom(update).start), "Update with new failures");
+  assert.equal(fitTitle(null, priorFrom(plain).start), "Fit a life model");
+  // The form opens with the row's model as the prior, its failure modes kept; the request names it.
+  const s = initialFit(priorFrom(update).start, update);
+  assert.deepEqual(s.modes, ["fm1"]);
+  assert.deepEqual(body(s).prior, { kind: "model", model_id: "m1" });
+  assert.equal(body(s).method, "bayes");
+  // Trust isn't asked of an update's own prior: the preview says so, and before it answers, the row it opened on.
+  assert.ok(keepsOwnPrior(s, priorFrom(update).start));
+  assert.ok(!keepsOwnPrior({ ...s, modelId: "m9" }, priorFrom(update).start));
+  assert.ok(!keepsOwnPrior({ ...s, priorKind: "params" }, priorFrom(update).start));
+  assert.ok(!keepsOwnPrior(initialFit(priorFrom(plain).start), priorFrom(plain).start));
+  assert.ok(keepsOwnPrior(s, {}, { trust: { id: "kept" } }));
+  assert.ok(!keepsOwnPrior(s, priorFrom(update).start, { trust: { id: "guide" } }));
+});
+
+test("the fit pane's preset: the opener's, else the address's row once the rows are read", async () => {
+  const { fitPreset } = await import("./fitDialog.js");
+  const rows = [{ id: "l1", role: "bayesian", model_id: "m1" }, { id: "l2", role: "fitted", model_id: "m2" }];
+  const seed = { start: { data: "class" }, link: { id: "l3" } };
+  assert.deepEqual(fitPreset(seed, "l1", rows), { start: { data: "class" }, link: { id: "l3" } });
+  assert.deepEqual(fitPreset(null, null, null), { start: {}, link: null });
+  // A reload of ?fit=p1&from=l1: waits for the rows, then opens as the menu did.
+  assert.equal(fitPreset(null, "l1", null), null);
+  assert.deepEqual(fitPreset(null, "l1", rows), { start: { method: "bayes", priorKind: "model", modelId: "m1", update: true }, link: rows[0] });
+  assert.deepEqual(fitPreset(null, "l2", rows).link, null);
+  // A row that's gone (unlinked since): a plain fit.
+  assert.deepEqual(fitPreset(null, "gone", rows), { start: {}, link: null });
+});
