@@ -11,8 +11,8 @@ test("the data choice sets what the method and prior can be", () => {
   assert.deepEqual(effective({ ...base, method: "bayes" }), { method: "bayes", priorKind: "class" });
   // The class as data can't be the prior too.
   assert.deepEqual(effective({ ...base, data: "class", method: "bayes", priorKind: "class" }), { method: "bayes", priorKind: "model" });
-  assert.deepEqual(priorChoices("class").map((p) => p.value), ["model", "params", "around", "b10"]);
-  assert.deepEqual(priorChoices("position").map((p) => p.value), ["class", "model", "params", "around", "b10"]);
+  assert.deepEqual(priorChoices("class").map((p) => p.value), ["model", "library", "params", "around", "b10"]);
+  assert.deepEqual(priorChoices("position").map((p) => p.value), ["class", "model", "library", "params", "around", "b10"]);
 });
 
 test("the request for each choice, and what's missing", () => {
@@ -50,7 +50,7 @@ test("Data and Prior as dropdowns, and a prior around a value between two bounds
     "This position's history (0 failures, 1 suspension)", "The class's pooled history (2 positions, 5 failures, 2 suspensions)",
     "Both: this position's, with the class's as a prior"]);
   assert.deepEqual(dataOptions({ hasClass: false }).map((o) => o.value), ["position"]);
-  assert.deepEqual(PRIOR_CHOICES.map((p) => p.value), ["class", "model", "params", "around", "b10"]);
+  assert.deepEqual(PRIOR_CHOICES.map((p) => p.value), ["class", "model", "library", "params", "around", "b10"]);
   assert.ok(showsTrust("params") && !showsTrust("around") && !showsTrust("b10"));
   assert.deepEqual(AROUND_PARAMS.weibull.map(([n]) => n), ["alpha", "beta"]);
   const s = { ...base, method: "bayes", priorKind: "around", around: { alpha: { about: "4", lo: "3", hi: "6" }, beta: { lo: "1.5", hi: "3" } } };
@@ -64,4 +64,17 @@ test("Data and Prior as dropdowns, and a prior around a value between two bounds
   assert.match(problem({ ...s, around: {} }), /at least one/);
   const e = { ...s, distribution: "exponential", around: { mean: { lo: "100", hi: "300" }, failure_rate: { lo: "0.001", hi: "0.01" } } };
   assert.match(problem(e), /not both/);
+});
+
+test("a library record as the prior", async () => {
+  const { libraryPriorWords, showsTrust } = await import("./fitDialog.js");
+  const s = { ...base, method: "bayes", priorKind: "library", distribution: "exponential" };
+  assert.equal(problem(s), "Pick a library record.");
+  assert.deepEqual(bodyOf({ ...s, recordId: "nrc-inl-2020:aov-fc" }).prior, { kind: "library", record_id: "nrc-inl-2020:aov-fc" });
+  const w = { ...s, recordId: "r1", distribution: "weibull", libShape: { lo: "0.8", hi: "3" } };
+  assert.deepEqual(bodyOf(w).prior, { kind: "library", record_id: "r1", shape: [0.8, 3] });
+  assert.match(problem({ ...w, libShape: { lo: "3", hi: "1" } }), /low < high/);
+  assert.ok(!showsTrust("library"));
+  assert.match(libraryPriorWords("exponential"), /conjugate/);
+  assert.match(libraryPriorWords("weibull"), /prior on the mean life/);
 });

@@ -24,6 +24,9 @@ const RecurrentHome = lazy(() => import("./views/RecurrentHome.jsx"));
 const RecurrentNewPage = lazy(() => import("./views/RecurrentNewPage.jsx"));
 const RecurrentModelPage = lazy(() => import("./views/RecurrentModelPage.jsx"));
 const AltHome = lazy(() => import("./views/AltHome.jsx"));
+const LibraryHome = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibraryHome })));
+const LibrarySource = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibrarySource })));
+const LibraryRecord = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibraryRecord })));
 const AltNewPage = lazy(() => import("./views/AltNewPage.jsx"));
 const AltModelPage = lazy(() => import("./views/AltModelPage.jsx"));
 const RbdHome = lazy(() => import("./views/RbdHome.jsx"));
@@ -293,7 +296,9 @@ function Shell() {
             <Route path="/failures" element={<PlannedPage id="failures" />} />
             <Route path="/asset-register/fleets" element={<PlannedPage id="fleets" />} />
             <Route path="/maintenance/inbox" element={<PlannedPage id="inbox" />} />
-            <Route path="/data/library" element={<PlannedPage id="library" />} />
+            <Route path="/models/library" element={<LibraryHome />} />
+            <Route path="/models/library/:source" element={<LibrarySource />} />
+            <Route path="/models/library/:source/:record" element={<LibraryRecord />} />
 
             <Route path="/reports" element={<ReportsPage />} />
             {agentEnabled && <Route path="/agent" element={<ReliabilityAgent />} />}

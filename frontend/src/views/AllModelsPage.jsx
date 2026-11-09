@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { getLibrarySources, getLibraryUsed } from "../api.js";
+import { LIBRARY_PATH, recordPath, sourcePath } from "../libraryModels.js";
 import { relativeTime } from "../instrument.js";
 import { TYPE_LABEL, TYPE_FILTERS, deleteAnyModel, loadAllModels } from "../allModels.js";
 import Chip from "../components/ui/Chip.jsx";
@@ -96,6 +98,44 @@ export default function AllModelsPage() {
           </tr>
         )}
       />
+      <LibraryList />
     </div>
+  );
+}
+
+// After Yours and Samples: the data library (published rates and probabilities, each with its
+// uncertainty: models to use as they are or as priors), its sources with their record counts, and
+// the records used lately.
+function LibraryList() {
+  const [sources, setSources] = useState(null);
+  const [used, setUsed] = useState([]);
+  useEffect(() => {
+    getLibrarySources().then((d) => setSources(d.sources || []), () => setSources([]));
+    getLibraryUsed().then((d) => setUsed(d.records || []), () => {});
+  }, []);
+  if (!sources?.length) return null;
+  return (
+    <section className="card" aria-labelledby="models-library">
+      <div className="maint-head">
+        <h2 id="models-library">Library</h2>
+        <Link to={LIBRARY_PATH}>Open the library</Link>
+      </div>
+      <p className="hint">Published failure rates and probabilities with their uncertainty, to use as a model or a prior.</p>
+      <ul className="lib-list">
+        {sources.map((s) => (
+          <li key={s.id}><Link to={sourcePath(s.id)}>{s.name}</Link> <span className="lib-date">{s.records} records</span></li>
+        ))}
+      </ul>
+      {used.length > 0 && (
+        <>
+          <h3 className="lib-h">Used lately</h3>
+          <ul className="lib-list">
+            {used.map((u) => (
+              <li key={u.record_id}><Link to={recordPath(u.record_id)}>{u.label}</Link> <span className="lib-date">{u.source} · as <Link to={`/models/m/${u.model.id}`}>{u.model.name}</Link></span></li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
   );
 }

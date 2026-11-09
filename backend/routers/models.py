@@ -647,6 +647,64 @@ def save_model(
     return JSONResponse(content=_model_detail(model, ctx))
 
 
+@router.post("/models/from-library")
+def create_from_library(record_id: str = Body(..., embed=True), name: str | None = Body(default=None, embed=True),
+                        session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """A record of the reliability data library saved as a model in the user's models: a failure rate
+    per hour as an exponential, its 5–95% range as the interval (the source's uncertainty), the record
+    id and citation kept. A per-demand probability or a handbook base rate is refused in words. Counts
+    against the model cap."""
+    from backend.maintenance import library_models
+
+    denied = _creation_denied(session, ctx, "models")
+    if denied is not None:
+        return denied
+    try:
+        model, _ = library_models.save_record_model(session, ctx.write_owner, record_id, name)
+        access_service.stamp_editor(session, "models", model.id, ctx)
+    except ValueError as exc:  # Invalid
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    return JSONResponse(content=_model_detail(model, ctx))
+
+
+@router.get("/library/used")
+def library_used(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """The data library records behind the user's latest models from the library."""
+    from backend.maintenance import library_models
+
+    return JSONResponse(content={"records": library_models.recently_used(session, ctx.read_owners)})
+
+
+@router.post("/models/fit-with-prior")
+def fit_with_prior(body: dict = Body(...), session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """A saved dataset fitted with a data library record as the prior (the Library page's Use as a
+    prior…): dataset_id, time_column, censor_column (0 failed, 1 still running; c_invert flips it),
+    unit (the times' unit), distribution (exponential, weibull, lognormal), prior {kind: library,
+    record_id, shape?}, trust. Previewed (a refusal comes back as {refused}); with save true, saved as
+    a model (counts against the model cap)."""
+    from backend.maintenance import library_models
+    from backend.services import bayes_life
+
+    try:
+        model, result = library_models.fit_dataset(
+            session, ctx.read_owners, str(body.get("dataset_id") or ""), str(body.get("time_column") or ""),
+            body.get("censor_column") or None, body.get("unit") or "hours", body.get("prior") or {},
+            body.get("distribution") or "exponential", body.get("trust") or "guide", bool(body.get("c_invert")))
+    except KeyError:
+        return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+    except ValueError as exc:
+        return JSONResponse(content={"refused": client_message(exc)})
+    if not body.get("save"):
+        result.pop("rows", None)
+        return JSONResponse(content=result)
+    denied = _creation_denied(session, ctx, "models")
+    if denied is not None:
+        return denied
+    doc = bayes_life.save(session, ctx.write_owner, model, result, None, body.get("name"))
+    access_service.stamp_editor(session, "models", doc.id, ctx)
+    return JSONResponse(content=_model_detail(doc, ctx))
+
+
 @router.post("/models/from-params")
 def create_from_params(
     name: str = Body(...),

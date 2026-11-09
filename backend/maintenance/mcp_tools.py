@@ -679,12 +679,13 @@ RELIABILITY: Table = {
 # Life models on positions (the Explorer's Modelling tab, position_models.py). Read them with get.position (models).
 POSITION_MODELS: Table = {
     "link": ("position_id", "model_id model_type from_class fit distribution scope failure_mode_ids note "
-                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior", """Attach a life model to a position (a link: the model isn't
+                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior library_record_id", """Attach a life model to a position (a link: the model isn't
         copied). One of: model_id (a saved model; model_type model default, recurrent_model, degradation_model,
         alt_model), from_class true (its position class's fitted model) or fit true (Pro: fit distribution, weibull
         default, to its own failure history, or its class's pooled history when its own is thin: scope auto,
         position or class; saved to Models). failure_mode_ids: the modes it's for (none: every failure there);
-        replace_link_id: the model on it this replaces. fit true with data (position, class, both: the class's history
+        replace_link_id: the model on it this replaces. library_record_id: a data library rate record (list kind library)
+        as an exponential model, cited. fit true with data (position, class, both: the class's history
         as the prior) and method (mle: plain, 95% confidence; bayes: with a prior {kind: class | model | params | b10,
         ...}, 90% credible); trust weighs a prior (close, guide, start). fit true with baseline: a Bayesian update of a
         baseline (the class's model by default) with its history, for one or two failures (guide topic modelling).
@@ -2379,7 +2380,9 @@ def register() -> None:
                            prior: Annotated[dict[str, Any] | None, Field(description=(
                                "With fit and method bayes: {kind: class} (the class's pooled history as a power prior, "
                                "weighed by trust), {kind: model, model_id}, {kind: params, distribution, params, unit} "
-                               "or {kind: b10, b10: {value, low, high}, shape: {low, high}, unit}."))] = None) -> dict[str, Any]:
+                               "or {kind: b10, b10: {value, low, high}, shape: {low, high}, unit}, or {kind: library, "
+                               "record_id, shape?: [low, high]} (a data library rate record)."))] = None,
+                           library_record_id: str | None = None) -> dict[str, Any]:
         """The life models on a position (a functional location, or a position of a product's design): attach a
         saved model, the class's model or a new fit from its history; take one off. The guide's modelling topic
         says how they feed the RCM."""
@@ -2390,12 +2393,18 @@ def register() -> None:
         if action == "unlink":
             return run(m.unlink_position_model, link_id)
         reader = _reader(_caller(ctx))
-        chosen = sum(bool(x) for x in (model_id, from_class, fit, prediction is not None, rbd_id, build_rbd, use_link_id))
+        chosen = sum(bool(x) for x in (model_id, from_class, fit, prediction is not None, rbd_id, build_rbd, use_link_id,
+                                       library_record_id))
         if chosen != 1:
             raise ToolError("Give one of model_id (a saved model), from_class true, fit true, prediction, rbd_id, "
                             "build_rbd true or use_link_id.")
         if use_link_id:
             return run(m.use_position_model, position_id, use_link_id)
+        if library_record_id:
+            from backend.maintenance import library_models
+
+            return run(library_models.attach, m, _db(), m.org, position_id, library_record_id, failure_mode_ids,
+                       note or "", replace_link_id)
         if build_rbd:
             return run(pm.build_rbd, m, _db(), reader.read_owners, reader.hidden, position_id, None, replace_link_id,
                        note or "")

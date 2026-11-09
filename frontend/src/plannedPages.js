@@ -43,14 +43,4 @@ export const PLANNED = {
       "Mark a report handled and link what was made from it",
     ],
   },
-  library: {
-    section: "data",
-    title: "Library",
-    purpose: "Published reliability data to start from when you have none of your own.",
-    will: [
-      "Cited failure-rate and Weibull records, each with its source and licence",
-      "Search by part or equipment type",
-      "Use a record as a block's life model, marked as a generic estimate",
-    ],
-  },
 };

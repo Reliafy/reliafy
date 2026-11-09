@@ -65,7 +65,7 @@ test("no roles: every entry in one flat list, nothing under More", async ({ page
   await expect(page).toHaveURL(/\/models$/);
   await expect(page.getByRole("heading", { name: "Models", level: 1 })).toBeVisible();
   await expect(mainMenu(page).locator(".side-grandchildren .side-subitem")).toHaveText(["Non-repairable", "Repairable",
-    "Accelerated life", "Degradation", "Condition and life"]);
+    "Accelerated life", "Degradation", "Condition and life", "Library"]);
   await expect(mainMenu(page).getByRole("link", { name: "Models", exact: true })).toHaveAttribute("aria-current", "page");
   // A child page: the child lit, and its entry (never the group) named above the title.
   await mainMenu(page).getByRole("link", { name: "Repairable", exact: true }).click();

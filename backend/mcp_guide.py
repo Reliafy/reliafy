@@ -40,7 +40,9 @@ never confidence bounds, and says what moved the baseline. It's a Bayesian updat
 sparse data with a baseline the user trusts, say the baseline and the trust when quoting it; with plenty of \
 failures fit instead. No data: the baseline stands as given. With Reliafy Maintenance, baseline \
 {class_power_prior: true, position_id} uses that position's class's other positions' history as a power prior \
-(SurPyval's prior.from_data, weighed by trust). On a maintenance position, maintenance models.link \
+(SurPyval's prior.from_data, weighed by trust). A data library rate as a prior: maintenance models.link with fit, \
+method bayes and prior {kind: library, record_id} (e.g. a motor-operated valve's rate, record from list kind \
+library): on an exponential its gamma is the prior exactly (conjugate). On a maintenance position, maintenance models.link \
 with fit and baseline saves one and attaches it.
 - Weibull beta < 1 = infant mortality, ≈ 1 = random failures, > 1 = wear-out.
 - Read saved models: list kind models, get kind model (parameters with 95% CIs, goodness of fit, B-lives with \

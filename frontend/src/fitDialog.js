@@ -18,6 +18,7 @@ export const METHOD_CHOICES = [
 export const PRIOR_CHOICES = [
   { value: "class", label: "The class's history" },
   { value: "model", label: "A saved model" },
+  { value: "library", label: "A library record" },
   { value: "params", label: "Numbers I know" },
   { value: "around", label: "Around a value, between two bounds" },
   { value: "b10", label: "A B10 I believe" },
@@ -84,6 +85,12 @@ export function problem(s) {
   const { method, priorKind } = effective(s);
   if (method === "bayes" && s.distribution === "best" && (priorKind === "class")) return "“Best of” is for a plain fit: choose a distribution.";
   if (method === "bayes" && priorKind === "around") return aroundParams(s).problem || null;
+  if (method === "bayes" && priorKind === "library") {
+    if (!s.recordId) return "Pick a library record.";
+    const lo = num(s.libShape?.lo), hi = num(s.libShape?.hi);
+    if ((lo != null || hi != null) && !(lo > 0 && hi > lo)) return "The shape's bounds must be low < high, both above 0.";
+    return null;
+  }
   if (method === "bayes" && priorKind !== "class" && !baselineOf({ ...s, kind: priorKind })) {
     return priorKind === "model" ? "Pick the model to use as the prior." : priorKind === "params"
       ? "Give the prior's numbers." : "Give the B10 with the values you'd be surprised under and over.";
@@ -100,6 +107,9 @@ export function bodyOf(s) {
     out.trust = s.trust || "guide";
     out.prior = priorKind === "class" ? { kind: "class" }
       : priorKind === "around" ? { kind: "around", distribution: aroundDist(s), unit: s.unit, params: aroundParams(s).params || {} }
+        : priorKind === "library" ? { kind: "library", record_id: s.recordId,
+          ...(aroundDist(s) !== "exponential" && num(s.libShape?.lo) > 0 && num(s.libShape?.hi) > 0
+            ? { shape: [num(s.libShape.lo), num(s.libShape.hi)] } : {}) }
         : { kind: priorKind, ...(baselineOf({ ...s, kind: priorKind }) || {}) };
   }
   if (Number(s.age) > 0) out.age = Number(s.age);
@@ -150,3 +160,12 @@ export function historyRow(r, unit = "") {
 
 // The link a refusal offers: a plain fit that can't be done switches to a fit with a prior.
 export const refusalSwitch = (method) => (method === "mle" ? { to: "bayes", label: "Fit with a prior instead" } : null);
+
+// What a library record as the prior means for the distribution chosen, in one line.
+export function libraryPriorWords(distribution) {
+  if (distribution === "weibull" || distribution === "lognormal") {
+    return "The record gives a failure rate: for this distribution it's a prior on the mean life (one over the rate), "
+      + `with the ${distribution === "weibull" ? "shape" : "spread"} between the bounds below (0.5 to 5 if left empty).`;
+  }
+  return "On an exponential the record's distribution is the prior exactly (conjugate: worked out in closed form).";
+}

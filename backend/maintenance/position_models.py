@@ -57,7 +57,7 @@ MODEL_TYPES = ("model", "recurrent_model", "degradation_model", "alt_model", "rb
 #: How a model came to the position: chosen from the library, fitted from history,
 #: the position class's model, copied from the product design it was built from, or a
 #: Bayesian update of a baseline with its history (backend/services/bayes_life.py).
-ROLES = ("assigned", "fitted", "class", "design", "bayesian", "prediction", "rbd")
+ROLES = ("assigned", "fitted", "class", "design", "bayesian", "prediction", "rbd", "library")
 MAX_LINKS_EACH = 50  # models on one position
 FIT_SCOPES = ("auto", "position", "class")
 FIT_DISTRIBUTIONS = ("weibull", "best", "lognormal", "exponential", "gamma")
@@ -806,6 +806,10 @@ def source_text(link: dict, position_name: str = "") -> str:
         return src.get("label") or f"Bayesian update of {src.get('baseline') or 'a baseline'}"
     if role == "design":
         return "From the product's design"
+    if role == "library":
+        from backend.maintenance.library_models import source_text as library_source
+
+        return library_source(src)
     if role == "prediction":
         env = src.get("environment_name") or src.get("environment") or ""
         return f"Predicted from its parts list (parts count{', ' + env if env else ''})"

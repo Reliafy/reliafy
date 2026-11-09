@@ -79,7 +79,7 @@ test("Modelling and Decisions are groups: their entries, each with its children"
   assert.deepEqual(group("decisions"), ["Strategy", "Forecasts", "Risk"]);
   assert.deepEqual(kids(live, "data"), []);
   assert.deepEqual(kids(live, "models"), ["Non-repairable", "Repairable", "Accelerated life", "Degradation",
-    "Condition and life"]);
+    "Condition and life", "Library"]);
   assert.deepEqual(kids(live, "maintainability"), []);
   assert.deepEqual(kids(live, "systems"), ["RBDs", "Fault trees", "Simulation runs"]);
   assert.deepEqual(kids(live, "strategy"), ["Optimal replacement", "Compare two models", "Failure finding",
@@ -347,6 +347,7 @@ const tabbed = (query, search = "") => (EXPLORER_PARTS_CLASSES_TABS ? `/asset-re
 const OLD_TO_NEW = [
   ["/modelling", "/models"],
   ["/modelling/models", "/models"],
+  ["/data/library", "/models/library"],
   ["/modelling/data", "/data"],
   ["/modelling/data/x", "/data/x"],
   ["/modelling/life", "/models/life"],
@@ -483,17 +484,18 @@ test("not-yet-built entries show only where the menu preview is on", () => {
   const plain = liveEntries(ALL);
   const preview = liveEntries(PREVIEW);
   assert.deepEqual(kids(plain, "data"), []);
-  assert.deepEqual(kids(preview, "data"), ["Library"]);
+  // The library moved under Models, for everyone (9 Nov 2026): Data has no preview entries now.
+  assert.deepEqual(kids(preview, "data"), []);
   assert.deepEqual(kids(plain, "maintenance"), []);
   assert.deepEqual(kids(preview, "maintenance"), ["Field inbox"]);
   assert.deepEqual(kids(preview, "systems"), ["RBDs", "Fault trees", "Simulation runs"]);
   assert.deepEqual(kids(preview, "assets"), []);
 });
 
-test("every placeholder page has its text; Library and Field inbox are in the preview menu", () => {
+test("every placeholder page has its text; Field inbox is in the preview menu, the library is live under Models", () => {
   const links = new Set(everyLink(liveEntries(PREVIEW)));
   for (const [id, page] of Object.entries(PLANNED)) assert.ok(page.title && page.purpose && page.will.length, id);
-  assert.ok(links.has("/data/library"));
+  assert.ok(new Set(everyLink(liveEntries(ALL))).has("/models/library"));
   assert.ok(links.has("/maintenance/inbox"));
-  assert.deepEqual(Object.keys(PLANNED).sort(), ["failures", "fleets", "inbox", "library", "requirements"]);
+  assert.deepEqual(Object.keys(PLANNED).sort(), ["failures", "fleets", "inbox", "requirements"]);
 });

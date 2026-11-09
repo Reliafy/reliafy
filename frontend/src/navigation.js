@@ -104,7 +104,6 @@ export const ENTRIES = [
     entries: [
       {
         id: "data", label: "Data", to: "/data",
-        children: [{ to: "/data/library", label: "Library", needs: "preview" }],
       },
       {
         id: "models", label: MODELS_LABEL, to: "/models",
@@ -114,6 +113,8 @@ export const ENTRIES = [
           { to: "/models/alt", label: "Accelerated life" },
           { to: "/models/degradation", label: "Degradation" },
           { to: "/models/joint", label: "Condition and life" },
+          // Published rates and probabilities with their uncertainty: models, not datasets (9 Nov 2026).
+          { to: "/models/library", label: "Library" },
         ],
       },
       // Reliability prediction: a parts count from handbook base rates, for a

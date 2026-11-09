@@ -1241,6 +1241,12 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
     from backend.maintenance import position_models as pm
 
     modes, note, replace = body.get("failure_mode_ids"), str(body.get("note") or ""), body.get("replace_link_id")
+    if body.get("library_record_id"):
+        # A record of the reliability data library as the position's model (library_models.py).
+        from backend.maintenance import library_models
+
+        return _run(library_models.attach, m, session, ctx.write_owner, position_id, body["library_record_id"], modes, note,
+                    replace)
     if body.get("use_link_id"):
         # Which of the position's rows is the model in use.
         return _run(m.use_position_model, position_id, str(body["use_link_id"]))

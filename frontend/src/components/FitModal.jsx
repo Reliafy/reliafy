@@ -12,9 +12,10 @@ import { saveErrorText } from "../confirm.js";
 import { TRUST_CHOICES } from "../bayesUpdate.js";
 import {
   AROUND_PARAMS, METHOD_CHOICES, METHOD_LINE, bodyOf, countsWords, dataOptions, effective, forWords, historyRow, previewKey,
-  priorChoices, problem, refusalSwitch, showsTrust,
+  libraryPriorWords, priorChoices, problem, refusalSwitch, showsTrust,
 } from "../fitDialog.js";
 import { fmt } from "../explorerModels.js";
+import { LibraryPicker } from "./LibraryParts.jsx";
 import "./RcmWorksheet.css";
 import "./FitModal.css";
 
@@ -79,7 +80,8 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
   const modes = useModes(position.id);
   const [state, setState] = useState(() => ({
     data: start.data || "position", method: start.method || "mle", priorKind: start.priorKind || "class",
-    modelId: start.modelId || null, distribution: "weibull", trust: "guide", unit: "hours", params: {}, b10: {}, shape: {}, around: {},
+    modelId: start.modelId || null, distribution: start.priorKind === "library" ? "exponential" : "weibull", trust: "guide", unit: "hours",
+    params: {}, b10: {}, shape: {}, around: {}, recordId: start.recordId || null, libShape: {},
     modes: (link?.failure_modes || []).map((f) => f.id), exclude: new Set(), age: "",
   }));
   const set = (k, v) => setState((s) => ({ ...s, [k]: v }));
@@ -137,7 +139,7 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
   const u = (ctx?.unit || "").toLowerCase();
   const cls = ctx?.class_history;
   const bayes = eff.method === "bayes";
-  const showDist = !bayes || eff.priorKind === "class" || eff.priorKind === "around";
+  const showDist = !bayes || ["class", "around", "library"].includes(eff.priorKind);
   const rows = ctx?.rows || [];
   const toggle = (id) => setState((s) => {
     const next = new Set(s.exclude);
@@ -199,6 +201,20 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
                 {showsTrust(eff.priorKind) && (
                   <ChoiceChips label="How much to trust the prior" className="sm" value={state.trust} onChange={(v) => v && set("trust", v)}
                                options={TRUST_CHOICES.map((t) => ({ value: t.value, label: t.label }))} />
+                )}
+                {eff.priorKind === "library" && (
+                  <>
+                    <LibraryPicker value={state.recordId} onPick={(r) => set("recordId", r.id)} use="prior" label="Library records" />
+                    <p className="fit2-sum">{libraryPriorWords(state.distribution)}</p>
+                    {(state.distribution === "weibull" || state.distribution === "lognormal") && (
+                      <div className="fit2-pair">
+                        <TextInput inputMode="decimal" aria-label="Shape between" placeholder="Shape between (0.5)" value={state.libShape.lo || ""}
+                                   onChange={(e) => set("libShape", { ...state.libShape, lo: e.target.value })} />
+                        <TextInput inputMode="decimal" aria-label="Shape and" placeholder="and (5)" value={state.libShape.hi || ""}
+                                   onChange={(e) => set("libShape", { ...state.libShape, hi: e.target.value })} />
+                      </div>
+                    )}
+                  </>
                 )}
                 {eff.priorKind === "around" && (
                   <div className="fit2-around" role="group" aria-label="Around a value, between two bounds">

@@ -6,7 +6,7 @@ import {
 import { graftMeasurements, isMeasRow, measKey, openForMeasurements, rollupText as measRollup } from "../explorerMeasurements.js";
 import { measurementsCsv } from "../measurementsTable.js";
 import {
-  MODEL_COLUMNS, MODEL_TREE_HEAD, ModelCell, ModelDialogs, ModelSide, ParamsModal, RbdBuildModal, RbdLinkModal, modelPhoneRow, modelRowActions,
+  LibraryAttachModal, MODEL_COLUMNS, MODEL_TREE_HEAD, ModelCell, ModelDialogs, ModelSide, ParamsModal, RbdBuildModal, RbdLinkModal, modelPhoneRow, modelRowActions,
   unlinkModel, useTreeModels,
 } from "../components/ModelTable.jsx";
 import BayesUpdateModal from "../components/BayesUpdateModal.jsx";
@@ -1605,6 +1605,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The panel shows the row from the whole tree, so its way up is the whole path.
   const row = (phone ? detailKey : focus) != null ? whole.rows.get(phone ? detailKey : focus) ?? null : null;
   const posRow = selPos != null ? display.rows.get(selPos) : null;
+  // ?fit_prior=<library record> (the Library page's Use as a prior…): the Fit dialog opens on the
+  // position picked with that record as the prior; with none picked, the tab says to pick one.
+  const fitPrior = params.get("fit_prior");
+  useEffect(() => {
+    if (!fitPrior || !data || !modelsOn) return;
+    if (posRow?.type !== "pos") { say("Pick the position to fit, then Life model › Fit a life model… (the record is chosen for you).", "ok"); return; }
+    setModelModal({ kind: "fit-life", position: { id: posRow.key, name: posRow.ref.name || "(no name)", position_class: posRow.ref.position_class || "" },
+      start: { method: "bayes", priorKind: "library", recordId: fitPrior } });
+    setQuery_((q) => q.delete("fit_prior"));
+  }, [fitPrior, data, modelsOn, posRow?.key]); // eslint-disable-line react-hooks/exhaustive-deps
   // The heading's Full screen: the tree pane's 30 × 30 icon button (its name
   // and the F key in the tooltip), on a phone too (no key there).
   const fullButton = (
@@ -2089,6 +2099,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <FitModal position={modelModal.position} start={modelModal.start || {}} link={modelModal.link || null} onClose={() => setModelModal(null)}
                   onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       )}
+      {modelModal?.kind === "library" && (
+        <LibraryAttachModal position={modelModal.position} onClose={() => setModelModal(null)}
+                            onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
+      )}
       {modelModal?.kind === "params" && (
         <ParamsModal position={modelModal.position} onClose={() => setModelModal(null)}
                      onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
@@ -2101,7 +2115,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <PredictionModal position={modelModal.position} link={modelModal.link || null} onClose={() => setModelModal(null)}
                          onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       )}
-      <ModelDialogs modal={["bayes", "predict", "rbd-build", "rbd-link", "params", "fit-life"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
+      <ModelDialogs modal={["bayes", "predict", "rbd-build", "rbd-link", "params", "fit-life", "library"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
                     onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       <MeasDialogs modal={measModal} onClose={() => setMeasModal(null)} onSaid={(text) => say(text)}
                    onDone={() => { setMeasModal(null); meas.load(); }} />
