@@ -541,3 +541,13 @@ button.maint-toggle {
   align-items: center;
   gap: 0.25rem 0.5rem;
 }
+
+/* A work package's work order: a line per task, answered Done, a problem or Not done. */
+.pkg-lines { list-style: none; margin: 0; padding: 0; }
+.pkg-line { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.6rem 0; min-width: 0; }
+.pkg-line + .pkg-line { border-top: 1px solid var(--line2); }
+.pkg-line-name { overflow-wrap: anywhere; }
+.pkg-step { margin-top: 0; gap: 0.5rem; }
+.pkg-ask { margin-top: 0; flex-wrap: wrap; }
+.pkg-ask input { flex: 1 1 12rem; min-width: 0; }
+.pkg-said { margin: 0; overflow-wrap: anywhere; }
