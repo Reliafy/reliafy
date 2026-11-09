@@ -2,6 +2,8 @@
 // logic, kept out of the component so it can be tested. The server turns the
 // dates into model time with "today = 0"; the form sends dates as given.
 
+import * as dates from "./dates.js";
+
 export const TIME_UNITS = ["Hours", "Days", "Weeks", "Months", "Years"];
 export const EVERY_UNITS = ["days", "weeks", "months", "years"];
 
@@ -36,9 +38,7 @@ export function localToday(now = new Date()) {
 // "2027-03-17" → "17 Mar 2027" (read as a calendar date: no time zone shift).
 export function formatDate(iso) {
   if (!iso) return "—";
-  const d = new Date(`${iso}T00:00:00Z`);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  return dates.formatDate(new Date(`${iso}T00:00:00Z`), { utc: true }) || String(iso);
 }
 
 // Dates typed in a box: one per line or comma-separated, each YYYY-MM-DD.

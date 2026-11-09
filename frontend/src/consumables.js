@@ -6,13 +6,13 @@
 // qty, cost, note, work_order, from_location), lsa (the doses its position's
 // tasks list)}. Pure functions, tested in consumables.test.js.
 
+import { MONTHS } from "./dates.js";
 import { dayText, numberText } from "./measuringPoint.js";
 import { withUnit } from "./measurementsTab.js";
 
 const DAY = 86400000;
 const ms = (d) => Date.parse(`${String(d).slice(0, 10)}T00:00:00Z`);
 const iso = (t) => new Date(t).toISOString().slice(0, 10);
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // How many days the state's total looks back.
 export const WINDOW_DAYS = 90;

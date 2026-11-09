@@ -3,6 +3,7 @@
 // { key, kind, tone, name, url, detail, at } — the shape the "What changed"
 // list draws (components/WhatChanged.jsx), so the three lists look alike.
 import { rcmDetail } from "./changes.js";
+import { formatDate } from "./dates.js";
 import { datasetPath } from "./navigation.js";
 import { partsPath } from "./redirects.js";
 
@@ -16,9 +17,7 @@ export const NEAR_EMPTY = 3;
 // "20 Oct 2026" for a workspace date ("2026-10-20"), read as a calendar day.
 export function dayText(iso) {
   if (!iso) return "";
-  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? String(iso)
-    : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return formatDate(String(iso).slice(0, 10)) || String(iso);
 }
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

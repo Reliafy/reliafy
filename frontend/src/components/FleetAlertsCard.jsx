@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { createFleetAlert, deleteFleetAlert, listFleetAlerts, updateFleetAlert } from "../api.js";
+import { formatDateTime } from "../dates.js";
 import { CardHeader } from "./ui/Card.jsx";
 import Switch from "./ui/Switch.jsx";
 import { PlusIcon } from "./LibRows.jsx";
@@ -141,7 +142,7 @@ export default function FleetAlertsCard({ fleetId, version }) {
                 <div className="hint">
                   {rule.kind === "within" && rule.current_value != null && <>Now {fmt(rule.current_value, 2)} · </>}
                   {rule.last_fired_at
-                    ? `Last fired ${new Date(rule.last_fired_at).toLocaleString()}${rule.last_fired_value != null ? ` at ${fmt(rule.last_fired_value)}` : ""}`
+                    ? `Last fired ${formatDateTime(new Date(rule.last_fired_at))}${rule.last_fired_value != null ? ` at ${fmt(rule.last_fired_value)}` : ""}`
                     : "Not fired yet"}
                   {!rule.mine && " · set by a teammate"}
                 </div>

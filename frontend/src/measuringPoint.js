@@ -6,6 +6,7 @@
 // readings (a hand-read point's newest first, struck-out ones included and
 // marked; a feed's oldest first, values only).
 
+import { formatDate, formatMonth } from "./dates.js";
 import { isStruck, liveReadings, readingStatusText } from "./maintenanceReadings.js";
 import { isSetting, needsAttention, nextReadingOn, pointChip, pointState, rangeText, STATES, withUnit } from "./measurementsTab.js";
 
@@ -13,13 +14,9 @@ import { isSetting, needsAttention, nextReadingOn, pointChip, pointState, rangeT
 export const READINGS_INTRO =
   "The latest readings. A voided reading stays listed and struck out, and is left out of rates, due dates and alarms.";
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 // "2026-10-18" → "18 Oct 2026" (the day as written: no time zone shift).
 export function dayText(iso) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
-  if (!m) return "";
-  return `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}`;
+  return formatDate(String(iso || "").slice(0, 10));
 }
 
 // When a reading was taken, on one line, to the precision it's known:
@@ -31,8 +28,8 @@ export function readingDate(r) {
   const when = r.when || "";
   if (r.precision === "year") return (when || r.at || "").slice(0, 4);
   if (r.precision === "month") {
-    const m = /^(\d{4})-(\d{2})/.exec(when || r.at || "");
-    return m ? `${MONTHS[Number(m[2]) - 1]} ${m[1]}` : when;
+    const m = /^\d{4}-\d{2}/.exec(when || r.at || "");
+    return (m && formatMonth(`${m[0]}-01`)) || when;
   }
   const clock = (text) => (/[ T](\d{2}:\d{2})/.exec(text) || [])[1];
   if (when.length > 10) return `${dayText(when)}, ${clock(when)}`;

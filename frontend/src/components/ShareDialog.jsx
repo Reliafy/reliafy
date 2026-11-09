@@ -6,6 +6,7 @@ import {
   createPublicLink, listPublicLinks, updatePublicLink, revokePublicLink,
 } from "../api.js";
 import Chip from "./ui/Chip.jsx";
+import { formatDate } from "../dates.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
 
 // The report composer (#30) loads only when someone opens it.
@@ -40,8 +41,7 @@ const LockIcon = () => (
   </svg>
 );
 
-const fmtDate = (iso) =>
-  new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+const fmtDate = (iso) => formatDate(new Date(iso));
 
 async function copyText(text) {
   try {

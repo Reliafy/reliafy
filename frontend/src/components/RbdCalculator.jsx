@@ -31,6 +31,7 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatPercent } from "../format.js";
+import { formatDate } from "../dates.js";
 import { hoursPerUnit } from "./rbdModelText.js";
 import { answerAtTime, formatReliability } from "../rbdCalcText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
@@ -1266,11 +1267,7 @@ function ResultDetailsRows({ rows }) {
 export function savedOn(iso) {
   const d = iso ? new Date(iso) : null;
   if (!d || Number.isNaN(d.getTime())) return "Saved result";
-  return `Saved result from ${d.toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  })}`;
+  return `Saved result from ${formatDate(d)}`;
 }
 
 // The Pro offer: shown when a free user asks for the simulation, and instead

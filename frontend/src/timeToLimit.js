@@ -1,6 +1,8 @@
 // Time to the limit (Signals tab): the small pieces of logic behind the panel,
 // kept apart from the screen so they can be tested.
 
+import { formatDate } from "./dates.js";
+
 export const PROCESSES = [
   { id: "wiener", label: "Random walk with drift", hint: "Can wobble down as well as up. The usual choice." },
   { id: "gamma", label: "Rises only", hint: "Wear that only ever goes up. Refuses a series that falls anywhere." },
@@ -17,8 +19,7 @@ export function daysText(d) {
 
 export function dateText(iso) {
   if (!iso) return "";
-  const t = new Date(iso);
-  return Number.isNaN(t.getTime()) ? "" : t.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return formatDate(new Date(iso));
 }
 
 export function percent(p) {
