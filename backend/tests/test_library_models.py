@@ -95,6 +95,17 @@ def test_on_a_weibull_the_rate_is_a_prior_on_the_mean_life(m, db):
                        prior={"kind": "library", "record_id": RATE, "shape": [0.8, 3]})
     assert "a prior on the mean life" in got["words"] and "between 0.8 and 3 (as given)" in got["words"]
     assert got["distribution"] == "weibull"
+    # The prior shows: its implied characteristic life, shape, B10 and mean life as medians with 90% ranges,
+    # its numbers on the baseline (so the dashed curve draws), and the summary says how far the data moved it.
+    prior = {p["name"]: p for p in got["prior"]}
+    assert set(prior) == {"alpha", "beta", "B10", "mean"}
+    assert prior["mean"]["lower"] == pytest.approx(1 / 4.86e-7, rel=0.03) and prior["mean"]["upper"] == pytest.approx(1 / 1.5e-8, rel=0.03)
+    assert prior["beta"]["lower"] == pytest.approx(0.8, rel=0.03) and prior["beta"]["upper"] == pytest.approx(3, rel=0.03)
+    assert all(p["median"] is not None for p in prior.values())
+    assert got["baseline"]["params_from"] == "prior" and set(got["baseline"]["params"]) == {"alpha", "beta"}
+    assert got["curves"]["baseline_sf"][0] == pytest.approx(1) and got["curves"]["baseline_hf"] is not None
+    assert "pulled the characteristic life from the prior's" in got["words"] and "gave the belief its numbers" not in got["words"]
+    assert "centred on about" in got["words"]
 
 
 def test_library_gamma_prior_curves_do_not_overflow():

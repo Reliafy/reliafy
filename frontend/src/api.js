@@ -1685,13 +1685,16 @@ export function updatePrediction(id, body) {
 export function deletePrediction(id) {
   return request(`/api/predictions/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
-// The reliability data library's search (public): the part-type picker.
-export function searchLibrary({ q, source, equipmentType, kind, page, pageSize } = {}) {
+// The reliability data library's search (public): the part-type picker and the record pickers.
+// ``use`` ("model" or "prior") keeps only the records usable as that on their own; the result's
+// ``left_out`` says how many it hid, by why.
+export function searchLibrary({ q, source, equipmentType, kind, page, pageSize, use } = {}) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (source) params.set("source", source);
   if (equipmentType) params.set("equipment_type", equipmentType);
   if (kind) params.set("kind", kind);
+  if (use) params.set("use", use);
   if (page) params.set("page", String(page));
   if (pageSize) params.set("page_size", String(pageSize));
   const s = params.toString();

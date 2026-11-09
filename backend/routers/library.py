@@ -48,6 +48,8 @@ def library_search(
     kind: Optional[str] = None,
     page: int = 1,
     page_size: int = service.DEFAULT_PAGE_SIZE,
+    use: Optional[str] = Query(default=None, description=(
+        "Only records usable as this on their own: model (an exponential at the rate) or prior.")),
 ) -> JSONResponse:
     """A page of matching records, best first, with counts."""
     limited = _limited(request)
@@ -55,7 +57,7 @@ def library_search(
         return limited
     try:
         out = service.search(q, source=source, equipment_type=equipment_type, kind=kind, page=page,
-                             page_size=page_size)
+                             page_size=page_size, use=use)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=out, headers=_CACHE)

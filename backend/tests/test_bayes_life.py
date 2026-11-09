@@ -85,6 +85,40 @@ def test_a_b10_belief_is_a_baseline_too():
     _, result, _ = bl.update(base, "guide", [])
     b10 = next(p for p in result["prior"] if p["name"] == "B10")
     assert b10["lower"] == pytest.approx(3000, rel=0.05) and b10["upper"] == pytest.approx(8000, rel=0.05)
+    # A belief has no numbers of its own: the prior's medians stand in, so the result draws its curve
+    # and says how far the data moved it, with the numbers.
+    assert result["baseline"]["params_from"] == "prior"
+    assert result["baseline"]["params"]["beta"] == pytest.approx(2.19, rel=0.02)
+    _, moved, _ = bl.update(base, "guide", bl.given_rows([1400, 1900, 800, 800], [0, 0, 1, 1]))
+    assert moved["moved"].startswith("2 failures at 1,400 and 1,900 hours pulled the characteristic life from the prior's 14,0")
+    assert "gave the belief its numbers" not in moved["words"]
+    assert moved["curves"]["baseline_sf"][0] == pytest.approx(1) and len(moved["curves"]["baseline_hf"]) == bl.GRID
+
+
+def test_a_prior_on_the_mean_life_is_summarised_by_sampling_it():
+    """A library record's prior on a Weibull: the mean life 90% between two bounds with the shape
+    between two more. SurPyval's grid check can't summarise it (the long tail the mean implies), so
+    the quantities are drawn and mapped to the parameters: the prior exactly, and the same every run."""
+    priors = sp.prior.on_quantities(sp.Weibull, mean=sp.prior.around(5.7e6, between=(2.06e6, 6.67e7)),
+                                    beta=sp.prior.between(0.5, 5))
+    table = {p["name"]: p for p in bl.prior_table("weibull", priors)}
+    assert set(table) == {"alpha", "beta", "B10", "mean"}
+    assert table["mean"]["lower"] == pytest.approx(2.06e6, rel=0.03) and table["mean"]["upper"] == pytest.approx(6.67e7, rel=0.03)
+    assert table["beta"]["lower"] == pytest.approx(0.5, rel=0.03) and table["beta"]["upper"] == pytest.approx(5, rel=0.03)
+    assert table["beta"]["median"] == pytest.approx((0.5 * 5) ** 0.5, rel=0.03)  # the geometric middle
+    assert 0 < table["B10"]["lower"] < table["B10"]["median"] < table["B10"]["upper"]
+    assert table["alpha"]["median"] > 0
+    assert bl.prior_table("weibull", priors) == bl.prior_table("weibull", priors)  # seeded
+    # A lognormal's spread, and an exponential's mean alone, are worked out the same way.
+    ln = {p["name"]: p for p in bl.prior_table("lognormal", sp.prior.on_quantities(
+        sp.LogNormal, mean=sp.prior.between(2.06e6, 6.67e7), sigma=sp.prior.between(0.5, 5)))}
+    assert ln["mean"]["lower"] == pytest.approx(2.06e6, rel=0.03) and ln["sigma"]["upper"] == pytest.approx(5, rel=0.03)
+    ex = {p["name"]: p for p in bl.prior_table("exponential", sp.prior.on_quantities(
+        sp.Exponential, mean=sp.prior.between(1000, 10000)))}
+    assert ex["failure_rate"]["median"] == pytest.approx(1 / (1000 * 10000) ** 0.5, rel=0.03)
+    # A statement not worked out here gives no table, not a wrong one.
+    assert bl._sampled_table("weibull", sp.prior.on_quantities(
+        sp.Weibull, B10=sp.prior.between(100, 200), B50=sp.prior.between(300, 900))) == {}
 
 
 def test_a_saved_update_is_a_normal_model_that_rebuilds(db):

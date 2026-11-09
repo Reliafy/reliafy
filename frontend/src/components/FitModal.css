@@ -40,3 +40,6 @@
 .fit2-around-head { font-size: var(--fs-12); color: var(--muted); }
 .fit2-around-name { font-size: var(--fs-13); }
 .fit2-around .field-select, .fit2-around select { max-width: 10rem; }
+/* Nothing in the result column shrinks (the chart chips to nothing, the numbers table to its header
+   row): the pane scrolls instead. */
+.fit2-out > * { flex: none; }

@@ -165,8 +165,17 @@ def priors_for(base: dict, trust: str):
 
 def prior_table(dist_id: str, priors) -> list[dict]:
     """What the prior says before any data: each parameter's, the B10's and the mean life's
-    median and 90% range (SurPyval's prior check)."""
-    table = sp.prior.check(DISTS[dist_id], priors).table
+    median and 90% range. A prior on quantities (a library record's mean life with the shape
+    between two bounds; a B10 belief) is sampled: its quantities are independent beliefs, so
+    drawing each and mapping them to the parameters is the prior exactly, where SurPyval's grid
+    check can fail on the long tail the mean life implies. Everything else is SurPyval's prior
+    check."""
+    from surpyval.bayes.prior import OnQuantities
+
+    if isinstance(priors, OnQuantities):
+        table = _sampled_table(dist_id, priors)
+    else:
+        table = sp.prior.check(DISTS[dist_id], priors).table
     out = []
     for key in [*DISTS[dist_id].parameter_names, "B10", "mean"]:
         if key in table:
@@ -174,6 +183,108 @@ def prior_table(dist_id: str, priors) -> list[dict]:
             out.append({"name": key, "label": WORDS.get(key, "B10 life" if key == "B10" else "mean life"),
                         "median": _f(med), "lower": _f(lo), "upper": _f(hi)})
     return out
+
+
+PRIOR_DRAWS = 40_000  # samples of a prior on quantities (a few ms; the 5–95% to about 1%)
+
+
+def _draw_quantities(dist_id: str, priors, n: int, rng) -> dict:
+    """Each statement of an on_quantities prior drawn on its own scale: {("mean",): values,
+    ("q", 0.1): values, ("param", "beta"): values}."""
+    from surpyval.bayes.transforms import Transform
+
+    dist = DISTS[dist_id]
+    out = {}
+    for _, spec, p in priors.statements:
+        if spec[0] == "param":
+            t = Transform.for_bounds(dist.bounds[list(dist.parameter_names).index(spec[1])])
+        elif spec[0] == "R":
+            t = Transform("logit", 0.0, 1.0)
+        else:
+            t = Transform("log", 0.0, np.inf)
+        out[tuple(spec)] = np.asarray(t.to_theta(p.draw_phi(n, t, rng)), dtype=float)
+    return out
+
+
+def _params_from_quantities(dist_id: str, drawn: dict) -> dict | None:
+    """The parameters each draw implies, from the quantities stated (one shape or spread statement
+    and one of the mean, a B-life or a reliability at a time), or None for a shape of statement
+    not worked out here."""
+    from scipy import special, stats
+
+    params = {spec[1]: v for spec, v in drawn.items() if spec[0] == "param"}
+    scale = {spec: v for spec, v in drawn.items() if spec[0] != "param"}
+    if dist_id == "exponential":
+        if "failure_rate" in params:
+            return params
+        if len(scale) != 1:
+            return None
+        (spec, v), = scale.items()
+        if spec[0] == "mean":
+            return {"failure_rate": 1 / v}
+        if spec[0] == "q":
+            return {"failure_rate": -np.log1p(-float(spec[1])) / v}
+        if spec[0] == "R":
+            return {"failure_rate": -np.log(v) / float(spec[1])}
+        return None
+    if len(scale) != 1 or len(params) != 1:
+        return None
+    (spec, v), = scale.items()
+    if dist_id == "weibull" and "beta" in params:
+        beta = params["beta"]
+        if spec[0] == "mean":
+            alpha = v / special.gamma(1 + 1 / beta)
+        elif spec[0] == "q":
+            alpha = v / (-np.log1p(-float(spec[1]))) ** (1 / beta)
+        elif spec[0] == "R":
+            alpha = float(spec[1]) / (-np.log(v)) ** (1 / beta)
+        else:
+            return None
+        return {"alpha": alpha, "beta": beta}
+    if dist_id == "lognormal" and "sigma" in params:
+        sigma = params["sigma"]
+        if spec[0] == "mean":
+            mu = np.log(v) - sigma ** 2 / 2
+        elif spec[0] == "q":
+            mu = np.log(v) - sigma * stats.norm.ppf(float(spec[1]))
+        elif spec[0] == "R":
+            mu = np.log(float(spec[1])) - sigma * stats.norm.ppf(1 - v)
+        else:
+            return None
+        return {"mu": mu, "sigma": sigma}
+    return None
+
+
+def _quantities_of(dist_id: str, params: dict) -> dict:
+    """The B10 and the mean life of each parameter draw."""
+    from scipy import special, stats
+
+    if dist_id == "weibull":
+        a, b = params["alpha"], params["beta"]
+        return {"B10": a * (-np.log(0.9)) ** (1 / b), "mean": a * special.gamma(1 + 1 / b)}
+    if dist_id == "lognormal":
+        mu, sg = params["mu"], params["sigma"]
+        return {"B10": np.exp(mu + sg * stats.norm.ppf(0.1)), "mean": np.exp(mu + sg ** 2 / 2)}
+    r = params["failure_rate"]
+    return {"B10": -np.log(0.9) / r, "mean": 1 / r}
+
+
+def _sampled_table(dist_id: str, priors, n: int = PRIOR_DRAWS, seed: int = 20261109) -> dict:
+    """The prior check's table ({quantity: (median, lower, upper)}) from draws of a prior on
+    quantities; empty for a shape of statement not worked out here."""
+    rng = np.random.default_rng(seed)
+    params = _params_from_quantities(dist_id, _draw_quantities(dist_id, priors, n, rng))
+    if params is None:
+        return {}
+    values = {**params, **_quantities_of(dist_id, params)}
+    table = {}
+    for key, v in values.items():
+        v = np.asarray(v, dtype=float)
+        v = v[np.isfinite(v)]
+        if len(v):
+            med, lo, hi = np.quantile(v, [0.5, ALPHA / 2, 1 - ALPHA / 2])
+            table[key] = (float(med), float(lo), float(hi))
+    return table
 
 
 # ---- the data ---------------------------------------------------------------------------
@@ -300,7 +411,10 @@ def _moved(base: dict, post: list[dict], rows: list[dict], unit: str) -> str:
     else:
         who = f"{len(used)} unit{'s' if len(used) != 1 else ''} still running and none failed"
     if not base.get("params"):
-        return f"{who[0].upper()}{who[1:]} gave the belief its numbers."
+        said = [f"{WORDS.get(p['name'], p['name'])} about {num(p['median'])}" for p in post if p["median"] is not None]
+        return f"{who[0].upper()}{who[1:]} gave the belief its numbers: {', '.join(said)}." if said \
+            else f"{who[0].upper()}{who[1:]} gave the belief its numbers."
+    whose = "the prior's " if base.get("params_from") == "prior" else ""
     parts, still = [], []
     for p in post:
         b = base["params"].get(p["name"])
@@ -312,7 +426,7 @@ def _moved(base: dict, post: list[dict], rows: list[dict], unit: str) -> str:
             still.append(word)
         else:
             unit_txt = f" {u}" if p["name"] == "alpha" and u else ""
-            parts.append(f"{'pulled' if change < 0 else 'pushed'} the {word} from {num(b)}{unit_txt} to about "
+            parts.append(f"{'pulled' if change < 0 else 'pushed'} the {word} from {whose}{num(b)}{unit_txt} to about "
                          f"{num(p['median'])}{unit_txt}")
     text = who + (" " + " and ".join(parts) if parts else " left the baseline about where it was")
     if still and parts:
@@ -340,12 +454,17 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None,
         prior = prior_table(dist_id, priors)
     except Exception:  # noqa: BLE001 - a prior SurPyval can't summarise before data still fits
         prior = []
+    if not base.get("params"):
+        medians = {p["name"]: p["median"] for p in prior if p["name"] in dist.parameter_names and p["median"] is not None}
+        if len(medians) == len(dist.parameter_names):
+            # A baseline stated only as a prior: its medians are its numbers (the dashed curve, "moved from").
+            base = {**base, "params": medians, "params_from": "prior"}
     failures = int(np.sum(c != 1))
     suspensions = int(np.sum(c == 1))
     t = TRUST.get(trust, TRUST["guide"])
     result = {
         "method": METHOD, "level": LEVEL, "distribution": dist_id, "distribution_label": LABELS[dist_id], "unit": unit,
-        "baseline": {k: base.get(k) for k in ("source", "name", "model_id", "params")},
+        "baseline": {k: base.get(k) for k in ("source", "name", "model_id", "params", "params_from")},
         "trust": {"id": trust, **t} if base["source"] != "update" else {"id": "kept", "label": "As the earlier update",
                                                                           "words": "the earlier update's prior"},
         "counts": {"failures": failures, "suspensions": suspensions}, "prior": prior,
@@ -400,8 +519,9 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None,
 
 
 def curves(model, base: dict, dist_id: str, x_max: float | None = None) -> dict:
-    """The plot: the baseline's reliability, the updated (predictive) reliability and its
-    90% credible band, over ages to where 99% of new units have failed."""
+    """The plot: the baseline's reliability and hazard, the updated (predictive) reliability
+    and its 90% credible band, and the updated hazard, over ages to where 99% of new units have
+    failed."""
     dist = DISTS[dist_id]
     hi = None
     for q in (0.99, 0.95, 0.9):
@@ -426,6 +546,7 @@ def curves(model, base: dict, dist_id: str, x_max: float | None = None) -> dict:
     fx = lambda a: [_f(v) for v in np.ravel(a)]  # noqa: E731
     out = {"x": fx(grid), "sf": fx(model.sf(grid)), "sf_lower": fx(band[:, 0]), "sf_upper": fx(band[:, 1]),
            "baseline_sf": fx(base_model.sf(grid)) if base_model is not None else None,
+           "baseline_hf": fx(base_model.hf(grid)) if base_model is not None else None,
            "hf": fx(model.hf(grid))}
     return out
 
