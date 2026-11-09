@@ -527,6 +527,50 @@ test("the fit at 400 px takes the screen: inputs, then the result, nothing sidew
   await expect(row(page, pump.id)).toBeVisible();
 });
 
+// Too narrow for the two columns side by side (the tree takes its share of a 1280 px window): the
+// parts stack, each as tall as what's in it, so neither is drawn over the other; the pane scrolls
+// as one, and Cancel and Save stay at its foot whichever part is being read.
+test("the fit beside the tree at 1280 px stacks its two parts, neither over the other, Save always in view", async ({ page, request }) => {
+  const tag = `k${Date.now()}`;
+  const ago = (d) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
+  const pump = await postOk(request, `${M}/positions`, { name: `Stacked pump ${tag}` });
+  let at = 1500;
+  for (const life of [300, 420, 380]) {
+    await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `K${life} ${tag}` }, on: ago(at) });
+    at -= life;
+    await postOk(request, `${M}/positions/${pump.id}/remove`, { on: ago(at), reason: "failure" });
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
+  await headPick(page, "Life model", "Fit a life model…");
+  const dialog = page.getByRole("region", { name: "Fit a life model" });
+  await expect(dialog.getByRole("status")).toContainText("A plain fit (maximum likelihood) to 3 failures");
+  // The tallest the inputs get: a prior, typed as ranges.
+  await dialog.getByRole("radio", { name: "With a prior" }).click();
+  await dialog.getByRole("combobox", { name: "Prior", exact: true }).selectOption("around");
+  await expect(dialog.getByRole("group", { name: "Around a value, between two bounds" })).toBeVisible();
+  const save = dialog.getByRole("button", { name: "Save as this position's model" });
+  const parts = () => dialog.evaluate((el) => {
+    const box = (sel) => { const e = el.querySelector(sel); const r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, spills: e.scrollHeight - e.clientHeight }; };
+    return { pane: el.getBoundingClientRect().bottom, inputs: box(".fit2-in"), result: box(".fit2-out"), foot: box(".fit2-foot") };
+  });
+  const top = await parts();
+  expect(top.result.left).toBeLessThanOrEqual(top.inputs.left + 1);  // stacked, not side by side
+  expect(top.result.top).toBeGreaterThanOrEqual(top.inputs.bottom - 1);  // the result starts where the inputs end
+  expect(top.inputs.spills).toBeLessThanOrEqual(1);  // and nothing of either hangs out of its box
+  expect(top.result.spills).toBeLessThanOrEqual(1);
+  expect(top.foot.bottom).toBeLessThanOrEqual(top.pane + 1);
+  await expect(save).toBeInViewport({ ratio: 1 });
+  // Scrolled to the end of the result: the bar is still at the pane's foot, under the last of it.
+  const scrolled = await dialog.locator(".fit2").evaluate((el) => { el.scrollTop = el.scrollHeight; return el.scrollTop; });
+  expect(scrolled).toBeGreaterThan(0);
+  const end = await parts();
+  expect(end.foot.bottom).toBeLessThanOrEqual(end.pane + 1);
+  expect(end.foot.top).toBeGreaterThanOrEqual(top.foot.top - 1);
+  await expect(save).toBeInViewport({ ratio: 1 });
+  expect(await sideways(page)).toBeLessThanOrEqual(1280);
+});
+
 // A prior around a value, between two bounds: alpha about 400 (90% between 300 and 600), beta just
 // between 1.5 and 4; no trust chips (the ranges are the belief); the how-it-was-computed line says it.
 test("Fit a life model… with a prior around a value, between two bounds", async ({ page, request, problems }) => {

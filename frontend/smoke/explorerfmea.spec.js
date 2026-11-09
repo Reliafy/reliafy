@@ -166,6 +166,16 @@ test("FME(C)A: the worksheet on the tree; a score edited in place changes the RP
   await expect(details.getByRole("table", { name: /Criticality matrix/ })).toBeVisible();
   await expect(details.getByText("2 of 3 scored").first()).toBeVisible(); // the chip, and the Cr card's own count
   await expect(details.getByRole("heading", { name: "Item criticality (Cr)" })).toBeVisible();
+  // The panel is as wide here as on the other tabs (a wide table doesn't squeeze it), and the modes
+  // ranked by criticality fit it: the criticality itself in view, nothing to scroll sideways for.
+  const rank = details.getByRole("table", { name: "Failure modes by criticality, highest first" });
+  await expect(rank.getByRole("columnheader", { name: "Cm" })).toBeInViewport({ ratio: 1 });
+  const fits = await rank.evaluate((el) => {
+    const sc = el.closest(".maint-scroll");
+    return { side: el.closest(".tt-side").getBoundingClientRect().width, over: sc.scrollWidth - sc.clientWidth };
+  });
+  expect(fits.side).toBeGreaterThanOrEqual(300);
+  expect(fits.over).toBeLessThanOrEqual(1);
   await shot(page, "fmea-matrix-1440");
   // A function's menu adds a failure mode directly under it, typed in place in its details.
   await trow(page, `^Function: Pump water ${tag}`).locator(".tt-tree").first().click({ button: "right" });

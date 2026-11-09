@@ -75,14 +75,17 @@
 .fm-matrix td.ap-L, .fm-swatch.ap-L { background: var(--surf); border-color: var(--line); }
 .fm-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 6px 0 0; }
 .fm-swatch { display: inline-block; width: 12px; height: 12px; border: 1px solid var(--line); border-radius: 3px; vertical-align: middle; }
-.fm-legend .fm-swatch + * { margin-right: 6px; }
+.fm-key { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.fm-key-note { flex: 1 1 100%; }
 
-/* The modes ranked by Cm. */
+/* The modes ranked by Cm: each one's name on a line of its own, its figures under it in columns
+   (they fit the panel beside the table at its narrowest, 300 px, with no sideways scroll). */
 .fm-rank { width: 100%; border-collapse: collapse; font-size: var(--fs-12); margin-top: var(--sp-2); }
-.fm-rank th, .fm-rank td { padding: 3px 6px; border-bottom: 1px solid var(--line2); text-align: left; vertical-align: top; }
-.fm-rank th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.fm-rank th, .fm-rank td { padding: 3px 5px; border-bottom: 1px solid var(--line2); text-align: left; vertical-align: top; }
+.fm-rank thead th { color: var(--muted); font-weight: 600; white-space: nowrap; }
 .fm-rank .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.fm-rank td .link { text-align: left; }
+.fm-rank .fm-rank-nm th { padding-top: 6px; padding-bottom: 0; border-bottom: 0; font-size: var(--fs-13); font-weight: 400; overflow-wrap: anywhere; }
+.fm-rank .fm-rank-nm .link { text-align: left; }
 
 /* The print view (FmeaPrint.jsx): one plain full-width worksheet. */
 .fm-print { max-width: none; }

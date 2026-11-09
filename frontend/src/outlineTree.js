@@ -92,24 +92,36 @@ export function flatten(display, open, filter = null, order = null) {
 }
 
 // The ancestors pinned at the top while scrolling (VS Code's sticky scroll):
-// the rows the first row on screen sits inside, at most `max` (the top one and
-// the nearest ones when there are more).
+// the rows the first row under the pins sits inside, at most `max` (the top one
+// and the nearest ones when there are more). The pins cover as many rows as are
+// shown, never more than `max`, so that first row is `max` down at most: counting
+// the whole chain instead pinned the parents of a row further down the screen.
 export function pinnedRows(display, list, index, scrollTop, rowHeight, max = 4) {
   if (scrollTop <= 2 || !list.length) return [];
   const top = Math.floor(scrollTop / rowHeight + 0.0001);
   let pins = [];
   for (let it = 0; it < 4; it++) {
-    const i = Math.min(list.length - 1, top + pins.length);
+    const i = Math.min(list.length - 1, top + Math.min(pins.length, max));
     const chain = [];
     let p = display.rows.get(list[i].key).parent;
     while (p != null) {
       if (index.has(p)) chain.unshift(p);
       p = display.rows.get(p).parent;
     }
-    pins = chain.filter((k) => index.get(k) < top + chain.length);
+    const shown = Math.min(chain.length, max);
+    pins = chain.filter((k) => index.get(k) < top + shown);
   }
   if (pins.length > max) pins = [pins[0], ...pins.slice(pins.length - max + 1)];
   return pins;
+}
+
+// Whether the pinned rows leave levels out between the top one and the next
+// (more ancestors than there's room to pin), so the page can say so.
+export function pinsSkip(display, index, pins) {
+  if (pins.length < 2) return false;
+  let p = display.rows.get(pins[1])?.parent;
+  while (p != null && !index.has(p)) p = display.rows.get(p).parent;
+  return p != null && p !== pins[0];
 }
 
 // The first rows drawn and the last (exclusive): what's on screen, plus a few.

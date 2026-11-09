@@ -133,6 +133,13 @@ export function CriticalityGroup({ r, readOnly, saved = {}, onCommit }) {
   );
 }
 
+// The figures behind a mode's criticality, in the order they multiply: the record's field, its
+// sign and what it is (the column's tooltip, and what a screen reader says for it).
+const RANK_COLS = [
+  ["failure_rate", "λ", "Failure rate"], ["mode_ratio", "α", "Mode ratio"], ["loss_probability", "β", "Loss probability"],
+  ["operating_time", "t", "Operating time"], ["cm", "Cm", "Mode criticality"],
+];
+
 // A position picked on the FME(C)A tab: its criticality matrix (severity
 // across, occurrence down; each cell the count of failure modes there, toned
 // by the worst action priority among them, which the tooltip says too), the
@@ -209,8 +216,11 @@ export function FmeaPositionPanel({ row, summary, phone, headingRef, onClose, on
             <p className="rw-fhelp">No failure mode {where} has both a severity and an occurrence score yet.</p>
           )}
           <p className="fm-legend rw-fhelp" aria-hidden="true">
-            <span className="fm-swatch ap-H" /> High <span className="fm-swatch ap-M" /> Medium <span className="fm-swatch ap-L" /> Low
-            {matrix.byClass ? " · columns are severity classes" : ""}
+            {/* Each swatch stays with its word when the line wraps. */}
+            <span className="fm-key"><span className="fm-swatch ap-H" /> High</span>
+            <span className="fm-key"><span className="fm-swatch ap-M" /> Medium</span>
+            <span className="fm-key"><span className="fm-swatch ap-L" /> Low</span>
+            {matrix.byClass && <span className="fm-key-note">Columns are severity classes.</span>}
           </p>
         </Section>
         <Section title="Item criticality (Cr)" label="Item criticality">
@@ -223,21 +233,28 @@ export function FmeaPositionPanel({ row, summary, phone, headingRef, onClose, on
           </dl>
           {ranked.length ? (
             <div className="maint-scroll">
+              {/* Two lines a failure mode, its name over its figures: seven columns side by side
+                  left the name a few characters a line in the panel beside the table. */}
               <table className="fm-rank" aria-label="Failure modes by criticality, highest first">
-                <thead><tr><th scope="col">Failure mode</th><th scope="col">Class</th><th scope="col">λ</th><th scope="col">α</th><th scope="col">β</th><th scope="col">t</th><th scope="col">Cm</th></tr></thead>
-                <tbody>
-                  {ranked.map((m) => (
-                    <tr key={m.id}>
-                      <td>{onSelect ? <button type="button" className="link" onClick={() => onSelect(m.id)} title={cmWords(m)}>{m.text || "(no description)"}</button> : m.text}</td>
-                      <td>{m.severity_class || ""}</td>
-                      <td className="num">{fmt3(m.failure_rate)}</td>
-                      <td className="num">{fmt3(m.mode_ratio)}</td>
-                      <td className="num">{fmt3(m.loss_probability)}</td>
-                      <td className="num">{fmt3(m.operating_time)}</td>
-                      <td className="num"><b>{fmt3(m.cm)}</b></td>
+                <thead>
+                  <tr>
+                    <th scope="col">Class</th>
+                    {RANK_COLS.map(([col, sign, words]) => <th key={col} scope="col" className="num" abbr={words} title={`${words} (${sign})`}>{sign}</th>)}
+                  </tr>
+                </thead>
+                {ranked.map((m) => (
+                  <tbody key={m.id}>
+                    <tr className="fm-rank-nm">
+                      <th scope="rowgroup" colSpan={RANK_COLS.length + 1}>
+                        {onSelect ? <button type="button" className="link" onClick={() => onSelect(m.id)} title={cmWords(m)}>{m.text || "(no description)"}</button> : m.text}
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
+                    <tr>
+                      <td>{m.severity_class || "—"}</td>
+                      {RANK_COLS.map(([col]) => <td key={col} className="num">{col === "cm" ? <b>{fmt3(m.cm)}</b> : fmt3(m[col])}</td>)}
+                    </tr>
+                  </tbody>
+                ))}
               </table>
             </div>
           ) : <p className="rw-fhelp">No failure mode {where} has the four criticality figures (λ, α, β, t) yet.</p>}

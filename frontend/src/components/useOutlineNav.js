@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { findByPrefix, pinnedRows, windowOf } from "../outlineTree.js";
 
 // The scrolling and the keyboard of an outline (a tree view or a tree grid)
@@ -37,13 +38,15 @@ export default function useOutlineNav({
     return () => ro.disconnect();
   }, [measureKey]);
 
-  // One state update a frame, however fast the scroll events come.
+  // One state update a frame, however fast the scroll events come, and drawn in that same frame
+  // (flushSync, before the browser paints it): left to React's own timing the rows pinned at the
+  // top were a frame behind the scroll, so after a jump the old ones showed over the new place.
   const frame = useRef(0);
   const onScroll = useCallback(() => {
     if (frame.current) return;
     frame.current = requestAnimationFrame(() => {
       frame.current = 0;
-      if (scroller.current) setScrollTop(scroller.current.scrollTop);
+      if (scroller.current) flushSync(() => setScrollTop(scroller.current.scrollTop));
     });
   }, []);
   useEffect(() => () => cancelAnimationFrame(frame.current), []);

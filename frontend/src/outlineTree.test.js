@@ -99,3 +99,42 @@ test("the tree's tail makes the furthest scroll a whole number of rows", () => {
   assert.equal(tailFor(1110, 54), 24); // 1110 + 24 = 1134: 21 rows
   assert.equal((1110 + tailFor(1110, 54)) % 54, 0);
 });
+
+import { pinnedRows, pinsSkip } from "./outlineTree.js";
+
+test("the pinned rows are the ones the first row under them sits inside, however few there's room for", () => {
+  // A deep branch, as an RCM tree is: top → sys → (p1, p2, unit → fn → std → ff → (m1, m2 → t1, m3)), last.
+  const rows = new Map();
+  const roots = [];
+  const add = (key, parent) => {
+    rows.set(key, { key, parent, kids: [], depth: parent ? rows.get(parent).depth + 1 : 0, ref: { name: key } });
+    (parent ? rows.get(parent).kids : roots).push(key);
+  };
+  [["top", null], ["sys", "top"], ["p1", "sys"], ["p2", "sys"], ["unit", "sys"], ["fn", "unit"], ["std", "fn"], ["ff", "std"],
+    ["m1", "ff"], ["m2", "ff"], ["t1", "m2"], ["m3", "ff"], ["last", null]].forEach(([k, p]) => add(k, p));
+  const d = { rows, roots };
+  const { list, index } = flatten(d, new Set(rows.keys()));
+  const H = 54;
+  // Checked at every scroll position, for two pins (a phone) and four: every pin's own row is
+  // under the pins, and the last pin is the parent of the first row showing below them.
+  for (const max of [1, 2, 4]) {
+    for (let top = 0; top + max < list.length; top++) {
+      const pins = pinnedRows(d, list, index, top * H + 20, H, max);
+      assert.ok(pins.length <= max);
+      for (const k of pins) assert.ok(index.get(k) < top + pins.length, `${k} pinned and showing, ${max} pins at row ${top}`);
+      const under = list[top + pins.length].key;
+      if (max > 1 && pins.length) assert.equal(pins[pins.length - 1], rows.get(under).parent, `${under} under ${pins}, ${max} pins at row ${top}`);
+    }
+  }
+  // Two pins: the top row and the parent, with the levels between left out (and said so).
+  const at = (key, max) => pinnedRows(d, list, index, (index.get(key) - max) * H + 20, H, max);
+  assert.deepEqual(at("fn", 2), ["top", "unit"]);
+  assert.deepEqual(at("m1", 2), ["top", "ff"]);
+  assert.deepEqual(at("t1", 2), ["top", "m2"]);
+  assert.equal(pinsSkip(d, index, ["top", "ff"]), true);
+  assert.equal(pinsSkip(d, index, ["top", "sys"]), false);
+  assert.equal(pinsSkip(d, index, ["top"]), false);
+  // Four: the top row and the three nearest.
+  assert.deepEqual(at("m1", 4), ["top", "fn", "std", "ff"]);
+  assert.deepEqual(pinnedRows(d, list, index, H + 20, H, 4), ["top", "sys"]);
+});

@@ -9604,6 +9604,15 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
 .plot-dl { opacity: 0; transition: opacity 0.15s; }
 .plot-frame:hover .plot-dl, .plot-dl:focus-within { opacity: 1; }
 @media (hover: none) { .plot-dl { opacity: 1; } }
+/* A narrow screen or a touch one: the legend above the plot runs the chart's whole width there (and on
+   a touch screen the buttons never hide), so they'd sit on its last entry. They take a row of their
+   own above the chart: in the frame's flow, or, where the chart fills a box of a set height
+   (.plot-fill), with the chart starting under them. */
+@media (max-width: 640px), (hover: none) {
+  .plot-frame > .plot-dl { position: static; display: flex; justify-content: flex-end; }
+  .plot-fill > .plot-dl { position: absolute; }
+  .plot-fill > .plot-dl + .plot-fill-inner { top: 32px; }
+}
 .plot-dl-btn:focus-visible { outline: none; box-shadow: var(--focus); border-color: var(--acc); }
 
 /* Fit statistics in their modal: the table is the dialog's content, not a card in it. */
