@@ -26,8 +26,9 @@ import "./FitLifeModel.css";
 // library"). FitPane is that area: a heading ("Fit a life model · <position>") with a close, and
 // FitLifeModel under it: inputs on the left as a step | choice grid (Data with the history under
 // it, Method, Prior, Distribution, For), the result on the right (what came out, the curve, the
-// numbers, reliability at an age, how it was computed, Save). Both columns scroll on their own;
-// when the area is narrow they stack, inputs first, Save at the foot. Every change asks again a
+// numbers, reliability at an age, how it was computed), Cancel and Save in a bar under it. Both
+// columns scroll on their own; when the area is narrow they stack, inputs first, each as tall as
+// what's in it, the pane scrolling as one with Cancel and Save kept at its foot. Every change asks again a
 // moment later (fitDialog.previewKey: the request and what's missing). Only the library record
 // picker is a dialog, over the pane.
 //
@@ -400,14 +401,15 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
               </p>
             </>
           )}
-          {failed && <p className="field-error" role="alert">{failed}</p>}
-          <div className="fit2-foot">
-            <button type="button" className="secondary" onClick={onClose} disabled={saving}>Cancel</button>
-            <button type="button" onClick={save} disabled={saving || !d?.can_save} aria-busy={saving || undefined}>
-              {saving ? "Saving…" : "Save as this position's model"}
-            </button>
-          </div>
         </section>
+        {/* Cancel and Save are the pane's own foot, not the result's: always in view, whichever part is being read. */}
+        <div className="fit2-foot">
+          {failed && <p className="field-error fit2-failed" role="alert">{failed}</p>}
+          <button type="button" className="secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" onClick={save} disabled={saving || !d?.can_save} aria-busy={saving || undefined}>
+            {saving ? "Saving…" : "Save as this position's model"}
+          </button>
+        </div>
       </div>
       {picking && (
         <LibraryRecordPicker use="prior" selectedId={state.recordId} onClose={closePicker}

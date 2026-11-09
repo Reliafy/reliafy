@@ -381,7 +381,9 @@ export function TreeCanvas({ result, name, active }) {
           maxZoom={1.5}
           proOptions={{ hideAttribution: true }}
         >
-          <Controls showInteractive={false} />
+          {/* Top right: the one corner the tree never reaches (the top event is centred, its
+              inputs spread the full width under it), so the buttons sit over no node. */}
+          <Controls showInteractive={false} position="top-right" />
         </ReactFlow>
       </div>
     </div>

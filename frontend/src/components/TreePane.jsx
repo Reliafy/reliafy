@@ -4,7 +4,7 @@ import TreeControlsMenu from "./TreeControlsMenu.jsx";
 import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
 import { NotesMark, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
-import { tailFor } from "../outlineTree.js";
+import { pinsSkip, tailFor } from "../outlineTree.js";
 import { ARRANGEMENTS, CHIP_MARK, PANE, chipsFor, TREE_ROW_MARKERS, clampWidth, markersOf, nextGutter } from "../assetTree.js";
 import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensPanel, phonePositionLine } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
@@ -330,11 +330,11 @@ function dropClass(drag, key) {
   return o.state === "no" ? " drop-no" : ` drop-${o.zone || "into"}${o.copy ? " drop-copy" : ""}`;
 }
 
-function Row({ v, r, top, height, open, focused, dim, pinned, underPin = false, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen, rowW, pinRoot }) {
+function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, underPin = false, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen, rowW, pinRoot }) {
   const has = r.kids.length > 0;
   const drag = table && !phone ? table.drag : null;
   const movable = !!drag && !pinned && drag.canDrag(r);
-  const cls = "tp-row" + (focused ? " focus" : "") + (dim ? " dim" : "") + (pinned ? " pin" : "") + (heading(r) ? " grp" : "")
+  const cls = "tp-row" + (focused ? " focus" : "") + (dim ? " dim" : "") + (pinned ? " pin" : "") + (pinGap ? " pin-gap" : "") + (heading(r) ? " grp" : "")
     + (table ? ` tt tt-${r.type}` : "") + (menuOpen ? " menu-open" : "") + (drag?.picked?.has(r.key) ? " picked" : "")
     + (movable ? " movable" : "") + dropClass(drag, r.key) + (drag?.dragging?.has(r.key) ? " dragged" : "")
     // A row whose pinned copy is on show at the top: hidden under it, so no half of it peeks
@@ -555,6 +555,9 @@ export default function TreePane({
     nameOf: (r) => label(r),
   });
   const pinnedKeys = useMemo(() => new Set(pins), [pins]);
+  // More levels above the first row than there's room to pin (two rows on a phone): the top one
+  // and the nearest are pinned, with a mark between them for the levels left out.
+  const pinGap = pinsSkip(display, index, pins);
   // A little blank space at the end, so the furthest the tree scrolls is a whole number of
   // rows: then a row brought into view at the end (reveal rounds to whole rows) sits on a
   // row's edge too, and no half row peeks out under the rows pinned at the top.
@@ -873,11 +876,11 @@ export default function TreePane({
           {pins.length > 0 && (
             <div className="tp-pins" style={{ top: headH }}>
               <div className="tp-pins-in">
-                {pins.map((k) => {
+                {pins.map((k, n) => {
                   const v = list[index.get(k)];
                   const r = display.rows.get(k);
                   return (
-                    <Row key={k} v={v} r={r} height={H} open={open.has(k)} focused={k === focus} pinned {...rowProps} {...menuProps(k)} pinRoot={pinRootOf(k)}
+                    <Row key={k} v={v} r={r} height={H} open={open.has(k)} focused={k === focus} pinned pinGap={n === 1 && pinGap} {...rowProps} {...menuProps(k)} pinRoot={pinRootOf(k)}
                          onPick={(key) => { onPick(key, {}); reveal(key, true); }} />
                   );
                 })}
