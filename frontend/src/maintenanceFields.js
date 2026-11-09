@@ -1,7 +1,7 @@
 // Reliafy Maintenance: showing the structured fields (dates known only roughly,
 // costs, warranties, document links) honestly, and reading them from forms.
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+import { MONTHS } from "./dates.js";
 
 export const PRECISIONS = [
   { id: "exact", label: "Exact day" },

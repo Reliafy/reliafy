@@ -3,6 +3,7 @@
 // logic behind the spectrum chart and its player, kept apart from the screen so
 // they can be tested.
 
+import { formatDate, formatDateTime } from "./dates.js";
 import { measurementAddress } from "./measurementsTab.js";
 
 // ---- the player ---------------------------------------------------------------------
@@ -346,9 +347,7 @@ export function fmtMB(bytes) {
 
 export function fmtWhen(iso, { time = true } = {}) {
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const opts = { day: "numeric", month: "short", year: "numeric", ...(time ? { hour: "2-digit", minute: "2-digit" } : {}) };
-  return d.toLocaleString("en-GB", opts);
+  return time ? formatDateTime(d) : formatDate(d);
 }
 
 // Which snapshots to offer in the picker when there are many: all of them are

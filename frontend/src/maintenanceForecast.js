@@ -1,5 +1,6 @@
 // A position class's failure forecast (#407): how its periods, ranges and
 // spares read on the class page.
+import { formatDate, formatMonth } from "./dates.js";
 import { formatNumber, formatPercent } from "./format.js";
 
 export const FORECAST_PERIODS = [
@@ -17,8 +18,8 @@ export function periodLabels(rows = [], period = "month") {
   return rows.map((r) => {
     const d = day(r.start);
     const y = d.getUTCFullYear();
-    if (period === "year") return d.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
-    const text = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+    if (period === "year") return formatMonth(d, { utc: true });
+    const text = formatDate(d, { utc: true, year: false });
     const label = y !== year ? `${text} ${y}` : text;
     year = y;
     return label;

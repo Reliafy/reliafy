@@ -9,13 +9,14 @@ import { AvailabilityView } from "../components/RbdCalculator.jsx";
 import { pctDigits } from "../components/availabilityPrecision.js";
 import { unitInText } from "../components/unitText.js";
 import { formatNumber } from "../format.js";
+import { formatDateTime } from "../dates.js";
 import { byText, jobStatusLine, runsPath, runtimeVsQuote, statusChip, viaText } from "../rbdRuns.js";
 import "../components/RbdRuns.css";
 import { RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
 import { PageTitle } from "../components/usePageTitle.js";
 
 const when = (iso) =>
-  iso ? new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+  iso ? formatDateTime(new Date(iso)) : "—";
 
 // "±0.012 points, within the target" / "not reached within the time budget".
 function precisionText(p) {

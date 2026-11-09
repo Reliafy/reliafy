@@ -10,6 +10,7 @@ import { StorageCapNotice } from "../components/StorageCap.jsx";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { ACCENT } from "../plotTheme.js";
+import { formatDate } from "../dates.js";
 import CovariateCalculator from "../components/CovariateCalculator.jsx";
 import { TRIGGER_WORDS, isCovariate, modeRows, modelShape, modelWords, unitShort } from "../covariate.js";
 import {
@@ -637,7 +638,7 @@ export function LibraryRecord() {
                   {link ? (link.exists
                     ? <>, a snapshot of the model <Link to={`/models/m/${link.id}`}>{link.name}</Link> when it was added</>
                     : <>, a snapshot of the model {link.name || rec.model?.name} (since deleted) when it was added</>) : ""}
-                  {rec.created_at ? ` on ${new Date(rec.created_at).toLocaleDateString("en-AU")}` : ""}.
+                  {rec.created_at ? ` on ${formatDate(new Date(rec.created_at))}` : ""}.
                   {" "}A later refit of the model doesn’t change this record.
                 </p>
                 {lib.notes ? <p className="lib-notes rim-tquiet">{lib.notes}</p> : <p className="rim-tquiet">No notes or licence text on this library yet.</p>}

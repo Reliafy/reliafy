@@ -8,6 +8,7 @@ import {
   DOCUMENT_KINDS, MAX_DOCUMENT_MB, PRECISIONS, datedText, daysText, documentFileProblem, fileSizeText,
   roughDateInput, roughDateValue, safeHref,
 } from "../maintenanceFields.js";
+import { formatDate } from "../dates.js";
 import { locationOptions } from "../maintenanceLocations.js";
 import { SHORT_TEXT, lengthNote } from "../maintenanceText.js";
 import Modal from "./Modal.jsx";
@@ -16,8 +17,7 @@ import Modal from "./Modal.jsx";
 
 export function fmtDate(iso) {
   if (!iso) return "—";
-  const d = new Date(`${iso}T00:00:00`);
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return formatDate(iso) || String(iso);
 }
 
 // A date as it's known: "2022", "Mar 2022", "~Mar 2022", or the day.

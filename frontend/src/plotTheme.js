@@ -35,10 +35,18 @@ export const COLORWAY = [ACCENT, "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#0
 
 const FONT = '"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
+// Date axes read day first: Plotly's own tick and hover text is "Nov 1, 2026".
+// The rest of the locale (numbers, month names) is Plotly's English.
+export const DATE_LOCALE = {
+  locale: "en-GB",
+  locales: { "en-GB": { format: { dayMonth: "%-d %b", dayMonthYear: "%-d %b %Y" } } },
+};
+
 export const PLOT_CONFIG = {
   displayModeBar: false,
   displaylogo: false,
   responsive: true,
+  ...DATE_LOCALE,
 };
 
 // Shared by every x/y axis (xaxis, yaxis, xaxis2, …).

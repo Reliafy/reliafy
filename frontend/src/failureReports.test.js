@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CONSEQUENCES, DEFAULT_FILTERS, OPEN_STATUSES, STATUSES, STATUS_CHIPS, canMoveTo, closeBlock, consequenceLabel,
-  consequenceShort, countsSentence, defaultFoundBy, filtering, historyRows, isOpen, itemText, levelText, nextStatus,
+  consequenceShort, countsSentence, defaultFoundBy, filtering, fmtWhen, historyRows, isOpen, itemText, levelText, nextStatus,
   positionsInScope, queryParams, repeatSentence, scopeOf, signOffText, statusLabel,
 } from "./failureReports.js";
 import { buildDisplay } from "./assetTree.js";
@@ -124,4 +124,12 @@ test("the positions a report can be filed at from a row", () => {
   const u1 = { key: "u1", type: "item", ref: { id: "u1", name: "Pump unit", fitted_to: { id: "pump", name: "Filter pump" } }, kids: [], parent: null };
   assert.deepEqual(positionsInScope(d, u1).map((p) => p.id), ["pump"]);
   assert.deepEqual(positionsInScope(null, null), []);
+});
+
+test("a history line's time reads day first on a 24-hour clock", () => {
+  // No zone on the timestamp: the viewer's own, so the same on any machine.
+  assert.equal(fmtWhen("2026-11-01T14:05:00"), "1 Nov 2026, 14:05");
+  assert.equal(fmtWhen("2026-11-01T08:04:00"), "1 Nov 2026, 08:04");
+  assert.equal(fmtWhen(""), "");
+  assert.equal(fmtWhen("some time ago"), "some time ago");
 });

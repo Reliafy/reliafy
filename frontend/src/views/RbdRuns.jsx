@@ -4,6 +4,7 @@ import { listRbdRunDiagrams, listRbdRuns } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import Chip from "../components/ui/Chip.jsx";
+import { formatDateTime } from "../dates.js";
 import { relativeTime } from "../instrument.js";
 import { availabilityText, byText, keptLine, runtimeText, statusChip, viaText } from "../rbdRuns.js";
 import "../components/RbdRuns.css";
@@ -132,7 +133,7 @@ export default function RbdRuns() {
                         onChange={() => toggle(r.run_id)}
                       />
                     </td>
-                    <td className="lib-date" title={r.created_at ? new Date(r.created_at).toLocaleString() : ""}>
+                    <td className="lib-date" title={r.created_at ? formatDateTime(new Date(r.created_at)) : ""}>
                       <RowLink to={`/systems/runs/${r.run_id}`} aria-label={`Open the run from ${relativeTime(r.created_at)}`}>{relativeTime(r.created_at)}</RowLink>
                     </td>
                     {!rbdId && <td className="rbd-runs-name">{r.rbd_name || "Unsaved diagram"}</td>}

@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js-basic-dist-min";
-import { INK, SURFACE, chartFileName, themedConfig, themedLayout } from "../plotTheme.js";
+import { DATE_LOCALE, INK, SURFACE, chartFileName, themedConfig, themedLayout } from "../plotTheme.js";
 
 const PlotlyPlot = createPlotlyComponent(Plotly);
 
@@ -50,7 +50,7 @@ async function downloadImage(gd, title, format) {
     height: height + 48,
   };
   const size = { width: 1000, height: height + 48, scale: format === "png" ? 2 : 1 };
-  const url = await Plotly.toImage({ data: gd.data, layout }, { format, ...size });
+  const url = await Plotly.toImage({ data: gd.data, layout, config: DATE_LOCALE }, { format, ...size });
   const a = document.createElement("a");
   a.href = url;
   a.download = chartFileName(title, format);

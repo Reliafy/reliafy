@@ -9,6 +9,7 @@ import { COLORWAY, bandPair, fitLine } from "../plotTheme.js";
 import { rollingMean } from "../components/RbdCalculator.jsx";
 import { unitInText } from "../components/unitText.js";
 import { formatNumber } from "../format.js";
+import { formatDateTime } from "../dates.js";
 import { availabilityText, compareSummary, runsPath, runtimeText } from "../rbdRuns.js";
 import { availabilityPct } from "../components/availabilityPrecision.js";
 import "../components/RbdRuns.css";
@@ -16,7 +17,7 @@ import { RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
 import { RowLink, rowOpen } from "../components/LibRows.jsx";
 
 const when = (iso) =>
-  iso ? new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+  iso ? formatDateTime(new Date(iso), { year: false }) : "—";
 
 function tint(hex, alpha) {
   const n = parseInt(hex.slice(1), 16);
