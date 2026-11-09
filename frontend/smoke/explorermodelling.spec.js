@@ -267,7 +267,6 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
 test("an RBD row opens in the table area: reload, edit and save, unsaved changes, rebuild, link another", async ({ page, request, problems }) => {
   const tag = `ro${Date.now()}`;
   const st = await station(request, tag);
-  const other = await postOk(request, `${M}/positions`, { name: `Neighbour ${tag}` });
   const built = await postOk(request, `${M}/positions/${st.id}/models`, { build_rbd: true });
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${st.id}&tab=models`);
@@ -299,8 +298,9 @@ test("an RBD row opens in the table area: reload, edit and save, unsaved changes
   await discard.getByRole("button", { name: "Keep editing" }).click();
   await expect(pane).toBeVisible();
   await expect(nodes).toHaveCount(count + 1);
-  // Another row asks too.
-  await row(page, other.id).locator(".tp-nm").click();
+  // Another row asks too. (A row beside this one: a new root can be far down a long tree that only
+  // draws the rows in view, as on CI with every other test's plants.)
+  await page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Pump B ${tag}` }) }).locator(".tp-nm").click();
   await expect(discard).toBeVisible();
   await discard.getByRole("button", { name: "Keep editing" }).click();
   await expect(pane).toBeVisible();
