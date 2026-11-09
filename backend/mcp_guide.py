@@ -156,6 +156,12 @@ tests), costs (downtime_rate, horizon, discount_rate) and production (capacity d
 common_cause_beta on a stage, or edit add_ccf (mgl for 3+ members).
 - Non-repairable extras: phases (a phased mission), network (an undirected two-terminal network), \
 covariate_schedules on a block with a saved regression model.
+- Missions: change rbd_mission adds named phased missions to a diagram (several over the same blocks, e.g. \
+"Corridor inspection", "Survey grid"); each phase has a duration, not_needed blocks, votes (k-of-n per \
+phase) and values {covariate name: value} for the Use / Environment covariates its bound blocks left open \
+(block_values {block id: {key: value}} for one block). Blocks age across the whole mission. analyse \
+rbd_mission lists those covariates with the blocks each feeds, then gives the chance of completing it, per \
+phase, and each phase's weakest block; a phase missing a value waits (needs).
 - Condition and life block (non-repairable diagrams only, one component block per unit): model = \
 {saved_model_id: <joint model id>, joint_unit: {id: <running unit id>}} or joint_unit {age, readings: [[age, \
 value], ...], covariates}. The block runs from its unit's age now: at mission time t its reliability is the \

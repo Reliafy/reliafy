@@ -17,8 +17,14 @@ A diagram holds its phases as::
       {"name": "Take-off", "duration": 0.1,
        "not_needed": ["c3"],         # blocks this phase doesn't need
        "votes": {"k1": 2}},          # a vote node's required count in this phase
-      {"name": "Cruise", "duration": 5}
+      {"name": "Cruise", "duration": 5,
+       "values": {"Temperature": 15},          # Use / Environment values for the phase
+       "block_values": {"c2": {"temp_C": 40}}} # one block's own, over the phase's
     ]
+
+A diagram can hold more missions over the same blocks (``missions``: each with
+an id, a name and phases like these; :mod:`.rbd_missions`); ``phases`` itself
+is the diagram's own mission, as it always was.
 
 Each phase's diagram is the drawn diagram with:
 
@@ -30,10 +36,13 @@ Each phase's diagram is the drawn diagram with:
 * each vote node's required count taken from ``votes`` where given.
 
 Blocks pinned working or failed are perfectly reliable or failed throughout.
-What the engine has no place for is refused in plain words rather than
-approximated: common-cause groups (a phased mission doesn't model them), a
-repairable diagram, and a stress level per phase (every block keeps one life
-model through the mission).
+Covariates set per phase (``values``, ``block_values``) reach the blocks whose
+covariates were left open at their positions (:mod:`.covariate_binding`): such
+a block's life then follows its phases' values along the mission's clock, its
+age carried from one phase into the next (:mod:`.rbd_missions`). What the
+engine has no place for is refused in plain words rather than approximated:
+common-cause groups (a phased mission doesn't model them) and a repairable
+diagram.
 """
 
 from __future__ import annotations
@@ -56,8 +65,11 @@ SIM_MISSIONS = 20_000
 SIM_SEED = 1
 SIM_CONFIDENCE = 0.95
 
-STRESS_NOTE = ("Each block keeps one non-repairable model through the whole mission: a stress level per phase isn't "
-               "modelled.")
+STRESS_NOTE = ("Each block keeps one non-repairable model through the whole mission, ageing from the start of the "
+               "first phase to the end of the last.")
+#: When some blocks' covariates change from phase to phase.
+PHASE_VALUES_NOTE = ("Blocks whose covariates change from phase to phase carry their age into each phase: a block "
+                     "wears faster in a harsher phase, and that wear stays with it for the rest of the mission.")
 #: With covariate schedules (#52): those blocks follow their schedule through
 #: the phases (it is a function of mission time); the others keep one model.
 SCHEDULE_NOTE = ("Blocks with a covariate schedule follow it through the mission, so their stress changes "
@@ -103,6 +115,70 @@ def _votes(value, where: str) -> dict[str, int]:
     return out
 
 
+#: The most covariate values a phase may set (its own, and per block).
+MAX_VALUES = 200
+
+
+def _value(v, what: str):
+    """One covariate value: a finite number, or a choice's code (text). None for blank."""
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None
+    if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+        raise PhaseError(f"{what} must be a number (or a choice).")
+    if isinstance(v, str):
+        text = v.strip()[:MAX_NAME]
+        try:
+            number = float(text)
+        except ValueError:
+            return text
+        v = number
+    v = float(v)
+    if not math.isfinite(v):
+        raise PhaseError(f"{what} must be a finite number.")
+    return v
+
+
+def _values(raw, where: str) -> dict:
+    """A phase's Use and Environment values, set once for the phase: {covariate name: value}."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise PhaseError(f"{where}: values maps a covariate's name to its value in this phase.")
+    if len(raw) > MAX_VALUES:
+        raise PhaseError(f"{where}: at most {MAX_VALUES} values.")
+    out = {}
+    for key, v in raw.items():
+        name = " ".join(str(key or "").split())[:MAX_NAME]
+        if not name:
+            raise PhaseError(f"{where}: a value needs the covariate's name.")
+        value = _value(v, f"{where}: {name}")
+        if value is not None:
+            out[name] = value
+    return out
+
+
+def _block_values(raw, where: str) -> dict:
+    """A phase's values for single blocks, over the phase's own: {block id: {input key: value}}."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise PhaseError(f"{where}: block_values maps a block's id to its own values in this phase.")
+    out = {}
+    for nid, vals in raw.items():
+        if not isinstance(vals, dict):
+            raise PhaseError(f"{where}: block_values for '{nid}' must map an input to its value.")
+        got = {}
+        for key, v in vals.items():
+            value = _value(v, f"{where}: {key} of block '{nid}'")
+            if value is not None and str(key).strip():
+                got[str(key).strip()] = value
+        if got:
+            out[str(nid)] = got
+    if sum(len(v) for v in out.values()) > MAX_VALUES:
+        raise PhaseError(f"{where}: at most {MAX_VALUES} block values.")
+    return out
+
+
 def parse_phases(raw) -> list[dict]:
     """The phases in their clean stored shape. Raises :class:`PhaseError`."""
     if raw is None:
@@ -137,6 +213,12 @@ def parse_phases(raw) -> list[dict]:
         votes = _votes(phase.get("votes"), where)
         if votes:
             clean["votes"] = votes
+        values = _values(phase.get("values"), where)
+        if values:
+            clean["values"] = values
+        block_values = _block_values(phase.get("block_values"), where)
+        if block_values:
+            clean["block_values"] = block_values
         out.append(clean)
     return out
 
@@ -147,14 +229,19 @@ def carry(graph: dict, out: dict) -> None:
     setting that can't be read."""
     from backend.services.rbd_graph import GraphError
 
-    if not graph.get("phases"):
-        return
+    from backend.services import rbd_missions
+
+    if graph.get("phases"):
+        try:
+            phases = parse_phases(graph["phases"])
+        except PhaseError as exc:
+            raise GraphError(str(exc)) from None
+        if phases:
+            out["phases"] = phases
     try:
-        phases = parse_phases(graph["phases"])
-    except PhaseError as exc:
+        rbd_missions.carry(graph, out)
+    except rbd_missions.MissionError as exc:
         raise GraphError(str(exc)) from None
-    if phases:
-        out["phases"] = phases
 
 
 def apply_set(graph: dict, op: dict) -> list[str]:
@@ -180,6 +267,7 @@ def apply_set(graph: dict, op: dict) -> list[str]:
 
 
 def has_phases(graph: dict) -> bool:
+    """Has the diagram's own phased mission (``phases``)."""
     return bool(isinstance(graph, dict) and graph.get("phases"))
 
 
@@ -227,29 +315,8 @@ def _stand_in(nid: str, j: int) -> str:
     return f"{nid}~phase{j + 1}"
 
 
-def build_mission(
-    graph: dict,
-    resolve_subsystem: Optional[Callable[[str], dict]] = None,
-    resolve_model=None,
-    covariates: Optional[dict] = None,
-):
-    """``(PhasedMission, phases, labels, notes)`` for a diagram with phases;
-    ``notes`` are the covariate schedules' warnings (#52). Raises
-    :class:`AnalysisError` in plain words for what a phased mission can't
-    take."""
-    from repyability import PhasedMission
-    from repyability.rbd.helper_classes import PerfectReliability, PerfectUnreliability
-    from repyability.rbd.non_repairable_rbd import NonRepairableRBD
-
-    from backend.services import rbd_analysis as ra
-
-    try:
-        phases = parse_phases(graph.get("phases"))
-    except PhaseError as exc:
-        raise AnalysisError(f"The diagram's phases can't be read: {exc}") from None
-    if not phases:
-        raise AnalysisError("The diagram has no phases yet. Add the mission's phases (each with a name and a "
-                            "duration) under ⋯ → Phased mission.")
+def _refuse(graph: dict) -> None:
+    """What a phased mission can't be worked out on, in plain words (AnalysisError)."""
     if graph.get("repairable"):
         raise AnalysisError("A phased mission is analysed on a non-repairable diagram: in a repairable one "
                             "failed blocks are repaired, which a phased mission doesn't model.")
@@ -260,8 +327,41 @@ def build_mission(
         raise AnalysisError("A phased mission doesn't model common-cause groups, so it can't be analysed with "
                             "them. Remove the diagram's common-cause groups to analyse the mission.")
 
-    rbd, labels, node_types, reliabilities, working, broken, _ = ra._build_rbd(
-        graph, resolve_subsystem, None, resolve_model, covariates)
+
+def build_mission(
+    graph: dict,
+    resolve_subsystem: Optional[Callable[[str], dict]] = None,
+    resolve_model=None,
+    covariates: Optional[dict] = None,
+    phases: Optional[list] = None,
+    perfect: frozenset = frozenset(),
+    built: Optional[tuple] = None,
+):
+    """``(PhasedMission, phases, labels, notes)`` for a diagram with phases
+    (``phases``: these instead of the diagram's own); ``notes`` are the
+    covariate schedules' warnings (#52). ``perfect``: blocks held perfectly
+    reliable throughout (what a block costs the mission). ``built``: the
+    diagram's blocks already built (``_build_rbd``'s result), so holding one
+    block perfect doesn't build every model again. Raises
+    :class:`AnalysisError` in plain words for what a phased mission can't
+    take."""
+    from repyability import PhasedMission
+    from repyability.rbd.helper_classes import PerfectReliability, PerfectUnreliability
+    from repyability.rbd.non_repairable_rbd import NonRepairableRBD
+
+    from backend.services import rbd_analysis as ra
+
+    try:
+        phases = parse_phases(graph.get("phases") if phases is None else phases)
+    except PhaseError as exc:
+        raise AnalysisError(f"The mission's phases can't be read: {exc}") from None
+    if not phases:
+        raise AnalysisError("The mission has no phases yet. Add its phases, each with a name and a duration.")
+    _refuse(graph)
+
+    if built is None:
+        built = ra._build_rbd(graph, resolve_subsystem, None, resolve_model, covariates)
+    rbd, labels, node_types, reliabilities, working, broken, _ = built
     from backend.services import rbd_tvc
 
     notes = rbd_tvc.notes_of(reliabilities)
@@ -286,6 +386,9 @@ def build_mission(
         base[nid] = PerfectReliability
     for nid in broken:
         base[nid] = PerfectUnreliability
+    for nid in perfect:
+        if nid in base:
+            base[nid] = PerfectReliability
 
     built = []
     for j, phase in enumerate(phases):
@@ -328,17 +431,33 @@ def _plain_unit(graph: dict) -> str:
     return (graph.get("unit") or "").strip()
 
 
+#: The most blocks whose part in each phase's failures is worked out (one
+#: mission per block): beyond it the weakest block per phase isn't given.
+MAX_WEAKEST_BLOCKS = 60
+
+
 def analyze_phases(
     graph: dict,
     resolve_subsystem: Optional[Callable[[str], dict]] = None,
     resolve_model=None,
     covariates: Optional[dict] = None,
+    phases: Optional[list] = None,
+    varying: frozenset = frozenset(),
+    weakest: bool = False,
 ) -> dict:
     """The mission's reliability, each phase's chance of being where the
     mission fails, the reliability at the end of each phase, and the riskiest
     phase. Exact where the decision diagram fits; otherwise simulated (with
-    an interval), and the result says which."""
-    mission, phases, labels, schedule_notes = build_mission(graph, resolve_subsystem, resolve_model, covariates)
+    an interval), and the result says which. ``phases``: these instead of the
+    diagram's own; ``varying``: the blocks whose covariates change by phase
+    (for the notes); ``weakest``: add each phase's weakest block (exact
+    missions only)."""
+    from backend.services import rbd_analysis as ra
+
+    _refuse(graph)
+    built = ra._build_rbd(graph, resolve_subsystem, None, resolve_model, covariates)
+    mission, phases, labels, schedule_notes = build_mission(graph, resolve_subsystem, resolve_model, covariates,
+                                                            phases=phases, built=built)
     interval = None
     reason = None
     try:
@@ -403,31 +522,80 @@ def analyze_phases(
         "riskiest": ({"name": riskiest["name"], "failure_probability": riskiest["failure_probability"],
                       "share": riskiest["share"]} if riskiest else None),
         "notes": ([SCHEDULE_NOTE, *schedule_notes] if any((n.get("data") or {}).get("covariate_schedules")
-                                                          for n in graph.get("nodes") or [])
-                  else [STRESS_NOTE]),
+                                                          for n in graph.get("nodes") or [] if n.get("id") not in varying)
+                  else [STRESS_NOTE]) + ([PHASE_VALUES_NOTE, *schedule_notes] if varying else []),
     }
     if interval is not None:
         out["interval"] = interval
     if reason:
         out["method_reason"] = reason
+    if weakest:
+        _add_weakest(out, graph, resolve_subsystem, resolve_model, covariates, phases, built, labels)
     return out
 
 
+def _candidates(graph: dict, built: tuple) -> list[str]:
+    """The blocks that can fail: every component the diagram built a model for (not its vote
+    nodes, junctions, repeated copies, or blocks pinned working or failed)."""
+    _, _, node_types, reliabilities, working, broken, _ = built
+    repeats, _ = rbd_repeats.find_repeats(graph.get("nodes") or [])
+    out = []
+    for n in graph.get("nodes") or []:
+        nid = n.get("id")
+        if (nid not in reliabilities or nid in repeats or nid in working or nid in broken
+                or node_types.get(nid) in ("knode", "input", "output")):
+            continue
+        out.append(nid)
+    return out
+
+
+def _add_weakest(out: dict, graph: dict, resolve_subsystem, resolve_model, covariates, phases, built,
+                 labels) -> None:
+    """Each phase's weakest block: the one whose failures end the most missions in that phase. For
+    each block, the mission is worked out again with that block never failing; the fall in the
+    chance of failing in each phase is the block's part in it (those parts add up, over the phases,
+    to how much the mission's reliability would rise). Exact missions only."""
+    rows = out["phases"]
+    if out["method"] != "exact" or out["unreliability"] <= 0:
+        if out["method"] != "exact":
+            out["weakest_note"] = "The weakest block per phase is worked out for missions solved exactly."
+        return
+    blocks = _candidates(graph, built)
+    if len(blocks) > MAX_WEAKEST_BLOCKS:
+        out["weakest_note"] = (f"The weakest block per phase is worked out for up to {MAX_WEAKEST_BLOCKS} blocks; "
+                               f"this diagram has {len(blocks)}.")
+        return
+    base = [r["failure_probability"] for r in rows]
+    best: list = [None] * len(rows)
+    for nid in blocks:
+        try:
+            mission, _, _, _ = build_mission(graph, resolve_subsystem, resolve_model, covariates, phases=phases,
+                                             perfect=frozenset({nid}), built=built)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                failing = mission.phase_failure_probabilities()
+        except (AnalysisError, NotImplementedError, ValueError):
+            continue
+        for j, phase in enumerate(phases):
+            part = base[j] - float(max(failing.get(phase["name"], 0.0), 0.0))
+            if part > 1e-15 and (best[j] is None or part > best[j]["part"]):
+                best[j] = {"id": nid, "label": labels.get(nid, nid), "part": part,
+                           "share": part / base[j] if base[j] > 0 else 0.0}
+    for row, b in zip(rows, best):
+        row["weakest"] = b
+
+
 def analyze_for_owner(db, graph: dict, owner_id, covariates: Optional[dict] = None) -> dict:
-    """:func:`analyze_phases` with sub-systems and saved models resolved in
-    the caller's scope, exactly as ``rbds.analyze_graph`` resolves them."""
-    from backend.services import models as models_service
-    from backend.services import rbds as rbds_service
+    """The diagram's own phased mission (``phases``) for the caller: sub-systems and saved models
+    resolved in their scope, as ``rbds.analyze_graph`` resolves them, and blocks whose covariates
+    were left open at their positions given the phases' values (:mod:`.rbd_missions`). A phase
+    still missing a value stops it, saying which blocks need what."""
+    from backend.services import rbd_missions
 
-    def resolve_subsystem(sub_id: str) -> dict | None:
-        sub = rbds_service.get_rbd(db, sub_id, owner_id)
-        return sub.graph if sub is not None else None
-
-    def resolve_model(model_id: str) -> dict | None:
-        return models_service.get_live_model(db, model_id, owner_id)
-
-    return analyze_phases(graph, resolve_subsystem=resolve_subsystem, resolve_model=resolve_model,
-                          covariates=covariates)
+    result = rbd_missions.analyze(db, owner_id, graph, graph.get("phases"), covariates=covariates)
+    if result.get("needs"):
+        raise AnalysisError(rbd_missions.needs_message(result["needs"]))
+    return result
 
 
 def agent_summary(result: dict) -> dict:
@@ -436,11 +604,16 @@ def agent_summary(result: dict) -> dict:
         "method": result["method"],
         "mission_reliability": result["reliability"],
         "mission_duration": result["duration"],
-        "phases": [{k: r[k] for k in ("name", "duration", "end", "failure_probability", "reliability_at_end",
-                                      "conditional_failure") if k in r} for r in result["phases"]],
+        "phases": [{**{k: r[k] for k in ("name", "duration", "end", "failure_probability", "reliability_at_end",
+                                         "conditional_failure", "waiting") if k in r},
+                    **({"weakest_block": r["weakest"]["label"], "weakest_share": r["weakest"]["share"]}
+                       if r.get("weakest") else {})} for r in result["phases"]],
         "riskiest_phase": (result.get("riskiest") or {}).get("name"),
         "notes": list(result.get("notes") or []),
     }
+    if result.get("needs"):
+        out["needs"] = result["needs"]
+        out["through"] = result.get("through")
     if result.get("interval"):
         out["interval"] = result["interval"]
     if result.get("method_reason"):
