@@ -15,6 +15,10 @@ const SIGNED_IN = [
   ["POST", "/api/maintenance/rcm/interval/failure-finding"],
   // Life models on positions (the Explorer's Modelling tab).
   ["GET", "/api/maintenance/position-models"],
+  // The data library as models and priors (Models › Library).
+  ["POST", "/api/models/from-library"],
+  ["GET", "/api/library/used"],
+  ["POST", "/api/models/fit-with-prior"],
   // Reliability prediction: the parts count, the saved predictions, a product's parts list.
   ["POST", "/api/predictions/compute"],
   ["POST", "/api/predictions"],

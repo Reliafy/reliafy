@@ -249,6 +249,8 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
           nextIdRef={calcNextId}
           name={label}
           paramLabel={isRegression ? (p) => paramView(baselineOf(result), p).label : null}
+          ciLabel={result.method === "library" ? "Source's 5–95%" : "95%"}
+          ciNote={result.method === "library" ? result.ci_note : null}
         />
       );
       break;

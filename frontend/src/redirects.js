@@ -28,6 +28,8 @@ const EXPLORER = "/asset-register/explorer";
 const tabAt = (query) => (EXPLORER_PARTS_CLASSES_TABS ? `${EXPLORER}?${query}` : EXPLORER);
 
 export const MOVED = [
+  // The reliability data library moved from Data to Models (9 Nov 2026): its records are models.
+  { path: "/data/library", to: "/models/library" },
   // Modelling → Analyse › Models and Analyse › Data.
   { path: "/modelling", to: "/models" },
   { path: "/modelling/models", to: "/models" },

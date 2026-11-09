@@ -158,7 +158,12 @@ def fit(m, db, owners, hidden, position_id: str, data: str = "position", method:
 
     base = None
     unit = "days"
-    if method == "bayes" and prior.get("kind") == "around":
+    if method == "bayes" and prior.get("kind") == "library":
+        from backend.maintenance import library_models
+
+        base = library_models.prior_base(prior, distribution)
+        unit, distribution = base["unit"], base["distribution"]
+    elif method == "bayes" and prior.get("kind") == "around":
         base = around_prior(prior, distribution)
         unit = base.get("unit") or "days"
         distribution = base["distribution"]
@@ -219,6 +224,8 @@ def _fit_on(m, db, p, position_id, data, method, prior, distribution, modes, tex
                 base, priors, extra = _class_prior(sp, distribution, class_rows, trust, cls, unit, force_wide=True)
         elif base.get("source") == "around":
             priors, extra = base["priors"], ""
+        elif base.get("source") == "library":
+            priors, extra = base["priors"], base["note"]
         else:
             # An earlier update as the prior carries its own (bayes_life.update reads its recipe).
             priors, extra = (None if base["source"] == "update" else bl.priors_for(base, trust)), ""

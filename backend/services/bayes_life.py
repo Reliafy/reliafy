@@ -238,7 +238,44 @@ def given_rows(x, c) -> list[dict]:
 # ---- the update -------------------------------------------------------------------------
 
 def _fit(dist_id: str, x, c, priors, unit):
-    return DISTS[dist_id].fit_bayes(x, c, priors=priors, unit=unit or None)
+    model = DISTS[dist_id].fit_bayes(x, c, priors=priors, unit=unit or None)
+    ex = getattr(getattr(model, "posterior", None), "exact", None) or {}
+    return _StableLomax(model, ex) if ex.get("family") == "gamma" else model
+
+
+class _StableLomax:
+    """An exponential with a gamma prior, whose predictive is closed form (Lomax): S(x) = (b / (b + x))^a,
+    h(x) = a / (b + x). SurPyval 0.26 works out its density as a * b**a / (b + x)**(a + 1) in plain floats,
+    which overflows (and so fails sf, hf, ... alike) when b is large: a library record's gamma on a rate
+    per hour has b near 1e9 hours, and a above about 33 then overflows. These five are worked out here on
+    the log scale; everything else is the SurPyval model's."""
+
+    def __init__(self, model, exact: dict):
+        self._model = model
+        self._a, self._b = (float(v) for v in exact["params"])
+
+    def __getattr__(self, name):
+        return getattr(self._model, name)
+
+    def _at(self, x, fn):
+        x = np.asarray(x, dtype=float)
+        xs = np.maximum(np.nan_to_num(x, nan=0.0), 0.0)
+        return np.where(np.isnan(x), np.nan, fn(xs))
+
+    def sf(self, x):
+        return self._at(x, lambda t: np.exp(-self._a * np.log1p(t / self._b)))
+
+    def ff(self, x):
+        return self._at(x, lambda t: -np.expm1(-self._a * np.log1p(t / self._b)))
+
+    def hf(self, x):
+        return self._at(x, lambda t: self._a / (self._b + t))
+
+    def Hf(self, x):  # noqa: N802 - SurPyval's name
+        return self._at(x, lambda t: self._a * np.log1p(t / self._b))
+
+    def df(self, x):
+        return self._at(x, lambda t: self._a / (self._b + t) * np.exp(-self._a * np.log1p(t / self._b)))
 
 
 def rebuild(spec: dict):
@@ -354,7 +391,7 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None,
     result["moved"] = _moved(base, post, rows, unit)
     u = _unit_word(unit)
     b = result["b10"]
-    how = ("its earlier prior" if base["source"] == "update" else "as stated" if base["source"] in ("around", "belief")
+    how = ("its earlier prior" if base["source"] == "update" else "as stated" if base["source"] in ("around", "belief", "library")
            else t["label"].lower())
     result["words"] = (f"{result['moved']} Starting from {base['name']} ({how}), "
                        f"the position's best B10 is about {num(b['point'])}{(' ' + u) if u else ''}: there's a "

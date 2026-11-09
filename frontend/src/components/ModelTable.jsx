@@ -21,6 +21,7 @@ import {
 } from "../explorerModels.js";
 import "./MeasurementTable.css";
 import "./ModelTable.css";
+import { LibraryPicker } from "./LibraryParts.jsx";
 
 // The Explorer's Modelling tab is the tree with each position's life models in it
 // (explorerModels.js), like the RCM and Measurements tabs. This file has what the page
@@ -452,6 +453,37 @@ export function ParamsModal({ position, onClose, onDone }) {
         ))}
       </div>
       <Field label="Name"><TextInput value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      {failed && <p className="field-error" role="alert">{failed}</p>}
+    </Modal>
+  );
+}
+
+// Life model › From the data library…: a record attached as the position's model (a rate per hour
+// becomes an exponential with the source's 5–95% range, cited); per-demand and handbook records say why not.
+export function LibraryAttachModal({ position, onClose, onDone }) {
+  const [rec, setRec] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(null);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const made = await linkPositionModel(position.id, { library_record_id: rec.id });
+      onDone(made, `Attached ${rec.label} (${rec.source}) to ${position.name}.`);
+    } catch (e) {
+      setBusy(false);
+      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
+    }
+  };
+  return (
+    <Modal title="From the data library" onClose={onClose} locked={busy} trapFocus className="ml-dialog"
+           footer={(
+             <>
+               <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+               <button type="button" onClick={save} disabled={busy || !rec} aria-busy={busy || undefined}>{busy ? "Attaching…" : "Attach"}</button>
+             </>
+           )}>
+      <p className="rw-fhelp">A published failure rate as {position.name}’s model: an exponential at the record’s mean rate, its 5–95% range as the source’s uncertainty, and the record cited.</p>
+      <LibraryPicker value={rec?.id} onPick={setRec} use="model" />
       {failed && <p className="field-error" role="alert">{failed}</p>}
     </Modal>
   );

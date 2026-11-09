@@ -3382,3 +3382,28 @@ export function previewPositionFit(positionId, body) {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
 }
+
+// ---- The reliability data library under Models -------------------------------------------
+export function getLibrarySources() {
+  return request("/api/library/sources");
+}
+export function getLibraryRecord(recordId) {
+  return request(`/api/library/records/${encodeURIComponent(recordId)}`);
+}
+// A record saved as a model in the user's models (a rate → an exponential, cited).
+export function createModelFromLibrary(recordId, name) {
+  return request("/api/models/from-library", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ record_id: recordId, ...(name ? { name } : {}) }),
+  });
+}
+// The records behind the user's latest models from the library.
+export function getLibraryUsed() {
+  return request("/api/library/used");
+}
+// A saved dataset fitted with a library record as the prior: previewed, or saved with save true.
+export function fitDatasetWithPrior(body) {
+  return request("/api/models/fit-with-prior", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+}

@@ -285,7 +285,17 @@ history as a power prior, SurPyval's `prior.from_data`, weighed by `trust`:
 model_id}`, `{kind: params, distribution, params, unit}`, `{kind: around,
 distribution, unit, params: {alpha: {about: 4, between: [3, 6]}, beta:
 {between: [1.5, 3]}}}` (90% between the bounds, "about" optional; a parameter
-left out is the data's) or `{kind: b10, …}`.
+left out is the data's), `{kind: library, record_id, shape?: [low, high]}` (a
+data library failure rate: on an exponential the record's gamma is the prior
+exactly, a closed-form update; on a Weibull or lognormal a prior on the mean
+life, `around(1/rate, between=(1/p95, 1/p05))`, with the shape between the
+bounds, 0.5 to 5 by default; a per-demand record is refused) or
+`{kind: b10, …}`.
+`library_record_id` attaches a data library failure rate as the position's
+model (role `library`): an exponential at the record's mean rate per hour,
+saved in Models with the source's 5–95% range as its interval and the record
+id and citation kept. Per-demand probabilities and handbook base rates are
+refused in words.
 The class can't be both the data and the prior. The app previews with
 `POST /api/maintenance/positions/{id}/fit-preview` (a refusal comes back as
 `{refused: words}`). `analyse bayes_update` takes `baseline:
@@ -306,6 +316,7 @@ failure there) when the decision has no evidence of its own.
 ```bash
 reliafy maintenance models.link --position-id P --model-id sample-model-bearings-weibull
 reliafy maintenance models.link --position-id P --fit --scope auto
+reliafy maintenance models.link --position-id P --library-record-id nrc-inl-2020:mov-sop
 reliafy maintenance models.unlink --link-id L
 ```
 
@@ -491,7 +502,15 @@ The same reads are the `library` tool: `POST /api/v1/library/search`
 Free plan's tool calls. These are generic estimates (today: U.S. nuclear
 power plant industry averages, and base failure rates for electronic parts
 from the MIL-HDBK-217F prediction handbook), not your own equipment's data;
-show each record's `licence.attribution` with its numbers. The record format
+show each record's `licence.attribution` with its numbers. In the app the
+library is under Models › Library (`/models/library`, one page per source and
+per record). Its **Use as a model…** is `POST /api/models/from-library`
+(`record_id`, `name?`: a rate as an exponential model, counted against the Free
+plan's saved models) and **Use as a prior…** on a dataset is `POST
+/api/models/fit-with-prior` (`dataset_id`, `time_column`, `censor_column`,
+`c_invert`, `unit`, `distribution`, `prior: {kind: library, record_id,
+shape?}`, `save` with `name` to keep it). `GET /api/library/used` lists the
+records behind the user's latest library models. The record format
 and the sources: [library.md](library.md).
 
 ### Reliability prediction (a parts count)

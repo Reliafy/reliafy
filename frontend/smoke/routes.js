@@ -60,7 +60,15 @@ export function publicRoutes() {
 export const hasParam = (path) => path.includes("/:");
 
 // Fill a route's parameter: "/models/m/:id" + "abc" -> "/models/m/abc".
-export const fill = (path, id) => path.replace(/:\w+/, encodeURIComponent(id));
+// A route with two parameters (the library's /models/library/:source/:record) takes an id
+// "source/record", one part each.
+export const fill = (path, id) => {
+  const n = (path.match(/:\w+/g) || []).length;
+  if (n < 2) return path.replace(/:\w+/, encodeURIComponent(id));
+  const parts = String(id).split("/");
+  let i = 0;
+  return path.replace(/:\w+/g, () => encodeURIComponent(parts[Math.min(i++, parts.length - 1)]));
+};
 
 // Where each app route with a parameter gets its records (each `{id, ...}`):
 // an API list and how to read them out of it. Every sample (or seeded record)
@@ -84,6 +92,10 @@ export const DETAIL_IDS = {
   "/strategy/analyses/:id": ["/api/strategy/analyses", list("analyses")],
   // A reliability prediction (the sample parts count).
   "/predictions/:id": ["/api/predictions", list("predictions")],
+  // The reliability data library under Models: a source, and a record of it (its id "source:code").
+  "/models/library/:source": ["/api/library/sources", list("sources")],
+  "/models/library/:source/:record": ["/api/library/search?page_size=12",
+    (body) => (body.results || []).map((r) => ({ ...r, id: r.id.replace(":", "/") }))],
   // A maintainability prediction: the sample quadcopter's.
   "/maintainability/:id": ["/api/maintainability/predictions", list("predictions")],
   "/risk/:fleetId": ["/api/fleet/tracked", list("fleets")],

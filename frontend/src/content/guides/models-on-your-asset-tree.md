@@ -69,6 +69,12 @@ items. Under **Life model**:
 - **From the class…** links the model fitted to the position's class.
 - **Enter parameters…** saves a model from numbers you have (a data sheet, a
   handbook) and attaches it.
+- **From the data library…** attaches a published failure rate (Models ›
+  Library): an exponential at the record's mean rate per hour, with the
+  source's 5–95% range as its interval. The row's source reads, for example,
+  "Library: NRC/INL 2020, Motor-operated valve spurious operation
+  (INL/EXT-21-65055, Table 1, p. 6)", and the record stays cited. A probability per demand can't be a
+  life model, and the dialog says why.
 
 A row's **⋯** has **Refit…** (a fitted model), **Replace with…** and
 **Unlink…**. Unlinking takes it off the position; the model stays in Models.
@@ -143,8 +149,12 @@ vendor's numbers, a handbook model, or a belief such as "the B10 is about
 for the class's history as the prior) and the position's own failures and
 running units move that prior.
 
-1. Choose the **prior**: the class's history, a saved model, numbers you
-   know, or a B10 you believe.
+1. Choose the **prior**: the class's history, a saved model, a library
+   record, numbers you know, or a B10 you believe. A **library record**'s
+   gamma on the rate is the prior exactly for an exponential (the update is
+   then exact, in closed form); for a Weibull or lognormal the rate becomes a
+   prior on the mean life, with the shape between bounds you set (0.5 to 5
+   unless you change them).
 2. Choose **how much to trust it**:
    - *Trust it closely*: each number within about 10%, or all of the class's
      (or a fitted model's) evidence;

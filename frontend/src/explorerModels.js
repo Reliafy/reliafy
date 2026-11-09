@@ -309,6 +309,7 @@ export function attachGroups({ positionClass = "", hasPrediction = false, viewOn
       // One dialog for every fit from history: this position's, the class's or both; plain or with a prior.
       { id: "model-attach-fit-life", label: "Fit a life model…", ...off },
       { id: "model-attach-assign", label: "Assign a saved model…", ...off },
+      { id: "model-attach-library", label: "From the data library…", ...off },
       { id: "model-attach-class", label: "From the class…", ...off,
         ...(positionClass || viewOnly ? {} : { disabled: true, reason: "This position has no class" }) },
       { id: "model-attach-params", label: "Enter parameters…", ...off },

@@ -254,7 +254,8 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
                 <span className="gv">{id === "weibull" && p.name === "beta" ? fmtShape(p.value) : v.value}</span>
                 {/* A Bayesian update's are credible intervals (bayes_life.py), never confidence bounds. */}
                 {v.ci && <span className="param-ci" title={result.ci_note || HOW_CI}>
-                  {result.method === "bayesian_update" ? `${Math.round((result.credible_level || 0.9) * 100)}% credible` : "95%"} {v.ci}</span>}
+                  {result.method === "bayesian_update" ? `${Math.round((result.credible_level || 0.9) * 100)}% credible`
+                    : result.method === "library" ? "Source's 5–95%" : "95%"} {v.ci}</span>}
               </span>
             </div>
           );

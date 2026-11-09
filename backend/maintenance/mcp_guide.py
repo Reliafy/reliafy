@@ -445,7 +445,10 @@ fit, 95% confidence bounds; bayes: with a prior, 90% credible intervals). The pr
 history as a power prior, SurPyval's prior.from_data: trust close counts all of its evidence, guide half, start a \
 fifth), {kind: model, model_id}, {kind: params, distribution, params, unit}, {kind: around, distribution, unit, \
 params: {alpha: {about: 4, between: [3, 6]}, beta: {between: [1.5, 3]}}} (90% between the bounds; a parameter left \
-out is the data's) or {kind: b10, ...}. The class can't \
+out is the data's), {kind: library, record_id, shape?: [0.8, 3]} (a data library rate: exact gamma prior on an \
+exponential, else a prior on the mean life) or {kind: b10, ...}. A published rate as the model itself: models.link \
+with library_record_id, e.g. {position_id, library_record_id: "nrc-inl-2020:mov-sop"} (an exponential at its mean \
+rate per hour, its 5–95% range the interval, cited; per-demand records refused). The class can't \
 be both the data and the prior. Say which data and method when quoting it, with confidence or credible as the \
 result says. With one failure a plain Weibull fit refuses: use a prior, or exponential.
 - One or two failures and a baseline the user trusts: models.link with fit true and baseline ({model_id}, \

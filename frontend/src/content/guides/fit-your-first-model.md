@@ -188,6 +188,25 @@ reads them in detail.
 
 ![The model calculator, reading reliability off the fitted curve](/guides/img/fit-03-calculator.png)
 
+## No data yet: a model from the data library
+
+The reliability data library has moved from Data to **Models › Library**
+([open it](/models/library)). It holds published failure data, each record
+cited: industry-average failure rates and probabilities on demand (NRC/INL
+2020, from U.S. nuclear plants) and handbook base rates for electronic parts.
+Open a source to filter its records by equipment type, failure mode and kind,
+and a record to see its distribution written out and plotted.
+
+A record's **Use as a model…** saves a failure rate as an exponential model
+at its mean rate per hour, with the source's 5–95% range as the interval (the
+spread between plants, not a fit's confidence bound), cited on the model.
+**Use as a prior…** fits one of your datasets with the record as the prior:
+on an exponential the record's gamma is the prior exactly; on a Weibull or
+lognormal it becomes a prior on the mean life, with the shape between bounds
+you give. A probability per demand isn't a life over time, and a handbook
+base rate needs the environment and quality factors of a prediction, so
+neither can be a model on its own: the page says so and why.
+
 ## Where to go next
 
 Name the model in the "This fit isn't saved yet" bar above the result and

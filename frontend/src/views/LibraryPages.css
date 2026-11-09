@@ -1,0 +1,16 @@
+/* The reliability data library under Models (LibraryPages.jsx). */
+.lib-sources { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.lib-source { color: inherit; text-decoration: none; display: flex; flex-direction: column; gap: 6px; }
+.lib-source:hover { border-color: var(--acc); }
+.lib-h { font-size: var(--fs-16); margin: 0 0 6px; }
+.lib-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.lib-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.lib-filters > * { flex: 1 1 160px; }
+.lib-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
+.lib-table th, .lib-table td { padding: 5px 8px; border-bottom: 1px solid var(--line2); text-align: left; vertical-align: top; }
+.lib-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lib-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.lib-record { display: flex; flex-direction: column; gap: 12px; }
+.lib-picker { display: flex; flex-direction: column; gap: 8px; }
+.lib-picker .evidence-picker { max-height: 300px; overflow: auto; }
+.evidence-option.off { opacity: 0.6; }

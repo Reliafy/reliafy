@@ -18,7 +18,8 @@ what **Modelling → Reliability prediction** gives you: a parts count.
 Every part type in a handbook has a **base failure rate** (λb): failures per
 million hours for a ceramic capacitor, a film resistor, a rectangular connector,
 a MOSFET. Reliafy's reliability data library carries these rates from
-MIL-HDBK-217F, the U.S. military's prediction handbook, each one cited.
+MIL-HDBK-217F, the U.S. military's prediction handbook, each one cited (browse
+them under [Models › Library](/models/library)).
 
 For microcircuits (logic, microprocessors, memories, GaAs devices), motors,
 synchros and resolvers, circuit boards, quartz crystals, lamps and laser

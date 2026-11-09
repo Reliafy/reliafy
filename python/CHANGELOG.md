@@ -2,6 +2,12 @@
 
 ## Unreleased (0.5.1)
 
+- **Data library records as models and priors**: `maintenance models.link`
+  takes `library_record_id` (a published failure rate attached as an
+  exponential model, its 5–95% range the interval, cited), and the fit's
+  `prior` takes `{kind: "library", record_id, shape?}`. The CLI's
+  `reliafy maintenance models.link --library-record-id …` follows.
+
 - **Life models on positions** (the Explorer's Modelling tab): new actions
   `maintenance models.link` (a saved model, the class's model, a fit from the
   position's history, or a Bayesian update of a baseline with it) and
