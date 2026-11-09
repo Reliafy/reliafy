@@ -1250,6 +1250,107 @@ def _plain_warning(text: str) -> str:
                 .replace("cb()", "the reliability bounds"))
 
 
+#: The probability at which each distribution's quantile *is* its
+#: characteristic life (the scale the life-stress model replaces), whatever
+#: the shape: 1 - 1/e for the Weibull and the exponential, the median for the
+#: lognormal and the normal. The gamma's depends on its fitted shape, so it
+#: has none.
+_LIFE_QUANTILE = {
+    "Weibull": 1.0 - math.exp(-1.0),
+    "Exponential": 1.0 - math.exp(-1.0),
+    "LogNormal": 0.5,
+    "Normal": 0.5,
+}
+_NO_LIFE_RANGE = "No range on the life at the use stress: "
+_METHOD_WORDS = {"wald": "Wald", "lr": "likelihood-ratio", "bootstrap": "bootstrap"}
+
+
+def _log_life_se(model, Zuse: np.ndarray, life_use: float) -> Optional[float]:
+    """The standard error of ``ln(life at the use stress)`` by the delta
+    method: ``sqrt(g' V g)``, with ``V`` the fit's covariance of the
+    life-stress coefficients (:meth:`covariance`, the one the Wald intervals
+    on the coefficients use) and ``g`` the gradient of the log life in them
+    (central differences, each step relative to its coefficient: SurPyval
+    reports Arrhenius' ``b`` near 1e-6). None where there is no usable
+    covariance or the life isn't a positive number."""
+    phi = getattr(getattr(model, "reg_model", None), "phi", None)
+    if not callable(phi) or not np.isfinite(life_use) or life_use <= 0:
+        return None
+    k_dist = int(getattr(model, "k_dist", 1) or 1)
+    try:
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            coeffs = np.asarray(model.params, dtype=float)[k_dist:]
+            cov = np.asarray(model.covariance(), dtype=float)[k_dist:, k_dist:]
+
+            def log_life(q):
+                return math.log(float(np.asarray(phi(Zuse, *q), dtype=float).ravel()[0]))
+
+            # The life model alone must give the life the page shows: it
+            # wouldn't for a model that keeps its coefficients on another
+            # footing, and then there is no range rather than a wrong one.
+            if cov.shape != (coeffs.size, coeffs.size) or not math.isclose(
+                    log_life(coeffs), math.log(life_use), rel_tol=1e-9, abs_tol=1e-9):
+                return None
+            grad = np.zeros(coeffs.size)
+            for i, value in enumerate(coeffs):
+                h = float(np.finfo(float).eps) ** (1.0 / 3.0) * (abs(float(value)) or 1.0)
+                up, down = coeffs.copy(), coeffs.copy()
+                up[i], down[i] = value + h, value - h
+                grad[i] = (log_life(up) - log_life(down)) / (2.0 * h)
+            var = float(grad @ cov @ grad)
+    except Exception:  # noqa: BLE001 - no covariance, or a life that isn't positive beside the estimate
+        return None
+    return math.sqrt(var) if np.isfinite(var) and var >= 0 else None
+
+
+def life_at_use_interval(model, Zuse: np.ndarray, life_use: float, confidence: float,
+                         method: str = "wald", **boot) -> tuple:
+    """A two-sided interval on the life at the use stress (the characteristic
+    life :func:`_characteristic_life` gives there), as ``(ci, note)``:
+    ``[lower, upper]`` and None, or None and the reason there is none.
+
+    * ``wald``: the delta method on the log of the life, so both limits stay
+      positive: ``life · exp(± z · se)``, ``se`` from :func:`_log_life_se`.
+    * ``lr`` and ``bootstrap``: SurPyval's ``quantile_cb`` (as the B-lives)
+      at the probability whose quantile is the characteristic life
+      (:data:`_LIFE_QUANTILE`); a gamma model has no such probability, so no
+      range by these two.
+    """
+    from scipy.stats import norm
+
+    if not np.isfinite(life_use) or life_use <= 0:
+        return None, _NO_LIFE_RANGE + "the life there isn't a positive number."
+    if method == "wald":
+        se = _log_life_se(model, Zuse, life_use)
+        if se is None:
+            return None, _NO_LIFE_RANGE + "the fit has no usable covariance for its life-stress coefficients."
+        half = float(norm.ppf(0.5 + confidence / 2.0)) * se
+        with np.errstate(all="ignore"):
+            ci = [float(life_use * np.exp(-half)), float(life_use * np.exp(half))]
+        if not (np.all(np.isfinite(ci)) and ci[0] > 0):
+            return None, _NO_LIFE_RANGE + "it is too wide to state."
+        return ci, None
+    p = _LIFE_QUANTILE.get(getattr(getattr(model, "distribution", None), "name", None))
+    if p is not None:
+        # Only where that quantile is the life shown, to the last digits.
+        q = _quantiles(model, Zuse, [p])[0]
+        if q is None or not math.isclose(q, life_use, rel_tol=1e-6):
+            p = None
+    if p is None:
+        return None, (_NO_LIFE_RANGE + f"the {_METHOD_WORDS[method]} method has none for this distribution. "
+                      "The Wald method gives one.")
+    try:
+        with np.errstate(all="ignore"):
+            ci = np.asarray(model.quantile_cb(np.array([p]), Zuse, alpha_ci=1.0 - confidence, bound="two-sided",
+                                              method=method, **boot), dtype=float).ravel()
+    except Exception as exc:  # noqa: BLE001 - SurPyval's reason, in the app's words
+        return None, _NO_LIFE_RANGE + _plain_warning(str(exc).strip() or type(exc).__name__)
+    if ci.size != 2 or not np.all(np.isfinite(ci)) or not 0 < ci[0] <= ci[1]:
+        return None, _NO_LIFE_RANGE + f"the {_METHOD_WORDS[method]} method found none."
+    return [float(ci[0]), float(ci[1])], None
+
+
 def use_level_bounds(
     model,
     use_stress: list,
@@ -1271,7 +1372,10 @@ def use_level_bounds(
       (99%) of units reach;
     * ``mission``: R(mission_time) with its one-sided lower bound (``cb``);
     * ``coefficients``: two-sided intervals on the distribution's shape and
-      the life-stress coefficients (``param_cb``).
+      the life-stress coefficients (``param_cb``);
+    * ``characteristic_life``: the life at the use stress with a two-sided
+      interval, ``ci`` (:func:`life_at_use_interval`); where it has none,
+      ``ci`` is null and ``note`` says why.
 
     ``method`` is ``wald`` (default), ``lr`` or ``bootstrap``; the last two
     need the data the model was fitted to (:func:`has_data`), and the
@@ -1338,6 +1442,7 @@ def use_level_bounds(
                 "kind": "shape" if i < k_dist else "life_stress",
                 "ci": param_interval(model, name, confidence, method, **boot),
             })
+        life_ci, life_note = life_at_use_interval(model, Zuse, life_use, confidence, method, **boot)
     caught_all.extend(caught)
 
     warnings_out = []
@@ -1374,6 +1479,8 @@ def use_level_bounds(
         },
         "mission": mission,
         "coefficients": coefficients,
+        "characteristic_life": {"value": _f(life_use), "ci": life_ci,
+                                **({"note": life_note} if life_note else {})},
         "warnings": warnings_out,
         "note": (f"Two-sided {confidence * 100:g}% band on R(t); B-lives and the mission reliability "
                  f"carry one-sided {confidence * 100:g}% lower bounds; intervals on the parameters are "
