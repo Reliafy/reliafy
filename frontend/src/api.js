@@ -3485,3 +3485,32 @@ export function removeLibraryRecord(libraryId, recordId) {
   return request(`/api/library/mine/${encodeURIComponent(libraryId)}/records/${encodeURIComponent(recordId)}`,
     { method: "DELETE" });
 }
+
+// Missions (rbd_missions.py): named phased missions on an RBD, each phase with its duration, the
+// blocks it doesn't need, vote counts and Use / Environment covariate values. A position has the
+// missions of the RBDs linked to it (never a parent's).
+export function listPositionMissions(positionIds) {
+  const q = positionIds?.length ? `?position_ids=${encodeURIComponent(positionIds.join(","))}` : "";
+  return request(`/api/maintenance/position-missions${q}`);
+}
+const missionPath = (rbdId, missionId = null) =>
+  `/api/rbds/${encodeURIComponent(rbdId)}/missions${missionId ? `/${encodeURIComponent(missionId)}` : ""}`;
+const asJson = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+// One mission in full: its phases, the blocks and vote nodes, every covariate its phases can set.
+export function getMission(rbdId, missionId) {
+  return request(missionPath(rbdId, missionId));
+}
+export function createMission(rbdId, { name = null, phases = null } = {}) {
+  return request(missionPath(rbdId), asJson("POST", { ...(name ? { name } : {}), ...(phases ? { phases } : {}) }));
+}
+// {name?, phases?, expected_updated_at?}
+export function updateMission(rbdId, missionId, body) {
+  return request(missionPath(rbdId, missionId), asJson("PUT", body));
+}
+export function deleteMission(rbdId, missionId) {
+  return request(missionPath(rbdId, missionId), { method: "DELETE" });
+}
+// The chance of completing it, per phase, and each phase's weakest block; `phases`: unsaved edits.
+export function calculateMission(rbdId, missionId, phases = null) {
+  return request(`${missionPath(rbdId, missionId)}/calculate`, asJson("POST", phases ? { phases } : {}));
+}

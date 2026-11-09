@@ -38,9 +38,11 @@ under the tree's **⋯** open the way down to the rows that match.
 - **See its history:** click a row. Its details open beside the table: a
   point's chart and readings, a setting's changes, a channel's spectrum, a
   consumable's additions. Expand them across the table, or close them.
-- **Add one:** the panel's **…** menu has **Add a measuring point…**, **Add a
-  setting…**, **Add a consumable…** and **Add a sensor channel…** for the
-  position picked, with **Columns…** and **Export CSV**.
+- **Add one:** right-click a position's row (or press its **⋯**): its menu
+  starts with **Add a measuring point…**, **Add a setting…**, **Add a
+  consumable…** and **Add a sensor channel…** for that position. The panel's
+  **…** menu has the same four for the position picked, with **Columns…** and
+  **Export CSV**.
 - **A setting's history** shows what it's been over time: a step chart, a
   line such as *Set 3 times since 1 Apr 2026, between 45% and 60%*, and each
   change with who set it (a work order, or by hand) and how long it held.

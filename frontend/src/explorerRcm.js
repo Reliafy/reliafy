@@ -293,6 +293,8 @@ export function positionOf(r) {
   if (r.type === "meas") return r.ref.position_id;
   // A model row (the Modelling tab): the position it's attached to.
   if (r.type === "pmodel") return r.ref.position_id;
+  // A mission row (the Missions tab), or one of its phases: the position whose RBD it's flown on.
+  if (r.type === "mission" || r.type === "phase") return r.ref.position_id;
   return isRcmRow(r) ? r.ref.position_id : null;
 }
 
@@ -305,7 +307,11 @@ export const cellRow = (r) => ({ ...r, sum: r.rsum || rcmBlank() });
 export const rcmRowText = (r) => rcmText(r);
 
 // What a row's menu offers on the RCM tab (right-click, its ⋯ button, or
-// Shift+F10 / the Menu key): adding inside it, and the actions the table and
+// Shift+F10 / the Menu key): adding inside it first (Derryn, 10 Nov 2026: "The
+// relevant 'add' should be the top item": a position's Add function, a
+// function's Add a performance standard… and Add functional failure, a
+// standard's Add a functional failure…, a functional failure's Add failure
+// mode, a failure mode's Add a task…), then Open… and the actions the table and
 // the details already have for it ([] for a row with none). `canRename`:
 // the description is edited in the table (not on a phone, where the details panel edits it). `moves`: a
 // standard's Move up / Move down (a wide screen drags them instead, so the page
@@ -314,8 +320,8 @@ export function rowActions(r, { canRename = true, moves = true, viewOnly = null 
   if (!r) return [];
   // A function, standard, functional failure or failure mode opens its
   // details across the table (a double-click on its name does the same):
-  // first, so it's found without the double-click, and on a phone, where
-  // there's none (there the details are a sheet).
+  // straight after the adds, so it's found without the double-click, and on a
+  // phone, where there's none (there the details are a sheet).
   const open = opensItem(r) ? [{ id: "open", label: "Open…" }] : [];
   const rename = canRename ? [{ id: "rename", label: "Edit description" }] : [];
   // Delete… on any row takes everything under it (a dialog counts it first; Undo brings it back).
@@ -328,9 +334,9 @@ export function rowActions(r, { canRename = true, moves = true, viewOnly = null 
   }
   if (r.type === "fn") {
     return [
-      ...open,
       { id: "add-std", label: "Add a performance standard…" },
       { id: "add-fail", label: "Add functional failure" },
+      ...open,
       ...rename,
       { id: "delete", label: "Delete function…", danger: true },
     ];
@@ -344,9 +350,9 @@ export function rowActions(r, { canRename = true, moves = true, viewOnly = null 
       { id: "move-down", label: "Move down", disabled: at < 0 || at >= ids.length - 1 },
     ];
     return [
+      { id: "add-fail", label: "Add a functional failure…" },
       ...open,
       ...(canRename ? [{ id: "rename", label: "Edit text" }] : []),
-      { id: "add-fail", label: "Add a functional failure…" },
       ...move,
       // The old single text (legacy) is cleared; a standard of the list goes with the failures breaching it.
       { id: "delete", label: r.ref.legacy ? "Remove performance standard" : "Delete performance standard…", danger: true },
@@ -354,8 +360,8 @@ export function rowActions(r, { canRename = true, moves = true, viewOnly = null 
   }
   if (r.type === "fail") {
     return [
-      ...open,
       { id: "add-mode", label: "Add failure mode" },
+      ...open,
       { id: "link-cause", label: "Link to a cause…" },
       { id: "link-effect", label: "Link to an effect…" },
       ...rename,
@@ -384,10 +390,10 @@ export function rowActions(r, { canRename = true, moves = true, viewOnly = null 
   }
   if (r.type === "mode") {
     return [
-      ...open,
-      { id: "decide", label: r.ref.decision ? "Change the decision…" : "Decide…" },
       // Another task for the mode (or an existing one linked): the details' Tasks, on their add row.
       { id: "add-task", label: "Add a task…" },
+      ...open,
+      { id: "decide", label: r.ref.decision ? "Change the decision…" : "Decide…" },
       ...rename,
       { id: "delete", label: "Delete failure mode…", danger: true },
     ];

@@ -293,6 +293,29 @@ its model in use (by default its own life model, else its RBD, else its
 prediction): what its roll-up reports, what the RCM offers first and what a
 parent's RBD block takes. `GET /api/maintenance/position-models/{id}?age=`
 adds an RBD's system reliability at that age.
+
+Missions (the Explorer's Missions tab): a non-repairable RBD can carry several
+named phased missions over the same blocks, in `graph.missions` (`[{id, name,
+phases}]`; the diagram's own `phases` reads as one more mission, id `mission`,
+named by `mission_name`). A phase is `{name, duration, not_needed?: [block
+id], votes?: {vote node id: inputs needed}, values?: {covariate name: value},
+block_values?: {block id: {input key: value}}}`: `values` sets a Use or
+Environment covariate once for every bound block it feeds in that phase,
+`block_values` one block's own. The blocks age across the whole mission; a
+block whose covariates change from phase to phase carries its age into the
+next. `GET /api/maintenance/position-missions?position_ids=` lists each
+position's RBDs and their missions (a position has its own RBDs' missions,
+never a parent's). On an RBD: `GET /api/rbds/{id}/missions`, `POST
+/api/rbds/{id}/missions {name?, phases?}`, `GET|PUT|DELETE
+/api/rbds/{id}/missions/{mission}` (`PUT {name?, phases?,
+expected_updated_at?}`; `GET` adds the blocks, vote nodes and every open
+covariate with the blocks it feeds and, per phase, the value each block uses
+and where it comes from), and `POST /api/rbds/{id}/missions/{mission}/calculate
+{phases?}`: the chance of completing it, each phase's failure probability,
+reliability at its end and weakest block (the one whose failures end the most
+missions in that phase). A phase missing a value waits: `reliability` is null,
+`through` says how far the mission was worked out and `needs` which blocks need
+what. Over MCP: `analyse rbd_mission` and `change rbd_mission`.
 `fit: true` with `data` (`position`, `class`, or `both`: the position's history
 with its class's other positions' history as the prior) and `method` (`mle`:
 a plain fit with 95% confidence bounds; `bayes`: with a `prior`, 90% credible
