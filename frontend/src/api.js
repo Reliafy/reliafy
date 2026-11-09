@@ -1688,13 +1688,15 @@ export function deletePrediction(id) {
 // The reliability data library's search (public): the part-type picker and the record pickers.
 // ``use`` ("model" or "prior") keeps only the records usable as that on their own; the result's
 // ``left_out`` says how many it hid, by why.
-export function searchLibrary({ q, source, equipmentType, kind, page, pageSize, use } = {}) {
+export function searchLibrary({ q, source, equipmentType, failureMode, kind, page, pageSize, use, facets } = {}) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (source) params.set("source", source);
   if (equipmentType) params.set("equipment_type", equipmentType);
+  if (failureMode) params.set("failure_mode", failureMode);
   if (kind) params.set("kind", kind);
   if (use) params.set("use", use);
+  if (facets) params.set("facets", "true");
   if (page) params.set("page", String(page));
   if (pageSize) params.set("page_size", String(pageSize));
   const s = params.toString();

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { linkPositionModel, listModels, previewPositionFit } from "../api.js";
+import { getLibraryRecord, getLibrarySources, linkPositionModel, listModels, previewPositionFit } from "../api.js";
 import Modal from "./Modal.jsx";
 import Plot from "./Plot.jsx";
 import ProbabilityPlot from "./ProbabilityPlot.jsx";
@@ -15,7 +15,8 @@ import {
   libraryPriorWords, priorChoices, problem, refusalSwitch, refusalWords, showsTrust,
 } from "../fitDialog.js";
 import { fmt } from "../explorerModels.js";
-import { LibraryPicker } from "./LibraryParts.jsx";
+import LibraryRecordPicker, { PickedRecord } from "./LibraryRecordPicker.jsx";
+import { rowFromDetail } from "../libraryPicker.js";
 import "./RcmWorksheet.css";
 import "./FitModal.css";
 
@@ -88,6 +89,18 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
   const [models, setModels] = useState(null);
   // The library record picked as the prior (its kind and bounds shape the words beside the picker).
   const [record, setRecord] = useState(null);
+  // "Pick a library record" (a modal over this one): open, and whether it has opened by itself yet
+  // (the first time "A library record" is chosen with nothing picked).
+  const [picking, setPicking] = useState(false);
+  const autoOpened = useRef(false);
+  // Opened with a record already chosen (Use as a prior… on a record's page): read it for the summary.
+  useEffect(() => {
+    if (!state.recordId || record?.id === state.recordId) return undefined;
+    let live = true;
+    Promise.all([getLibraryRecord(state.recordId), getLibrarySources().catch(() => ({ sources: [] }))])
+      .then(([d, src]) => live && setRecord(rowFromDetail(d, src.sources)), () => {});
+    return () => { live = false; };
+  }, [state.recordId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [preview, setPreview] = useState({ data: null, refused: null, busy: false });
   const [chart, setChart] = useState("sf");
   const [saving, setSaving] = useState(false);
@@ -195,7 +208,10 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
             {bayes && (
               <Step label="Prior">
                 {state.data !== "both" && (
-                  <Select aria-label="Prior" value={eff.priorKind} onChange={(e) => set("priorKind", e.target.value)}>
+                  <Select aria-label="Prior" value={eff.priorKind} onChange={(e) => {
+                    set("priorKind", e.target.value);
+                    if (e.target.value === "library" && !state.recordId && !autoOpened.current) { autoOpened.current = true; setPicking(true); }
+                  }}>
                     {priorChoices(state.data).filter((p) => p.value !== "class" || position.position_class)
                       .map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </Select>
@@ -206,8 +222,8 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
                 )}
                 {eff.priorKind === "library" && (
                   <>
-                    <LibraryPicker value={state.recordId} onPick={(r) => { set("recordId", r.id); setRecord(r); }} use="prior" label="Library records" />
-                    <p className="fit2-sum">{libraryPriorWords(state.distribution, record)}</p>
+                    <PickedRecord record={state.recordId ? record || { id: state.recordId } : null} onPick={() => setPicking(true)} />
+                    {state.recordId && <p className="fit2-sum">{libraryPriorWords(state.distribution, record)}</p>}
                     {record?.kind !== "life" && (state.distribution === "weibull" || state.distribution === "lognormal") && (
                       <div className="fit2-pair">
                         <TextInput inputMode="decimal" aria-label="Shape between" placeholder="Shape between (0.5)" value={state.libShape.lo || ""}
@@ -352,6 +368,10 @@ export default function FitModal({ position, start = {}, link = null, onClose, o
           </div>
         </section>
       </div>
+      {picking && (
+        <LibraryRecordPicker use="prior" selectedId={state.recordId} onClose={() => setPicking(false)}
+                             onPick={(r) => { set("recordId", r.id); setRecord(r); setPicking(false); }} />
+      )}
     </Modal>
   );
 }

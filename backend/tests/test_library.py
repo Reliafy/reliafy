@@ -378,6 +378,31 @@ def test_public_routes_need_no_sign_in(client):
     assert client.get("/api/library/sources").json()["total_records"] == N_NRC + N_MIL
 
 
+def test_search_by_failure_mode_with_facets(client):
+    """The record picker's filters: a failure mode by name (any case), and facets that count what
+    each filter's choices would give with the others (and ``use``) kept."""
+    r = client.get("/api/library/search", params={"source": NRC, "use": "prior", "facets": "true", "page_size": 100})
+    body = r.json()
+    facets = body["facets"]
+    assert sum(facets["kind"].values()) == body["total"] == sum(facets["equipment_type"].values())
+    assert "per_demand" not in facets["kind"]  # left out for a prior, so not a choice either
+    mode = "Fails to run"
+    assert facets["failure_mode"][mode] > 0
+    r = client.get("/api/library/search", params={"source": NRC, "use": "prior", "failure_mode": mode.upper(), "facets": "true"})
+    narrowed = r.json()
+    assert narrowed["total"] == facets["failure_mode"][mode]
+    assert all(row["failure_mode"] == mode for row in narrowed["results"])
+    assert narrowed["filters"]["failure_mode"] == mode.upper()
+    # The failure-mode facet ignores its own filter; the others follow it.
+    assert narrowed["facets"]["failure_mode"] == facets["failure_mode"]
+    assert sum(narrowed["facets"]["equipment_type"].values()) == narrowed["total"]
+    pump = client.get("/api/library/search", params={"source": NRC, "use": "prior", "failure_mode": mode,
+                                                    "equipment_type": "pump"}).json()
+    assert pump["total"] == narrowed["facets"]["equipment_type"]["pump"]
+    assert "facets" not in client.get("/api/library/search").json()  # only when asked for
+    assert client.get("/api/library/search", params={"failure_mode": "no such mode"}).json()["total"] == 0
+
+
 def test_public_routes_are_rate_limited(client, monkeypatch):
     from backend.ratelimit import SlidingWindowLimiter
     from backend.routers import library as router

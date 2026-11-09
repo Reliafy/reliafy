@@ -21,7 +21,7 @@ import {
 } from "../explorerModels.js";
 import "./MeasurementTable.css";
 import "./ModelTable.css";
-import { LibraryPicker } from "./LibraryParts.jsx";
+import LibraryRecordPicker, { PickedRecord } from "./LibraryRecordPicker.jsx";
 
 // The Explorer's Modelling tab is the tree with each position's life models in it
 // (explorerModels.js), like the RCM and Measurements tabs. This file has what the page
@@ -459,9 +459,13 @@ export function ParamsModal({ position, onClose, onDone }) {
 }
 
 // Life model › From the data library…: a record attached as the position's model (a rate per hour
-// becomes an exponential with the source's 5–95% range, cited); per-demand and handbook records say why not.
+// becomes an exponential with the source's 5–95% range, cited). The record comes from "Pick a library
+// record" (a modal over this one, opened at once), which lists only the records that can be a model.
 export function LibraryAttachModal({ position, onClose, onDone }) {
   const [rec, setRec] = useState(null);
+  const [picking, setPicking] = useState(false);
+  // Opened once this dialog is up, so the picker stacks above it (Escape closes the picker first).
+  useEffect(() => setPicking(true), []);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const save = async () => {
@@ -483,8 +487,12 @@ export function LibraryAttachModal({ position, onClose, onDone }) {
              </>
            )}>
       <p className="rw-fhelp">A published failure rate as {position.name}’s model: an exponential at the record’s mean rate, its 5–95% range as the source’s uncertainty, and the record cited.</p>
-      <LibraryPicker value={rec?.id} onPick={setRec} use="model" />
+      <PickedRecord record={rec} onPick={() => setPicking(true)} />
       {failed && <p className="field-error" role="alert">{failed}</p>}
+      {picking && (
+        <LibraryRecordPicker use="model" selectedId={rec?.id} onClose={() => setPicking(false)}
+                             onPick={(r) => { setRec(r); setPicking(false); }} />
+      )}
     </Modal>
   );
 }

@@ -5,7 +5,7 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import Plot from "../components/Plot.jsx";
 import { Select, TextInput } from "../components/ui/Controls.jsx";
 import Chip from "../components/ui/Chip.jsx";
-import { LibraryFormDialog, LibraryPicker, UseAsModelDialog, UseAsPriorDialog } from "../components/LibraryParts.jsx";
+import { LibraryFormDialog, LibraryLookup, UseAsModelDialog, UseAsPriorDialog } from "../components/LibraryParts.jsx";
 import { StorageCapNotice } from "../components/StorageCap.jsx";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
@@ -99,7 +99,7 @@ export function LibraryHome() {
       <StorageCapNotice kind="libraries" one="data library" many="data libraries" refreshKey={sources} />
       <section className="card" aria-label="Search every library">
         <h2 className="lib-h">Know the record you want?</h2>
-        <LibraryPicker label="Records" use="look" />
+        <LibraryLookup label="Records" />
       </section>
       {sources === null && !error && <div className="card empty">Loading…</div>}
       {sources !== null && (
