@@ -7,12 +7,26 @@
 // position above: a sub-position has its own RBD's missions. Pure functions, tested in
 // explorerMissions.test.js; the cells are drawn by MissionTable.jsx, a mission opens in the table
 // area (MissionPane.jsx). The links come from GET /api/maintenance/position-missions.
+//
+// Under each mission hang its phases, one row each, in order (Derryn, 10 Nov 2026: "on the
+// missions page I need to be able to add phases below the mission in the tree"). The menus
+// (right-click, ⋯, Shift+F10) start with what goes under the row: a position's Add a mission (or
+// Build an RBD…), a mission's Add a phase (saved at the end, then opened in the pane to be named),
+// a phase's Open… (the pane at that phase), Move earlier / Move later, Delete…. A phase is changed
+// through the mission's own update route, with the pane's phase helpers (editablePhase, newPhase,
+// movePhase, cleanPhases: changedPhases).
 
 import { reliabilityPercent } from "./rbdMission.js";
 
 export const MISSION_TYPE = "mission";
-export const isMissionRow = (r) => r?.type === MISSION_TYPE;
+export const PHASE_TYPE = "phase";
+// A row of the Missions tab's own: a mission, or one of its phases.
+export const isMissionRow = (r) => r?.type === MISSION_TYPE || r?.type === PHASE_TYPE;
+export const isPhaseRow = (r) => r?.type === PHASE_TYPE;
 export const missionKey = (rbdId, missionId) => `MS:${rbdId}:${missionId}`;
+export const phaseKey = (rbdId, missionId, i) => `MP:${rbdId}:${missionId}:${i}`;
+// Phases a mission can have (the pane's Add a phase stops there too).
+export const MAX_PHASES = 50;
 
 // The pane's address value (?mission=<rbd id>:<mission id>&on=<position id>) and back.
 export const missionParam = (rbdId, missionId) => `${rbdId}:${missionId}`;
@@ -84,13 +98,22 @@ export function graftMissions(display, links = []) {
       p.msum.rbds += 1;
       for (const m of link.missions || []) {
         const key = missionKey(link.rbd.id, m.id);
+        const names = m.phase_names || [];
+        const kids = names.map((_, i) => phaseKey(link.rbd.id, m.id, i));
         rows.set(key, {
-          key, type: MISSION_TYPE, parent: pk, kids: [], depth: p.depth + 1, own: noStatus(), sum: noStatus(),
+          key, type: MISSION_TYPE, parent: pk, kids, depth: p.depth + 1, own: noStatus(), sum: noStatus(),
           ref: {
             name: m.name, mission: m, rbd: link.rbd, position_id: pk, many: list.filter((l) => l.rbd).length > 1,
-            search: [m.name, ...(m.phase_names || []), link.rbd.name].filter(Boolean).join(" ").toLowerCase(),
+            search: [m.name, ...names, link.rbd.name].filter(Boolean).join(" ").toLowerCase(),
           },
         });
+        names.forEach((name, i) => rows.set(kids[i], {
+          key: kids[i], type: PHASE_TYPE, parent: key, kids: [], depth: p.depth + 2, own: noStatus(), sum: noStatus(),
+          ref: {
+            name, phase: { index: i, name, of: names.length }, mission: m, rbd: link.rbd, position_id: pk,
+            search: String(name || "").toLowerCase(),
+          },
+        }));
         keys.push(key);
         p.msum.missions += 1;
       }
@@ -143,10 +166,29 @@ export function phasesText(m) {
   return `${count(n, "phase")}${names ? `: ${names}` : ""}`;
 }
 
-// A mission row's ⋯ (Open, Delete…) and a position's (Add a mission, Open the RBD, Build…).
+// A phase row's cells and phone line: "Phase 2 of 3".
+export const phaseOfText = (p) => `Phase ${p.index + 1} of ${p.of}`;
+
+// A mission row's ⋯ (Add a phase, then Open, Show the RBD, Delete…), a phase row's (Open…, Move
+// earlier, Move later, Delete…) and a position's (Add a mission, Open the RBD, Build…).
 export function missionRowActions(r, { viewOnly = null } = {}) {
-  const off = viewOnly ? { disabled: true, title: viewOnly } : {};
+  const off = viewOnly ? { disabled: true, reason: viewOnly, title: viewOnly } : {};
+  if (isPhaseRow(r)) {
+    const { index, of } = r.ref.phase;
+    const first = "It's the first phase already.";
+    const last = "It's the last phase already.";
+    return [
+      { id: "mission-phase-open", label: "Open…" },
+      { id: "mission-phase-earlier", label: "Move earlier", ...(viewOnly ? off : index === 0 ? { disabled: true, reason: first, title: first } : {}) },
+      { id: "mission-phase-later", label: "Move later", ...(viewOnly ? off : index >= of - 1 ? { disabled: true, reason: last, title: last } : {}) },
+      { id: "mission-phase-delete", label: "Delete…", danger: true, ...off },
+    ];
+  }
+  const full = `A mission has at most ${MAX_PHASES} phases.`;
   return [
+    { id: "mission-phase-add", label: "Add a phase",
+      ...(viewOnly ? off : (r?.ref?.mission?.phases || 0) >= MAX_PHASES ? { disabled: true, reason: full, title: full } : {}) },
+    { separator: true },
     { id: "mission-open", label: "Open" },
     { id: "mission-rbd", label: "Show the RBD" },
     { id: "mission-delete", label: "Delete…", ...off },
@@ -179,12 +221,12 @@ export function openForMissions(display, positionKey) {
 
 // ---- a mission's phases, as the pane edits them -------------------------------------------------
 
-let phaseKey = 0;
+let phaseSeq = 0;
 // A phase as the pane holds it: the stored phase with a key of its own (for React) and its
 // duration as typed.
 export function editablePhase(p = {}) {
   return {
-    key: ++phaseKey,
+    key: ++phaseSeq,
     name: p.name || "",
     duration: p.duration ?? "",
     not_needed: [...(p.not_needed || [])],
@@ -193,7 +235,13 @@ export function editablePhase(p = {}) {
     block_values: Object.fromEntries(Object.entries(p.block_values || {}).map(([k, v]) => [k, { ...v }])),
   };
 }
-export const newPhase = (i) => editablePhase({ name: `Phase ${i + 1}` });
+// A new phase, named "Phase <n>" from the count (i), skipping a name the phases given already have.
+export function newPhase(i, phases = []) {
+  const taken = new Set(phases.map((p) => String(p.name || "").trim().toLowerCase()));
+  let n = i + 1;
+  while (taken.has(`phase ${n}`)) n += 1;
+  return editablePhase({ name: `Phase ${n}` });
+}
 
 // Move phase i by dir (−1 earlier, +1 later); out of range leaves them.
 export function movePhase(phases, i, dir) {
@@ -279,6 +327,18 @@ export function cleanPhases(rows, { blocks = [], votes = [] } = {}) {
   });
   return { phases, errors };
 }
+
+// A saved mission's phases (GET …/missions/{id}) changed by `change` (editable rows in, rows out)
+// and made ready to save: {phases, errors}, as the pane saves them. The tree's Add a phase, Move
+// earlier / later and Delete… go through here.
+export function changedPhases(detail, change) {
+  const rows = (detail?.mission?.phases || []).map(editablePhase);
+  return cleanPhases(change(rows), { blocks: detail?.blocks || [], votes: detail?.votes || [] });
+}
+// The tree's Add a phase: a new one at the end, saved with a duration of 0 until it's given one.
+export const withNewPhase = (rows) => [...rows, { ...newPhase(rows.length, rows), duration: 0 }];
+// Phase i taken out (movePhase moves one).
+export const withoutPhase = (rows, i) => rows.filter((_, j) => j !== i);
 
 // ---- a phase's covariates: what each block uses and where it comes from ------------------------
 

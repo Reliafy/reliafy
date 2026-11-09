@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, filterOpen, flatten, rowText } from "./assetTree.js";
 import { positionOf } from "./explorerRcm.js";
 import {
-  MEAS_CHIPS, graftMeasurements, isMeasRow, measKey, measurementAsk, openForMeasurements, rollupText,
+  MEAS_ADDS, MEAS_CHIPS, graftMeasurements, isMeasRow, measAddActions, measKey, measurementAsk, openForMeasurements, rollupText,
 } from "./explorerMeasurements.js";
 
 const TODAY = "2026-11-09";
@@ -82,4 +82,16 @@ test("the Needs attention chip and a search open the way down to the matches", (
   const s = computeFilter(d, { query: "pt-101" });
   assert.deepEqual([...s.match], [measKey("gauge")]);
   assert.deepEqual(openForMeasurements(d, "heater"), ["heater", "pool"]);
+});
+
+test("a position's adds on this tab: a measuring point, a setting, a consumable, a sensor channel", () => {
+  const pos = { key: "pool", type: "pos", ref: { name: "Pool" } };
+  assert.deepEqual(measAddActions(pos).map((a) => a.label),
+    ["Add a measuring point…", "Add a setting…", "Add a consumable…", "Add a sensor channel…"]);
+  assert.deepEqual(measAddActions(pos).map((a) => a.id), MEAS_ADDS.map((a) => a.id));
+  // View only: greyed with the reason.
+  assert.deepEqual(measAddActions(pos, { viewOnly: "View only." })[0], { ...MEAS_ADDS[0], disabled: true, reason: "View only." });
+  // Only a position: a measurement row keeps its own menu.
+  assert.deepEqual(measAddActions({ key: "M:x", type: "meas", ref: {} }), []);
+  assert.deepEqual(measAddActions(null), []);
 });

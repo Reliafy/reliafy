@@ -29,12 +29,14 @@ const RbdDiagramView = lazy(() => import("./RbdDiagramView.jsx"));
 // it doesn't need faded. The covariate fields are the one shared component (CovariateInputs.jsx).
 //
 //   rbdId, missionId     position {id, name}
+//   phase                the phase to open on (its index, from a phase row in the tree): opened,
+//                        its name field focused; else the first phase is opened
 //   onSaved(text)        onDeleted(text)      onDirty(changed)
 //   phone, headingRef, onClose: TablePane's
 
 const valueText = (v, unit) => (v == null ? "—" : `${typeof v === "number" ? fmt(v) : v}${unit ? (unit === "%" ? "%" : ` ${unit}`) : ""}`);
 
-export default function MissionPane({ rbdId, missionId, position, phone = false, headingRef = null, onClose, onSaved, onDirty, onDelete }) {
+export default function MissionPane({ rbdId, missionId, position, phase = null, phone = false, headingRef = null, onClose, onSaved, onDirty, onDelete }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState(null);
   const [name, setName] = useState("");
@@ -48,16 +50,30 @@ export default function MissionPane({ rbdId, missionId, position, phone = false,
   const [calc, setCalc] = useState({ busy: false, error: null, stale: false });
   const [shown, setShown] = useState(null); // the phase key whose RBD is shown
   const [graph, setGraph] = useState(null);
+  const [focusOn, setFocusOn] = useState(null); // the phase key whose name takes focus, once
 
   const load = () => getMission(rbdId, missionId).then((d) => {
     setDetail(d);
     setName(d.mission.name);
     const eds = (d.mission.phases || []).map(editablePhase);
     setRows(eds);
-    setOpen(new Set(eds.length ? [eds[0].key] : []));
+    const at = eds[phase ?? 0] || eds[0];
+    setOpen(new Set(at ? [at.key] : []));
+    if (phase != null && eds[phase]) setFocusOn(eds[phase].key);
     setError(null);
   }, (e) => setError(e));
   useEffect(() => { load(); }, [rbdId, missionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Opened on a phase (from the tree): its name field focused, ready to be named.
+  useEffect(() => {
+    if (focusOn == null) return;
+    const el = document.getElementById(`mission-phase-name-${focusOn}`);
+    if (el) {
+      el.focus();
+      el.select?.();
+    }
+    setFocusOn(null);
+  }, [focusOn, detail]);
 
   const blocks = detail?.blocks || [];
   const votes = detail?.votes || [];
@@ -183,7 +199,7 @@ export default function MissionPane({ rbdId, missionId, position, phone = false,
                       </button>
                       <label className="mission-phase-name">
                         <span className="sr-only">Name of phase {i + 1}</span>
-                        <input value={row.name} placeholder="Name" maxLength={80} disabled={readOnly}
+                        <input id={`mission-phase-name-${row.key}`} value={row.name} placeholder="Name" maxLength={80} disabled={readOnly}
                                onChange={(e) => patch(row.key, { name: e.target.value })} />
                       </label>
                       <label className="mission-phase-duration">
@@ -284,7 +300,7 @@ export default function MissionPane({ rbdId, missionId, position, phone = false,
               {!readOnly && (
                 <button type="button" className="secondary" disabled={rows.length >= 50}
                         onClick={() => change((rs) => {
-                          const p = newPhase(rs.length);
+                          const p = newPhase(rs.length, rs);
                           setOpen((s) => new Set([...s, p.key]));
                           return [...rs, p];
                         })}>

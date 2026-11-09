@@ -164,7 +164,8 @@ goes the same way: on any position.
 
 ## Build the RCM on a position
 
-Pick a position in the tree on the RCM tab. Build from the top down:
+Pick a position in the tree on the RCM tab. Every row's menu starts with what
+you can add inside it, then **Open…** and the rest. Build from the top down:
 
 1. **Add function** in the position's row menu (right-click the row, press
    its **⋯** button, or Shift+F10). Type

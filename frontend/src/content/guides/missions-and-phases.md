@@ -43,6 +43,12 @@ Back**). Name it, then **Add a phase** for each stage, in order, with how long
 it lasts. Use **↑** and **↓** to reorder and **×** to remove one. **Save**
 keeps it on the RBD.
 
+Each mission's phases are rows under it in the tree, in order. A mission's row
+menu (right-click it, or press its **⋯**) starts with **Add a phase**: it adds
+one at the end and opens the mission on it, ready for its name and duration. A
+phase's row menu has **Open…** (the mission, on that phase), **Move earlier**,
+**Move later** and **Delete…**.
+
 ## Open a phase
 
 Open a phase (the **▸** beside its number) to set what's different about it.

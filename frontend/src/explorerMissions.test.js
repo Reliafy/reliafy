@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay } from "./assetTree.js";
 import {
-  answerText, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow, lengthText, missionKey,
-  missionParam, movePhase, parseMissionParam, phaseCompletes, phaseCovariates, phaseLine, phaseNeeds, phasesText,
-  positionMissionActions, rollupText, typed, withBlockValue, withValue,
+  MAX_PHASES, answerText, changedPhases, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow,
+  isPhaseRow, lengthText, missionKey, missionParam, missionRowActions, movePhase, newPhase, parseMissionParam, phaseCompletes,
+  phaseCovariates, phaseKey, phaseLine, phaseNeeds, phaseOfText, phasesText, positionMissionActions, rollupText, typed,
+  withBlockValue, withNewPhase, withoutPhase, withValue,
 } from "./explorerMissions.js";
 
 const DATA = {
@@ -126,4 +127,61 @@ test("a phase's line and the answer in words", () => {
   "Worked out to the end of Take-off (99.90% still going); Cruise needs values first.");
   assert.equal(phaseCompletes({ conditional_failure: 0.25 }), 0.75);
   assert.equal(phaseCompletes({ waiting: true }), null);
+});
+
+test("a mission's phases hang under it in the tree, in order", () => {
+  const d = graftMissions(buildDisplay(DATA, "positions"), LINKS);
+  const m1 = d.rows.get(missionKey("r1", "m1"));
+  assert.deepEqual(m1.kids, [phaseKey("r1", "m1", 0), phaseKey("r1", "m1", 1), phaseKey("r1", "m1", 2)]);
+  const p2 = d.rows.get(phaseKey("r1", "m1", 1));
+  assert.equal(p2.ref.name, "Transit");
+  assert.equal(p2.parent, m1.key);
+  assert.equal(p2.depth, m1.depth + 1);
+  assert.equal(p2.ref.position_id, "drone");
+  assert.ok(isPhaseRow(p2) && isMissionRow(p2) && !isPhaseRow(m1));
+  assert.equal(phaseOfText(p2.ref.phase), "Phase 2 of 3");
+  assert.deepEqual(d.rows.get(missionKey("r1", "m2")).kids, []); // no phases yet
+  // The position's counts are its missions', not their phases.
+  assert.equal(rollupText(d.rows.get("drone"), true), "2 missions");
+});
+
+test("menus: a mission's starts with Add a phase; a phase's opens, moves and deletes it", () => {
+  const d = graftMissions(buildDisplay(DATA, "positions"), LINKS);
+  const ids = (k, o) => missionRowActions(d.rows.get(k), o).map((a) => a.id || "—");
+  assert.deepEqual(ids(missionKey("r1", "m1")), ["mission-phase-add", "—", "mission-open", "mission-rbd", "mission-delete"]);
+  const full = { ...d.rows.get(missionKey("r1", "m1")), ref: { ...d.rows.get(missionKey("r1", "m1")).ref, mission: { phases: MAX_PHASES } } };
+  assert.equal(missionRowActions(full)[0].disabled, true);
+  assert.deepEqual(ids(phaseKey("r1", "m1", 1)), ["mission-phase-open", "mission-phase-earlier", "mission-phase-later", "mission-phase-delete"]);
+  const first = missionRowActions(d.rows.get(phaseKey("r1", "m1", 0)));
+  const last = missionRowActions(d.rows.get(phaseKey("r1", "m1", 2)));
+  assert.deepEqual(first.map((a) => a.label), ["Open…", "Move earlier", "Move later", "Delete…"]);
+  assert.equal(first[1].disabled, true);
+  assert.equal(first[2].disabled, undefined);
+  assert.equal(last[2].disabled, true);
+  assert.equal(last.at(-1).danger, true);
+  // View only: the changes greyed with the reason; Open… stays.
+  const vo = missionRowActions(d.rows.get(phaseKey("r1", "m1", 1)), { viewOnly: "View only." });
+  assert.deepEqual(vo.map((a) => !!a.disabled), [false, true, true, true]);
+  assert.equal(missionRowActions(d.rows.get(missionKey("r1", "m1")), { viewOnly: "View only." })[0].reason, "View only.");
+  // A position's menu starts with Add a mission.
+  assert.equal(positionMissionActions(d.rows.get("drone"))[0].label, "Add a mission");
+});
+
+test("phases changed from the tree: added at the end, moved, taken out, saved as the pane saves them", () => {
+  const detail = {
+    mission: { phases: [{ name: "Take-off", duration: 0.1 }, { name: "Phase 2", duration: 1 }, { name: "Landing", duration: 0.2, not_needed: ["b1"] }] },
+    blocks: [{ id: "b1", label: "Camera" }], votes: [],
+  };
+  const added = changedPhases(detail, withNewPhase);
+  assert.deepEqual(added.errors, []);
+  // "Phase 4", the next free name; a duration of 0 until it's given one.
+  assert.deepEqual(added.phases.at(-1), { name: "Phase 4", duration: 0 });
+  assert.equal(added.phases.length, 4);
+  assert.deepEqual(changedPhases(detail, (rows) => movePhase(rows, 2, -1)).phases.map((p) => p.name), ["Take-off", "Landing", "Phase 2"]);
+  const gone = changedPhases(detail, (rows) => withoutPhase(rows, 0)).phases;
+  assert.deepEqual(gone.map((p) => p.name), ["Phase 2", "Landing"]);
+  assert.deepEqual(gone[1].not_needed, ["b1"]); // what else a phase has is kept
+  // A new phase's name skips one already taken.
+  assert.equal(newPhase(1, [{ name: "phase 2" }]).name, "Phase 3");
+  assert.equal(newPhase(0).name, "Phase 1");
 });

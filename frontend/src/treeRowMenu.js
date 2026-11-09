@@ -4,6 +4,15 @@
 // Rename, Move to… and Delete…, beside Focus › and Pin this branch. The RCM
 // tab's rows keep their own menu (explorerRcm.js rowActions).
 //
+// On every other tab a row's menu starts with what that tab keeps under it
+// (Derryn, 10 Nov 2026: "The relevant 'add' should be the top item"): New
+// position inside is first on the Summary tab only. Elsewhere the tab's adds
+// come first, then a line, then these items (addsFirst, leadWith): Failure
+// reports puts Add failure report… first; Measurements its four adds
+// (explorerMeasurements.js measAddActions); RCM, FME(C)A, Modelling and
+// Missions build their own menus (explorerRcm.js, explorerFmea.js,
+// explorerModels.js, explorerMissions.js).
+//
 // A position can be renamed, moved (PATCH parent_id) and deleted; a location
 // renamed, moved and deleted; an item renamed (never deleted from the tree:
 // a delete keeps every item, and items are retired on the Items pages).
@@ -55,6 +64,18 @@ export function summaryActions(r, { mode, viewOnly = null } = {}) {
   }
   return out;
 }
+
+// A tab's own adds first, then a line, then the rest (the rest alone with no adds).
+export function addsFirst(adds, rest) {
+  return adds?.length ? [...adds, { separator: true }, ...rest] : rest;
+}
+// The items with these ids moved to the top, then a line, then the others as they were.
+export function leadWith(items, ids) {
+  return addsFirst(items.filter((i) => ids.includes(i.id)), items.filter((i) => !ids.includes(i.id)));
+}
+// What a tab puts first on the Summary menu's rows (the tabs drawn as the plain
+// tree, not a tree-table): ids, in order.
+export const TAB_LEADS = { reports: ["report-new"] };
 
 // The menu with Pin this branch (or Show whole tree) added: after the
 // changes, before Delete.
