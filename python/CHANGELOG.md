@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.5.2)
+## 0.5.2 (10 Nov 2026)
 
 - **Libraries of your own**: `list kind libraries`, `get kind library`
   (`id`) and the `change` actions `library_create`, `library_update`,
@@ -13,7 +13,7 @@
   library_create --name "Site pumps"`, `reliafy change library_add_model
   --library-id … --model-id …`.
 
-## Unreleased (0.5.1)
+## 0.5.1 (not published on its own; part of 0.5.2)
 
 - **Data library records as models and priors**: `maintenance models.link`
   takes `library_record_id` (a published failure rate attached as an

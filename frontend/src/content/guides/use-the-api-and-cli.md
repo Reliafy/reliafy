@@ -107,7 +107,7 @@ print(result["url"])
 command line takes:
 
 ```python
-rf.call("strategy", "optimal_replacement", distribution_id="weibull",
+rf.call("analyse", "optimal_replacement", distribution_id="weibull",
         params=[{"name": "alpha", "value": 996}, {"name": "beta", "value": 3.8}],
         planned_cost=1000, unplanned_cost=8000)
 ```
