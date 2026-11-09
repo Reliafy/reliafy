@@ -30,7 +30,14 @@ Checked against the rendered pages 6-3 to 6-32:
 - Eqs. 6-1 and 6-2 (p. 6-3) add the valve's parts and state every term, and the
   total, in failures per million operations, though the seal, spring and solenoid
   models of Chapters 3 to 5 and the housing give failures per million hours. The
-  assembly records follow the equations literally and say so on each part.
+  handbook's own rule for mixed parts (pp. 12-10, 12-16) and its only worked
+  combination (Chapter 1's valve, Table 1-1 and Figure 1.3, p. 1-12/1-13) put
+  every part on one time basis first: the poppet or spool (per operation) times
+  the valve's operations an hour, then add the per-hour parts. The assembly
+  records do that and are per million hours, with the operations an hour asked
+  for once (it also sets the spring's cycle rate and the solenoid's use rate).
+  The conditions the poppet (or spool) and the seals share (pressures, fluid,
+  temperature, contamination and flow) are entered once on the assembly.
 - Chapter 1's worked poppet (Table 1-1, p. 1-12, λ_P = 0.35) uses the leakage form
   of p. 1-7 (Eq. 6-4 inside Eq. 6-3) and multiplies by 0.5 operations an hour; the
   tests show it and what Eq. 6-6 gives for the same poppet.
@@ -147,9 +154,48 @@ def _cnu_cn_cw() -> list[dict]:
     ]
 
 
-_ASSEMBLY_NOTE = ("Eq. {eq} (p. 6-3) adds this part's rate as it comes from {where}, in failures per million hours, "
-                  "into a total it states in failures per million operations; the handbook sums the mixed units as "
-                  "printed and so does this record.")
+_ASSEMBLY_NOTE = ("{where} gives this part in failures per million hours; it is added as it is (Eq. {eq}, p. 6-3, "
+                  "with every part on one time basis as Chapter 1's worked valve does, p. 1-12).")
+_OPS_SCALE_NOTE = ("Per million operations × the valve's operations an hour, so it adds to the per-hour parts (the "
+                   "handbook's rule, pp. 12-10 and 12-16; Chapter 1's worked valve converts its poppet the same way, "
+                   "Table 1-1, p. 1-12).")
+
+#: The conditions the moving part and the seals share, entered once on the assembly.
+_SHARED = ("P1", "P2", "T_O", "fluid", "nu_cP", "source", "C_o", "FR")
+
+
+def _assembly_inputs() -> list[dict]:
+    ops = num("ops_per_hour", "Valve operations per hour", "per hour", [
+        positive("a valve that never operates isn't rated by this model"),
+    ], symbol="ops/h", page="6-3",
+        help="How often the valve opens and closes. It turns the poppet's (or spool's) rate per million operations "
+             "into one per hour, and sets the return spring's cycle rate and the solenoid's use rate (one cycle "
+             "per operation).")
+    shared = [i for i in (*_pressure(), *_fluid_inputs()) if i["name"] in _SHARED]
+    return [
+        ops, *shared,
+        num("n_seals", "Number of seals", "", [non_negative("a count can't be negative")], default=1,
+            default_basis="typical", page="6-3", help="Seals rated with the gasket and static seal model."),
+        num("n_springs", "Number of springs", "", [non_negative("a count can't be negative")], default=1,
+            default_basis="typical", page="6-3"),
+        num("n_solenoids", "Number of solenoids", "", [non_negative("a count can't be negative")], default=1,
+            default_basis="typical", page="6-3", help="0 for a valve worked by hand or by pressure (or a check valve)."),
+    ]
+
+
+def _assembly_modes(moving: dict, eq: str) -> list[dict]:
+    shared = {n: n for n in _SHARED}
+    return [
+        moving,
+        uses("seal", "Seals", "seal-static", symbol="λ_SE", count="n_seals", bind=shared,
+             note=_ASSEMBLY_NOTE.format(eq=eq, where="Chapter 3")),
+        uses("spring", "Return spring" if eq == "6-1" else "Springs", "spring-compression", symbol="λ_SP",
+             count="n_springs", bind={"cycle_rate": "ops_per_hour / 60"},
+             note=_ASSEMBLY_NOTE.format(eq=eq, where="Chapter 4")),
+        uses("solenoid", "Solenoid", "solenoid", symbol="λ_SO", count="n_solenoids",
+             bind={"ops_per_min": "ops_per_hour / 60"}, note=_ASSEMBLY_NOTE.format(eq=eq, where="Chapter 5")),
+        uses("housing", "Housing", "valve-housing", symbol="λ_HO", note=_ASSEMBLY_NOTE.format(eq=eq, where="Section 6.5")),
+    ]
 
 RECORDS = [
     record(
@@ -202,7 +248,14 @@ RECORDS = [
                         *_cnu_cn_cw(),
                     ], symbol="λ_PO")],
         rate_unit="per_million_operations",
-        notes="Between Table 6-6's 50 °F steps C_ν is interpolated linearly.",
+        notes=("Between Table 6-6's 50 °F steps C_ν is interpolated linearly. The handbook's Table 1-1 example "
+               "(p. 1-12: seal 1.20, spring 1.04, poppet 0.35 per million hours) uses Chapter 1's physical "
+               "equations (for the poppet, the leakage form of p. 1-7: 0.70 per million operations × 0.5 operations "
+               "an hour); this record uses the chapter's factor model, Eq. 6-6, normalised to field failure data, "
+               "which isn't algebraically the same: for Table 1-1's poppet it gives 0.597 per million operations "
+               "(0.30 an hour at 0.5 operations an hour) before C_N and C_W, which Table 1-1 doesn't have. The "
+               "contaminant factor C_N = (C_o/10)³ · FR · N10 (Table 6-5) is usually well below 1 (0.17 for a 10 gpm "
+               "piston pump and a 10 µm filter, 0.004 for a sliding valve) and Table 1-1 omits it."),
         failure_modes=_POPPET_MODES,
     ),
     record(
@@ -261,62 +314,36 @@ RECORDS = [
     ),
     record(
         "valve-assembly", "Valve assembly, poppet type", "valve", 6, "6.1 Introduction (valve assembly)", "6-1",
-        "6-3", "λ_VA = λ_PO + λ_SE + λ_SP + λ_SO + λ_HO",
-        "A poppet valve's failure rate is the sum of its parts': the poppet and seat, its seals, its return "
-        "spring, the solenoid that drives it and its housing, each from its own model.",
-        inputs=[
-            num("n_seals", "Number of seals", "", [non_negative("a count can't be negative")], default=1,
-                default_basis="typical", page="6-3", help="Seals rated with the gasket and static seal model."),
-            num("n_springs", "Number of springs", "", [non_negative("a count can't be negative")], default=1,
-                default_basis="typical", page="6-3"),
-            num("n_solenoids", "Number of solenoids", "", [non_negative("a count can't be negative")], default=1,
-                default_basis="typical", page="6-3", help="0 for a valve worked by hand or by pressure."),
-        ],
-        modes=[
-            uses("poppet", "Poppet and seat", "valve-poppet", symbol="λ_PO"),
-            uses("seal", "Seals", "seal-static", symbol="λ_SE", count="n_seals",
-                 note=_ASSEMBLY_NOTE.format(eq="6-1", where="Chapter 3")),
-            uses("spring", "Return spring", "spring-compression", symbol="λ_SP", count="n_springs",
-                 note=_ASSEMBLY_NOTE.format(eq="6-1", where="Chapter 4")),
-            uses("solenoid", "Solenoid", "solenoid", symbol="λ_SO", count="n_solenoids",
-                 note=_ASSEMBLY_NOTE.format(eq="6-1", where="Chapter 5")),
-            uses("housing", "Housing", "valve-housing", symbol="λ_HO",
-                 note=_ASSEMBLY_NOTE.format(eq="6-1", where="Section 6.5")),
-        ],
-        rate_unit="per_million_operations",
-        notes=("The seals use the gasket and static seal model, as Chapter 1's worked valve does (p. 1-10); rate a "
-               "seal that slides with the dynamic seal model instead. A count of 0 leaves a part out, but its "
-               "inputs are still asked for. Chapter 1's worked valve (p. 1-12) instead turns the poppet into a rate "
-               "per hour (times its operations an hour) before adding the parts."),
+        "6-3", "λ_VA = λ_PO · ops/h + λ_SE + λ_SP + λ_SO + λ_HO",
+        "A poppet valve's failure rate per hour is the sum of its parts': the poppet and seat (its rate per "
+        "operation times the operations an hour), its seals, its return spring, the solenoid that drives it and "
+        "its housing, each from its own model. The pressures, fluid and dirt the poppet and seals share are "
+        "entered once.",
+        inputs=_assembly_inputs(),
+        modes=_assembly_modes(
+            uses("poppet", "Poppet and seat", "valve-poppet", symbol="λ_PO", bind={n: n for n in _SHARED},
+                 scale="ops_per_hour", scale_label="operations an hour", note=_OPS_SCALE_NOTE), "6-1"),
+        notes=("Per million hours: the poppet's per-operation rate is multiplied by the operations an hour before "
+               "the parts are added, as Chapter 1's worked valve does (p. 1-12); Eq. 6-1 itself labels every term "
+               "per million operations. The seals use the gasket and static seal model, as Chapter 1's worked valve "
+               "does (p. 1-10); rate a seal that slides with the dynamic seal model instead. A count of 0 leaves a "
+               "part out and its inputs aren't needed."),
         failure_modes=_VALVE_MODES,
     ),
     record(
         "valve-assembly-sliding", "Valve assembly, sliding action (spool) type", "valve", 6,
-        "6.1 Introduction (valve assembly)", "6-2", "6-3", "λ_VA = λ_SV + λ_SE + λ_SP + λ_SO + λ_HO",
-        "A spool valve's failure rate is the sum of its parts': the spool and sleeve, its seals, its springs, the "
-        "solenoid that drives it and its housing, each from its own model.",
-        inputs=[
-            num("n_seals", "Number of seals", "", [non_negative("a count can't be negative")], default=1,
-                default_basis="typical", page="6-3", help="Seals rated with the gasket and static seal model."),
-            num("n_springs", "Number of springs", "", [non_negative("a count can't be negative")], default=1,
-                default_basis="typical", page="6-3"),
-            num("n_solenoids", "Number of solenoids", "", [non_negative("a count can't be negative")], default=1,
-                default_basis="typical", page="6-3", help="0 for a valve worked by hand or by pressure."),
-        ],
-        modes=[
-            uses("spool", "Spool and sleeve", "valve-sliding", symbol="λ_SV"),
-            uses("seal", "Seals", "seal-static", symbol="λ_SE", count="n_seals",
-                 note=_ASSEMBLY_NOTE.format(eq="6-2", where="Chapter 3")),
-            uses("spring", "Springs", "spring-compression", symbol="λ_SP", count="n_springs",
-                 note=_ASSEMBLY_NOTE.format(eq="6-2", where="Chapter 4")),
-            uses("solenoid", "Solenoid", "solenoid", symbol="λ_SO", count="n_solenoids",
-                 note=_ASSEMBLY_NOTE.format(eq="6-2", where="Chapter 5")),
-            uses("housing", "Housing", "valve-housing", symbol="λ_HO",
-                 note=_ASSEMBLY_NOTE.format(eq="6-2", where="Section 6.5")),
-        ],
-        rate_unit="per_million_operations",
-        notes=("The seals use the gasket and static seal model; rate a seal that slides with the dynamic seal model "
-               "instead. A count of 0 leaves a part out, but its inputs are still asked for."),
+        "6.1 Introduction (valve assembly)", "6-2", "6-3", "λ_VA = λ_SV · ops/h + λ_SE + λ_SP + λ_SO + λ_HO",
+        "A spool valve's failure rate per hour is the sum of its parts': the spool and sleeve (its rate per "
+        "operation times the operations an hour), its seals, its springs, the solenoid that drives it and its "
+        "housing, each from its own model. The pressures, fluid and dirt the spool and seals share are entered once.",
+        inputs=_assembly_inputs(),
+        modes=_assembly_modes(
+            uses("spool", "Spool and sleeve", "valve-sliding", symbol="λ_SV", bind={n: n for n in _SHARED},
+                 scale="ops_per_hour", scale_label="operations an hour", note=_OPS_SCALE_NOTE), "6-2"),
+        notes=("Per million hours: the spool's per-operation rate is multiplied by the operations an hour before "
+               "the parts are added (pp. 12-10, 12-16; p. 1-12). The seals use the gasket and static seal model; "
+               "rate a seal that slides with the dynamic seal model instead. A count of 0 leaves a part out and "
+               "its inputs aren't needed."),
         failure_modes=_VALVE_MODES,
     ),
 ]

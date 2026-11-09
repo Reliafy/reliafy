@@ -164,15 +164,15 @@
       "limits": [
        {
         "min": 0,
+        "exclusive": true,
         "severity": "refuse",
-        "why": "a diameter can't be negative"
+        "why": "a seal has a diameter"
        }
       ],
-      "default": 0,
-      "default_basis": "neutral",
+      "when": "shape == 'circular'",
       "symbol": "D_SL",
       "page": "3-31",
-      "help": "Circular seals only; leave at 0 for a gasket.",
+      "help": "Circular seals only.",
       "role": "design"
      },
      {
@@ -183,15 +183,15 @@
       "limits": [
        {
         "min": 0,
+        "exclusive": true,
         "severity": "refuse",
-        "why": "a length can't be negative"
+        "why": "a gasket has a length"
        }
       ],
-      "default": 0,
-      "default_basis": "neutral",
+      "when": "shape == 'gasket'",
       "symbol": "L",
       "page": "3-32",
-      "help": "Gaskets only; leave at 0 for a seal.",
+      "help": "Gaskets only.",
       "role": "design"
      },
      {
@@ -202,15 +202,15 @@
       "limits": [
        {
         "min": 0,
+        "exclusive": true,
         "severity": "refuse",
-        "why": "a width can't be negative"
+        "why": "a gasket has a width"
        }
       ],
-      "default": 0,
-      "default_basis": "neutral",
+      "when": "shape == 'gasket'",
       "symbol": "w",
       "page": "3-32",
-      "help": "Gaskets only; leave at 0 for a seal.",
+      "help": "Gaskets only.",
       "role": "design"
      },
      {
@@ -395,7 +395,7 @@
       "symbol": "ν",
       "page": "3-37",
       "help": "Only used for 'another fluid'. The handbook works in lbf·min/in²; 1 lbf·min/in² = 4.137×10⁸ cP. For a kinematic viscosity, multiply by the density (p. 3-14).",
-      "role": "environment"
+      "role": "use"
      },
      {
       "name": "source",
@@ -688,7 +688,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "Surface finish and hardness change with time in service (p. 3-7): evaluate at several ages for a rate over the product's life. Between Table 3-3's 50 °F steps C_ν is interpolated linearly."
+   "notes": "Surface finish and hardness change with time in service (p. 3-7): evaluate at several ages for a rate over the product's life. Between Table 3-3's 50 °F steps C_ν is interpolated linearly. The handbook's Table 1-1 example (p. 1-12: seal 1.20, spring 1.04, poppet 0.35 per million hours) uses Chapter 1's physical equations (the leakage form, Eq. 3-5 here, with K1 = 3.27×10⁻⁴); this record uses the chapter's factor model, Eq. 3-7, normalised to field failure data, which isn't algebraically the same: for Table 1-1's seal it gives about 1.5 before C_T and C_N, which Table 1-1 doesn't have. Table 1-1 was also last revised before this chapter (p. vii). The contaminant factor C_N = (C_o/10)³ · FR · N10 (Table 3-4) is usually well below 1 (0.17 for a 10 gpm piston pump and a 10 µm filter, 0.004 for a sliding valve) and is the largest lever in the model; Table 1-1's worked example leaves it out."
   },
   {
    "id": "nswc-11:seal-dynamic",
@@ -1025,7 +1025,7 @@
       "symbol": "ν",
       "page": "3-37",
       "help": "Only used for 'another fluid'. The handbook works in lbf·min/in²; 1 lbf·min/in² = 4.137×10⁸ cP. For a kinematic viscosity, multiply by the density (p. 3-14).",
-      "role": "environment"
+      "role": "use"
      },
      {
       "name": "source",
@@ -1136,7 +1136,7 @@
       "default_basis": "neutral",
       "symbol": "PV_DS",
       "page": "3-24",
-      "help": "Needed at or above 800 rpm or 600 ft/min; leave at 0 for a slow seal.",
+      "help": "Used at or above 800 rpm or 600 ft/min when the maker gives one; 0 when there's none (C_PV is then left out, p. 3-23).",
       "role": "design"
      }
     ],
@@ -1246,9 +1246,9 @@
      },
      {
       "expr": "PV_DS > 0",
-      "why": "A seal at or above 800 rpm or 600 ft/min needs its design PV (PV_DS) for C_PV",
-      "severity": "refuse",
-      "page": "3-24",
+      "why": "No design PV from the maker: the PV factor C_PV is left out (1.0), as the handbook applies it only \"where a PV design factor is available from the manufacturer\"",
+      "severity": "warn",
+      "page": "3-23",
       "when": "fast == 1"
      },
      {
@@ -1351,7 +1351,7 @@
         "expr": "PV_OP / PV_DS",
         "page": "3-24",
         "equation": "3-15",
-        "when": "fast == 1",
+        "when": "fast == 1 and PV_DS > 0",
         "words": "running above its design PV"
        }
       ],
@@ -1381,7 +1381,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "One diameter serves both the size factor (Figure 3.12's inner diameter) and Eq. 3-13's seal diameter. Between Table 3-3's 50 °F steps C_ν is interpolated linearly."
+   "notes": "One diameter serves both the size factor (Figure 3.12's inner diameter) and Eq. 3-13's seal diameter. Between Table 3-3's 50 °F steps C_ν is interpolated linearly. Without a design PV from the maker, a fast seal's C_PV is left out (p. 3-23). The contaminant factor C_N = (C_o/10)³ · FR · N10 (Table 3-4) is usually well below 1 (0.17 for a 10 gpm piston pump and a 10 µm filter, 0.004 for a sliding valve) and is the largest lever in the model; Table 1-1's worked example leaves it out."
   },
   {
    "id": "nswc-11:seal-mechanical",
@@ -1659,7 +1659,7 @@
       "symbol": "ν",
       "page": "3-37",
       "help": "Only used for 'another fluid'. The handbook works in lbf·min/in²; 1 lbf·min/in² = 4.137×10⁸ cP. For a kinematic viscosity, multiply by the density (p. 3-14).",
-      "role": "environment"
+      "role": "use"
      },
      {
       "name": "source",
@@ -1947,7 +1947,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "Between Table 3-3's 50 °F steps C_ν is interpolated linearly."
+   "notes": "Between Table 3-3's 50 °F steps C_ν is interpolated linearly. The contaminant factor C_N = (C_o/10)³ · FR · N10 (Table 3-4) is usually well below 1 (0.17 for a 10 gpm piston pump and a 10 µm filter, 0.004 for a sliding valve) and is the largest lever in the model; Table 1-1's worked example leaves it out."
   },
   {
    "id": "nswc-11:spring-compression",
@@ -2385,7 +2385,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "Section 4.3.7: a conical, barrel or hourglass spring is split into increments, each rated, and their rates added. With an S10 life from the maker, use that (times 4.55 for an average life) with these factors instead (p. 4-5)."
+   "notes": "Section 4.3.7: a conical, barrel or hourglass spring is split into increments, each rated, and their rates added. With an S10 life from the maker, use that (times 4.55 for an average life) with these factors instead (p. 4-5); the library has no separate record for that route yet. The handbook's Table 1-1 example (p. 1-12: seal 1.20, spring 1.04, poppet 0.35 per million hours) uses Chapter 1's physical equations (for the spring, Eq. 4-5: 23.8 × (S_G/T_S)³ = 1.04); this record uses the chapter's factor model, Eq. 4-6, normalised to a 190,000 psi wire and a cycle rate, which isn't algebraically the same: for Table 1-1's spring it gives 1.11 (C_Y 0.466, C_CS 0.1, every geometry factor 1)."
   },
   {
    "id": "nswc-11:spring-extension",
@@ -5774,7 +5774,7 @@
       "symbol": "ν",
       "page": "6-31",
       "help": "Only used for 'another fluid'. 1 lbf·min/in² = 4.137×10⁸ cP.",
-      "role": "environment"
+      "role": "use"
      },
      {
       "name": "source",
@@ -6032,7 +6032,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "Between Table 6-6's 50 °F steps C_ν is interpolated linearly."
+   "notes": "Between Table 6-6's 50 °F steps C_ν is interpolated linearly. The handbook's Table 1-1 example (p. 1-12: seal 1.20, spring 1.04, poppet 0.35 per million hours) uses Chapter 1's physical equations (for the poppet, the leakage form of p. 1-7: 0.70 per million operations × 0.5 operations an hour); this record uses the chapter's factor model, Eq. 6-6, normalised to field failure data, which isn't algebraically the same: for Table 1-1's poppet it gives 0.597 per million operations (0.30 an hour at 0.5 operations an hour) before C_N and C_W, which Table 1-1 doesn't have. The contaminant factor C_N = (C_o/10)³ · FR · N10 (Table 6-5) is usually well below 1 (0.17 for a 10 gpm piston pump and a 10 µm filter, 0.004 for a sliding valve) and Table 1-1 omits it."
   },
   {
    "id": "nswc-11:valve-sliding",
@@ -6303,7 +6303,7 @@
       "symbol": "ν",
       "page": "6-31",
       "help": "Only used for 'another fluid'. 1 lbf·min/in² = 4.137×10⁸ cP.",
-      "role": "environment"
+      "role": "use"
      },
      {
       "name": "source",
@@ -6654,9 +6654,9 @@
     "Cracked fitting or housing: fatigue, shock, vibration (external leakage)"
    ],
    "units": {
-    "value": "per_million_operations",
+    "value": "per_million_hours",
     "time_basis": "operating",
-    "as_given": "failures per million operations"
+    "as_given": "failures per million hours"
    },
    "summary": {
     "mean": null
@@ -6664,11 +6664,244 @@
    "covariate_model": {
     "equation": "6-1",
     "page": "6-3",
-    "formula": "λ_VA = λ_PO + λ_SE + λ_SP + λ_SO + λ_HO",
-    "words": "A poppet valve's failure rate is the sum of its parts': the poppet and seat, its seals, its return spring, the solenoid that drives it and its housing, each from its own model.",
-    "rate_unit": "per_million_operations",
+    "formula": "λ_VA = λ_PO · ops/h + λ_SE + λ_SP + λ_SO + λ_HO",
+    "words": "A poppet valve's failure rate per hour is the sum of its parts': the poppet and seat (its rate per operation times the operations an hour), its seals, its return spring, the solenoid that drives it and its housing, each from its own model. The pressures, fluid and dirt the poppet and seals share are entered once.",
+    "rate_unit": "per_million_hours",
     "combine": "sum",
     "inputs": [
+     {
+      "name": "ops_per_hour",
+      "kind": "number",
+      "label": "Valve operations per hour",
+      "unit": "per hour",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a valve that never operates isn't rated by this model"
+       }
+      ],
+      "symbol": "ops/h",
+      "page": "6-3",
+      "help": "How often the valve opens and closes. It turns the poppet's (or spool's) rate per million operations into one per hour, and sets the return spring's cycle rate and the solenoid's use rate (one cycle per operation).",
+      "role": "use"
+     },
+     {
+      "name": "P1",
+      "kind": "number",
+      "label": "Upstream pressure",
+      "unit": "psi",
+      "limits": [
+       {
+        "min": 0,
+        "severity": "refuse",
+        "why": "a pressure can't be negative"
+       }
+      ],
+      "symbol": "P1",
+      "page": "6-10",
+      "role": "use"
+     },
+     {
+      "name": "P2",
+      "kind": "number",
+      "label": "Downstream pressure",
+      "unit": "psi",
+      "limits": [
+       {
+        "min": 0,
+        "severity": "refuse",
+        "why": "a pressure can't be negative"
+       }
+      ],
+      "default": 14.7,
+      "default_basis": "handbook",
+      "symbol": "P2",
+      "page": "6-10",
+      "help": "Atmospheric for a valve venting to air (the handbook: upstream minus downstream pressure).",
+      "role": "use"
+     },
+     {
+      "name": "T_O",
+      "kind": "number",
+      "label": "Fluid temperature",
+      "unit": "°F",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "below absolute zero",
+        "min": -459.67
+       }
+      ],
+      "symbol": "T",
+      "page": "6-31",
+      "role": "environment"
+     },
+     {
+      "name": "fluid",
+      "kind": "choice",
+      "label": "Fluid",
+      "choices": [
+       {
+        "code": "air",
+        "label": "Air"
+       },
+       {
+        "code": "oxygen",
+        "label": "Oxygen"
+       },
+       {
+        "code": "nitrogen",
+        "label": "Nitrogen"
+       },
+       {
+        "code": "co2",
+        "label": "Carbon dioxide"
+       },
+       {
+        "code": "water",
+        "label": "Water"
+       },
+       {
+        "code": "sae10",
+        "label": "SAE 10 oil"
+       },
+       {
+        "code": "sae20",
+        "label": "SAE 20 oil"
+       },
+       {
+        "code": "sae30",
+        "label": "SAE 30 oil"
+       },
+       {
+        "code": "sae40",
+        "label": "SAE 40 oil"
+       },
+       {
+        "code": "sae50",
+        "label": "SAE 50 oil"
+       },
+       {
+        "code": "sae90",
+        "label": "SAE 90 oil"
+       },
+       {
+        "code": "diesel",
+        "label": "Diesel fuel"
+       },
+       {
+        "code": "mil_h_83282",
+        "label": "Hydraulic fluid MIL-H-83282"
+       },
+       {
+        "code": "mil_h_5606",
+        "label": "Hydraulic fluid MIL-H-5606"
+       },
+       {
+        "code": "other",
+        "label": "Another fluid (give its viscosity)"
+       }
+      ],
+      "default": "other",
+      "default_basis": "neutral",
+      "page": "6-31",
+      "help": "Table 6-6's fluids at the fluid temperature. 'Another fluid' uses the viscosity below (its default, 8.27 cP, is the handbook's reference viscosity: factor 1).",
+      "role": "use"
+     },
+     {
+      "name": "nu_cP",
+      "kind": "number",
+      "label": "Dynamic viscosity of the fluid at its temperature (another fluid only)",
+      "unit": "cP",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a viscosity is more than zero"
+       }
+      ],
+      "default": 8.2737084,
+      "default_basis": "neutral",
+      "symbol": "ν",
+      "page": "6-31",
+      "help": "Only used for 'another fluid'. 1 lbf·min/in² = 4.137×10⁸ cP.",
+      "role": "use"
+     },
+     {
+      "name": "source",
+      "kind": "choice",
+      "label": "Upstream component producing contaminants",
+      "choices": [
+       {
+        "code": "piston_pump",
+        "label": "Piston pump (steel)"
+       },
+       {
+        "code": "gear_pump",
+        "label": "Gear pump (steel)"
+       },
+       {
+        "code": "vane_pump",
+        "label": "Vane pump (steel)"
+       },
+       {
+        "code": "cylinder",
+        "label": "Cylinder (steel)"
+       },
+       {
+        "code": "sliding_valve",
+        "label": "Sliding action valve (steel)"
+       },
+       {
+        "code": "hose",
+        "label": "Hose (rubber)"
+       }
+      ],
+      "symbol": "N10",
+      "page": "6-30",
+      "help": "Table 6-5: particles under 10 μm per hour per rated gpm (piston pump 0.017, gear pump 0.019, vane pump 0.006, cylinder 0.008, sliding valve 0.0004, hose 0.0013).",
+      "role": "environment"
+     },
+     {
+      "name": "C_o",
+      "kind": "number",
+      "label": "System filter size",
+      "unit": "μm",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a filter size is more than zero"
+       }
+      ],
+      "default": 10,
+      "default_basis": "handbook",
+      "symbol": "C_o",
+      "page": "6-30",
+      "help": "10 μm is the handbook's standard system filter (factor (C_o/10)³ = 1).",
+      "role": "environment"
+     },
+     {
+      "name": "FR",
+      "kind": "number",
+      "label": "Rated flow rate",
+      "unit": "gpm",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "the flow rate is more than zero"
+       }
+      ],
+      "symbol": "FR",
+      "page": "6-30",
+      "role": "design"
+     },
      {
       "name": "n_seals",
       "kind": "number",
@@ -6719,7 +6952,7 @@
       "default": 1,
       "default_basis": "typical",
       "page": "6-3",
-      "help": "0 for a valve worked by hand or by pressure.",
+      "help": "0 for a valve worked by hand or by pressure (or a check valve).",
       "role": "design"
      }
     ],
@@ -6730,7 +6963,20 @@
       "key": "poppet",
       "name": "Poppet and seat",
       "uses": "nswc-11:valve-poppet",
-      "symbol": "λ_PO"
+      "symbol": "λ_PO",
+      "note": "Per million operations × the valve's operations an hour, so it adds to the per-hour parts (the handbook's rule, pp. 12-10 and 12-16; Chapter 1's worked valve converts its poppet the same way, Table 1-1, p. 1-12).",
+      "scale": "ops_per_hour",
+      "scale_label": "operations an hour",
+      "bind": {
+       "P1": "P1",
+       "P2": "P2",
+       "T_O": "T_O",
+       "fluid": "fluid",
+       "nu_cP": "nu_cP",
+       "source": "source",
+       "C_o": "C_o",
+       "FR": "FR"
+      }
      },
      {
       "key": "seal",
@@ -6738,7 +6984,17 @@
       "uses": "nswc-11:seal-static",
       "symbol": "λ_SE",
       "count": "n_seals",
-      "note": "Eq. 6-1 (p. 6-3) adds this part's rate as it comes from Chapter 3, in failures per million hours, into a total it states in failures per million operations; the handbook sums the mixed units as printed and so does this record."
+      "note": "Chapter 3 gives this part in failures per million hours; it is added as it is (Eq. 6-1, p. 6-3, with every part on one time basis as Chapter 1's worked valve does, p. 1-12).",
+      "bind": {
+       "P1": "P1",
+       "P2": "P2",
+       "T_O": "T_O",
+       "fluid": "fluid",
+       "nu_cP": "nu_cP",
+       "source": "source",
+       "C_o": "C_o",
+       "FR": "FR"
+      }
      },
      {
       "key": "spring",
@@ -6746,7 +7002,10 @@
       "uses": "nswc-11:spring-compression",
       "symbol": "λ_SP",
       "count": "n_springs",
-      "note": "Eq. 6-1 (p. 6-3) adds this part's rate as it comes from Chapter 4, in failures per million hours, into a total it states in failures per million operations; the handbook sums the mixed units as printed and so does this record."
+      "note": "Chapter 4 gives this part in failures per million hours; it is added as it is (Eq. 6-1, p. 6-3, with every part on one time basis as Chapter 1's worked valve does, p. 1-12).",
+      "bind": {
+       "cycle_rate": "ops_per_hour / 60"
+      }
      },
      {
       "key": "solenoid",
@@ -6754,14 +7013,17 @@
       "uses": "nswc-11:solenoid",
       "symbol": "λ_SO",
       "count": "n_solenoids",
-      "note": "Eq. 6-1 (p. 6-3) adds this part's rate as it comes from Chapter 5, in failures per million hours, into a total it states in failures per million operations; the handbook sums the mixed units as printed and so does this record."
+      "note": "Chapter 5 gives this part in failures per million hours; it is added as it is (Eq. 6-1, p. 6-3, with every part on one time basis as Chapter 1's worked valve does, p. 1-12).",
+      "bind": {
+       "ops_per_min": "ops_per_hour / 60"
+      }
      },
      {
       "key": "housing",
       "name": "Housing",
       "uses": "nswc-11:valve-housing",
       "symbol": "λ_HO",
-      "note": "Eq. 6-1 (p. 6-3) adds this part's rate as it comes from Section 6.5, in failures per million hours, into a total it states in failures per million operations; the handbook sums the mixed units as printed and so does this record."
+      "note": "Section 6.5 gives this part in failures per million hours; it is added as it is (Eq. 6-1, p. 6-3, with every part on one time basis as Chapter 1's worked valve does, p. 1-12)."
      }
     ]
    },
@@ -6787,7 +7049,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "The seals use the gasket and static seal model, as Chapter 1's worked valve does (p. 1-10); rate a seal that slides with the dynamic seal model instead. A count of 0 leaves a part out, but its inputs are still asked for. Chapter 1's worked valve (p. 1-12) instead turns the poppet into a rate per hour (times its operations an hour) before adding the parts."
+   "notes": "Per million hours: the poppet's per-operation rate is multiplied by the operations an hour before the parts are added, as Chapter 1's worked valve does (p. 1-12); Eq. 6-1 itself labels every term per million operations. The seals use the gasket and static seal model, as Chapter 1's worked valve does (p. 1-10); rate a seal that slides with the dynamic seal model instead. A count of 0 leaves a part out and its inputs aren't needed."
   },
   {
    "id": "nswc-11:valve-assembly-sliding",
@@ -6815,9 +7077,9 @@
     "Cracked fitting or housing: fatigue, shock, vibration (external leakage)"
    ],
    "units": {
-    "value": "per_million_operations",
+    "value": "per_million_hours",
     "time_basis": "operating",
-    "as_given": "failures per million operations"
+    "as_given": "failures per million hours"
    },
    "summary": {
     "mean": null
@@ -6825,11 +7087,244 @@
    "covariate_model": {
     "equation": "6-2",
     "page": "6-3",
-    "formula": "λ_VA = λ_SV + λ_SE + λ_SP + λ_SO + λ_HO",
-    "words": "A spool valve's failure rate is the sum of its parts': the spool and sleeve, its seals, its springs, the solenoid that drives it and its housing, each from its own model.",
-    "rate_unit": "per_million_operations",
+    "formula": "λ_VA = λ_SV · ops/h + λ_SE + λ_SP + λ_SO + λ_HO",
+    "words": "A spool valve's failure rate per hour is the sum of its parts': the spool and sleeve (its rate per operation times the operations an hour), its seals, its springs, the solenoid that drives it and its housing, each from its own model. The pressures, fluid and dirt the spool and seals share are entered once.",
+    "rate_unit": "per_million_hours",
     "combine": "sum",
     "inputs": [
+     {
+      "name": "ops_per_hour",
+      "kind": "number",
+      "label": "Valve operations per hour",
+      "unit": "per hour",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a valve that never operates isn't rated by this model"
+       }
+      ],
+      "symbol": "ops/h",
+      "page": "6-3",
+      "help": "How often the valve opens and closes. It turns the poppet's (or spool's) rate per million operations into one per hour, and sets the return spring's cycle rate and the solenoid's use rate (one cycle per operation).",
+      "role": "use"
+     },
+     {
+      "name": "P1",
+      "kind": "number",
+      "label": "Upstream pressure",
+      "unit": "psi",
+      "limits": [
+       {
+        "min": 0,
+        "severity": "refuse",
+        "why": "a pressure can't be negative"
+       }
+      ],
+      "symbol": "P1",
+      "page": "6-10",
+      "role": "use"
+     },
+     {
+      "name": "P2",
+      "kind": "number",
+      "label": "Downstream pressure",
+      "unit": "psi",
+      "limits": [
+       {
+        "min": 0,
+        "severity": "refuse",
+        "why": "a pressure can't be negative"
+       }
+      ],
+      "default": 14.7,
+      "default_basis": "handbook",
+      "symbol": "P2",
+      "page": "6-10",
+      "help": "Atmospheric for a valve venting to air (the handbook: upstream minus downstream pressure).",
+      "role": "use"
+     },
+     {
+      "name": "T_O",
+      "kind": "number",
+      "label": "Fluid temperature",
+      "unit": "°F",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "below absolute zero",
+        "min": -459.67
+       }
+      ],
+      "symbol": "T",
+      "page": "6-31",
+      "role": "environment"
+     },
+     {
+      "name": "fluid",
+      "kind": "choice",
+      "label": "Fluid",
+      "choices": [
+       {
+        "code": "air",
+        "label": "Air"
+       },
+       {
+        "code": "oxygen",
+        "label": "Oxygen"
+       },
+       {
+        "code": "nitrogen",
+        "label": "Nitrogen"
+       },
+       {
+        "code": "co2",
+        "label": "Carbon dioxide"
+       },
+       {
+        "code": "water",
+        "label": "Water"
+       },
+       {
+        "code": "sae10",
+        "label": "SAE 10 oil"
+       },
+       {
+        "code": "sae20",
+        "label": "SAE 20 oil"
+       },
+       {
+        "code": "sae30",
+        "label": "SAE 30 oil"
+       },
+       {
+        "code": "sae40",
+        "label": "SAE 40 oil"
+       },
+       {
+        "code": "sae50",
+        "label": "SAE 50 oil"
+       },
+       {
+        "code": "sae90",
+        "label": "SAE 90 oil"
+       },
+       {
+        "code": "diesel",
+        "label": "Diesel fuel"
+       },
+       {
+        "code": "mil_h_83282",
+        "label": "Hydraulic fluid MIL-H-83282"
+       },
+       {
+        "code": "mil_h_5606",
+        "label": "Hydraulic fluid MIL-H-5606"
+       },
+       {
+        "code": "other",
+        "label": "Another fluid (give its viscosity)"
+       }
+      ],
+      "default": "other",
+      "default_basis": "neutral",
+      "page": "6-31",
+      "help": "Table 6-6's fluids at the fluid temperature. 'Another fluid' uses the viscosity below (its default, 8.27 cP, is the handbook's reference viscosity: factor 1).",
+      "role": "use"
+     },
+     {
+      "name": "nu_cP",
+      "kind": "number",
+      "label": "Dynamic viscosity of the fluid at its temperature (another fluid only)",
+      "unit": "cP",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a viscosity is more than zero"
+       }
+      ],
+      "default": 8.2737084,
+      "default_basis": "neutral",
+      "symbol": "ν",
+      "page": "6-31",
+      "help": "Only used for 'another fluid'. 1 lbf·min/in² = 4.137×10⁸ cP.",
+      "role": "use"
+     },
+     {
+      "name": "source",
+      "kind": "choice",
+      "label": "Upstream component producing contaminants",
+      "choices": [
+       {
+        "code": "piston_pump",
+        "label": "Piston pump (steel)"
+       },
+       {
+        "code": "gear_pump",
+        "label": "Gear pump (steel)"
+       },
+       {
+        "code": "vane_pump",
+        "label": "Vane pump (steel)"
+       },
+       {
+        "code": "cylinder",
+        "label": "Cylinder (steel)"
+       },
+       {
+        "code": "sliding_valve",
+        "label": "Sliding action valve (steel)"
+       },
+       {
+        "code": "hose",
+        "label": "Hose (rubber)"
+       }
+      ],
+      "symbol": "N10",
+      "page": "6-30",
+      "help": "Table 6-5: particles under 10 μm per hour per rated gpm (piston pump 0.017, gear pump 0.019, vane pump 0.006, cylinder 0.008, sliding valve 0.0004, hose 0.0013).",
+      "role": "environment"
+     },
+     {
+      "name": "C_o",
+      "kind": "number",
+      "label": "System filter size",
+      "unit": "μm",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a filter size is more than zero"
+       }
+      ],
+      "default": 10,
+      "default_basis": "handbook",
+      "symbol": "C_o",
+      "page": "6-30",
+      "help": "10 μm is the handbook's standard system filter (factor (C_o/10)³ = 1).",
+      "role": "environment"
+     },
+     {
+      "name": "FR",
+      "kind": "number",
+      "label": "Rated flow rate",
+      "unit": "gpm",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "the flow rate is more than zero"
+       }
+      ],
+      "symbol": "FR",
+      "page": "6-30",
+      "role": "design"
+     },
      {
       "name": "n_seals",
       "kind": "number",
@@ -6880,7 +7375,7 @@
       "default": 1,
       "default_basis": "typical",
       "page": "6-3",
-      "help": "0 for a valve worked by hand or by pressure.",
+      "help": "0 for a valve worked by hand or by pressure (or a check valve).",
       "role": "design"
      }
     ],
@@ -6891,7 +7386,20 @@
       "key": "spool",
       "name": "Spool and sleeve",
       "uses": "nswc-11:valve-sliding",
-      "symbol": "λ_SV"
+      "symbol": "λ_SV",
+      "note": "Per million operations × the valve's operations an hour, so it adds to the per-hour parts (the handbook's rule, pp. 12-10 and 12-16; Chapter 1's worked valve converts its poppet the same way, Table 1-1, p. 1-12).",
+      "scale": "ops_per_hour",
+      "scale_label": "operations an hour",
+      "bind": {
+       "P1": "P1",
+       "P2": "P2",
+       "T_O": "T_O",
+       "fluid": "fluid",
+       "nu_cP": "nu_cP",
+       "source": "source",
+       "C_o": "C_o",
+       "FR": "FR"
+      }
      },
      {
       "key": "seal",
@@ -6899,7 +7407,17 @@
       "uses": "nswc-11:seal-static",
       "symbol": "λ_SE",
       "count": "n_seals",
-      "note": "Eq. 6-2 (p. 6-3) adds this part's rate as it comes from Chapter 3, in failures per million hours, into a total it states in failures per million operations; the handbook sums the mixed units as printed and so does this record."
+      "note": "Chapter 3 gives this part in failures per million hours; it is added as it is (Eq. 6-2, p. 6-3, with every part on one time basis as Chapter 1's worked valve does, p. 1-12).",
+      "bind": {
+       "P1": "P1",
+       "P2": "P2",
+       "T_O": "T_O",
+       "fluid": "fluid",
+       "nu_cP": "nu_cP",
+       "source": "source",
+       "C_o": "C_o",
+       "FR": "FR"
+      }
      },
      {
       "key": "spring",
@@ -6907,7 +7425,10 @@
       "uses": "nswc-11:spring-compression",
       "symbol": "λ_SP",
       "count": "n_springs",
-      "note": "Eq. 6-2 (p. 6-3) adds this part's rate as it comes from Chapter 4, in failures per million hours, into a total it states in failures per million operations; the handbook sums the mixed units as printed and so does this record."
+      "note": "Chapter 4 gives this part in failures per million hours; it is added as it is (Eq. 6-2, p. 6-3, with every part on one time basis as Chapter 1's worked valve does, p. 1-12).",
+      "bind": {
+       "cycle_rate": "ops_per_hour / 60"
+      }
      },
      {
       "key": "solenoid",
@@ -6915,14 +7436,17 @@
       "uses": "nswc-11:solenoid",
       "symbol": "λ_SO",
       "count": "n_solenoids",
-      "note": "Eq. 6-2 (p. 6-3) adds this part's rate as it comes from Chapter 5, in failures per million hours, into a total it states in failures per million operations; the handbook sums the mixed units as printed and so does this record."
+      "note": "Chapter 5 gives this part in failures per million hours; it is added as it is (Eq. 6-2, p. 6-3, with every part on one time basis as Chapter 1's worked valve does, p. 1-12).",
+      "bind": {
+       "ops_per_min": "ops_per_hour / 60"
+      }
      },
      {
       "key": "housing",
       "name": "Housing",
       "uses": "nswc-11:valve-housing",
       "symbol": "λ_HO",
-      "note": "Eq. 6-2 (p. 6-3) adds this part's rate as it comes from Section 6.5, in failures per million hours, into a total it states in failures per million operations; the handbook sums the mixed units as printed and so does this record."
+      "note": "Section 6.5 gives this part in failures per million hours; it is added as it is (Eq. 6-2, p. 6-3, with every part on one time basis as Chapter 1's worked valve does, p. 1-12)."
      }
     ]
    },
@@ -6948,7 +7472,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "The seals use the gasket and static seal model; rate a seal that slides with the dynamic seal model instead. A count of 0 leaves a part out, but its inputs are still asked for."
+   "notes": "Per million hours: the spool's per-operation rate is multiplied by the operations an hour before the parts are added (pp. 12-10, 12-16; p. 1-12). The seals use the gasket and static seal model; rate a seal that slides with the dynamic seal model instead. A count of 0 leaves a part out and its inputs aren't needed."
   },
   {
    "id": "nswc-11:bearing-rolling-load-rating",
@@ -7189,8 +7713,7 @@
        },
        {
         "severity": "warn",
-        "why": "Figure 7.5 covers 60 to 260 °C",
-        "min": 60,
+        "why": "Figure 7.5 covers up to 260 °C",
         "max": 260,
         "page": "7-17"
        }
@@ -7596,6 +8119,7 @@
       ],
       "symbol": "L10h",
       "page": "7-11",
+      "help": "At the load L_S below (90 % reliability).",
       "role": "design"
      },
      {
@@ -7618,18 +8142,19 @@
      {
       "name": "L_S",
       "kind": "number",
-      "label": "Dynamic load rating (catalogue)",
+      "label": "Load the L10 life was quoted at",
       "unit": "lbf",
       "limits": [
        {
         "min": 0,
         "exclusive": true,
         "severity": "refuse",
-        "why": "a load rating is more than zero"
+        "why": "a load is more than zero"
        }
       ],
       "symbol": "L_S",
       "page": "7-14",
+      "help": "The handbook's rated L10 is at the rated dynamic load (p. 7-10). A catalogue L10 life is usually already at the bearing's service load: then enter L_A = L_S (C_Y = 1), or the load counts twice (8× low at L_A/L_S = 0.5).",
       "role": "design"
      },
      {
@@ -7725,8 +8250,7 @@
        },
        {
         "severity": "warn",
-        "why": "Figure 7.5 covers 60 to 260 °C",
-        "min": 60,
+        "why": "Figure 7.5 covers up to 260 °C",
         "max": 260,
         "page": "7-17"
        }
@@ -8099,7 +8623,7 @@
     "equation": "8-2",
     "page": "8-8",
     "formula": "λ_G = λ_G,B · C_GS · C_GP · C_GA · C_GL · C_GT · C_GV, with λ_G,B = 10⁶ · 60 · V_d / design life (revolutions)",
-    "words": "A gear's failure rate starts at one failure per design life (10⁸ revolutions unless the maker says otherwise), turned into hours at its design speed. That is scaled by its speed and load against the design, misalignment, its lubricant's viscosity, its temperature and the shock from the prime mover and the load (the AGMA service factor). The handbook's speed and load factors aren't 1 at the design point: 2.0 at the design speed and 1 at half the design load.",
+    "words": "A gear's failure rate starts at one failure per design life (10⁸ revolutions unless the maker says otherwise), turned into hours at its design speed. That is scaled by its speed and load against the design, misalignment, its lubricant's viscosity, its temperature and the shock from the prime mover and the load (the AGMA service factor). At its design speed and load the speed and load factors are 1 (Reliafy's reading: see the note).",
     "rate_unit": "per_million_hours",
     "combine": "sum",
     "inputs": [
@@ -8364,8 +8888,8 @@
       "factors": [
        {
         "symbol": "C_GS",
-        "name": "Speed against design",
-        "expr": "1.0 + speed_ratio ** 0.7",
+        "name": "Speed against design (÷ 2, its value at the design speed)",
+        "expr": "(1.0 + speed_ratio ** 0.7) / 2",
         "page": "8-9",
         "equation": "8-3",
         "source": "Figure 8.6",
@@ -8373,8 +8897,8 @@
        },
        {
         "symbol": "C_GP",
-        "name": "Load against design",
-        "expr": "(load_ratio / 0.50) ** 4.69",
+        "name": "Load against design (÷ 25.8, its value at the design load)",
+        "expr": "load_ratio ** 4.69",
         "page": "8-10",
         "equation": "8-6",
         "source": "Figure 8.7",
@@ -8465,7 +8989,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "The footnote's RPM in the base rate is taken as the design speed; C_GS scales for the operating speed (p. 8-9)."
+   "notes": "The footnote's RPM in the base rate is taken as the design speed; C_GS scales for the operating speed (p. 8-9). Reliafy's reading (p. 8-8 against Eqs. 8-3 and 8-6, pp. 8-9, 8-10): the handbook says the speed and load factors adjust the base rate for any difference from the design, yet as printed they are 2.0 and 25.8 at the design speed and load (× 51.6). Each is divided by its value at the design point (C_GS ÷ 2, C_GP ÷ 25.8), so a gear at its design speed and load gets its base rate."
   },
   {
    "id": "nswc-11:gear-known-rate",
@@ -8505,7 +9029,7 @@
     "equation": "8-2",
     "page": "8-8",
     "formula": "λ_G = λ_G,B · C_GS · C_GP · C_GA · C_GL · C_GT · C_GV",
-    "words": "When the maker (or data for similar gears) gives the gear's failure rate at its specified speed, load, lubricant and temperature, that rate is scaled by its speed and load against the design, misalignment, its lubricant's viscosity, its temperature and the shock from the prime mover and the load (the AGMA service factor). The handbook's speed and load factors aren't 1 at the design point: 2.0 at the design speed and 1 at half the design load.",
+    "words": "When the maker (or data for similar gears) gives the gear's failure rate at its specified speed, load, lubricant and temperature, that rate is scaled by its speed and load against the design, misalignment, its lubricant's viscosity, its temperature and the shock from the prime mover and the load (the AGMA service factor). At its design speed and load the speed and load factors are 1 (Reliafy's reading: see the note).",
     "rate_unit": "per_million_hours",
     "combine": "sum",
     "inputs": [
@@ -8768,8 +9292,8 @@
       "factors": [
        {
         "symbol": "C_GS",
-        "name": "Speed against design",
-        "expr": "1.0 + speed_ratio ** 0.7",
+        "name": "Speed against design (÷ 2, its value at the design speed)",
+        "expr": "(1.0 + speed_ratio ** 0.7) / 2",
         "page": "8-9",
         "equation": "8-3",
         "source": "Figure 8.6",
@@ -8777,8 +9301,8 @@
        },
        {
         "symbol": "C_GP",
-        "name": "Load against design",
-        "expr": "(load_ratio / 0.50) ** 4.69",
+        "name": "Load against design (÷ 25.8, its value at the design load)",
+        "expr": "load_ratio ** 4.69",
         "page": "8-10",
         "equation": "8-6",
         "source": "Figure 8.7",
@@ -8868,7 +9392,8 @@
    "licence": {
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
-   }
+   },
+   "notes": "Reliafy's reading (p. 8-8 against Eqs. 8-3 and 8-6, pp. 8-9, 8-10): the handbook says the speed and load factors adjust the base rate for any difference from the design, yet as printed they are 2.0 and 25.8 at the design speed and load (× 51.6). Each is divided by its value at the design point (C_GS ÷ 2, C_GP ÷ 25.8), so a gear at its design speed and load gets its base rate."
   },
   {
    "id": "nswc-11:spline",
@@ -8892,9 +9417,9 @@
     "Abrasive wear: contaminants in the lubricant"
    ],
    "units": {
-    "value": "per_million_cycles",
+    "value": "per_million_hours",
     "time_basis": "operating",
-    "as_given": "failures per million cycles"
+    "as_given": "failures per million hours"
    },
    "summary": {
     "mean": null
@@ -8902,9 +9427,9 @@
    "covariate_model": {
     "equation": "8-13",
     "page": "8-12",
-    "formula": "λ_GS = λ_GS,B · C_GS · C_GL · C_GT · C_GV, with λ_GS,B = 10⁶ / θ, θ = 7.08×10⁻¹⁰ (φ G_L / G_D)^4.56 · A_E^−2.36 and φ = 4.85×10³ G_B G_D³ / G_T",
-    "words": "A spline's failure rate per million revolutions starts at one over its life in revolutions, which grows steeply with its length, diameter and tooth hardness and falls with the torque and the misalignment. That is scaled by its speed against the design, its lubricant's viscosity, its temperature and the shock from the prime mover and the load.",
-    "rate_unit": "per_million_cycles",
+    "formula": "λ_GS = λ_GS,B · C_GS · C_GL · C_GT · C_GV, with λ_GS,B = 10⁶ / θ × 60 · V_o (per million hours), θ = 7.08×10⁻¹⁰ (φ G_L / G_D)^4.56 · A_E^−2.36 and φ = 4.85×10³ G_B G_D³ / G_T",
+    "words": "A spline's failure rate per million hours starts at one over its life in revolutions, times the revolutions it makes an hour at its operating speed. The life grows steeply with its length, diameter and tooth hardness and falls with the torque and the misalignment. That is scaled by its speed against the design, its lubricant's viscosity, its temperature and the shock from the prime mover and the load.",
+    "rate_unit": "per_million_hours",
     "combine": "sum",
     "inputs": [
      {
@@ -9169,16 +9694,16 @@
       "name": "Spline (wear, fretting, tooth failure)",
       "base": {
        "symbol": "λ_GS,B",
-       "name": "Base failure rate (10⁶ ÷ the life in revolutions)",
-       "expr": "1e6 / theta",
+       "name": "Base failure rate (10⁶ ÷ the life in revolutions × 60 × the operating rpm)",
+       "expr": "1e6 / theta * 60 * V_o",
        "page": "8-12",
        "equation": "8-11"
       },
       "factors": [
        {
         "symbol": "C_GS",
-        "name": "Speed against design",
-        "expr": "1.0 + speed_ratio ** 0.7",
+        "name": "Speed against design (÷ 2, its value at the design speed)",
+        "expr": "(1.0 + speed_ratio ** 0.7) / 2",
         "page": "8-9",
         "equation": "8-3",
         "source": "Figure 8.6",
@@ -9260,7 +9785,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "Per million revolutions (one revolution is one cycle). G_B is taken as the Brinell hardness number though the handbook labels it lb/in² (p. 8-13)."
+   "notes": "Eq. 8-11 is per million revolutions; the record turns it into per million hours with the spline's own operating speed (60 × V_o revolutions an hour), so a prediction needs no separate cycles an hour. G_B is taken as the Brinell hardness number though the handbook labels it lb/in² (p. 8-13); the life equation is very sensitive to it (read in psi it would change θ by about 10¹⁴) and is unvalidated. Reliafy's reading (p. 8-8 against Eqs. 8-3 and 8-6, pp. 8-9, 8-10): the handbook says the speed and load factors adjust the base rate for any difference from the design, yet as printed they are 2.0 and 25.8 at the design speed and load (× 51.6). Each is divided by its value at the design point (C_GS ÷ 2, C_GP ÷ 25.8), so a gear at its design speed and load gets its base rate."
   },
   {
    "id": "nswc-11:actuator-side-load",
@@ -9655,7 +10180,14 @@
       "equation": "9-4"
      }
     ],
-    "checks": [],
+    "checks": [
+     {
+      "expr": "1e4 <= N_O <= 1e8",
+      "why": "The constant-wear life N_O is outside about 10⁴ to 10⁸ cycles, far from the handbook's own test lives (70,000 to 170,000 cycles, Figure 9.2, p. 9-10): the 9th-power equation gives a wide range for small differences in the inputs and the handbook says testing may be needed; this rate isn't credible as it stands",
+      "severity": "warn",
+      "page": "9-11"
+     }
+    ],
     "modes": [
      {
       "key": "actuator",
@@ -9727,7 +10259,8 @@
    "licence": {
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
-   }
+   },
+   "notes": "Warning: as printed, Eq. 9-4 and 9-6 raise the strength-to-stress ratio to the 9th power, and for an ordinary steel actuator (for example a 50 lbf side load, a 3 in bore and a 0.002 in clearance) give about 10¹⁷ to 10¹⁹ cycles, a rate near 10⁻¹² per million cycles: about 12 orders of magnitude below the handbook's own test data (Figure 9.2, p. 9-10: actuators wearing out after 70,000 to 170,000 cycles, about 6 to 15 failures per million cycles). The handbook warns of the wide range and says reliability testing may be needed (p. 9-11). The equation is transcribed as printed; treat a life outside about 10⁴ to 10⁸ cycles as not credible and use test or field data instead."
   },
   {
    "id": "nswc-11:actuator-axial-load",
@@ -10105,7 +10638,14 @@
       "equation": "9-6"
      }
     ],
-    "checks": [],
+    "checks": [
+     {
+      "expr": "1e4 <= N_O <= 1e8",
+      "why": "The constant-wear life N_O is outside about 10⁴ to 10⁸ cycles, far from the handbook's own test lives (70,000 to 170,000 cycles, Figure 9.2, p. 9-10): the 9th-power equation gives a wide range for small differences in the inputs and the handbook says testing may be needed; this rate isn't credible as it stands",
+      "severity": "warn",
+      "page": "9-11"
+     }
+    ],
     "modes": [
      {
       "key": "actuator",
@@ -10177,7 +10717,8 @@
    "licence": {
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
-   }
+   },
+   "notes": "Warning: as printed, Eq. 9-4 and 9-6 raise the strength-to-stress ratio to the 9th power, and for an ordinary steel actuator (for example a 50 lbf side load, a 3 in bore and a 0.002 in clearance) give about 10¹⁷ to 10¹⁹ cycles, a rate near 10⁻¹² per million cycles: about 12 orders of magnitude below the handbook's own test data (Figure 9.2, p. 9-10: actuators wearing out after 70,000 to 170,000 cycles, about 6 to 15 failures per million cycles). The handbook warns of the wide range and says reliability testing may be needed (p. 9-11). The equation is transcribed as printed; treat a life outside about 10⁴ to 10⁸ cycles as not credible and use test or field data instead."
   },
   {
    "id": "nswc-11:pump-fluid-driver",
@@ -10655,6 +11196,44 @@
     "combine": "sum",
     "inputs": [
      {
+      "name": "n",
+      "kind": "number",
+      "label": "Pump speed",
+      "unit": "rpm",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "the pump must run"
+       }
+      ],
+      "symbol": "V_O",
+      "page": "10-15",
+      "help": "Passed to the seals, the bearings and the fluid driver (one speed for the whole pump).",
+      "role": "use"
+     },
+     {
+      "name": "filter_um",
+      "kind": "number",
+      "label": "System filter size",
+      "unit": "µm",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a filter size is more than zero"
+       }
+      ],
+      "default": 10,
+      "default_basis": "handbook",
+      "symbol": "C_o, F_AC",
+      "page": "10-15",
+      "help": "Passed to the seals' contaminant factor (10 µm is the handbook's standard filter, p. 3-38) and the fluid driver's (Eq. 10-5: 0.6 + 0.05 × µm, so 1.1 at 10 µm).",
+      "role": "environment"
+     },
+     {
       "name": "n_SE",
       "kind": "number",
       "label": "Number of mechanical seals",
@@ -10698,21 +11277,28 @@
       "name": "Mechanical seals",
       "uses": "nswc-11:seal-mechanical",
       "symbol": "λ_SE",
-      "count": "n_SE"
+      "count": "n_SE",
+      "bind": {
+       "n": "n",
+       "C_o": "filter_um"
+      }
      },
      {
       "key": "shaft",
       "name": "Shaft",
       "uses": "nswc-11:shaft",
       "symbol": "λ_SH",
-      "note": "The shaft's model (Chapter 20) is in failures per million cycles; Eq. 10-2 adds it to the per-hour rates as it is, and so does this model."
+      "note": "Reliafy's reading (p. 10-10 against p. 20-5): Eq. 10-2 lists the shaft per million hours while Chapter 20 gives it per million cycles; the shaft is taken per million hours and added as it is (converting by revolutions would give a shaft life of hours)."
      },
      {
       "key": "bearings",
       "name": "Bearings",
       "uses": "nswc-11:bearing-rolling-load-rating",
       "symbol": "λ_BE",
-      "count": "n_BE"
+      "count": "n_BE",
+      "bind": {
+       "n": "n"
+      }
      },
      {
       "key": "casing",
@@ -10730,7 +11316,11 @@
       "key": "fluid_driver",
       "name": "Fluid driver",
       "uses": "nswc-11:pump-fluid-driver",
-      "symbol": "λ_FD"
+      "symbol": "λ_FD",
+      "bind": {
+       "V_O": "n",
+       "F_AC": "filter_um"
+      }
      }
     ]
    },
@@ -10756,7 +11346,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "λ_SE here is the mechanical seals; the handbook's λ_SE also counts the pump's O-rings and gaskets (Chapter 3), which are added as their own records (p. 10-11). The shaft's per-cycle rate is added as the handbook does (p. 10-10)."
+   "notes": "λ_SE here is the mechanical seals; the handbook's λ_SE also counts \"all pump seals\", O-rings and gaskets included (Chapter 3, p. 10-11), which are added as their own records. All bearings share one set of inputs. Reliafy's reading (p. 10-10 against p. 20-5): Eq. 10-2 lists the shaft per million hours while Chapter 20 gives it per million cycles; the shaft is taken per million hours and added as it is (converting by revolutions would give a shaft life of hours)."
   },
   {
    "id": "nswc-11:filter-fluid",
@@ -10849,7 +11439,7 @@
       "symbol": "P_R",
       "page": "11-10",
       "help": "In the same unit as the operating pressure.",
-      "role": "use"
+      "role": "design"
      },
      {
       "name": "mobile",
@@ -11390,9 +11980,14 @@
        {
         "code": "resin_asbestos_truck",
         "label": "Resin-asbestos (truck linings)"
+       },
+       {
+        "code": "other",
+        "label": "Another lining (no curve: C_T = 1)"
        }
       ],
       "page": "12-13",
+      "help": "The handbook's four temperature curves (they aren't tied to the wear coefficient's material): pick the one that matches the lining, or 'another lining' for none of them.",
       "role": "design"
      },
      {
@@ -11452,7 +12047,14 @@
       "equation": "12-3"
      }
     ],
-    "checks": [],
+    "checks": [
+     {
+      "expr": "-40 <= T <= 200",
+      "why": "The temperature curves have no stated range; outside about −40 to 200 °F they're extrapolated",
+      "severity": "warn",
+      "page": "12-13"
+     }
+    ],
     "modes": [
      {
       "key": "lining",
@@ -11501,7 +12103,7 @@
        {
         "symbol": "C_T",
         "name": "Ambient temperature",
-        "expr": "(1.42 - 0.00154 * X + 1.38e-06 * X ** 2) if lining_type == 'sintered_metallic' else (2.79 - 0.0109 * X + 1.24e-05 * X ** 2) if lining_type == 'resin_asbestos' else (3.8 - 0.00759 * X + 5.07e-06 * X ** 2) if lining_type == 'carbon_carbon' else (17.59 - 0.0603 * X + 5.34e-05 * X ** 2)",
+        "expr": "1.0 if lining_type == 'other' else (1.42 - 0.00154 * X + 1.38e-06 * X ** 2) if lining_type == 'sintered_metallic' else (2.79 - 0.0109 * X + 1.24e-05 * X ** 2) if lining_type == 'resin_asbestos' else (3.8 - 0.00759 * X + 5.07e-06 * X ** 2) if lining_type == 'carbon_carbon' else (17.59 - 0.0603 * X + 5.34e-05 * X ** 2)",
         "page": "12-13",
         "equation": "12-7 to 12-10",
         "words": "ambient temperature away from about 70 °F"
@@ -11692,9 +12294,14 @@
        {
         "code": "resin_asbestos_truck",
         "label": "Resin-asbestos (truck linings)"
+       },
+       {
+        "code": "other",
+        "label": "Another lining (no curve: C_T = 1)"
        }
       ],
       "page": "12-13",
+      "help": "The handbook's four temperature curves (they aren't tied to the wear coefficient's material): pick the one that matches the lining, or 'another lining' for none of them.",
       "role": "design"
      },
      {
@@ -11728,7 +12335,14 @@
       "page": "12-13"
      }
     ],
-    "checks": [],
+    "checks": [
+     {
+      "expr": "-40 <= T <= 200",
+      "why": "The temperature curves have no stated range; outside about −40 to 200 °F they're extrapolated",
+      "severity": "warn",
+      "page": "12-13"
+     }
+    ],
     "modes": [
      {
       "key": "lining",
@@ -11776,7 +12390,7 @@
        {
         "symbol": "C_T",
         "name": "Ambient temperature",
-        "expr": "(1.42 - 0.00154 * X + 1.38e-06 * X ** 2) if lining_type == 'sintered_metallic' else (2.79 - 0.0109 * X + 1.24e-05 * X ** 2) if lining_type == 'resin_asbestos' else (3.8 - 0.00759 * X + 5.07e-06 * X ** 2) if lining_type == 'carbon_carbon' else (17.59 - 0.0603 * X + 5.34e-05 * X ** 2)",
+        "expr": "1.0 if lining_type == 'other' else (1.42 - 0.00154 * X + 1.38e-06 * X ** 2) if lining_type == 'sintered_metallic' else (2.79 - 0.0109 * X + 1.24e-05 * X ** 2) if lining_type == 'resin_asbestos' else (3.8 - 0.00759 * X + 5.07e-06 * X ** 2) if lining_type == 'carbon_carbon' else (17.59 - 0.0603 * X + 5.34e-05 * X ** 2)",
         "page": "12-13",
         "equation": "12-7 to 12-10",
         "words": "ambient temperature away from about 70 °F"
@@ -12033,9 +12647,14 @@
        {
         "code": "resin_asbestos_truck",
         "label": "Resin-asbestos (truck linings)"
+       },
+       {
+        "code": "other",
+        "label": "Another lining (no curve: C_T = 1)"
        }
       ],
       "page": "12-19",
+      "help": "The handbook's four temperature curves (they aren't tied to the wear coefficient's material): pick the one that matches the lining, or 'another lining' for none of them.",
       "role": "design"
      },
      {
@@ -12095,7 +12714,20 @@
       "equation": "12-13"
      }
     ],
-    "checks": [],
+    "checks": [
+     {
+      "expr": "N_P == 1",
+      "why": "C_NP multiplies the rate by the number of disks, as printed (p. 12-19), though p. 12-18 says multiple plates increase the reliability; with a maker's rate for the whole disk pack, set the number of disks to 1",
+      "severity": "warn",
+      "page": "12-19"
+     },
+     {
+      "expr": "-40 <= T <= 200",
+      "why": "The temperature curves have no stated range; outside about −40 to 200 °F they're extrapolated",
+      "severity": "warn",
+      "page": "12-13"
+     }
+    ],
     "modes": [
      {
       "key": "lining",
@@ -12118,7 +12750,7 @@
        {
         "symbol": "C_T",
         "name": "Ambient temperature",
-        "expr": "(1.42 - 0.00154 * X + 1.38e-06 * X ** 2) if lining_type == 'sintered_metallic' else (2.79 - 0.0109 * X + 1.24e-05 * X ** 2) if lining_type == 'resin_asbestos' else (3.8 - 0.00758 * X + 5.07e-06 * X ** 2) if lining_type == 'carbon_carbon' else (17.59 - 0.0603 * X + 5.34e-05 * X ** 2)",
+        "expr": "1.0 if lining_type == 'other' else (1.42 - 0.00154 * X + 1.38e-06 * X ** 2) if lining_type == 'sintered_metallic' else (2.79 - 0.0109 * X + 1.24e-05 * X ** 2) if lining_type == 'resin_asbestos' else (3.8 - 0.00758 * X + 5.07e-06 * X ** 2) if lining_type == 'carbon_carbon' else (17.59 - 0.0603 * X + 5.34e-05 * X ** 2)",
         "page": "12-19",
         "equation": "12-17 to 12-20",
         "words": "ambient temperature away from about 70 °F"
@@ -12247,9 +12879,14 @@
        {
         "code": "resin_asbestos_truck",
         "label": "Resin-asbestos (truck linings)"
+       },
+       {
+        "code": "other",
+        "label": "Another lining (no curve: C_T = 1)"
        }
       ],
       "page": "12-19",
+      "help": "The handbook's four temperature curves (they aren't tied to the wear coefficient's material): pick the one that matches the lining, or 'another lining' for none of them.",
       "role": "design"
      },
      {
@@ -12283,7 +12920,20 @@
       "page": "12-13"
      }
     ],
-    "checks": [],
+    "checks": [
+     {
+      "expr": "N_P == 1",
+      "why": "C_NP multiplies the rate by the number of disks, as printed (p. 12-19), though p. 12-18 says multiple plates increase the reliability; with a maker's rate for the whole disk pack, set the number of disks to 1",
+      "severity": "warn",
+      "page": "12-19"
+     },
+     {
+      "expr": "-40 <= T <= 200",
+      "why": "The temperature curves have no stated range; outside about −40 to 200 °F they're extrapolated",
+      "severity": "warn",
+      "page": "12-13"
+     }
+    ],
     "modes": [
      {
       "key": "lining",
@@ -12305,7 +12955,7 @@
        {
         "symbol": "C_T",
         "name": "Ambient temperature",
-        "expr": "(1.42 - 0.00154 * X + 1.38e-06 * X ** 2) if lining_type == 'sintered_metallic' else (2.79 - 0.0109 * X + 1.24e-05 * X ** 2) if lining_type == 'resin_asbestos' else (3.8 - 0.00758 * X + 5.07e-06 * X ** 2) if lining_type == 'carbon_carbon' else (17.59 - 0.0603 * X + 5.34e-05 * X ** 2)",
+        "expr": "1.0 if lining_type == 'other' else (1.42 - 0.00154 * X + 1.38e-06 * X ** 2) if lining_type == 'sintered_metallic' else (2.79 - 0.0109 * X + 1.24e-05 * X ** 2) if lining_type == 'resin_asbestos' else (3.8 - 0.00758 * X + 5.07e-06 * X ** 2) if lining_type == 'carbon_carbon' else (17.59 - 0.0603 * X + 5.34e-05 * X ** 2)",
         "page": "12-19",
         "equation": "12-17 to 12-20",
         "words": "ambient temperature away from about 70 °F"
@@ -12351,7 +13001,7 @@
    "failure_mode": {
     "code": "ALL",
     "name": "All its failure modes",
-    "meaning": "The sum of 6 parts or failure modes, each a base rate scaled by its conditions."
+    "meaning": "The sum of 7 parts or failure modes, each a base rate scaled by its conditions."
    },
    "failure_modes": [
     "Sticking piston or leaking cylinder (contamination): low output pressure",
@@ -12378,6 +13028,30 @@
     "rate_unit": "per_million_hours",
     "combine": "sum",
     "inputs": [
+     {
+      "name": "lining",
+      "kind": "choice",
+      "label": "Friction material rated",
+      "choices": [
+       {
+        "code": "wear",
+        "label": "From its wear (the lining's wear coefficient, load and speed)"
+       },
+       {
+        "code": "maker",
+        "label": "From the maker's base failure rate"
+       },
+       {
+        "code": "none",
+        "label": "None: a magnetic particle, hysteresis or eddy-current brake (no friction lining)"
+       }
+      ],
+      "default": "wear",
+      "default_basis": "typical",
+      "page": "12-7",
+      "help": "Which friction material model the assembly adds; magnetic particle, hysteresis and eddy-current brakes brake without friction (p. 12-7).",
+      "role": "design"
+     },
      {
       "name": "AC_cycles_per_hour",
       "kind": "number",
@@ -12452,8 +13126,9 @@
       "name": "Actuators",
       "uses": "nswc-11:actuator-axial-load",
       "symbol": "λ_AC",
-      "count": "AC_cycles_per_hour",
-      "note": "Chapter 9 gives actuators in failures per million cycles; the handbook multiplies by cycles per hour (pp. 12-10, 12-16), so this part is its rate × the actuator cycles per hour (all actuators together)."
+      "note": "Chapter 9 gives actuators in failures per million cycles; the handbook multiplies by cycles per hour (pp. 12-10, 12-16), so this part is its rate × the actuator cycles per hour (all actuators together).",
+      "scale": "AC_cycles_per_hour",
+      "scale_label": "actuator cycles an hour (all actuators)"
      },
      {
       "key": "springs",
@@ -12464,9 +13139,17 @@
      },
      {
       "key": "friction",
-      "name": "Friction lining",
+      "name": "Friction lining (from its wear)",
       "uses": "nswc-11:brake-friction-material",
-      "symbol": "λ_FR"
+      "symbol": "λ_FR",
+      "when": "lining == 'wear'"
+     },
+     {
+      "key": "friction_maker",
+      "name": "Friction lining (from the maker's rate)",
+      "uses": "nswc-11:brake-friction-material-known-rate",
+      "symbol": "λ_FR",
+      "when": "lining == 'maker'"
      },
      {
       "key": "bearings",
@@ -12532,7 +13215,7 @@
    "failure_mode": {
     "code": "ALL",
     "name": "All its failure modes",
-    "meaning": "The sum of 5 parts or failure modes, each a base rate scaled by its conditions."
+    "meaning": "The sum of 6 parts or failure modes, each a base rate scaled by its conditions."
    },
    "failure_modes": [
     "Dishing, waviness or buckling of the plates (lack of conformability, uneven heating)",
@@ -12559,6 +13242,26 @@
     "rate_unit": "per_million_hours",
     "combine": "sum",
     "inputs": [
+     {
+      "name": "lining",
+      "kind": "choice",
+      "label": "Friction material rated",
+      "choices": [
+       {
+        "code": "wear",
+        "label": "From its wear (the lining's wear coefficient, load and speed)"
+       },
+       {
+        "code": "maker",
+        "label": "From the maker's base failure rate"
+       }
+      ],
+      "default": "wear",
+      "default_basis": "typical",
+      "page": "12-16",
+      "help": "Which friction material model the assembly adds.",
+      "role": "design"
+     },
      {
       "name": "AC_cycles_per_hour",
       "kind": "number",
@@ -12633,8 +13336,9 @@
       "name": "Actuators",
       "uses": "nswc-11:actuator-axial-load",
       "symbol": "λ_AC",
-      "count": "AC_cycles_per_hour",
-      "note": "Chapter 9 gives actuators in failures per million cycles; the handbook multiplies by cycles per hour (pp. 12-10, 12-16), so this part is its rate × the actuator cycles per hour (all actuators together)."
+      "note": "Chapter 9 gives actuators in failures per million cycles; the handbook multiplies by cycles per hour (pp. 12-10, 12-16), so this part is its rate × the actuator cycles per hour (all actuators together).",
+      "scale": "AC_cycles_per_hour",
+      "scale_label": "actuator cycles an hour (all actuators)"
      },
      {
       "key": "springs",
@@ -12645,9 +13349,17 @@
      },
      {
       "key": "friction",
-      "name": "Friction material",
+      "name": "Friction material (from its wear)",
       "uses": "nswc-11:clutch-friction-material",
-      "symbol": "λ_CF"
+      "symbol": "λ_CF",
+      "when": "lining == 'wear'"
+     },
+     {
+      "key": "friction_maker",
+      "name": "Friction material (from the maker's rate)",
+      "uses": "nswc-11:clutch-friction-material-known-rate",
+      "symbol": "λ_CF",
+      "when": "lining == 'maker'"
      },
      {
       "key": "bearings",
@@ -12895,10 +13607,10 @@
       "role": "design"
      },
      {
-      "name": "VA_ops_per_hour",
+      "name": "n_VA",
       "kind": "number",
-      "label": "Control valve operations per hour (all valves together)",
-      "unit": "per hour",
+      "label": "Number of control valves",
+      "unit": "",
       "limits": [
        {
         "min": 0,
@@ -12906,10 +13618,10 @@
         "why": "it can't be negative"
        }
       ],
-      "symbol": "ops/h",
+      "symbol": "n_VA",
       "page": "13-11",
-      "help": "Turns the valves' rate per million operations into one per million hours; 0 when it has none (a rotary screw normally has no control valves, p. 13-11).",
-      "role": "use"
+      "help": "0 when it has none (a rotary screw normally has no control valves, p. 13-11). Each valve's operations an hour are among the valve's inputs.",
+      "role": "design"
      },
      {
       "name": "n_SE",
@@ -12926,27 +13638,23 @@
       "symbol": "n_SE",
       "page": "13-11",
       "role": "design"
-     },
-     {
-      "name": "SH_cycles_per_hour",
-      "kind": "number",
-      "label": "Shaft cycles per hour",
-      "unit": "per hour",
-      "limits": [
-       {
-        "min": 0,
-        "severity": "refuse",
-        "why": "it can't be negative"
-       }
-      ],
-      "symbol": "cycles/h",
-      "page": "13-11",
-      "help": "Turns the shaft's rate per million cycles (Chapter 20) into one per million hours.",
-      "role": "use"
      }
     ],
     "derived": [],
-    "checks": [],
+    "checks": [
+     {
+      "expr": "n_BE > 0",
+      "why": "No shaft bearings counted: the bearings add nothing (every compressor shaft runs in bearings)",
+      "severity": "warn",
+      "page": "13-10"
+     },
+     {
+      "expr": "n_SE > 0",
+      "why": "No seals counted: the seals add nothing (every compressor type has a shaft seal)",
+      "severity": "warn",
+      "page": "13-11"
+     }
+    ],
     "modes": [
      {
       "key": "fluid_driver",
@@ -13203,11 +13911,11 @@
      },
      {
       "key": "valves",
-      "name": "Control valve assemblies",
+      "name": "Control valve assemblies (each)",
       "uses": "nswc-11:valve-assembly",
       "symbol": "λ_VA",
-      "count": "VA_ops_per_hour",
-      "note": "Chapter 6 gives valve assemblies in failures per million operations; Eq. 13-1 adds them per million hours, so this part is the valve rate × the operations per hour (all valves)."
+      "count": "n_VA",
+      "note": "Chapter 6's valve assembly, per million hours (its poppet converted by its own operations an hour), one per control valve."
      },
      {
       "key": "seals",
@@ -13221,8 +13929,7 @@
       "name": "Shaft",
       "uses": "nswc-11:shaft",
       "symbol": "λ_SH",
-      "count": "SH_cycles_per_hour",
-      "note": "Chapter 20 gives the shaft in failures per million cycles; Eq. 13-1 adds it per million hours, so this part is the shaft rate × its cycles per hour."
+      "note": "Reliafy's reading (p. 13-11 against p. 20-5): the shaft is taken per million hours, as Eq. 13-1 lists it, and added as it is."
      }
     ]
    },
@@ -13247,7 +13954,8 @@
    "licence": {
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
-   }
+   },
+   "notes": "The fluid driver is Table 13-4's rate by type; the detailed rubber-diaphragm model (Eq. 13-2, compressor-diaphragm, base 0.58) is a separate record: for a rubber-diaphragm compressor, compare it with Table 13-4's 22.8 (p. 13-13 sets λ_FD = λ_DI for that type). A reciprocating compressor's shaft sees reciprocating loads the shaft model doesn't cover (p. 20-5)."
   },
   {
    "id": "nswc-11:compressor-diaphragm",
@@ -13282,7 +13990,7 @@
    "covariate_model": {
     "equation": "13-2",
     "page": "13-13",
-    "formula": "λ_DI = λ_BFD · C_P · C_AC · C_LC · C_T, λ_BFD = 0.58, with the strain S = σ_r / E, σ_r = F·K_F·B_F / (2π h²)",
+    "formula": "λ_DI = λ_BFD · C_P · C_AC · C_LC · C_T, λ_BFD = 0.58, with C_P from the strain read off Figure 13.3, C_AC from the strain S = σ_r / E (Table 13-2), σ_r = F·K_F·B_F / (2π h²)",
     "words": "A rubber compressor diaphragm's failure rate starts at 0.58 failures per million hours and is scaled by how far it is strained (the push-rod force on a diaphragm of its size, thickness and hardness), ozone in the air, oil or solvent soaking into it, and temperatures over 212 °F.",
     "rate_unit": "per_million_hours",
     "combine": "sum",
@@ -13427,6 +14135,29 @@
       "role": "design"
      },
      {
+      "name": "S_fig",
+      "kind": "number",
+      "label": "Strain read from Figure 13.3 at the stress σ_r",
+      "unit": "%",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "a strain can't be negative",
+        "min": 0
+       },
+       {
+        "severity": "warn",
+        "why": "Figure 13.3's curves run to about 900 % strain",
+        "max": 900,
+        "page": "13-17"
+       }
+      ],
+      "symbol": "S (Figure 13.3)",
+      "page": "13-17",
+      "help": "Read off Figure 13.3 (p. 13-17), natural rubber's stress against strain for 33, 47, 59 and 73 IRHD, at the maximum radial stress σ_r this record works out (shown under its derived values). Below 75 % the load factor C_P is 1. For example about 800 psi on the 47 IRHD curve is about 445 %.",
+      "role": "use"
+     },
+     {
       "name": "ozone",
       "kind": "choice",
       "label": "Ozone in the air",
@@ -13441,8 +14172,9 @@
        }
       ],
       "default": "lab",
-      "default_basis": "handbook",
+      "default_basis": "typical",
       "page": "13-23",
+      "help": "Figure 13.7's two curves. Outdoor air at ground level is \"a few parts per hundred million\" (p. 13-18): nearer 7.5 pphm than the laboratory's 0.3.",
       "role": "environment"
      },
      {
@@ -13565,7 +14297,7 @@
      },
      {
       "name": "S",
-      "label": "Maximum strain",
+      "label": "Strain for the ozone factor (σ_r ÷ E)",
       "expr": "100 * sigma_r / E",
       "unit": "%",
       "symbol": "S",
@@ -13573,17 +14305,19 @@
       "limits": [
        {
         "severity": "warn",
-        "why": "Figure 13.6 covers strains up to 800 %",
-        "max": 800,
-        "page": "13-22"
-       },
-       {
-        "severity": "warn",
         "why": "Figure 13.7 covers strains from 15 %",
         "min": 15,
         "page": "13-23"
        }
       ]
+     },
+     {
+      "name": "S_AC",
+      "label": "Strain used for C_AC (held at Figure 13.7's 100 %)",
+      "expr": "min(S, 100)",
+      "unit": "%",
+      "symbol": "S",
+      "page": "13-23"
      }
     ],
     "checks": [
@@ -13607,9 +14341,15 @@
      },
      {
       "expr": "S <= 100",
-      "why": "Figure 13.7 (ozone) covers strains up to 100 %",
+      "why": "Figure 13.7 (ozone) covers strains up to 100 %: C_AC is held at its 100 % value",
       "severity": "warn",
       "page": "13-23"
+     },
+     {
+      "expr": "S_fig <= 800",
+      "why": "Figure 13.6 covers strains up to 800 %",
+      "severity": "warn",
+      "page": "13-22"
      }
     ],
     "modes": [
@@ -13626,16 +14366,16 @@
       "factors": [
        {
         "symbol": "C_P",
-        "name": "Axial loading (strain)",
-        "expr": "1.0 if S <= 75 else (S / 75) ** 1.8",
+        "name": "Axial loading (strain from Figure 13.3)",
+        "expr": "1.0 if S_fig <= 75 else (S_fig / 75) ** 1.8",
         "page": "13-22",
-        "source": "Figure 13.6",
+        "source": "Figures 13.3 and 13.6",
         "words": "strain over 75 %"
        },
        {
         "symbol": "C_AC",
         "name": "Atmospheric contaminants (ozone)",
-        "expr": "((S / 10) ** 1.1 if ozone == 'lab' else (S / 10) ** 2) * (1 / 3 if coating == 'yes' else 1.0)",
+        "expr": "((S_AC / 10) ** 1.1 if ozone == 'lab' else (S_AC / 10) ** 2) * (1 / 3 if coating == 'yes' else 1.0)",
         "page": "13-23",
         "source": "Figure 13.7",
         "words": "strain and ozone"
@@ -13780,6 +14520,24 @@
       "role": "use"
      },
      {
+      "name": "n",
+      "kind": "number",
+      "label": "Motor speed",
+      "unit": "rpm",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "the motor must turn",
+        "min": 0,
+        "exclusive": true
+       }
+      ],
+      "symbol": "n",
+      "page": "14-7",
+      "help": "Passed to the bearings (one speed for the motor).",
+      "role": "use"
+     },
+     {
       "name": "L_I",
       "kind": "number",
       "label": "Expected winding life (maker's figure)",
@@ -13864,7 +14622,7 @@
        },
        {
         "severity": "warn",
-        "why": "the industry standard limits voltage unbalance to 1 %",
+        "why": "the industry standard recommends at most 1 % (the handbook's range is 0 to 3 %)",
         "max": 1,
         "page": "14-12"
        },
@@ -13881,6 +14639,57 @@
       "page": "14-12",
       "help": "100 × (greatest difference from the average phase voltage) ÷ the average (three-phase motors).",
       "role": "environment"
+     },
+     {
+      "name": "ins_class",
+      "kind": "choice",
+      "label": "Insulation class (to adjust T_O from a measured winding rise)",
+      "choices": [
+       {
+        "code": "unknown",
+        "label": "Not used (no measured rise)"
+       },
+       {
+        "code": "A",
+        "label": "Class A (allowable rise 60 °C)"
+       },
+       {
+        "code": "B",
+        "label": "Class B (85 °C)"
+       },
+       {
+        "code": "F",
+        "label": "Class F (110 °C)"
+       },
+       {
+        "code": "H",
+        "label": "Class H (135 °C)"
+       }
+      ],
+      "default": "unknown",
+      "default_basis": "neutral",
+      "symbol": "Table 14-2",
+      "page": "14-9",
+      "help": "With a measured rise, T_O is lowered by the class's allowable rise minus the measured rise (p. 14-11, note 1): a Class F motor running a Class B rise gets 25 °C off, 2^2.5 = 5.7 × longer.",
+      "role": "design"
+     },
+     {
+      "name": "rise",
+      "kind": "number",
+      "label": "Measured winding temperature rise at full load",
+      "unit": "°C",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "a rise can't be negative",
+        "min": 0
+       }
+      ],
+      "when": "ins_class != 'unknown'",
+      "symbol": "T_rise",
+      "page": "14-10",
+      "help": "Eq. 14-4: (R_H − R_C) / R_C × (234.5 + T_C), from the hot and cold winding resistances and the cold temperature.",
+      "role": "use"
      },
      {
       "name": "a",
@@ -13964,7 +14773,16 @@
       "role": "design"
      }
     ],
-    "derived": [],
+    "derived": [
+     {
+      "name": "T_eff",
+      "label": "Ambient temperature for C_T (less any spare rise, Table 14-2 note 1)",
+      "expr": "T_O if ins_class == 'unknown' else T_O - ((60 if ins_class == 'A' else 85 if ins_class == 'B' else 110 if ins_class == 'F' else 135 if ins_class == 'H' else 0) - rise)",
+      "unit": "°C",
+      "symbol": "T_O",
+      "page": "14-11"
+     }
+    ],
     "checks": [
      {
       "expr": "not (motor_type == 'dc' and n_BS == 0)",
@@ -14032,7 +14850,7 @@
        {
         "symbol": "C_T",
         "name": "Ambient temperature",
-        "expr": "2 ** ((T_O - 40) / 10)",
+        "expr": "2 ** ((T_eff - 40) / 10)",
         "page": "14-11",
         "equation": "14-5",
         "source": "Figure 14.1",
@@ -14100,14 +14918,17 @@
       "name": "Armature shaft",
       "uses": "nswc-11:shaft",
       "symbol": "λ_AS",
-      "note": "Chapter 20's shaft model is in failures per million cycles; Eq. 14-1 adds it to the motor's per-hour rates as written (the handbook doesn't convert it)."
+      "note": "Reliafy's reading (p. 14-7 against p. 20-5): Eq. 14-1 lists the armature shaft per million hours while Chapter 20 gives it per million cycles; it is taken per million hours and added as it is."
      },
      {
       "key": "bearings",
       "name": "Bearings (each)",
       "uses": "nswc-11:bearing-rolling-load-rating",
       "symbol": "λ_BE",
-      "count": "n_BE"
+      "count": "n_BE",
+      "bind": {
+       "n": "n"
+      }
      },
      {
       "key": "capacitor",
@@ -14244,6 +15065,24 @@
       "role": "use"
      },
      {
+      "name": "n",
+      "kind": "number",
+      "label": "Motor speed",
+      "unit": "rpm",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "the motor must turn",
+        "min": 0,
+        "exclusive": true
+       }
+      ],
+      "symbol": "n",
+      "page": "14-7",
+      "help": "Passed to the bearings (one speed for the motor).",
+      "role": "use"
+     },
+     {
       "name": "L_I",
       "kind": "number",
       "label": "Expected winding life (maker's figure)",
@@ -14328,7 +15167,7 @@
        },
        {
         "severity": "warn",
-        "why": "the industry standard limits voltage unbalance to 1 %",
+        "why": "the industry standard recommends at most 1 % (the handbook's range is 0 to 3 %)",
         "max": 1,
         "page": "14-12"
        },
@@ -14345,6 +15184,57 @@
       "page": "14-12",
       "help": "100 × (greatest difference from the average phase voltage) ÷ the average (three-phase motors).",
       "role": "environment"
+     },
+     {
+      "name": "ins_class",
+      "kind": "choice",
+      "label": "Insulation class (to adjust T_O from a measured winding rise)",
+      "choices": [
+       {
+        "code": "unknown",
+        "label": "Not used (no measured rise)"
+       },
+       {
+        "code": "A",
+        "label": "Class A (allowable rise 60 °C)"
+       },
+       {
+        "code": "B",
+        "label": "Class B (85 °C)"
+       },
+       {
+        "code": "F",
+        "label": "Class F (110 °C)"
+       },
+       {
+        "code": "H",
+        "label": "Class H (135 °C)"
+       }
+      ],
+      "default": "unknown",
+      "default_basis": "neutral",
+      "symbol": "Table 14-2",
+      "page": "14-9",
+      "help": "With a measured rise, T_O is lowered by the class's allowable rise minus the measured rise (p. 14-11, note 1): a Class F motor running a Class B rise gets 25 °C off, 2^2.5 = 5.7 × longer.",
+      "role": "design"
+     },
+     {
+      "name": "rise",
+      "kind": "number",
+      "label": "Measured winding temperature rise at full load",
+      "unit": "°C",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "a rise can't be negative",
+        "min": 0
+       }
+      ],
+      "when": "ins_class != 'unknown'",
+      "symbol": "T_rise",
+      "page": "14-10",
+      "help": "Eq. 14-4: (R_H − R_C) / R_C × (234.5 + T_C), from the hot and cold winding resistances and the cold temperature.",
+      "role": "use"
      },
      {
       "name": "a",
@@ -14445,7 +15335,16 @@
       "role": "design"
      }
     ],
-    "derived": [],
+    "derived": [
+     {
+      "name": "T_eff",
+      "label": "Ambient temperature for C_T (less any spare rise, Table 14-2 note 1)",
+      "expr": "T_O if ins_class == 'unknown' else T_O - ((60 if ins_class == 'A' else 85 if ins_class == 'B' else 110 if ins_class == 'F' else 135 if ins_class == 'H' else 0) - rise)",
+      "unit": "°C",
+      "symbol": "T_O",
+      "page": "14-11"
+     }
+    ],
     "checks": [
      {
       "expr": "not (motor_type == 'dc' and n_BS == 0)",
@@ -14513,7 +15412,7 @@
        {
         "symbol": "C_T",
         "name": "Ambient temperature",
-        "expr": "2 ** ((T_O - 40) / 10)",
+        "expr": "2 ** ((T_eff - 40) / 10)",
         "page": "14-11",
         "equation": "14-5",
         "source": "Figure 14.1",
@@ -14581,14 +15480,17 @@
       "name": "Armature shaft",
       "uses": "nswc-11:shaft",
       "symbol": "λ_AS",
-      "note": "Chapter 20's shaft model is in failures per million cycles; Eq. 14-1 adds it to the motor's per-hour rates as written (the handbook doesn't convert it)."
+      "note": "Reliafy's reading (p. 14-7 against p. 20-5): Eq. 14-1 lists the armature shaft per million hours while Chapter 20 gives it per million cycles; it is taken per million hours and added as it is."
      },
      {
       "key": "bearings",
       "name": "Bearings (each)",
       "uses": "nswc-11:bearing-rolling-load-rating",
       "symbol": "λ_BE",
-      "count": "n_BE"
+      "count": "n_BE",
+      "bind": {
+       "n": "n"
+      }
      },
      {
       "key": "gears",
@@ -14772,7 +15674,7 @@
        },
        {
         "severity": "warn",
-        "why": "the industry standard limits voltage unbalance to 1 %",
+        "why": "the industry standard recommends at most 1 % (the handbook's range is 0 to 3 %)",
         "max": 1,
         "page": "14-12"
        },
@@ -14789,6 +15691,57 @@
       "page": "14-12",
       "help": "100 × (greatest difference from the average phase voltage) ÷ the average (three-phase motors).",
       "role": "environment"
+     },
+     {
+      "name": "ins_class",
+      "kind": "choice",
+      "label": "Insulation class (to adjust T_O from a measured winding rise)",
+      "choices": [
+       {
+        "code": "unknown",
+        "label": "Not used (no measured rise)"
+       },
+       {
+        "code": "A",
+        "label": "Class A (allowable rise 60 °C)"
+       },
+       {
+        "code": "B",
+        "label": "Class B (85 °C)"
+       },
+       {
+        "code": "F",
+        "label": "Class F (110 °C)"
+       },
+       {
+        "code": "H",
+        "label": "Class H (135 °C)"
+       }
+      ],
+      "default": "unknown",
+      "default_basis": "neutral",
+      "symbol": "Table 14-2",
+      "page": "14-9",
+      "help": "With a measured rise, T_O is lowered by the class's allowable rise minus the measured rise (p. 14-11, note 1): a Class F motor running a Class B rise gets 25 °C off, 2^2.5 = 5.7 × longer.",
+      "role": "design"
+     },
+     {
+      "name": "rise",
+      "kind": "number",
+      "label": "Measured winding temperature rise at full load",
+      "unit": "°C",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "a rise can't be negative",
+        "min": 0
+       }
+      ],
+      "when": "ins_class != 'unknown'",
+      "symbol": "T_rise",
+      "page": "14-10",
+      "help": "Eq. 14-4: (R_H − R_C) / R_C × (234.5 + T_C), from the hot and cold winding resistances and the cold temperature.",
+      "role": "use"
      },
      {
       "name": "a",
@@ -14817,7 +15770,16 @@
       "role": "environment"
      }
     ],
-    "derived": [],
+    "derived": [
+     {
+      "name": "T_eff",
+      "label": "Ambient temperature for C_T (less any spare rise, Table 14-2 note 1)",
+      "expr": "T_O if ins_class == 'unknown' else T_O - ((60 if ins_class == 'A' else 85 if ins_class == 'B' else 110 if ins_class == 'F' else 135 if ins_class == 'H' else 0) - rise)",
+      "unit": "°C",
+      "symbol": "T_O",
+      "page": "14-11"
+     }
+    ],
     "checks": [],
     "modes": [
      {
@@ -14834,7 +15796,7 @@
        {
         "symbol": "C_T",
         "name": "Ambient temperature",
-        "expr": "2 ** ((T_O - 40) / 10)",
+        "expr": "2 ** ((T_eff - 40) / 10)",
         "page": "14-11",
         "equation": "14-5",
         "source": "Figure 14.1",
@@ -15535,6 +16497,24 @@
     "combine": "sum",
     "inputs": [
      {
+      "name": "cycles_per_hour",
+      "kind": "number",
+      "label": "Charge and discharge cycles per hour",
+      "unit": "per hour",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "an accumulator that never cycles isn't rated by this model"
+       }
+      ],
+      "symbol": "cycles/h",
+      "page": "15-5",
+      "help": "Converts the piston's wear (per million cycles) to per hour, and sets the valves' operations and the springs' cycle rate (one each per cycle).",
+      "role": "use"
+     },
+     {
       "name": "n_SE",
       "kind": "number",
       "label": "Number of piston seals",
@@ -15548,6 +16528,25 @@
       ],
       "symbol": "n",
       "page": "15-5",
+      "role": "design"
+     },
+     {
+      "name": "n_VA",
+      "kind": "number",
+      "label": "Number of valves",
+      "unit": "",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "a count can't be negative",
+        "min": 0
+       }
+      ],
+      "default": 1,
+      "default_basis": "handbook",
+      "symbol": "n",
+      "page": "15-5",
+      "help": "Eq. 15-1 has one λ_VA; p. 15-1 describes an inlet (one-way) and an outlet valve: enter 2 for both. For a check valve with no solenoid, set the valve's solenoids to 0.",
       "role": "design"
      },
      {
@@ -15585,21 +16584,30 @@
       "uses": "nswc-11:spring-compression",
       "symbol": "λ_SP",
       "count": "n_SP",
-      "note": "Chapter 4's compression spring model (p. 15-5: the static spring equations suit most accumulators)."
+      "note": "Chapter 4's compression spring model (p. 15-5: the static spring equations suit most accumulators), cycling once per accumulator cycle.",
+      "bind": {
+       "cycle_rate": "cycles_per_hour / 60"
+      }
      },
      {
       "key": "piston_cylinder",
       "name": "Piston and cylinder interface",
       "uses": "nswc-11:actuator-side-load",
       "symbol": "λ_PC",
-      "note": "Chapter 9's side-load actuator model (p. 15-5: tilting the accumulator changes the piston's side load) is per million cycles; Eq. 15-1 adds it to per-hour rates as written (the handbook doesn't convert it)."
+      "note": "Chapter 9's side-load actuator model (p. 15-5: tilting the accumulator changes the piston's side load) is per million cycles: × the accumulator's charge and discharge cycles an hour, so it adds to Eq. 15-1's per-hour rates (the handbook's rule, pp. 12-10, 12-16).",
+      "scale": "cycles_per_hour",
+      "scale_label": "cycles an hour"
      },
      {
       "key": "valve",
-      "name": "Control valve",
+      "name": "Valves (each)",
       "uses": "nswc-11:valve-assembly",
       "symbol": "λ_VA",
-      "note": "Chapter 6's valve assembly rate is per million operations; Eq. 15-1 adds it to per-hour rates as written (the handbook doesn't convert it)."
+      "count": "n_VA",
+      "note": "Chapter 6's valve assembly, per million hours (its poppet converted by its operations an hour, one operation per accumulator cycle).",
+      "bind": {
+       "ops_per_hour": "cycles_per_hour"
+      }
      },
      {
       "key": "wall",
@@ -15673,6 +16681,24 @@
     "combine": "sum",
     "inputs": [
      {
+      "name": "cycles_per_hour",
+      "kind": "number",
+      "label": "Charge and discharge cycles per hour",
+      "unit": "per hour",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "an accumulator that never cycles isn't rated by this model"
+       }
+      ],
+      "symbol": "cycles/h",
+      "page": "15-5",
+      "help": "Converts the piston's wear (per million cycles) to per hour, and sets the valves' operations and the springs' cycle rate (one each per cycle).",
+      "role": "use"
+     },
+     {
       "name": "n_SE",
       "kind": "number",
       "label": "Number of piston seals",
@@ -15686,6 +16712,25 @@
       ],
       "symbol": "n",
       "page": "15-5",
+      "role": "design"
+     },
+     {
+      "name": "n_VA",
+      "kind": "number",
+      "label": "Number of valves",
+      "unit": "",
+      "limits": [
+       {
+        "severity": "refuse",
+        "why": "a count can't be negative",
+        "min": 0
+       }
+      ],
+      "default": 1,
+      "default_basis": "handbook",
+      "symbol": "n",
+      "page": "15-5",
+      "help": "Eq. 15-1 has one λ_VA; p. 15-1 describes an inlet (one-way) and an outlet valve: enter 2 for both. For a check valve with no solenoid, set the valve's solenoids to 0.",
       "role": "design"
      }
     ],
@@ -15705,14 +16750,20 @@
       "name": "Piston and cylinder interface",
       "uses": "nswc-11:actuator-side-load",
       "symbol": "λ_PC",
-      "note": "Chapter 9's side-load actuator model (p. 15-5: tilting the accumulator changes the piston's side load) is per million cycles; Eq. 15-1 adds it to per-hour rates as written (the handbook doesn't convert it)."
+      "note": "Chapter 9's side-load actuator model (p. 15-5: tilting the accumulator changes the piston's side load) is per million cycles: × the accumulator's charge and discharge cycles an hour, so it adds to Eq. 15-1's per-hour rates (the handbook's rule, pp. 12-10, 12-16).",
+      "scale": "cycles_per_hour",
+      "scale_label": "cycles an hour"
      },
      {
       "key": "valve",
-      "name": "Control valve",
+      "name": "Valves (each)",
       "uses": "nswc-11:valve-assembly",
       "symbol": "λ_VA",
-      "note": "Chapter 6's valve assembly rate is per million operations; Eq. 15-1 adds it to per-hour rates as written (the handbook doesn't convert it)."
+      "count": "n_VA",
+      "note": "Chapter 6's valve assembly, per million hours (its poppet converted by its operations an hour, one operation per accumulator cycle).",
+      "bind": {
+       "ops_per_hour": "cycles_per_hour"
+      }
      },
      {
       "key": "wall",
@@ -16580,7 +17631,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "C_SZ is 1 for axial loading (Eq. 16-8) and follows Eq. 16-7 under bending or torsion."
+   "notes": "C_SZ is 1 for axial loading (Eq. 16-8) and follows Eq. 16-7 under bending or torsion, as printed. As printed it lowers the rate for a bigger fastener (0.88 at 2 in, 1.14 at 0.25 in), against p. 16-14's text (\"the probability of failure is greater in larger parts\"): it is Shigley's strength size factor, which the chapter's other factors take as a reciprocal. Kept as printed; the effect is about ±14 % across the 0.25 to 2 in range."
   },
   {
    "id": "nswc-11:coupling-endurance",
@@ -16790,9 +17841,9 @@
     "Swollen, distorted or cracked elastomer, hub corrosion: chemical attack, heat"
    ],
    "units": {
-    "value": "per_million_cycles",
+    "value": "per_million_hours",
     "time_basis": "operating",
-    "as_given": "failures per million cycles"
+    "as_given": "failures per million hours"
    },
    "summary": {
     "mean": null
@@ -16802,13 +17853,13 @@
     "page": "17-6",
     "formula": "λ_CP = λ_CP,B · C_SF + λ_GR + λ_SE + λ_H",
     "words": "A gear coupling's failure rate is its base rate (5 failures per million cycles is typical) scaled by a service factor for shock and uneven torque, plus its gears, its seals and its housing.",
-    "rate_unit": "per_million_cycles",
+    "rate_unit": "per_million_hours",
     "combine": "sum",
     "inputs": [
      {
       "name": "lambda_CP_B",
       "kind": "number",
-      "label": "Base failure rate of the coupling",
+      "label": "Base failure rate of the coupling body",
       "unit": "failures per million cycles",
       "limits": [
        {
@@ -16818,12 +17869,28 @@
         "why": "a failure rate is more than zero"
        }
       ],
-      "default": 5.0,
-      "default_basis": "handbook",
       "symbol": "λ_CP,B",
-      "page": "17-7",
-      "help": "The handbook: a typical coupling rate is 5.0 per million cycles; or 10⁶ ÷ the maker's cycles to failure (Eq. 17-1).",
+      "page": "17-6",
+      "help": "10⁶ ÷ the maker's cycles to failure (Eq. 17-1). The handbook's \"typical\" 5.0 per million cycles (p. 17-7) is a whole coupling's rate, parts included: using it here counts the gears and seals twice.",
       "role": "design"
+     },
+     {
+      "name": "cycles_per_hour",
+      "kind": "number",
+      "label": "Coupling cycles per hour",
+      "unit": "per hour",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a coupling that never cycles isn't rated by this model"
+       }
+      ],
+      "symbol": "cycles/h",
+      "page": "17-6",
+      "help": "Turns the per-cycle terms into per hour. The handbook doesn't say what a coupling cycle is: use the same cycle the maker's cycles to failure count (a load or start-stop cycle, or a revolution). At 1,800 rpm a revolution is 108,000 an hour, and 5 failures per million revolutions would be 540,000 per million hours.",
+      "role": "use"
      },
      {
       "name": "driven",
@@ -16917,7 +17984,7 @@
       "name": "Coupling body",
       "base": {
        "symbol": "λ_CP,B",
-       "name": "Base failure rate",
+       "name": "Base failure rate (per million cycles)",
        "expr": "lambda_CP_B",
        "page": "17-6"
       },
@@ -16954,7 +18021,10 @@
         "words": "shock in the driven machinery and uneven torque"
        }
       ],
-      "symbol": "λ_CP,B·C_SF"
+      "symbol": "λ_CP,B·C_SF",
+      "note": "Per million cycles × the coupling's cycles an hour, so it adds to the per-hour parts (pp. 12-10, 12-16).",
+      "scale": "cycles_per_hour",
+      "scale_label": "cycles an hour"
      },
      {
       "key": "gears",
@@ -16962,7 +18032,7 @@
       "uses": "nswc-11:gear",
       "symbol": "λ_GR",
       "count": "n_GR",
-      "note": "Its own chapter gives it per million hours; Eq. 17-2 adds it to the per-cycle rates as it is (the handbook writes it per million cycles), and so does this model."
+      "note": "Its own chapter gives it per million hours, so it adds as it is (Eq. 17-2 writes it per million cycles; the per-cycle terms are the ones converted)."
      },
      {
       "key": "seals",
@@ -16970,19 +18040,22 @@
       "uses": "nswc-11:seal-dynamic",
       "symbol": "λ_SE",
       "count": "n_SE",
-      "note": "Its own chapter gives it per million hours; Eq. 17-2 adds it to the per-cycle rates as it is (the handbook writes it per million cycles), and so does this model."
+      "note": "Its own chapter gives it per million hours, so it adds as it is (Eq. 17-2 writes it per million cycles; the per-cycle terms are the ones converted)."
      },
      {
       "key": "housing",
       "name": "Housing (with hubs)",
       "base": {
        "symbol": "λ_H",
-       "name": "Housing failure rate",
+       "name": "Housing failure rate (per million cycles)",
        "value": 0.001,
        "page": "17-9"
       },
       "factors": [],
-      "symbol": "λ_H"
+      "symbol": "λ_H",
+      "note": "Per million cycles × the coupling's cycles an hour, so it adds to the per-hour parts (pp. 12-10, 12-16).",
+      "scale": "cycles_per_hour",
+      "scale_label": "cycles an hour"
      }
     ]
    },
@@ -17008,7 +18081,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "The gear and seal models are per million hours and are added to the per-cycle rates as the handbook does (p. 17-6, 17-7)."
+   "notes": "Per million hours: the coupling body and housing (per million cycles) × the cycles an hour, plus the gear and seal models (per million hours) as they are (pp. 12-10, 12-16; Eq. 17-2 labels every term per million cycles)."
   },
   {
    "id": "nswc-11:coupling-universal-joint",
@@ -17036,9 +18109,9 @@
     "Swollen, distorted or cracked elastomer, hub corrosion: chemical attack, heat"
    ],
    "units": {
-    "value": "per_million_cycles",
+    "value": "per_million_hours",
     "time_basis": "operating",
-    "as_given": "failures per million cycles"
+    "as_given": "failures per million hours"
    },
    "summary": {
     "mean": null
@@ -17048,9 +18121,27 @@
     "page": "17-9",
     "formula": "λ_UJ = λ_BE + λ_SE + λ_H + λ_F",
     "words": "A universal joint's failure rate is the sum of its parts: its bearings, its seals, its housing (a small fixed rate) and its fasteners, each from its own model.",
-    "rate_unit": "per_million_cycles",
+    "rate_unit": "per_million_hours",
     "combine": "sum",
     "inputs": [
+     {
+      "name": "cycles_per_hour",
+      "kind": "number",
+      "label": "Coupling cycles per hour",
+      "unit": "per hour",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a coupling that never cycles isn't rated by this model"
+       }
+      ],
+      "symbol": "cycles/h",
+      "page": "17-6",
+      "help": "Turns the per-cycle terms into per hour. The handbook doesn't say what a coupling cycle is: use the same cycle the maker's cycles to failure count (a load or start-stop cycle, or a revolution). At 1,800 rpm a revolution is 108,000 an hour, and 5 failures per million revolutions would be 540,000 per million hours.",
+      "role": "use"
+     },
      {
       "name": "n_BE",
       "kind": "number",
@@ -17113,7 +18204,7 @@
       "uses": "nswc-11:bearing-rolling-load-rating",
       "symbol": "λ_BE",
       "count": "n_BE",
-      "note": "Its own chapter gives it per million hours; Eq. 17-3 adds it to the per-cycle rates as it is (the handbook writes it per million cycles), and so does this model."
+      "note": "Its own chapter gives it per million hours, so it adds as it is (Eq. 17-3 writes it per million cycles; the per-cycle terms are the ones converted)."
      },
      {
       "key": "seals",
@@ -17121,19 +18212,22 @@
       "uses": "nswc-11:seal-dynamic",
       "symbol": "λ_SE",
       "count": "n_SE",
-      "note": "Its own chapter gives it per million hours; Eq. 17-3 adds it to the per-cycle rates as it is (the handbook writes it per million cycles), and so does this model."
+      "note": "Its own chapter gives it per million hours, so it adds as it is (Eq. 17-3 writes it per million cycles; the per-cycle terms are the ones converted)."
      },
      {
       "key": "housing",
       "name": "Housing (with hubs)",
       "base": {
        "symbol": "λ_H",
-       "name": "Housing failure rate",
+       "name": "Housing failure rate (per million cycles)",
        "value": 0.001,
        "page": "17-9"
       },
       "factors": [],
-      "symbol": "λ_H"
+      "symbol": "λ_H",
+      "note": "Per million cycles × the coupling's cycles an hour, so it adds to the per-hour parts (pp. 12-10, 12-16).",
+      "scale": "cycles_per_hour",
+      "scale_label": "cycles an hour"
      },
      {
       "key": "fasteners",
@@ -17141,7 +18235,7 @@
       "uses": "nswc-11:fastener",
       "symbol": "λ_F",
       "count": "n_F",
-      "note": "Its own chapter gives it per million hours; Eq. 17-3 adds it to the per-cycle rates as it is (the handbook writes it per million cycles), and so does this model."
+      "note": "Its own chapter gives it per million hours, so it adds as it is (Eq. 17-3 writes it per million cycles; the per-cycle terms are the ones converted)."
      }
     ]
    },
@@ -17167,7 +18261,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "The bearing, seal and fastener models are per million hours and are added to the per-cycle housing rate as the handbook does (p. 17-9)."
+   "notes": "Per million hours: the bearing, seal and fastener models (per million hours) as they are, plus the housing (per million cycles) × the cycles an hour (pp. 12-10, 12-16; Eq. 17-3 labels every term per million cycles)."
   },
   {
    "id": "nswc-11:slider-crank",
@@ -17192,9 +18286,9 @@
     "Poor linkage response: lubricant film too thin; seal leakage"
    ],
    "units": {
-    "value": "per_million_operations",
+    "value": "per_million_hours",
     "time_basis": "operating",
-    "as_given": "failures per million operations"
+    "as_given": "failures per million hours"
    },
    "summary": {
     "mean": null
@@ -17202,11 +18296,29 @@
    "covariate_model": {
     "equation": "18-1",
     "page": "18-3",
-    "formula": "λ_SC = λ_BE + λ_RD + λ_SE + λ_RI + λ_SM",
+    "formula": "λ_SC = λ_BE + λ_RD + λ_SE + λ_RI + λ_SM · ops/h",
     "words": "A slider crank's failure rate is the sum of its parts: its bearings, its connecting rods, its seals and gaskets, its rings and other dynamic seals, and the wear of the slider on its sliding surface.",
-    "rate_unit": "per_million_operations",
+    "rate_unit": "per_million_hours",
     "combine": "sum",
     "inputs": [
+     {
+      "name": "ops_per_hour",
+      "kind": "number",
+      "label": "Crank operations (revolutions) per hour",
+      "unit": "per hour",
+      "limits": [
+       {
+        "min": 0,
+        "exclusive": true,
+        "severity": "refuse",
+        "why": "a crank that never turns isn't rated by this model"
+       }
+      ],
+      "symbol": "ops/h",
+      "page": "18-3",
+      "help": "One operation is one crank revolution (one slider stroke and return). Converts the slider's wear per million cycles to per hour and sets the bearings' speed (rpm = this ÷ 60).",
+      "role": "use"
+     },
      {
       "name": "n_BE",
       "kind": "number",
@@ -17285,7 +18397,10 @@
       "uses": "nswc-11:bearing-rolling-load-rating",
       "symbol": "λ_BE",
       "count": "n_BE",
-      "note": "Chapter 7's bearing rate is in failures per million hours; Eq. 18-1 counts every term as per million operations and adds them as written (the handbook doesn't convert)."
+      "note": "Chapter 7's bearing rate is in failures per million hours, so it adds as it is (Eq. 18-1 labels it per million operations).",
+      "bind": {
+       "n": "ops_per_hour / 60"
+      }
      },
      {
       "key": "rods",
@@ -17299,7 +18414,7 @@
       "factors": [],
       "symbol": "λ_RD",
       "count": "n_RD",
-      "note": "The handbook's 0.001 rod estimate (p. 18-9) is in failures per million hours; Eq. 18-1 counts every term as per million operations and adds them as written (the handbook doesn't convert)."
+      "note": "The handbook's 0.001 rod estimate (p. 18-9) is in failures per million hours, so it adds as it is (Eq. 18-1 labels it per million operations)."
      },
      {
       "key": "seals",
@@ -17307,7 +18422,7 @@
       "uses": "nswc-11:seal-static",
       "symbol": "λ_SE",
       "count": "n_SE",
-      "note": "Chapter 3's static seal rate is in failures per million hours; Eq. 18-1 counts every term as per million operations and adds them as written (the handbook doesn't convert)."
+      "note": "Chapter 3's static seal rate is in failures per million hours, so it adds as it is (Eq. 18-1 labels it per million operations)."
      },
      {
       "key": "rings",
@@ -17315,14 +18430,16 @@
       "uses": "nswc-11:seal-dynamic",
       "symbol": "λ_RI",
       "count": "n_RI",
-      "note": "Chapter 3's dynamic seal rate is in failures per million hours; Eq. 18-1 counts every term as per million operations and adds them as written (the handbook doesn't convert)."
+      "note": "Chapter 3's dynamic seal rate is in failures per million hours, so it adds as it is (Eq. 18-1 labels it per million operations)."
      },
      {
       "key": "slider",
       "name": "Slider mechanism (wear)",
       "uses": "nswc-11:actuator-side-load",
       "symbol": "λ_SM",
-      "note": "Chapter 9's side-load actuator rate (the slider wears under the rod's side thrust) is in failures per million cycles; Eq. 18-1 counts every term as per million operations and adds them as written (the handbook doesn't convert)."
+      "note": "Chapter 9's side-load actuator rate (the slider wears under the rod's side thrust) is in failures per million cycles: × the crank's operations an hour, so it adds to the per-hour parts (pp. 12-10, 12-16).",
+      "scale": "ops_per_hour",
+      "scale_label": "operations an hour"
      }
     ]
    },
@@ -17849,9 +18966,9 @@
     "Fretting corrosion: movement between tightly fitted parts"
    ],
    "units": {
-    "value": "per_million_cycles",
+    "value": "per_million_hours",
     "time_basis": "operating",
-    "as_given": "failures per million cycles"
+    "as_given": "failures per million hours"
    },
    "summary": {
     "mean": null
@@ -17859,9 +18976,9 @@
    "covariate_model": {
     "equation": "20-3",
     "page": "20-4",
-    "formula": "λ_SH = λ_SH,B · C_f · C_T · C_DY · C_SC, with λ_SH,B = 10⁶ / N",
-    "words": "A shaft's failure rate per million cycles starts at one over the cycles its material lasts at the stress it works at (from the material's S-N curve). That is scaled by its surface finish, its temperature, how far it deflects against the allowable deflection, and the stress concentrations at its shoulders and grooves.",
-    "rate_unit": "per_million_cycles",
+    "formula": "λ_SH = λ_SH,B · (1 / C_f) · C_T · C_DY · C_SC, with λ_SH,B = 10⁶ / N and C_SC = C_SC,R · C_SC,G",
+    "words": "A shaft's failure rate starts at one over the cycles its material lasts at the stress it works at (from the material's S-N curve). That is scaled by its surface finish, its temperature, how far it deflects against the allowable deflection, and the stress concentrations at its shoulders and grooves. The rate is taken per million hours (Reliafy's reading: see the note).",
+    "rate_unit": "per_million_hours",
     "combine": "sum",
     "inputs": [
      {
@@ -17934,8 +19051,10 @@
         "page": "20-11"
        }
       ],
+      "when": "finish != 'polished' and finish != 'ground'",
       "symbol": "T_S",
       "page": "20-10",
+      "help": "Only needed for hot-rolled, machined and forged finishes (Table 20-3).",
       "role": "design"
      },
      {
@@ -18048,9 +19167,10 @@
         "why": "a diameter can't be negative"
        }
       ],
+      "when": "len_X > 0",
       "symbol": "D_X",
       "page": "20-7",
-      "help": "0 when the section has no length.",
+      "help": "Only needed when the section has a length.",
       "role": "design"
      },
      {
@@ -18065,6 +19185,8 @@
         "why": "a length can't be negative"
        }
       ],
+      "default": 0,
+      "default_basis": "neutral",
       "symbol": "L",
       "page": "20-7",
       "help": "0 when the shaft has no such section (Figure 20.2).",
@@ -18082,9 +19204,10 @@
         "why": "a diameter can't be negative"
        }
       ],
+      "when": "len_L > 0",
       "symbol": "D_L",
       "page": "20-7",
-      "help": "0 when the section has no length.",
+      "help": "Only needed when the section has a length.",
       "role": "design"
      },
      {
@@ -18099,6 +19222,8 @@
         "why": "a length can't be negative"
        }
       ],
+      "default": 0,
+      "default_basis": "neutral",
       "symbol": "M",
       "page": "20-7",
       "help": "0 when the shaft has no such section (Figure 20.2).",
@@ -18116,9 +19241,10 @@
         "why": "a diameter can't be negative"
        }
       ],
+      "when": "len_M > 0",
       "symbol": "D_M",
       "page": "20-7",
-      "help": "0 when the section has no length.",
+      "help": "Only needed when the section has a length.",
       "role": "design"
      },
      {
@@ -18133,6 +19259,8 @@
         "why": "a length can't be negative"
        }
       ],
+      "default": 0,
+      "default_basis": "neutral",
       "symbol": "N",
       "page": "20-7",
       "help": "0 when the shaft has no such section (Figure 20.2).",
@@ -18150,9 +19278,10 @@
         "why": "a diameter can't be negative"
        }
       ],
+      "when": "len_N > 0",
       "symbol": "D_N",
       "page": "20-7",
-      "help": "0 when the section has no length.",
+      "help": "Only needed when the section has a length.",
       "role": "design"
      },
      {
@@ -18345,8 +19474,8 @@
     ],
     "checks": [
      {
-      "expr": "len_X + len_L + len_M + len_N > 0",
-      "why": "At least one shaft section needs a length",
+      "expr": "len_X > 0",
+      "why": "Shaft section X (the overhang to the load) needs a length",
       "severity": "refuse",
       "page": "20-7"
      },
@@ -18395,11 +19524,11 @@
       "factors": [
        {
         "symbol": "C_f",
-        "name": "Surface finish",
-        "expr": "1.0 if finish == 'polished' else 0.89 if finish == 'ground' else 0.94 - 0.0046 * T_S + 8.37e-6 * T_S ** 2 if finish == 'hot_rolled' else 1.07 - 0.0051 * T_S + 2.21e-5 * T_S ** 2 - 3.57e-8 * T_S ** 3 if finish == 'machined' else 0.75 - 4.06e-3 * T_S + 7.58e-6 * T_S ** 2",
+        "name": "Surface finish (rate ÷ Table 20-3's factor)",
+        "expr": "1 / (1.0 if finish == 'polished' else 0.89 if finish == 'ground' else 0.94 - 0.0046 * T_S + 8.37e-6 * T_S ** 2 if finish == 'hot_rolled' else 1.07 - 0.0051 * T_S + 2.21e-5 * T_S ** 2 - 3.57e-8 * T_S ** 3 if finish == 'machined' else 0.75 - 4.06e-3 * T_S + 7.58e-6 * T_S ** 2)",
         "page": "20-10",
         "source": "Table 20-3",
-        "words": "its surface finish"
+        "words": "a rougher finish"
        },
        {
         "symbol": "C_T",
@@ -18420,7 +19549,7 @@
        {
         "symbol": "C_SC",
         "name": "Stress concentration",
-        "expr": "C_SC_R + C_SC_G",
+        "expr": "C_SC_R * C_SC_G",
         "page": "20-8",
         "equation": "20-9",
         "source": "Table 20-4",
@@ -18453,7 +19582,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "Per million cycles. Table 20-3's finish factors are below 1 for rougher finishes and are applied as printed, so a rougher finish lowers the rate (p. 20-10). C_SC is the sum C_SC,R + C_SC,G as printed (p. 20-8)."
+   "notes": "Reliafy's reading (p. 20-5 against pp. 10-10, 13-11, 14-7): Chapter 20 prints the shaft per million cycles, but every assembly that uses it lists it per million hours, and converting by revolutions gives a life of hours (0.1 to 0.25 per million cycles × 108,000 revolutions an hour at 1,800 rpm). The rate is taken per million hours. Reliafy's reading (p. 20-10): Table 20-3's finish factors are endurance-strength factors (1 or below for a rougher finish); applied as printed they would lower the rate for a rougher finish, so the rate is divided by them (polished stays 1). Reliafy's reading (p. 20-8): Eq. 20-9 prints C_SC = C_SC,R + C_SC,G, but the page says C_SC,G = 1.0 with no grooves, which is the neutral value of a product; C_SC,R × C_SC,G is used. C_DY's 0.0043 constant keeps it near 10⁻³ for an ordinary shaft, so the deflection factor dominates (p. 20-7). The model assumes a constant torque and completely reversed bending from rotation; for large reciprocating loads (piston engines, compressors) the handbook says the rate must be analysed and adjusted (p. 20-5)."
   },
   {
    "id": "nswc-11:belt-drive",
@@ -18561,11 +19690,11 @@
         "page": "21-11"
        }
       ],
-      "default": 40,
-      "default_basis": "neutral",
+      "default": 85,
+      "default_basis": "handbook",
       "symbol": "T_O",
-      "page": "21-13",
-      "help": "Up to 40 °F the factor is 1. Include heat from slip, tight bends and poor ventilation.",
+      "page": "21-3",
+      "help": "Published belt ratings are often based on 85 °F (p. 21-3), where the factor is 1.76; it is 1 only at 40 °F and below. Include heat from slip, tight bends and poor ventilation.",
       "role": "environment"
      },
      {
@@ -19601,7 +20730,7 @@
       ],
       "symbol": "T_R",
       "page": "22-13",
-      "role": "environment"
+      "role": "design"
      },
      {
       "name": "T_O",
@@ -20602,9 +21731,9 @@
     "Loose shaft coupling (loose set screw)"
    ],
    "units": {
-    "value": "per_million_cycles",
+    "value": "per_million_hours",
     "time_basis": "operating",
-    "as_given": "failures per million cycles"
+    "as_given": "failures per million hours"
    },
    "summary": {
     "mean": null
@@ -20613,8 +21742,8 @@
     "equation": "§23.10.2",
     "page": "23-14",
     "formula": "λ_PB = 5",
-    "words": "A pillow block (a bearing in its housing) has a typical failure rate of 5.0 failures per million revolutions.",
-    "rate_unit": "per_million_cycles",
+    "words": "A pillow block (a bearing in its housing) has a typical failure rate of 5.0 failures per million hours (the handbook prints \"per million revolutions\": Reliafy's reading, see the note).",
+    "rate_unit": "per_million_hours",
     "combine": "sum",
     "inputs": [],
     "derived": [],
@@ -20656,7 +21785,7 @@
     "id": "us-government-work",
     "attribution": "Source: Handbook of Reliability Prediction Procedures for Mechanical Equipment, CARDEROCKDIV NSWC-11 (Naval Surface Warfare Center, Carderock Division, May 2011). Approved for public release; distribution is unlimited. A U.S. Government work; the models are written out by Reliafy with the handbook's procedures and parameter limits. CDNSWC (the Naval Surface Warfare Center, Carderock Division) and the U.S. Navy did not take part in making Reliafy and do not approve it. The handbook is the result of a research programme, not an official DoD document."
    },
-   "notes": "The handbook gives this per million revolutions: one revolution is one cycle here."
+   "notes": "Reliafy's reading (p. 23-14): the handbook prints 5.0 failures per million revolutions, which at 1,800 rpm is 540,000 per million hours, a life of about 2 hours, against L10 lives of thousands of hours for the same bearings (Chapter 7). It is taken as 5.0 per million hours, in line with the handbook's other bearing-class rates. For a rate from the bearing's own life, use the pillow block from its L10 life."
   },
   {
    "id": "nswc-11:pillow-block-from-l10",

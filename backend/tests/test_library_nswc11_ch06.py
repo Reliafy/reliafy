@@ -45,6 +45,8 @@ def test_table_1_1_poppet():
     assert round(without_n_w * 0.5, 2) == 0.30
     assert out["unit"] == "per_million_operations"
     assert any("p. 6-25" in w for w in out["warnings"])  # L_W = 0.85 is past Figure 6.11
+    notes = rec("valve-poppet")["notes"]
+    assert "Table 1-1" in notes and "0.597" in notes and "usually well below 1" in notes
 
 
 def test_poppet_figure_formulas():
@@ -78,21 +80,59 @@ def test_sliding_valve():
     assert factors(lam("valve-sliding", P1=3000, Q_f=0.05, B=400, D_SP=1.0, mu=0.5, **FLUID))["C_B"] == 0.42
 
 
-def test_valve_assembly_adds_its_parts_as_printed():
-    values = {f"poppet.{k}": v for k, v in POPPET.items()}
-    values.update({"seal.P1": 3000, "seal.Q_f": 0.06, "seal.D_SL": 0.34, "seal.M": 500, "seal.C": 910, "seal.f": 35,
-                   "seal.T_R": 250, "seal.T_O": 200, "seal.source": "cylinder", "seal.FR": 10})
-    values.update({"spring.G_M": 11.5e6, "spring.D_W": 0.085, "spring.D_C": 0.58, "spring.N_a": 14,
-                   "spring.T_S": 245e3, "spring.L1": 3.35, "spring.L2": 2.28, "spring.cycle_rate": 0.5 / 60})
-    values.update({"solenoid.T_R": 130, "solenoid.T_O": 110, "solenoid.ops_per_min": 0.5 / 60})
-    out = lam("valve-assembly", **values)
+SEAL = {"Q_f": 0.06, "D_SL": 0.34, "M": 500, "C": 910, "f": 35, "T_R": 250}
+SPRING = {"G_M": 11.5e6, "D_W": 0.085, "D_C": 0.58, "N_a": 14, "T_S": 245e3, "L1": 3.35, "L2": 2.28}
+SOLENOID = {"T_R": 130, "T_O": 70}
+SHARED = {"P1": 3000, "P2": 15, "T_O": 100, "source": "piston_pump", "FR": 10}
+
+
+def _pre(prefix, d):
+    return {f"{prefix}.{k}": v for k, v in d.items()}
+
+
+def test_valve_assembly_is_per_hour_at_one_operation_a_minute():
+    # Eq. 6-1 (p. 6-3) with every part on one time basis, as the handbook's rule (pp. 12-10, 12-16) and
+    # Chapter 1's worked valve (Table 1-1, Figure 1.3, p. 1-12/1-13) do: the poppet's rate per million
+    # operations × 60 operations an hour, plus the seal, spring, solenoid and housing per million hours.
+    poppet_inputs = {k: POPPET[k] for k in ("Q_f", "f", "S_S", "D_S", "L_W", "F_L")}
+    out = lam("valve-assembly", ops_per_hour=60, **SHARED, **_pre("poppet", poppet_inputs), **_pre("seal", SEAL),
+              **_pre("spring", SPRING), **_pre("solenoid", SOLENOID))
+    assert out["unit"] == "per_million_hours"
     parts = {m["key"]: m["rate"] for m in out["modes"]}
-    assert parts["housing"] == pytest.approx(0.01)
-    assert out["total"] == pytest.approx(sum(parts.values()))
-    assert out["unit"] == "per_million_operations"
-    assert all(m.get("note") for m in out["modes"] if m["key"] != "poppet")
-    no_solenoid = lam("valve-assembly", n_solenoids=0, **values)
+    # Each part by hand, from its own record under the same conditions:
+    poppet = lam("valve-poppet", **{**POPPET, **SHARED})["total"]  # per million operations
+    seal = lam("seal-static", **SEAL, **SHARED)["total"]
+    spring = lam("spring-compression", **SPRING, cycle_rate=1.0)["total"]  # one spring cycle per operation
+    solenoid = 2.77 * (1 / 1.5 ** ((130 - 70 - 20) / 10)) ** 3 * 1.1 * 60  # Eq. 5-1 at 1 operation a minute
+    assert parts["poppet"] == pytest.approx(poppet * 60)
+    assert parts["seal"] == pytest.approx(seal) and parts["spring"] == pytest.approx(spring)
+    assert parts["solenoid"] == pytest.approx(solenoid) and parts["housing"] == pytest.approx(0.01)
+    hand = poppet * 60 + seal + spring + solenoid + 0.01
+    assert out["total"] == pytest.approx(hand)
+    assert round(out["total"], 2) == 10.20
+    # Before the fix the record summed these unconverted and labelled the sum per million operations
+    # (2.71), which a prediction then multiplied by 60 an hour: 162.6 per million hours, 16× too high.
+    unconverted = poppet + seal + spring + solenoid + 0.01
+    assert round(unconverted * 60, 1) == 162.6
+    # The shared conditions are entered once: not again under the seal or poppet.
+    keys = {i["key"] for i in covariate.inputs(rec("valve-assembly"), library.get)}
+    assert {"P1", "T_O", "ops_per_hour"} <= keys
+    assert not {"seal.P1", "poppet.T_O", "spring.cycle_rate", "solenoid.ops_per_min"} & keys
+    with pytest.raises(covariate.CovariateError, match="Unknown input"):
+        lam("valve-assembly", **{"seal.P1": 3000})
+    no_solenoid = lam("valve-assembly", ops_per_hour=60, n_solenoids=0, **SHARED, **_pre("poppet", poppet_inputs),
+                      **_pre("seal", SEAL), **_pre("spring", SPRING))
     assert no_solenoid["total"] == pytest.approx(out["total"] - parts["solenoid"])
+
+
+def test_sliding_valve_assembly_converts_its_spool():
+    spool = dict(Q_f=0.05, B=600, D_SP=1.0, mu=0.5, F_L=0.5)
+    out = lam("valve-assembly-sliding", ops_per_hour=6, **SHARED, **_pre("spool", spool), **_pre("seal", SEAL),
+              **_pre("spring", SPRING), **_pre("solenoid", SOLENOID))
+    per_op = lam("valve-sliding", **spool, **SHARED)["total"]
+    parts = {m["key"]: m for m in out["modes"]}
+    assert parts["spool"]["rate"] == pytest.approx(per_op * 6) and parts["spool"]["scale"] == 6
+    assert out["unit"] == "per_million_hours"
 
 
 def test_limits_refuse_and_warn_with_the_page():

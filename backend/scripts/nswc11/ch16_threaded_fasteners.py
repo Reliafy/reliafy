@@ -185,7 +185,11 @@ RECORDS = [
                             equation="16-7", when="load == 'bending' or load == 'torsion_shear'",
                             words="a size different from the test specimen"),
                      *_common_factors()], symbol="λ_F")],
-        notes="C_SZ is 1 for axial loading (Eq. 16-8) and follows Eq. 16-7 under bending or torsion.",
+        notes="C_SZ is 1 for axial loading (Eq. 16-8) and follows Eq. 16-7 under bending or torsion, as printed. "
+              "As printed it lowers the rate for a bigger fastener (0.88 at 2 in, 1.14 at 0.25 in), against p. "
+              "16-14's text (\"the probability of failure is greater in larger parts\"): it is Shigley's strength "
+              "size factor, which the chapter's other factors take as a reciprocal. Kept as printed; the effect is "
+              "about ±14 % across the 0.25 to 2 in range.",
         failure_modes=_FAILURE_MODES,
     ),
 ]

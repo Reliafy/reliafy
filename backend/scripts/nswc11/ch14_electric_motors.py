@@ -24,9 +24,13 @@ Readings chosen where the handbook is silent or loose (each in the report):
   factor.
 - λ_C, the capacitor, is from MIL-HDBK-217 (an electronic part, outside this
   handbook): a rate the user gives, 0 when there's no capacitor.
-- λ_AS uses the Chapter 20 shaft model, whose rate is per million cycles: the
-  handbook adds it to the motor's per-hour rates as written (said in the mode
-  note).
+- λ_AS uses the Chapter 20 shaft model: per million hours by Reliafy's reading
+  (readings.SHAFT_PER_HOUR; p. 14-7 lists λ_AS per million hours), added as it
+  is; with the switch off it is per million cycles × the motor's revolutions an
+  hour. One motor speed is entered and passed to the bearings.
+- Insulation class (Table 14-2, p. 14-9) and Note 1 (p. 14-11): with the class
+  and a measured winding rise (Eq. 14-4 from hot and cold resistances), T_O is
+  lowered by the class's allowable rise minus the measured one.
 - Gears are only in geared motors, so there are two motor records: without
   gears and with (λ_GR from Chapter 8, a count of gears).
 - p. 14-11 says a Class F motor in a Class B environment "can be expected to
@@ -35,8 +39,12 @@ Readings chosen where the handbook is silent or loose (each in the report):
 """
 
 from backend.scripts.nswc11.common import (
-    base, check, choice, factor, mode, num, refuse, record, table, uses, warn,
+    base, check, choice, derived, factor, mode, num, refuse, record, table, uses, warn,
 )
+from backend.scripts.nswc11 import readings
+
+#: Table 14-2 (p. 14-9): allowable temperature rise by insulation class, °C.
+_RISE = {"A": 60, "B": 85, "F": 110, "H": 135}
 
 _FAILURE_MODES = [
     "Open or shorted winding: insulation breakdown (heat, altitude, overload, frequent starts, dirt on cooling fins, "
@@ -86,11 +94,22 @@ def _winding_inputs() -> list[dict]:
             help="|rated − actual voltage| ÷ rated voltage, above or below (single-phase and DC motors)."),
         num("V_U", "Phase voltage unbalance", "%", [
             refuse(min=0, max=100, why="a percentage unbalance is 0 to 100"),
-            warn(max=1, why="the industry standard limits voltage unbalance to 1 %", page="14-12"),
+            warn(max=1, why="the industry standard recommends at most 1 % (the handbook's range is 0 to 3 %)",
+                 page="14-12"),
             warn(max=3, why="the handbook's range for V_U is 0 to 3 %; never run a motor above 3 %",
                  page="14-13"),
         ], default=0, default_basis="neutral", symbol="V_U", page="14-12",
             help="100 × (greatest difference from the average phase voltage) ÷ the average (three-phase motors)."),
+        choice("ins_class", "Insulation class (to adjust T_O from a measured winding rise)", [
+            ("unknown", "Not used (no measured rise)"), ("A", "Class A (allowable rise 60 °C)"),
+            ("B", "Class B (85 °C)"), ("F", "Class F (110 °C)"), ("H", "Class H (135 °C)")],
+            default="unknown", default_basis="neutral", symbol="Table 14-2", page="14-9",
+            help="With a measured rise, T_O is lowered by the class's allowable rise minus the measured rise "
+                 "(p. 14-11, note 1): a Class F motor running a Class B rise gets 25 °C off, 2^2.5 = 5.7 × longer."),
+        num("rise", "Measured winding temperature rise at full load", "°C", [
+            refuse(min=0, why="a rise can't be negative")], symbol="T_rise", page="14-10", when="ins_class != 'unknown'",
+            help="Eq. 14-4: (R_H − R_C) / R_C × (234.5 + T_C), from the hot and cold winding resistances and the "
+                 "cold temperature."),
         num("a", "Operating altitude", "ft", [
             refuse(min=-1500, why="no land is more than about 1,400 ft below sea level"),
             warn(min=0, max=18000, why="Figure 14.4 covers 0 to 18,000 ft", page="14-17"),
@@ -106,7 +125,7 @@ def positive_life() -> dict:
 def _winding_factors(polyphase: str) -> list[dict]:
     """C_T, C_V (Eq. 14-6 unless ``polyphase`` is true, then Eq. 14-7) and C_alt."""
     return [
-        factor("C_T", "Ambient temperature", "14-11", expr="2 ** ((T_O - 40) / 10)", equation="14-5",
+        factor("C_T", "Ambient temperature", "14-11", expr="2 ** ((T_eff - 40) / 10)", equation="14-5",
                source="Figure 14.1", words="a hotter surrounding"),
         factor("C_V", "Supply voltage differential (single phase; DC by the same differential)", "14-12",
                expr="2 ** (10 * VD_VR)", equation="14-6", source="Figure 14.2", when=f"not ({polyphase})",
@@ -125,13 +144,20 @@ def _winding_mode(polyphase: str) -> dict:
                 _winding_factors(polyphase), symbol="λ_WI")
 
 
-_SHAFT_NOTE = ("Chapter 20's shaft model is in failures per million cycles; Eq. 14-1 adds it to the motor's "
-               "per-hour rates as written (the handbook doesn't convert it).")
+_SHAFT_NOTE = ("Reliafy's reading (p. 14-7 against p. 20-5): Eq. 14-1 lists the armature shaft per million hours "
+               "while Chapter 20 gives it per million cycles; it is taken per million hours and added as it is."
+               if readings.SHAFT_PER_HOUR else
+               "Chapter 20's shaft model is per million cycles: × the motor's revolutions an hour (60 × rpm).")
+_RISE_EXPR = " else ".join(f"{v} if ins_class == '{k}'" for k, v in _RISE.items()) + " else 0"
+_T_EFF = derived("T_eff", "Ambient temperature for C_T (less any spare rise, Table 14-2 note 1)",
+                 f"T_O if ins_class == 'unknown' else T_O - (({_RISE_EXPR}) - rise)", "°C", "T_O", "14-11")
 
 
 def _motor_inputs(geared: bool) -> list[dict]:
     out = [
         _MOTOR_TYPE, _LOAD,
+        num("n", "Motor speed", "rpm", [refuse(min=0, exclusive=True, why="the motor must turn")], symbol="n",
+            page="14-7", help="Passed to the bearings (one speed for the motor)."),
         *_winding_inputs(),
         num("n_BS", "Number of brushes", "", [refuse(min=0, why="a count can't be negative")], default=0,
             default_basis="typical", symbol="n", page="14-7",
@@ -164,8 +190,10 @@ def _motor_modes(geared: bool) -> list[dict]:
              symbol="λ_BS", count="n_BS"),
         mode("stator", "Stator housing", base("λ_ST", "Stator housing failure rate", "14-7", value=0.001),
              symbol="λ_ST"),
-        uses("shaft", "Armature shaft", "shaft", symbol="λ_AS", note=_SHAFT_NOTE),
-        uses("bearings", "Bearings (each)", "bearing-rolling-load-rating", symbol="λ_BE", count="n_BE"),
+        uses("shaft", "Armature shaft", "shaft", symbol="λ_AS", note=_SHAFT_NOTE,
+             **({} if readings.SHAFT_PER_HOUR else {"scale": "60 * n", "scale_label": "revolutions an hour"})),
+        uses("bearings", "Bearings (each)", "bearing-rolling-load-rating", symbol="λ_BE", count="n_BE",
+             bind={"n": "n"}),
     ]
     if geared:
         out.append(uses("gears", "Gears (each)", "gear", symbol="λ_GR", count="n_GR"))
@@ -191,7 +219,7 @@ RECORDS = [
     record(
         "electric-motor", "Electric motor (no gearbox)", "electric_motor", 14, "14.4 Model development", "14-1",
         "14-7", _FORMULA.format(gr=""), _WORDS.format(gears=""),
-        inputs=_motor_inputs(False), modes=_motor_modes(False), checks=_MOTOR_CHECKS,
+        inputs=_motor_inputs(False), modes=_motor_modes(False), checks=_MOTOR_CHECKS, derived=[_T_EFF],
         notes=("Eq. 14-1 without λ_GR, for a motor with no gears. Bearings use the Chapter 7 load-rating model "
                "and the armature shaft the Chapter 20 shaft model. The handbook gives the supply-voltage factor "
                "for single- and three-phase motors only: a DC motor here takes the single-phase voltage "
@@ -201,7 +229,7 @@ RECORDS = [
     record(
         "electric-motor-geared", "Electric motor with gears", "electric_motor", 14, "14.4 Model development",
         "14-1", "14-7", _FORMULA.format(gr=" + λ_GR"), _WORDS.format(gears=" and gears"),
-        inputs=_motor_inputs(True), modes=_motor_modes(True), checks=_MOTOR_CHECKS,
+        inputs=_motor_inputs(True), modes=_motor_modes(True), checks=_MOTOR_CHECKS, derived=[_T_EFF],
         notes=("Eq. 14-1 in full, for a motor with gears (Chapter 8's gear model, one per gear). Bearings use the "
                "Chapter 7 load-rating model and the armature shaft the Chapter 20 shaft model. A DC motor takes "
                "the single-phase voltage differential (Eq. 14-6)."),
@@ -221,7 +249,7 @@ RECORDS = [
             ], symbol="C_V", page="14-12"),
             *_winding_inputs(),
         ],
-        modes=[_winding_mode("supply == 'three_phase'")],
+        modes=[_winding_mode("supply == 'three_phase'")], derived=[_T_EFF],
         notes="The windings term λ_WI of Eq. 14-1 on its own. DC motors take Eq. 14-6 (the handbook names only "
               "single- and three-phase motors).",
         failure_modes=_FAILURE_MODES[:1],

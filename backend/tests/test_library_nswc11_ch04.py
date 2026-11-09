@@ -43,6 +43,8 @@ def test_table_1_1_spring():
         assert f[s] == pytest.approx(1.0, abs=2e-3), s
     assert f["C_CS"] == 0.1
     assert round(out["total"], 2) == 1.11
+    # The record page says so (and where the 1.04 comes from).
+    assert "Table 1-1" in rec("spring-compression")["notes"] and "Eq. 4-5" in rec("spring-compression")["notes"]
 
 
 @pytest.mark.parametrize("g, printed", [(11.8, 1.08), (11.5, 1.00), (11.2, 0.92), (10.8, 0.83), (10.5, 0.76),

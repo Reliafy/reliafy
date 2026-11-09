@@ -35,18 +35,24 @@ def test_endurance_coupling_eq_17_1_with_table_17_3(driven, torque, printed):
 
 
 def test_gear_coupling_is_its_body_plus_its_parts():
-    # Eq. 17-2 (p. 17-6): λ_CP,B·C_SF + λ_GR + λ_SE + λ_H; λ_CP,B 5.0 (p. 17-7), λ_H 0.001 (p. 17-9).
-    out = lam("coupling-gear", {"n_GR": 2, "n_SE": 2}, resolve)
+    # Eq. 17-2 (p. 17-6): λ_CP,B·C_SF + λ_GR + λ_SE + λ_H, per million hours: the per-cycle body and housing
+    # (λ_H 0.001, p. 17-9) × the coupling's cycles an hour (pp. 12-10, 12-16), the per-hour gears and seals as
+    # they are. λ_CP,B has no default (p. 17-7's 5.0 is a whole coupling's rate).
+    out = lam("coupling-gear", {"lambda_CP_B": 2.0, "cycles_per_hour": 10, "n_GR": 2, "n_SE": 2}, resolve)
     rates = {m["key"]: m["rate"] for m in out["modes"]}
-    assert rates == pytest.approx({"coupling": 5.5, "gears": 3.0, "seals": 8.0, "housing": 0.001})
-    assert out["total"] == pytest.approx(16.501)
+    assert rates == pytest.approx({"coupling": 2.0 * 1.1 * 10, "gears": 3.0, "seals": 8.0, "housing": 0.001 * 10})
+    assert out["total"] == pytest.approx(22.0 + 3.0 + 8.0 + 0.01)
+    assert out["unit"] == "per_million_hours"
+    with pytest.raises(covariate.CovariateError) as exc:
+        lam("coupling-gear", {"cycles_per_hour": 10, "n_GR": 2, "n_SE": 2}, resolve)
+    assert exc.value.missing == ["lambda_CP_B"]
 
 
 def test_universal_joint_is_the_sum_of_its_parts():
-    # Eq. 17-3 (p. 17-9).
-    out = lam("coupling-universal-joint", {"n_BE": 4, "n_SE": 4, "n_F": 8}, resolve)
-    assert out["total"] == pytest.approx(8.0 + 16.0 + 0.001 + 0.8)
-    assert all("per million hours" in m["note"] for m in out["modes"] if m["key"] != "housing")
+    # Eq. 17-3 (p. 17-9): the per-hour bearings, seals and fasteners as they are, the housing × cycles an hour.
+    out = lam("coupling-universal-joint", {"cycles_per_hour": 100, "n_BE": 4, "n_SE": 4, "n_F": 8}, resolve)
+    assert out["total"] == pytest.approx(8.0 + 16.0 + 0.001 * 100 + 0.8)
+    assert out["unit"] == "per_million_hours"
 
 
 def test_records_build_against_the_real_parts():

@@ -15,6 +15,21 @@ A record of kind ``covariate_model`` holds its model in ``covariate_model``:
 - ``checks``: conditions on the inputs together (FA at most 30% of FR) that
   refuse or warn, like an input's own limits.
 
+Assemblies (Derryn, 9 Nov 2026: one component, no copies):
+- A ``uses`` mode whose record is per cycle or per operation, inside an
+  assembly per hour, carries ``scale``: an expression of the assembly's values
+  (its cycles or operations an hour) its rate is multiplied by, the handbook's
+  own rule (NSWC-11 pp. 12-10, 12-16; Chapter 1's worked valve). A mode in any
+  other unit than its assembly's is refused when the library is built: rates
+  are never added in mixed units.
+- ``bind`` ({part input: expression of the assembly's inputs}) enters a
+  condition the parts share once, on the assembly, and passes it down: a bound
+  input isn't asked for again under the part.
+- ``when`` on a mode leaves the part out (it adds nothing and needs no inputs)
+  when false; ``when`` on an input asks for it only when true (otherwise it
+  takes ``unused``, 0 by default), so a value one choice doesn't need is never
+  a placeholder the user has to type.
+
 A base or a factor is ``value`` (a constant), ``expr`` (an expression), or
 ``table`` (a lookup by one or two choice inputs). Expressions are a small,
 safe language parsed with :mod:`ast` and walked here (never ``eval``):
@@ -48,6 +63,8 @@ PER_CYCLE_UNITS = {"per_million_cycles", "per_million_operations"}
 SEVERITIES = ("refuse", "warn")
 #: Deepest chain of ``uses`` (a pump uses a bearing record; nothing goes deeper than a few).
 MAX_DEPTH = 4
+#: A bound input whose value couldn't be worked out (the assembly's own input is missing: said there).
+_UNAVAILABLE = object()
 
 
 def _interp(x: float, xs: list, ys: list) -> float:
@@ -205,12 +222,15 @@ def open_inputs(rec: dict, values: Optional[dict] = None, resolve: Optional[Reso
 
 
 def inputs(rec: dict, resolve: Optional[Resolver] = None, prefix: str = "", group: Optional[str] = None,
-           _depth: int = 0) -> list[dict]:
+           _depth: int = 0, _bound: frozenset = frozenset()) -> list[dict]:
     """Every input the model reads, its own and (prefixed) those of the
     records its modes use, each with ``key`` (the name a value is given by)
-    and ``group`` (None for the record's own, else the mode's name)."""
+    and ``group`` (None for the record's own, else the mode's name). A part's
+    input its assembly binds (enters once for every part) isn't listed."""
     out = []
     for i in model_of(rec).get("inputs") or []:
+        if i["name"] in _bound:
+            continue
         out.append({**i, "key": f"{prefix}{i['name']}", "group": group})
     if resolve is None:
         return out
@@ -221,7 +241,7 @@ def inputs(rec: dict, resolve: Optional[Resolver] = None, prefix: str = "", grou
             sub = resolve(mode["uses"])
             label = mode.get("name") or sub.get("name")
             out += inputs(sub, resolve, f"{prefix}{mode.get('prefix') or mode['key']}.",
-                          f"{group} › {label}" if group else label, _depth + 1)
+                          f"{group} › {label}" if group else label, _depth + 1, frozenset(mode.get("bind") or {}))
     return out
 
 
@@ -268,18 +288,39 @@ def _limit_words(inp: dict, value: float, limit: dict, side: str) -> str:
     return f"{label}{group} is {_fmt(value)}{unit}; {rel} {_fmt(bound)}{unit}{why}{_page_text(limit.get('page'))}."
 
 
+def _needed(inp: dict, scope: dict) -> bool:
+    """Whether an input with ``when`` is needed with the values read so far (when it can't be told yet,
+    because an earlier input is missing, it's taken as needed)."""
+    if not inp.get("when"):
+        return True
+    try:
+        return bool(evaluate_expr(inp["when"], scope))
+    except (ExpressionError, ArithmeticError, ValueError, TypeError):
+        return True
+
+
 def _read_inputs(rec: dict, values: dict, prefix: str, refused: list, warnings: list, group: Optional[str],
-                 missing: Optional[list] = None) -> dict:
-    """The record's own inputs from ``values`` (by prefixed key) or their
-    defaults, checked against their limits. Problems go on ``refused`` and
-    ``warnings``; the scope (by plain name) is returned."""
+                 missing: Optional[list] = None, bound: Optional[dict] = None) -> dict:
+    """The record's own inputs from ``values`` (by prefixed key), the value its assembly binds, or
+    their defaults, checked against their limits. Problems go on ``refused`` and ``warnings``; the
+    scope (by plain name) is returned. A bound input its assembly couldn't work out is left out of
+    the scope (the assembly has said why)."""
     scope: dict[str, Any] = {}
+    bound = bound or {}
     for inp in model_of(rec).get("inputs") or []:
         key = f"{prefix}{inp['name']}"
         info = {**inp, "group": group}
-        raw = values.get(key)
-        if raw is None or raw == "":
-            raw = inp.get("default")
+        if inp["name"] in bound:
+            raw = bound[inp["name"]]
+            if raw is _UNAVAILABLE:
+                continue
+        else:
+            if not _needed(inp, scope):
+                scope[inp["name"]] = inp.get("unused", 0)
+                continue
+            raw = values.get(key)
+            if raw is None or raw == "":
+                raw = inp.get("default")
         label = inp.get("label") or inp["name"]
         where = f" ({group})" if group else ""
         if raw is None or raw == "":
@@ -348,12 +389,37 @@ def _term(spec: dict, scope: dict, what: str) -> float:
     raise CovariateError([f"{what} has no value, expression or table."])
 
 
+def _bound_values(mode: dict, scope: dict) -> dict:
+    """The values an assembly passes down to a part (``bind``), each worked out from the assembly's
+    inputs, or _UNAVAILABLE when one it reads is missing (already said)."""
+    out = {}
+    for name, expr in (mode.get("bind") or {}).items():
+        try:
+            out[name] = evaluate_expr(expr, scope)
+        except (ExpressionError, ArithmeticError, ValueError, TypeError):
+            out[name] = _UNAVAILABLE
+    return out
+
+
+def _mode_off(mode: dict, scope: dict) -> bool:
+    """A mode left out: its ``when`` is false, or its count is 0 (a compressor with no valves)."""
+    if mode.get("count") and scope.get(mode["count"]) == 0:
+        return True
+    if mode.get("when"):
+        try:
+            return not evaluate_expr(mode["when"], scope)
+        except (ExpressionError, ArithmeticError, ValueError, TypeError):
+            return False
+    return False
+
+
 def _evaluate(rec: dict, values: dict, resolve: Optional[Resolver], prefix: str, group: Optional[str],
-              refused: list, warnings: list, depth: int, missing: Optional[list] = None) -> Optional[dict]:
+              refused: list, warnings: list, depth: int, missing: Optional[list] = None,
+              bound: Optional[dict] = None) -> Optional[dict]:
     model = model_of(rec)
     before = len(refused)
-    scope = _read_inputs(rec, values, prefix, refused, warnings, group, missing)
-    own_ok = len(refused) == before
+    scope = _read_inputs(rec, values, prefix, refused, warnings, group, missing, bound)
+    own_ok = len(refused) == before and not any(v is _UNAVAILABLE for v in (bound or {}).values())
     # The modes that use other records read their own inputs; do them even when this record's
     # inputs are refused, so every missing input is listed at once.
     subs: dict[str, Optional[dict]] = {}
@@ -362,7 +428,7 @@ def _evaluate(rec: dict, values: dict, resolve: Optional[Resolver], prefix: str,
             if resolve is None or depth >= MAX_DEPTH:
                 raise CovariateError([f"{rec.get('id')}: can't read the record its mode '{mode['key']}' uses."])
             sub = resolve(mode["uses"])
-            if mode.get("count") and scope.get(mode["count"]) == 0:
+            if _mode_off(mode, scope):
                 # None of this part (a compressor with no valves): it adds nothing and needs no inputs.
                 subs[mode["key"]] = {"id": sub.get("id"), "name": sub.get("name"), "unit": rate_unit(sub),
                                      "unit_words": rate_unit_words(sub), "total": 0.0, "modes": [], "derived": [],
@@ -370,7 +436,8 @@ def _evaluate(rec: dict, values: dict, resolve: Optional[Resolver], prefix: str,
                 continue
             label = mode.get("name") or sub.get("name")
             subs[mode["key"]] = _evaluate(sub, values, resolve, f"{prefix}{mode.get('prefix') or mode['key']}.",
-                                          f"{group} › {label}" if group else label, refused, warnings, depth + 1, missing)
+                                          f"{group} › {label}" if group else label, refused, warnings, depth + 1, missing,
+                                          _bound_values(mode, scope))
     if not own_ok or any(v is None for v in subs.values()):
         return None  # something this record or a part of it needs is missing (already said)
     try:
@@ -418,14 +485,25 @@ def _compute(rec: dict, model: dict, scope: dict, subs: dict, group: Optional[st
         count = 1.0
         if mode.get("count"):
             count = float(scope.get(mode["count"], 1.0))
+        scale = None
+        if mode.get("scale"):
+            try:
+                scale = _number(evaluate_expr(mode["scale"], scope), mode.get("scale_label") or mode["scale"])
+            except (ArithmeticError, ValueError, TypeError) as exc:
+                refused.append(exc.problems[0] if isinstance(exc, CovariateError) else
+                               f"Can't compute {mode.get('scale_label') or mode['scale']} ({exc}).")
+                return None
+        conv = {"scale": scale, "scale_label": mode.get("scale_label")} if scale is not None else {}
         if mode.get("uses"):
             sub = subs.get(mode["key"])
             if sub is None:
                 continue
-            each = sub["total"]
+            each = sub["total"] * (scale if scale is not None else 1.0)
             row = {"key": mode["key"], "name": mode.get("name"), "symbol": mode.get("symbol"),
-                   "uses": mode["uses"], "count": count, "each": each, "rate": each * count, "parts": sub,
+                   "uses": mode["uses"], "count": count, "each": each, "rate": each * count, "parts": sub, **conv,
                    **({"note": mode["note"]} if mode.get("note") else {})}
+        elif mode.get("when") and not evaluate_expr(mode["when"], scope):
+            continue
         else:
             base = _term(mode["base"], scope, f"{mode.get('name') or mode['key']}: {mode['base'].get('symbol') or 'base rate'}")
             factors = []
@@ -436,9 +514,11 @@ def _compute(rec: dict, model: dict, scope: dict, subs: dict, group: Optional[st
                 v = _term(f, scope, f"{f.get('name') or f['symbol']} ({f['symbol']})")
                 factors.append({"symbol": f["symbol"], "name": f.get("name"), "value": v})
                 each *= v
+            if scale is not None:
+                each *= scale
             row = {"key": mode["key"], "name": mode.get("name"), "symbol": mode.get("symbol"),
                    "base": {"symbol": mode["base"].get("symbol"), "value": base}, "factors": factors,
-                   "count": count, "each": each, "rate": each * count,
+                   "count": count, "each": each, "rate": each * count, **conv,
                    **({"note": mode["note"]} if mode.get("note") else {})}
         if row["rate"] < 0 or not math.isfinite(row["rate"]):
             refused.append(f"{row['name'] or row['key']}'s rate comes out at {_fmt(row['rate'])} for these inputs, "
@@ -509,6 +589,14 @@ def problems(rec: dict, resolve: Optional[Resolver] = None) -> list[str]:
             bad(f"input {n} needs a label")
         if inp.get("default") is not None and inp.get("default_basis") not in ("handbook", "neutral", "typical"):
             bad(f"input {n}'s default needs default_basis (handbook, neutral or typical)")
+        if inp.get("when"):
+            try:
+                early = names_in(inp["when"]) - (set(names) - {n})
+            except ExpressionError as exc:
+                bad(f"input {n}'s when: {exc}")
+            else:
+                if early:
+                    bad(f"input {n}'s when reads {', '.join(sorted(early))}: only inputs listed before it")
         if inp.get("kind") == "choice":
             codes = [c.get("code") for c in inp.get("choices") or []]
             if not codes or not all(isinstance(c, str) and c for c in codes) or len(set(codes)) != len(codes):
@@ -597,6 +685,7 @@ def problems(rec: dict, resolve: Optional[Resolver] = None) -> list[str]:
             bad(f"{what} needs its page")
 
     keys = set()
+    input_names = set(names)
     modes = m.get("modes") or []
     if not modes:
         bad("a covariate model needs at least one mode")
@@ -609,7 +698,15 @@ def problems(rec: dict, resolve: Optional[Resolver] = None) -> list[str]:
             bad(f"mode {k} needs a name")
         if mode.get("count") and (mode["count"] not in names or names[mode["count"]].get("kind") != "number"):
             bad(f"mode {k}'s count must be a number input")
+        if mode.get("scale"):
+            check_expr(mode["scale"], f"mode {k}'s scale", scope)
+            if not mode.get("scale_label"):
+                bad(f"mode {k}'s scale needs a scale_label (what it multiplies by, in words)")
+        if mode.get("when"):
+            check_expr(mode["when"], f"mode {k}'s when", input_names if mode.get("uses") else scope)
         if mode.get("uses"):
+            for target, expr in (mode.get("bind") or {}).items():
+                check_expr(expr, f"mode {k}'s bind of {target}", input_names)
             if resolve is not None:
                 try:
                     sub = resolve(mode["uses"])
@@ -618,10 +715,22 @@ def problems(rec: dict, resolve: Optional[Resolver] = None) -> list[str]:
                     continue
                 if sub.get("kind") != KIND:
                     bad(f"mode {k} uses {mode['uses']}, which isn't a covariate model")
-                elif rate_unit(sub) != rate_unit(rec) and not mode.get("note"):
-                    bad(f"mode {k} uses a record in {rate_unit(sub)} in a model in {rate_unit(rec)}: say how "
-                        "the handbook combines them in its note")
+                    continue
+                sub_inputs = {i["name"] for i in model_of(sub).get("inputs") or []}
+                for target in mode.get("bind") or {}:
+                    if target not in sub_inputs:
+                        bad(f"mode {k} binds {target}, which {mode['uses']} doesn't read")
+                su, pu = rate_unit(sub), rate_unit(rec)
+                if su != pu:
+                    if not (pu == "per_million_hours" and su in PER_CYCLE_UNITS and mode.get("scale")):
+                        bad(f"mode {k} uses a record in {su} in a model in {pu}: an assembly is per million "
+                            "hours and converts a per-cycle part with scale (its cycles an hour); rates are "
+                            "never added in mixed units")
+                elif mode.get("scale"):
+                    bad(f"mode {k} has a scale, but {mode['uses']} is already in {pu}")
             continue
+        if mode.get("scale") and not mode.get("note"):
+            bad(f"mode {k}'s scale needs a note saying what unit its base rate is in")
         check_term(mode.get("base"), f"mode {k}'s base")
         for f in mode.get("factors") or []:
             if not f.get("symbol") or not f.get("name"):

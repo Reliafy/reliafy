@@ -188,10 +188,10 @@ _WALL = record(
 )
 
 _UNIT_NOTE_PC = ("Chapter 9's side-load actuator model (p. 15-5: tilting the accumulator changes the piston's side "
-                 "load) is per million cycles; Eq. 15-1 adds it to per-hour rates as written (the handbook doesn't "
-                 "convert it).")
-_UNIT_NOTE_VA = ("Chapter 6's valve assembly rate is per million operations; Eq. 15-1 adds it to per-hour rates as "
-                 "written (the handbook doesn't convert it).")
+                 "load) is per million cycles: × the accumulator's charge and discharge cycles an hour, so it adds "
+                 "to Eq. 15-1's per-hour rates (the handbook's rule, pp. 12-10, 12-16).")
+_UNIT_NOTE_VA = ("Chapter 6's valve assembly, per million hours (its poppet converted by its operations an hour, "
+                 "one operation per accumulator cycle).")
 
 
 def _parts(spring: bool) -> list[dict]:
@@ -199,20 +199,30 @@ def _parts(spring: bool) -> list[dict]:
                 note="Chapter 3's dynamic seal model, one per piston seal.")]
     if spring:
         out.append(uses("springs", "Springs (each)", "spring-compression", symbol="λ_SP", count="n_SP",
+                        bind={"cycle_rate": "cycles_per_hour / 60"},
                         note="Chapter 4's compression spring model (p. 15-5: the static spring equations suit "
-                             "most accumulators)."))
+                             "most accumulators), cycling once per accumulator cycle."))
     out += [
         uses("piston_cylinder", "Piston and cylinder interface", "actuator-side-load", symbol="λ_PC",
-             note=_UNIT_NOTE_PC),
-        uses("valve", "Control valve", "valve-assembly", symbol="λ_VA", note=_UNIT_NOTE_VA),
+             scale="cycles_per_hour", scale_label="cycles an hour", note=_UNIT_NOTE_PC),
+        uses("valve", "Valves (each)", "valve-assembly", symbol="λ_VA", count="n_VA",
+             bind={"ops_per_hour": "cycles_per_hour"}, note=_UNIT_NOTE_VA),
         uses("wall", "Cylinder wall", "accumulator-cylinder-wall", symbol="λ_CW"),
     ]
     return out
 
 
 def _counts(spring: bool) -> list[dict]:
-    out = [num("n_SE", "Number of piston seals", "", [refuse(min=0, why="a count can't be negative")],
-               symbol="n", page="15-5")]
+    out = [num("cycles_per_hour", "Charge and discharge cycles per hour", "per hour",
+               [positive("an accumulator that never cycles isn't rated by this model")], symbol="cycles/h",
+               page="15-5", help="Converts the piston's wear (per million cycles) to per hour, and sets the valves' "
+                                 "operations and the springs' cycle rate (one each per cycle)."),
+           num("n_SE", "Number of piston seals", "", [refuse(min=0, why="a count can't be negative")],
+               symbol="n", page="15-5"),
+           num("n_VA", "Number of valves", "", [refuse(min=0, why="a count can't be negative")], default=1,
+               default_basis="handbook", symbol="n", page="15-5",
+               help="Eq. 15-1 has one λ_VA; p. 15-1 describes an inlet (one-way) and an outlet valve: enter 2 for "
+                    "both. For a check valve with no solenoid, set the valve's solenoids to 0.")]
     if spring:
         out.append(num("n_SP", "Number of springs", "", [refuse(min=0, why="a count can't be negative")],
                        symbol="n", page="15-2", help="A spring-loaded accumulator has one spring or several."))

@@ -18,7 +18,9 @@ def lam(slug, **values):
     ("cam-mechanism", 6.1, "per_million_hours"),  # p. 23-8
     ("hinge", 0.5, "per_million_cycles"),  # p. 23-12
     ("key-pin", 0.35, "per_million_hours"),  # p. 23-13
-    ("pillow-block", 5.0, "per_million_cycles"),  # p. 23-14, per million revolutions
+    # p. 23-14 prints 5.0 per million revolutions (2 hours' life at 1,800 rpm); Reliafy's reading
+    # (readings.PILLOW_BLOCK_PER_HOUR): per million hours.
+    ("pillow-block", 5.0, "per_million_hours"),
     ("wire-rope", 17.5, "per_million_operations"),  # p. 23-22
 ])
 def test_typical_rates(slug, rate, unit):

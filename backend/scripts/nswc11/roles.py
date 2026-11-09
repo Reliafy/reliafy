@@ -25,7 +25,7 @@ ROLES: dict[str, dict[str, str]] = {
         'T_R': 'design',  # Maximum rated temperature of the seal material
         'T_O': 'environment',  # Operating temperature (of the fluid at the seal)
         'fluid': 'use',  # Fluid sealed
-        'nu_cP': 'environment',  # Dynamic viscosity of the fluid at its operating temperature (another fluid only)
+        'nu_cP': 'use',  # Dynamic viscosity of the fluid at its operating temperature (another fluid only)
         'source': 'environment',  # Upstream component producing contaminants
         'C_o': 'environment',  # System filter size
         'FR': 'design',  # Rated flow rate
@@ -43,7 +43,7 @@ ROLES: dict[str, dict[str, str]] = {
         'T_R': 'design',  # Maximum rated temperature of the seal material
         'T_O': 'environment',  # Operating temperature (of the fluid at the seal)
         'fluid': 'use',  # Fluid sealed
-        'nu_cP': 'environment',  # Dynamic viscosity of the fluid at its operating temperature (another fluid only)
+        'nu_cP': 'use',  # Dynamic viscosity of the fluid at its operating temperature (another fluid only)
         'source': 'environment',  # Upstream component producing contaminants
         'C_o': 'environment',  # System filter size
         'FR': 'design',  # Rated flow rate
@@ -60,7 +60,7 @@ ROLES: dict[str, dict[str, str]] = {
         'T_R': 'design',  # Maximum rated temperature of the seal material
         'T_O': 'environment',  # Operating temperature (of the fluid at the seal)
         'fluid': 'use',  # Fluid sealed
-        'nu_cP': 'environment',  # Dynamic viscosity of the fluid at its operating temperature (another fluid only)
+        'nu_cP': 'use',  # Dynamic viscosity of the fluid at its operating temperature (another fluid only)
         'source': 'environment',  # Upstream component producing contaminants
         'C_o': 'environment',  # System filter size
         'FR': 'design',  # Rated flow rate
@@ -179,7 +179,7 @@ ROLES: dict[str, dict[str, str]] = {
         'L_W': 'design',  # Radial seat land width
         'T_O': 'environment',  # Fluid temperature
         'fluid': 'use',  # Fluid
-        'nu_cP': 'environment',  # Dynamic viscosity of the fluid at its temperature (another fluid only)
+        'nu_cP': 'use',  # Dynamic viscosity of the fluid at its temperature (another fluid only)
         'source': 'environment',  # Upstream component producing contaminants
         'C_o': 'environment',  # System filter size
         'FR': 'design',  # Rated flow rate
@@ -194,7 +194,7 @@ ROLES: dict[str, dict[str, str]] = {
         'mu': 'design',  # Static friction coefficient, spool on sleeve
         'T_O': 'environment',  # Fluid temperature
         'fluid': 'use',  # Fluid
-        'nu_cP': 'environment',  # Dynamic viscosity of the fluid at its temperature (another fluid only)
+        'nu_cP': 'use',  # Dynamic viscosity of the fluid at its temperature (another fluid only)
         'source': 'environment',  # Upstream component producing contaminants
         'C_o': 'environment',  # System filter size
         'FR': 'design',  # Rated flow rate
@@ -329,7 +329,7 @@ ROLES: dict[str, dict[str, str]] = {
     'filter-fluid': {
         'lambda_FB': 'design',  # Base failure rate (2.53, or 10⁶ ÷ the maker's life in hours)
         'P_O': 'use',  # Operating pressure upstream of the filter
-        'P_R': 'use',  # Rated filter pressure
+        'P_R': 'design',  # Rated filter pressure
         'mobile': 'environment',  # System type (vibration)
         'nu_ratio': 'environment',  # Viscosity at a cold start ÷ viscosity at normal operation
         'fluid': 'use',  # Fluid (sets the cold-start exponent x)
@@ -396,7 +396,6 @@ ROLES: dict[str, dict[str, str]] = {
         'vibration_shock': 'environment',  # High vibration and/or heavy shock loading
         'poor_inlet_air': 'environment',  # Poor inlet air quality
         'n_BE': 'design',  # Number of shaft bearings
-        'VA_ops_per_hour': 'use',  # Control valve operations per hour (all valves together)
         'n_SE': 'design',  # Number of seals
         'SH_cycles_per_hour': 'use',  # Shaft cycles per hour
     },
@@ -564,7 +563,7 @@ ROLES: dict[str, dict[str, str]] = {
         'environment': 'environment',  # Operating environment
     },
     'hose-assembly': {
-        'T_R': 'environment',  # Hose's rated temperature
+        'T_R': 'design',  # Hose's rated temperature
         'T_O': 'environment',  # Hose's operating temperature
         'environment': 'environment',  # Operating environment
     },
@@ -609,3 +608,24 @@ ROLES: dict[str, dict[str, str]] = {
     'wire-rope': {
     },
 }
+
+# Inputs added with the 9 Nov 2026 review fixes: an assembly's own cycles an hour and the conditions it
+# enters once for its parts (each takes the role it has on the part it's passed to).
+_FLUID_SHARED = {'P1': 'use', 'P2': 'use', 'T_O': 'environment', 'fluid': 'use', 'nu_cP': 'use',
+                 'source': 'environment', 'C_o': 'environment', 'FR': 'design'}
+for _slug in ('valve-assembly', 'valve-assembly-sliding'):
+    ROLES[_slug].update({'ops_per_hour': 'use', **_FLUID_SHARED})
+ROLES['pump'].update({'n': 'use', 'filter_um': 'environment'})
+ROLES['compressor'].update({'n_VA': 'design', 'SH_cycles_per_hour': 'use'})
+ROLES['compressor-diaphragm'].update({'S_fig': 'use'})
+for _slug in ('electric-motor', 'electric-motor-geared', 'electric-motor-winding'):
+    ROLES[_slug].update({'ins_class': 'design', 'rise': 'use'})
+for _slug in ('electric-motor', 'electric-motor-geared'):
+    ROLES[_slug].update({'n': 'use'})
+for _slug in ('accumulator-spring-loaded', 'accumulator-gas-charged'):
+    ROLES[_slug].update({'cycles_per_hour': 'use', 'n_VA': 'design'})
+for _slug in ('coupling-gear', 'coupling-universal-joint'):
+    ROLES[_slug].update({'cycles_per_hour': 'use'})
+ROLES['slider-crank'].update({'ops_per_hour': 'use'})
+for _slug in ('brake-assembly', 'clutch-assembly'):
+    ROLES[_slug].update({'lining': 'design'})

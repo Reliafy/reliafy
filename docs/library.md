@@ -170,6 +170,23 @@ one record kind, `covariate_model`, not a special case per chapter.
 - Where the handbook is ambiguous (a scrambled equation, units that don't add
   up, a table that disagrees with its formula), each chapter module says what
   was read and why, with the page, and its tests pin it.
+- Assemblies (valves, pumps, compressors, motors, accumulators, couplings, the
+  slider crank, brakes and clutches) are per million hours. A per-cycle or
+  per-operation part is multiplied by the assembly's cycles (or operations) an
+  hour (`scale`), the handbook's rule (pp. 12-10, 12-16; Chapter 1's worked
+  valve). The build refuses a part in another unit without that conversion: a
+  prediction or an RBD then never multiplies an assembly's total again. A
+  condition the parts share (pressure, fluid, temperature, contamination, speed,
+  cycle rate) is entered once on the assembly and passed down (`bind`); a part
+  can be left out by a choice (`when`), and an input asked for only when a
+  choice needs it.
+- Four places where the handbook contradicts itself are switches in
+  `backend/scripts/nswc11/readings.py`, each marked "Reliafy's reading" with
+  its page on the records it touches: the shaft per million hours (not cycles),
+  gear speed and load factors normalised to 1 at the design point, the shaft
+  finish factor divided (so a rougher finish raises the rate), and the pillow
+  block per million hours (not revolutions). Set one to `False` and rebuild to
+  follow the page literally.
 - A covariate record is never a block model on its own (its rate depends on
   conditions): it's tried on its library page (`POST
   /api/library/records/{id}/evaluate`) and used in a reliability prediction

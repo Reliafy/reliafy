@@ -6,18 +6,23 @@ Checked against the rendered pages 20-4 to 20-11:
   curve). 1/N is per cycle, so the model uses 10⁶ / N for the stated unit (as
   Chapter 7 does with 1/L10h). N has to come from the material's S-N data: the
   handbook gives endurance limits (Table 20-2) but no way to get N from them.
+- The unit: see readings.SHAFT_PER_HOUR (per million hours by default, the unit
+  every assembly that uses the shaft lists it in).
 - C_f (Table 20-3, p. 20-10): polynomials in the tensile strength T_S (kpsi).
   They are surface-finish (endurance) factors below 1 for rougher finishes, so
   multiplying the rate by them makes a rougher finish *lower* the predicted rate.
-  Ambiguous; followed literally as printed and reported.
+  See readings.SHAFT_FINISH_INVERTED (divided by default).
 - C_T (Eq. 20-5, p. 20-6): (460 + T_AT) / 620 above 160 °F, else 1.0.
 - C_DY (Eq. 20-8, p. 20-7): 0.0043 F / (E b) · [X³/I_X + L³/I_L + M³/I_M + N³/I_N],
   I = π d⁴ / 64 for each section (p. 20-7). The factor is the deflection against
   the allowable, so it is below 1 (lowering the rate) for a stiff shaft.
   Followed literally. Sections not present are entered with length 0.
   b defaults to 0.007 in (Table 20-6, note 1).
-- C_SC (Eq. 20-9, 20-10, p. 20-8): C_SC,R + C_SC,G (a sum, as printed, so with
-  no grooves C_SC = C_SC,R + 1), C_SC,R = (0.3 / (r/d))^0.2 · (D/d)^(1 − r/d).
+- C_SC (Eq. 20-9, 20-10, p. 20-8): printed as C_SC,R + C_SC,G, but the same page
+  says C_SC,G = 1.0 with no grooves, and Table 20-4's smallest value is 1.00: the
+  neutral values of a product, not a sum (a sum would add 1 to every plain
+  shaft). Reliafy's reading: the product C_SC,R × C_SC,G.
+  C_SC,R = (0.3 / (r/d))^0.2 · (D/d)^(1 − r/d).
   C_SC,G from Table 20-4 (h/D by h/r; the table's blank cells are left out of
   the choices), 1.0 with no grooves.
 - The torque and shear stress (Eq. 20-1, 20-2) are design aids that feed no
@@ -27,6 +32,7 @@ Checked against the rendered pages 20-4 to 20-11:
 from backend.scripts.nswc11.common import (
     base, check, choice, derived, factor, mode, non_negative, num, positive, record, refuse, warn,
 )
+from backend.scripts.nswc11 import readings
 
 _FAILURE_MODES = [
     "Bent shaft: excessive load or torque, impact, a failed bearing",
@@ -56,10 +62,13 @@ _SECTIONS = ("X", "L", "M", "N")
 def _section_inputs() -> list[dict]:
     out = []
     for s in _SECTIONS:
+        # Section X always exists; L, M and N are absent (length 0) unless given (Figure 20.2).
+        extra = {} if s == "X" else {"default": 0, "default_basis": "neutral"}
         out.append(num(f"len_{s}", f"Length of shaft section {s}", "in", [non_negative("a length can't be negative")],
-                       symbol=s, page="20-7", help="0 when the shaft has no such section (Figure 20.2)."))
+                       symbol=s, page="20-7", help="0 when the shaft has no such section (Figure 20.2).", **extra))
         out.append(num(f"D_{s}", f"Diameter of shaft section {s}", "in", [non_negative("a diameter can't be negative")],
-                       symbol=f"D_{s}", page="20-7", help="0 when the section has no length."))
+                       symbol=f"D_{s}", page="20-7", help="Only needed when the section has a length.",
+                       when=f"len_{s} > 0"))
     return out
 
 
@@ -73,14 +82,36 @@ def _section_term(s: str) -> str:
     return f"(len_{s} ** 3 / (pi() * D_{s} ** 4 / 64) if len_{s} > 0 else 0)"
 
 
+_CF = ("1.0 if finish == 'polished' else 0.89 if finish == 'ground' else "
+       "0.94 - 0.0046 * T_S + 8.37e-6 * T_S ** 2 if finish == 'hot_rolled' else "
+       "1.07 - 0.0051 * T_S + 2.21e-5 * T_S ** 2 - 3.57e-8 * T_S ** 3 if finish == 'machined' "
+       "else 0.75 - 4.06e-3 * T_S + 7.58e-6 * T_S ** 2")
+
+UNIT_NOTE = (
+    "Reliafy's reading (p. 20-5 against pp. 10-10, 13-11, 14-7): Chapter 20 prints the shaft per million cycles, but "
+    "every assembly that uses it lists it per million hours, and converting by revolutions gives a life of hours "
+    "(0.1 to 0.25 per million cycles × 108,000 revolutions an hour at 1,800 rpm). The rate is taken per million "
+    "hours." if readings.SHAFT_PER_HOUR else
+    "Per million cycles, as printed (p. 20-5): one cycle is one revolution (completely reversed bending); "
+    "converted by revolutions an hour the rate can be implausibly high.")
+FINISH_NOTE = (
+    "Reliafy's reading (p. 20-10): Table 20-3's finish factors are endurance-strength factors (1 or below for a "
+    "rougher finish); applied as printed they would lower the rate for a rougher finish, so the rate is divided by "
+    "them (polished stays 1)." if readings.SHAFT_FINISH_INVERTED else
+    "Table 20-3's finish factors are applied as printed: a rougher finish lowers the rate (p. 20-10), against "
+    "Table 20-1 and Section 20.4.2.")
+_FORMULA = ("λ_SH = λ_SH,B · " + ("(1 / C_f)" if readings.SHAFT_FINISH_INVERTED else "C_f") +
+            " · C_T · C_DY · C_SC, with λ_SH,B = 10⁶ / N and C_SC = C_SC,R · C_SC,G")
+
 RECORDS = [
     record(
         "shaft", "Shaft", "shaft", 20, "20.4 Failure rate model for shafts", "20-3", "20-4",
-        "λ_SH = λ_SH,B · C_f · C_T · C_DY · C_SC, with λ_SH,B = 10⁶ / N",
-        "A shaft's failure rate per million cycles starts at one over the cycles its material lasts at the stress "
+        _FORMULA,
+        "A shaft's failure rate starts at one over the cycles its material lasts at the stress "
         "it works at (from the material's S-N curve). That is scaled by its surface finish, its temperature, how "
         "far it deflects against the allowable deflection, and the stress concentrations at its shoulders and "
-        "grooves.",
+        "grooves." + (" The rate is taken per million hours (Reliafy's reading: see the note)."
+                      if readings.SHAFT_PER_HOUR else " The rate is per million cycles (revolutions)."),
         inputs=[
             num("N_cycles", "Cycles to failure at the application stress", "cycles",
                 [positive("a life is more than zero")], symbol="N", page="20-5",
@@ -92,7 +123,8 @@ RECORDS = [
             num("T_S", "Tensile strength of the material", "kpsi", [
                 positive("a strength is more than zero"),
                 warn(min=20, max=240, why="Table 20-5's shaft materials span 20 to 240 ksi", page="20-11"),
-            ], symbol="T_S", page="20-10"),
+            ], symbol="T_S", page="20-10", when="finish != 'polished' and finish != 'ground'",
+                help="Only needed for hot-rolled, machined and forged finishes (Table 20-3)."),
             num("T_AT", "Operating temperature", "°F", [refuse(min=-459.67, why="below absolute zero")],
                 default=160, default_basis="neutral", symbol="T_AT", page="20-6",
                 help="Up to 160 °F the factor is 1."),
@@ -122,7 +154,7 @@ RECORDS = [
             derived("C_SC_G", "Groove stress concentration (Table 20-4)", _groove_expr(), "", "C_SC,G", "20-10"),
         ],
         checks=[
-            check("len_X + len_L + len_M + len_N > 0", "At least one shaft section needs a length", "20-7",
+            check("len_X > 0", "Shaft section X (the overhang to the load) needs a length", "20-7",
                   severity="refuse"),
             *[check(f"len_{s} == 0 or D_{s} > 0", f"Shaft section {s} has a length, so it needs its diameter",
                     "20-7", severity="refuse") for s in _SECTIONS],
@@ -132,25 +164,28 @@ RECORDS = [
                     base("λ_SH,B", "Base failure rate (10⁶ ÷ cycles to failure)", "20-5", expr="1e6 / N_cycles",
                          equation="20-4"),
                     [
-                        factor("C_f", "Surface finish", "20-10", expr=(
-                            "1.0 if finish == 'polished' else 0.89 if finish == 'ground' else "
-                            "0.94 - 0.0046 * T_S + 8.37e-6 * T_S ** 2 if finish == 'hot_rolled' else "
-                            "1.07 - 0.0051 * T_S + 2.21e-5 * T_S ** 2 - 3.57e-8 * T_S ** 3 if finish == 'machined' "
-                            "else 0.75 - 4.06e-3 * T_S + 7.58e-6 * T_S ** 2"),
-                            source="Table 20-3", words="its surface finish"),
+                        factor("C_f", "Surface finish" + (" (rate ÷ Table 20-3's factor)"
+                                                          if readings.SHAFT_FINISH_INVERTED else ""), "20-10",
+                               expr=_CF if not readings.SHAFT_FINISH_INVERTED else f"1 / ({_CF})",
+                               source="Table 20-3",
+                               words="a rougher finish" if readings.SHAFT_FINISH_INVERTED else "its surface finish"),
                         factor("C_T", "Material temperature", "20-6", expr="(460 + T_AT) / 620 if T_AT > 160 else 1.0",
                                equation="20-5", words="running above 160 °F"),
                         factor("C_DY", "Shaft displacement", "20-7",
                                expr="0.0043 * F / (E * b) * (" + " + ".join(_section_term(s) for s in _SECTIONS) + ")",
                                equation="20-8", words="a heavier load or a longer, thinner shaft"),
                         factor("C_SC", "Stress concentration", "20-8",
-                               expr="C_SC_R + C_SC_G",
+                               expr="C_SC_R * C_SC_G",
                                equation="20-9", source="Table 20-4", words="sharp fillets and grooves"),
                     ], symbol="λ_SH")],
-        rate_unit="per_million_cycles",
+        rate_unit="per_million_hours" if readings.SHAFT_PER_HOUR else "per_million_cycles",
         failure_modes=_FAILURE_MODES,
-        notes="Per million cycles. Table 20-3's finish factors are below 1 for rougher finishes and are applied as "
-              "printed, so a rougher finish lowers the rate (p. 20-10). C_SC is the sum C_SC,R + C_SC,G as printed "
-              "(p. 20-8).",
+        notes=" ".join([UNIT_NOTE, FINISH_NOTE,
+                        "Reliafy's reading (p. 20-8): Eq. 20-9 prints C_SC = C_SC,R + C_SC,G, but the page says "
+                        "C_SC,G = 1.0 with no grooves, which is the neutral value of a product; C_SC,R × C_SC,G is "
+                        "used. C_DY's 0.0043 constant keeps it near 10⁻³ for an ordinary shaft, so the deflection "
+                        "factor dominates (p. 20-7). The model assumes a constant torque and completely reversed "
+                        "bending from rotation; for large reciprocating loads (piston engines, compressors) the "
+                        "handbook says the rate must be analysed and adjusted (p. 20-5)."]),
     ),
 ]

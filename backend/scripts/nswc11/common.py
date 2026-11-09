@@ -67,9 +67,16 @@ def _default(out: dict, default: Any, basis: Optional[str]) -> None:
 
 def num(name: str, label: str, unit: str, limits: list[dict], default: Optional[float] = None,
         symbol: Optional[str] = None, page: Optional[str] = None, help: Optional[str] = None,
-        default_basis: Optional[str] = None) -> dict:
+        default_basis: Optional[str] = None, when: Optional[str] = None, unused: Optional[float] = None) -> dict:
+    """A number input. ``when``: an expression of the inputs before it; the input is asked for only
+    when it's true (otherwise it takes ``unused``, 0 unless given), so a value one choice doesn't
+    need is never a placeholder."""
     out: dict[str, Any] = {"name": name, "kind": "number", "label": label, "unit": unit, "limits": limits}
     _default(out, default, default_basis)
+    if when:
+        out["when"] = when
+        if unused is not None:
+            out["unused"] = unused
     if symbol:
         out["symbol"] = symbol
     if page:
@@ -130,19 +137,28 @@ def factor(symbol: str, name: str, page: str, value: Optional[float] = None, exp
 
 
 def mode(key: str, name: str, base: dict, factors: list[dict] = (), symbol: Optional[str] = None,
-         count: Optional[str] = None, note: Optional[str] = None, meaning: Optional[str] = None) -> dict:
+         count: Optional[str] = None, note: Optional[str] = None, meaning: Optional[str] = None,
+         scale: Optional[str] = None, scale_label: Optional[str] = None, when: Optional[str] = None) -> dict:
+    """A failure mode or part: ``base`` × ``factors`` (× ``count``). ``scale`` (with ``scale_label``)
+    turns a per-cycle base into per hour inside a per-hour assembly; ``when`` leaves it out when false."""
     out: dict[str, Any] = {"key": key, "name": name, "base": base, "factors": list(factors)}
-    for k, v in (("symbol", symbol), ("count", count), ("note", note), ("meaning", meaning)):
+    for k, v in (("symbol", symbol), ("count", count), ("note", note), ("meaning", meaning), ("scale", scale),
+                 ("scale_label", scale_label), ("when", when)):
         if v:
             out[k] = v
     return out
 
 
 def uses(key: str, name: str, record: str, prefix: Optional[str] = None, symbol: Optional[str] = None,
-         count: Optional[str] = None, note: Optional[str] = None) -> dict:
-    """A mode whose rate is another NSWC-11 record's total (``record``: its slug)."""
+         count: Optional[str] = None, note: Optional[str] = None, scale: Optional[str] = None,
+         scale_label: Optional[str] = None, bind: Optional[dict] = None, when: Optional[str] = None) -> dict:
+    """A mode whose rate is another NSWC-11 record's total (``record``: its slug). ``scale`` (with
+    ``scale_label``): the expression a per-cycle part is multiplied by to be per hour (its cycles an
+    hour, the handbook's rule, pp. 12-10, 12-16). ``bind``: {the part's input: an expression of the
+    assembly's inputs}, a shared condition entered once. ``when``: the part is left out when false."""
     out: dict[str, Any] = {"key": key, "name": name, "uses": f"nswc-11:{record}"}
-    for k, v in (("prefix", prefix), ("symbol", symbol), ("count", count), ("note", note)):
+    for k, v in (("prefix", prefix), ("symbol", symbol), ("count", count), ("note", note), ("scale", scale),
+                 ("scale_label", scale_label), ("bind", bind), ("when", when)):
         if v:
             out[k] = v
     return out

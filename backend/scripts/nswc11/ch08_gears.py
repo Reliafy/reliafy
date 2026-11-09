@@ -38,6 +38,17 @@ Checked against the rendered pages 8-8 to 8-19:
 from backend.scripts.nswc11.common import (
     base, choice, derived, factor, mode, num, positive, record, refuse, table, warn,
 )
+from backend.scripts.nswc11 import readings
+
+#: Reliafy's reading (readings.GEAR_NORMALISED_AT_DESIGN): each factor ÷ its value at the design point.
+_NORM = readings.GEAR_NORMALISED_AT_DESIGN
+DESIGN_READING = (
+    "Reliafy's reading (p. 8-8 against Eqs. 8-3 and 8-6, pp. 8-9, 8-10): the handbook says the speed and load "
+    "factors adjust the base rate for any difference from the design, yet as printed they are 2.0 and 25.8 at the "
+    "design speed and load (× 51.6). Each is divided by its value at the design point (C_GS ÷ 2, C_GP ÷ 25.8), so "
+    "a gear at its design speed and load gets its base rate." if _NORM else
+    "As printed, the speed and load factors aren't 1 at the design point: 2.0 at the design speed and 25.8 at the "
+    "design load (× 51.6), though p. 8-8 says they adjust for a difference from the design.")
 
 _FAILURE_MODES = [
     "Pitting: cyclic contact stress through the lubricant film damages the tooth surface",
@@ -86,7 +97,8 @@ def _condition_inputs() -> list[dict]:
 _SPEED_RATIO = derived("speed_ratio", "Operating speed ÷ design speed", "V_o / V_d", "", "V_o/V_d", "8-9",
                        limits=[warn(max=1.4, why="Figure 8.6 covers V_o/V_d up to 1.4", page="8-14")])
 
-_C_GS = factor("C_GS", "Speed against design", "8-9", expr="1.0 + speed_ratio ** 0.7", equation="8-3",
+_C_GS = factor("C_GS", "Speed against design" + (" (÷ 2, its value at the design speed)" if _NORM else ""), "8-9",
+               expr="(1.0 + speed_ratio ** 0.7) / 2" if _NORM else "1.0 + speed_ratio ** 0.7", equation="8-3",
                source="Figure 8.6", words="running faster than its design speed")
 _C_GL = factor("C_GL", "Lubricant viscosity", "8-11", expr="nu_ratio ** 0.54", equation="8-8", source="Figure 8.9",
                words="a thinner lubricant than specified")
@@ -125,7 +137,8 @@ def _gear_derived() -> list[dict]:
 def _gear_factors() -> list[dict]:
     return [
         _C_GS,
-        factor("C_GP", "Load against design", "8-10", expr="(load_ratio / 0.50) ** 4.69", equation="8-6",
+        factor("C_GP", "Load against design" + (" (÷ 25.8, its value at the design load)" if _NORM else ""), "8-10",
+               expr="load_ratio ** 4.69" if _NORM else "(load_ratio / 0.50) ** 4.69", equation="8-6",
                source="Figure 8.7", words="a heavier load than designed for"),
         factor("C_GA", "Misalignment", "8-10", expr="(A_E / 0.006) ** 2.36", equation="8-7", source="Figure 8.8",
                words="misalignment of gears, shafts and bearings"),
@@ -135,9 +148,10 @@ def _gear_factors() -> list[dict]:
 
 _GEAR_FORMULA = "λ_G = λ_G,B · C_GS · C_GP · C_GA · C_GL · C_GT · C_GV"
 _GEAR_WORDS_TAIL = ("scaled by its speed and load against the design, misalignment, its lubricant's viscosity, its "
-                    "temperature and the shock from the prime mover and the load (the AGMA service factor). The "
-                    "handbook's speed and load factors aren't 1 at the design point: 2.0 at the design speed and "
-                    "1 at half the design load.")
+                    "temperature and the shock from the prime mover and the load (the AGMA service factor). "
+                    + ("At its design speed and load the speed and load factors are 1 (Reliafy's reading: see the "
+                       "note)." if _NORM else "The handbook's speed and load factors aren't 1 at the design point: "
+                       "2.0 at the design speed and 25.8 at the design load."))
 
 RECORDS = [
     record(
@@ -158,7 +172,7 @@ RECORDS = [
                     _gear_factors(), symbol="λ_G")],
         failure_modes=_FAILURE_MODES,
         notes="The footnote's RPM in the base rate is taken as the design speed; C_GS scales for the operating "
-              "speed (p. 8-9).",
+              "speed (p. 8-9). " + DESIGN_READING,
     ),
     record(
         "gear-known-rate", "Gear (from a known base failure rate)", "gear", 8, "8.4 Gear reliability prediction",
@@ -176,12 +190,14 @@ RECORDS = [
                     base("λ_G,B", "Base failure rate (from the maker)", "8-8", expr="lambda_GB"),
                     _gear_factors(), symbol="λ_G")],
         failure_modes=_FAILURE_MODES,
+        notes=DESIGN_READING,
     ),
     record(
         "spline", "Spline", "gear", 8, "8.5 Spline reliability prediction", "8-13", "8-12",
-        "λ_GS = λ_GS,B · C_GS · C_GL · C_GT · C_GV, with λ_GS,B = 10⁶ / θ, "
+        "λ_GS = λ_GS,B · C_GS · C_GL · C_GT · C_GV, with λ_GS,B = 10⁶ / θ × 60 · V_o (per million hours), "
         "θ = 7.08×10⁻¹⁰ (φ G_L / G_D)^4.56 · A_E^−2.36 and φ = 4.85×10³ G_B G_D³ / G_T",
-        "A spline's failure rate per million revolutions starts at one over its life in revolutions, which grows "
+        "A spline's failure rate per million hours starts at one over its life in revolutions, times the "
+        "revolutions it makes an hour at its operating speed. The life grows "
         "steeply with its length, diameter and tooth hardness and falls with the torque and the misalignment. "
         "That is scaled by its speed against the design, its lubricant's viscosity, its temperature and the "
         "shock from the prime mover and the load.",
@@ -206,17 +222,19 @@ RECORDS = [
                     "θ", "8-12", "8-12"),
         ],
         modes=[mode("spline", "Spline (wear, fretting, tooth failure)",
-                    base("λ_GS,B", "Base failure rate (10⁶ ÷ the life in revolutions)", "8-12", expr="1e6 / theta",
-                         equation="8-11"),
+                    base("λ_GS,B", "Base failure rate (10⁶ ÷ the life in revolutions × 60 × the operating rpm)",
+                         "8-12", expr="1e6 / theta * 60 * V_o", equation="8-11"),
                     [_C_GS, _C_GL, _C_GT, _C_GV], symbol="λ_GS")],
-        rate_unit="per_million_cycles",
         failure_modes=[
             "Wear from fretting, especially in loose splines",
             "Tooth bending and contact fatigue",
             "Tooth shear: fracture",
             "Abrasive wear: contaminants in the lubricant",
         ],
-        notes="Per million revolutions (one revolution is one cycle). G_B is taken as the Brinell hardness number "
-              "though the handbook labels it lb/in² (p. 8-13).",
+        notes="Eq. 8-11 is per million revolutions; the record turns it into per million hours with the spline's own "
+              "operating speed (60 × V_o revolutions an hour), so a prediction needs no separate cycles an hour. "
+              "G_B is taken as the Brinell hardness number though the handbook labels it lb/in² (p. 8-13); the "
+              "life equation is very sensitive to it (read in psi it would change θ by about 10¹⁴) and is "
+              "unvalidated. " + DESIGN_READING,
     ),
 ]

@@ -35,7 +35,7 @@ Checked against the rendered pages 9-5 to 9-17:
 """
 
 from backend.scripts.nswc11.common import (
-    base, choice, derived, factor, mode, num, positive, record, refuse, warn,
+    base, check, choice, derived, factor, mode, num, positive, record, refuse, warn,
 )
 
 _FAILURE_MODES = [
@@ -118,6 +118,18 @@ _BASE = base("λ_AC,B", "Base failure rate (10⁶ ÷ cycles in the constant wear
              equation="9-14")
 _WORDS_TAIL = ("That is scaled by how hard the particles are against the piston, the filter's rating, how many and "
                "how large the particles are, and its temperature.")
+#: The ninth-power life equation leaves any plausible range for ordinary inputs (p. 9-11; Figure 9.2).
+_NINTH = ("Warning: as printed, Eq. 9-4 and 9-6 raise the strength-to-stress ratio to the 9th power, and for an "
+          "ordinary steel actuator (for example a 50 lbf side load, a 3 in bore and a 0.002 in clearance) give "
+          "about 10¹⁷ to 10¹⁹ cycles, a rate near 10⁻¹² per million cycles: about 12 orders of magnitude below the "
+          "handbook's own test data (Figure 9.2, p. 9-10: actuators wearing out after 70,000 to 170,000 cycles, "
+          "about 6 to 15 failures per million cycles). The handbook warns of the wide range and says reliability "
+          "testing may be needed (p. 9-11). The equation is transcribed as printed; treat a life outside about 10⁴ "
+          "to 10⁸ cycles as not credible and use test or field data instead.")
+_N_CHECK = check("1e4 <= N_O <= 1e8", "The constant-wear life N_O is outside about 10⁴ to 10⁸ cycles, far from the "
+                 "handbook's own test lives (70,000 to 170,000 cycles, Figure 9.2, p. 9-10): the 9th-power equation "
+                 "gives a wide range for small differences in the inputs and the handbook says testing may be "
+                 "needed; this rate isn't credible as it stands", "9-11")
 
 RECORDS = [
     record(
@@ -144,9 +156,11 @@ RECORDS = [
             derived("N_O", "Cycles in the constant wear phase", "15.4e3 * (gamma * F_Y / stress) ** 9", "cycles",
                     "N_O", "9-7", "9-4"),
         ],
+        checks=[_N_CHECK],
         modes=[mode("actuator", "Actuator (piston and cylinder wear)", _BASE, _factors(), symbol="λ_AC")],
         rate_unit="per_million_cycles",
         failure_modes=_FAILURE_MODES,
+        notes=_NINTH,
     ),
     record(
         "actuator-axial-load", "Actuator, piston and cylinder (axial load)", "actuator", 9,
@@ -170,8 +184,10 @@ RECORDS = [
             derived("N_O", "Cycles in the constant wear phase", "17.7e3 * (gamma * F_Y / stress) ** 9", "cycles",
                     "N_O", "9-8", "9-6"),
         ],
+        checks=[_N_CHECK],
         modes=[mode("actuator", "Actuator (piston and cylinder wear)", _BASE, _factors(), symbol="λ_AC")],
         rate_unit="per_million_cycles",
         failure_modes=_FAILURE_MODES,
+        notes=_NINTH,
     ),
 ]

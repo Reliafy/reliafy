@@ -73,7 +73,7 @@ def _conditions() -> list[dict]:
             help="0 for a bearing designed for a water-based lubricant (the handbook: then C_CW = 1)."),
         num("T_O", "Bearing operating temperature", "°C", [
             refuse(min=-273.15, why="below absolute zero"),
-            warn(min=60, max=260, why="Figure 7.5 covers 60 to 260 °C", page="7-17"),
+            warn(max=260, why="Figure 7.5 covers up to 260 °C", page="7-17"),
         ], default=60, default_basis="neutral", symbol="T_O", page="7-13",
             help="Up to 183 °C the factor is 1."),
         _TYPE, _SERVICE, _CONTAMINATION, _DIAMETER,
@@ -163,11 +163,15 @@ RECORDS = [
         "then by the reliability its life is quoted at, its lubricant's viscosity, water in the lubricant, its "
         "temperature, shock in service and dirt in its lubricant.",
         inputs=[
-            num("L10h", "Rated L10 life", "hours", [positive("a life is more than zero")], symbol="L10h", page="7-11"),
+            num("L10h", "Rated L10 life", "hours", [positive("a life is more than zero")], symbol="L10h", page="7-11",
+                help="At the load L_S below (90 % reliability)."),
             num("L_A", "Equivalent radial load in service", "lbf", [positive("the bearing needs a load")],
                 symbol="L_A", page="7-14"),
-            num("L_S", "Dynamic load rating (catalogue)", "lbf", [positive("a load rating is more than zero")],
-                symbol="L_S", page="7-14"),
+            num("L_S", "Load the L10 life was quoted at", "lbf", [positive("a load is more than zero")],
+                symbol="L_S", page="7-14",
+                help="The handbook's rated L10 is at the rated dynamic load (p. 7-10). A catalogue L10 life is usually "
+                     "already at the bearing's service load: then enter L_A = L_S (C_Y = 1), or the load counts "
+                     "twice (8× low at L_A/L_S = 0.5)."),
             *_conditions(),
         ],
         derived=[

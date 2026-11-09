@@ -54,7 +54,7 @@ test("the NSWC-11 library source, a bearing's record and Try it past a limit", a
   const before = await out.locator(".cov-big b").textContent();
   // Past the handbook's range: it still computes, and says which limit and where.
   await tryIt.getByLabel("Bearing operating temperature (T_O)").fill("300");
-  await expect(tryIt.locator(".cov-warn")).toContainText("Outside the handbook’s range (60 to 260 °C, p. 7-17)");
+  await expect(tryIt.locator(".cov-warn")).toContainText("Outside the handbook’s range (at most 260 °C, p. 7-17)");
   await expect(out).toContainText("NSWC-11 p. 7-17");
   await expect(out.locator(".cov-big b")).not.toHaveText(before);
   // Past a physical limit: refused, in words.

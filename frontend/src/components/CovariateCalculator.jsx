@@ -82,7 +82,7 @@ export default function CovariateCalculator({ recordId, inputs = [], unit, value
             {answer.result.modes.length > 1 && (
               <ul className="cov-modes">
                 {answer.result.modes.map((m) => (
-                  <li key={m.key}><span>{m.name}{m.count !== 1 ? ` (×${m.count})` : ""}</span><span className="num">{fmtRate(m.rate)}</span></li>
+                  <li key={m.key}><span>{m.name}{m.count !== 1 ? ` (×${m.count})` : ""}{m.scale != null ? ` (× ${fmtRate(m.scale)} ${m.scale_label || "an hour"})` : ""}</span><span className="num">{fmtRate(m.rate)}</span></li>
                 ))}
               </ul>
             )}
@@ -91,7 +91,7 @@ export default function CovariateCalculator({ recordId, inputs = [], unit, value
             )}
             {answer.warnings?.length > 0 && (
               <div className="cov-warnings">
-                <p className="cov-head">Outside the handbook’s limits, so treat it with care:</p>
+                <p className="cov-head">Outside the handbook’s limits or flagged by its cautions, so treat it with care:</p>
                 <ul>{answer.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
               </div>
             )}
