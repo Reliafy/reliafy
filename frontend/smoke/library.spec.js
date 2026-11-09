@@ -24,7 +24,7 @@ test("the library's three levels, then a record used as a model", async ({ page,
   await expect(page.getByRole("searchbox", { name: "Search the data library" })).toBeVisible();
 
   // A source: its records, filtered and sorted.
-  await page.getByRole("link", { name: new RegExp(NRC.replace(/[()]/g, "\\$&")) }).click();
+  await page.getByRole("link", { name: NRC }).click();
   await expect(page).toHaveURL(/\/models\/library\/nrc-inl-2020$/);
   await page.getByRole("searchbox", { name: "Search this library" }).fill("Motor-operated valve");
   const table = page.locator(".lib-table");
