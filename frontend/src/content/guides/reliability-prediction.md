@@ -94,8 +94,10 @@ handbook, under its own heading:
   out of the total, and the result says so. Don't give it the nearest
   electronic part type just to get a number.
 
-The sample prediction, the sample quadcopter's electronics, shows a finished
-one with lines in assemblies and two parts left out.
+The sample prediction, the sample quadcopter's electronics and motors, shows a
+finished one with lines in assemblies: microcircuits on the handbook's generic
+rates, the motors on NSWC-11 with their conditions filled in, and the
+propellers left out as not electronic.
 
 ## Read the result honestly
 
