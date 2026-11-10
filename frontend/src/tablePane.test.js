@@ -32,7 +32,7 @@ test("putting a pane in the address takes any other out", () => {
 });
 
 test("each pane has its address and its words for leaving it changed", () => {
-  assert.deepEqual(PANE_PARAMS, ["fit", "from", "predict", "bind", "on", "mission", "rbd"]);
+  assert.deepEqual(PANE_PARAMS, ["fit", "prior", "predict", "bind", "on", "mission", "rbd"]);
   assert.equal(TABLE_PANES.predict.discard.title, "Discard this prediction?");
   assert.equal(TABLE_PANES.rbd.discard.title, "Discard your changes to this RBD?");
   for (const p of Object.values(TABLE_PANES)) {
@@ -41,12 +41,22 @@ test("each pane has its address and its words for leaving it changed", () => {
 });
 
 test("a fit that starts from a model row: the row in the address, taken out with the pane", () => {
-  assert.deepEqual(paneFromQuery(new URLSearchParams("tab=models&fit=p1&from=l1")), { kind: "fit", id: "p1", from: "l1" });
-  assert.equal(paneFromQuery(new URLSearchParams("from=l1")), null);
+  assert.deepEqual(paneFromQuery(new URLSearchParams("tab=models&fit=p1&prior=l1")), { kind: "fit", id: "p1", from: "l1" });
+  assert.equal(paneFromQuery(new URLSearchParams("prior=l1")), null);
   const q = new URLSearchParams("tab=models&sel=p1");
-  assert.equal(setPaneQuery(q, "fit", "p1", { from: "l1" }).toString(), "tab=models&sel=p1&fit=p1&from=l1");
+  assert.equal(setPaneQuery(q, "fit", "p1", { from: "l1" }).toString(), "tab=models&sel=p1&fit=p1&prior=l1");
   // Another fit (no row) or another pane drops it.
   assert.equal(setPaneQuery(q, "fit", "p1").toString(), "tab=models&sel=p1&fit=p1");
   setPaneQuery(q, "fit", "p1", { from: "l1" });
   assert.equal(setPaneQuery(q, "predict", "p1", { from: "l1" }).toString(), "tab=models&sel=p1&predict=p1");
+});
+
+test("no pane takes a general word for its own: a link's ?from= or ?utm_… is never a pane's to clear", () => {
+  // The Explorer clears PANE_PARAMS when another row is picked; an earlier address's own query
+  // (redirects.js: /rcm/studies/…?from=email) must come through it.
+  for (const k of ["from", "source", "ref", "id"]) assert.ok(!PANE_PARAMS.includes(k), k);
+  assert.ok(PANE_PARAMS.every((k) => !k.startsWith("utm_")));
+  const q = new URLSearchParams("tab=models&sel=p1&from=email");
+  assert.equal(setPaneQuery(q, "fit", "p1", { from: "l1" }).toString(), "tab=models&sel=p1&from=email&fit=p1&prior=l1");
+  assert.equal(setPaneQuery(q, "predict", "p1").toString(), "tab=models&sel=p1&from=email&predict=p1");
 });

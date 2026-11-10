@@ -237,7 +237,7 @@ export function priorFrom(row) {
 }
 
 // What the fit pane opens with: what the opener chose (`seed`), else, on a reload, the row named in
-// the address (?fit=<position>&from=<row>) as its prior; null while the rows are still being read.
+// the address (?fit=<position>&prior=<row>) as its prior; null while the rows are still being read.
 export function fitPreset(seed = null, from = null, rows = null) {
   if (seed) return { start: seed.start || {}, link: seed.link || null };
   if (!from) return { start: {}, link: null };
