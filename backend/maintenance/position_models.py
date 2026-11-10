@@ -26,6 +26,9 @@ Events (new types only; older logs replay unchanged):
 * ``position.model_in_use_set {position_id, link_id}`` (Nov 2026): which of a position's
   rows is the model in use (one at a time). Without one, the in-use row is its own life
   model, else its RBD, else its prediction (:meth:`PositionModelOps.in_use_link`).
+* ``position.model_relinked {id, model_id, name, note}`` (Nov 2026): a link pointed at
+  another saved model of the same kind (or the same one), with the name and note it
+  carries from then on. The link itself and what it is for stay as they were.
 
 An RBD is a row too (``model_type`` and ``role`` ``rbd``, Nov 2026: "every position can
 either have a life model, an RBD, or a prediction"): a saved diagram, built from the
@@ -91,10 +94,15 @@ def _model_in_use_set(s: GraphStore, org: str, p: dict) -> None:
         s.patch_node(org, x["id"], {"in_use": x["id"] == p["link_id"]})
 
 
+def _model_relinked(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"model_id": p["model_id"], "name": p["name"], "note": p["note"]})
+
+
 PROJECTORS = {
     "position.model_linked": _model_linked,
     "position.model_unlinked": _model_unlinked,
     "position.model_in_use_set": _model_in_use_set,
+    "position.model_relinked": _model_relinked,
 }
 
 
@@ -257,6 +265,20 @@ class PositionModelOps:
             raise _sv().Invalid("That model was already taken off.")
         self._emit("position.model_unlinked", {"id": link_id, "on": self.today()})
         return {"unlinked": link_id, "position_id": link.get("position_id"), "name": link.get("name") or ""}
+
+    def relink_position_model(self, link_id: str, model_id: str, name: str, note: str = "") -> dict:
+        """Point a link at another saved model of its kind (or leave it on the same one),
+        with the name and note it carries from now on. The link, its position and the
+        failure modes it is for stay."""
+        sv = _sv()
+        link = self._get(link_id, "ModelLink")
+        if link.get("removed"):
+            raise sv.Invalid("That model was taken off its position.")
+        self._emit("position.model_relinked", {
+            "id": link_id, "model_id": sv._text(model_id, "model id", required=True),
+            "name": sv._text(name, "model's name", required=True)[:sv.SHORT_TEXT],
+            "note": sv._text(note, "note")})
+        return self.model_link(link_id)
 
     def _copy_model_links(self, mapping: dict) -> int:
         """A built item's positions take their design positions' models (role design),

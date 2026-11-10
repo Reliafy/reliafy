@@ -1032,13 +1032,15 @@ def failure_mode_interval_inputs(mode_id: str, session=Depends(get_session), ctx
 @router.post("/sample-product")
 def add_sample_product(body: dict | None = Body(None), session=Depends(get_session),
                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Add the sample product: a quadcopter's design (its RCM, some decisions linked to sample evidence, and
-    every failure mode scored as an FME(C)A; its maintenance programme with each task's LSA record; sample
-    life models on its motors, propellers, battery pack and radio), its part with a bill of materials, three
-    items built from it with two failure reports (the first with its calendar tasks in a monthly work
-    package), and a flight-critical RBD with
-    placeholder failure rates. When a copy is there already nothing is added (added false) unless again is
-    true."""
+    """Add the Survey quadcopter, a ready-made product whose numbers are invented: a quadcopter's design
+    (its RCM, some decisions linked to evidence, and every failure mode scored as an FME(C)A; its
+    maintenance programme with each task's LSA record; life models on its motors, propellers, battery pack
+    and radio), its part with a bill of materials, three items built from it with two failure reports (the
+    first with its calendar tasks in a monthly work package), a flight-critical RBD with placeholder failure
+    rates and a maintainability prediction. Its life models and the analyses behind its decisions are saved
+    in the workspace as its own records (own_records; a second copy uses the first one's), except any the
+    plan's storage has no room for, which stay linked to the shared library's (kept_shared names them).
+    When a copy is there already nothing is added (added false) unless again is true."""
     from backend.maintenance import templates
 
     return _run(templates.add_sample_product, m, session, bool((body or {}).get("again")))
@@ -1772,10 +1774,18 @@ def build_item(product_id: str, body: dict = Body(...), m: Maintenance = Depends
 
 
 @router.post("/products/{product_id}/make-own")
-def make_sample_own(product_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Make a copy of the sample product your own, in place: "(sample)" goes from its name, nothing
-    inside changes, and the sample is never added again beside it unless asked."""
-    return _run(m.clear_sample, product_id)
+def make_sample_own(product_id: str, session=Depends(get_session),
+                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Bring a copy of the Survey quadcopter added earlier as "… (sample)" to how it is added now, in
+    place: "(sample)" goes from its name and from what was added with it (its part, the items built from
+    it, its RBD, its maintainability prediction and the names and notes of its life-model links), and its
+    life models and the analyses behind its decisions are saved in the workspace as its own records, with
+    its positions' links and its decisions' evidence pointed at them (own_records; kept_shared names any
+    the plan's storage had no room for). Ids stay, and it is never added again beside this copy unless
+    asked. renamed lists what was renamed."""
+    from backend.maintenance import templates
+
+    return _run(templates.make_sample_own, m, session, product_id)
 
 
 @router.delete("/products/{product_id}/design")

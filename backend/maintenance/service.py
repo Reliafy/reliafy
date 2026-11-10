@@ -4758,6 +4758,20 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             self._write_mode_notes(fm, notes_now)
         return self.rcm_mode(mode_id)
 
+    def relink_evidence(self, mode_id: str, evidence: dict) -> bool:
+        """Point a failure mode's decision at another saved record as its evidence
+        ({type, id}); the decision, its task and its notes stay. False when it links
+        that record already."""
+        fm, _ = self._live_mode(mode_id)
+        try:
+            cleaned = rcm_decisions._clean_evidence(evidence)
+        except rcm_decisions.RcmValidationError as err:
+            raise Invalid(str(err)) from None
+        if not fm.get("outcome") or fm.get("evidence") == cleaned:
+            return False
+        self._emit("failure_mode.analysed", {"id": mode_id, "changes": {"evidence": cleaned}})
+        return True
+
     @staticmethod
     def _on_found(fm: dict, outcome, given: dict, prev: dict | None = None) -> str:
         """What's done when the check finds it, for a decision (or a combination's

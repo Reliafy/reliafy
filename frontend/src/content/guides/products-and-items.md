@@ -2,7 +2,7 @@
 title: "Products and the items built from them"
 task: "How do I keep a product's design (its structure, FME(C)A and parts list) and see what happens to every item built from it?"
 category: "Maintenance strategy"
-prerequisites: "Reliafy Maintenance, or the sample UAV product."
+prerequisites: "Reliafy Maintenance, or the Survey quadcopter."
 order: 28
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
 # Products and Items pages and stays out of the index until Maintenance opens.
@@ -19,10 +19,11 @@ item copies the product's functional structure into the item's own tree and
 fits the item at its top, so each item keeps its own fitments, readings and
 failure reports.
 
-## Start with the sample
+## Start with the Survey quadcopter
 
-On **Products**, press **Add the sample UAV product**. It adds a small
-inspection quadcopter (entirely invented): its design with a complete RCM
+On **Products**, press **Add the Survey quadcopter**. The Survey quadcopter is
+a made-up product: its numbers are invented. It adds a small
+inspection quadcopter: its design with a complete RCM
 study and every failure mode scored, its part with a short bill of materials,
 three items built from it, each with its flight hours and flights counted, a
 motor replaced on one of them, two failure reports, a flight-critical RBD
@@ -31,11 +32,18 @@ whose failure rates are placeholders, and a
 product, saved with your own predictions under the product's name (its repair
 times and failure rates are invented too).
 
-To keep it and build on it, pick **Make this my own…** in the **⋯** menu of
-the product's own row (the top of its tree). It stays exactly as it is, with
-"(sample)" taken off its name (and off its part's and its items' names), and
-it's yours to change. The sample isn't added again beside it unless you ask
-for a fresh copy.
+It is yours from the moment it's added, a product like any you make: rename
+it, change it, build on it. Its life models and strategy analyses are saved in
+your workspace as your own, so they count towards your plan's storage; any
+there was no room for stay linked to the shared library's records, and the
+product says which. It isn't added again beside the one you have unless you
+ask for another copy (the **⋯** menu on **Products**).
+
+A copy added earlier may still have "(sample)" in its name. Pick **Make this
+my own…** in the **⋯** menu of its own row (the top of its tree): it stays
+exactly as it is, the word leaves its name and the names of its part, items,
+RBD and maintainability prediction, and its life models are saved as your
+own.
 
 ## A product's page
 
@@ -63,7 +71,7 @@ have no failure reports, signals, stock, work or due dates. Its tabs:
 - **LSA**: every task in the design with what it needs to be done (labour,
   tools, spares, consumables, method), added up. Its tasks are packaged into
   visits on the items built from it, not on the design. An item built later
-  carries copies of the tasks with what they need. In the sample product every
+  carries copies of the tasks with what they need. In the Survey quadcopter every
   programme task has its record, and item 0007 has its calendar tasks (the
   failsafe tests, the battery storage check and the annual inspection) in one
   monthly work package.
@@ -93,7 +101,7 @@ A product's locations are part of its design, never assets: they don't show on
 positions placed the same way. The copy is wherever the item is kept, and moves
 with it.
 
-The sample quadcopter's layout has four arms (each with its arm structure,
+The Survey quadcopter's layout has four arms (each with its arm structure,
 motor, speed controller and propeller), the centre body with its battery bay,
 and the payload bay.
 

@@ -30,7 +30,7 @@ const SIGNED_IN = [
   ["POST", "/api/maintainability/analyse"],
   ["GET", "/api/maintainability/predictions"],
   ["GET", "/api/maintainability/products/smoke/lines"],
-  // "Add the sample UAV product" (Products; the Explorer's "Open the sample UAV product").
+  // "Add the Survey quadcopter" (Products; the Explorer's "Open the Survey quadcopter").
   ["POST", "/api/maintenance/sample-product"],
   // A dataset's measurements part (docs/datasets.md): add, paste, remove, split, life data for readings alone.
   ["PUT", "/api/datasets/smoke/measurements"],

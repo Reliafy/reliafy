@@ -1262,7 +1262,7 @@ button.rw-cklink {
 .tp-row button.tp-unpin:hover { background: var(--acc-t); }
 .tp-mk + .tp-unpin, .tt-st + .tp-unpin, .tp-unpin + .tt-more { margin-left: 2px; }
 
-/* The empty tree's "New here? Open the sample UAV product" card. */
+/* The empty tree's "New here? Open the Survey quadcopter" card. */
 .ae-sample {
   margin: 1.25rem auto 0;
   max-width: 34rem;

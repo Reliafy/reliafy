@@ -42,15 +42,15 @@ export default function MaintenanceAssets() {
   const rest = view?.not_placed;
   const horizon = view?.horizon_days ?? 30;
   const newAsset = <button onClick={() => setModal(true)}><PlusIcon /> New asset</button>;
-  // The sample quadcopter: the first of the three items built from the sample
-  // product, on its own tree (the sample is added first when there's none).
+  // A Survey quadcopter: the first of the three items built from the ready-made
+  // product, on its own tree (the product is added first when there's none).
   const openSample = () => {
     if (adding) return;
     setAdding(true);
     setError(null);
     sampleUnitsPath(addSampleProduct, listProductItems)
       .then((path) => navigate(path))
-      .catch((e) => { setError(`The sample quadcopter didn't open: ${e.message}`); setAdding(false); });
+      .catch((e) => { setError(`The Survey quadcopter didn't open: ${e.message}`); setAdding(false); });
   };
   const sampleButton = (
     <button type="button" className="secondary" onClick={openSample} disabled={adding}>{adding ? "Opening…" : OPEN_SAMPLE_UNITS_LABEL}</button>
@@ -91,7 +91,7 @@ export default function MaintenanceAssets() {
         columns={columns} after={notPlaced || null} onDelete={setDeleting}
         empty={{
           title: "No assets yet",
-          text: "An asset is a place you look after: a house, a site, a plant. Add one, then add the rooms or areas inside it and say where each position is. Or open the sample quadcopter: one of three built from the sample product, with its flight hours and failure reports.",
+          text: "An asset is a place you look after: a house, a site, a plant. Add one, then add the rooms or areas inside it and say where each position is. Or open a Survey quadcopter: one of three built from a ready-made product, with its flight hours and failure reports. Its numbers are invented.",
           sample: sampleButton,
           guide: "How the asset tree works",
         }}

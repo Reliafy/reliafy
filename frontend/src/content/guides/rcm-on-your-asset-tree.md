@@ -2,7 +2,7 @@
 title: "Build RCM on your asset tree, every decision backed by evidence"
 task: "How do I record a position's functions, functional failures and failure modes, choose a maintenance task for each, and show the analysis behind it?"
 category: "Maintenance strategy"
-prerequisites: "A position in your asset tree, or the sample UAV product. Fitted models or saved strategy analyses to cite help, but you can start without them."
+prerequisites: "A position in your asset tree, or the Survey quadcopter. Fitted models or saved strategy analyses to cite help, but you can start without them."
 order: 25
 ---
 
@@ -19,18 +19,18 @@ that justifies it: a non-repairable model, a degradation model or a saved
 strategy analysis. Reliafy checks the link every time you open the tree, and
 marks each decision **Supported**, **Contradicted** or **Inconclusive**.
 
-## Start from the sample UAV product
+## Start from the Survey quadcopter
 
 Open **Assets → Explorer** and pick the **RCM** tab. The tree of
 positions is the first column, and under each position sit its functions,
 their performance standards, functional failures and failure modes, with the
 RCM's columns beside every row.
 
-The sample is a product: *Survey quadcopter (sample)*, a small fictional
-inspection quadcopter's design with a complete RCM study on it. If your tree
-is empty, press **Open the sample UAV product**. (With positions already
+The Survey quadcopter is a made-up product: its numbers are invented. It is a
+small inspection quadcopter's design with a complete RCM study on it. If your tree
+is empty, press **Open the Survey quadcopter**. (With positions already
 there, it's in the **⋯** beside the tree's search box; on **Products**, **Add
-the sample UAV product** adds it too.) It is added to your workspace the first
+the Survey quadcopter** adds it too.) It is added to your workspace the first
 time, and its **Functional structure** opens on the **RCM** tab: the same
 Explorer, scoped to the design.
 
@@ -60,7 +60,7 @@ go by the calendar. The higher positions' failures are explained by those below
 them (see *Working top down or bottom up*, below), and some decisions link the
 evidence behind them.
 
-![The RCM tab on the sample UAV product: its functions, failures and modes, each decision with its evidence check](/guides/img/rcm-01-explorer.png)
+![The RCM tab on the Survey quadcopter: its functions, failures and modes, each decision with its evidence check](/guides/img/rcm-01-explorer.png)
 
 The five levels under a position are the ones classic RCM uses, and the tasks
 that answer them:
@@ -142,14 +142,14 @@ To find your way around a big tree:
   column's edge to resize it. The Explorer remembers these choices on this
   device.
 
-One decision in the sample is red on purpose, on each of the four motors. The
+One decision in it is red on purpose, on each of the four motors. The
 first build's plan ran the motor bearings to failure, on the grounds that
 bearing failures are random. The linked bearing model says otherwise: *β = 2.50
 [1.88, 3.32] — the CI excludes 1: this is wear-out.* That's the point of linking
 evidence. The worksheet says what was decided; the check says whether the data
 still agree.
 
-The rest of the sample shows the other cases. The propeller replacement and
+The rest of the product shows the other cases. The propeller replacement and
 the BMS cut-off test are **Supported** by the analyses they link; so are the
 speed controllers' thermal-pad check (a degradation model of their temperature
 rise), the radio's run-to-failure (an exponential fit: its failures are random)
@@ -162,7 +162,7 @@ failures (the four failsafes, each IMU failing silently, the BMS cut-off and
 its state of charge), each with its failure-finding task (**Show only → Hidden
 failures**).
 
-The sample product is yours to edit, so try things on it. Your own equipment
+The Survey quadcopter is yours to edit, so try things on it. Your own equipment
 goes the same way: on any position.
 
 ## Build the RCM on a position

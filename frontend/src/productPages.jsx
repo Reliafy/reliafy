@@ -169,15 +169,15 @@ export const PRODUCT_PAGES = [
           degradation models in the same platform, from the same datasets, and teams work on one
           shared tree. Walk through a{" "}
           <Link to="/learn/rcm-analysis-example">complete worked RCM example</Link> — a pump
-          system, five failure modes, every decision reasoned — or open the sample UAV product: a
-          survey quadcopter's design with its RCM, decisions linked to their evidence, one of them
+          system, five failure modes, every decision reasoned — or open the Survey quadcopter: a
+          ready-made product's design with its RCM, decisions linked to their evidence, one of them
           contradicted on purpose.
         </p>
       </>
     ),
     band: {
       h2: "Your next RCM review could check itself.",
-      p: "Start from the sample UAV product and link your first decision to real evidence — free.",
+      p: "Start from the Survey quadcopter and link your first decision to real evidence — free.",
     },
   },
   {

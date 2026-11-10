@@ -5,10 +5,11 @@ author: The Reliafy Team
 summary: Every mature RCM programme has the same artifact — a thorough, expensive study that was true the day it was written and has been quietly diverging from reality ever since. The fix isn't more discipline. It's making the worksheet check itself.
 ---
 
-*Editor's note, added October 2026: RCM in Reliafy now lives on your asset
-tree, on the Explorer's RCM tab, rather than as separate studies; the sample
-is now the sample UAV product, a quadcopter's design with its RCM (the
-delivery truck below is no longer offered). The post below is as published.*
+*Editor's note, added October 2026 and updated in November: RCM in Reliafy now
+lives on your asset tree, on the Explorer's RCM tab, rather than as separate
+studies; the worked example is now the Survey quadcopter, a made-up product: a
+quadcopter's design with its RCM (the delivery truck below is no longer
+offered). The post below is as published.*
 
 Somewhere near you is an RCM binder. It was produced by a serious team over
 several months, it was reviewed and signed, and it directs the maintenance of
