@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   covariateParts, fleetAnswer, fleetWithin, guessLifetimeColumns, lifeLeftNumber, riskText, sortRiskRows, guessReadingColumns, jointBlockLine, jointBlockModel, medianText,
-  paramGroups, parseReadings, readingsText, riskTone, sortColumn,
+  paramGroups, parseReadings, positionFacts, positionRisk, readingsText, riskTone, sortColumn,
 } from "./joint.js";
 
 const col = (name, dtype = "float64", values = null) => ({ name, dtype, values });
@@ -150,4 +150,47 @@ test("a class's fleet inside one asset: only its positions, counted again", () =
   assert.equal(fleetAnswer(none), "1 position · no risk now yet");
   // The fleet as read is left as it was.
   assert.equal(fleet.positions, 4);
+});
+
+test("one position's risk now: its summary and charts, or why there are none, in words", () => {
+  const model = { id: "m1", name: "Feed pumps", path: "/models/joint/m1", unit: "Days" };
+  const member = (over = {}) => ({
+    position: { id: "p1", name: "Pump 1" }, item: { id: "i1", name: "Unit 7", serial: "S-7" }, age: 120, model: { id: "m1", name: "Feed pumps" },
+    point: { id: "pt", name: "Vibration", unit: "mm/s", on: "position" }, last_reading: { on: "2026-11-01", value: 4.23456, unit: "mm/s" },
+    n_readings: 12, scored: false, why: null, ...over,
+  });
+  assert.equal(positionRisk(null), null);
+  // Scored, with its curves: the summary and the charts.
+  const scored = member({ scored: true, risk: [0.1, 0.3, 0.8], unit: { unit_id: "Pump 1", age: 120, markers: [], prediction: {} } });
+  assert.deepEqual(positionRisk({ member: scored, model, age_unit: "Days" }), { state: "scored", why: null, facts: null });
+  // No model linked: no reason from the read (the tab says how to link one), and what is known all the same.
+  const none = positionRisk({ member: member({ model: null }), model: null, age_unit: "Days" });
+  assert.equal(none.state, "no-model");
+  assert.equal(none.why, null);
+  assert.equal(none.facts, "Fitted here: Unit 7 (S-7), age 120 days. Last reading of Vibration: 4.23 mm/s on 2026-11-01.");
+  // A model that can't score it yet: the read's own reason.
+  const why = "No vibration readings since this item went into service (2026-07-01). Record one on “Vibration”.";
+  const not = positionRisk({ member: member({ why, last_reading: null, n_readings: 0 }), model, age_unit: "Days" });
+  assert.equal(not.state, "not-scored");
+  assert.equal(not.why, why);
+  assert.equal(not.facts, "Fitted here: Unit 7 (S-7), age 120 days. No readings of Vibration since this item went in.");
+  // Scored in the table but read without its curves, or with no reason given: still words, never a blank.
+  const bare = positionRisk({ member: member({ scored: true }), model, age_unit: "Days" });
+  assert.equal(bare.state, "not-scored");
+  assert.match(bare.why, /^The model gave no risk for this position/);
+  // Nothing fitted: the read says so, with or without a model; no facts.
+  const empty = "No item is fitted here, so there is no age or readings to work a risk out from. Fit an item to see its risk.";
+  assert.deepEqual(positionRisk({ member: null, model: null, why: empty }), { state: "no-model", why: empty, facts: null });
+  assert.deepEqual(positionRisk({ member: null, model, why: empty }), { state: "not-scored", why: empty, facts: null });
+});
+
+test("a member's facts: numbers to three figures with their units, never NaN", () => {
+  assert.equal(positionFacts(null), null);
+  assert.equal(positionFacts({ item: { name: "", serial: "" }, age: 1 }, "Days"), "Fitted here: (no name), age 1 day.");
+  assert.equal(
+    positionFacts({ item: { name: "Unit" }, age: 12345.678, point: { name: "Wear" }, last_reading: { on: "2026-10-30", value: 0.000123456, unit: "" } }),
+    "Fitted here: Unit, age 12,300 days. Last reading of Wear: 1.23e-4 on 2026-10-30.",
+  );
+  const odd = positionFacts({ item: { name: "Unit" }, age: NaN, last_reading: { on: "2026-10-30", value: Infinity, unit: "mm" } });
+  assert.ok(!/NaN|Infinity/.test(odd));
 });
