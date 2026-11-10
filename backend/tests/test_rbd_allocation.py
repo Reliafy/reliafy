@@ -147,6 +147,68 @@ def test_pins_are_ignored():
     assert res["system"]["current"] == pytest.approx(float(_library().sf(T)))
 
 
+def _two_of_three(repairable=False):
+    """Three equal pumps a, b, c voting 2-out-of-3 (node k3), in series with
+    a valve d (non-repairable only)."""
+    nodes = [_node("input", "input"), _node("output", "output")]
+    for nid in ("a", "b", "c"):
+        extra = {"repair": _exp(1.0)} if repairable else {}
+        nodes.append(_node(nid, model=_exp(1e-3), **extra))
+    nodes.append({"id": "k3", "type": "knode", "position": {"x": 0, "y": 0},
+                  "data": {"label": "2oo3", "n": 2, "k": 3}})
+    edges = [("input", "a"), ("input", "b"), ("input", "c"), ("a", "k3"), ("b", "k3"), ("c", "k3")]
+    if repairable:
+        edges.append(("k3", "output"))
+    else:
+        nodes.append(_node("d", model=_exp(1e-4)))
+        edges += [("k3", "d"), ("d", "output")]
+    graph = {"nodes": nodes, "edges": [{"id": f"{s}-{t}", "source": s, "target": t} for s, t in edges],
+             "unit": "Hours"}
+    if repairable:
+        graph["repairable"] = True
+    return graph
+
+
+def _two_of_three_by_hand(p):
+    """2-out-of-3 of a, b, c in series with d, from the block probabilities:
+    all three work, or exactly two do."""
+    a, b, c, d = p["a"], p["b"], p["c"], p["d"]
+    vote = a * b * c + a * b * (1 - c) + a * (1 - b) * c + (1 - a) * b * c
+    return vote * d
+
+
+@pytest.mark.parametrize("method", ["equal", "simple", "improvement", "cost_based"])
+def test_k_of_n_allocation_meets_the_target_by_hand(method):
+    res = ra.allocate(_two_of_three(), 0.99, method, T, {}, None, None)
+    need = _required(res)
+    assert set(need) == {"a", "b", "c", "d"}  # the voting node is no block
+    current = {b["id"]: b["current"] for b in res["blocks"]}
+    assert current["a"] == pytest.approx(np.exp(-1e-3 * T))
+    assert res["system"]["current"] == pytest.approx(_two_of_three_by_hand(current))
+    assert res["system"]["allocated"] == pytest.approx(0.99)
+    assert _two_of_three_by_hand(need) == pytest.approx(0.99)
+    assert need["a"] == pytest.approx(need["b"]) == pytest.approx(need["c"])
+    if method == "equal":
+        p = need["a"]
+        assert need["d"] == pytest.approx(p)
+        assert (3 * p ** 2 - 2 * p ** 3) * p == pytest.approx(0.99)
+
+
+def test_k_of_n_minimum_effort_is_refused_plainly():
+    with pytest.raises(AllocationError, match="series system only"):
+        ra.allocate(_two_of_three(), 0.99, "minimum_effort", T, {}, None, None)
+
+
+@pytest.mark.parametrize("how", ["equal", "improvement", "cost_based"])
+def test_k_of_n_availability_allocation_by_hand(how):
+    res = ra.allocate(_two_of_three(True), 0.999999, "availability", None, {"availability_method": how})
+    need = _required(res)
+    assert set(need) == {"a", "b", "c"}
+    p = need["a"]
+    assert res["system"]["allocated"] == pytest.approx(0.999999)
+    assert 3 * p ** 2 - 2 * p ** 3 == pytest.approx(0.999999)
+
+
 # ---- repairable ------------------------------------------------------------------------
 
 @pytest.mark.parametrize("how", ["cost_based", "improvement", "equal"])
