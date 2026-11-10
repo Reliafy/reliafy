@@ -84,10 +84,11 @@ The **Life-stress** tab is the ALT signature: characteristic life against
 stress, with each tested level marked and the fitted relationship drawn through
 them. Enter your **use stress** beside the chart: the line runs on to it, a star
 marks the life there, and the table gives the **acceleration factor** against
-each tested level. This is where you see whether the extrapolation is a short
-reach or a heroic one. A model with two stresses shows two charts side by side,
-one along each stress, with a line for each tested level of the other (on a
-phone, a switch picks one).
+each tested level. The **life at use stress** is shown with its 95% range: the
+further your use stress is from the tested levels, the wider it gets. This is
+where you see whether the extrapolation is a short reach or a heroic one. A
+model with two stresses shows two charts side by side, one along each stress,
+with a line for each tested level of the other (on a phone, a switch picks one).
 
 ![The Life-stress tab with each tested level and the fitted relationship](/guides/img/alt-02-lifestress.png)
 

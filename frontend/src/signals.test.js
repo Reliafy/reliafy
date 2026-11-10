@@ -73,7 +73,7 @@ test("defaults: the latest snapshot and a running baseline", () => {
 // ---- slice 2 ----
 
 import {
-  convertRange, dropStopped, fadeWeights, hzRange, isStopped, limitLines, localToIso, parseCsv, parseJsonSnapshots,
+  convertRange, dropStopped, fadeWeights, fmtWhen, hzRange, isStopped, limitLines, localToIso, parseCsv, parseJsonSnapshots,
   parseWav, runningOnly, sizeProblem, snapshotBody, thinWave, trimAxes, xFor,
 } from "./signals.js";
 
@@ -189,4 +189,10 @@ test("a channel's link opens its own page (the Signals tab is hidden), at its ba
   assert.equal(channelPath({ id: "c1", position: { id: "p1" } }), "/asset-register/explorer?arrange=positions&sel=p1&tab=measurements&channel=c1");
   assert.equal(channelPath({ id: "c1", position: { id: "p1" } }, { bands: true }).endsWith("&channel=c1#bands"), true);
   assert.equal(channelPath("c 2", { bands: true }), "/asset-register/channels/c%202#bands");
+});
+
+test("a snapshot's time reads day first on a 24-hour clock", () => {
+  assert.equal(fmtWhen("2026-11-01T14:05:00"), "1 Nov 2026, 14:05");
+  assert.equal(fmtWhen("2026-11-01T14:05:00", { time: false }), "1 Nov 2026");
+  assert.equal(fmtWhen(undefined), "");
 });

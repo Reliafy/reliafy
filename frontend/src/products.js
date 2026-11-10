@@ -27,7 +27,7 @@ export function productPath(id, tab = null) {
 }
 
 // A product's design on one of its structure's tabs (view: "rcm", "fmea"), the
-// top position picked (the Explorer's way to the sample quadcopter).
+// top position picked (the Explorer's way to a Survey quadcopter).
 export function productViewPath(id, view = "fmea") {
   return `${productPath(id)}?view=${encodeURIComponent(view)}&sel=${encodeURIComponent(id)}`;
 }
@@ -135,12 +135,22 @@ export function isDesignScope(data, root) {
   return !!(root && data?.positions?.find((p) => p.id === root)?.design);
 }
 
+// Does one tree on show offer the Classes arrangement (the item classes, each with its positions)?
+// An asset's tree opened on its own does: items are fitted there. A product's design doesn't, on
+// its own page (`ownPage`) or opened as a tree: nothing is fitted in a design. Until the tree is
+// read (`data` null) the address is taken at its word, so a reload by Classes stays by Classes.
+export function scopeHasClasses(data, { ownPage = false } = {}) {
+  if (ownPage) return false;
+  return !data || data.scope?.kind === "unit";
+}
+
 // A design's rows: no failure report is filed there (a report is about an item).
 // The product's own row (the design's top position, `r`) adds Build an item…
 // first, as its Summary does (greyed with the reason when the workspace is
 // view only).
-// A copy of the sample product's own row adds Make this my own… after it (the
-// copy becomes the user's product in place: "(sample)" leaves its name).
+// An earlier copy of the Survey quadcopter (still named "(sample)") adds Make
+// this my own… after it on its own row (the copy becomes the user's product in
+// place: "(sample)" leaves its name).
 export const BUILD_ITEM = { id: "build-item", label: "Build an item…" };
 export const MAKE_OWN = { id: "make-own", label: "Make this my own…" };
 export function designActions(actions, design, { row = null, viewOnly = null } = {}) {
@@ -151,21 +161,25 @@ export function designActions(actions, design, { row = null, viewOnly = null } =
   return [offer(BUILD_ITEM), ...(isSampleRow(row) ? [offer(MAKE_OWN)] : []), ...out];
 }
 
-// Is the row a copy of the sample product, not yet made the user's own?
+// Is the row a copy of the Survey quadcopter added before it took a product's own
+// name (it still says "(sample)"), not yet made the user's own? A copy added now
+// reads as the user's own from the start and is never offered this.
 export const isSampleRow = (row) => row?.type === "pos" && !!row.ref?.design?.sample;
 
 // Make this my own…'s question, and what's said once it's done.
 export function makeOwnConfirm(name) {
   return {
-    title: "Make the sample your own?",
-    body: `“${name}” becomes your own product, exactly as it is: its design, RCM, tasks, items and reports stay, and "(sample)" leaves its name. The sample won't be added again beside it unless you ask for a fresh copy.`,
+    title: "Make this product your own?",
+    body: `“${name}” becomes your own product, exactly as it is: its design, RCM, tasks, items and reports stay. “(sample)” leaves its name and the names of its part, built items, RBD and maintainability prediction. Its life models and strategy analyses are saved in your workspace as your own, and its positions and decisions point at those. It won't be added again beside this one unless you ask for a fresh copy.`,
     confirmLabel: "Make it my own",
     pendingLabel: "Making it yours…",
     failedWhat: "make it your own",
     destructive: false,
   };
 }
-export const madeOwnText = (out) => `“${out.was}” is your own product now, as “${out.name}”.`;
+// What it did, in the server's words when it sent them (what was renamed, what was
+// saved as the user's own, and any record the plan's storage had no room for).
+export const madeOwnText = (out) => out.message || `“${out.was}” is your own product now, as “${out.name}”.`;
 
 // Words.
 const n = (count, one, many = `${one}s`) => `${Number(count || 0).toLocaleString("en-AU")} ${count === 1 ? one : many}`;

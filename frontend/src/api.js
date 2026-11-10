@@ -1711,6 +1711,53 @@ export function getRcmOptions() {
   return request("/api/maintenance/rcm/options");
 }
 
+// ---- RCM studies: stand-alone worksheets (/maintenance/rcm). They share no
+// data with the RCM on the asset tree, and keep their own decision options.
+export function getRcmStudyOptions() {
+  return request("/api/rcm/options");
+}
+
+export function listRcmStudies() {
+  return request("/api/rcm/studies");
+}
+
+export function createRcmStudy(name, system, description) {
+  return withEvent(
+    request("/api/rcm/studies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, system: system || "", description: description || "" }),
+    }),
+    "rcm_create"
+  );
+}
+
+export function getRcmStudy(id) {
+  return request(`/api/rcm/studies/${id}`);
+}
+
+export function renameRcmStudy(id, name) {
+  return request(`/api/rcm/studies/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteRcmStudy(id) {
+  return request(`/api/rcm/studies/${id}`, { method: "DELETE" });
+}
+
+// Replace a study's whole worksheet; returns the study with its evidence
+// statuses freshly checked.
+export function putRcmTree(id, functions, expectedUpdatedAt) {
+  return request(`/api/rcm/studies/${id}/tree`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ functions, expected_updated_at: expectedUpdatedAt || null }),
+  });
+}
+
 // ---- Teams -------------------------------------------------------------------
 
 export function listTeams() {
@@ -2275,14 +2322,15 @@ export function removeMaintenanceItem(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/remove`, body);
 }
 
-// The sample product: a quadcopter's design with its RCM (some decisions linked to
-// sample evidence) and FME(C)A, its part and bill
+// The Survey quadcopter, a ready-made product: a quadcopter's design with its RCM
+// (some decisions linked to evidence saved with it) and FME(C)A, its part and bill
 // of materials, three items built from it with two failure reports, and a
 // flight-critical RBD (placeholder failure rates). Once, unless again.
 export function addSampleProduct(again = false) {
   return postJson("/api/maintenance/sample-product", { again: !!again });
 }
-// Make a copy of the sample product your own, in place ("(sample)" leaves its name).
+// Make a copy that still says "(sample)" your own, in place: the word leaves its
+// name and everything named after it, and its life models are saved as your own.
 export function makeSampleOwn(productId) {
   return postJson(`/api/maintenance/products/${encodeURIComponent(productId)}/make-own`, {});
 }
@@ -2861,6 +2909,11 @@ export function addWorkCost(id, body) {
 export function checkWorkItem(id, index, done) {
   return postJson(`/api/maintenance/work-orders/${id}/checklist/${index}`, { done });
 }
+// A work package's work order line answered during the visit, saved at once:
+// {state: todo | done | not_done (reason) | problem (finding)}. Returns the work order.
+export function markWorkOrderLine(id, taskId, body) {
+  return putJson(`/api/maintenance/work-orders/${id}/lines/${encodeURIComponent(taskId)}`, body);
+}
 export function removeWorkEntry(id) {
   return postJson(`/api/maintenance/work-entries/${id}/remove`, {});
 }
@@ -3111,6 +3164,13 @@ export function getItemClasses() {
 }
 export function getItemClass(id) {
   return request(`/api/maintenance/item-classes/${id}`);
+}
+// An item class's fleet: every position whose fitted item is of the class (or a class inside it),
+// each with its risk now from the condition and life model linked to its position. With
+// positionId: that one member, with its curves.
+export function getClassFleet(id, positionId = null) {
+  const q = positionId ? `?position_id=${encodeURIComponent(positionId)}` : "";
+  return request(`/api/maintenance/item-classes/${encodeURIComponent(id)}/fleet${q}`);
 }
 export function createItemClass(body) {
   return postJson("/api/maintenance/item-classes", body);
@@ -3413,18 +3473,35 @@ export function getBoundBlocks(graph) {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph }),
   });
 }
-// A covariate model's rate (NSWC-11) under some conditions: {ok, result, warnings} or {ok: false, problems}.
-export function evaluateLibraryRecord(recordId, values) {
+// A record's rate under its covariates (any library record: a pipe's length, the clock, the demands
+// a year, a handbook part's environment and quality, an NSWC-11 model's conditions), or a
+// component's chance of failing over a period: {ok, result, warnings} or {ok: false, problems, missing}.
+export function evaluateLibraryRecord(recordId, covariates) {
   return request(`/api/library/records/${encodeURIComponent(recordId)}/evaluate`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values }),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ covariates }),
   });
 }
-// A record saved as a model in the user's models (a rate → an exponential, cited).
-// A rate per foot of pipe takes the pipe's length in feet.
-export function createModelFromLibrary(recordId, name, lengthFt = null) {
+// The components of a source (NRC/INL: an equipment type in one pooling group, its failure modes together).
+export function getLibraryComponents(source, q) {
+  const params = new URLSearchParams();
+  if (source) params.set("source", source);
+  if (q) params.set("q", q);
+  const s = params.toString();
+  return request(`/api/library/components${s ? `?${s}` : ""}`);
+}
+export function getLibraryComponent(componentId) {
+  return request(`/api/library/components/${encodeURIComponent(componentId)}`);
+}
+// A record saved as a model in the user's models (a rate → an exponential, cited), under its
+// covariates ({key: value}: a pipe's length, the clock and running hours, the demands a year...).
+// ``lengthFt`` is the pipe's length by its old name.
+export function createModelFromLibrary(recordId, name, lengthFt = null, covariates = null) {
   return request("/api/models/from-library", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ record_id: recordId, ...(name ? { name } : {}), ...(lengthFt != null ? { length_ft: lengthFt } : {}) }),
+    body: JSON.stringify({
+      record_id: recordId, ...(name ? { name } : {}), ...(lengthFt != null ? { length_ft: lengthFt } : {}),
+      ...(covariates && Object.keys(covariates).length ? { covariates } : {}),
+    }),
   });
 }
 // The records behind the user's latest models from the library.
@@ -3462,4 +3539,33 @@ export function addModelToLibrary(libraryId, { modelId, label, equipmentType, fa
 export function removeLibraryRecord(libraryId, recordId) {
   return request(`/api/library/mine/${encodeURIComponent(libraryId)}/records/${encodeURIComponent(recordId)}`,
     { method: "DELETE" });
+}
+
+// Missions (rbd_missions.py): named phased missions on an RBD, each phase with its duration, the
+// blocks it doesn't need, vote counts and Use / Environment covariate values. A position has the
+// missions of the RBDs linked to it (never a parent's).
+export function listPositionMissions(positionIds) {
+  const q = positionIds?.length ? `?position_ids=${encodeURIComponent(positionIds.join(","))}` : "";
+  return request(`/api/maintenance/position-missions${q}`);
+}
+const missionPath = (rbdId, missionId = null) =>
+  `/api/rbds/${encodeURIComponent(rbdId)}/missions${missionId ? `/${encodeURIComponent(missionId)}` : ""}`;
+const asJson = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+// One mission in full: its phases, the blocks and vote nodes, every covariate its phases can set.
+export function getMission(rbdId, missionId) {
+  return request(missionPath(rbdId, missionId));
+}
+export function createMission(rbdId, { name = null, phases = null } = {}) {
+  return request(missionPath(rbdId), asJson("POST", { ...(name ? { name } : {}), ...(phases ? { phases } : {}) }));
+}
+// {name?, phases?, expected_updated_at?}
+export function updateMission(rbdId, missionId, body) {
+  return request(missionPath(rbdId, missionId), asJson("PUT", body));
+}
+export function deleteMission(rbdId, missionId) {
+  return request(missionPath(rbdId, missionId), { method: "DELETE" });
+}
+// The chance of completing it, per phase, and each phase's weakest block; `phases`: unsaved edits.
+export function calculateMission(rbdId, missionId, phases = null) {
+  return request(`${missionPath(rbdId, missionId)}/calculate`, asJson("POST", phases ? { phases } : {}));
 }

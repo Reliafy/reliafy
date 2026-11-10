@@ -1,7 +1,10 @@
 """Templates: ready-made samples a workspace can copy in.
 
-The sample product, "Survey quadcopter (sample)": the one sample for the RCM
-and FME(C)A tabs, on Products (a design, not an operated asset in the tree).
+The sample product, "Survey quadcopter": the one sample for the RCM and
+FME(C)A tabs, on Products (a design, not an operated asset in the tree). Once
+added it is a product like any other: nothing on it or inside it says
+"sample". A copy is known by the mark it is given when added
+(``design.template_marked``, products.py), not by its name.
 It is a complete RCM study of a small inspection quadcopter, written the way a
 reliability engineer would write one for a drone maker: a mission (routine
 corridor inspection of a rural distribution feeder, in the product's
@@ -15,13 +18,19 @@ a decision (on condition, scheduled discard or restoration, failure finding
 for the hidden protective functions, redesign, run to failure, or risk
 accepted); and the tasks those decisions schedule, read together as the
 aircraft's maintenance programme (the pre-flight check, the flight log
-review, the 25-hour, 100-hour and annual inspections, the failsafe function
-tests, and the propeller and battery limits). The higher positions' functional
-failures are explained by those on the positions inside them (linked causes),
-so the RCM tab reads top down.
+review, the 25-hour, 100-hour and annual inspections, the monthly failsafe
+function tests, the three-monthly battery storage check, and the propeller and
+battery limits). The higher positions' functional failures are explained by
+those on the positions inside them (linked causes), so the RCM tab reads top
+down. Each programme task carries its LSA record (who does it and for how
+long, the tools, spares and consumables, access and the method), which the
+items built from the design copy; the calendar tasks (the failsafe tests, the
+battery storage check and the annual inspection) are packaged into one
+monthly visit on the first item built. The motors, propellers, battery pack
+and radio carry life models, invented like the rest.
 
-Some decisions link the evidence behind them, saved analyses and models every
-account can read, so the evidence check shows each case: the propeller
+Some decisions link the evidence behind them, saved analyses and models, so
+the evidence check shows each case: the propeller
 replacement, the BMS failure-finding test, the speed controllers' thermal-pad
 check (a degradation model), the radio's run-to-failure (an exponential fit)
 and the gimbal motor's (a replacement analysis with no worthwhile interval)
@@ -30,11 +39,19 @@ contradicted on purpose (the bearing life model shows wear-out); the battery
 retirement can't be checked yet (its task counts charge cycles, its analysis
 flight hours). Two modes still need a decision, on purpose, and eight are
 hidden failures with failure-finding tasks. It comes with a part and bill of
-materials, three items built from it, failure reports and a flight-critical
-RBD. Entirely invented: no real product, company, operator or partner.
+materials, three items built from it, failure reports, a flight-critical
+RBD and a maintainability prediction attached to the product (the shared
+sample prediction's lines). Those life models and analyses are saved in the
+workspace as its own records when it is added (workspace_records: made from
+the shared library's, which the product then never points a user at; a second
+copy uses the first one's, and one the plan's storage has no room for stays
+linked to the library's). Entirely invented: no real product, company,
+operator or partner.
 (Earlier samples, "Delivery truck (sample)" and the asset-tree "Quadcopter UAV
 (sample)", are no longer offered; copies already in a workspace stay as they
-are.)
+are. Copies of this one added before Nov 2026 are named "Survey quadcopter
+(sample)" and say "sample" inside: they are still known by that name, and
+make_sample_own brings one to the wording used now.)
 
 A copy is made through the ordinary service methods, so it is events like
 any change a person makes, in the caller's own workspace only. Nothing is
@@ -44,10 +61,14 @@ seeded for anyone who never asks.
 from __future__ import annotations
 
 import copy
+import logging
 import re
 from datetime import date, timedelta
 
 from backend.maintenance import fmea, products
+
+
+logger = logging.getLogger(__name__)
 
 
 def _n(count: int, one: str) -> str:
@@ -60,15 +81,14 @@ def _copies(m, pattern: re.Pattern) -> list[dict]:
                   key=lambda p: p["name"])
 
 
-def _copy_name(existing: list[dict], pattern: re.Pattern, base: str) -> str:
-    """The sample's name, or the next free number when a copy is there ("… (sample 2)")."""
-    taken = {int(match.group(1) or 1) for p in existing if (match := pattern.match(p["name"]))}
-    if 1 not in taken:
-        return base
-    n = 2
-    while n in taken:
-        n += 1
-    return base.replace("(sample)", f"(sample {n})")
+def _free_name(m, base: str) -> str:
+    """``base``, or the next free number after it ("Survey quadcopter 2") when a live
+    position has that name already."""
+    taken = {p["name"].lower() for p in m.s.nodes(m.org, "Position") if not p.get("retired")}
+    name, n = base, 2
+    while name.lower() in taken:
+        name, n = f"{base} {n}", n + 1
+    return name
 
 
 def _scores(mode: dict, basis: dict) -> dict:
@@ -78,23 +98,27 @@ def _scores(mode: dict, basis: dict) -> dict:
 
 # ---- the sample quadcopter's mission ------------------------------------------------
 # Entirely invented: no real product, company, operator or partner. The sample
-# product ("Survey quadcopter (sample)", below) puts the RCM on its design: the one
+# product ("Survey quadcopter", below) puts the RCM on its design: the one
 # sample for the RCM and FME(C)A tabs, on Products, not in the asset tree.
 
-# The product's description (what the product page shows).
+# The product's description (what the product page shows). Written as the product's
+# own record: the text a copy carries never says it is a sample.
 SAMPLE_PRODUCT_DESCRIPTION = (
-    "A sample product: a small inspection quadcopter's design with a complete RCM study on it and every failure "
-    "mode scored as an FME(C)A. The mission it is designed for (invented, like everything here): routine corridor "
+    "A small inspection quadcopter's design with a complete RCM study on it and every failure "
+    "mode scored as an FME(C)A. The mission it is designed for: routine corridor "
     "inspection of a 12 km rural 11 kV distribution feeder, flown monthly in sorties of up to 25 minutes, 30 m above "
     "the conductors at 5 m/s, with a 4K camera and a thermal imager on a gimbal; about 150 flight hours a year per "
     "aircraft. Each position carries its functions with their performance standards (numbers from the mission), "
     "the ways each fails, the failure modes that cause them, and a decision for each: the checks before every "
-    "flight, the flight log review, the 25-hour, 100-hour and annual inspections, the failsafe function tests, the "
-    "propeller and battery limits, and the things to redesign, run to failure or accept. Some decisions link the "
-    "analysis or model behind them: the legacy run-to-failure plan on the motor bearings is contradicted on purpose "
+    "flight, the flight log review, the 25-hour, 100-hour and annual inspections, the monthly failsafe function "
+    "tests, the three-monthly battery storage check, the propeller and battery limits, and the things to redesign, "
+    "run to failure or accept. Each programme task has its LSA record (labour, tools, spares, method). Some "
+    "decisions link the "
+    "analysis or model behind them: the legacy run-to-failure plan on the motor bearings is contradicted "
     "(their life model shows wear-out), the battery retirement can't be checked until its units agree, and two "
-    "failure modes still need a decision. With its part and bill of materials, three items built from it, a "
-    "replaced motor and two failure reports. Entirely invented: no real product, company or operator."
+    "failure modes still need a decision. The motors, propellers, battery pack and radio carry life models. "
+    "With its part and bill of materials, three items built from it (the first with its calendar tasks in a "
+    "monthly work package), a replaced motor and two failure reports."
 )
 
 # The top position's operating context: the mission every performance standard
@@ -140,7 +164,11 @@ UAV_GIMBAL_ANALYSIS = "sample-strategy-quad-gimbal-replacement"
 # "check": the line it adds to the task's checklist). A task on a position may serve
 # the failure modes on the positions inside it, so these read as one schedule on each
 # aircraft built from the design: before every flight, every 10 flight hours (the log),
-# every 25 and 100 flight hours, once a year, and the failsafe tests every 25 hours.
+# every 25 and 100 flight hours, and by the calendar: the failsafe tests every month,
+# the battery storage check every three months and the annual inspection. The use-based
+# tasks go by flight hours or flights because wear does; the calendar ones go by the
+# calendar because what they find doesn't come from flying (a configuration change, a
+# pack draining in storage, rubber and memory cards ageing).
 SAMPLE_UAV_PROGRAMME = {
     "pre_flight": {
         "name": "Pre-flight check", "interval": 1, "unit": "flights", "outcome": "on_condition",
@@ -167,9 +195,15 @@ SAMPLE_UAV_PROGRAMME = {
                         "replaced, and the aircraft's logs reviewed for the year.",
     },
     "failsafe": {
-        "name": "Failsafe function tests", "interval": 25, "unit": "hours", "outcome": "failure_finding",
-        "instructions": "Every 25 flight hours and after any firmware or configuration change: each protective "
-                        "function tested over the pad, so a hidden failure is found before it is needed.",
+        "name": "Failsafe function tests", "interval": 1, "unit": "months", "outcome": "failure_finding",
+        "instructions": "Every month, before the month's survey flying, and after any firmware or configuration "
+                        "change: each protective function tested over the pad, so a hidden failure is found "
+                        "before it is needed.",
+    },
+    "battery": {
+        "name": "Battery storage check", "interval": 3, "unit": "months", "outcome": "on_condition",
+        "instructions": "Every three months, on every pack, flown or not: packs drain in storage whether the "
+                        "aircraft flies or not.",
     },
 }
 SAMPLE_UAV_PROGRAMME_NAMES = tuple(spec["name"] for spec in SAMPLE_UAV_PROGRAMME.values())
@@ -315,7 +349,7 @@ SAMPLE_UAV_RCM = [
                     "action_due": "2027-01-20", "action_status": "open",
                     "failure_rate": 5e-5, "mode_ratio": 0.4, "loss_probability": 0.3, "severity_class": "III",
                     "consequence": "operational", "decision": None,
-                    "notes": "Still to decide, on purpose: the decision waits on the crushable-foot trial."},
+                    "notes": "Still to decide: the decision waits on the crushable-foot trial."},
                ]},
               {"text": "Ground clearance under 120 mm",
                "standard": "Keeps the camera 120 mm clear of the ground",
@@ -441,8 +475,8 @@ SAMPLE_UAV_RCM = [
                     "failure_rate": 8e-5, "mode_ratio": 0.5, "loss_probability": 1.0, "severity_class": "I",
                     "consequence": "safety",
                     "decision": {"outcome": "rtf", "rtf_basis": "random",
-                                 "notes": "Legacy decision from the first build's plan, kept to show the evidence "
-                                          "check: the bearing life model shows wear-out, so running to failure isn't "
+                                 "notes": "Legacy decision from the first build's plan, up for review: the "
+                                          "bearing life model shows wear-out, so running to failure isn't "
                                           "justified.",
                                  "evidence": {"type": "model", "id": UAV_BEARING_MODEL}}},
                    {"text": "Winding insulation breaks down from overheating",
@@ -577,7 +611,7 @@ SAMPLE_UAV_RCM = [
                     "severity": 4, "occurrence": 7, "detection": 2,  # RPN 56, AP M
                     "action": "Retire packs at 300 charge cycles; redo the retirement analysis in cycles",
                     "action_owner": "Operations", "action_due": "2026-11-10", "action_status": "open",
-                    "failure_rate": 3e-4, "mode_ratio": 0.5, "loss_probability": 0.05, "severity_class": "III",
+                    "failure_rate": 3e-4, "mode_ratio": 0.4, "loss_probability": 0.05, "severity_class": "III",
                     "consequence": "operational",
                     "decision": {"outcome": "fixed_interval", "task": "Retire the battery pack", "interval": 300,
                                  "interval_unit": "cycles",
@@ -600,6 +634,24 @@ SAMPLE_UAV_RCM = [
                                  "check": "Packs: flat-sided, no puffing; a swollen pack is retired on the spot",
                                  "notes": "A swollen pack shows days before it fails; the look before each flight, "
                                           "and the 50 % storage rule, cover it."}},
+                   {"text": "Stored pack self-discharges below its safe voltage",
+                    "cause": "Spare packs left for weeks between the monthly survey days; the BMS draws a small "
+                             "standby current",
+                    "effect_local": "Cells fall below 3.0 V in storage",
+                    "effect_next": "Capacity lost for good; a deeply discharged pack is unsafe to charge",
+                    "effects": "Shorter flights or a pack retired early; a charging fire if one is charged anyway.",
+                    "detection_method": "Cell voltages read on every pack at the battery storage check",
+                    "severity": 7, "occurrence": 3, "detection": 3,  # RPN 63, AP L
+                    "action": "Store packs at 3.8 V a cell; a BMS that sleeps when the pack is unplugged",
+                    "action_owner": "Operations", "action_due": "2026-12-01", "action_status": "open",
+                    "failure_rate": 3e-4, "mode_ratio": 0.1, "loss_probability": 0.1, "severity_class": "II",
+                    "consequence": "safety",
+                    "decision": {"outcome": "on_condition", "programme": "battery",
+                                 "check": "Every pack: cells at 3.75 to 3.85 V; a pack below 3.6 V a cell is set "
+                                          "aside and checked before it is charged",
+                                 "notes": "P-F interval: a stored pack drains over months, not days, so a check "
+                                          "every three months finds it before a cell reaches 3.0 V. By the "
+                                          "calendar, not flight hours: the pack drains while it sits."}},
                ]},
               {"text": "Power lost in flight",
                "modes": [
@@ -612,7 +664,7 @@ SAMPLE_UAV_RCM = [
                     "action_owner": "Safety lead", "action_due": "2026-11-25", "action_status": "in_progress",
                     "failure_rate": 3e-4, "mode_ratio": 0.05, "loss_probability": 1.0, "severity_class": "I",
                     "consequence": "safety", "decision": None,
-                    "notes": "Still to decide, on purpose: the decision waits on the case redesign and the charging "
+                    "notes": "Still to decide: the decision waits on the case redesign and the charging "
                              "trial."},
                    {"text": "Pack connector contacts wear and overheat",
                     "cause": "The spring contacts lose tension after hundreds of connections; resistance rises",
@@ -1224,16 +1276,16 @@ SAMPLE_UAV_RCM = [
                     "effects": "A fly-away: the aircraft is lost, and may come down on people or the line.",
                     "detection_method": "None in normal flying (hidden): only a deliberate link-loss test shows it",
                     "severity": 10, "occurrence": 2, "detection": 9,  # RPN 180, AP H
-                    "action": "Failsafe test after every firmware update and every 25 flight hours",
+                    "action": "Failsafe test after every firmware update and every month",
                     "action_owner": "Software lead", "action_due": "2026-11-15", "action_status": "done",
                     "failure_rate": 1e-5, "mode_ratio": 0.15, "loss_probability": 0.8, "severity_class": "I",
                     "consequence": "safety", "hidden": True,
                     "decision": {"outcome": "failure_finding", "programme": "failsafe",
                                  "check": "Link loss: switch the transmitter off in a hover at 3 m over the pad; "
                                           "the aircraft returns and lands within 3 s of the loss",
-                                 "notes": "Failure-finding on a hidden function, tested every 25 hours (about 60 "
-                                          "sorties) and after any firmware change; at the fleet's failure rate that "
-                                          "keeps the chance of flying with a dead failsafe under 2 %."}},
+                                 "notes": "Failure-finding on a hidden function, tested every month (about 12 "
+                                          "flight hours) and after any firmware change. By the calendar, not flight "
+                                          "hours: a configuration change defeats it, not flying."}},
                ]},
               {"text": "Does not land before the pack runs out",
                "standard": "Lands with at least 15 % charge left in the pack",
@@ -1253,8 +1305,8 @@ SAMPLE_UAV_RCM = [
                     "decision": {"outcome": "failure_finding", "programme": "failsafe",
                                  "check": "Low battery: on the bench supply, bring the pack voltage down to the 20 % "
                                           "point; the land warning and the landing come within 3 s",
-                                 "notes": "Failure-finding on a hidden function; done with the link-loss test at "
-                                          "the same 25 hours."}},
+                                 "notes": "Failure-finding on a hidden function; done with the link-loss test "
+                                          "every month."}},
                ]},
           ]},
          {"text": "Hold the aircraft inside the geofence and under the height limit",
@@ -1302,7 +1354,7 @@ SAMPLE_UAV_RCM = [
                     "decision": {"outcome": "failure_finding", "programme": "failsafe",
                                  "check": "Height limit: climb over the pad; the aircraft stops at 120 m above "
                                           "take-off",
-                                 "notes": "Failure-finding, with the other failsafe tests at 25 hours."}},
+                                 "notes": "Failure-finding, with the other failsafe tests every month."}},
                ]},
           ]},
          {"text": "Record every flight for the log review",
@@ -1444,7 +1496,7 @@ def _decision_for(decision: dict, programme: dict[str, str]) -> tuple[dict, str 
     return given, programme[decision["programme"]]
 
 
-def _add_uav_rcm(m, at_of: dict[str, list[str]], counts: dict) -> None:
+def _add_uav_rcm(m, at_of: dict[str, list[str]], counts: dict, ids: dict[str, str] | None = None) -> dict[str, str]:
     """The sample quadcopter's RCM on every position a template name maps to (at_of:
     name -> position ids; "" is the product itself): the maintenance programme's
     shared tasks on the product, then, position by position, its operating context,
@@ -1493,6 +1545,10 @@ def _add_uav_rcm(m, at_of: dict[str, list[str]], counts: dict) -> None:
                                                   hidden=mode.get("hidden", ...))
                             continue
                         decision, task_id = _decision_for(mode["decision"], programme)
+                        linked = decision.get("evidence")
+                        if linked and linked["id"] in (ids or {}):
+                            # The workspace's own copy of the record (workspace_records).
+                            decision = {**decision, "evidence": {**linked, "id": ids[linked["id"]]}}
                         # strict=False: one sample keeps a legacy decision the diagram now refuses, to show
                         # the evidence check and the advice that flags it.
                         m.decide_failure_mode(fm["id"], consequence=mode.get("consequence"), decision=decision,
@@ -1509,6 +1565,45 @@ def _add_uav_rcm(m, at_of: dict[str, list[str]], counts: dict) -> None:
     # the RCM reads; its kind is the programme's, whatever mode joined it first.
     for key, tid in programme.items():
         m.update_task(tid, checklist=checks[key], outcome=SAMPLE_UAV_PROGRAMME[key]["outcome"])
+    return programme
+
+
+def _add_uav_lsa(m, programme: dict[str, str], counts: dict) -> None:
+    """Each programme task's LSA record (task.resources_set), its spares named by part
+    number taken from the parts register."""
+    for key, record in SAMPLE_UAV_LSA.items():
+        given = dict(record)
+        if record.get("spares"):
+            given["spares"] = [{"part_id": _part(m, line["part_number"], "")["id"], "qty": line["qty"]}
+                               if line.get("part_number") else line for line in record["spares"]]
+        m.set_task_resources(programme[key], given)
+        counts["lsa_records"] += 1
+
+
+def _add_uav_models(m, at_of: dict[str, list[str]], counts: dict, ids: dict[str, str] | None = None) -> None:
+    """The life models on the design's positions, each for the failure mode it describes
+    (ids: library record → the workspace's own copy of it, linked in its place)."""
+    for name, model_id, model_name, mode_text, note in SAMPLE_PRODUCT_MODELS:
+        for at in at_of[name]:
+            modes = [fm["id"] for fm in m._modes_on(at) if fm.get("text") == mode_text]
+            m.link_position_model(at, "model", (ids or {}).get(model_id, model_id), failure_mode_ids=modes,
+                                  name=model_name, note=note)
+            counts["models_linked"] += 1
+
+
+def _add_uav_package(m, top_id: str) -> dict:
+    """The calendar tasks on a built item, packaged into one monthly visit."""
+    spec = SAMPLE_UAV_PACKAGE
+    tasks = {t["name"]: t["id"] for t in m.s.inn(m.org, top_id, "ON")
+             if t.get("label") == "Task" and not t.get("retired")}
+    members = []
+    for key, nth in spec["tasks"]:
+        tid = tasks[SAMPLE_UAV_PROGRAMME[key]["name"]]
+        members.append({"task_id": tid, "visit_rule": "nth", "every_nth": nth} if nth else {"task_id": tid})
+    pkg = m.create_package(spec["name"], position_id=top_id, timing="fixed", every=spec["every"], unit=spec["unit"],
+                           weekday=spec["weekday"], nth=spec["nth"], tolerance=spec["tolerance"],
+                           tolerance_unit="days", trade=spec["trade"], notes=spec["notes"], tasks=members)
+    return {"id": pkg["id"], "name": pkg["name"]}
 
 
 # ---- the sample product: a quadcopter design and three items built from it ---------
@@ -1516,10 +1611,16 @@ def _add_uav_rcm(m, at_of: dict[str, list[str]], counts: dict) -> None:
 # the RCM above on every position it belongs to (four arms, motors, speed controllers
 # and propellers, two IMUs), so its RCM and FME(C)A tabs are full.
 
-SAMPLE_PRODUCT_NAME = "Survey quadcopter (sample)"
+SAMPLE_PRODUCT_NAME = "Survey quadcopter"
 SAMPLE_PRODUCT_PART = "SQ-4"
 SAMPLE_PRODUCT_REV = "C"
+# What the add saves beside the product, named after it.
+SAMPLE_RBD_NAME = "{name}: flight-critical RBD"
+SAMPLE_MAINTAINABILITY_NAME = "{name} — maintainability"
+# Copies added before Nov 2026: known by name ("Survey quadcopter (sample)", "… (sample 2)"),
+# with the RBD named as it was then.
 _PRODUCT_COPY_NAME = products.SAMPLE_NAME
+_EARLIER_RBD_NAME = "{name}: flight-critical RBD (placeholder failure rates)"
 
 ARMS = 4
 # The design tree: (name, position class, children); the classes pool like positions' life data.
@@ -1573,6 +1674,33 @@ SAMPLE_PRODUCT_BOM = [
     ("SQ-RL24", "Telemetry radio 2.4 GHz", 1, "LRU"),
     ("SQ-GB2", "Camera gimbal, 2 axis", 1, "LRU"),
 ]
+# Where a parts-count prediction of the sample starts (position_models.py). Sample values,
+# invented like the rest: nothing here is a real design's figure.
+# Its environment: MIL-HDBK-217F's "Airborne, rotary winged" (ARW), the handbook's environment for
+# equipment on a rotorcraft, which a quadcopter is. The handbook's uninhabited environments (AUC,
+# AUF) are the uncrewed bays of fixed-wing transports and fighters. The sample prediction on the
+# Predictions page (backend/services/samples.py) uses ARW too.
+SAMPLE_PRODUCT_ENVIRONMENT = "ARW"
+SAMPLE_MOTOR_PART = "SQ-M2210"
+
+
+def is_sample_product(node: dict | None) -> bool:
+    """A design's top that is a copy of the sample product: marked when added, or an
+    earlier copy under the sample's name, made the user's own or not."""
+    return products.template_of(node) == products.SAMPLE_KEY
+
+
+def sample_part_conditions(reference: str, record_id: str) -> dict | None:
+    """The conditions a part of the sample starts from when a prediction gives it this handbook
+    model (None: the sample has none for it). The motors on NSWC-11's electric motor: the sample
+    prediction's conditions for a 2210 brushless motor (sample values, not measured)."""
+    from backend.services import samples
+
+    if (reference or "").upper() == SAMPLE_MOTOR_PART and record_id == samples.SAMPLE_MOTOR_MODEL:
+        return dict(samples.SAMPLE_MOTOR_CONDITIONS)
+    return None
+
+
 # The items built: serial, revision, flight hours and sorties flown, read now.
 SAMPLE_PRODUCT_ITEMS = [("0007", "C", 212.0, 553), ("0008", "C", 31.0, 81), ("0009", "B", 640.0, 1670)]
 # The flight-critical RBD's blocks: a guessed constant failure rate per flight hour each
@@ -1580,10 +1708,294 @@ SAMPLE_PRODUCT_ITEMS = [("0007", "C", 212.0, 553), ("0008", "C", 31.0, 81), ("00
 SAMPLE_RBD_RATES = {"Battery pack": 1e-4, "BMS": 5e-5, "Flight controller": 2e-5, "IMU": 1e-4, "GPS": 5e-5,
                     "ESC": 3e-5, "Motor": 4e-5, "Propeller": 2e-5}
 
+# Each programme task's LSA record (task.resources_set): who does it and for how long, the
+# tools, the spares and consumables to bring, access and downtime, and the method. The task
+# names say what is done; this says how. Invented, like the rest of the sample: the times
+# are a plausible plan for a small drone, not measured. A spare with a part_number is the
+# catalogue part of the bill of materials; the items built from the design copy the lot.
+SAMPLE_UAV_LSA = {
+    "pre_flight": {
+        "labour": [{"trade": "Pilot", "people": 1, "hours": 0.25}, {"trade": "Observer", "people": 1, "hours": 0.25}],
+        "tools": [{"name": "Propeller go/no-go gauge"}, {"name": "Hex driver set, 1.5 to 3 mm"},
+                  {"name": "Ground station tablet"}],
+        "spares": [{"part_number": "SQ-P1045", "qty": 4}],
+        "consumables": [{"name": "Lens cleaning wipes", "qty": 2, "unit": "wipes"}],
+        "access": {"downtime_hours": 0.25, "access_equipment": "Marked take-off pad, clear of people"},
+        "method": "On the pad before each sortie: the observer reads the checklist aloud and the pilot does each "
+                  "item; then power up, wait for the arming checks and hover at 2 m.",
+        "duration_hours": 0.25,
+    },
+    "log_review": {
+        "labour": [{"trade": "Technician", "people": 1, "hours": 0.5}],
+        "tools": [{"name": "Laptop with the flight log viewer"}],
+        "method": "Download the logs since the last review; plot each motor's temperature, each speed controller's "
+                  "temperature rise, RPM and watchdog events against their limits, and note the trend.",
+        "duration_hours": 0.5,
+    },
+    "25h": {
+        "labour": [{"trade": "Technician", "people": 1, "hours": 1.5}],
+        "tools": [{"name": "Torque driver, 0.5 to 3 N·m"}, {"name": "Magnifier, 10×"},
+                  {"name": "Gimbal levelling reference"}],
+        "consumables": [{"name": "Isopropyl alcohol", "qty": 0.05, "unit": "L"},
+                        {"name": "Cable sleeve", "qty": 0.2, "unit": "m"}],
+        "access": {"downtime_hours": 2, "isolation": "Battery pack out and propellers off before any work"},
+        "method": "On the bench: clean each arm root and motor mount and look at it under the magnifier; check the "
+                  "antenna cables where they pass the arm roots; then level the gimbal against the reference.",
+        "duration_hours": 1.5,
+    },
+    "100h": {
+        "labour": [{"trade": "Technician", "people": 1, "hours": 3}],
+        "tools": [{"name": "Torque driver, 0.5 to 3 N·m"}, {"name": "Magnifier, 10×"},
+                  {"name": "Hex driver set, 1.5 to 3 mm"}],
+        "consumables": [{"name": "Torque seal", "qty": 2, "unit": "g"},
+                        {"name": "Isopropyl alcohol", "qty": 0.05, "unit": "L"}],
+        "access": {"downtime_hours": 4, "isolation": "Battery pack out and propellers off before any work"},
+        "method": "The 25-hour items first; then take the arms off and look at every arm bolt hole in the centre "
+                  "plates under the magnifier; refit the arms, torque the clamp bolts to 2.5 N·m in a cross "
+                  "pattern and renew the stripes.",
+        "duration_hours": 3,
+    },
+    "annual": {
+        "labour": [{"trade": "Service centre technician", "people": 1, "hours": 6}],
+        "tools": [{"name": "Torque driver, 0.5 to 3 N·m"}, {"name": "Magnifier, 10×"},
+                  {"name": "Motor and speed controller run-up bench"}],
+        "spares": [{"name": "Memory card, 128 GB (approved type)", "qty": 1}, {"name": "Gimbal damper ball", "qty": 4}],
+        "consumables": [{"name": "Isopropyl alcohol", "qty": 0.1, "unit": "L"}],
+        "access": {"downtime_hours": 120, "access_equipment": "Shipping case to and from the maker's service centre"},
+        "method": "At the maker's service centre: the 100-hour items, then the memory card and the four damper "
+                  "balls replaced, the age-limited parts replaced, and the year's logs reviewed.",
+        "duration_hours": 6,
+    },
+    "failsafe": {
+        "labour": [{"trade": "Pilot", "people": 1, "hours": 1}, {"trade": "Observer", "people": 1, "hours": 1}],
+        "tools": [{"name": "Bench power supply, 0 to 30 V, 10 A"}, {"name": "Ground station tablet"},
+                  {"name": "Radio transmitter"}],
+        "access": {"downtime_hours": 1, "access_equipment": "Marked take-off pad, clear of people, inside the "
+                                                            "geofence"},
+        "method": "Over the pad, with the observer watching the airspace: the link-loss test in a 3 m hover, the "
+                  "geofence at 10 m and the height-limit climb; then, with the propellers off, the low-battery "
+                  "test on the bench supply.",
+        "duration_hours": 1,
+    },
+    "battery": {
+        "labour": [{"trade": "Technician", "people": 1, "hours": 0.5}],
+        "tools": [{"name": "Battery analyser (cell voltages and internal resistance)"},
+                  {"name": "Charger with a storage mode"}],
+        "access": {"isolation": "Packs handled and charged in a fire-resistant bag"},
+        "method": "Read every pack's cell voltages and internal resistance on the analyser and log them against the "
+                  "pack's serial; bring a pack outside 3.75 to 3.85 V a cell to storage charge; set aside a pack "
+                  "below 3.6 V a cell.",
+        "duration_hours": 0.5,
+    },
+}
+
+# The calendar tasks, packaged into one monthly visit on the first item built (a design's
+# tasks are never due; the items' copies are): the failsafe tests on every visit, the
+# battery storage check on every third and the annual inspection on every twelfth.
+SAMPLE_UAV_PACKAGE = {
+    "name": "Monthly maintenance visit", "every": 1, "unit": "months", "weekday": "Monday", "nth": 1,
+    "tolerance": 3, "trade": "Technician",
+    "notes": "The calendar tasks in one visit on the first Monday of the month, before the month's survey "
+             "flying: the failsafe tests every visit, the battery storage check every third visit and the annual "
+             "inspection every twelfth.",
+    "tasks": [("failsafe", None), ("battery", 3), ("annual", 12)],
+}
+
+# Life models on the design's positions (copied to the items built from it): (template
+# position, saved model id, the name the link carries, the failure mode it describes, the
+# link's note). The models are shared samples every account can read, in flight hours,
+# invented like the rest (backend/services/samples.py); the name and note on the link are
+# the product's own words for them, so they never say "sample".
+UAV_PROPELLER_MODEL = "sample-model-quad-propeller-weibull"
+UAV_BATTERY_MODEL = "sample-model-quad-battery-weibull"
+SAMPLE_PRODUCT_MODELS = [
+    ("Motor", UAV_BEARING_MODEL, "Bearing life — Weibull", "Bearing seizure",
+     "A Weibull fitted to bench-test bearing lives, in hours."),
+    ("Propeller", UAV_PROPELLER_MODEL, "Quadcopter propeller — Weibull", "Blade fatigue crack at the hub",
+     "A Weibull in flight hours (scale 400, shape 3), the same as the propeller replacement analysis."),
+    ("Battery pack", UAV_BATTERY_MODEL, "Quadcopter battery pack — Weibull", "Cell capacity fade",
+     "A Weibull in flight hours (scale 600, shape 3), the same as the battery retirement analysis."),
+    ("Comms link", UAV_AVIONICS_MODEL, "Quadcopter avionics — Exponential",
+     "Radio module fails (electronic)",
+     "An exponential fitted to avionics board lives, in hours."),
+]
+# What those links were called on copies added before Nov 2026: model id → (name, note).
+# make_sample_own rewords the links that still carry these.
+_EARLIER_MODEL_LABELS = {
+    UAV_BEARING_MODEL: (
+        "Bearing life — Weibull (sample)",
+        "Sample values, not field data: a Weibull fitted to invented bench-test bearing lives, in hours."),
+    UAV_PROPELLER_MODEL: (
+        "Quadcopter propeller — Weibull (sample)",
+        "Sample values, not field data: an invented Weibull in flight hours (scale 400, shape 3), the same as the "
+        "propeller replacement analysis."),
+    UAV_BATTERY_MODEL: (
+        "Quadcopter battery pack — Weibull (sample)",
+        "Sample values, not field data: an invented Weibull in flight hours (scale 600, shape 3), the same as the "
+        "battery retirement analysis."),
+    UAV_AVIONICS_MODEL: (
+        "Quadcopter avionics — Exponential (sample)",
+        "Sample values, not field data: an exponential fitted to invented avionics board lives, in hours."),
+}
+
+
+# The saved records the product stands on: the life models on its positions and the
+# models and analyses its decisions link as evidence. When the product is added they are
+# saved in the workspace as its own records under these names (workspace_records), from
+# the shared library's (backend/services/samples.py), so everything a user opens from the
+# product is theirs to change. (library record, where it is saved, the name here).
+PRODUCT_RECORDS = (
+    (UAV_BEARING_MODEL, "models", "Bearing life — Weibull"),
+    (UAV_PROPELLER_MODEL, "models", "Quadcopter propeller — Weibull"),
+    (UAV_BATTERY_MODEL, "models", "Quadcopter battery pack — Weibull"),
+    (UAV_AVIONICS_MODEL, "models", "Quadcopter avionics — Exponential"),
+    (UAV_ESC_DEGRADATION, "degradation_models", "Quadcopter speed controller — temperature rise"),
+    (UAV_PROPELLER_ANALYSIS, "strategy_analyses", "Quadcopter propeller — preventive replacement"),
+    (UAV_BATTERY_ANALYSIS, "strategy_analyses", "Quadcopter battery pack — retirement age"),
+    (UAV_BMS_ANALYSIS, "strategy_analyses", "Quadcopter BMS cut-off — failure finding"),
+    (UAV_GIMBAL_ANALYSIS, "strategy_analyses", "Quadcopter gimbal motor — preventive replacement"),
+)
+# The data a fitted record is fitted to, saved beside it: library dataset → the name here.
+PRODUCT_DATASETS = {
+    "sample-ds-bearings": "Bearing fatigue test",
+    "sample-ds-quad-avionics": "Quadcopter avionics boards — field failures",
+    "sample-ds-quad-esc-temperature": "Quadcopter speed controller temperature rise",
+}
+# The notes of the two models made from parameters alone.
+PRODUCT_MODEL_NOTES = {
+    UAV_PROPELLER_MODEL: "Flight hours to a blade fatigue crack at the hub. The same parameters as the propeller "
+                         "replacement analysis.",
+    UAV_BATTERY_MODEL: "Flight hours until the pack no longer gives a 25-minute flight. The same parameters as the "
+                       "battery retirement analysis.",
+}
+# Which of a plan's storage limits each kind counts toward (billing.CAPPED_KINDS).
+_CAPPED = {"models": "models", "degradation_models": "degradation_models"}
+#: The field a workspace's copy of a library record carries (the record it was made from),
+#: so a second copy of the product finds the first one's records.
+COPY_OF = "copy_of"
+
+
+def _has_room(m, db, kind: str) -> bool:
+    """Whether the workspace's plan lets it save one more of ``kind``: the same rule
+    as the app's own saves (a team's workspace and an operator's have no limit)."""
+    from backend.services import access, billing
+
+    if access.is_team_owner(m.org):
+        return True
+    actor = db.users.find_one({"_id": m.actor}, {"email": 1, "email_verified": 1}) or {}
+    return billing.is_admin_user(actor) or not billing.would_exceed_cap(db, m.org, kind)
+
+
+def _own_dataset(m, db, library_id: str):
+    """The workspace's copy of a library dataset (the same rows under the product's
+    name for them), or None when the library has none or the plan has no room."""
+    from backend import storage
+    from backend.db import from_doc
+    from backend.schema import Dataset
+    from backend.services import datasets as datasets_service
+
+    shared = db.datasets.find_one({"_id": library_id})
+    if shared is None:
+        return None
+    data = bytes(shared["data"])
+    have = db.datasets.find_one({"owner_id": m.org, "checksum": storage.checksum(data)})
+    if have is not None:
+        return from_doc(Dataset, have)
+    if not _has_room(m, db, "datasets"):
+        return None
+    return datasets_service.create_dataset(db, PRODUCT_DATASETS[library_id], data, m.org)
+
+
+class _NoRoom(Exception):
+    """The workspace's plan has no room to save one more record of this kind."""
+
+
+def _own_record(m, db, library_id: str, kind: str, name: str) -> str | None:
+    """The id of the workspace's own copy of a library record, saved now when there's
+    none (through the same services a user's save goes through, so it is fitted or
+    worked out afresh). None when the library has no such record; _NoRoom when the
+    workspace's plan has no room for it (or for its data)."""
+    have = db[kind].find_one({"owner_id": m.org, COPY_OF: library_id}, {"_id": 1})
+    if have is not None:
+        return have["_id"]
+    shared = db[kind].find_one({"_id": library_id})
+    if shared is None:
+        return None
+    if kind in _CAPPED and not _has_room(m, db, _CAPPED[kind]):
+        raise _NoRoom
+    spec = shared.get("spec") or {}
+    dataset = None
+    if shared.get("dataset_id"):
+        dataset = _own_dataset(m, db, shared["dataset_id"])
+        if dataset is None:
+            raise _NoRoom
+    if kind == "strategy_analyses":
+        from backend.services import strategy_store
+
+        made = strategy_store.save_analysis(db, name, shared["kind"], copy.deepcopy(shared.get("inputs") or {}), m.org)
+    elif kind == "degradation_models":
+        from backend.services import degradation
+
+        made = degradation.save_model(db, name, dataset, copy.deepcopy(spec), m.org)
+    elif dataset is not None:
+        from backend.services import models as models_service
+
+        made = models_service.save_model(db, name, dataset, spec["distribution_id"], dict(spec.get("mapping") or {}),
+                                         spec.get("covariates"), spec.get("formula"), spec.get("unit"), m.org)
+    else:
+        from backend.services import models as models_service
+
+        params = [{"name": p["name"], "value": p["value"]} for p in (shared.get("results") or {}).get("params") or []]
+        made = models_service.import_model(db, m.org, name, shared["distribution_id"], unit=spec.get("unit"),
+                                           params=params, notes=PRODUCT_MODEL_NOTES.get(library_id))
+    db[kind].update_one({"_id": made.id}, {"$set": {COPY_OF: library_id}})
+    return made.id
+
+
+def workspace_records(m, db) -> tuple[dict[str, str], list[dict]]:
+    """The product's saved records in this workspace: {library record id: the workspace's
+    own copy's id}, saving the ones it doesn't have yet (a second copy of the product
+    uses the first one's), and those left on the library's record, each {name, why:
+    "no_room" (the plan's storage is full) | "not_saved" (it wouldn't save)}. Nothing
+    here is an event: they are saved documents like the RBD, and they stay if the
+    product is retired."""
+    ids: dict[str, str] = {}
+    kept: list[dict] = []
+    for library_id, kind, name in PRODUCT_RECORDS:
+        try:
+            own = _own_record(m, db, library_id, kind, name)
+        except _NoRoom:
+            kept.append({"name": name, "why": "no_room"})
+            continue
+        except Exception:  # noqa: BLE001 - one record that won't save never stops the product being added
+            logger.warning("The product's record %r wasn't saved in the workspace.", library_id, exc_info=True)
+            kept.append({"name": name, "why": "not_saved"})
+            continue
+        if own:
+            ids[library_id] = own
+    return ids, kept
+
+
+def _kept_text(kept: list[dict]) -> str:
+    """What to tell the user about the records left on the shared library's."""
+    out = ""
+    for why, lead in (("no_room", "Your plan's storage had no room for {names}"),
+                      ("not_saved", "{names} couldn't be saved in your workspace")):
+        names = [k["name"] for k in kept if k["why"] == why]
+        if names:
+            out += (f" {lead.format(names=', '.join(names))}: "
+                    f"{'that one stays' if len(names) == 1 else 'those stay'} linked to the shared library's "
+                    f"{'record' if len(names) == 1 else 'records'}.")
+    return out
+
 
 def sample_products(m) -> list[dict]:
-    """Copies of the sample product in this workspace (live product designs with its name)."""
-    return [p for p in _copies(m, _PRODUCT_COPY_NAME) if p.get("design")]
+    """Copies of the sample product in this workspace, not made the user's own: live
+    product designs marked as one when added, and earlier ones with the sample's name."""
+    named = {p["id"] for p in _copies(m, _PRODUCT_COPY_NAME)}
+    return sorted((p for p in m.s.nodes(m.org, "Position") if p.get("design") and not p.get("retired")
+                   and (p["id"] in named or p.get("from_template") == products.SAMPLE_KEY)),
+                  key=lambda p: p["name"])
 
 
 def own_sample_products(m) -> list[dict]:
@@ -1648,32 +2060,171 @@ def _save_sample_rbd(m, db, name: str) -> dict:
     return {"id": rbd.id, "name": rbd.name}
 
 
+def _sample_maintainability(m, db, product: dict) -> dict:
+    """The sample product's maintainability prediction, in the workspace's saved
+    predictions and attached to the product (its inputs' product_id): the shared
+    sample's lines (backend/services/samples.py), so the numbers are the same. Made
+    only when the workspace has none for this product, so asking twice adds one. A
+    saved document like the RBD, not an event: it stays if the product is retired."""
+    from backend.services import maintainability, samples
+
+    have = db[maintainability.COLLECTION].find_one({"owner_id": m.org, "inputs.product_id": product["id"]})
+    if have is not None:
+        return {"id": have["_id"], "name": have["name"], "added": False}
+    inputs = samples.sample_maintainability_inputs({"id": product["id"], "name": product["name"]})
+    doc = maintainability.save_prediction(db, SAMPLE_MAINTAINABILITY_NAME.format(name=product["name"]), inputs,
+                                          m.org)
+    return {"id": doc.id, "name": doc.name, "added": True}
+
+
+def _relink_models(m, product_id: str, ids: dict[str, str]) -> int:
+    """The life-model links an earlier copy carries, on its design and on the trees
+    built from it, pointed at the workspace's own models (``ids``: library record →
+    own) and reworded to the names and notes used now. A link whose name or note the
+    user changed keeps it."""
+    now = {model_id: (name, note) for _, model_id, name, _, note in SAMPLE_PRODUCT_MODELS}
+    done = 0
+    for top in _trees_of(m, product_id):
+        for p in m._tree_positions(top):
+            for link in m._model_links(p["id"]):
+                was = _EARLIER_MODEL_LABELS.get(link.get("model_id") or "")
+                if link.get("model_type") != "model" or not was:
+                    continue
+                library_id, had_name, had_note = link["model_id"], link.get("name") or "", link.get("note") or ""
+                name = now[library_id][0] if had_name == was[0] else had_name
+                note = now[library_id][1] if had_note == was[1] else had_note
+                own = ids.get(library_id, library_id)
+                if (own, name, note) != (library_id, had_name, had_note):
+                    m.relink_position_model(link["id"], own, name or now[library_id][0], note)
+                    done += 1
+    return done
+
+
+def _relink_evidence(m, product_id: str, ids: dict[str, str]) -> int:
+    """The decisions on an earlier copy (its design and the trees built from it) that
+    link a library record as evidence, pointed at the workspace's own copy of it."""
+    done = 0
+    for top in _trees_of(m, product_id):
+        for p in m._tree_positions(top):
+            for fm in m._modes_on(p["id"]):
+                linked = fm.get("evidence") or {}
+                own = ids.get(linked.get("id") or "")
+                if own and m.relink_evidence(fm["id"], {"type": linked["type"], "id": own}):
+                    done += 1
+    return done
+
+
+# The description an earlier copy was given (it opened "A sample product: …"), by its
+# SHA-256: make_sample_own swaps it for the one used now unless the user rewrote it.
+_EARLIER_DESCRIPTION_SHA256 = "44a8bdb9f7fb50ddfd097487bc0b2977124da2584759615e41cea8e75bc4487c"
+
+
+def _trees_of(m, product_id: str) -> list[str]:
+    return [product_id] + [t["id"] for t in m._built_tops(product_id) if not t.get("retired")]
+
+
+def _redescribe(m, product_id: str) -> bool:
+    """An earlier copy's description, still as it was added, reworded as it is added
+    now: on the design and on each tree built from it (a built tree's top carries the
+    design's description as it was when the item was built)."""
+    import hashlib
+
+    done = False
+    for top in _trees_of(m, product_id):
+        had = (m.s.node(m.org, top) or {}).get("description") or ""
+        if hashlib.sha256(had.encode()).hexdigest() == _EARLIER_DESCRIPTION_SHA256:
+            m.update_position(top, description=SAMPLE_PRODUCT_DESCRIPTION)
+            done = True
+    return done
+
+
+def make_sample_own(m, db, product_id=None) -> dict:
+    """Bring a copy of the product added under its earlier name ("Survey quadcopter
+    (sample)") to how it is added now, in place: products.clear_sample (the product,
+    its part, the trees and items built from it), then what the add saved beside it
+    under the earlier name: its RBD, its maintainability prediction (the name, and the
+    product's name in its inputs), and the life models and analyses it linked in the
+    shared library, which are saved in the workspace as its own (workspace_records)
+    with its positions' links and its decisions' evidence pointed at them. Only what
+    still carries the name the add gave it is renamed; the graph's ids stay.
+    product_id: the copy (default: the only one)."""
+    from backend.services import access, maintainability
+    from backend.services import rbds as rbds_service
+
+    out = m.clear_sample(product_id)
+    old, name, pid = out["was"], out["name"], out["id"]
+    renamed = list(out.get("renamed") or [])
+    for rbd in list(db.rbds.find({"owner_id": m.org, "name": _EARLIER_RBD_NAME.format(name=old)})):
+        fresh = rbds_service.rename_rbd(db, rbd["_id"], SAMPLE_RBD_NAME.format(name=name), m.org)
+        renamed.append(f"the RBD “{fresh.name}”")
+    if _redescribe(m, pid):
+        renamed.append("its description")
+    ids, kept = workspace_records(m, db)
+    links = _relink_models(m, pid, ids)
+    decisions = _relink_evidence(m, pid, ids)
+    for doc in list(db[maintainability.COLLECTION].find({"owner_id": m.org, "inputs.product_id": pid})):
+        inputs = dict(doc.get("inputs") or {})
+        fresh_name = (SAMPLE_MAINTAINABILITY_NAME.format(name=name)
+                      if doc.get("name") == SAMPLE_MAINTAINABILITY_NAME.format(name=old) else None)
+        fresh_inputs = {**inputs, "product_name": name} if inputs.get("product_name") == old else None
+        if fresh_name is None and fresh_inputs is None:
+            continue
+        rates = maintainability.prediction_rates(db, pid, access.owner_in(m.org)) if fresh_inputs else None
+        maintainability.update_prediction(db, doc["_id"], m.org, name=fresh_name, inputs=fresh_inputs,
+                                          prediction=rates)
+        if fresh_name:
+            renamed.append(f"the maintainability prediction “{fresh_name}”")
+    if links:
+        renamed.append(f"{_n(links, 'life-model link')} on its positions")
+    also = f" Renamed or reworded with it: {', '.join(renamed)}." if renamed else ""
+    saved = (f" Its {_n(len(ids), 'life model and analysis record')} are saved in your workspace as your own, and "
+             f"its positions and {_n(decisions, 'decision')} point at them.") if ids else ""
+    return m.product(pid) | {
+        "made_own": True, "was": old, "renamed": renamed, "own_records": len(ids),
+        "kept_shared": [k["name"] for k in kept], "kept_note": _kept_text(kept).strip(),
+        "message": f"“{old}” is “{name}” now, a product like any of your own: change anything in it. It isn't "
+                   f"added again beside this one unless you ask.{also}{saved}{_kept_text(kept)}"}
+
+
 def add_sample_product(m, db, again: bool = False) -> dict:
     """Add the sample product to ``m``'s workspace: a quadcopter's design tree with the
     sample RCM on it (its mission as the operating context, every failure mode scored,
     the decisions' tasks as its maintenance programme), its physical layout (design
     locations, the positions placed on them), its part with a small bill of materials,
     three items built from it (each with flight-hours and flights counters), a replaced
-    motor on one, two failure reports, and a flight-critical RBD in the RBDs
-    (placeholder failure rates, said so in its name). Once only, unless ``again``."""
+    motor on one, two failure reports, a flight-critical RBD in the RBDs
+    (placeholder failure rates, flagged on every block) and a maintainability prediction
+    attached to the product. The copy is named as a product of the user's own ("Survey
+    quadcopter", then "Survey quadcopter 2") and marked as a copy of the sample
+    (products.mark_template). Once only, unless ``again``. A copy of the sample that is
+    there already and has no maintainability prediction (one added before the sample
+    had one) is given it here; one the user made their own is left as it is."""
     existing = sample_products(m)
     # One made the user's own counts too: the sample is never added again beside it unless asked.
     owned = [] if existing else own_sample_products(m)
     if (existing or owned) and not again:
         have = (existing or owned)[0]
+        predictions = {p["id"]: _sample_maintainability(m, db, p) for p in existing}
+        mine = predictions.get(have["id"])
+        topped_up = (f" Added its maintainability prediction, “{mine['name']}”: its repair times and failure "
+                     "rates are invented.") if mine and mine["added"] else ""
         return {
             "added": False,
             "product": {"id": have["id"], "name": have["name"]},
             "position": {"id": have["id"], "name": have["name"]},
-            "message": (f"The sample product is already in your workspace as “{have['name']}”. "
-                        "Ask again to add another copy.") if existing else
-                       (f"You made the sample product your own as “{have['name']}”. Ask again to add a fresh copy "
-                        "of the sample beside it."),
+            **({"maintainability": mine} if mine else {}),
+            "message": (f"The Survey quadcopter is already in your workspace as “{have['name']}”. "
+                        f"Ask again to add another copy.{topped_up}") if existing else
+                       (f"The Survey quadcopter is in your workspace as “{have['name']}”, renamed as your own. "
+                        "Ask again to add a fresh copy beside it."),
         }
-    name = _copy_name(_copies(m, _PRODUCT_COPY_NAME), _PRODUCT_COPY_NAME, SAMPLE_PRODUCT_NAME)
+    # Its saved records first (documents, not events): one that won't save leaves nothing half-made.
+    ids, kept = workspace_records(m, db)
+    name = _free_name(m, SAMPLE_PRODUCT_NAME)
     product = m.create_product(name, _free_number(m, SAMPLE_PRODUCT_PART), SAMPLE_PRODUCT_REV,
                                SAMPLE_PRODUCT_DESCRIPTION)
     pid = product["id"]
+    m.mark_template(pid, products.SAMPLE_KEY)
     top_part = product["part"]["id"]
     levels = set(m.part_levels())
     for number, part_name, qty, level in SAMPLE_PRODUCT_BOM:
@@ -1686,7 +2237,8 @@ def add_sample_product(m, db, again: bool = False) -> dict:
 
     at: dict[str, str] = {"": pid}
     counts = {"positions": 1, "functions": 0, "standards": 0, "functional_failures": 0, "failure_modes": 0,
-              "scored": 0, "decisions": 0, "causes_linked": 0, "tasks": 0, "locations": 0}
+              "scored": 0, "decisions": 0, "causes_linked": 0, "tasks": 0, "locations": 0, "lsa_records": 0,
+              "models_linked": 0}
     # Its physical layout first, so each position is made where it sits.
     places: dict[str, str] = {}
     placed_at: dict[str, str] = {}
@@ -1703,7 +2255,11 @@ def add_sample_product(m, db, again: bool = False) -> dict:
             at[child] = m.create_position(child, parent_id=at[group], position_class=child_cls,
                                           location_id=placed_at.get(child))["id"]
             counts["positions"] += 1
-    _add_uav_rcm(m, {k: [at[n] for n in names] for k, names in SAMPLE_PRODUCT_MODES_AT.items()}, counts)
+    at_of = {k: [at[n] for n in names] for k, names in SAMPLE_PRODUCT_MODES_AT.items()}
+    programme = _add_uav_rcm(m, at_of, counts, ids)
+    # Before any item is built, so each item's copies carry them.
+    _add_uav_lsa(m, programme, counts)
+    _add_uav_models(m, at_of, counts, ids)
 
     today = date.fromisoformat(m.today())
 
@@ -1744,7 +2300,9 @@ def add_sample_product(m, db, again: bool = False) -> dict:
                               failure_mode_text="Antenna connector works loose"),
     ]
     m.set_failure_report_status(reports[0]["id"], "investigating", note="Bearing sent for teardown.")
-    rbd = _save_sample_rbd(m, db, f"{name}: flight-critical RBD (placeholder failure rates)")
+    package = _add_uav_package(m, first["top_position_id"])
+    rbd = _save_sample_rbd(m, db, SAMPLE_RBD_NAME.format(name=name))
+    prediction = _sample_maintainability(m, db, {"id": pid, "name": name})
     undecided = counts["failure_modes"] - counts["decisions"]
     return {
         "added": True,
@@ -1753,6 +2311,10 @@ def add_sample_product(m, db, again: bool = False) -> dict:
         "items": [{k: it[k] for k in ("serial", "rev", "item_id", "top_position_id")} for it in items],
         "reports": [{"id": r["id"], "label": r.get("label") or r["title"]} for r in reports],
         "rbd": rbd,
+        "maintainability": prediction,
+        "package": package,
+        "own_records": len(ids),
+        "kept_shared": [k["name"] for k in kept], "kept_note": _kept_text(kept).strip(),
         **counts,
         "message": (f"Added “{name}”: a design of {_n(counts['positions'], 'position')} with a complete RCM study "
                     f"for its inspection mission ({_n(counts['functions'], 'function')} with "
@@ -1761,14 +2323,22 @@ def add_sample_product(m, db, again: bool = False) -> dict:
                     f"{_n(counts['failure_modes'], 'failure mode')}, each scored as an FME(C)A and all but "
                     f"{undecided} decided) and the maintenance programme those decisions make "
                     f"({_n(counts['tasks'], 'task')}: the pre-flight check, the flight log review, the 25-hour, "
-                    "100-hour and annual inspections, the failsafe function tests, and the propeller and battery "
-                    "limits). The evidence check shows each case: the motor bearings' legacy run-to-failure "
-                    "decision is contradicted on purpose (their life model shows wear-out), the battery retirement "
+                    "100-hour and annual inspections, the monthly failsafe function tests, the three-monthly "
+                    "battery storage check, and the propeller and battery limits; each programme task with its "
+                    "LSA record). The evidence check shows "
+                    "each case: the motor bearings' legacy run-to-failure "
+                    "decision is contradicted (their life model shows wear-out), the battery retirement "
                     "can't be checked until its units agree, and the rest with evidence are supported. Its physical "
                     f"layout ({_n(counts['locations'], 'design location')}: four arms, the centre body with its "
                     f"battery bay, and the payload bay), its part with a bill of materials, {_n(len(items), 'item')} "
-                    f"built from it (serials {', '.join(it['serial'] for it in items)}), a replaced motor and two "
-                    f"failure reports. The RBD “{rbd['name']}” is in your RBDs: its failure rates are placeholders, "
+                    f"built from it (serials {', '.join(it['serial'] for it in items)}), the work package "
+                    f"“{package['name']}” on {items[0]['serial']} for the calendar tasks, a replaced motor and two "
+                    f"failure reports. Life models on {_n(counts['models_linked'], 'position')} (motors, propellers, "
+                    "battery pack and radio) and the analyses behind its decisions are saved in your workspace as "
+                    f"your own ({_n(len(ids), 'record')}): their values are invented, not field data."
+                    f"{_kept_text(kept)} The RBD "
+                    f"“{rbd['name']}” is in your RBDs: its failure rates are placeholders, "
                     "not data. Each arm's ESC, motor and propeller are in series there: the design has one ESC per "
-                    "motor."),
+                    f"motor. The maintainability prediction “{prediction['name']}” is in your maintainability "
+                    "predictions, attached to the product: its repair times and failure rates are invented."),
     }

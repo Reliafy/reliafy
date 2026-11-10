@@ -31,3 +31,4 @@
 .lib-formula code { white-space: normal; overflow-wrap: anywhere; }
 .lib-h3 { font-size: 1rem; margin: 1rem 0 0.4rem; }
 .lib-cov-mode + .lib-cov-mode { border-top: 1px solid var(--line2); }
+.lib-view { display: flex; gap: 8px; flex-wrap: wrap; }

@@ -11,11 +11,12 @@ import { saveErrorText } from "../confirm.js";
 import { TRUST_CHOICES } from "../bayesUpdate.js";
 import {
   AROUND_PARAMS, METHOD_CHOICES, METHOD_LINE, bodyOf, countsWords, dataOptions, effective, forWords, historyRow, previewKey,
-  fitChanged, fitTitle, initialFit, libraryPriorWords, priorChoices, problem, refusalSwitch, refusalWords, showsTrust,
+  fitChanged, fitTitle, initialFit, keepsOwnPrior, libraryPriorWords, priorChoices, problem, refusalSwitch, refusalWords, showsTrust,
 } from "../fitDialog.js";
 import { fmt } from "../explorerModels.js";
 import TablePane from "./TablePane.jsx";
 import LibraryRecordPicker, { PickedRecord } from "./LibraryRecordPicker.jsx";
+import { RecordCovariatesField, useRecordCovariates } from "./LibraryParts.jsx";
 import { rowFromDetail } from "../libraryPicker.js";
 import "./RcmWorksheet.css";
 import "./FitLifeModel.css";
@@ -25,13 +26,16 @@ import "./FitLifeModel.css";
 // library"). FitPane is that area: a heading ("Fit a life model · <position>") with a close, and
 // FitLifeModel under it: inputs on the left as a step | choice grid (Data with the history under
 // it, Method, Prior, Distribution, For), the result on the right (what came out, the curve, the
-// numbers, reliability at an age, how it was computed, Save). Both columns scroll on their own;
-// when the area is narrow they stack, inputs first, Save at the foot. Every change asks again a
+// numbers, reliability at an age, how it was computed), Cancel and Save in a bar under it. Both
+// columns scroll on their own; when the area is narrow they stack, inputs first, each as tall as
+// what's in it, the pane scrolling as one with Cancel and Save kept at its foot. Every change asks again a
 // moment later (fitDialog.previewKey: the request and what's missing). Only the library record
 // picker is a dialog, over the pane.
 //
 //   position  {id, name, position_class}
-//   start     {data?, method?, priorKind?, modelId?, recordId?}   link: a row it replaces (Refit…)
+//   start     {data?, method?, priorKind?, modelId?, recordId?, update?}   link: a row it replaces (Refit…)
+//             update: "Update with new failures…" on a fit with a prior, that row's model the prior
+//             (fitDialog.priorFrom); its own prior is kept, so trust isn't asked.
 
 const PARAM_NAMES = { weibull: ["alpha", "beta"], exponential: ["failure_rate"], lognormal: ["mu", "sigma"] };
 const PARAM_WORDS = { alpha: "Characteristic life (alpha)", beta: "Shape (beta)", failure_rate: "Failure rate", mu: "mu", sigma: "sigma" };
@@ -89,7 +93,7 @@ export function FitPane({ position, start = {}, link = null, phone = false, head
   const [saving, setSavingState] = useState(false);
   const setSaving = (v) => { setSavingState(v); onSaving?.(v); };
   return (
-    <TablePane title={fitTitle(link)} subject={position.name} phone={phone} busy={saving} headingRef={headingRef} onClose={onClose}
+    <TablePane title={fitTitle(link, start)} subject={position.name} phone={phone} busy={saving} headingRef={headingRef} onClose={onClose}
                className="fit-pane">
       <FitLifeModel position={position} start={start} link={link} onClose={onClose} onDone={onDone} onDirty={onDirty} onSaving={setSaving} />
     </TablePane>
@@ -124,6 +128,13 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
       .then(([d, src]) => live && setRecord(rowFromDetail(d, src.sources)), () => {});
     return () => { live = false; };
   }, [state.recordId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The record's covariates (a pipe's length, the clock, the demands a year...): the shared calculator
+  // under the picked record, its values kept on the request.
+  const libCov = useRecordCovariates(state.recordId, opened.libCov);
+  const libSig = JSON.stringify([libCov.toSave, libCov.missing.map((i) => i.label)]);
+  useEffect(() => {
+    setState((s) => ({ ...s, libCov: libCov.toSave, libMissing: libCov.missing.map((i) => i.label) }));
+  }, [libSig]); // eslint-disable-line react-hooks/exhaustive-deps
   const [preview, setPreview] = useState({ data: null, refused: null, busy: false });
   const [chart, setChart] = useState("sf");
   const [saving, setSaving] = useState(false);
@@ -240,7 +251,7 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
                       .map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </Select>
                 )}
-                {showsTrust(eff.priorKind) && (
+                {showsTrust(eff.priorKind) && !keepsOwnPrior(state, start, d) && (
                   <ChoiceChips label="How much to trust the prior" className="sm" value={state.trust} onChange={(v) => v && set("trust", v)}
                                options={TRUST_CHOICES.map((t) => ({ value: t.value, label: t.label }))} />
                 )}
@@ -250,6 +261,7 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
                       <PickedRecord record={state.recordId ? record || { id: state.recordId } : null} onPick={() => setPicking(true)} />
                     </div>
                     {state.recordId && <p className="fit2-sum">{libraryPriorWords(state.distribution, record)}</p>}
+                    {state.recordId && record?.kind !== "life" && <RecordCovariatesField recordId={state.recordId} cov={libCov} idPrefix="fitcov" />}
                     {record?.kind !== "life" && (state.distribution === "weibull" || state.distribution === "lognormal") && (
                       <div className="fit2-pair">
                         <TextInput inputMode="decimal" aria-label="Shape between" placeholder="Shape between (0.5)" value={state.libShape.lo || ""}
@@ -279,6 +291,10 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
                   <Select aria-label="Prior model" value={state.modelId || ""} onChange={(e) => set("modelId", e.target.value || null)}>
                     <option value="">{models === null ? "Loading models…" : "Pick a Weibull, exponential or lognormal model"}</option>
                     {(models || []).map((m) => <option key={m.id} value={m.id}>{m.name}{m.is_sample ? " (sample)" : ""}</option>)}
+                    {/* The row it was opened from, while the list is read or if the list leaves it out. */}
+                    {state.modelId && state.modelId === link?.model_id && !(models || []).some((m) => m.id === state.modelId) && (
+                      <option value={state.modelId}>{link.model?.name || link.name}</option>
+                    )}
                   </Select>
                 )}
                 {eff.priorKind === "params" && (
@@ -385,14 +401,15 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
               </p>
             </>
           )}
-          {failed && <p className="field-error" role="alert">{failed}</p>}
-          <div className="fit2-foot">
-            <button type="button" className="secondary" onClick={onClose} disabled={saving}>Cancel</button>
-            <button type="button" onClick={save} disabled={saving || !d?.can_save} aria-busy={saving || undefined}>
-              {saving ? "Saving…" : "Save as this position's model"}
-            </button>
-          </div>
         </section>
+        {/* Cancel and Save are the pane's own foot, not the result's: always in view, whichever part is being read. */}
+        <div className="fit2-foot">
+          {failed && <p className="field-error fit2-failed" role="alert">{failed}</p>}
+          <button type="button" className="secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" onClick={save} disabled={saving || !d?.can_save} aria-busy={saving || undefined}>
+            {saving ? "Saving…" : "Save as this position's model"}
+          </button>
+        </div>
       </div>
       {picking && (
         <LibraryRecordPicker use="prior" selectedId={state.recordId} onClose={closePicker}

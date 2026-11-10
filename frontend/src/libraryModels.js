@@ -23,23 +23,28 @@ export const BASIS_LABEL = { field_data: "Field data", prediction_model: "Handbo
 // A life record (a saved model's snapshot, or a published life distribution).
 export const isLife = (rec) => rec?.kind === "life";
 
-// Why a record can't be a model (or a prior) here, in words; null when it can.
+// Why a record can't be a model (or a prior) here, in words; null when it can once its covariates
+// are given (a pipe's length, the clock, the demands a year, a handbook part's environment...).
 export function whyNot(rec, use = "model") {
   if (!rec) return null;
   if (isLife(rec)) return null;
   if (rec.kind === "covariate_model") {
-    return "A covariate model: its rate depends on the conditions the part works in. Try it on its page, or use it in a prediction.";
+    return "A covariate model: its rate depends on the conditions the part works in. Attach it at a position (Life model › From the data library…), try it on its page, or use it in a prediction.";
   }
-  if (rec.basis === "prediction_model") {
-    return "A handbook base rate for a parts count: on its own it isn't a model. Use it in a prediction.";
-  }
-  if (rec.kind === "per_demand") {
-    return use === "model"
-      ? "A probability per demand, not a life over time: a model here is fitted from counts of demands and failures."
-      : "A probability per demand: a position's history counts lives, not demands.";
+  if (rec.basis === "prediction_model" && use === "prior") {
+    return "A handbook rate: a point value with no spread, so it can't be a prior. Use it as a model (with its environment), or in a prediction.";
   }
   return null;
 }
+
+// A component's address (an NRC/INL equipment type in one pooling group): its id is
+// "source:component:slug".
+export const isComponentId = (id) => String(id || "").includes(":component:");
+export function componentPath(componentId) {
+  const [source, , slug] = String(componentId).split(":");
+  return `${sourcePath(source)}/components/${encodeURIComponent(slug || "")}`;
+}
+export const componentIdOf = (source, slug) => `${source}:component:${slug}`;
 
 // A library that has records usable as a model or a prior on their own (a failure rate counted
 // from service; not a handbook of base rates for parts counts): the pickers' default.
@@ -55,8 +60,8 @@ export function pickerSources(sources) {
 // null when it hid none.
 export function leftOutWords(leftOut) {
   const parts = [];
-  if (leftOut?.prediction_model) parts.push("Base rates for parts counts are left out; use them in a prediction.");
-  if (leftOut?.per_demand) parts.push("Probabilities per demand are left out: they aren't lives over time.");
+  if (leftOut?.prediction_model) parts.push("Handbook rates and covariate models are left out: they have no spread to be a prior, or need a position.");
+  if (leftOut?.per_demand) parts.push("Probabilities per demand are left out.");
   return parts.length ? parts.join(" ") : null;
 }
 

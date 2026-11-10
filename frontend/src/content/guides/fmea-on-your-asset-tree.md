@@ -2,7 +2,7 @@
 title: "Score failure modes as an FMEA or FMECA on your asset tree"
 task: "How do I score severity, occurrence and detection for each failure mode, get an action priority and RPN, and work out criticality, on the same tree as my RCM?"
 category: "Maintenance strategy"
-prerequisites: "A position in your asset tree with failure modes, or the sample UAV product."
+prerequisites: "A position in your asset tree with failure modes, or the Survey quadcopter."
 order: 26
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
 # FME(C)A tab itself and stays out of the index until Maintenance opens.
@@ -21,25 +21,25 @@ In Reliafy, the FMEA sits on the same failure modes as your RCM. The
 records: a failure mode written on either tab is there on the other, and a
 score or an effect edited on one shows on the other at once. Nothing is copied.
 
-## Start from the sample UAV product
+## Start from the Survey quadcopter
 
-A quadcopter is something you design, so the sample one is a product. On
-**Products**, press **Add the sample UAV product** (in **Assets → Explorer**,
-**Open the sample UAV product** in the **⋯** beside the tree's search box, or on the empty
-tree's card, does the same and opens it). *Survey quadcopter (sample)* is a
-small fictional inspection quadcopter: an airframe with four arms, a centre
+The Survey quadcopter is a made-up product: its numbers are invented. A
+quadcopter is something you design, so it is a product. On
+**Products**, press **Add the Survey quadcopter** (in **Assets → Explorer**,
+**Open the Survey quadcopter** in the **⋯** beside the tree's search box, or on the empty
+tree's card, does the same and opens it). *Survey quadcopter* is a
+small inspection quadcopter: an airframe with four arms, a centre
 frame and landing gear, propulsion with four motors, power, flight control,
 comms and a payload gimbal with its camera, with every failure mode scored
 and its criticality figures filled in over a year's 150 flight hours. Its
 **Functional structure** tab is the
 same Explorer, scoped to the design: pick its **FME(C)A** tab. Everything below
 works the same on a product's design and on your asset tree. Its **RCM** tab
-holds the same failure modes as an RCM, each with its decision (see
-[RCM on your asset tree](/guides/rcm-on-your-asset-tree)). The product's own
-row holds the rest of the sample on its Summary: its bill of materials, the
+holds the same failure modes as an RCM, each with its decision. The product's own
+row holds the rest of it on its Summary: its bill of materials, the
 items built from it and their failure reports.
 
-![The FME(C)A tab on the sample UAV product: each failure mode with its cause, effects, scores, RPN and action priority](/guides/img/fmea-01-worksheet.png)
+![The FME(C)A tab on the Survey quadcopter: each failure mode with its cause, effects, scores, RPN and action priority](/guides/img/fmea-01-worksheet.png)
 
 The tree of positions is the first column, as on the RCM tab. Under each
 position sit its functions, and under each function its failure modes, one
@@ -123,7 +123,7 @@ The fields, in the **Criticality** group of a failure mode's Details:
   mission, a year or the design life.
 - **Severity class**: I Catastrophic, II Critical, III Marginal, IV Minor.
 
-The formula is C<sub>m</sub> = β × α × λ × t. For the sample UAV product's
+The formula is C<sub>m</sub> = β × α × λ × t. For the Survey quadcopter's
 motor bearing seizure that is 1.0 × 0.5 × 0.00008 per hour × 150 hours = 0.006: the
 chance, over a year's 150 flight hours, of losing the aircraft to that one
 mode on that one motor. The **item
@@ -198,8 +198,7 @@ one plain page for printing or a PDF.
 
 ## Where to go next
 
-The decisions an FMEA leads to are the RCM's: see [build RCM on your asset
-tree](/guides/rcm-on-your-asset-tree). An occurrence score that should come
+The decisions an FMEA leads to are the RCM's, on the **RCM** tab. An occurrence score that should come
 from data starts with [fitting a model](/guides/fit-your-first-model); a
 detection score that depends on an inspection interval leads to the
 [failure-finding interval](/guides/failure-finding-interval).

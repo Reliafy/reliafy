@@ -882,6 +882,31 @@ item. The tree rows carry `design` (a design's top), `design_position_id`
 (a built position) and `built_from` (a built tree's top), so the app can keep
 designs and built items out of the Assets landing.
 
+**The ready-made product** (the Survey quadcopter, `backend/maintenance/templates.py`)
+is added through the same service methods as anything else, so its log is
+ordinary events. Once added it is a product like any other: nothing on it says
+it came from a template. Two things tell a copy apart, neither of them its
+name:
+
+- `design.template_marked {position_id, template}` sets `from_template` on the
+  design's top position (the template's key). The add writes it once; "add it
+  once" and the template's own starting points (its motors' conditions, its
+  missing prediction) go by this mark, so a renamed copy is still known.
+- A copy added before Nov 2026 has no mark: it was named "… (sample)" and is
+  still known by that name (those logs replay unchanged).
+  `position.sample_cleared {id, name, sample_key}` renames such a copy in
+  place and sets `from_sample`; "Make this my own…" writes it, then brings the
+  rest of the copy to how one is added now through events that exist already
+  (position updates, `position.model_relinked` below, `failure_mode.analysed`
+  for evidence).
+
+The life models and analyses the product stands on are saved in the workspace
+as its own records before any event is written (the library's records are
+copied through the ordinary save services, each remembering the library record
+it came from, so a second copy of the product reuses them). The events then
+name the workspace's records. A record the plan's storage has no room for stays
+linked to the shared library's, and the add says which.
+
 ### A product's physical layout (design locations)
 
 A product has locations of its own (Forward left arm, Centre body › Battery
@@ -1191,11 +1216,16 @@ saved model assigned by hand. Code: `backend/maintenance/position_models.py`.
   can't open it); `source` what a fit used (scope, failures, suspensions,
   class) or the design position a built one came from.
   `position.model_unlinked {id, on}` marks it removed and drops the edge.
+  `position.model_relinked {id, model_id, name, note}` points a link at
+  another saved model of the same kind and sets its name and note (the
+  ready-made product's links moved from the shared library's records to the
+  workspace's own); everything else on the link stays.
 - **Predictions.** A parts-count prediction of a position (role `prediction`)
   is saved as a reliability prediction and an exponential model at its rate;
   the link names the model, and `source` the prediction, the environment and
   the counts. It's computed from the parts lists at the position and inside
-  it (a product design's bill of materials where they list none). No new event:
+  it (on a product design, plus the bill-of-materials parts they don't list; a
+  part on both is counted once, from the parts lists). No new event:
   it's a `position.model_linked` like any other.
 - **Covariate models** (accelerated life, proportional hazards) are linked as
   they are; the link carries no stress (that's set where the model is used).

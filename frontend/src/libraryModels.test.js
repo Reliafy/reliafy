@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   curve, density, distributionWords, leftOutWords, lgamma, pickerDetail, rangeText, recordIdOf, recordPath, sig, sourcePath, unitsMeaning, asGivenWords,
-  usableSource, whyNot,
+  usableSource, whyNot, componentIdOf, componentPath, isComponentId,
 } from "./libraryModels.js";
 
 test("the three levels' addresses", () => {
@@ -13,9 +13,21 @@ test("the three levels' addresses", () => {
 
 test("which records can be a model or a prior, in words", () => {
   assert.equal(whyNot({ kind: "rate", basis: "field_data" }), null);
-  assert.match(whyNot({ kind: "per_demand" }), /counts of demands and failures/);
-  assert.match(whyNot({ kind: "per_demand" }, "prior"), /counts lives, not demands/);
-  assert.match(whyNot({ kind: "rate", basis: "prediction_model" }), /parts count/);
+  // Every input a record needs is a covariate (Derryn, 9 Nov 2026): a probability per demand is a
+  // model or a prior with its demands a year; a handbook rate a model with its environment.
+  assert.equal(whyNot({ kind: "per_demand" }), null);
+  assert.equal(whyNot({ kind: "per_demand" }, "prior"), null);
+  assert.equal(whyNot({ kind: "rate", basis: "prediction_model" }), null);
+  assert.match(whyNot({ kind: "rate", basis: "prediction_model" }, "prior"), /no spread/);
+  assert.match(whyNot({ kind: "covariate_model" }), /Attach it at a position/);
+});
+
+test("a component's address", () => {
+  assert.ok(isComponentId("nrc-inl-2020:component:motor-driven-pump-normally-standby"));
+  assert.ok(!isComponentId("nrc-inl-2020:mdp-fts-ns"));
+  assert.equal(componentPath("nrc-inl-2020:component:motor-driven-pump-normally-standby"),
+    "/models/library/nrc-inl-2020/components/motor-driven-pump-normally-standby");
+  assert.equal(componentIdOf("nrc-inl-2020", "pipe-service-water"), "nrc-inl-2020:component:pipe-service-water");
 });
 
 test("the pickers: the default library, the records hidden, and a record's detail line", () => {
@@ -27,8 +39,8 @@ test("the pickers: the default library, the records hidden, and a record's detai
   assert.equal([handbook, field].find(usableSource), field);
   assert.equal(leftOutWords({}), null);
   assert.equal(leftOutWords(undefined), null);
-  assert.match(leftOutWords({ prediction_model: 236 }), /^Base rates for parts counts are left out; use them in a prediction\.$/);
-  assert.match(leftOutWords({ prediction_model: 1, per_demand: 2 }), /parts counts.*per demand/);
+  assert.match(leftOutWords({ prediction_model: 236 }), /^Handbook rates and covariate models are left out/);
+  assert.match(leftOutWords({ prediction_model: 1, per_demand: 2 }), /Handbook rates.*per demand/);
   assert.equal(pickerDetail({ mean: 9.13e-5, units: "per hour (running)", p05: 7.34e-7, p95: 3.33e-4, source: "NRC/INL 2020" }),
     "9.13e−5 per hour (running) · 5–95%: 7.34e−7 – 3.33e−4 · NRC/INL 2020");
   // A base rate with no range given says none, rather than "5–95%: —".

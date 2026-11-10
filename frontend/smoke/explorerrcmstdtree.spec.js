@@ -14,7 +14,7 @@
 // the shared workspace holds (rows below the fold aren't drawn).
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots at 1280 and 400 px: the
-// sample UAV product, and a function with three standards (for the pull request).
+// Survey quadcopter, and a function with three standards (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { frameOf, movedBetween } from "./explorer.js";
 
@@ -178,7 +178,7 @@ test("row menus: add a standard, a failure under it, change a failure's standard
   // A function's menu: Add a performance standard… (the first standard; its loose failure stays on show, under "No standard").
   let menu = await menuOf(page, circulate);
   // With the mouse: Move to…, but no Move up / down (a drag does them); Focus › before Delete.
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Focus", "Focus on incomplete rows", "Delete function…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Edit description", "Move to…", "Focus", "Focus on incomplete rows", "Delete function…"]);
   await menu.getByRole("menuitem", { name: "Add a performance standard…" }).click();
   // The function's details, on the standards' add row: typed in place, Enter writes it.
   const details = page.getByRole("complementary", { name: "Details" });
@@ -198,11 +198,11 @@ test("row menus: add a standard, a failure under it, change a failure's standard
 
   // A standard's menu: Add a functional failure… (it breaches this standard).
   menu = await menuOf(page, fifty);
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Move to…", "Focus", "Delete performance standard…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add a functional failure…", "Open…", "Edit text", "Move to…", "Focus", "Delete performance standard…"]);
   await page.keyboard.press("Escape");
   // From the keyboard: Move up / down too.
   menu = await menuOf(page, fifty, { keyboard: true });
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Move up", "Move down", "Move to…", "Focus", "Delete performance standard…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add a functional failure…", "Open…", "Edit text", "Move up", "Move down", "Move to…", "Focus", "Delete performance standard…"]);
   await expect(menu.getByRole("menuitem", { name: "Move up" })).toHaveAttribute("aria-disabled", "true"); // the only one
   await menu.getByRole("menuitem", { name: "Add a functional failure…" }).click();
   // The standard's details, on their functional failures' add row (one that breaches it).
@@ -278,7 +278,7 @@ test("row menus: add a standard, a failure under it, change a failure's standard
   // The one text's row: Edit text changes the function's text; Remove clears it; no event for a standard.
   const legacy = trow(page, `^Performance standard: FC 1-3 ppm; CC under 0.5 ppm ${tag}`);
   menu = await menuOf(page, legacy);
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Focus", "Focus on incomplete rows", "Remove performance standard"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add a functional failure…", "Open…", "Edit text", "Focus", "Focus on incomplete rows", "Remove performance standard"]);
   await menu.getByRole("menuitem", { name: "Remove performance standard" }).click();
   const confirm2 = page.getByRole("alertdialog", { name: "Remove this performance standard?" });
   await expect(confirm2).toContainText("is cleared from this function. Its functional failures stay on the function");
@@ -384,7 +384,7 @@ test("at 400 px the standard rows, their menus and the details sheet fit", async
   // The menu: no in-place edit on a phone (the details edit the text); Open… shows them.
   await ca.getByRole("button", { name: /^Actions for / }).click();
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a functional failure…", "Move up", "Move down", "Move to…", "Focus", "Delete performance standard…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add a functional failure…", "Open…", "Move up", "Move down", "Move to…", "Focus", "Delete performance standard…"]);
   await menu.getByRole("menuitem", { name: "Open…" }).click();
   const dlg = panel(page);
   await expect(dlg).toBeVisible();
@@ -415,11 +415,87 @@ test("at 400 px the standard rows, their menus and the details sheet fit", async
   await expectHealthy(page, problems, { label: "rcm standards tree phone" });
 });
 
-test("screenshots: the sample UAV product, and a function with three standards (SMOKE_SHOTS_DIR)", async ({ page, request }) => {
+// Scrolled on a phone, the rows held at the top are ones the first row under them sits
+// inside: the top one and its own parent (there's room for two), a mark between them when
+// levels are left out. No row further down has its parents held instead, and no gap is left
+// where a held row's own place shows empty.
+test("at 400 px the rows held at the top while scrolling are the first row's own parents", async ({ page, request }) => {
+  const tag = `h${Date.now()}`;
+  const p = await plant(request, tag);
+  await page.setViewportSize({ width: 400, height: 560 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&pin=${p.pool.id}&tab=rcm`);
+  await expect(trow(page, `^Function: Keep the water balanced ${tag}`).first()).toBeVisible();
+  await settled(page);
+  const scroller = page.locator(".tp-scroll");
+  const room = await scroller.evaluate((el) => el.scrollHeight - el.clientHeight);
+  expect(room).toBeGreaterThan(200);
+  // The held rows are copies with no level of their own, so each row's level and place is noted
+  // as it's drawn (the list draws only the rows near the window).
+  const seen = new Map();
+  const held = async () => {
+    const now = await page.evaluate(() => {
+      const pins = [...document.querySelectorAll(".tp-pins-in .tp-row")];
+      const foot = pins.length ? document.querySelector(".tp-pins-in").getBoundingClientRect().bottom : 0;
+      const rows = [...document.querySelectorAll(".tp-body > .tp-row")];
+      const body = document.querySelector(".tp-body").getBoundingClientRect().top;
+      const under = rows.filter((r) => r.getBoundingClientRect().bottom > foot + 1);
+      return {
+        pins: pins.map((r) => ({ key: r.dataset.key, gap: r.classList.contains("pin-gap") })),
+        first: under[0]?.dataset.key,
+        empty: under.filter((r) => r.classList.contains("under-pin")).length,
+        rows: rows.map((r) => [r.dataset.key, { level: Number(r.getAttribute("aria-level")), top: Math.round(r.getBoundingClientRect().top - body) }]),
+      };
+    });
+    for (const [key, row] of now.rows) seen.set(key, row);
+    return now;
+  };
+  // The row a row sits right inside: the nearest one above it that is one level up.
+  const parentOf = (key) => {
+    const me = seen.get(key);
+    let best = null;
+    for (const [k, r] of seen) if (r.level === me.level - 1 && r.top < me.top && (!best || r.top > seen.get(best).top)) best = k;
+    return best;
+  };
+  await held();
+  let deepest = 0;
+  let marked = 0;
+  for (let y = 54; y <= room; y += 54) {
+    // The held rows are drawn in the frame after the scroll.
+    await scroller.evaluate((el, top) => new Promise((done) => {
+      el.scrollTop = top;
+      requestAnimationFrame(() => requestAnimationFrame(done));
+    }), y);
+    const now = await held();
+    const names = now.pins.map((x) => x.key);
+    const at = `scrolled ${y} px, held ${JSON.stringify(now.pins)}, first row under them ${now.first}`;
+    expect(names.length, at).toBeLessThanOrEqual(2);
+    expect(names[0], at).toBe(p.pool.id);
+    expect(now.empty, at).toBe(0);
+    // Each one held is a row the first row sits inside; with two held, the second is its own
+    // parent. (One alone can be further up: at the last row of a branch, holding its parent too
+    // would cover the row itself.)
+    const inside = [];
+    for (let k = parentOf(now.first); k; k = parentOf(k)) inside.push(k);
+    for (const k of names) expect(inside, at).toContain(k);
+    if (names.length === 2) {
+      expect(names[1], at).toBe(inside[0]);
+      // The mark is there exactly when levels between the two are left out.
+      expect(now.pins[1].gap, at).toBe(inside.length > 2);
+      marked += now.pins[1].gap ? 1 : 0;
+    }
+    deepest = Math.max(deepest, seen.get(now.first).level);
+  }
+  // Deep enough that levels were left out on the way.
+  expect(deepest).toBeGreaterThanOrEqual(4);
+  expect(marked).toBeGreaterThan(0);
+  expect(await overflow(page)).toBe(0);
+});
+
+test("screenshots: the Survey quadcopter, and a function with three standards (SMOKE_SHOTS_DIR)", async ({ page, request }) => {
   test.skip(!SHOTS, "only when saving screenshots");
   const tag = "shot";
   const p = await plant(request, tag);
-  // smoke/seed.js added the sample product: once, so this adds nothing.
+  // smoke/seed.js added the Survey quadcopter: once, so this adds nothing.
   const sample = await postOk(request, `${M}/sample-product`, {});
   const sampleId = sample.product?.id || sample.position.id;
   for (const [w, h] of [[1280, 800], [400, 860]]) {

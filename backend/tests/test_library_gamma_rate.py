@@ -97,20 +97,24 @@ def test_use_as_a_model_keeps_the_gamma_and_the_length(db):
     assert entry["rate_uncertainty"]["shape"] == 0.3
     assert float(entry["model"].params[0]) == pytest.approx(rate)
 
-    # A per-foot record with no length: one foot, said in the notes; a length on another record is refused.
-    one, _ = lm.save_record_model(db, ORG, PIPE)
+    # A per-foot record with no length is refused: the pipe's length is a covariate with no default,
+    # never guessed (it used to be taken as one foot). A length on another record is refused too.
+    with pytest.raises(lm._sv().Invalid, match="Pipe length is needed"):
+        lm.save_record_model(db, ORG, PIPE)
+    one, _ = lm.save_record_model(db, ORG, PIPE, covariates={"length_ft": 1})
     assert one.results["params"][0]["value"] == pytest.approx(2.53e-11, rel=0.01)
-    assert "no length was given" in one.spec["notes"] and one.results["rate_uncertainty"]["length_ft"] == 1.0
+    assert one.results["rate_uncertainty"]["length_ft"] == 1.0
     with pytest.raises(lm._sv().Invalid, match="isn't a rate per foot"):
         lm.save_record_model(db, ORG, RATE, length_ft=10)
-    with pytest.raises(lm._sv().Invalid, match="above 0"):
+    with pytest.raises(lm._sv().Invalid, match="must be more than 0 ft"):
         lm.save_record_model(db, ORG, PIPE, length_ft=0)
 
 
 def test_a_model_saved_before_gets_its_gamma_back_from_the_record(db):
-    model, _ = lm.save_record_model(db, ORG, PIPE)
+    model, _ = lm.save_record_model(db, ORG, PIPE, length_ft=1)
     # As the old code saved it: the rate per hour (per foot), its range as the interval, no gamma.
-    db.models.update_one({"_id": model.id}, {"$unset": {"results.rate_uncertainty": "", "results.library.length_ft": ""},
+    db.models.update_one({"_id": model.id}, {"$unset": {"results.rate_uncertainty": "", "results.library.length_ft": "",
+                                                        "results.library.covariates": "", "results.library.covariates_words": ""},
                                              "$set": {"results.ci_note": "old note"}})
     old = models_service.get_model(db, model.id)
     assert "rate_uncertainty" not in old.results

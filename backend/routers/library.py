@@ -17,6 +17,7 @@ writes are the ``change`` tool's ``library_*`` actions.
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, Header, Query, Request
@@ -36,7 +37,9 @@ from backend.services.access import AccessCtx, get_access
 
 router = APIRouter(prefix="/api/library")
 
-_LIMIT = SlidingWindowLimiter(120)
+# Per address a minute. The smoke suite (every library page from one address, several workers)
+# raises it with LIBRARY_READS_PER_MINUTE, as Maintenance's writes have MAINTENANCE_WRITES_PER_MINUTE.
+_LIMIT = SlidingWindowLimiter(int(os.environ.get("LIBRARY_READS_PER_MINUTE") or 120))
 #: Try it asks again a moment after each change, so it has its own allowance.
 _EVAL_LIMIT = SlidingWindowLimiter(600)
 _CACHE = {"Cache-Control": "public, max-age=3600"}
@@ -145,19 +148,54 @@ def library_record(
 
 
 @router.post("/records/{record_id}/evaluate")
-def library_evaluate(record_id: str, request: Request, values: dict = Body(default={}, embed=True)) -> JSONResponse:
-    """A covariate model's rate under some conditions (the record page's Try it; the same as get kind
-    library_record with conditions): {ok, result, warnings} or {ok: false, problems}, each problem
-    naming the limit and the handbook's page. Published records only; nothing is saved."""
+def library_evaluate(record_id: str, request: Request, covariates: Optional[dict] = Body(default=None, embed=True),
+                     values: Optional[dict] = Body(default=None, embed=True),
+                     time_unit: str = Body(default="hours", embed=True),
+                     session=Depends(get_session), ctx: AccessCtx | None = Depends(optional_access)) -> JSONResponse:
+    """A record's rate under its covariates, or a component's chance of failing over a period (the
+    record page's Try it, the fix-covariates pane's preview; the same as get kind library_record with
+    covariates): {ok, result, warnings} or {ok: false, problems, missing}, each problem saying what's
+    needed (an NSWC-11 limit names the handbook's page). ``values`` is the old name of
+    ``covariates``. Nothing is saved."""
     limited = _limited(request, _EVAL_LIMIT)
     if limited:
         return limited
+    given = covariates if covariates is not None else values
     try:
-        return JSONResponse(content=service.evaluate(record_id, values))
+        mine = _mine(session, ctx)
+        return JSONResponse(content=service.evaluate(record_id, given, mine=mine, time_unit=time_unit),
+                            headers=_PRIVATE)
     except service.LibraryNotFound as exc:
         return JSONResponse(status_code=404, content={"detail": client_message(exc)})
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+
+
+@router.get("/components")
+def library_components(request: Request, source: Optional[str] = None,
+                       q: Optional[str] = Query(default=None, max_length=200)) -> JSONResponse:
+    """The components (NRC/INL: an equipment type in one of the report's pooling groups, its failure
+    modes together), of ``source``, matching ``q``."""
+    limited = _limited(request)
+    if limited:
+        return limited
+    try:
+        return JSONResponse(content=service.components(source, q), headers=_CACHE)
+    except ValueError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+
+
+@router.get("/components/{component_id}")
+def library_component(component_id: str, request: Request) -> JSONResponse:
+    """One component: its failure modes (each a record, with what sets it off), its covariates
+    (demands, running hours and calendar hours over a period) and how the modes combine."""
+    limited = _limited(request)
+    if limited:
+        return limited
+    try:
+        return JSONResponse(content=service.component_detail(component_id), headers=_CACHE)
+    except service.LibraryNotFound as exc:
+        return JSONResponse(status_code=404, content={"detail": client_message(exc)})
 
 
 # ---- A user's own libraries (sign-in required) ----------------------------------------------

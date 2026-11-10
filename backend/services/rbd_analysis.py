@@ -204,8 +204,96 @@ class _ALTStress:
         return conditional_survival(self, x, X)
 
 
+class _ALTSteps:
+    """A block on a saved accelerated life model whose stresses change at set times of the
+    diagram's clock (a mission's phases, rbd_missions.py): RePyability's regression node along a
+    SurPyval step schedule, so its life follows Nelson's cumulative exposure, the wear done at one
+    stress carried into the next."""
+
+    def __init__(self, model, times, rows, name: str, scale: float = 1.0):
+        from repyability import RegressionNode
+        from surpyval import StepSchedule
+
+        self.scale = scale  # model time units per diagram time unit
+        self.dist = _DistName(name or "Accelerated life")
+        schedule = StepSchedule.from_changepoints([float(t) * scale for t in times],
+                                                  np.atleast_2d(np.asarray(rows, dtype=float)))
+        self.node = RegressionNode(model, schedule=schedule)
+
+    def sf(self, x) -> np.ndarray:
+        x = np.atleast_1d(np.asarray(x, dtype=float)) * self.scale
+        with np.errstate(all="ignore"):
+            return np.clip(np.asarray(self.node.sf(x), dtype=float).ravel(), 0, 1)
+
+    def ff(self, x) -> np.ndarray:
+        return 1.0 - self.sf(x)
+
+    def random(self, size) -> np.ndarray:
+        return np.asarray(self.node.random(size), dtype=float) / self.scale
+
+    def cs(self, x, X) -> np.ndarray:
+        return conditional_survival(self, x, X)
+
+
+class _PhaseRates:
+    """A constant failure rate that changes at set times of the diagram's clock (an NSWC-11
+    covariate model under a mission's phases, rbd_missions.py): its cumulative hazard is the sum
+    of each rate times the time spent at it, so R(t) = exp(-Σ λᵢ·Δtᵢ). The last rate holds on."""
+
+    def __init__(self, starts, rates, name: str = "Exponential"):
+        self.starts = np.asarray(starts, dtype=float)
+        self.rates = np.asarray(rates, dtype=float)
+        self.dist = _DistName(name)
+        # The cumulative hazard at each step's start.
+        widths = np.diff(self.starts)
+        self.H0 = np.concatenate([[0.0], np.cumsum(self.rates[:-1] * widths)])
+
+    def _H(self, x) -> np.ndarray:
+        x = np.atleast_1d(np.asarray(x, dtype=float))
+        i = np.clip(np.searchsorted(self.starts, x, side="right") - 1, 0, len(self.starts) - 1)
+        return self.H0[i] + self.rates[i] * np.maximum(x - self.starts[i], 0.0)
+
+    def sf(self, x) -> np.ndarray:
+        return np.exp(-self._H(x))
+
+    def ff(self, x) -> np.ndarray:
+        return -np.expm1(-self._H(x))
+
+    def hf(self, x) -> np.ndarray:
+        x = np.atleast_1d(np.asarray(x, dtype=float))
+        i = np.clip(np.searchsorted(self.starts, x, side="right") - 1, 0, len(self.starts) - 1)
+        return self.rates[i]
+
+    def random(self, size) -> np.ndarray:
+        # Inverse of the cumulative hazard at an exponential(1) draw.
+        e = np.random.standard_exponential(size)
+        i = np.clip(np.searchsorted(self.H0, e, side="right") - 1, 0, len(self.H0) - 1)
+        rate = self.rates[i]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t = self.starts[i] + np.where(rate > 0, (e - self.H0[i]) / np.where(rate > 0, rate, 1.0), np.inf)
+        return t
+
+    def cs(self, x, X) -> np.ndarray:
+        return conditional_survival(self, x, X)
+
+
+def _phase_rates_reliability(model: dict, where: str):
+    """``kind: phase_rates`` — {steps: [{t, rate}]} from time 0, the rate per diagram time unit."""
+    steps = model.get("steps") or []
+    try:
+        starts = [float(s["t"]) for s in steps]
+        rates = [float(s["rate"]) for s in steps]
+    except (KeyError, TypeError, ValueError):
+        raise AnalysisError(f"{where}: its rates by phase can't be read.") from None
+    if not steps or starts[0] != 0 or any(b < a for a, b in zip(starts, starts[1:])) or \
+            any(not np.isfinite(r) or r < 0 for r in rates):
+        raise AnalysisError(f"{where}: its rates by phase can't be read.")
+    return _PhaseRates(starts, rates, model.get("name") or "Exponential")
+
+
 def _alt_stress_reliability(model: dict, where: str, resolve_model):
-    """An accelerated life model at the block's stress (``kind: alt_stress``)."""
+    """An accelerated life model at the block's stress (``kind: alt_stress``); with ``steps``
+    ([{t, stress}] from time 0) its stresses change at those times (a mission's phases)."""
     if resolve_model is None:
         return PerfectReliability
     entry = resolve_model(f"alt:{model.get('model_id')}")
@@ -217,7 +305,11 @@ def _alt_stress_reliability(model: dict, where: str, resolve_model):
         scale = _hours_per(model.get("diagram_unit") or "hours") / _hours_per(entry.get("unit") or "hours")
     except BindingError as exc:
         raise AnalysisError(f"{where}: {exc}") from None
+    steps = model.get("steps") or []
     try:
+        if len(steps) > 1:
+            return _ALTSteps(entry["model"], [s["t"] for s in steps], [s["stress"] for s in steps],
+                             entry.get("name") or "Accelerated life", scale)
         return _ALTStress(entry["model"], model.get("stress") or [], entry.get("name") or "Accelerated life", scale)
     except Exception as exc:  # noqa: BLE001 - a stress row the model can't take
         raise AnalysisError(f"{where}: {exc}") from None
@@ -340,6 +432,8 @@ def _build_distribution(
                             "Environment values).")
     if model.get("kind") == "alt_stress":
         return _alt_stress_reliability(model, where, resolve_model)
+    if model.get("kind") == "phase_rates":  # a mission's phases (rbd_missions.py)
+        return _phase_rates_reliability(model, where)
     from backend.services import rbd_mixture
 
     if rbd_mixture.is_mixture(model):
@@ -1225,14 +1319,23 @@ def _label_stem(label: str) -> tuple[str, Optional[str]]:
 
 
 def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> list:
-    """Warn (never block) when two blocks wired directly in series look like
-    a redundant pair — labels that differ only by a trailing A/B, 1/2, i/ii,
+    """Warn (never block) when blocks wired directly in series look like
+    redundant units — labels that differ only by a trailing A/B, 1/2, i/ii,
     left/right…, or that call one of them duty/standby/spare/backup/redundant.
     Redundancy wired in series makes the system look far less reliable than
     it is. Only directly adjacent series blocks (the one's sole output feeding
     the other's sole input) are compared, to keep false positives low; and a
     standby, parallel or load-sharing block's own "duty/standby" label
-    describes its units, so it doesn't count (#183)."""
+    describes its units, so it doesn't count (#183).
+
+    One warning per run of like blocks: "Motor 1" to "Motor 4" in a row is one
+    thing to check, not three pairs."""
+    return [text for _, text in series_redundancy_runs(graph, labels)]
+
+
+def series_redundancy_runs(graph: dict, labels: Optional[dict] = None) -> list:
+    """Each :func:`series_redundancy_warnings` warning with the blocks it is
+    about: ``[(node ids in order, warning text)]``."""
     nodes = {n.get("id"): n for n in graph.get("nodes") or []}
     edges = [(e.get("source"), e.get("target")) for e in graph.get("edges") or []
              if e.get("source") in nodes and e.get("target") in nodes]
@@ -1245,27 +1348,41 @@ def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> li
     def label(nid):
         return (labels or {}).get(nid) or (nodes[nid].get("data") or {}).get("label") or str(nid)
 
-    out, seen = [], set()
+    # Each flagged pair, by its first block: (second block, why, what makes a run of it).
+    flagged: dict = {}
     for s, t in edges:
-        if (s, t) in seen or outdeg.get(s) != 1 or indeg.get(t) != 1:
+        if s in flagged or outdeg.get(s) != 1 or indeg.get(t) != 1:
             continue
         if nodes[s].get("type") not in _BLOCK_TYPES or nodes[t].get("type") not in _BLOCK_TYPES:
             continue
-        seen.add((s, t))
         la, lb = label(s), label(t)
         auto = bool(_AUTO_LABEL.match(la) or _AUTO_LABEL.match(lb))
         (stem_a, tok_a), (stem_b, tok_b) = _label_stem(la), _label_stem(lb)
         if not auto and stem_a and stem_a == stem_b and tok_a != tok_b:
-            why = "the same item with a different unit suffix"
+            flagged[s] = (t, "the same item with a different unit suffix", ("stem", stem_a))
         elif any(_REDUNDANCY_WORDS.search(lab) and nodes[nid].get("type") not in _REDUNDANT_TYPES
                  for nid, lab in ((s, la), (t, lb))):
-            why = "one is labelled duty/standby/spare/backup/redundant"
+            flagged[s] = (t, "one is labelled duty/standby/spare/backup/redundant", ("word",))
+
+    out = []
+    follows = {(t, kind) for t, _, kind in flagged.values()}
+    for s, (t, why, kind) in flagged.items():
+        if (s, kind) in follows:
+            continue  # inside a run: told from its first block
+        run = [s, t]
+        while run[-1] in flagged and flagged[run[-1]][2] == kind and flagged[run[-1]][0] not in run:
+            run.append(flagged[run[-1]][0])
+        names = [f"“{label(nid)}”" for nid in run]
+        if len(run) == 2:
+            out.append((run, (
+                f"{names[0]} and {names[1]} are wired in series but look like a redundant pair ({why}). If either "
+                "one can do the job, put them in parallel (or use a standby or k-of-n node); keep them in series "
+                "only if both must work.")))
         else:
-            continue
-        out.append(
-            f"“{la}” and “{lb}” are wired in series but look like a redundant pair ({why}). If either one "
-            "can do the job, put them in parallel (or use a standby or k-of-n node); keep them in series "
-            "only if both must work.")
+            out.append((run, (
+                f"{', '.join(names[:-1])} and {names[-1]} are wired in series but look like redundant units ({why}). "
+                "If fewer than all of them can do the job, put them in parallel (or use a standby or k-of-n node); "
+                "keep them in series only if every one must work.")))
     return out
 
 

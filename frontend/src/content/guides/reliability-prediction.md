@@ -64,7 +64,10 @@ rate per assembly too.
 4. Give each line a **handbook part type**: type a word or two (`capacitor
    ceramic`, `resistor film`, `microprocessor MOS`, `memory DRAM`, `motor`,
    `crystal`) and pick the match. Set the **quality factor** (πQ) on a line
-   when its grade isn't the default.
+   when its grade isn't the default, or choose its grade under **Grade and
+   environment…** (**Environment…** for a part type with no grades), which also
+   sets an environment for that line alone. These are the part type's
+   covariates, the same inputs as on its library page.
 5. Press **Calculate**, read the result, then **Save prediction**.
 
 The Free plan keeps **1 saved reliability prediction** (the shared sample
@@ -94,8 +97,10 @@ handbook, under its own heading:
   out of the total, and the result says so. Don't give it the nearest
   electronic part type just to get a number.
 
-The sample prediction, the sample quadcopter's electronics, shows a finished
-one with lines in assemblies and two parts left out.
+The sample prediction, the sample quadcopter's electronics and motors, shows a
+finished one with lines in assemblies: microcircuits on the handbook's generic
+rates, the motors on NSWC-11 with their conditions filled in, and the
+propellers left out as not electronic.
 
 ## Read the result honestly
 

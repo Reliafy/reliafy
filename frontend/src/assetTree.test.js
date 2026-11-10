@@ -4,8 +4,10 @@ import {
   nextGutter,
   ARRANGEMENTS, CHIPS, CHIP_MARK, chipsFor, ancestorsOf, arrangementFor, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, findByPrefix, flatten, insideWords, levelSet, loadTreeState, markersOf, TREE_ROW_MARKERS, pinnedRows, saveTreeState,
-  scopedArrangeQuery, statusWords, windowOf,
+  classKey, scopedArrangeQuery, scopedArrangements, statusWords, windowOf,
 } from "./assetTree.js";
+import { scopeHasClasses, scopeTree } from "./products.js";
+import { addressTab } from "./explorerTabs.js";
 
 // A house and a truck whose engine carries a turbo slot, plus an engine on the
 // bench carrying an alternator slot; a store with a spare.
@@ -100,7 +102,16 @@ test("arranged by locations: placed positions, spares, then the places inside; n
 });
 
 test("the arrangement from the address, else the last one used; the Explorer's addresses", () => {
-  assert.deepEqual(ARRANGEMENTS.map((a) => a.label), ["Positions", "Locations"]);
+  assert.deepEqual(ARRANGEMENTS.map((a) => a.label), ["Positions", "Locations", "Classes"]);
+  assert.equal(arrangementOf("classes", "positions"), "classes");
+  assert.equal(arrangementOf(null, "classes"), "classes");
+  assert.equal(explorerPath("classes"), "/asset-register/explorer?arrange=classes");
+  // By-position tabs keep the positions tree; one tree on show has Classes only where it's an asset's.
+  assert.equal(arrangementFor({ param: "classes", rcm: true }), "positions");
+  assert.equal(arrangementFor({ param: "classes", scoped: true }), "positions");
+  assert.equal(arrangementFor({ param: "classes", scoped: true, classes: true }), "classes");
+  assert.equal(arrangementFor({ param: "classes", scoped: true, classes: true, rcm: true }), "positions");
+  assert.equal(arrangementFor({ param: null, remembered: "classes" }), "classes");
   assert.equal(arrangementOf("locations", "positions"), "locations");
   assert.equal(arrangementOf(null, "locations"), "locations");
   assert.equal(arrangementOf("nonsense", null), "positions");
@@ -344,4 +355,133 @@ test("a product's design offers no chips about operated things; the RCM's own st
   assert.ok(!rcm.some((id) => ["overdue", "open", "alarm", "reports", "empty"].includes(id)));
   assert.ok(ids({ tab: "rcm" }).includes("overdue"));
   assert.ok(ids({ tab: "fmea", design: true }).includes("ap-high"));
+});
+
+// The item-class taxonomy as GET /api/maintenance/item-classes gives it, and
+// positions whose fitted items are of some of its classes.
+const TAXONOMY = [
+  { id: "rot", name: "Rotating equipment", children: [
+    { id: "pump", name: "Pump", children: [
+      { id: "cf", name: "Centrifugal pump", children: [] },
+      { id: "pd", name: "Positive displacement pump", children: [] },
+    ] },
+    { id: "fan", name: "Fan", children: [] },
+  ] },
+  { id: "elec", name: "Electrical", children: [{ id: "motor", name: "Motor", children: [] }] },
+];
+const CLASSED = {
+  classes: TAXONOMY,
+  positions: [
+    { id: "station", name: "Riverside pumping station", parent_id: null },
+    { id: "p10", name: "Pump 10", parent_id: "station", item: { id: "i10", name: "Unit 10" }, item_class_id: "cf", status: { overdue: 1 } },
+    { id: "p2", name: "Pump 2", parent_id: "station", item: { id: "i2", name: "Unit 2" }, item_class_id: "cf" },
+    { id: "boost", name: "Booster", parent_id: "station", item: { id: "i3", name: "Unit 3" }, item_class_id: "pump" },
+    { id: "m1", name: "Drive motor", parent_id: "p2", item: { id: "i4", name: "Motor 4" }, item_class_id: "motor" },
+    { id: "odd", name: "Old slot", parent_id: "station", item: { id: "i5", name: "Unit 5" }, item_class_id: "gone" },
+    { id: "empty", name: "Spare bay", parent_id: "station", position_class: "Feed pump" },
+  ],
+};
+
+test("Classes: the item-class taxonomy, each class opening to its sub-classes and then its positions", () => {
+  const d = buildDisplay(CLASSED, "classes");
+  // Classes with nothing under them anywhere (Fan, Positive displacement pump) aren't shown; No class is last.
+  assert.deepEqual(d.roots, ["cls:rot", "cls:elec", "G:noclass"]);
+  assert.deepEqual(names(d, d.roots), ["Rotating equipment", "Electrical", "No class"]);
+  assert.deepEqual(d.rows.get("cls:rot").kids, ["cls:pump"]);
+  // Sub-classes first, then the class's own positions, A–Z ("Pump 2" before "Pump 10").
+  assert.deepEqual(d.rows.get("cls:pump").kids, ["cls:cf", "boost"]);
+  assert.deepEqual(d.rows.get("cls:cf").kids, ["p2", "p10"]);
+  assert.equal(d.rows.has("cls:fan"), false);
+  assert.equal(d.rows.has("cls:pd"), false);
+  // A class row counts the positions under it, sub-classes included, and rolls their status up.
+  assert.equal(d.rows.get("cls:rot").sum.positions, 3);
+  assert.equal(d.rows.get("cls:pump").sum.positions, 3);
+  assert.equal(d.rows.get("cls:cf").sum.positions, 2);
+  assert.equal(d.rows.get("cls:rot").sum.overdue, 1);
+  assert.equal(d.rows.get("cls:cf").type, "cls");
+  assert.equal(d.rows.get("cls:cf").ref.name, "Centrifugal pump");
+  // Nothing fitted, an item with no class, or a class the taxonomy no longer has: the one last group.
+  assert.deepEqual(names(d, d.rows.get("G:noclass").kids), ["Old slot", "Riverside pumping station", "Spare bay"]);
+  // Every position appears exactly once, flat under its class (a position inside another has its own class).
+  const seen = [...d.rows.values()].filter((r) => r.type === "pos").map((r) => r.key).sort();
+  assert.deepEqual(seen, CLASSED.positions.map((p) => p.id).sort());
+  assert.equal(d.rows.get("m1").parent, "cls:motor");
+  assert.equal(d.positions, 7);
+  // Searching keeps the path to each match.
+  const f = computeFilter(d, { query: "pump 2" });
+  assert.ok(f.match.has("p2") && f.keep.has("cls:cf") && f.keep.has("cls:rot"));
+});
+
+test("Classes with no taxonomy loaded or nothing classed: everything is in No class", () => {
+  const d = buildDisplay({ positions: CLASSED.positions }, "classes");
+  assert.deepEqual(d.roots, ["G:noclass"]);
+  assert.equal(d.rows.get("G:noclass").kids.length, 7);
+  assert.deepEqual(buildDisplay({ positions: [], classes: TAXONOMY }, "classes").roots, []);
+});
+
+test("one asset's tree by Classes: only the classes, counts and No class of the positions inside it", () => {
+  // Two stations with pumps of one class; a product's design beside them.
+  const data = {
+    classes: TAXONOMY,
+    positions: [
+      { id: "a", name: "Station A", parent_id: null },
+      { id: "a1", name: "A pump 1", parent_id: "a", item: { id: "ia1" }, item_class_id: "cf" },
+      { id: "a2", name: "A pump 2", parent_id: "a", item: { id: "ia2" }, item_class_id: "cf" },
+      { id: "am", name: "A motor", parent_id: "a1", item: { id: "iam" }, item_class_id: "motor" },
+      { id: "b", name: "Station B", parent_id: null },
+      { id: "b1", name: "B pump 1", parent_id: "b", item: { id: "ib1" }, item_class_id: "cf" },
+      { id: "bf", name: "B fan", parent_id: "b", item: { id: "ibf" }, item_class_id: "fan" },
+      { id: "bs", name: "B spare bay", parent_id: "b" },
+      { id: "d", name: "Drone", parent_id: null, design: { rev: "A" } },
+      { id: "d1", name: "Motor mount", parent_id: "d" },
+    ],
+  };
+  // The whole register: every station's pumps under the class.
+  const all = buildDisplay(scopeTree(data), "classes");
+  assert.equal(all.rows.get("cls:cf").sum.positions, 3);
+  assert.deepEqual(all.rows.get("cls:cf").kids, ["a1", "a2", "b1"]);
+  // Station B alone: its one pump, its fan, and its own unclassed positions; nothing of Station A.
+  const scoped = scopeTree(data, "b");
+  const b = buildDisplay(scoped, "classes");
+  assert.deepEqual(b.rows.get("cls:cf").kids, ["b1"]);
+  assert.equal(b.rows.get("cls:cf").sum.positions, 1);
+  assert.equal(b.rows.get("cls:rot").sum.positions, 2);
+  assert.equal(b.rows.has("cls:motor"), false); // Station A's motor class has nothing here
+  assert.deepEqual(names(b, b.rows.get("G:noclass").kids), ["B spare bay", "Station B"]);
+  assert.equal(b.positions, 4);
+  assert.ok(![...b.rows.keys()].some((k) => k.startsWith("a")));
+  // Station A: two pumps and the motor.
+  const a = buildDisplay(scopeTree(data, "a"), "classes");
+  assert.equal(a.rows.get("cls:cf").sum.positions, 2);
+  assert.ok(a.rows.has("cls:motor"));
+  assert.equal(a.rows.has("cls:fan"), false);
+  // An asset's tree offers Classes; a product's design doesn't (nothing is fitted there), on its
+  // page or opened as a tree; before the tree is read, the address is taken at its word.
+  assert.ok(scopeHasClasses(scoped));
+  assert.ok(scopeHasClasses(null));
+  assert.ok(!scopeHasClasses(scopeTree(data, "d")));
+  assert.ok(!scopeHasClasses(scoped, { ownPage: true }));
+  assert.ok(!scopeHasClasses(null, { ownPage: true }));
+  assert.ok(!scopeHasClasses(scopeTree(data, "gone"))); // a tree that isn't there
+  assert.deepEqual(scopedArrangements(true).map((x) => x.value), ["positions", "locations", "classes"]);
+  assert.deepEqual(scopedArrangements(false).map((x) => x.value), ["positions", "locations"]);
+  // Its address keeps the tree and the arrangement (a reload opens the same).
+  assert.equal(scopedArrangeQuery(new URLSearchParams("root=b&arrange=positions"), "classes").toString(), "root=b&arrange=classes");
+});
+
+test("switching to and from Classes keeps a position picked; a class only within Classes", () => {
+  const cls = buildDisplay(CLASSED, "classes");
+  assert.equal(carryOver(cls.rows.get("p2"), "positions"), "p2");
+  assert.equal(carryOver(buildDisplay(CLASSED, "positions").rows.get("p2"), "classes"), "p2");
+  assert.equal(carryOver(cls.rows.get("cls:cf"), "classes"), "cls:cf");
+  assert.equal(carryOver(cls.rows.get("cls:cf"), "positions"), null);
+  assert.equal(carryOver(cls.rows.get("cls:cf"), "locations"), null);
+  // An item isn't a row in Classes: the position it's fitted to is; a spare has none.
+  assert.equal(carryOver({ type: "item", key: "i2", ref: { fitted_to: { id: "p2" } } }, "classes"), "p2");
+  assert.equal(carryOver({ type: "item", key: "sp", ref: {} }, "classes"), null);
+  assert.equal(carryOver({ type: "loc", key: "site", ref: {} }, "classes"), null);
+});
+
+test("a class's row key is the one the address rule knows a class by", () => {
+  assert.equal(addressTab("rcm", { arrange: "classes", sel: classKey("pump") }), "condition");
 });

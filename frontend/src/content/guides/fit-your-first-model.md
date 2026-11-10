@@ -52,9 +52,7 @@ censoring covers most real cases.
 ## Loading it in
 
 Reliafy opens on [Home](/home): what changed, what needs attention and your
-recent work, with **Start here** cards while your workspace is new. (Tell it
-what you do under [Settings](/settings) → **What do you do?** and the menu puts
-what you use first, and Home leads with it.) From there,
+recent work, with **Start here** cards while your workspace is new. From there,
 go to **Modelling → Models → Non-repairable** and press **New model**, then choose **Upload a
 CSV or Excel file** (or **Paste values**). The fit runs in four steps, shown
 along the bottom: **Source**, **Data**, **Model** and **Result**. For the
@@ -197,19 +195,31 @@ cited: industry-average failure rates and probabilities on demand (NRC/INL
 Open a source to filter its records by equipment type, failure mode and kind,
 and a record to see its distribution written out and plotted.
 
-A record's **Use as a model…** saves a failure rate as an exponential model
-at its mean rate per hour, cited on the model. It keeps the source's gamma on
-that rate: the rate varies from plant to plant, and times to failure are
-exponential at a given rate. So the model's Model characteristics and
-Calculator show each value with its 5–95% range across plants (the spread
-between plants, not a fit's confidence bound), and an RBD's band draws the
-block's rate from it. A pipe's rate is per foot: give the pipe's length.
-**Use as a prior…** fits one of your datasets with the record as the prior:
-on an exponential the record's gamma is the prior exactly; on a Weibull or
-lognormal it becomes a prior on the mean life, with the shape between bounds
-you give. A probability per demand isn't a life over time, and a handbook
-base rate needs the environment and quality factors of a prediction, so
-neither can be a model on its own: the page says so and why.
+A record's **Use as a model…** saves it as an exponential model, cited on the
+model. First it asks for the record's **covariates**: what it needs before it
+gives a rate. A pipe's rate is per foot, so it asks for the pipe's length; a
+rate per hour of running can be moved to calendar hours with the hours a year
+it runs; a probability per demand becomes a rate with the demands a year; a
+handbook part needs its environment (and takes its quality grade). Left blank,
+a covariate takes its default; one with no default is needed, never guessed.
+The model keeps the source's gamma on the rate: the rate varies from plant to
+plant, and times to failure are exponential at a given rate. So the model's
+Model characteristics and Calculator show each value with its 5–95% range
+across plants (the spread between plants, not a fit's confidence bound), and
+an RBD's band draws the block's rate from it.
+**Use as a prior…** fits one of your datasets with the record as the prior,
+under the same covariates: on an exponential the record's gamma is the prior
+exactly; on a Weibull or lognormal it becomes a prior on the mean life, with
+the shape between bounds you give. A handbook rate is a single value with no
+spread, so it can't be a prior.
+
+**Components.** The NRC/INL source's page has **By component**: an equipment
+type in one of the report's groups, such as a motor-driven pump that's
+normally on standby, with its failure modes together (fails to start on each
+demand, fails to run in the first hour and after it, leaks every calendar
+hour). Give the demands, running hours and calendar hours of the period you
+have in mind and the component page says the chance it fails over it, each
+mode's share, and the constant rate an RBD block would use.
 
 ## Build your own library
 

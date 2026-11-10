@@ -98,7 +98,7 @@ Building the register.
 operating_context for how it's used (load, environment, hours; the description stays one line on what it is) and \
 location_id where it physically is (set it on a system's top position; the ones inside inherit it). Many alike: \
 build one, then maintenance positions.copy (failure modes, tasks and parts lists come too). A worked example to \
-start from: maintenance products.add_sample (the sample quadcopter, its RCM on its design). RCM: see the plan topic.
+start from: maintenance products.add_sample (the Survey quadcopter, its RCM on its design). RCM: see the plan topic.
 3. Items: maintenance fitments.fit (position_id, plus a new item by item_name / serial / manufacturer, or by \
 part_id, or an existing item_id), with on = the date it went in ('2022' if that's all that's known). Earlier \
 items: maintenance fitments.add_past. A spare that isn't fitted anywhere: maintenance items.create (with \
@@ -207,7 +207,7 @@ severity_class I-IV give cm = β × α × λ × t. A position's fmea in maintena
 cm, and by class), the H / M / L counts and max_rpn.
 - An FMEA row before its RCM: add (or assign, move) with function_id and no functional_failure_id puts a mode \
 directly under the function; the position isn't analysed until the functional failure is written and the mode \
-assigned to it (same id, scores kept). maintenance products.add_sample adds the sample quadcopter product, its design \
+assigned to it (same id, scores kept). maintenance products.add_sample adds the Survey quadcopter product, its design \
 fully scored (three such modes on purpose).
 - A worksheet the user has (an FMEA or RCM sheet, one row per failure mode): see below.
 - Directly (a maker's manual, a regulation, own practice): maintenance tasks.create, on exactly one subject:
@@ -257,8 +257,8 @@ in the function's notes (Markdown is fine; a function's notes take up to 25,000 
 the old argument for it, still accepted: it's added to the notes under a "Working" line. Reads keep \
 standard_basis / has_basis as the notes, for older callers.
 - A functional failure caused by others: maintenance failure_modes.link_cause (functional_failure_id: the effect; cause_id: another functional failure on the same tree, usually on a position inside it, but one beside it (the pool's 'no free chlorine' from the chlorinator next to it) or on the same position counts too; the same link whichever end you start from), unlink_cause to take it off (both undo in a maintenance apply batch). Refused: a failure causing itself, a loop, another tree. A failure explained by its causes needs no failure modes of its own: it's covered once every linked failure is (their modes decided, or explained further on), and its position counts as analysed then. get kind rcm gives each functional failure causes, effects (each with its position), covered and explained_below. Deleting or retiring the cause, or moving either end to another tree, drops the link and says so.
-- To see one built first: maintenance products.add_sample adds the sample quadcopter product, its RCM on its \
-design (decisions linked to sample evidence: supported, one contradicted on purpose, one inconclusive; two modes \
+- To see one built first: maintenance products.add_sample adds the Survey quadcopter product (invented numbers), its RCM on its \
+design (decisions linked to evidence: supported, one contradicted on purpose, one inconclusive; two modes \
 undecided on purpose). Once only: a second call says it's there; again true adds another copy. It's the user's \
 to change or retire.
 - An FMEA / RCM worksheet the user has (Excel or CSV, one row per failure mode): change upload_create (purpose excel), \
@@ -445,14 +445,16 @@ fit, 95% confidence bounds; bayes: with a prior, 90% credible intervals). The pr
 history as a power prior, SurPyval's prior.from_data: trust close counts all of its evidence, guide half, start a \
 fifth), {kind: model, model_id}, {kind: params, distribution, params, unit}, {kind: around, distribution, unit, \
 params: {alpha: {about: 4, between: [3, 6]}, beta: {between: [1.5, 3]}}} (90% between the bounds; a parameter left \
-out is the data's), {kind: library, record_id, shape?: [0.8, 3]} (a data library rate: exact gamma prior on an \
-exponential, else a prior on the mean life) or {kind: b10, ...}. A published rate as the model itself: models.link \
-with library_record_id, e.g. {position_id, library_record_id: "nrc-inl-2020:mov-sop"} (an exponential at its mean \
-rate per hour, its 5–95% range the interval, cited; per-demand records refused). The class can't \
+out is the data's), {kind: library, record_id, covariates?, shape?: [0.8, 3]} (a data library record under its covariates, e.g. a \
+pipe's length_ft: exact gamma prior on an exponential, else a prior on the mean life) or {kind: b10, ...}. A \
+published record as the model itself: models.link with library_record_id and covariates, e.g. {position_id, \
+library_record_id: "nrc-inl-2020:mov-sop"} (an exponential at its mean rate per hour under them, its 5–95% range \
+the interval, cited; a missing covariate is refused in words). The class can't \
 be both the data and the prior. Say which data and method when quoting it, with confidence or credible as the \
 result says. With one failure a plain Weibull fit refuses: use a prior, or exponential.
-- A covariate model at a position: models.link with bind {source: nswc (an NSWC-11 record), alt or ph (a saved \
-model), ref, fixed: {input: value}, roles?}. Fix some, all or none: design inputs usually here, use and \
+- A covariate model at a position: models.link with bind {source: nswc (an NSWC-11 record), library (any other \
+library record: its covariates), component (an NRC/INL component), alt or ph (a saved model), ref, fixed: {input: \
+value}, roles?}. Fix some, all or none: design inputs usually here, use and \
 environment left open. NSWC-11 with every input fixed is saved as a constant-rate exponential. What's left open is \
 set in an RBD built from the tree: each block's covariate_values, or the diagram's conditions [{name, role use or \
 environment, unit, value}] (matched by the input's key, symbol or label and unit; a block's covariate_map names \
@@ -466,8 +468,8 @@ life_data says more). With plenty of failures, fit the history instead.
 the row shows the model as fitted (its lowest tested stress, or the fit's average covariates). The stress at \
 the position is set where the model is used (an RBD block, a calculation), not on the link.
 - A parts-count prediction: models.link with prediction {environment?, mission_time?, assign?} predicts the \
-position's failure rate from its parts list and those of the positions inside it (a product design's bill of \
-materials where they list none): each part needs a handbook part type (assign {part number: {record_id, \
+position's failure rate from its parts list and those of the positions inside it (on a product design, plus the bill-of-\
+materials parts they don't list): each part needs a handbook part type (assign {part number: {record_id, \
 quality_factor?}}, a record from list kind library; parts without one are left out, and its last prediction's \
 are reused). A part the handbook has no type for (a battery) takes {rate_per_million_hours} the user gives; a \
 mechanical part (airframe, propeller) takes {excluded: true}: left out, and the result names it. The environment is set once (default: the position's last, else the nearest above). It's saved as \
@@ -477,6 +479,7 @@ the app. It compares designs early; it never says how the item will fail in serv
 a new RBD whose blocks are the positions one level inside, each taking its model in use (a saved model, or its \
 own RBD as a sub-system); one with none gets a placeholder flagged placeholder=true (never invented data: say \
 which and ask for their models). Wired by connections and redundancy groups, in series where there are none. \
+A position has one built RBD: build_rbd where it has one makes nothing and returns that row (existing=true). \
 build_rbd with replace_link_id (its RBD row) rebuilds into the same diagram, adding new positions and keeping \
 edits. rbd_id links an existing RBD as it is. The row reports the system MTBF and B10 (exact analysis; analyse \
 rbd for more).
@@ -484,6 +487,20 @@ rbd for more).
 the RCM offers first and what a parent's RBD block takes; by default its own life model, else its RBD, else \
 its prediction. models.link with use_link_id changes it (get.position lists models; the in-use read is in the app).
 - Take off: maintenance models.unlink (link_id). The model stays in Models.
+- A class's fleet and its risk now: maintenance get.item_class with fleet true, id = an item class \
+(list.item_classes; the Explorer arranged by Classes). Every position whose fitted item is of the class or a class inside it: its duty \
+(position_class), the item, its age in days and the last reading of its condition measurement. A member whose \
+position has a condition and life model (models.link with its model_id; else its position class's) is scored \
+from its own data: the item's age since new (its in-service date, else its first fitting), the readings of its \
+condition measurement point in the model's reading unit (on the position or the item; each reading's date \
+becomes the item's age then), and the model's covariates from value conditions of the same name that reach it \
+(item_classes.create_condition with kind value, then apply_condition with a value). members come highest \
+risk first: risk (the chance of failing within each of horizons, from today), survival, median_remaining (days; \
+median_reached false = at least that long) and marker_now. model null = no model there (note says how to get \
+risk). scored false with a model carries why in plain words (no point in the model's unit, no readings, a \
+covariate with no value, a model whose ages aren't in days, weeks, months or years) and what to do: relay it, \
+never fill the gap with a guess. position_id: that one member with unit, its survival curve from now and its \
+reading's path in its model's own time unit.
 - How they feed the RCM: a failure mode's evidence picker offers the position's models first, those named for \
 that mode at the top; link one as the decision's evidence with failure_modes.decide (evidence {type: model, \
 id}). The interval calculators (rcm.pf_interval, rcm.ff_interval, the app's Calculate…) start from the \
@@ -735,11 +752,18 @@ class_life_data), and the failure reports there and below with the item's serial
 item with its product, item class, position path, status and open reports; product_id, item_class_id, q, limit, \
 offset). get.item and get.position say which product an item or position belongs to.
 - products.clear: the tree is a plain tree again; refused while items built from it are in use.
-- products.add_sample: a worked example to explore (an invented quadcopter: its design with a scored FME(C)A, its \
-part and BOM, three items built, a replaced motor, two failure reports, and an RBD whose rates are placeholders, \
-said so in its name); once unless again is true. products.add_sample make_own=true (product_id: the copy, \
-default the only one) makes a copy the user's own in place: "(sample)" leaves its name (and its part's and built \
-items'), nothing inside changes, ids stay, and the sample isn't added again beside it unless asked.
+- products.add_sample: the Survey quadcopter, a ready-made product to explore, named and worded like the user's own \
+(every number in it is invented: say so when asked what it is; its design with a scored FME(C)A, its \
+maintenance programme with each task's LSA record, life models on its motors, propellers, battery pack and \
+radio, its part and BOM, three items built (the first with a monthly work package of its calendar tasks), a \
+replaced motor, two failure reports, a maintainability prediction and an RBD whose rates are placeholders). Its life \
+models and the analyses behind its decisions are saved in the workspace as its own records (own_records; a second copy \
+uses the first one's); any the plan's storage has no room for stay linked to the shared library's (kept_shared names \
+them: tell the user). Once unless again is true. products.add_sample make_own=true (product_id: the copy, \
+default the only one) is for a copy added earlier under the name "… (sample)": the word leaves its name and its \
+part's, built items', RBD's, maintainability prediction's and life-model links', its life models and analyses are \
+saved as the workspace's own with its positions and decisions pointed at them, ids stay, and it isn't added again \
+beside this copy unless asked.
 - A design's tasks are its maintenance programme, with their LSA records (tasks.set_resources): they never fall \
 due, raise no work orders and join no work packages (list.task_table says why_not). Items built later carry \
 copies, resources included, which do."""),

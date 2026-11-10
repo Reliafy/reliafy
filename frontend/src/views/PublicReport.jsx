@@ -4,12 +4,9 @@
 // item's own share page shows it (`Item`, the share page's renderer). Notes
 // are plain text: blank lines start paragraphs.
 
-const fmtDate = (iso) => {
-  const d = iso ? new Date(iso) : null;
-  return d && !Number.isNaN(d.getTime())
-    ? d.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })
-    : null;
-};
+import { formatDate } from "../dates.js";
+
+const fmtDate = (iso) => (iso && formatDate(new Date(iso), { long: true })) || null;
 
 export function Paragraphs({ text, className }) {
   const parts = String(text || "").split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);

@@ -4,7 +4,7 @@ import TreeControlsMenu from "./TreeControlsMenu.jsx";
 import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
 import { NotesMark, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
-import { tailFor } from "../outlineTree.js";
+import { pinsSkip, tailFor } from "../outlineTree.js";
 import { ARRANGEMENTS, CHIP_MARK, PANE, chipsFor, TREE_ROW_MARKERS, clampWidth, markersOf, nextGutter } from "../assetTree.js";
 import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensPanel, phonePositionLine } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
@@ -91,6 +91,8 @@ const ICON = {
   group: <path d="M2 4h12M2 8h12M2 12h8" strokeWidth="1.6" strokeLinecap="round" />,
   slot: <><rect x="2.5" y="2.5" width="11" height="11" rx="2.5" strokeWidth="1.5" /><circle cx="8" cy="8" r="2.3" fill="currentColor" stroke="none" /></>,
   emptyslot: <rect x="2.5" y="2.5" width="11" height="11" rx="2.5" strokeWidth="1.5" strokeDasharray="2 2" />,
+  // An item class (the tree by Classes): a tag.
+  cls: <><path d="M2.5 8.2V3.5a1 1 0 0 1 1-1h4.7a1 1 0 0 1 .7.3l4.8 4.8a1 1 0 0 1 0 1.4l-4.7 4.7a1 1 0 0 1-1.4 0L2.8 8.9a1 1 0 0 1-.3-.7z" strokeWidth="1.4" strokeLinejoin="round" /><circle cx="5.6" cy="5.6" r="1" fill="currentColor" stroke="none" /></>,
   loc: <><path d="M8 14s4.5-4.2 4.5-7.5a4.5 4.5 0 1 0-9 0C3.5 9.8 8 14 8 14z" strokeWidth="1.5" /><circle cx="8" cy="6.5" r="1.6" fill="currentColor" stroke="none" /></>,
   item: <path d="M8 1.8 14 5v6L8 14.2 2 11V5z M2 5l6 3.2L14 5M8 8.2v6" strokeWidth="1.4" strokeLinejoin="round" />,
 };
@@ -113,6 +115,23 @@ const MODEL_ICON = {
 };
 
 export function RowIcon({ r }) {
+  // The Missions tab's rows: a route through phases (dots along a path).
+  if (r.type === "mission") {
+    return (
+      <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
+        <path d="M2.5 12.5c2-5 4-5 5.5-2.5s3.5 2.5 5.5-5" strokeWidth="1.4" strokeLinecap="round" />
+        <circle cx="2.5" cy="12.5" r="1.3" fill="currentColor" /><circle cx="13.5" cy="5" r="1.3" fill="currentColor" />
+      </svg>
+    );
+  }
+  // A mission's phase: one stop along the route.
+  if (r.type === "phase") {
+    return (
+      <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
+        <path d="M2.5 8h11" strokeWidth="1.3" strokeLinecap="round" /><circle cx="8" cy="8" r="2.2" fill="currentColor" />
+      </svg>
+    );
+  }
   if (r.type === "pmodel") {
     return (
       <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
@@ -161,7 +180,7 @@ function Markers({ r, rcm, onGoto }) {
 }
 
 // Bold: the pane's own headings, the places, and an item with positions on it.
-const heading = (r) => r.type === "group" || r.type === "loc" || (r.type === "item" && r.kids.length > 0);
+const heading = (r) => r.type === "group" || r.type === "loc" || r.type === "cls" || (r.type === "item" && r.kids.length > 0);
 const label = (r) => (isRcmRow(r) ? r.ref.text : r.ref.name) || "(no name)";
 
 // What a row's menu is called, for screen readers: "Actions for Function: Pump water".
@@ -188,7 +207,7 @@ function MoreButton({ r, open, onMenu }) {
   );
 }
 
-// Positions or Locations: a two-way switch in the pane's heading (a radio
+// Positions, Locations or Classes: the switch in the pane's heading (a radio
 // group: Tab reaches the one on, ← → move and choose, the way radios do). With
 // `locked` (the RCM and FME(C)A tabs are by position) it stays on show, greyed,
 // and says why, so the heading looks the same on every tab.
@@ -229,14 +248,16 @@ export function ArrangeSwitch({ value, options, onChange, locked = null }) {
 }
 
 // The switch's icons, shown in place of the labels where the tree pane is
-// narrow: a tree of boxes (what each position does, inside what) and a map pin
-// (where things are).
+// narrow: a tree of boxes (what each position does, inside what), a map pin
+// (where things are) and a tag (what kind of thing is fitted).
 function ArrangeIcon({ value }) {
   return (
     <svg className="tp-arrange-ico" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none"
          stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       {value === "locations" ? (
         <><path d="M8 14.5s4.5-4.2 4.5-7.8a4.5 4.5 0 0 0-9 0c0 3.6 4.5 7.8 4.5 7.8Z" /><circle cx="8" cy="6.6" r="1.6" /></>
+      ) : value === "classes" ? (
+        <><path d="M2.5 8.2V3.5a1 1 0 0 1 1-1h4.7a1 1 0 0 1 .7.3l4.8 4.8a1 1 0 0 1 0 1.4l-4.7 4.7a1 1 0 0 1-1.4 0L2.8 8.9a1 1 0 0 1-.3-.7z" /><circle cx="5.6" cy="5.6" r="0.9" /></>
       ) : (
         <><rect x="5.5" y="1.5" width="5" height="3.5" rx="0.8" /><rect x="1.5" y="11" width="5" height="3.5" rx="0.8" />
           <rect x="9.5" y="11" width="5" height="3.5" rx="0.8" /><path d="M8 5v3M4 11V8h8v3" /></>
@@ -284,7 +305,12 @@ function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, onGoto, info =
           {ROLE[r.ref.outcome]?.then || "Then, if found:"} {r.ref.on_found}
         </span>
       )}
-      {TREE_ROW_MARKERS && has && !open && inner > 0 && <span className="tp-cnt" title={`${inner} directly inside`}>{inner.toLocaleString("en-AU")}</span>}
+      {/* A class says how many positions are under it, the classes inside it included. */}
+      {r.type === "cls" ? (
+        <span className="tp-cnt" title={`${r.sum.positions.toLocaleString("en-AU")} position${r.sum.positions === 1 ? "" : "s"} under this class`}>
+          {r.sum.positions.toLocaleString("en-AU")}<span className="sr-only"> position{r.sum.positions === 1 ? "" : "s"}</span>
+        </span>
+      ) : TREE_ROW_MARKERS && has && !open && inner > 0 && <span className="tp-cnt" title={`${inner} directly inside`}>{inner.toLocaleString("en-AU")}</span>}
       {info}
       <Markers r={r} rcm={rcm} onGoto={onGoto} />
     </>
@@ -313,11 +339,11 @@ function dropClass(drag, key) {
   return o.state === "no" ? " drop-no" : ` drop-${o.zone || "into"}${o.copy ? " drop-copy" : ""}`;
 }
 
-function Row({ v, r, top, height, open, focused, dim, pinned, underPin = false, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen, rowW, pinRoot }) {
+function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, underPin = false, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen, rowW, pinRoot }) {
   const has = r.kids.length > 0;
   const drag = table && !phone ? table.drag : null;
   const movable = !!drag && !pinned && drag.canDrag(r);
-  const cls = "tp-row" + (focused ? " focus" : "") + (dim ? " dim" : "") + (pinned ? " pin" : "") + (heading(r) ? " grp" : "")
+  const cls = "tp-row" + (focused ? " focus" : "") + (dim ? " dim" : "") + (pinned ? " pin" : "") + (pinGap ? " pin-gap" : "") + (heading(r) ? " grp" : "")
     + (table ? ` tt tt-${r.type}` : "") + (menuOpen ? " menu-open" : "") + (drag?.picked?.has(r.key) ? " picked" : "")
     + (movable ? " movable" : "") + dropClass(drag, r.key) + (drag?.dragging?.has(r.key) ? " dragged" : "")
     // A row whose pinned copy is on show at the top: hidden under it, so no half of it peeks
@@ -356,7 +382,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, underPin = false, 
     // details across the table; not on a data cell (an editable one's own
     // double-click edits it in place), a control or the chevron.
     // A measurement row (the Measurements tab) spreads its details the same way.
-    onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas" || r.type === "pmodel") ? (e) => {
+    onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas" || r.type === "pmodel" || r.type === "mission" || r.type === "phase") ? (e) => {
       if (e.target.closest("input, select, textarea, a, button, .tp-chev, .rw-c, [contenteditable='true']")) return;
       e.preventDefault();
       window.getSelection?.()?.removeAllRanges?.();
@@ -511,7 +537,7 @@ function cornerOf(row) {
 export default function TreePane({
   title, treeLabel, display, list, index, open, filter, query, onQuery, chips, onChips, mode, onMode, focus, onPick,
   onToggle, onLevel, onCloseAll, level = null, changed = [], onReset, phone, width, onWidth, collapsed, onCollapse,
-  addRow = null, canArrange = true, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table: tableIn = null,
+  addRow = null, canArrange = true, arrangements = null, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table: tableIn = null,
   head = null, headTabs = null, phoneTabs = null, layoutKey = "", anchorKey = null, side = null, arrangeLocked = null,
   rowMenu = null, branch = null, branchNote = null, fullScreenKey = false, design = false, titleLevel = 2,
 }) {
@@ -538,6 +564,9 @@ export default function TreePane({
     nameOf: (r) => label(r),
   });
   const pinnedKeys = useMemo(() => new Set(pins), [pins]);
+  // More levels above the first row than there's room to pin (two rows on a phone): the top one
+  // and the nearest are pinned, with a mark between them for the levels left out.
+  const pinGap = pinsSkip(display, index, pins);
   // A little blank space at the end, so the furthest the tree scrolls is a whole number of
   // rows: then a row brought into view at the end (reveal rounds to whole rows) sits on a
   // row's edge too, and no half row peeks out under the rows pinned at the top.
@@ -736,7 +765,7 @@ export default function TreePane({
   const titleRow = (
     <div className="tp-title-row">
       {wide ? <div className="tt-title"><TitleTag className="tp-title">{title}</TitleTag>{status}</div> : <TitleTag className="tp-title">{title}</TitleTag>}
-      {canArrange && <ArrangeSwitch value={mode} options={ARRANGEMENTS} onChange={onMode} locked={arrangeLocked} />}
+      {canArrange && <ArrangeSwitch value={mode} options={arrangements || ARRANGEMENTS} onChange={onMode} locked={arrangeLocked} />}
       {/* Folding is for the Summary tab; on the RCM and FME(C)A tabs the tree
           is the table's first column, so the button stays, greyed, and says
           why: the pane's header looks the same on every tab. */}
@@ -856,11 +885,11 @@ export default function TreePane({
           {pins.length > 0 && (
             <div className="tp-pins" style={{ top: headH }}>
               <div className="tp-pins-in">
-                {pins.map((k) => {
+                {pins.map((k, n) => {
                   const v = list[index.get(k)];
                   const r = display.rows.get(k);
                   return (
-                    <Row key={k} v={v} r={r} height={H} open={open.has(k)} focused={k === focus} pinned {...rowProps} {...menuProps(k)} pinRoot={pinRootOf(k)}
+                    <Row key={k} v={v} r={r} height={H} open={open.has(k)} focused={k === focus} pinned pinGap={n === 1 && pinGap} {...rowProps} {...menuProps(k)} pinRoot={pinRootOf(k)}
                          onPick={(key) => { onPick(key, {}); reveal(key, true); }} />
                   );
                 })}

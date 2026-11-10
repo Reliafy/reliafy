@@ -10,6 +10,8 @@ import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
   ["GET", "/api/extensions"], // optional extensions' pages (an empty list without any)
+  // RCM studies (the standalone worksheets under Maintenance).
+  ["GET", "/api/rcm/studies"],
   // The interval calculators on an RCM task card.
   ["POST", "/api/maintenance/rcm/interval/on-condition"],
   ["POST", "/api/maintenance/rcm/interval/failure-finding"],
@@ -30,7 +32,7 @@ const SIGNED_IN = [
   ["POST", "/api/maintainability/analyse"],
   ["GET", "/api/maintainability/predictions"],
   ["GET", "/api/maintainability/products/smoke/lines"],
-  // "Add the sample UAV product" (Products; the Explorer's "Open the sample UAV product").
+  // "Add the Survey quadcopter" (Products; the Explorer's "Open the Survey quadcopter").
   ["POST", "/api/maintenance/sample-product"],
   // A dataset's measurements part (docs/datasets.md): add, paste, remove, split, life data for readings alone.
   ["PUT", "/api/datasets/smoke/measurements"],
@@ -58,6 +60,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/parts/levels"], // #435
   ["POST", "/api/maintenance/parts/import-bom"], // #435
   ["GET", "/api/maintenance/classes/forecast"], // #407
+  ["GET", "/api/maintenance/item-classes/smoke/fleet"], // the Explorer by Classes: a class's positions with risk now
   ["POST", "/api/maintenance/graph/query"], // #423
   ["GET", "/api/maintenance/graph/schema"], // #423
   ["GET", "/api/maintenance/graph/design"], // the Data model page
@@ -101,6 +104,12 @@ const SIGNED_IN = [
   // Covariates fixed at a position, the rest set on RBD blocks (covariate_binding.py).
   ["POST", "/api/rbds/binding-inputs"],
   ["POST", "/api/rbds/bound-blocks"],
+  // Missions on an RBD and on positions (rbd_missions.py).
+  ["GET", "/api/maintenance/position-missions"],
+  ["GET", "/api/rbds/x/missions"],
+  ["POST", "/api/rbds/x/missions"],
+  ["GET", "/api/rbds/x/missions/m"],
+  ["POST", "/api/rbds/x/missions/m/calculate"],
   ["GET", "/api/maintenance/rcm/options"], // the decision dialog's vocabulary
   ["GET", "/api/fleet/fleets"],
   ["GET", "/api/strategy/analyses"],

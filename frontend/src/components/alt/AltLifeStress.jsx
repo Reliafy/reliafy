@@ -2,18 +2,18 @@
 // tested levels marked, the fitted line run on to the use stress and the use
 // point marked; beside it the use stress, the life there, the shape and the
 // acceleration factor against each tested level. A model with two stresses
-// has two charts side by side, one along each stress (a line for each tested
-// level of the other); on a phone a switch picks one.
+// has two charts, one along each stress (a line for each tested level of the
+// other): side by side where each is wide enough to read, else one at a time
+// with a switch above (ChartPair).
 import { useEffect, useState } from "react";
 import Plot from "../Plot.jsx";
-import SegmentedControl from "../ui/SegmentedControl.jsx";
-import { PlotCard, PlotPanel, ScrollCard, TwoPlots } from "../model/ModelLayouts.jsx";
+import ChartPair from "../model/ChartPair.jsx";
+import { PlotCard, PlotPanel, ScrollCard } from "../model/ModelLayouts.jsx";
 import { COLORWAY, DATA_INK, INK, SURFACE, fitLine } from "../../plotTheme.js";
 import { formatNumber } from "../../format.js";
 import { evaluateAlt } from "../../api.js";
 import { accelerationRows, levelWords, parseUse, shapeParam, stressName } from "../../altFrame.js";
 import { unitInText } from "../unitText.js";
-import usePhone from "./usePhone.js";
 
 const SERIES = COLORWAY;
 const USE_MARK = "#b45309";
@@ -121,6 +121,15 @@ function useLifeAtUse(modelId, use) {
   return state;
 }
 
+// The range on the life at the use stress from the calculator's answer:
+// { level, lower, upper }, or null where the answer has none (it says why).
+function lifeRange(ev) {
+  const ci = ev?.bounds?.characteristic_life?.ci;
+  if (!Array.isArray(ci) || ci.length !== 2 || !ci.every((v) => Number.isFinite(v))) return null;
+  const level = Number(ev.bounds.confidence);
+  return { level: Number.isFinite(level) ? level : null, lower: ci[0], upper: ci[1] };
+}
+
 function UseInputs({ results, use, onUse }) {
   return (
     <div className="alt-use-inputs">
@@ -142,6 +151,7 @@ function Side({ results, modelId, use, onUse, edited, state }) {
   const shape = shapeParam(r);
   const ev = state?.ev;
   const lifeUse = ev?.metrics?.characteristic_life;
+  const range = Number.isFinite(lifeUse) ? lifeRange(ev) : null;
   const rows = accelerationRows(r.levels, modelId ? lifeUse : null);
   return (
     <>
@@ -161,6 +171,11 @@ function Side({ results, modelId, use, onUse, edited, state }) {
             <span className="gk">Life at use stress</span>
             <span className="gv" aria-live="polite">
               {Number.isFinite(lifeUse) ? `${formatNumber(lifeUse)}${unit ? ` ${unit}` : ""}` : state?.busy ? "…" : "—"}
+              {range && (
+                <span className="gof-sub alt-ci">
+                  {" "}{range.level == null ? "" : `${formatNumber(range.level * 100)}% `}{formatNumber(range.lower)}–{formatNumber(range.upper)}
+                </span>
+              )}
             </span>
           </div>
         )}
@@ -204,8 +219,6 @@ function Side({ results, modelId, use, onUse, edited, state }) {
 
 export default function AltLifeStress({ results, modelId, name, use, onUse, edited }) {
   const r = results || {};
-  const phone = usePhone();
-  const [which, setWhich] = useState(0);
   const numeric = parseUse(use);
   const state = useLifeAtUse(modelId, numeric);
   const ev = state?.ev && state.key === JSON.stringify(numeric) ? state.ev : null;
@@ -226,24 +239,7 @@ export default function AltLifeStress({ results, modelId, name, use, onUse, edit
     </PlotCard>
   );
   if (plots.length < 2) return <PlotPanel plot={chart(0)} side={side} />;
-  if (phone) {
-    return (
-      <PlotPanel
-        plot={(
-          <>
-            <SegmentedControl
-              label="Chart"
-              value={which}
-              onChange={setWhich}
-              className="alt-stress-switch"
-              options={plots.map((p, j) => ({ value: j, label: (r.stresses?.[j]?.label) || p.x_label }))}
-            />
-            {chart(which)}
-          </>
-        )}
-        side={side}
-      />
-    );
-  }
-  return <TwoPlots first={chart(0)} second={chart(1)} side={side} />;
+  // Alternatives: the same life, along one stress or the other.
+  const items = plots.map((p, j) => ({ id: j, label: (r.stresses?.[j]?.label) || p.x_label, node: chart(j) }));
+  return <PlotPanel plot={<ChartPair label="Life against" items={items} />} side={side} />;
 }

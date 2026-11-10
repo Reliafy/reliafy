@@ -7,7 +7,7 @@ import SignalsPanel from "./SignalsPanel.jsx";
 import OverflowMenu from "./OverflowMenu.jsx";
 import RowMenu from "./RowMenu.jsx";
 import { ancestorsOf } from "../assetTree.js";
-import { branchOf, classesInBranch, isDesignRow, isProductRow, rowKind, shownTab, tabsFor } from "../explorerTabs.js";
+import { branchOf, classesInBranch, hasTabBar, isDesignRow, isProductRow, rowKind, shownTab, tabsFor } from "../explorerTabs.js";
 import TreeSummary from "./TreeSummary.jsx";
 import ProductSummary, { ProductPartsList } from "./ProductSummary.jsx";
 import "./TreeSummary.css";
@@ -19,6 +19,7 @@ import { withFullPage } from "../panelMenu.js";
 const PartsPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m) => ({ default: m.PartsPanel })));
 // The LSA tab's body (what each task needs, and the work packages: tasks done together on one visit).
 const LsaPanel = lazy(() => import("./LsaPanel.jsx"));
+const ClassFleet = lazy(() => import("./ClassFleet.jsx"));
 const ClassesPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m) => ({ default: m.ClassesPanel })));
 
 // The panel beside the asset tree: what the selected row is, in a glance. A
@@ -284,10 +285,11 @@ function GroupedHeaderMenu({ items }) {
   );
 }
 
-// The panel's tabs (Summary, RCM), under its heading.
+// The panel's tabs (Summary, RCM), under its heading. A row with Summary alone has none; an item
+// class has its one tab, Condition monitoring.
 export function HeaderTabs({ row, tab, onTab }) {
   const tabs = tabsFor(row);
-  if (tabs.length < 2) return null;
+  if (!hasTabBar(row)) return null;
   return <Tabs tabs={tabs} value={shownTab(tab, row)} onChange={onTab} label="What to show for this row" idPrefix="td" className="tt-tabs" wholeTabs />;
 }
 
@@ -295,10 +297,10 @@ export function HeaderTabs({ row, tab, onTab }) {
 // for the heading here on a phone; on a wide screen the page draws the heading.
 const TreeDetail = forwardRef(function TreeDetail({
   display, row, today, onSelect, onCrumb, above, back, version, empty, tab, onTab, fullScreenButton, headless = false, actions = [],
-  reports = null, heading = 1, menu = [], onMenu = null,
+  reports = null, heading = 1, menu = [], onMenu = null, within = null,
 }, headingRef) {
   if (!row) return <div className="td">{back}{empty}</div>;
-  const tabs = tabsFor(row);
+  const tabbed = hasTabBar(row);
   const shown = shownTab(tab, row);
   return (
     <div className="td">
@@ -311,8 +313,8 @@ const TreeDetail = forwardRef(function TreeDetail({
           <HeaderTabs row={row} tab={tab} onTab={onTab} />
         </div>
       )}
-      <div className="td-body" role={tabs.length > 1 ? "tabpanel" : undefined} id={tabs.length > 1 ? "td-panel" : undefined}
-           aria-labelledby={tabs.length > 1 ? `td-tab-${shown}` : undefined}>
+      <div className="td-body" role={tabbed ? "tabpanel" : undefined} id={tabbed ? "td-panel" : undefined}
+           aria-labelledby={tabbed ? `td-tab-${shown}` : undefined}>
         {shown === "reports" && reports
           ? (reports?.rollup ? reports.rollup(row) : <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} onMenu={onMenu} />)
           // The Measurements tab is the tree-table (AssetExplorer, MeasurementTable.jsx), not a panel.
@@ -327,6 +329,10 @@ const TreeDetail = forwardRef(function TreeDetail({
           ? <PartsTab row={row} display={display} />
           : shown === "classes"
           ? <ClassesTab row={row} display={display} />
+          // By Classes, a class's row: its Condition monitoring tab, the fleet (every position under
+          // it, with risk now; `within`: only the positions of the one asset on show).
+          : shown === "condition"
+          ? <Suspense fallback={loading}><ClassFleet row={row} version={version} onSelect={onSelect} within={within} /></Suspense>
           : <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} actions={actions} />}
       </div>
     </div>

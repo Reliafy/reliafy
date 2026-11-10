@@ -143,9 +143,12 @@ GET_KINDS: Table = {
     "measurement_point": ("id", "", """Kind, source and tag, latest reading, rate (counter) or trend and the
         date it should reach an alarm limit (condition), status, recent readings (each with status ok,
         correction, voided or replaced; reading ids for maintenance measurements.void / correct)."""),
-    "item_class": ("id", "", """Path, code, level, description, the classes inside it, attributes
-        (inherited first, each with the class it's from), and the items and parts in it or a class inside
-        it."""),
+    "item_class": ("id", "fleet position_id", """Path, code, level, description, the classes inside it,
+        attributes (inherited first, each with the class it's from), and the items and parts in it or a class
+        inside it. fleet=true: its fleet instead, the positions whose fitted item is of the class or a class
+        inside it, each with its duty, item, age, last condition reading and, where its position has a condition
+        and life model, its risk now from its own age, readings and covariates, highest first (why, where one
+        can't be scored); with position_id, that one alone with its curves."""),
     "manufacturer": ("id", "", "Its aliases and the items and parts linked to it."),
     "conditions": ("id", "", """id = a location, position, item or connection: the conditions that apply, each
         with value, note and source (own or where it's inherited from), and those excluded."""),
@@ -435,10 +438,11 @@ PRODUCTS: Table = {
     "build": ("product_id serial", "rev name dry_run", """Build an item from a product: a copy of its design tree
         named by the serial, the item (its part, this serial) fitted at the top, every position linked to its
         design position. dry_run (default true) lists the paths it would make."""),
-    "add_sample": ("", "again make_own product_id", """Add the sample product (a quadcopter: design with its RCM,
-        evidence linked, and a scored FME(C)A, part and BOM, three items built, two failure reports, an RBD with
-        placeholder rates); once unless again is true. make_own: make a copy (product_id, default the only one)
-        your own product in place."""),
+    "add_sample": ("", "again make_own product_id", """Add the Survey quadcopter, a ready-made product with
+        invented numbers (design with its RCM, evidence linked, and a scored FME(C)A, part and BOM, three items
+        built, two failure reports, an RBD with placeholder rates; its life models and analyses saved as the
+        workspace's own); once unless again is true. make_own: for a copy added earlier as "… (sample)"
+        (product_id, default the only one): bring it to the same, in place."""),
 }
 
 TASKS: Table = {
@@ -679,13 +683,13 @@ RELIABILITY: Table = {
 # Life models on positions (the Explorer's Modelling tab, position_models.py). Read them with get.position (models).
 POSITION_MODELS: Table = {
     "link": ("position_id", "model_id model_type from_class fit distribution scope failure_mode_ids note "
-                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior library_record_id bind", """Attach a life model to a position (a link: the model isn't
+                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior library_record_id covariates bind", """Attach a life model to a position (a link: the model isn't
         copied). One of: model_id (a saved model; model_type model default, recurrent_model, degradation_model,
         alt_model), from_class true (its position class's fitted model) or fit true (Pro: fit distribution, weibull
         default, to its own failure history, or its class's pooled history when its own is thin: scope auto,
         position or class; saved to Models). failure_mode_ids: the modes it's for (none: every failure there);
-        replace_link_id: the model on it this replaces. library_record_id: a data library rate record (list kind library)
-        as an exponential model, cited. fit true with data (position, class, both: the class's history
+        replace_link_id: the model on it this replaces. library_record_id: a data library record (list kind library)
+        as an exponential model, cited, with every one of its covariates given (pipe length, clock, demands a year...). fit true with data (position, class, both: the class's history
         as the prior) and method (mle: plain, 95% confidence; bayes: with a prior {kind: class | model | params | b10,
         ...}, 90% credible); trust weighs a prior (close, guide, start). fit true with baseline: a Bayesian update of a
         baseline (the class's model by default) with its history, for one or two failures (guide topic modelling).
@@ -693,8 +697,8 @@ POSITION_MODELS: Table = {
         {rate_per_million_hours} or {excluded: true}}}: a parts-count
         prediction from its parts list (and inside it), saved as an exponential model. rbd_id: link an RBD; build_rbd true:
         a new RBD from the positions inside (each block its model in use, else a flagged placeholder; with
-        replace_link_id, rebuilt). use_link_id: make that row its model in use. bind {source nswc|alt|ph, ref, fixed?,
-        roles?}: a covariate model with some, all or none of its covariates fixed here (guide topic modelling). The RCM
+        replace_link_id, rebuilt). use_link_id: make that row its model in use. bind {source nswc|library|component|alt|ph, ref,
+        fixed?, roles?}: a covariate model or library record with some, all or none of its covariates fixed here (guide topic modelling). The RCM
         offers these first."""),
     "unlink": ("link_id", "", "Take a model off its position (the model stays in Models)."),
 }
@@ -1205,7 +1209,11 @@ def register() -> None:
                             "How often stock is checked (default 0)."))] = None,
                         scope: Literal["below", "this"] | None = None,
                         position_id: Annotated[str | None, Field(description=(
-                            "task_measurement: a position the task would move to."))] = None) -> dict[str, Any]:
+                            "task_measurement: a position the task would move to. item_class with fleet: "
+                            "one member, for its curves."))] = None,
+                        fleet: Annotated[bool | None, Field(description=(
+                            "item_class: true for the class's fleet (its positions, with risk now) in place of "
+                            "the class record."))] = None) -> dict[str, Any]:
         """One maintenance record, or one answer about a record, by kind and id. Ids come from
         maintenance overview, maintenance list.… and the records themselves."""
         m = m_for(ctx)
@@ -1240,6 +1248,11 @@ def register() -> None:
             return run(document_link, base_url(ctx), m, rid)
         if kind == "task_measurement":
             return run(m.task_measurement, rid, position_id)
+        if kind == "item_class" and fleet:
+            from backend.maintenance import class_fleet
+
+            reader = _reader(_caller(ctx))
+            return run(class_fleet.fleet, m, _db(), reader.read_owners, reader.hidden, rid, position_id)
         read = {"position": m.position, "item": m.item, "work_order": m.work_order, "location": m.location,
                 "part": m.part, "measurement_point": m.point, "item_class": m.item_class,
                 "manufacturer": m.manufacturer, "task": m.explain_task, "class_life_data": m.class_life_data,
@@ -1966,8 +1979,10 @@ def register() -> None:
             dry_run: Annotated[bool | None, Field(description="build: only list what it would make (default true).")]
             = None, again: bool | None = None,
             make_own: Annotated[bool | None, Field(description=(
-                "add_sample: instead of adding, make the sample copy product_id your own (\"(sample)\" leaves "
-                "its name; nothing inside changes)."))] = None) -> dict[str, Any]:
+                "add_sample: instead of adding, rename the copy product_id added earlier as \"… (sample)\": "
+                "the word leaves its name and its part's, items', RBD's, maintainability prediction's and "
+                "life-model links' names, and its life models and analyses are saved as the workspace's own "
+                "with its positions and decisions pointed at them (ids stay)."))] = None) -> dict[str, Any]:
         """Products (what the user designs and builds): a product is a design tree (its functional
         hierarchy) with its part (the bill of materials); items are built from it by serial. Read with
         maintenance get.product / get.design_rollup and list.products / product_items / items_overview.
@@ -1983,7 +1998,7 @@ def register() -> None:
             from backend.maintenance import templates
 
             if make_own:
-                return run(m.clear_sample, product_id)
+                return run(templates.make_sample_own, m, _db(), product_id)
             return run(templates.add_sample_product, m, _db(), bool(again))
         return run(m.build_item, product_id, serial, rev, name, _d(dry_run, True))
 
@@ -2385,10 +2400,14 @@ def register() -> None:
                                "With fit and method bayes: {kind: class} (the class's pooled history as a power prior, "
                                "weighed by trust), {kind: model, model_id}, {kind: params, distribution, params, unit} "
                                "or {kind: b10, b10: {value, low, high}, shape: {low, high}, unit}, or {kind: library, "
-                               "record_id, shape?: [low, high]} (a data library rate record)."))] = None,
+                               "record_id, covariates?, shape?: [low, high]} (a data library record and its covariates)."))] = None,
                            library_record_id: str | None = None,
+                           covariates: Annotated[dict[str, Any] | None, Field(description=(
+                               "With library_record_id: its covariates by key (get kind library_record lists them), "
+                               "every one it needs; to fix some and set the rest in an RBD, use bind."))] = None,
                            bind: Annotated[dict[str, Any] | None, Field(description=(
-                               "{source: nswc (an NSWC-11 record), alt or ph (a saved model), ref, fixed: {input: value} "
+                               "{source: nswc (an NSWC-11 record), library (any other library record), component "
+                               "(an NRC/INL component), alt or ph (a saved model), ref, fixed: {input: value} "
                                "(some, all or none), roles?: {input: design|use|environment}}. What isn't fixed is set "
                                "on an RBD block or the diagram's Use and Environment values."))] = None) -> dict[str, Any]:
         """The life models on a position (a functional location, or a position of a product's design): attach a
@@ -2417,7 +2436,7 @@ def register() -> None:
             from backend.maintenance import library_models
 
             return run(library_models.attach, m, _db(), m.org, position_id, library_record_id, failure_mode_ids,
-                       note or "", replace_link_id, owners=reader.read_owners)
+                       note or "", replace_link_id, owners=reader.read_owners, covariates=covariates)
         if build_rbd:
             return run(pm.build_rbd, m, _db(), reader.read_owners, reader.hidden, position_id, None, replace_link_id,
                        note or "")

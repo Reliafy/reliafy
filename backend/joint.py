@@ -394,6 +394,12 @@ def horizons(unit: Optional[str], alpha: Optional[float] = None) -> dict:
     return {"values": vals, "labels": [f"{v:g} {shown}" for v in vals], "basis": "scale"}
 
 
+def days_per(unit: Optional[str]) -> Optional[float]:
+    """How many days one of a calendar time unit is (a day 1, a week 7); None
+    for a unit that isn't calendar time (cycles, km, hours run)."""
+    return _DAYS_PER.get(normalize_unit(unit))
+
+
 def _nice(v: float) -> float:
     if v <= 0:
         return v

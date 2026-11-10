@@ -1,6 +1,6 @@
 // Global setup for the local run: the samples cover most pages, but nothing
 // seeds Maintenance or an RBD simulation run, so make one of each here (the
-// sample product, as "Add the sample UAV product" makes it: the one sample for the RCM
+// Survey quadcopter, as "Add the Survey quadcopter" makes it: the one worked example for the RCM
 // and FME(C)A tabs; a position with a location, an item fitted to it, a work order, a part and an assembly of it, the starter item classes, a position
 // class with a fitted non-repairable model and a spare with a lead time, one availability run,
 // and a model of each kind the samples don't cover)
@@ -59,7 +59,7 @@ export default async function seed(config) {
   const patch = send("PATCH");
   try {
     const m = "/api/maintenance";
-    // The sample product: a design with its RCM (evidence linked) and FME(C)A, three items
+    // The Survey quadcopter: a design with its RCM (evidence linked) and FME(C)A, three items
     // built from it, their reports and its RBD (Products, Items). About a thousand events
     // (three items' trees copied): give it time on a busy machine.
     await post(`${m}/sample-product`, {}, 180000);

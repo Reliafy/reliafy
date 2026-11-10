@@ -502,3 +502,15 @@ def test_edit_reports_only_the_warnings_it_introduced(env):
     assert any("Pump A" in w and "Pump B (standby)" in w for w in out["warnings"])
     again = _ok(_edit(env, rid, {"op": "update_node", "id": "a", "model": _w(1100, 2)}))
     assert again["warnings"] == [] and again["warnings_unchanged"] == 1
+
+
+def test_an_edit_that_splits_a_run_of_like_blocks_repeats_no_warning(env):
+    """A run of like blocks in series is one warning naming every block. Renaming one block rewords
+    it (here it splits in two), which names nothing new; a block added to the run does."""
+    rid = _create(env, _chain("p1", "p2", "p3", "p4", "p5"))["id"]
+    out = _ok(_edit(env, rid, {"op": "update_node", "id": "p3", "label": "Gearbox"}))
+    assert out["warnings"] == [] and out["warnings_unchanged"] == 2
+    out = _ok(_edit(env, rid, {"op": "add_node", "after": "p5",
+                               "node": {"id": "p6", "type": "component", "label": "Block p6", "model": _w()}}))
+    assert len(out["warnings"]) == 1 and "Block p6" in out["warnings"][0]
+    assert out["warnings_unchanged"] == 1

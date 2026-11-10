@@ -287,16 +287,27 @@ def test_the_sample_is_seeded_from_the_sample_products_electronics(client):
     assert doc["is_sample"] and doc["product"]["name"] == "Survey quadcopter (sample)"
     r = doc["results"]
     assert r["environment"]["code"] == "ARW" and r["mission_time_hours"] == 100
-    assert 50 < r["failure_rate_per_million_hours"] < 200 and 0.98 < r["reliability_at_mission"] < 0.995
-    assert r["counts"]["unassigned"] == 2 and "Brushless motor" in r["warnings"][0]
+    assert 300 < r["failure_rate_per_million_hours"] < 420 and 0.95 < r["reliability_at_mission"] < 0.975
+    # Every line counts but the propellers (not electronic, in neither handbook): the microcircuits on
+    # MIL-HDBK-217F's parts-count rates, the motors on NSWC-11's electric motor under their conditions.
+    assert r["counts"]["unassigned"] == 0 and r["counts"]["excluded"] == 1 and r["warnings"] == []
+    by_name = {line["name"]: line for line in r["lines"]}
+    assert by_name["Propeller 10x4.5"]["excluded"]
+    motors = by_name["Brushless motor 2210"]
+    assert motors["handbook"] == "NSWC-11" and not motors["needs_conditions"] and motors["rate_per_million_hours"] > 0
+    micro = [line for line in r["lines"] if (line["part_type"] or "").startswith("Microcircuit")]
+    assert len(micro) == 10 and all(line["quality_factor"] == 10 for line in micro)
     labels = [a["label"] for a in r["assemblies"]]
     assert "Power › BMS board" in labels and labels.index("Power") < labels.index("Power › BMS board")
-    assert r["pareto"]["by_category"][0]["name"] == "Diodes, transistors and other semiconductors"
-    # The sample names the sample product as backend/maintenance/templates.py spells it.
+    assert [c["name"] for c in r["pareto"]["by_category"][:2]] == [
+        "Electric motors", "Microcircuits (integrated circuits, memories, SAW devices)"]
+    # The library's record names the product as backend/maintenance/templates.py spells it, with the
+    # library's own "(sample)" (a copy added to a workspace is plain "Survey quadcopter").
     from backend.maintenance import templates
 
     product = samples.SAMPLE_PREDICTION["inputs"]["product"]
-    assert product["name"] == templates.SAMPLE_PRODUCT_NAME and product["part_number"] == templates.SAMPLE_PRODUCT_PART
+    assert product["name"] == f"{templates.SAMPLE_PRODUCT_NAME} (sample)"
+    assert product["part_number"] == templates.SAMPLE_PRODUCT_PART
     assert product["rev"] == templates.SAMPLE_PRODUCT_REV
     from backend.db import get_db
 
@@ -332,7 +343,7 @@ def test_a_products_parts_list_over_the_app(monkeypatch):
         r = tc.get(f"/api/predictions/from-product/{added['product']['id']}")
         assert r.status_code == 200, r.text
         out = r.json()
-        assert out["product"]["name"] == "Survey quadcopter (sample)" and out["product"]["part_number"] == "SQ-4"
+        assert out["product"]["name"] == "Survey quadcopter" and out["product"]["part_number"] == "SQ-4"
         by_ref = {ln["reference"]: ln for ln in out["lines"]}
         assert by_ref["SQ-M2210"]["quantity"] == 4 and by_ref["SQ-M2210"]["name"] == "Brushless motor 2210"
         assert len(out["lines"]) == 11 and out["assemblies"] == 0  # the sample's bill of materials is one level

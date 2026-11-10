@@ -27,6 +27,13 @@ import { EXPLORER_PARTS_CLASSES_TABS } from "./explorerTabs.js";
 const EXPLORER = "/asset-register/explorer";
 const tabAt = (query) => (EXPLORER_PARTS_CLASSES_TABS ? `${EXPLORER}?${query}` : EXPLORER);
 
+// Where Assets' Parts and stock and Classes live now, for links: the same
+// place their old addresses redirect to, without the extra hop. A class's
+// name opens its panel.
+export const partsPath = () => tabAt("tab=parts&scope=all");
+export const classesPath = (name) =>
+  tabAt(name == null ? "tab=classes&scope=all" : `tab=classes&scope=all&class=${encodeURIComponent(name)}`);
+
 export const MOVED = [
   // The reliability data library moved from Data to Models (9 Nov 2026): its records are models.
   { path: "/data/library", to: "/models/library" },
@@ -78,14 +85,10 @@ export const MOVED = [
   { path: "/strategy/tracking/:modelId", to: "/risk" },
   // The Demonstration test page is Test planning's first tab.
   { path: "/strategy/demonstration-test", to: "/strategy/test-planning" },
-  // RCM studies (first at /rcm, then under Maintenance) → the RCM on the asset
-  // tree, the Explorer's RCM tab. No study survives, so a study's own address
-  // lands on the tab too, with no id to carry.
-  { path: "/rcm", to: "/asset-register/explorer?tab=rcm" },
-  { path: "/rcm/studies", to: "/asset-register/explorer?tab=rcm" },
-  { path: "/rcm/studies/:id", to: "/asset-register/explorer?tab=rcm" },
-  { path: "/maintenance/rcm", to: "/asset-register/explorer?tab=rcm" },
-  { path: "/maintenance/rcm/:id", to: "/asset-register/explorer?tab=rcm" },
+  // RCM studies were first at /rcm; they live under Maintenance.
+  { path: "/rcm", to: "/maintenance/rcm" },
+  { path: "/rcm/studies", to: "/maintenance/rcm" },
+  { path: "/rcm/studies/:id", to: "/maintenance/rcm/:id" },
   // Reliafy Maintenance's register → Operate › Assets. (/maintenance itself
   // stays: it's the due tasks and work orders now; the positions tree is
   // Assets › Explorer, and Assets opens on the top-level places.)

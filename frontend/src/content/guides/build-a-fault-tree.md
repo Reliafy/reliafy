@@ -61,7 +61,8 @@ gate's inputs indented beneath it.
 The sample [quadcopter tree](/systems/fault-trees/sample-fault-tree-quadcopter)
 is a worked example: loss of thrust on any of four arms (each a motor or its
 speed controller), a battery that wears out, and a flight controller that
-votes between three IMUs, so it loses attitude only when two of the three fail.
+carries on with either of its two IMUs, so it loses attitude only when both
+fail.
 Open it, change anything, and **Save a copy** to keep your version.
 
 ## Read the results

@@ -16,6 +16,7 @@ on every startup and against either real Atlas or the in-memory simulator.
 
 from __future__ import annotations
 
+import copy
 import logging
 
 from backend import config, fitting, storage
@@ -590,7 +591,49 @@ SAMPLE_MODELS = [
         "mapping": {"x": "hours", "c": "censored"},
         "unit": "hours",
     },
+    # The sample quadcopter's propellers and battery packs: models from parameters
+    # alone (no data behind them), the life models on those positions of the sample
+    # product. Invented, with the same parameters as the propeller replacement and
+    # battery retirement analyses below; each says so in its notes.
+    {
+        "id": "sample-model-quad-propeller-weibull",
+        "name": "Quadcopter propeller — Weibull (sample)",
+        "distribution": "weibull",
+        "params": [{"name": "alpha", "value": 400.0}, {"name": "beta", "value": 3.0}],
+        "unit": "hours",
+        "notes": "Sample values, not field data: invented for the sample quadcopter (flight hours to a blade "
+                 "fatigue crack), the same as the propeller replacement analysis.",
+    },
+    {
+        "id": "sample-model-quad-battery-weibull",
+        "name": "Quadcopter battery pack — Weibull (sample)",
+        "distribution": "weibull",
+        "params": [{"name": "alpha", "value": 600.0}, {"name": "beta", "value": 3.0}],
+        "unit": "hours",
+        "notes": "Sample values, not field data: invented for the sample quadcopter (flight hours until the pack "
+                 "no longer gives a 25-minute flight), the same as the battery retirement analysis.",
+    },
 ]
+
+
+def _seed_params_model(db, spec: dict) -> None:
+    """A sample model from parameters alone (no dataset), seeded once."""
+    import surpyval
+
+    from backend.units import canonical_unit
+
+    if db.models.find_one({"_id": spec["id"]}) is not None:
+        return
+    result = fitting.result_from_params(spec["distribution"], spec["params"], None, spec["unit"])
+    model = Model(
+        id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER, dataset_id="", kind="distribution",
+        distribution_id=spec["distribution"],
+        spec={"distribution_id": spec["distribution"], "unit": canonical_unit(spec["unit"]), "params_only": True,
+              "options": result.get("options") or None, "notes": spec["notes"]},
+        results=result, surpyval_version=getattr(surpyval, "__version__", None), status="ready",
+    )
+    db.models.insert_one(to_doc(model))
+    logger.info("Seeded sample model %r (from parameters).", spec["id"])
 
 
 # A small but representative diagram: a controller in series with two redundant
@@ -1177,6 +1220,9 @@ def seed_samples(db) -> None:
 
     for spec in SAMPLE_MODELS:
         try:
+            if spec.get("params"):
+                _seed_params_model(db, spec)
+                continue
             is_regression = bool(spec.get("covariates") or spec.get("formula"))
             existing = db.models.find_one({"_id": spec["id"]})
             if existing is not None:
@@ -1234,6 +1280,7 @@ def seed_samples(db) -> None:
             logger.warning("Failed to seed sample model %r: %s", spec["id"], exc)
 
     _seed_strategy_analyses(db)
+    _seed_rcm_study(db)
     _seed_reliability_prediction(db)
     _seed_maintainability_predictions(db)
     _seed_fleet(db)
@@ -1417,6 +1464,42 @@ def seed_samples(db) -> None:
     _seed_tracked_fleet(db)
 
 
+def _seed_rcm_study(db) -> None:
+    """Sample RCM study wiring every sample artifact together as evidence.
+
+    One decision — the legacy run-to-failure plan on the wheel bearings — is
+    deliberately linked to a model that CONTRADICTS it (the bearing Weibull
+    fits wear-out, β ≈ 2.5): the study opens with a red badge that demos the
+    live evidence validation.
+    """
+    from backend.schema import RcmStudy
+
+    if db.rcm_studies.find_one({"_id": "sample-rcm-truck"}) is not None:
+        return
+    try:
+        from backend.services.rcm_sample import sample_truck_functions
+
+        functions = sample_truck_functions()
+        from backend.services import rcm as rcm_service
+
+        study = RcmStudy(
+            id="sample-rcm-truck",
+            name="Delivery truck — RCM demo (sample)",
+            system="Delivery truck (brakes + drivetrain)",
+            description=(
+                "A worked RCM study with every decision linked to its evidence. "
+                "Note the legacy run-to-failure decision flagged as CONTRADICTED — "
+                "its own non-repairable model shows wear-out, not random failure."
+            ),
+            owner_id=SAMPLE_OWNER,
+            functions=rcm_service.clean_tree(functions),
+        )
+        db.rcm_studies.insert_one(to_doc(study))
+        logger.info("Seeded sample RCM study 'sample-rcm-truck'.")
+    except Exception as exc:  # pragma: no cover - defensive; never block boot
+        logger.warning("Failed to seed sample RCM study: %s", exc)
+
+
 def _seed_strategy_analyses(db) -> None:
     """Sample saved strategy analyses: the evidence the sample quadcopter's RCM
     decisions link (backend/maintenance/templates.py), and the bearing
@@ -1535,9 +1618,29 @@ def _seed_strategy_analyses(db) -> None:
 # electronics (backend/maintenance/templates.py: "Survey quadcopter (sample)",
 # part SQ-4, rev C), at part level as a design team's parts lists would be.
 # Entirely invented, like the product. Airborne, rotary winged (ARW); a
-# 100-hour season of flights. Motors and propellers are listed with no part
-# type: they're mechanical, outside the handbook, so the result says so.
+# 100-hour season of flights. The electronics are MIL-HDBK-217F part types
+# (the microcircuits from its parts-count tables, Appendix A); the motors are
+# NSWC-11's electric motor under the conditions a 2210 motor runs at; the
+# propellers aren't electronic and neither handbook has them, so they're left
+# out and the result says so.
 _R = "mil-hdbk-217f-n2:"
+_MICRO = "a-5-1-microprocessors-mos-up-to-32-bits"
+_LINEAR_SMALL = "a-5-1-mos-linear-101-to-300-transistors"
+_LINEAR_LARGE = "a-5-1-mos-linear-1-001-to-10-000-transistors"
+_MMIC = "a-5-4-gaas-mmic-1-to-100-active-elements"
+# NSWC-11 Eq. 14-1 conditions for the sample's 2210 motor in the hover: brushless, two
+# small ball bearings (a 3 mm bore, catalogue rating about 0.56 kN), a 3 mm steel shaft.
+# The bearings' thrust load is folded into an equivalent radial load, which the
+# handbook's bearing model expects. Invented design figures, like the product. A prediction
+# made on the sample product itself starts its motor line from the same ones
+# (backend/maintenance/templates.py: sample_part_conditions).
+SAMPLE_MOTOR_MODEL = "nswc-11:electric-motor"
+SAMPLE_MOTOR_CONDITIONS = {
+    "motor_type": "dc_brushless", "n": 9000, "load": "light_impact", "T_O": 40, "n_BE": 2,
+    "bearings.L_S": 126, "bearings.F_R": 1.0,
+    "shaft.N_cycles": 1e9, "shaft.F": 0.2, "shaft.E": 30e6, "shaft.len_X": 1.2, "shaft.D_X": 0.118,
+    "shaft.r": 0.01, "shaft.D_big": 0.157, "shaft.d_small": 0.118,
+}
 SAMPLE_PREDICTION = {
     "id": "sample-prediction-quadcopter",
     "name": "Survey quadcopter electronics (sample)",
@@ -1546,14 +1649,19 @@ SAMPLE_PREDICTION = {
         "mission_time": 100.0,
         "product": {"id": None, "name": "Survey quadcopter (sample)", "rev": "C", "part_number": "SQ-4"},
         "notes": (
-            "An invented part-level parts list for the sample quadcopter's electronics, as a design team's parts "
-            "lists would be. Microcircuits (the processor, the sensor and radio chips) aren't among the library's "
-            "handbook records, so they aren't counted; motors and propellers are mechanical, outside the "
-            "handbook, and are listed without a part type. Quality factors are 1 except where the design uses "
-            "commercial plastic parts (πQ 5.5) or commercial connectors (πQ 2)."
+            "An invented part-level parts list for the sample quadcopter's electronics and motors, as a design "
+            "team's parts lists would be. The microcircuits (the processors, the sensor, receiver and radio chips, "
+            "the gate drivers and regulators) use MIL-HDBK-217F's parts-count rates for their complexity band, at "
+            "the handbook's commercial grade (πQ 10). The motors use NSWC-11's electric motor under the conditions "
+            "a 2210 motor runs at in the hover (invented design figures, in the line's conditions). The propellers "
+            "aren't electronic and neither handbook has them, so they're left out. Other quality factors are 1 "
+            "except where the design uses commercial plastic parts (πQ 5.5) or commercial connectors (πQ 2)."
         ),
         "lines": [
-            # name, record, quantity, assembly path, πQ, reference
+            # name, record, quantity, assembly path, πQ (None: the record's default grade), reference,
+            # and optionally the line's other fields (conditions, excluded, notes)
+            ("Microcontroller, 32-bit", _MICRO, 1, ["Flight controller"], None, ""),
+            ("Voltage regulators", _LINEAR_SMALL, 2, ["Flight controller"], None, ""),
             ("Decoupling capacitors, 0.1 µF ceramic", "10-1-ck-11015", 48, ["Flight controller"], 1, ""),
             ("Chip resistors", "9-1-rm-55342", 62, ["Flight controller"], 1, ""),
             ("Schottky diodes, power input", "6-1-power-rectifier-schottky-power-diode", 3, ["Flight controller"],
@@ -1561,28 +1669,41 @@ SAMPLE_PREDICTION = {
             ("MOSFETs, power switching", "6-4-mosfet", 2, ["Flight controller"], 5.5, ""),
             ("Rectangular connectors (sensors, radio)", "15-1-rectangular", 4, ["Flight controller"], 2, ""),
             ("Reflow solder joints", "17-1-reflow-solder", 620, ["Flight controller"], 1, ""),
+            ("Microcontrollers, 32-bit (1 per ESC)", _MICRO, 4, ["Speed controllers (4)"], None, ""),
+            ("Gate drivers, three-phase (1 per ESC)", _LINEAR_SMALL, 4, ["Speed controllers (4)"], None, ""),
             ("MOSFETs, motor drive (6 per ESC)", "6-4-mosfet", 24, ["Speed controllers (4)"], 5.5, ""),
             ("Ceramic capacitors", "10-1-ck-11015", 32, ["Speed controllers (4)"], 1, ""),
             ("Electrolytic capacitors, aluminium", "10-1-cu-39018", 8, ["Speed controllers (4)"], 1, ""),
             ("Chip resistors", "9-1-rm-55342", 80, ["Speed controllers (4)"], 1, ""),
             ("Power connectors", "15-1-power", 4, ["Speed controllers (4)"], 2, ""),
             ("Reflow solder joints", "17-1-reflow-solder", 1200, ["Speed controllers (4)"], 1, ""),
+            ("Cell monitor and balancing IC", _LINEAR_LARGE, 1, ["Power", "BMS board"], None, ""),
             ("MOSFETs, charge and discharge switch", "6-4-mosfet", 4, ["Power", "BMS board"], 5.5, ""),
             ("Thermistors, cell temperature", "9-1-rth-23648", 2, ["Power", "BMS board"], 1, ""),
             ("Chip resistors", "9-1-rm-55342", 24, ["Power", "BMS board"], 1, ""),
             ("Ceramic capacitors", "10-1-ck-11015", 16, ["Power", "BMS board"], 1, ""),
             ("Power connectors, battery and load", "15-1-power", 2, ["Power"], 2, ""),
+            ("Inertial sensor ICs (1 per IMU)", _LINEAR_LARGE, 2, ["IMUs (2)"], None, "",
+             {"notes": "Counted as a MOS linear microcircuit in its complexity band; the handbook has no type for "
+                       "the sensing element itself."}),
             ("Ceramic capacitors", "10-1-ck-11015", 12, ["IMUs (2)"], 1, ""),
             ("Chip resistors", "9-1-rm-55342", 8, ["IMUs (2)"], 1, ""),
+            ("GNSS receiver chip", _MICRO, 1, ["GPS module"], None, ""),
+            ("Low-noise amplifier", _MMIC, 1, ["GPS module"], None, ""),
             ("RF coaxial connector, antenna", "15-1-rf-coaxial", 1, ["GPS module"], 2, ""),
             ("Ceramic capacitors", "10-1-ck-11015", 10, ["GPS module"], 1, ""),
             ("Chip resistors", "9-1-rm-55342", 6, ["GPS module"], 1, ""),
+            ("Radio transceiver chip", _MICRO, 1, ["Telemetry radio"], None, ""),
+            ("RF power amplifier", _MMIC, 1, ["Telemetry radio"], None, ""),
             ("RF transformer (balun)", "11-1-rf-10k-10m-hz", 1, ["Telemetry radio"], 1, ""),
             ("RF coaxial connector, antenna", "15-1-rf-coaxial", 1, ["Telemetry radio"], 2, ""),
             ("Ceramic capacitors", "10-1-ck-11015", 14, ["Telemetry radio"], 1, ""),
             ("Chip resistors", "9-1-rm-55342", 10, ["Telemetry radio"], 1, ""),
-            ("Brushless motor 2210", None, 4, ["Propulsion"], 1, "SQ-M2210"),
-            ("Propeller 10x4.5", None, 4, ["Propulsion"], 1, "SQ-P1045"),
+            ("Brushless motor 2210", SAMPLE_MOTOR_MODEL, 4, ["Propulsion"], None, "SQ-M2210",
+             {"conditions": SAMPLE_MOTOR_CONDITIONS,
+              "notes": "NSWC-11 conditions for a 2210 motor in the hover: 9,000 rpm, 40 °C, two ball bearings, a 3 "
+                       "mm steel shaft. Invented design figures, like the product."}),
+            ("Propeller 10x4.5", None, 4, ["Propulsion"], None, "SQ-P1045", {"excluded": True}),
         ],
     },
 }
@@ -1591,9 +1712,11 @@ SAMPLE_PREDICTION = {
 def sample_prediction_inputs() -> dict:
     """The sample prediction's inputs as the service takes them."""
     spec = SAMPLE_PREDICTION["inputs"]
-    lines = [{"name": name, "record_id": (_R + rec) if rec else None, "quantity": qty, "assembly": list(path),
-              "quality_factor": q, "reference": ref}
-             for name, rec, qty, path, q, ref in spec["lines"]]
+    lines = []
+    for name, rec, qty, path, q, ref, *more in spec["lines"]:
+        record_id = (rec if ":" in rec else _R + rec) if rec else None
+        lines.append({"name": name, "record_id": record_id, "quantity": qty, "assembly": list(path),
+                      "quality_factor": q, "reference": ref, **(more[0] if more else {})})
     return {**spec, "lines": lines}
 
 
@@ -1618,17 +1741,19 @@ def _seed_reliability_prediction(db) -> None:
 
 
 def _seed_maintainability_predictions(db) -> None:
-    """The sample maintainability prediction: the sample survey quadcopter's
-    parts list (backend/maintenance/templates.py, SAMPLE_PRODUCT_BOM) with
-    invented repair times and failure rates. It stands alone (a sample product
-    is added per workspace, so it links no product id)."""
+    """The shared sample maintainability prediction: the sample survey
+    quadcopter's parts list (backend/maintenance/templates.py,
+    SAMPLE_PRODUCT_BOM) with invented repair times and failure rates. It is the
+    example for every account, so it names no product: a workspace that adds
+    the sample product gets its own prediction beside it, from the same lines
+    and attached to that product (templates.add_sample_product)."""
     from backend.schema import MaintainabilityPrediction
     from backend.services import maintainability
 
     spec = {
         "id": "sample-maintainability-quadcopter",
         "name": "Survey quadcopter — maintainability prediction (sample)",
-        "inputs": SAMPLE_MAINTAINABILITY_INPUTS,
+        "inputs": sample_maintainability_inputs(),
     }
     try:
         if db.maintainability_predictions.find_one({"_id": spec["id"]}) is not None:
@@ -1672,6 +1797,17 @@ SAMPLE_MAINTAINABILITY_INPUTS = {
 }
 
 
+def sample_maintainability_inputs(product: dict | None = None) -> dict:
+    """The sample quadcopter's maintainability inputs, a fresh copy each time:
+    as the shared sample has them, or for a workspace's copy of the sample
+    product (``product``: its {id, name}), attached to it. One set of lines for
+    both, so their numbers agree."""
+    inputs = copy.deepcopy(SAMPLE_MAINTAINABILITY_INPUTS)
+    if product:
+        inputs |= {"product_id": product["id"], "product_name": product["name"]}
+    return inputs
+
+
 # ---------------------------------------------------------------------------
 # Per-user hiding ("delete" a sample for me only)
 # ---------------------------------------------------------------------------
@@ -1694,7 +1830,7 @@ def hide_sample(db, uid: str, sample_id: str) -> None:
 # Every collection that can hold a shared-sample artifact.
 _SAMPLE_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models", "tracked_items",
-    "tracked_fleets", "strategy_analyses", "fleets", "reliability_predictions", "fault_trees",
+    "tracked_fleets", "rcm_studies", "strategy_analyses", "fleets", "reliability_predictions", "fault_trees",
     "maintainability_predictions",
 )
 

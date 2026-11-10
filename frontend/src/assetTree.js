@@ -1,5 +1,6 @@
 // The asset tree pane's model (Operate › Assets › Explorer): the whole
-// register arranged by the positions tree or by where things are; what's open; the filter that keeps the path to
+// register arranged by the positions tree, by where things are or by what
+// kind of thing is fitted (the item classes); what's open; the filter that keeps the path to
 // each match; the rows that are drawn (only those on screen are in the page);
 // the ancestors pinned at the top while you scroll; and what's remembered on
 // this device.
@@ -18,6 +19,7 @@ import { CHIPS as FMEA_CHIPS } from "./fmeaWorksheet.js";
 import { NOFAIL_HINT } from "./rcmWorksheet.js";
 import { MEAS_CHIPS, isMeasRow } from "./explorerMeasurements.js";
 import { MODEL_CHIPS, isModelRow } from "./explorerModels.js";
+import { flattenClasses } from "./maintenanceItemClasses.js";
 
 // The outline's own model (open to a level, flatten, pinned rows, the drawn
 // window, type-ahead), shared with the RCM worksheet.
@@ -28,6 +30,7 @@ export {
 export const ARRANGEMENTS = [
   { value: "positions", label: "Positions", title: "What each position does, inside what", tree: "Positions" },
   { value: "locations", label: "Locations", title: "Where things are", tree: "Locations" },
+  { value: "classes", label: "Classes", title: "What kind of thing is fitted: the item classes, each with its positions", tree: "Classes" },
 ];
 const MODES = new Set(ARRANGEMENTS.map((a) => a.value));
 
@@ -46,12 +49,19 @@ export function arrangementOf(param, remembered) {
 // The arrangement the Explorer shows: by positions on the RCM and FME(C)A
 // tabs (they're by position); one tree on show (`scoped`: a product's page, an
 // item's tree) by positions unless its address says Locations (its own layout,
-// never the arrangement remembered for the whole register); else as
-// arrangementOf.
-export function arrangementFor({ param = null, remembered = null, rcm = false, scoped = false } = {}) {
+// never the arrangement remembered for the whole register) or, where the tree
+// is one asset's (`classes`: not a product's design, whose positions have
+// nothing fitted), Classes; else as arrangementOf.
+export function arrangementFor({ param = null, remembered = null, rcm = false, scoped = false, classes = false } = {}) {
   if (rcm) return "positions";
-  if (scoped) return param === "locations" ? "locations" : "positions";
+  if (scoped) return param === "locations" || (classes && param === "classes") ? param : "positions";
   return arrangementOf(param, remembered);
+}
+
+// The arrangements one tree on show offers: an asset's tree, all three; a
+// product's design, Positions and Locations (`classes` as arrangementFor's).
+export function scopedArrangements(classes = false) {
+  return classes ? ARRANGEMENTS : ARRANGEMENTS.filter((a) => a.value !== "classes");
 }
 
 // One tree's address for an arrangement (a product's page leaves Positions
@@ -74,12 +84,17 @@ export function explorerPath(mode = "positions", extra = {}) {
 
 // The row to keep picked when the arrangement changes, if any: a position
 // stays itself; an item stays itself (in Positions, the position it's fitted
-// to, if any); a location stays itself in Locations. null: nothing to carry
-// over.
+// to, if any; in Classes only that position: items aren't rows there); a
+// location stays itself in Locations, an item class in Classes. null: nothing
+// to carry over.
 export function carryOver(row, to, ctx = null) {
   if (!row) return null;
   if (row.type === "pos") return row.key;
-  if (row.type === "item") return to === "locations" ? row.key : row.ref.fitted_to?.id ?? row.key;
+  if (row.type === "cls") return to === "classes" ? row.key : null;
+  if (row.type === "item") {
+    if (to === "classes") return row.ref.fitted_to?.id ?? null;
+    return to === "locations" ? row.key : row.ref.fitted_to?.id ?? row.key;
+  }
   if (row.type === "loc") {
     if (to === "locations") return row.key;
     // To Positions (the RCM and FME(C)A tabs live there): the position whose
@@ -134,8 +149,16 @@ export const NO_HOME = {
   unit: { name: "Not placed on the item", note: "Positions not placed at one of the item's own locations: they're where the item is kept" },
 };
 
+// The last group in Classes: positions with nothing fitted, or whose item has
+// no item class.
+export const NO_CLASS = { name: "No class", note: "Positions with nothing fitted, or whose item has no item class" };
+
+// An item class's row key in the Classes arrangement (a class id alone could
+// be mistaken for a position's).
+export const classKey = (id) => `cls:${id}`;
+
 // The display tree for one arrangement: rows {key, type (pos | loc | item |
-// group), ref, parent, kids, depth, own, sum} keyed by id, and the tops.
+// cls | group), ref, parent, kids, depth, own, sum} keyed by id, and the tops.
 // Every position appears exactly once: one the arrangement has no place for
 // (it shouldn't happen) goes in a last group rather than going missing.
 export function buildDisplay(data, mode) {
@@ -221,6 +244,37 @@ export function buildDisplay(data, mode) {
       add("G:nohome", "group", NO_HOME[data?.scope?.kind] || NO_HOME.assets);
       for (const p of homeless) addPosTree(p, "G:nohome", true);
       for (const it of unhomed.sort(byName)) addItem(it, "G:nohome", true);
+    }
+  } else if (mode === "classes") {
+    // The item-class taxonomy (data.classes: the tree GET /api/maintenance/
+    // item-classes gives, walked parents first), each class opening to its
+    // sub-classes and then to the positions whose fitted item is of the class
+    // (item_class_id on the row: the item's own class, else its part's). A
+    // class with nothing under it anywhere is left out: a taxonomy can be
+    // large. Positions are listed flat: one inside another has its own class.
+    const flat = flattenClasses(data?.classes || []);
+    const parentOf = new Map();
+    const path = [];
+    for (const c of flat) {
+      path.length = c.depth;
+      parentOf.set(c.id, path.at(-1) ?? null);
+      path.push(c.id);
+    }
+    const used = new Set();
+    for (const p of positions) {
+      for (let k = p.item_class_id; k != null && parentOf.has(k) && !used.has(k); k = parentOf.get(k)) used.add(k);
+    }
+    for (const c of flat) {
+      if (!used.has(c.id)) continue;
+      const up = parentOf.get(c.id);
+      add(classKey(c.id), "cls", c, up == null ? null : classKey(up));
+    }
+    const sorted = [...positions].sort(byName);
+    for (const p of sorted) if (rows.has(classKey(p.item_class_id))) add(p.id, "pos", p, classKey(p.item_class_id));
+    const rest = sorted.filter((p) => !rows.has(p.id));
+    if (rest.length) {
+      add("G:noclass", "group", NO_CLASS);
+      for (const p of rest) add(p.id, "pos", p, "G:noclass");
     }
   } else {
     for (const p of tops) addPosTree(p, null, false);

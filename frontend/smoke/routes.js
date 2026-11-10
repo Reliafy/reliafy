@@ -89,6 +89,8 @@ export const DETAIL_IDS = {
   // A fault tree: the sample quadcopter tree is seeded.
   "/systems/fault-trees/:id": ["/api/fault-trees", list("fault_trees")],
   "/data/:id": ["/api/datasets", list("datasets")],
+  // An RCM study (the sample delivery truck is seeded).
+  "/maintenance/rcm/:id": ["/api/rcm/studies", list("studies")],
   "/strategy/analyses/:id": ["/api/strategy/analyses", list("analyses")],
   // A reliability prediction (the sample parts count).
   "/predictions/:id": ["/api/predictions", list("predictions")],
@@ -96,6 +98,9 @@ export const DETAIL_IDS = {
   "/models/library/:source": ["/api/library/sources", list("sources")],
   "/models/library/:source/:record": ["/api/library/search?page_size=12",
     (body) => (body.results || []).map((r) => ({ ...r, id: r.id.replace(":", "/") }))],
+  // An NRC/INL component (its id "source:component:slug").
+  "/models/library/:source/components/:component": ["/api/library/components?source=nrc-inl-2020",
+    (body) => (body.components || []).map((c) => ({ ...c, id: `${c.source}/${c.id.split(":").pop()}` }))],
   // A maintainability prediction: the sample quadcopter's.
   "/maintainability/:id": ["/api/maintainability/predictions", list("predictions")],
   "/risk/:fleetId": ["/api/fleet/tracked", list("fleets")],
@@ -105,7 +110,7 @@ export const DETAIL_IDS = {
   "/asset-register/positions/:id/fmea": ["/api/maintenance/overview", list("tree")],
   "/maintenance/work-orders/:id": ["/api/maintenance/work-orders", list("work_orders")],
   "/asset-register/items/:id": ["/api/maintenance/items", list("items")],
-  // A product: smoke/seed.js adds the sample UAV product.
+  // A product: smoke/seed.js adds the Survey quadcopter.
   "/products/:id": ["/api/maintenance/products", list("products")],
   "/asset-register/locations/:id": ["/api/maintenance/locations", list("locations")],
   // A class's old addresses (they open the Explorer's Classes tab on that
@@ -114,7 +119,7 @@ export const DETAIL_IDS = {
   "/maintenance/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
   "/asset-register/parts/:id": ["/api/maintenance/parts", list("parts")],
   // A measuring point's earlier own page (it now redirects into the Explorer's
-  // Measurements tab, &point=): every one added (the sample product's items' hour meters, and the
+  // Measurements tab, &point=): every one added (the Survey quadcopter's items' hour meters, and the
   // smoke test position's condition point that smoke/seed.js adds), from the event log.
   "/asset-register/points/:id": ["/api/maintenance/events?type=point.added&limit=500",
     (body) => (body.events || []).map((e) => ({ id: e.payload?.id })).filter((x) => x.id)],
@@ -170,9 +175,7 @@ export const REDIRECTS_WITH_QUERY = [
   ["/datasets/d/sample-ds-bearings?compare=arm", "/data/sample-ds-bearings?compare=arm"],
   ["/modelling/new?mode=paste", "/models/new?mode=paste"],
   ["/modelling/m/sample-model-bearings-weibull?from=email#bounds", "/models/m/sample-model-bearings-weibull?from=email#bounds"],
-  // A study's old address lands on the Explorer's RCM tab: the tab is the target's own query, then the rest.
-  ["/rcm/studies/sample-rcm-truck?from=email", "/asset-register/explorer?tab=rcm&from=email"],
-  ["/maintenance/rcm/sample-rcm-truck?from=email", "/asset-register/explorer?tab=rcm&from=email"],
+  ["/rcm/studies/sample-rcm-truck?from=email", "/maintenance/rcm/sample-rcm-truck?from=email"],
   ["/strategy/demonstration-test?model=sample-model-bearings-weibull", "/strategy/test-planning?model=sample-model-bearings-weibull"],
   ["/asset-register/positions?place=none", "/asset-register/explorer?arrange=positions&place=none"],
   ["/maintenance/locations#top", "/asset-register/explorer?arrange=locations#top"],

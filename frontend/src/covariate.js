@@ -71,7 +71,8 @@ export function defaultText(input = {}) {
   const shown = input.kind === "choice"
     ? (input.choices || []).find((c) => c.code === input.default)?.label || input.default
     : `${fmtNum(input.default)}${input.unit ? ` ${input.unit}` : ""}`;
-  const why = { handbook: "the handbook’s", neutral: "no effect", typical: "a typical value" }[input.default_basis];
+  const why = { handbook: "the handbook’s", neutral: "no effect", typical: "a typical value", record: "the record’s own",
+    year: "a year", prediction: "the prediction’s" }[input.default_basis];
   return `Default ${shown}${why ? ` (${why})` : ""}`;
 }
 
@@ -112,9 +113,54 @@ export function valuesForServer(values = {}, inputs = []) {
   return out;
 }
 
-// The inputs still needed (no default and nothing typed).
+// The value an input has now: what's typed, else its default (as text; "" for none).
+const valueOf = (i, values) => {
+  const s = String(values?.[i.key] ?? "").trim();
+  return s !== "" ? s : i.default == null ? "" : String(i.default);
+};
+
+// One ``needed_when`` term against the other input's value now: true, false, or null when it can't
+// be told (nothing typed and no default, or not a number where one is compared).
+const COMPARE = { "==": (a, b) => a === b, "!=": (a, b) => a !== b, ">": (a, b) => a > b, ">=": (a, b) => a >= b,
+                  "<": (a, b) => a < b, "<=": (a, b) => a <= b };
+function termHolds(term, other, values) {
+  const text = valueOf(other, values);
+  const compare = COMPARE[term.op];
+  if (text === "" || !compare) return null;
+  if (typeof term.value === "number") {
+    const n = Number(text);
+    return Number.isFinite(n) ? compare(n, term.value) : null;
+  }
+  return compare(text, String(term.value));
+}
+
+// Whether an input is asked for given the others' values. ``needed_if`` ({key: [values]}): running
+// hours a year only when the clock is changed from the record's own. ``needed_when`` ([{key, op,
+// value}], every one to hold): a winding's temperature rise only when its insulation class is known.
+export function isNeeded(input = {}, inputs = [], values = {}) {
+  const cond = input.needed_if;
+  const listed = !cond || Object.entries(cond).every(([k, allowed]) => {
+    const other = inputs.find((i) => i.key === k);
+    // The other one isn't here (fixed at the position, say): it can't be told, so it's asked for.
+    return other ? allowed.map(String).includes(valueOf(other, values)) : true;
+  });
+  if (!listed) return false;
+  // In order, as the server reads them: one that can't be told yet asks for the input.
+  for (const term of input.needed_when || []) {
+    const other = inputs.find((i) => i.key === term.key);
+    const holds = other ? termHolds(term, other, values) : null;
+    if (holds === null) return true;
+    if (!holds) return false;
+  }
+  return true;
+}
+
+// The inputs asked for now (those another input's value makes unnecessary are left out).
+export const neededInputs = (inputs = [], values = {}) => inputs.filter((i) => isNeeded(i, inputs, values));
+
+// The inputs still needed (no default and nothing typed), of those asked for.
 export function missingInputs(inputs = [], values = {}) {
-  return inputs.filter((i) => i.default == null && String(values?.[i.key] ?? "").trim() === "");
+  return neededInputs(inputs, values).filter((i) => i.default == null && String(values?.[i.key] ?? "").trim() === "");
 }
 
 // A rate as shown: 3–4 significant figures, never NaN or Infinity.
@@ -179,22 +225,38 @@ export function lineConditions(line = {}) {
 
 // ---- fixing covariates at a position (CovariateBindPane.jsx) --------------------------------------
 
-// A binding's address part: "nswc:nswc-11:bearing-rolling-load-rating", "alt:<id>", "ph:<id>".
+// The binding sources: an NSWC-11 covariate model, any other library record (its record
+// covariates), an NRC/INL component, an accelerated life model, a proportional-hazards model.
+export const BINDING_SOURCES = ["nswc", "library", "component", "alt", "ph"];
+// Sources whose covariates' roles are the source's own (fixed in the data, not chosen by the user).
+export const LIBRARY_SOURCES = ["nswc", "library", "component"];
+
+// A binding's address part: "nswc:nswc-11:bearing-rolling-load-rating", "library:<record id>",
+// "component:<component id>", "alt:<id>", "ph:<id>".
 export const bindingParam = (source, ref) => `${source}:${ref}`;
 export function bindingFromParam(param) {
   const s = String(param || "");
   const i = s.indexOf(":");
   if (i < 1) return null;
   const source = s.slice(0, i);
-  return ["nswc", "alt", "ph"].includes(source) ? { source, ref: s.slice(i + 1) } : null;
+  return BINDING_SOURCES.includes(source) ? { source, ref: s.slice(i + 1) } : null;
 }
 
-// What's ticked to start with: what the position's binding fixes when there is one; else, for an
-// NSWC-11 model, its design inputs (fixed by the design), and for an ALT or PH model none (their
-// stresses and covariates are use or environment by nature).
+// The binding a library record (or component) takes at a position: NSWC-11's covariate models
+// keep their own source; a component id is a component; any other record is "library".
+export function bindingForRecord(rec = {}) {
+  const id = rec.id || "";
+  if (rec.kind === "covariate_model") return { source: "nswc", ref: id };
+  if (String(id).includes(":component:")) return { source: "component", ref: id };
+  return { source: "library", ref: id };
+}
+
+// What's ticked to start with: what the position's binding fixes when there is one; else, for a
+// library record or component (NSWC-11 included), its design inputs (fixed by the design), and for
+// an ALT or PH model none (their stresses and covariates are use or environment by nature).
 export function initialFix(source, inputs = [], binding = null) {
   if (binding?.fixed) return Object.fromEntries(inputs.map((i) => [i.key, i.key in binding.fixed]));
-  return Object.fromEntries(inputs.map((i) => [i.key, source === "nswc" && i.role === "design"]));
+  return Object.fromEntries(inputs.map((i) => [i.key, LIBRARY_SOURCES.includes(source) && i.role === "design"]));
 }
 
 // The values to start with: the binding's fixed ones, else each input's default (as text).
@@ -208,21 +270,22 @@ export function initialValues(inputs = [], binding = null) {
 // The binding the position saves: the ticked inputs with their values (as numbers or codes), and
 // for ALT and PH what each covariate is. {binding, missing: [labels ticked with no value]}.
 export function bindingToSave({ source, ref, inputs = [], fix = {}, values = {}, roles = {} }) {
-  const ticked = inputs.filter((i) => fix[i.key]);
+  const ticked = neededInputs(inputs, values).filter((i) => fix[i.key]);
   const missing = ticked.filter((i) => String(values[i.key] ?? "").trim() === "").map((i) => i.label);
   const fixed = valuesForServer(Object.fromEntries(ticked.map((i) => [i.key, values[i.key]])), inputs);
   return {
-    binding: { source, ref, fixed, ...(source === "nswc" ? {} : { roles: Object.fromEntries(inputs.map((i) => [i.key, roles[i.key] || i.role])) }) },
+    binding: { source, ref, fixed, ...(LIBRARY_SOURCES.includes(source) ? {} : { roles: Object.fromEntries(inputs.map((i) => [i.key, roles[i.key] || i.role])) }) },
     missing,
   };
 }
 
 // The summary under the form: "3 of 14 fixed here; 11 set where it's used (an RBD block, or the
 // diagram's Use and Environment values)", or "Every covariate fixed: a constant-rate model here".
-export function bindSummary(source, inputs = [], fix = {}) {
+export function bindSummary(source, inputs = [], fix = {}, values = {}) {
+  inputs = neededInputs(inputs, values);
   const n = inputs.filter((i) => fix[i.key]).length;
   if (inputs.length && n === inputs.length) {
-    return source === "nswc"
+    return LIBRARY_SOURCES.includes(source)
       ? "Every covariate fixed: it's saved as a constant-rate model at this position."
       : "Every covariate fixed: a constant-stress model at this position.";
   }
@@ -242,3 +305,58 @@ export function cleanConditions(rows = []) {
 
 // A diagram's blocks whose covariates were left open at their positions.
 export const boundNodes = (graph) => (graph?.nodes || []).filter((n) => n.data?.model?.kind === "bound");
+
+// ---- any library record's covariates (backend/library/record_covariates.py) -----------------------
+
+export const CLOCK_WORDS = { calendar: "per calendar hour", operating: "per hour of running" };
+export const TRIGGER_WORDS = {
+  demand: "Per demand", first_hour: "Running, first hour of each run", after_first_hour: "Running, after the first hour",
+  running: "Per hour of running", calendar: "Per calendar hour",
+};
+
+// A record's or component's evaluation, the answer first: {big, sub: [lines], modes: [{name, words, value}]}.
+// A component: its chance of failing over the period, the 5–95% range, the rare-event sum and its
+// constant rate. A rate: failures per hour on its clock, with the 5–95% range across plants. A
+// probability per demand: per demand, and as a rate when the demands a year are given.
+export function recordAnswer(r) {
+  if (!r) return null;
+  const range = (b) => (b && b.p05 != null && b.p95 != null ? `${fmtRate(b.p05)} to ${fmtRate(b.p95)}` : null);
+  if (r.component_id) {
+    const sub = [];
+    if (range(r.bounds)) sub.push(`5–95% across plants: ${range(r.bounds)}`);
+    sub.push(`The plain sum of the modes (the rare-event approximation): ${fmtRate(r.rare_event_sum)}`);
+    sub.push(`As a constant rate: ${fmtRate(r.rate_per_calendar_hour)} failures per calendar hour`);
+    return {
+      big: `${fmtRate(r.probability)} chance it fails over the period`,
+      sub,
+      modes: (r.modes || []).filter((m) => m.counted).map((m) => ({
+        name: m.mode,
+        words: `${TRIGGER_WORDS[m.trigger] || m.trigger} · ${fmtRate(m.mean)} ${m.unit} × ${fmtRate(m.exposure)} ${Number(m.exposure) === 1 ? String(m.exposure_unit).replace(/s$/, "") : m.exposure_unit}`,
+        value: m.probability, share: m.share,
+      })),
+    };
+  }
+  if (r.total != null) return null; // an NSWC-11 model: its own view
+  const sub = [];
+  if (r.failure_rate != null) {
+    const per = CLOCK_WORDS[r.clock] || "per hour";
+    if (r.probability != null) {
+      sub.push(`= ${fmtRate(r.failure_rate)} failures ${per} at ${fmtRate(r.covariates?.demands_per_year)} demands a year`);
+      if (range(r.bounds_rate)) sub.push(`5–95% across plants: ${range(r.bounds_rate)} ${per}`);
+      return { big: `${fmtRate(r.probability)} chance of failing per demand`, sub, modes: [] };
+    }
+    if (range(r.bounds)) sub.push(`5–95% across plants: ${range(r.bounds)} ${per}`);
+    if (r.mean_time_to_failure) sub.push(`Mean time to failure ${fmtRate(r.mean_time_to_failure)} hours`);
+    return { big: `${fmtRate(r.failure_rate)} failures ${per}`, sub: [...sub, ...(r.assumptions || [])], modes: [] };
+  }
+  if (r.probability != null) {
+    if (range(r.bounds)) sub.push(`5–95% across plants: ${range(r.bounds)}`);
+    sub.push("Give the demands a year to make it a rate in time.");
+    return { big: `${fmtRate(r.probability)} chance of failing per demand`, sub, modes: [] };
+  }
+  return { big: "", sub: r.assumptions || [], modes: [] };
+}
+
+// The covariates typed, as a model or prior is saved with them (blanks left out: they take the default).
+export const covariatesToSave = (inputs = [], values = {}) => valuesForServer(
+  Object.fromEntries(neededInputs(inputs, values).map((i) => [i.key, values[i.key]])), inputs);

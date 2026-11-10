@@ -14,6 +14,7 @@ test("days read as days, months or years", () => {
 test("percent and dates tolerate gaps", () => {
   assert.equal(percent(0.126), "13%");
   assert.equal(percent(null), "–");
+  assert.equal(dateText("2026-11-01T14:05:00"), "1 Nov 2026");
   assert.equal(dateText(""), "");
   assert.equal(dateText("not a date"), "");
 });

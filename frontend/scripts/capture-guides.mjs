@@ -431,25 +431,46 @@ async function scrollTo(locator, offset = 80) {
   await wait(600);
 }
 
-// RCM and FME(C)A guides: the sample UAV product (the one sample for both tabs), its
-// design with its RCM (some decisions linked to sample evidence) and every failure
+// RCM and FME(C)A guides: the Survey quadcopter (the one worked example for both tabs), its
+// design with its RCM (some decisions linked to the evidence saved with it) and every failure
 // mode scored. When this run added it, the cleanup retires its design and items and
-// deletes its RBD; one already there is left alone. null when Reliafy Maintenance is
+// deletes its RBD, its maintainability prediction and the records the add saved with it;
+// one already there is left alone. null when Reliafy Maintenance is
 // off on this server (then those shots are skipped, out loud, and keep their images).
 // Teams guide: a team with one pending invitation (single-user mode can create one:
 // no billing).
 async function seedSampleProduct(config) {
   if (!config.maintenance) return null;
+  const before = await savedIds();
   const made = await api("/maintenance/sample-product", {});
+  // What the add saved in the workspace as its own (its life models, the analyses behind
+  // its decisions, their datasets): only the ones that weren't there before, so the
+  // cleanup deletes those and nothing a workspace already had.
+  const after = made.added ? await savedIds() : before;
+  const saved = SAVED_KINDS.flatMap((kind) => after[kind].filter((x) => !before[kind].includes(x)).map((x) => `${kind}/${x}`));
   const id = made.product?.id || made.position.id;
   const items = made.items || (await api(`/maintenance/products/${id}/items`)).items;
   // The design's positions by name (Motor 1, Propeller 1, ...), for the shots that pick one.
   const sheet = await api(`/maintenance/positions/${id}/rcm?scope=below`);
   const at = Object.fromEntries(sheet.positions.map((p) => [p.name, p.id]));
-  return { id, added: !!made.added, tops: items.map((it) => it.top_position_id), rbdId: made.rbd?.id, at };
+  return {
+    id, added: !!made.added, tops: items.map((it) => it.top_position_id), rbdId: made.rbd?.id, at, saved,
+    predictionId: made.maintainability?.added ? made.maintainability.id : null,
+  };
 }
-// Failure reports guide: a report filed on the first quadcopter built from the sample
-// product (serial 0007, which has the sample's own report on its Motor 1) and taken
+// The ids of every saved model, degradation model, strategy analysis and dataset the
+// workspace lists (models and analyses before the datasets they were fitted to).
+const SAVED_KINDS = ["/models", "/degradation/models", "/strategy/analyses", "/datasets"];
+async function savedIds() {
+  const out = {};
+  for (const kind of SAVED_KINDS) {
+    const got = await api(kind).catch(() => ({}));
+    out[kind] = (Object.values(got).find(Array.isArray) || []).map((row) => row.id);
+  }
+  return out;
+}
+// Failure reports guide: a report filed on the first quadcopter built from that
+// product (serial 0007, which has the product's own report on its Motor 1) and taken
 // part way round the loop (investigated, one corrective action), so the list and the
 // report have something to show. Reports are never deleted (rejected at most); when
 // this run added the product, retiring its items in the cleanup takes it out of the
@@ -493,6 +514,22 @@ async function seedSignals(config) {
     });
   }
   return { positionId: pump.id, channelId: channel.id };
+}
+// RCM study guide: a study of the user's own (the sample is read-only, so its
+// decision dialog can't open), with one mode still to decide.
+async function seedRcmStudy() {
+  const study = await api("/rcm/studies", { name: "Conveyor drive — RCM", system: "Conveyor line 2", description: "" });
+  const res = await fetch(`${BASE}/api/rcm/studies/${study.id}/tree`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ functions: [{ text: "Drive the belt at 4 m/s", failures: [{ text: "Belt stops", modes: [
+      { text: "Gearbox bearing fatigue", effects: "Line stops until the bearing is changed; about 8 hours lost.",
+        consequence: null, decision: null },
+      { text: "Motor overload trip fails to operate (hidden)", effects: "Motor burns out on the next jam.",
+        consequence: "hidden", decision: null },
+    ] }] }] }),
+  });
+  if (!res.ok) throw new Error(`rcm tree → ${res.status} ${await res.text()}`);
+  return study.id;
 }
 async function seedTeam() {
   const team = await api("/teams", { name: "Reliability team" });
@@ -734,6 +771,9 @@ async function main() {
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); await calculate(page); } },
     // --- Maintainability prediction: the sample quadcopter's saved prediction ---
     { file: "mp-01-result.png", url: "/maintainability/sample-maintainability-quadcopter", settle: 1500 },
+    // --- RCM study (guides/rcm-study.md): the sample, with its evidence statuses ---
+    { file: "rcm-study-01.png", url: "/maintenance/rcm/sample-rcm-truck", settle: 2000,
+      async act(page) { await page.getByRole("treegrid", { name: "RCM worksheet" }).waitFor({ timeout: 20000 }); await wait(400); } },
     // --- Failure-finding interval: a trip failing once a year (λ = 1/8,760 h), 99% ---
     { file: "ff-01-result.png", url: "/strategy/failure-finding", settle: 1200,
       async act(page) {
@@ -832,7 +872,19 @@ async function main() {
 
   // Shots needing purpose-built fixtures (created below, deleted afterwards).
   const fixtureShots = (fx) => [
-    // --- RCM on the asset tree: the RCM tab of the sample UAV product's functional
+    // --- RCM study (guides/rcm-study.md): deciding a failure mode, with the sample
+    // analysis as evidence ---
+    { file: "rcm-study-02-decision.png", url: `/maintenance/rcm/${fx.rcmStudyId}`, settle: 1500,
+      async act(page) {
+        await page.getByRole("button", { name: "To decide" }).first().click(); await wait(600);
+        const m = page.locator(".decision-modal");
+        await m.getByRole("button", { name: /^Operational$/ }).click(); await wait(300);
+        await m.getByRole("button", { name: /Fixed-interval replacement/ }).click(); await wait(800);
+        await m.getByPlaceholder("e.g. Replace brake pads").fill("Replace the gearbox input bearing");
+        await m.getByPlaceholder("Interval").fill("580");
+        await m.locator(".evidence-option", { hasText: /Bearing preventive replacement/ }).click(); await wait(500);
+      } },
+    // --- RCM on the asset tree: the RCM tab of the Survey quadcopter's functional
     // structure (the same Explorer, on the design), its top picked: its function top
     // down, failures explained below, with the evidence checks; then the decision
     // dialog on one of its modes (Propeller 1's blade fatigue: a fixed interval, 130
@@ -862,7 +914,7 @@ async function main() {
         await page.getByRole("menu").getByRole("menuitem", { name: "Change the decision…" }).click();
         await page.getByRole("dialog", { name: /^Decision/ }).waitFor({ timeout: 20000 }); await wait(800);
       } },
-    // --- FME(C)A: the FME(C)A tab of the sample UAV product's functional
+    // --- FME(C)A: the FME(C)A tab of the Survey quadcopter's functional
     // structure (the same Explorer, on the design; its motor picked, so the worksheet columns show scored rows),
     // then the root picked for the criticality matrix in its Details. Skipped,
     // like the RCM shots, without Maintenance.
@@ -881,7 +933,7 @@ async function main() {
         await page.getByRole("complementary", { name: "Details" }).getByText(/matrix/i).first().waitFor({ timeout: 20000 }); await wait(600);
       } },
     // --- Failure reports on the asset tree: the Explorer's Failure reports tab on
-    // a quadcopter built from the sample product (its tree, serial 0007, with a
+    // a quadcopter built from the Survey quadcopter product (its tree, serial 0007, with a
     // report filed on it in the fixture step, part way round the loop), then the
     // report itself: its stage, facts, investigation and corrective action.
     // Skipped, like the RCM shots, without Maintenance.
@@ -978,8 +1030,8 @@ async function main() {
         await page.getByLabel("load changes the path").check();
         await wait(800);
       } },
-    { file: "cbr-02-risk.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000 },
-    { file: "cbr-03-unit.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000,
+    { file: "cbr-02-risk.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000, noTree: true },
+    { file: "cbr-03-unit.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000, noTree: true,
       async act(page) {
         // Risk now shows the riskiest unit beside the table (no scrolling: the tab fits the screen).
         await page.locator(".joint-unit-sum").waitFor({ timeout: 20000 }); await wait(2000);
@@ -1117,6 +1169,12 @@ async function main() {
   const failed = [];
   const skipped = [];
 
+  // The model page keeps its Risk now tab only where the account has no asset
+  // tree (with one, risk now is in the Explorer by Classes): those shots answer
+  // the access check as such an account would get it.
+  const NO_TREE = "**/api/maintenance/access";
+  const noTree = (route) => route.fulfill({ json: { allowed: false } });
+
   const shoot = async (list) => {
     for (const s of list) {
       // A shot that can't be taken on this server (a feature switched off)
@@ -1130,6 +1188,8 @@ async function main() {
       try {
         // Every shot starts in the personal workspace (the team shot switches).
         if (page.url().startsWith(BASE)) await page.evaluate(() => localStorage.removeItem("reliafy.workspace"));
+        // A shot of what an account without the asset tree sees (`noTree`).
+        if (s.noTree) await page.route(NO_TREE, noTree);
         await page.goto(`${BASE}${s.url}`, { waitUntil: "networkidle" });
         await wait(s.settle || 500);
         await assertNotSignIn(page, s.url);
@@ -1151,6 +1211,7 @@ async function main() {
         // A shot that saved something of its own removes it, so it can't show
         // up in a later shot's list.
         if (s.cleanup) await s.cleanup().catch(() => {});
+        if (s.noTree) await page.unroute(NO_TREE, noTree).catch(() => {});
       }
     }
   };
@@ -1173,6 +1234,7 @@ async function main() {
       outageId: await seedOutageRbd(),
       networkId: await seedNetworkRbd(),
       design: await seedDesignRbds(),
+      rcmStudyId: await seedRcmStudy(),
       uav: await seedSampleProduct(config),
       signals: await seedSignals(config),
       teamId: await seedTeam(),
@@ -1199,6 +1261,8 @@ async function main() {
           }).catch(() => {});
         }
         if (fx.uav.rbdId) await fetch(`${BASE}/api/rbds/${fx.uav.rbdId}`, { method: "DELETE" }).catch(() => {});
+        if (fx.uav.predictionId) await fetch(`${BASE}/api/maintainability/predictions/${fx.uav.predictionId}`, { method: "DELETE" }).catch(() => {});
+        for (const path of fx.uav.saved) await fetch(`${BASE}/api${path}`, { method: "DELETE" }).catch(() => {});
       }
       if (fx.signals) {
         await fetch(`${BASE}/api/maintenance/signals/channels/${fx.signals.channelId}`, {
@@ -1208,6 +1272,7 @@ async function main() {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "guide capture" }),
         }).catch(() => {});
       }
+      await fetch(`${BASE}/api/rcm/studies/${fx.rcmStudyId}`, { method: "DELETE" }).catch(() => {});
       await fetch(`${BASE}/api/teams/${fx.teamId}`, { method: "DELETE" }).catch(() => {});
       for (const id of [fx.loadshare.datasetId, ...fx.joint.datasetIds]) {
         await fetch(`${BASE}/api/datasets/${id}`, { method: "DELETE" }).catch(() => {});

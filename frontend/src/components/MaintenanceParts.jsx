@@ -8,6 +8,7 @@ import {
   DOCUMENT_KINDS, MAX_DOCUMENT_MB, PRECISIONS, datedText, daysText, documentFileProblem, fileSizeText,
   roughDateInput, roughDateValue, safeHref,
 } from "../maintenanceFields.js";
+import { formatDate } from "../dates.js";
 import { locationOptions } from "../maintenanceLocations.js";
 import { SHORT_TEXT, lengthNote } from "../maintenanceText.js";
 import Modal from "./Modal.jsx";
@@ -16,8 +17,7 @@ import Modal from "./Modal.jsx";
 
 export function fmtDate(iso) {
   if (!iso) return "—";
-  const d = new Date(`${iso}T00:00:00`);
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return formatDate(iso) || String(iso);
 }
 
 // A date as it's known: "2022", "Mar 2022", "~Mar 2022", or the day.
@@ -268,13 +268,10 @@ export function LocationPicker({ locations, value, onChange, emptyLabel = "Choos
   );
 }
 
-// A modal with a form: `onSubmit` returns a promise; errors show in the modal.
-// Sent once: while it's in flight the button is disabled and says
-// `pendingLabel` (default "Saving…"), and a second click, double-click or
-// Enter sends nothing more (a ref, set before React draws again). A refusal
-// shows in the modal, in the server's words, or what to do when there was no
-// answer at all.
-export function FormModal({ title, submitLabel, pendingLabel = "Saving…", onClose, onSubmit, canSubmit = true, danger = false, children }) {
+// A form's send, wherever the form is drawn (a dialog, a panel beside the tree):
+// sent once while it's in flight, a refusal kept in the server's words (or what
+// to do when there was no answer at all). {busy, error, submit}.
+export function useSendOnce(onSubmit, canSubmit = true) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const inFlight = useRef(false);
@@ -290,10 +287,21 @@ export function FormModal({ title, submitLabel, pendingLabel = "Saving…", onCl
       setError(!msg || msg === "Failed to fetch" || /NetworkError|Load failed/i.test(msg)
         ? "Couldn't save. Check your connection and try again." : msg);
     }
-    // A step that keeps the dialog open (check, then import) needs the button back.
+    // A step that keeps the form open (check, then import) needs the button back.
     inFlight.current = false;
     setBusy(false);
   };
+  return { busy, error, submit };
+}
+
+// A modal with a form: `onSubmit` returns a promise; errors show in the modal.
+// Sent once: while it's in flight the button is disabled and says
+// `pendingLabel` (default "Saving…"), and a second click, double-click or
+// Enter sends nothing more (a ref, set before React draws again). A refusal
+// shows in the modal, in the server's words, or what to do when there was no
+// answer at all.
+export function FormModal({ title, submitLabel, pendingLabel = "Saving…", onClose, onSubmit, canSubmit = true, danger = false, children }) {
+  const { busy, error, submit } = useSendOnce(onSubmit, canSubmit);
   return (
     <Modal
       title={title}

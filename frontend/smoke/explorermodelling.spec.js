@@ -188,6 +188,13 @@ test("an ALT model attached as fitted, and a prediction row from the parts list"
 // in use over the position's own life model.
 const rbdPane = (page) => page.getByRole("region", { name: "RBD", exact: true });
 const rbdOf = (page) => new URL(page.url()).searchParams.get("rbd");
+// How many of the diagram's blocks are wholly inside its canvas.
+const blocksInView = (pane) => pane.locator(".react-flow").evaluate((flow) => {
+  const box = flow.getBoundingClientRect();
+  const nodes = [...flow.querySelectorAll(".react-flow__node")].map((n) => n.getBoundingClientRect());
+  const inside = nodes.filter((r) => r.left >= box.left - 1 && r.right <= box.right + 1 && r.top >= box.top - 1 && r.bottom <= box.bottom + 1);
+  return { all: nodes.length, inside: inside.length };
+});
 async function station(request, tag) {
   const st = await postOk(request, `${M}/positions`, { name: `Station ${tag}` });
   const a = await postOk(request, `${M}/positions`, { name: `Pump A ${tag}`, parent_id: st.id });
@@ -227,7 +234,10 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
   await pane.getByRole("button", { name: "More diagram settings" }).click();  // closes the menu
   await expect(pane.getByRole("link", { name: "Open full page" })).toHaveCount(0);
   await expect(pane.getByRole("button", { name: "Close the RBD" })).toBeVisible();
+  // The whole diagram is in view: every block inside the canvas.
+  await expect.poll(() => blocksInView(pane)).toEqual({ all: 4, inside: 4 });
   await shot(page, "1440-rbd-built");
+  const first = rbdOf(page);
 
   // Esc: the table again, the position still picked, the address as it was.
   await page.keyboard.press("Escape");
@@ -235,6 +245,23 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
   await expect(row(page, st.id)).toHaveAttribute("aria-selected", "true");
   await expect(page).not.toHaveURL(/[?&](rbd|on)=/);
   const rbd = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Station ${tag} (from the tree)` }) });
+  // The menu again: it opens the diagram already built (the same one) and never makes a second.
+  await headMenu(page);
+  await page.getByRole("menuitem", { name: "RBD", exact: true }).click();
+  await expect(page.getByRole("menu", { name: "RBD" }).getByRole("menuitem"))
+    .toHaveText(["Open the RBD", "Rebuild from what's inside…", "Link an existing RBD…"]);
+  await page.getByRole("menu", { name: "RBD" }).getByRole("menuitem", { name: "Open the RBD" }).click();
+  await expect(pane).toBeVisible();
+  expect(rbdOf(page)).toBe(first);
+  await page.keyboard.press("Escape");
+  await expect(pane).toHaveCount(0);
+  await expect(rbd).toHaveCount(1);
+  const links = (await (await request.get(`${M}/position-models?position_ids=${st.id}`)).json()).links;
+  expect(links.filter((x) => x.model_type === "rbd").length).toBe(1);
+  // Asked for again over the API: the same row comes back, nothing new saved.
+  const again = await postOk(request, `${M}/positions/${st.id}/models`, { build_rbd: true });
+  expect(again.existing).toBe(true);
+  expect(again.model_id).toBe(first);
   await expect(rbd.locator(".mt-c-kind")).toContainText("RBD");
   await expect(rbd.locator(".mt-c-source")).toHaveText("Built from 2 positions inside · 1 placeholder");
   await expect(rbd.locator(".mt-c-numbers")).toContainText(/MTBF [\d,]+ hours/);
@@ -323,12 +350,28 @@ test("an RBD row opens in the table area: reload, edit and save, unsaved changes
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await expect(row(page, st.id)).toHaveAttribute("aria-selected", "true");
 
-  // Rebuild from what's inside…: run again into the same diagram, reopened with what it did.
+  // Rebuild from what's inside…: the diagram opens and asks in the pane (no dialog). Cancel leaves
+  // it as it is; Rebuild runs again into the same diagram, the saved edit kept.
   await rbd.locator(".tp-nm").click({ button: "right" });
   await page.getByRole("menu").last().getByRole("menuitem", { name: "Rebuild from what's inside…" }).click();
   await expect(pane).toBeVisible();
+  const ask = pane.getByRole("group", { name: "Rebuild from what's inside" });
+  await expect(ask).toContainText(`Rebuild from what’s inside Station ${tag}?`);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await ask.getByRole("button", { name: "Cancel" }).click();
+  await expect(ask).toHaveCount(0);
+  await expect(nodes).toHaveCount(count + 1);
+  await page.keyboard.press("Escape");
+  await expect(pane).toHaveCount(0);
+  await postOk(request, `${M}/positions`, { name: `Pump C ${tag}`, parent_id: st.id });
+  await headPick(page, "RBD", "Rebuild from what's inside…");
+  await expect(ask).toBeVisible();
+  await ask.getByRole("button", { name: "Rebuild", exact: true }).click();
+  await expect(ask).toHaveCount(0);
   await expect(page).toHaveURL(new RegExp(`[?&]rbd=${built.model_id}&on=${st.id}`));
-  await expect(nodes).toHaveCount(count + 1);  // the saved edit kept
+  await expect(nodes.filter({ hasText: `Pump C ${tag}` })).toBeVisible();
+  await expect(nodes).toHaveCount(count + 2);  // the saved edit kept, the new position's block added
 
   // Link an existing RBD…: a picker, then the linked diagram in the pane (a sample: read only).
   await page.keyboard.press("Escape");
@@ -527,6 +570,50 @@ test("the fit at 400 px takes the screen: inputs, then the result, nothing sidew
   await expect(row(page, pump.id)).toBeVisible();
 });
 
+// Too narrow for the two columns side by side (the tree takes its share of a 1280 px window): the
+// parts stack, each as tall as what's in it, so neither is drawn over the other; the pane scrolls
+// as one, and Cancel and Save stay at its foot whichever part is being read.
+test("the fit beside the tree at 1280 px stacks its two parts, neither over the other, Save always in view", async ({ page, request }) => {
+  const tag = `k${Date.now()}`;
+  const ago = (d) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
+  const pump = await postOk(request, `${M}/positions`, { name: `Stacked pump ${tag}` });
+  let at = 1500;
+  for (const life of [300, 420, 380]) {
+    await postOk(request, `${M}/positions/${pump.id}/fit`, { new_item: { name: `K${life} ${tag}` }, on: ago(at) });
+    at -= life;
+    await postOk(request, `${M}/positions/${pump.id}/remove`, { on: ago(at), reason: "failure" });
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
+  await headPick(page, "Life model", "Fit a life model…");
+  const dialog = page.getByRole("region", { name: "Fit a life model" });
+  await expect(dialog.getByRole("status")).toContainText("A plain fit (maximum likelihood) to 3 failures");
+  // The tallest the inputs get: a prior, typed as ranges.
+  await dialog.getByRole("radio", { name: "With a prior" }).click();
+  await dialog.getByRole("combobox", { name: "Prior", exact: true }).selectOption("around");
+  await expect(dialog.getByRole("group", { name: "Around a value, between two bounds" })).toBeVisible();
+  const save = dialog.getByRole("button", { name: "Save as this position's model" });
+  const parts = () => dialog.evaluate((el) => {
+    const box = (sel) => { const e = el.querySelector(sel); const r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, spills: e.scrollHeight - e.clientHeight }; };
+    return { pane: el.getBoundingClientRect().bottom, inputs: box(".fit2-in"), result: box(".fit2-out"), foot: box(".fit2-foot") };
+  });
+  const top = await parts();
+  expect(top.result.left).toBeLessThanOrEqual(top.inputs.left + 1);  // stacked, not side by side
+  expect(top.result.top).toBeGreaterThanOrEqual(top.inputs.bottom - 1);  // the result starts where the inputs end
+  expect(top.inputs.spills).toBeLessThanOrEqual(1);  // and nothing of either hangs out of its box
+  expect(top.result.spills).toBeLessThanOrEqual(1);
+  expect(top.foot.bottom).toBeLessThanOrEqual(top.pane + 1);
+  await expect(save).toBeInViewport({ ratio: 1 });
+  // Scrolled to the end of the result: the bar is still at the pane's foot, under the last of it.
+  const scrolled = await dialog.locator(".fit2").evaluate((el) => { el.scrollTop = el.scrollHeight; return el.scrollTop; });
+  expect(scrolled).toBeGreaterThan(0);
+  const end = await parts();
+  expect(end.foot.bottom).toBeLessThanOrEqual(end.pane + 1);
+  expect(end.foot.top).toBeGreaterThanOrEqual(top.foot.top - 1);
+  await expect(save).toBeInViewport({ ratio: 1 });
+  expect(await sideways(page)).toBeLessThanOrEqual(1280);
+});
+
 // A prior around a value, between two bounds: alpha about 400 (90% between 300 and 600), beta just
 // between 1.5 and 4; no trust chips (the ranges are the belief); the how-it-was-computed line says it.
 test("Fit a life model… with a prior around a value, between two bounds", async ({ page, request, problems }) => {
@@ -634,8 +721,10 @@ test("the library record picker at 400 px", async ({ page, request, problems }) 
   expect(await picker.locator(".lib-pick-list").evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
   await first.click();
   await expect(picker).toHaveCount(0);
-  await expect(page.getByRole("dialog", { name: "From the data library" }).getByRole("group", { name: "The library record" }))
-    .toContainText("Motor-driven pump");
+  // A published record goes on to Fix covariates (its covariates fixed here or set in the RBD), at 400 px too.
+  const pane = page.getByRole("region", { name: "Fix covariates" });
+  await expect(pane).toContainText("Motor-driven pump");
+  expect(await sideways(page)).toBeLessThanOrEqual(400);
   await expectHealthy(page, problems, { label: "the library record picker at 400 px" });
 });
 
@@ -929,10 +1018,10 @@ test("the prediction's lines: add a part on a child, leave one out and put it ba
   await expectHealthy(page, problems, { label: "adding and removing prediction lines" });
 });
 
-test("a product's Modelling tab: Add a prediction… in the table area, on the sample quadcopter", async ({ page, request, problems }) => {
+test("a product's Modelling tab: Add a prediction… in the table area, on the Survey quadcopter", async ({ page, request, problems }) => {
   const { products } = await (await request.get(`${M}/products`)).json();
   const quad = products.find((p) => /^Survey quadcopter/.test(p.name));
-  expect(quad, "the seeded sample product").toBeTruthy();
+  expect(quad, "the seeded Survey quadcopter").toBeTruthy();
   for (const [width, height] of [[1920, 1080], [1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
     // The address alone opens it (a link, or a reload).
@@ -980,6 +1069,36 @@ test("a product's Modelling tab: Add a prediction… in the table area, on the s
   await expectHealthy(page, problems, { label: "a product's prediction pane" });
 });
 
+// A long diagram built from the tree (the Survey quadcopter's Propulsion: twelve like blocks in
+// series) opens with every block in view, and its "like blocks in series" hints are one line on
+// the Calculator that opens to the list, under the answer.
+test("a built RBD opens whole, and its like-blocks hints fold into one line", async ({ page, request, problems }) => {
+  const { products } = await (await request.get(`${M}/products`)).json();
+  const quad = products.find((p) => /^Survey quadcopter/.test(p.name));
+  expect(quad, "the seeded Survey quadcopter").toBeTruthy();
+  const { positions } = await (await request.get(`${M}/tree`)).json();
+  const prop = positions.find((p) => p.name === "Propulsion" && p.parent_id === quad.id);
+  expect(prop, "the Survey quadcopter's Propulsion").toBeTruthy();
+  const built = await postOk(request, `${M}/positions/${prop.id}/models`, { build_rbd: true });
+  for (const [width, height] of [[1440, 900], [400, 860]]) {
+    await page.setViewportSize({ width, height });
+    await open(page, `/products/${quad.id}?view=models&sel=${prop.id}&rbd=${built.model_id}&on=${prop.id}`);
+    const pane = rbdPane(page);
+    await expect(pane.locator(".react-flow__node").first()).toBeVisible();
+    await expect.poll(async () => { const b = await blocksInView(pane); return b.all > 10 && b.inside === b.all; }).toBe(true);
+    await pane.getByRole("tab", { name: "Calculator" }).click();
+    await pane.getByRole("button", { name: "Calculate" }).click();
+    const fold = pane.locator("details.rbd-check-fold:visible").first();
+    await expect(fold.locator("summary")).toHaveText("⚠ 3 groups of like blocks are in series: check whether any are redundant");
+    await expect(fold.locator("li").first()).toBeHidden();
+    await fold.locator("summary").click();
+    await expect(fold.locator("li")).toHaveCount(3);
+    await expect(fold.locator("li").filter({ hasText: "“Motor 1”, “Motor 2”, “Motor 3” and “Motor 4”" })).toHaveCount(1);
+    expect(await sideways(page)).toBeLessThanOrEqual(width);
+  }
+  await expectHealthy(page, problems, { label: "a built RBD's hints" });
+});
+
 // A product's Modelling tab: Build from what's inside… opens the builder in the table area too.
 test("a product's Modelling tab: Build from what's inside… opens the RBD builder in the table area", async ({ page, request, problems }) => {
   const tag = `rp${Date.now()}`;
@@ -987,18 +1106,24 @@ test("a product's Modelling tab: Build from what's inside… opens the RBD build
   const motor = await postOk(request, `${M}/positions`, { name: `Drone motor ${tag}`, parent_id: product.id });
   await postOk(request, `${M}/positions`, { name: `Drone battery ${tag}`, parent_id: product.id });
   await postOk(request, `${M}/positions/${motor.id}/models`, { model_id: "sample-model-bearings-weibull" });
+  let first = null;
   for (const [width, height] of [[1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
     await open(page, `/products/${product.id}?view=models&sel=${product.id}`);
     if (width < 600) {
+      // Built at the first width: the menu now opens that diagram rather than building another.
       await row(page, product.id).locator(".tp-nm").click({ button: "right" });
       await page.getByRole("menuitem", { name: "RBD", exact: true }).click();
-      await page.getByRole("group", { name: "RBD" }).getByRole("menuitem", { name: "Build from what's inside…" }).click();
+      await expect(page.getByRole("group", { name: "RBD" }).getByRole("menuitem", { name: "Build from what's inside…", exact: true })).toHaveCount(0);
+      await page.getByRole("group", { name: "RBD" }).getByRole("menuitem", { name: "Open the RBD" }).click();
     } else {
       await headPick(page, "RBD", "Build from what's inside…");
     }
     const pane = rbdPane(page);
     await expect(pane.locator(".react-flow__node").filter({ hasText: `Drone battery ${tag}` })).toBeVisible();
+    if (first) expect(rbdOf(page)).toBe(first);
+    first = rbdOf(page);
+    await expect.poll(() => blocksInView(pane)).toEqual({ all: 4, inside: 4 });
     await expect(page.getByRole("dialog")).toHaveCount(0);
     // The heading row shows on a phone (for ‹ Back); on a wide screen it is for screen readers only.
     await expect(pane.locator(width < 600 ? ".table-pane-title" : "h2.sr-only")).toContainText(`RBD drone ${tag}`);

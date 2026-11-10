@@ -3,11 +3,14 @@ import { evaluateLibraryRecord } from "../api.js";
 import Field from "./ui/Field.jsx";
 import { TextInput } from "./ui/Controls.jsx";
 import CovariateInputs from "./CovariateInputs.jsx";
-import { cycleWord, fmtRate, perCycle, resultLine, unitShort, valuesForServer } from "../covariate.js";
+import { cycleWord, fmtRate, neededInputs, perCycle, recordAnswer, resultLine, unitShort, valuesForServer } from "../covariate.js";
 import "./CovariateCalculator.css";
 
-// A covariate model's inputs and its rate under them (NSWC-11): the record page's "Try it" and a
-// prediction line's "Conditions…" are this one component (the same components rule). Each input
+// A record's covariates and its rate under them: the one calculator for every library record (an
+// NSWC-11 covariate model's modes and total; any other record's rate on its clock, or a component's
+// chance of failing over a period). The record page's and component page's "Try it", a prediction
+// line's "Conditions…", Use as a model… and the Fit dialog's record prior are this one component
+// (the same components rule). Each input
 // shows its unit, its default (and where that comes from) and the handbook's limits; a value past a
 // limit says which, and the page, as it's typed. The rate is the server's, asked a moment after
 // each change: in total and for each part or failure mode, with the handbook's warnings.
@@ -17,12 +20,14 @@ import "./CovariateCalculator.css";
 //   cycles    (per-cycle rates, when given with onCycles) the cycles an hour typed; onCycles(text)
 //   onResult  (result or null)     the latest evaluation, for a caller that shows it elsewhere
 
-export default function CovariateCalculator({ recordId, inputs = [], unit, values = {}, onChange, cycles = null, onCycles = null, onResult = null, idPrefix = "cov" }) {
+//   stacked   true: the answer under the inputs, for a narrow place (a pane, a dialog)
+export default function CovariateCalculator({ recordId, inputs = [], unit, values = {}, onChange, cycles = null, onCycles = null, onResult = null, idPrefix = "cov", stacked = false }) {
   const [answer, setAnswer] = useState(null); // {ok, result, warnings} | {ok:false, problems}
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const seq = useRef(0);
-  const sent = JSON.stringify(valuesForServer(values, inputs));
+  const sent = JSON.stringify(valuesForServer(Object.fromEntries(Object.entries(values)
+    .filter(([k]) => neededInputs(inputs, values).some((i) => i.key === k) || !inputs.some((i) => i.key === k))), inputs));
 
   useEffect(() => {
     const mine = ++seq.current;
@@ -46,9 +51,10 @@ export default function CovariateCalculator({ recordId, inputs = [], unit, value
   const cyc = perCycle(unit) && onCycles;
   const cph = Number(cycles);
   const perHour = answer?.ok && cyc && cph > 0 ? answer.result.total * cph : null;
+  const generic = answer?.ok ? recordAnswer(answer.result) : null;
 
   return (
-    <div className="cov">
+    <div className={"cov" + (stacked ? " cov-stacked" : "")}>
       <div className="cov-inputs">
         <CovariateInputs inputs={inputs} values={values} onChange={onChange} idPrefix={idPrefix} />
         {cyc && (
@@ -74,7 +80,26 @@ export default function CovariateCalculator({ recordId, inputs = [], unit, value
             <ul>{answer.problems.map((p) => <li key={p}>{p}</li>)}</ul>
           </div>
         )}
-        {answer?.ok && (
+        {generic && (
+          <>
+            <p className="cov-big"><b>{generic.big}</b>{busy ? <span className="rw-sum"> · updating…</span> : null}</p>
+            {generic.sub.map((x) => <p key={x} className="cov-sub">{x}</p>)}
+            {generic.modes.length > 0 && (
+              <ul className="cov-modes" aria-label="Its failure modes">
+                {generic.modes.map((m) => (
+                  <li key={m.name + m.words}><span>{m.name}<span className="cov-mode-words">{m.words}</span></span><span className="num">{fmtRate(m.value)}</span></li>
+                ))}
+              </ul>
+            )}
+            {answer.warnings?.length > 0 && (
+              <div className="cov-warnings">
+                <p className="cov-head">Treat it with care:</p>
+                <ul>{answer.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+              </div>
+            )}
+          </>
+        )}
+        {answer?.ok && !generic && (
           <>
             <p className="cov-big"><b>{fmtRate(answer.result.total)}</b> {unitShort(answer.result.unit).replace("per ", "failures per ")}{busy ? <span className="rw-sum"> · updating…</span> : null}</p>
             {perHour != null && <p className="cov-sub">= <b>{fmtRate(perHour)}</b> failures per 10⁶ h at {fmtRate(cph)} {cycleWord(unit)} an hour</p>}

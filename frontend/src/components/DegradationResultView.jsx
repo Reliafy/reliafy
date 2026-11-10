@@ -9,11 +9,12 @@ import { paramView } from "./LifeSummary.jsx";
 import { formatNumber, formatPercent } from "../format.js";
 import { meanLevels } from "../meanLife.js";
 import { ModelTabs } from "./model/ModelFrame.jsx";
-import { CheckCard, ChecksGrid, NumbersSheet, PlotCard, PlotPanel, ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
+import { CheckCard, ChecksGrid, NumbersSheet, PlotCard, PlotPanel, ScrollCard, TablePanel, VerdictChip } from "./model/ModelLayouts.jsx";
+import ChartPair from "./model/ChartPair.jsx";
 import { InducedLifeCard, InducedLifeCheck, useInducedLife } from "./DegradationInducedLife.jsx";
 import {
   PATH_FORMULAS, POPULATION_METHODS, bLives, bandLevel, degradationTabs, meanAnswer, oneSidedLevel, pathParams, pathRanking,
-  reliabilityAt, resolveDegradationTab, scatterCheck, thresholdText, timeAtReliability,
+  reliabilityAt, resolveDegradationTab, routesVerdict, scatterCheck, thresholdText, timeAtReliability,
 } from "../degradationFrame.js";
 import "./DegradationResultView.css";
 
@@ -26,7 +27,8 @@ import "./DegradationResultView.css";
 //   Model characteristics  the mean life and the B-lives with their band
 //   Diagnostics            do the two routes to a life agree (the induced
 //                          life), does the path shape suit the readings
-//                          (residuals), which path shape fits best (AICc)
+//                          (residuals): one chart at a time where two would
+//                          be too thin; which path shape fits best (AICc)
 //   Data                   what it was fitted to, the items' crossing times
 //                          and every parameter
 // ``modelId`` (a saved model the viewer can ask) fetches the band at another
@@ -453,9 +455,20 @@ function DiagTab({ r, name, modelId }) {
   const induced = useInducedLife(modelId);
   const s = scatterCheck(r);
   const ranking = pathRanking(r);
+  // The two charted checks are alternatives: where both can't sit side by
+  // side at a readable width, a switch shows one, and each one's verdict
+  // stays in view in the switch.
   const checks = [
-    modelId && <InducedLifeCheck key="induced" induced={induced} unit={r.unit} name={name} />,
-    s && <ResidualsCheck key="resid" r={r} name={name} />,
+    modelId && {
+      id: "induced",
+      label: <>Two routes to a life<VerdictChip tone={routesVerdict(induced.data, r.unit)?.tone} /></>,
+      node: <InducedLifeCheck induced={induced} unit={r.unit} name={name} />,
+    },
+    s && {
+      id: "resid",
+      label: <>Scatter about each path<VerdictChip tone={s.tone} /></>,
+      node: <ResidualsCheck r={r} name={name} />,
+    },
   ].filter(Boolean);
   const notes = [
     !ranking && r.path_model?.name && `The ${r.path_model.name.toLowerCase()} path was chosen when fitting, so no other shapes were compared.`,
@@ -477,7 +490,7 @@ function DiagTab({ r, name, modelId }) {
         </>
       }
     >
-      {checks.length ? checks : (
+      {checks.length ? <ChartPair label="Check" items={checks} /> : (
         <p className="muted-line">No checks for this model beyond the path comparison.</p>
       )}
     </ChecksGrid>

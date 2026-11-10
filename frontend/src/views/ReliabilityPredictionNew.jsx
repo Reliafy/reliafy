@@ -22,8 +22,8 @@ import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { itemName } from "../components/LibRows.jsx";
 import {
   DEFAULT_ENVIRONMENT, DEFAULT_MISSION_HOURS, PREDICTIONS_GUIDE, PREDICTIONS_LABEL, PREDICTIONS_PATH, blankLine,
-  defaultQuality, lineFromServer, linesForServer, linesFromSaved, linesProblem, parsePartsList, predictionPath,
-  qualityHint,
+  defaultQuality, handbookConditionsLabel, lineFromServer, linesForServer, linesFromSaved, linesProblem, parsePartsList,
+  predictionPath, qualityHint,
 } from "../predictions.js";
 import { productPath } from "../products.js";
 import "./Predictions.css";
@@ -296,9 +296,16 @@ export default function ReliabilityPredictionNew() {
                           {conditionsLabel(l)}
                         </button>
                       ) : (
-                        <input type="number" inputMode="decimal" min="0" step="any" value={l.quality_factor} placeholder={defaultQuality(l.record)} aria-label={`Quality factor of part ${i + 1}`}
-                               title={qualityHint(l.record)}
-                               disabled={!l.record_id || l.excluded} onChange={(e) => setLine(i, { quality_factor: e.target.value })} />
+                        <span className="pred-q-cell">
+                          <input type="number" inputMode="decimal" min="0" step="any" value={l.quality_factor} placeholder={defaultQuality(l.record)} aria-label={`Quality factor of part ${i + 1}`}
+                                 title={qualityHint(l.record)}
+                                 disabled={!l.record_id || l.excluded} onChange={(e) => setLine(i, { quality_factor: e.target.value })} />
+                          {l.record_id && !l.excluded && (
+                            <button type="button" className="secondary sm" aria-label={`Environment and grade of part ${i + 1}`} onClick={() => setConditionsOf(i)}>
+                              {handbookConditionsLabel(l)}
+                            </button>
+                          )}
+                        </span>
                       )}
                     </td>
                     <td className="lib-actions">
@@ -334,7 +341,7 @@ export default function ReliabilityPredictionNew() {
         </section>
       )}
       {conditionsOf != null && lines[conditionsOf] && (
-        <ConditionsModal line={{ ...lines[conditionsOf], name: lines[conditionsOf].name || `part ${conditionsOf + 1}` }}
+        <ConditionsModal line={{ ...lines[conditionsOf], name: lines[conditionsOf].name || `part ${conditionsOf + 1}` }} environment={environment}
                          onClose={() => setConditionsOf(null)}
                          onDone={(c) => { setLine(conditionsOf, c); setConditionsOf(null); }} />
       )}

@@ -71,12 +71,18 @@ items. Under **Life model**:
 - **From the class…** links the model fitted to the position's class.
 - **Enter parameters…** saves a model from numbers you have (a data sheet, a
   handbook) and attaches it.
-- **From the data library…** attaches a published failure rate (Models ›
-  Library): an exponential at the record's mean rate per hour, with the
-  source's 5–95% range as its interval. The row's source reads, for example,
-  "Library: NRC/INL 2020, Motor-operated valve spurious operation
-  (INL/EXT-21-65055, Table 1, p. 6)", and the record stays cited. A probability per demand can't be a
-  life model, and the dialog says why.
+- **From the data library…** attaches a published record (Models ›
+  Library). Every input a record needs before it gives a rate is one of its
+  **covariates**, and they open in **Fix covariates** beside the tree: a
+  pipe's length, the clock (calendar hours or hours of running, and the
+  running hours a year to change it), the demands a year for a probability
+  per demand, a handbook part's environment and quality grade. Fix them all
+  and it's an exponential at the record's rate under them, with the source's
+  5–95% range as its interval; leave some open and they're set in an RBD
+  built from the tree. The row's source reads, for example, "Library: NRC/INL
+  2020, Motor-operated valve spurious operation (INL/EXT-21-65055, Table 1,
+  p. 6)", and the record stays cited. A library life model of your own is
+  attached as it is.
 
 A row's **⋯** has **Refit…** (a fitted model), **Replace with…** and
 **Unlink…**. Unlinking takes it off the position; the model stays in Models.
@@ -97,11 +103,12 @@ an RBD block or a calculation.
 ## Predict the failure rate from the parts list
 
 Reliability predictions live here, on the position they're for.
-**Covariate models at a position.** An NSWC-11 covariate model (from **Life
-model › From the data library…**), an accelerated life model or a
-proportional-hazards model opens **Fix covariates** beside the tree. Each
-covariate is grouped Design, Use or Environment, with **Fix at this position**
-and a value. Design inputs start ticked for an NSWC-11 model; an accelerated
+**Covariate models at a position.** A data library record or an NSWC-11
+covariate model (from **Life model › From the data library…**), an
+accelerated life model or a proportional-hazards model opens **Fix
+covariates** beside the tree. Each covariate is grouped Design, Use or
+Environment, with **Fix at this position** and a value. Design inputs start
+ticked for a library record (a pipe's length, a part's quality grade); an accelerated
 life model's stresses and a covariate model's covariates start open, and you
 say what each one is. What you leave open is set where the model is used: in
 an RBD built from the tree, on each block, or once for the whole diagram under
@@ -113,8 +120,9 @@ them later with **Fix covariates at this position…** on the row's ⋯ menu.
 
 **Prediction › Add a prediction (parts count)…** works
 out a parts count from the position's parts list and those of the positions
-inside it (on a product's design, its bill of materials where they list
-none). Set the environment once, the place the equipment works; the next
+inside it. On a product's design it also counts the parts of the bill of
+materials that aren't on a parts list, so a part you add never takes the
+other lines away; a part on both is counted once, from the parts lists. Set the environment once, the place the equipment works; the next
 prediction below it starts from the same one. Give each part a handbook part
 type (and a quality factor where the handbook has one): each part's rate is
 its base rate times the factors, and the rates add up as if every part were
@@ -146,17 +154,30 @@ positions one level down, each taking its model in use (a position with its
 own RBD comes in as a sub-system). They're wired by their connections and
 redundancy groups, in series where there are none. A position with no model
 gets a placeholder, flagged: the row warns until each has a model. The diagram
-opens in the RBD builder, filling the table area beside the tree, with a note
-of what it made; edit its blocks and connections there and **Save**, just as on
-the diagram's own page. **×** or Esc goes back to the table (it asks first if
-there are changes you haven't saved). **RBD › Link an existing RBD…** links one
-you've already drawn, and opens it the same way.
+opens in the RBD builder, filling the table area beside the tree, with the
+whole diagram in view (a long chain is folded into rows); edit its blocks and
+connections there and **Save**, just as on the diagram's own page. **×** or Esc
+goes back to the table (it asks first if there are changes you haven't saved).
+**RBD › Link an existing RBD…** links one you've already drawn, and opens it
+the same way.
+
+A position has one diagram built this way. Once it has one, the menu reads
+**RBD › Open the RBD**, which opens it, so using the menu again never makes a
+second diagram.
+
+Blocks built from the tree are in series unless the tree says otherwise, so
+the Calculator may note that like blocks ("Motor 1" to "Motor 4") are in
+series. Several such notes fold into one line; open it to see each group, and
+make a group redundant in the builder only if the system can run without one
+of them.
 
 The RBD row shows the system's MTBF and B10, and its panel lists every block
 with its model and the position it came from; type an age to see the
 system's reliability there. Double-click the row (or **Open in the pane**) to
 edit the diagram beside the tree; **Open full page** opens it on its own page.
-**Rebuild from what's inside…** adds positions added since, keeping your edits.
+**Rebuild from what's inside…** (on the row, or under **RBD ›**) opens the
+diagram and asks first; **Rebuild** then adds the positions inside that have
+no block yet, keeping your edits.
 
 ## The model in use
 
@@ -176,8 +197,11 @@ for the class's history as the prior) and the position's own failures and
 running units move that prior.
 
 1. Choose the **prior**: the class's history, a saved model, a library
-   record, numbers you know, or a B10 you believe. A **library record**'s
-   gamma on the rate is the prior exactly for an exponential (the update is
+   record, numbers you know, or a B10 you believe. A **library record** shows
+   its covariates under it (a pipe's length, the clock and running hours, the
+   demands a year): the prior is the record's under them, so a 200 ft pipe's
+   prior is 200 times a foot's. Its gamma on the rate is the prior exactly for
+   an exponential (the update is
    then exact, in closed form); for a Weibull or lognormal the rate becomes a
    prior on the mean life, with the shape between bounds you set (0.5 to 5
    unless you change them).
@@ -194,16 +218,58 @@ hours; the shape barely moved". Then the numbers before and after, each with
 a **90% credible interval**: there's a 90% chance the value lies in it, given
 the baseline and the data. The plot shows the baseline dashed and the update
 with its band. **Save as this position's model** keeps it in Models and
-attaches it; later, **Update with new failures…** on its row adds the
-failures recorded since.
+attaches it; later, **Update with new failures…** on its row opens the same
+fit with that model as the prior (its own prior and trust kept), adds the
+failures recorded since, and saving replaces the row.
 
 Use it when the data are sparse and the baseline is credible. With plenty of
 failures, fit the history instead: the data then speak for themselves. With no
 history at all the baseline stands as given.
 
+## Risk now for a class of equipment
+
+A [condition and life model](/guides/condition-based-risk) attached to a
+position gives that position's **risk now**: the chance its fitted item fails
+in the next 30, 90 and 365 days, from the item's age and its own condition
+readings.
+
+To see it for every item of a kind, arrange the
+Explorer by **Classes** (beside
+**Positions** and **Locations**, above the tree) and choose an item class. It
+opens on its one tab, **Condition monitoring**. The table there lists every
+position whose fitted item is of that class, or of a class inside it, highest
+risk first: the position, its position class, the item and its serial, its
+age, its last reading, the three chances and the **Median life left**. Choose
+a row for that item's two charts: its survival from now and its reading's
+path.
+
+With one asset's tree open (the **One tree** note shows above the tree),
+**Classes** covers only that asset: the classes, their counts and the table
+list the positions inside it and nothing else. **Show every asset** goes back
+to the whole register.
+
+Each position is scored with its own model: the condition and life model
+attached to it, or else its position class's. So one class can hold positions
+on different models, and positions with none. For a number, a position needs:
+
+- **A model.** A position with none shows a dash. Attach one on its
+  **Modelling** tab.
+- **Readings.** A condition point on the position or its item, in the model's
+  unit (mm/s for a model fitted on mm/s), with at least one reading since the
+  item went into service. Readings taken on the position before that belonged
+  to an earlier item and aren't used.
+- **The model's covariates.** For each one, a value condition of the same name
+  applied to the position (or above it), such as **Load** with the value 1.
+- **A model in calendar time.** An item's age is counted in days from its
+  in-service date (or the day it was first fitted), so the model's ages must
+  be in days, weeks, months or years.
+
+When one of these is missing the row says which, and what to do, in place of a
+number.
+
 ## Use the models in the RCM
 
-On the [RCM tab](/guides/rcm-on-your-asset-tree), a failure mode's **Based
+On the **RCM** tab, a failure mode's **Based
 on: Link…** offers the position's models first, those attached for that
 failure mode at the top (one attached for that mode is picked for you when
 nothing is linked yet). The interval calculators on a task card start from the

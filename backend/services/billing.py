@@ -456,7 +456,7 @@ def owned_count(db, uid: str, collection: str) -> int:
     return sum(db[name].count_documents({"owner_id": uid}) for name in names)
 
 
-CAPPED_KINDS = ("datasets", "models", "rbds", "degradation_models", "tracked_items", "fleets",
+CAPPED_KINDS = ("datasets", "models", "rbds", "degradation_models", "tracked_items", "rcm_studies", "fleets",
                 "outage_logs", "fault_trees", "reliability_predictions", "maintainability_predictions",
                 "libraries")
 
@@ -482,6 +482,7 @@ _CAP_NOUNS = {
     "rbds": ("saved RBD", "saved RBDs"),
     "degradation_models": ("degradation model", "degradation models"),
     "tracked_items": ("tracked item", "tracked items"),
+    "rcm_studies": ("RCM study", "RCM studies"),
     "fleets": ("failure forecast", "failure forecasts"),
     "outage_logs": ("outage log", "outage logs"),
     "fault_trees": ("saved fault tree", "saved fault trees"),

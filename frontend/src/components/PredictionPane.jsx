@@ -15,10 +15,10 @@ import { Select, TextInput } from "./ui/Controls.jsx";
 import { NotElectronic, OwnRate, PartTypeChoice } from "./PartTypeCell.jsx";
 import ConditionsModal from "./ConditionsModal.jsx";
 import { saveErrorText } from "../confirm.js";
-import { defaultQuality, fmtPerMillion, fmtQuantity, qualityHint } from "../predictions.js";
+import { defaultQuality, fmtPerMillion, fmtQuantity, handbookConditionsLabel, qualityHint } from "../predictions.js";
 import { predictionAssign } from "../explorerModels.js";
 import {
-  branchPositions, conditionsLabel, isCovariateLine, leftOutKeys, lineChange, lineFromPreview, lineKey, lineMenu, lineMode,
+  adoptConditions, branchPositions, conditionsLabel, isCovariateLine, leftOutKeys, lineChange, lineFromPreview, lineKey, lineMenu, lineMode,
   mergeLines, noPartsText, predictionKey, predictionResult, predictionTitle, quantityTyped, removeQuestion, resultLines,
 } from "../predictionPane.js";
 import "./ModelTable.css";
@@ -28,7 +28,8 @@ import "./PredictionPane.css";
 // 9 Nov 2026: reliability prediction "by the parts/component method; this is the only place that
 // should go", and it "should also be the same, where it fills up the table area of the explorer
 // view"): a parts count of the position from its parts list and those of the positions inside it
-// (a product design's bill of materials where they list none). Set the environment once; give each
+// (on a product design, plus the bill-of-materials parts they don't list; a part on both is
+// counted once, from the parts lists). Set the environment once; give each
 // part a handbook part type (and a quality factor where the handbook has one), a rate of the user's
 // own for a part the handbook doesn't have (a battery), or tick "Not electronic" for a mechanical
 // part (an airframe, a propeller) to leave it out. The parts table takes the width; the result
@@ -102,8 +103,11 @@ export default function PredictionPane({ position, link = null, phone = false, h
           setLines((old) => {
             const got = mergeLines(old || [], d.lines, d.results);
             if (got.added.length) focusKey.current = got.added[got.added.length - 1];
-            return got.lines;
+            return adoptConditions(got.lines, d.lines);
           });
+        } else {
+          // A part type just chosen that the server starts from conditions: the line shows them.
+          setLines((old) => (old ? adoptConditions(old, d.lines) : old));
         }
       }, (e) => {
         if (mine !== seq.current) return;
@@ -219,7 +223,7 @@ export default function PredictionPane({ position, link = null, phone = false, h
               </Select>
             </Field>
             <Field label="Mission time (hours)" optional help="For the chance of getting through it with no failure.">
-              <TextInput inputMode="decimal" value={mission} onChange={(e) => setMission(e.target.value)} placeholder="1000" />
+              <TextInput inputMode="decimal" value={mission} onChange={(e) => setMission(e.target.value)} placeholder="e.g. 1000" />
             </Field>
           </div>
           {error && <p className="field-error" role="alert">{error}</p>}
@@ -301,11 +305,19 @@ export default function PredictionPane({ position, link = null, phone = false, h
                               {conditionsLabel(l)}
                             </button>
                           ) : (
-                          <TextInput inputMode="decimal" className="pred2-q" aria-label={`Quality factor of ${l.name}`}
-                                     value={l.quality_factor == null ? "" : String(l.quality_factor)}
-                                     placeholder={hasType ? defaultQuality(l.record) : "—"} title={qualityHint(l.record)}
-                                     disabled={off || !hasType || mode === "excluded"}
-                                     onChange={(e) => setLine(i, { quality_factor: e.target.value })} />
+                          <span className="pred-q-cell">
+                            <TextInput inputMode="decimal" className="pred2-q" aria-label={`Quality factor of ${l.name}`}
+                                       value={l.quality_factor == null ? "" : String(l.quality_factor)}
+                                       placeholder={hasType ? defaultQuality(l.record) : "—"} title={qualityHint(l.record)}
+                                       disabled={off || !hasType || mode === "excluded"}
+                                       onChange={(e) => setLine(i, { quality_factor: e.target.value })} />
+                            {hasType && !off && mode !== "excluded" && (
+                              <button type="button" className="secondary sm" aria-label={`Environment and grade of ${l.name}`}
+                                      onClick={() => setModal({ conditions: i })}>
+                                {handbookConditionsLabel(l)}
+                              </button>
+                            )}
+                          </span>
                           )}
                         </td>
                         <td className="pred2-c-ne">
@@ -419,7 +431,7 @@ export default function PredictionPane({ position, link = null, phone = false, h
       )}
       {modal === "bom" && <ImportBomModal onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal?.conditions != null && lines?.[modal.conditions] && (
-        <ConditionsModal line={lines[modal.conditions]} onClose={() => setModal(null)}
+        <ConditionsModal line={lines[modal.conditions]} environment={environment || null} onClose={() => setModal(null)}
                          onDone={(c) => { setLine(modal.conditions, c); setModal(null); }} />
       )}
       {modal?.remove && (

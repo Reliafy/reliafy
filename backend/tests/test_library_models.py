@@ -55,13 +55,21 @@ def test_a_rate_record_becomes_a_cited_exponential_model(m, db):
     assert lm.recently_used(db, OWNERS)[0]["record_id"] == RATE
 
 
-def test_per_demand_and_handbook_records_are_refused_in_words(m, db):
+def test_records_need_their_covariates_and_a_handbook_rate_is_no_prior(m, db):
+    """A probability per demand is a model (and a prior) once its demands a year are given, never
+    guessed; a handbook rate is a model with its environment, but a point value can't be a prior."""
     pump = m.create_position("Valve 2")["id"]
-    with pytest.raises(Invalid, match="probability per demand .* fitted from counts of demands"):
+    with pytest.raises(Invalid, match="Demands a year is needed"):
         lm.attach(m, db, ORG, pump, DEMAND)
-    with pytest.raises(Invalid, match="handbook base rate for a parts count"):
+    link = lm.attach(m, db, ORG, pump, DEMAND, covariates={"demands_per_year": 12})
+    assert link["source"]["library"]["covariates"] == {"demands_per_year": 12.0}
+    with pytest.raises(Invalid, match="Environment is needed"):
         lm.save_record_model(db, ORG, HANDBOOK)
-    with pytest.raises(Invalid, match="counts lives, not demands"):
+    model, _ = lm.save_record_model(db, ORG, HANDBOOK, covariates={"environment": "GF"})
+    assert model.results["library"]["covariates"]["environment"] == "GF"
+    with pytest.raises(Invalid, match="no spread"):
+        lm.prior_base({"record_id": HANDBOOK}, "exponential")
+    with pytest.raises(Invalid, match="Demands a year is needed"):
         lm.prior_base({"record_id": DEMAND}, "exponential")
     with pytest.raises(Invalid, match="no library record"):
         lm.attach(m, db, ORG, pump, "nope")

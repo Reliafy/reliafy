@@ -48,6 +48,8 @@ const TABLE_ROWS = 15;
 // significant figures, scientific below 0.001), as on the stat tiles.
 const fmtP = (v) => formatNumber(v);
 const fmtX = (v) => formatNumber(v);
+// The time evaluated at, the same text in the box and in the heading (four figures).
+const timeText = (t) => Number(Number(t).toPrecision(4)).toString();
 const fmtPct = (v) =>
   v == null || !Number.isFinite(v) ? "—" : v >= 0.001 ? `${(v * 100).toFixed(1)}%` : "<0.1%";
 const fullLabel = (e) => [...(e.path || []), e.label].join(" › ");
@@ -379,7 +381,9 @@ export function TreeCanvas({ result, name, active }) {
           maxZoom={1.5}
           proOptions={{ hideAttribution: true }}
         >
-          <Controls showInteractive={false} />
+          {/* Top right: the one corner the tree never reaches (the top event is centred, its
+              inputs spread the full width under it), so the buttons sit over no node. */}
+          <Controls showInteractive={false} position="top-right" />
         </ReactFlow>
       </div>
     </div>
@@ -641,7 +645,7 @@ export default function RbdFaultTree({ graph, validation, stale, active, name, o
                   type="number" inputMode="decimal"
                   min="0"
                   step="any"
-                  placeholder={result?.t_default != null ? Number(result.t_default.toPrecision(4)).toString() : "auto"}
+                  placeholder={result?.t_default != null ? timeText(result.t_default) : "auto"}
                   value={tInput}
                   onChange={(e) => setTInput(e.target.value)}
                 />
@@ -668,7 +672,7 @@ export default function RbdFaultTree({ graph, validation, stale, active, name, o
             <div className="stats ft-stats">
               <div className="stat">
                 <div className="k">
-                  {availability ? "Unavailability (top event)" : `Top event F(${formatNumber(result.t)}${u})`}
+                  {availability ? "Unavailability (top event)" : `Top event F(${timeText(result.t)}${u})`}
                 </div>
                 <div className="v">{formatNumber(result.top_event_probability)}</div>
               </div>

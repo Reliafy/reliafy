@@ -19,6 +19,8 @@ const env = Object.fromEntries(keep.filter((k) => process.env[k]).map((k) => [k,
 Object.assign(env, {
   AUTH_DISABLED: "true",
   MAINTENANCE_ENABLED: "true",
+  // "What do you do?" (the roles picker, off by default), so its tests run.
+  MENU_ROLES: "true",
   MAINTENANCE_STORE: "mongo",
   // The single-user mode's fixed user, made an operator, so operator-only
   // behaviour (and any installed extension's operator pages) is tested too.
@@ -30,6 +32,9 @@ Object.assign(env, {
   // Several workers edit the one workspace at once: past the usual 600 changes
   // a minute the server would refuse them ("Too many changes in the last minute").
   MAINTENANCE_WRITES_PER_MINUTE: "100000",
+  // The same for the data library's public reads (120 a minute an address): every library page,
+  // record and component is opened from one address.
+  LIBRARY_READS_PER_MINUTE: "100000",
   MPLBACKEND: "Agg",
   PYTHONUNBUFFERED: "1",
 });

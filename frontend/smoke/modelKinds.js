@@ -46,9 +46,11 @@ export const MODEL_KINDS = [
     tabs: ["Probability plot", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
   { slug: "tvc", find: { id: "sample-model-pump-load-weibull-ph" },
     tabs: ["Effects", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
+  // Condition and life: no Risk now tab where the workspace has the Explorer (the smoke server
+  // does), which shows risk now by Classes instead (views/JointModelPage.jsx).
   { slug: "condition-life",
     find: { path: "/models/joint/:id", list: "/api/joint/models", name: "Smoke test pumps (condition-based)" },
-    tabs: ["Risk now", "Calculator", "Effects", "Diagnostics", "Data"] },
+    tabs: ["Calculator", "Effects", "Diagnostics", "Data"] },
   // Accelerated life: one stress, and two (two life-stress charts side by side).
   { slug: "alt-one-stress", find: { path: "/models/alt/:id", id: "sample-alt-fluid" },
     tabs: ["Life-stress", "Probability plot", "Calculator", "Diagnostics", "Data"] },

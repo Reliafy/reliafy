@@ -59,11 +59,12 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await expect((await headMenu(page)).locator(".ovm-menu .ovm-item")).toHaveText(["Add failure report…", "Open the full page"]);
   await page.keyboard.press("Escape");
 
-  // Right-click the pump: Add failure report… is after New position inside.
+  // Right-click the pump: the tab's own add leads its menu, before New position inside.
   await row(page, `Report pump ${tag}`).locator(".tp-nm").click({ button: "right" });
   const menu = rowMenu(page, `Report pump ${tag}`);
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem").nth(1)).toHaveText("Add failure report…");
+  await expect(menu.getByRole("menuitem").first()).toHaveText("Add failure report…");
+  await expect(menu.getByRole("menuitem").nth(1)).toHaveText("New position inside");
   await menu.getByRole("menuitem", { name: "Add failure report…" }).click();
   const dialog = page.getByRole("dialog", { name: "New failure report" });
   await expect(dialog).toContainText(`At Report pump ${tag}`);

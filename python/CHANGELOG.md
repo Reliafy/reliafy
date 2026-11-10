@@ -1,6 +1,44 @@
 # Changelog
 
+## 0.5.3 (10 Nov 2026)
+
+No change to the client's own code: the tools, routes and flags below come
+from the server, and need a server on this release.
+
+- **Data library records take their inputs as covariates**: every input a
+  record needs before it gives a rate is a covariate of the record (a pipe's
+  length, running hours a year, demands a year, a MIL-HDBK-217F part's
+  environment and quality grade), given as `covariates` wherever the record
+  is used: as a model or a prior (`{kind: library, record_id, covariates?}`),
+  on a position's link and on a parts-count line. The earlier arguments
+  still work as other names for the same thing. `list kind library` takes
+  `components: true` for the NRC/INL components (an equipment type in one
+  pooling group, its failure modes together), and `get kind library_record`
+  takes a component's id.
+- **Accelerated life**: `analyse alt_use_level` bounds now carry the range on
+  the life at the use stress, as the app's card shows it.
+- **RBD edits**: `change rbd_edit` no longer lists a "like blocks wired in
+  series" warning as new when the edit only reworded it.
+- **Survey quadcopter**: `maintenance products.add_sample` answers with
+  `own_records` (the models and analyses saved in the workspace as its own),
+  `kept_shared` and `kept_note`. Action names and arguments are unchanged.
+- **A class's fleet**: `maintenance get.item_class` takes `fleet: true` (and
+  `position_id` for one member): the positions whose fitted item is of the
+  class, each with its risk now where a condition and life model is linked.
+  `reliafy maintenance get.item_class --id … --fleet true`.
+
 ## 0.5.2 (10 Nov 2026)
+
+- **Missions on an RBD**: `change rbd_mission` adds, changes or deletes a
+  named phased mission (`rbd_id`, `mission_id` to change one, `name`,
+  `phases`, `delete`); each phase takes `values` (a Use or Environment
+  covariate's value for the phase, set once for every block it feeds) and
+  `block_values` (one block's own). `analyse rbd_mission` works one out
+  (`mission_id`) or every mission on the RBD: the chance of completing it,
+  per phase, each phase's weakest block, and the covariates its phases can
+  set. `get kind rbd` lists the missions. Over REST `POST
+  /api/v1/change/rbd_mission` and `/api/v1/analyse/rbd_mission`; on the
+  command line `reliafy analyse rbd_mission --rbd-id … --mission-id …`.
 
 - **Libraries of your own**: `list kind libraries`, `get kind library`
   (`id`) and the `change` actions `library_create`, `library_update`,

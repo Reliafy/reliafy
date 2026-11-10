@@ -109,3 +109,6 @@
 .pred-source { margin-top: var(--sp-2); }
 .pred-source ul { margin: var(--sp-1) 0 0; padding-left: 1.2rem; }
 .pred-notes { white-space: pre-line; }
+
+.pred-q-cell { display: inline-flex; flex-direction: column; gap: 4px; align-items: flex-end; max-width: 9rem; }
+.pred-q-cell button { white-space: normal; text-align: right; }

@@ -3,12 +3,13 @@ import { useLocation } from "react-router-dom";
 import { dismissRolesOffer, getMaintenanceAccess, getMyRoles, setMyRoles } from "./api.js";
 import { useAppConfig } from "./ConfigProvider.jsx";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
-import { buildMenu, crumbsFor, liveEntries } from "./navigation.js";
+import { buildMenu, crumbsFor, liveEntries, rolesInUse } from "./navigation.js";
 
 const RolesContext = createContext({
   roles: [],
   loaded: false,
   offer: false,
+  rolesOn: false,
   saveRoles: () => Promise.resolve(),
   dismissOffer: () => Promise.resolve(),
   has: {},
@@ -21,6 +22,11 @@ const RolesContext = createContext({
 // the sidebar, section headers, Home and the Settings picker. `has` is what
 // this workspace has (navigation.js `needs`); `live` is every entry it has,
 // whatever the roles (for breadcrumbs and in-page tabs).
+//
+// The roles are a deployment's choice (`menu_roles`; `rolesOn` here). Off,
+// `roles` is empty and `offer` false whatever the profile holds, so everything
+// that reads them shows the full menu and asks nothing (navigation.js
+// `rolesInUse`). The read still happens: `uses` comes with it.
 //
 // `uses` is what the active workspace has used, for entries it sees only then
 // (Risk: tracked items, degradation or condition-and-life models); it comes
@@ -46,7 +52,9 @@ export function RolesProvider({ children }) {
   }, [workspace]);
   const noteUse = useCallback((key) => setUses((u) => (u[key] ? u : { ...u, [key]: true })), []);
 
-  const { reliability_agent: agentEnabled, maintenance: maintenanceEnabled, menu_preview: previewOn } = useAppConfig();
+  const {
+    reliability_agent: agentEnabled, maintenance: maintenanceEnabled, menu_preview: previewOn, menu_roles: rolesOn,
+  } = useAppConfig();
   // Reliafy Maintenance is for its operators only: the same check its pages make.
   // Graph access (the Data model page) comes with the same answer.
   const [maintenanceAllowed, setMaintenanceAllowed] = useState(false);
@@ -81,13 +89,14 @@ export function RolesProvider({ children }) {
       risk: !!(uses.risk || previewOn),
       graph: !!(maintenanceEnabled && graphAllowed),
     };
+    const inUse = rolesInUse(state, !!rolesOn);
     return {
-      ...state, saveRoles, dismissOffer, has, noteUse,
+      ...state, ...inUse, saveRoles, dismissOffer, has, noteUse,
       live: liveEntries(has),
-      menu: buildMenu({ roles: state.roles, has }),
+      menu: buildMenu({ roles: inUse.roles, has }),
     };
   }, [state, saveRoles, dismissOffer, noteUse, uses, maintenanceEnabled, maintenanceAllowed, graphAllowed, agentEnabled,
-    previewOn]);
+    previewOn, rolesOn]);
   return <RolesContext.Provider value={value}>{children}</RolesContext.Provider>;
 }
 

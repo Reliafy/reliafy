@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PANE_PARAMS, TABLE_PANES, paneFromQuery, setPaneQuery } from "./tablePane.js";
+import { PANE_PARAMS, TABLE_PANES, keepPaneFor, paneFromQuery, setPaneQuery } from "./tablePane.js";
 
 test("the pane the address asks for", () => {
   assert.equal(paneFromQuery(new URLSearchParams("sel=p1")), null);
@@ -13,6 +13,8 @@ test("the pane the address asks for", () => {
 
 test("an RBD's pane: the diagram, and the position it opens beside", () => {
   assert.deepEqual(paneFromQuery(new URLSearchParams("tab=models&rbd=r9&on=p3")), { kind: "rbd", id: "p3", rbd: "r9" });
+  // A mission on a position's RBD (the Missions tab): the RBD and the mission in one value.
+  assert.deepEqual(paneFromQuery(new URLSearchParams("tab=missions&mission=r9:m1&on=p3")), { kind: "mission", id: "p3", mission: "r9:m1" });
   // No position: not one for the Explorer.
   assert.equal(paneFromQuery(new URLSearchParams("rbd=r9")), null);
   assert.equal(paneFromQuery(new URLSearchParams("on=p3")), null);
@@ -30,10 +32,49 @@ test("putting a pane in the address takes any other out", () => {
 });
 
 test("each pane has its address and its words for leaving it changed", () => {
-  assert.deepEqual(PANE_PARAMS, ["fit", "predict", "bind", "on", "rbd"]);
+  assert.deepEqual(PANE_PARAMS, ["fit", "prior", "predict", "bind", "on", "mission", "rbd"]);
   assert.equal(TABLE_PANES.predict.discard.title, "Discard this prediction?");
   assert.equal(TABLE_PANES.rbd.discard.title, "Discard your changes to this RBD?");
   for (const p of Object.values(TABLE_PANES)) {
     for (const k of ["title", "body", "confirmLabel", "cancelLabel"]) assert.ok(p.discard[k], k);
   }
+});
+
+test("a fit that starts from a model row: the row in the address, taken out with the pane", () => {
+  assert.deepEqual(paneFromQuery(new URLSearchParams("tab=models&fit=p1&prior=l1")), { kind: "fit", id: "p1", from: "l1" });
+  assert.equal(paneFromQuery(new URLSearchParams("prior=l1")), null);
+  const q = new URLSearchParams("tab=models&sel=p1");
+  assert.equal(setPaneQuery(q, "fit", "p1", { from: "l1" }).toString(), "tab=models&sel=p1&fit=p1&prior=l1");
+  // Another fit (no row) or another pane drops it.
+  assert.equal(setPaneQuery(q, "fit", "p1").toString(), "tab=models&sel=p1&fit=p1");
+  setPaneQuery(q, "fit", "p1", { from: "l1" });
+  assert.equal(setPaneQuery(q, "predict", "p1", { from: "l1" }).toString(), "tab=models&sel=p1&predict=p1");
+});
+
+test("no pane takes a general word for its own: a link's ?from= or ?utm_… is never a pane's to clear", () => {
+  // The Explorer clears PANE_PARAMS when another row is picked; an earlier address's own query
+  // (redirects.js: /rcm/studies/…?from=email) must come through it.
+  for (const k of ["from", "source", "ref", "id"]) assert.ok(!PANE_PARAMS.includes(k), k);
+  assert.ok(PANE_PARAMS.every((k) => !k.startsWith("utm_")));
+  const q = new URLSearchParams("tab=models&sel=p1&from=email");
+  assert.equal(setPaneQuery(q, "fit", "p1", { from: "l1" }).toString(), "tab=models&sel=p1&from=email&fit=p1&prior=l1");
+  assert.equal(setPaneQuery(q, "predict", "p1").toString(), "tab=models&sel=p1&from=email&predict=p1");
+});
+
+test("picking a row keeps a pane open for that position whole, and closes one for another", () => {
+  const after = (address, picked) => keepPaneFor(new URLSearchParams(address), picked).toString();
+  // The pane's own position: its other keys (not position ids) stay.
+  assert.equal(after("sel=p1&fit=p1&prior=model%3Am9", "p1"), "sel=p1&fit=p1&prior=model%3Am9");
+  assert.equal(after("rbd=r7&on=p1", "p1"), "rbd=r7&on=p1");
+  assert.equal(after("mission=r7%3Am2&on=p1", "p1"), "mission=r7%3Am2&on=p1");
+  assert.equal(after("bind=model%3Am9&on=p1", "p1"), "bind=model%3Am9&on=p1");
+  // Another position: the pane goes, every key of it, and nothing else in the address.
+  assert.equal(after("sel=p2&tab=modelling&fit=p1&prior=model%3Am9", "p2"), "sel=p2&tab=modelling");
+  assert.equal(after("rbd=r7&on=p1&tab=modelling", "p2"), "tab=modelling");
+  assert.equal(after("mission=r7%3Am2&on=p1", "p2"), "");
+  assert.equal(after("predict=p1", "p2"), "");
+  // Keys with no pane to belong to (an RBD with no position, a prior with no fit) go as well.
+  assert.equal(after("rbd=r7&sel=p1", "p1"), "sel=p1");
+  assert.equal(after("prior=model%3Am9&on=p1", "p1"), "");
+  assert.equal(after("sel=p1", "p1"), "sel=p1");
 });

@@ -69,7 +69,7 @@ test("freeStorageLines names every capped kind once, in plain words", () => {
     "1 RBD, 1 fault tree and 1 outage log",
     "1 reliability prediction, 1 maintainability prediction and 1 data library",
     "Degradation tracking: 1 degradation model and 3 tracked items",
-    "1 fleet failure forecast",
+    "1 fleet failure forecast and 1 RCM study",
   ]);
   // Follows a changed limit (the live caps from GET /api/billing).
   assert.match(freeStorageLines({ ...FREE_CAPS, rbds: 2 })[1], /^2 RBDs,/);

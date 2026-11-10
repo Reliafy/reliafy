@@ -102,7 +102,7 @@ const FEATURES = [
   {
     viz: <VizRcm />,
     title: "Evidence-linked RCM",
-    body: "Build functions → functional failures → failure modes on each position of your asset tree, where every maintenance decision cites the analysis that justifies it — and gets re-checked live when the data changes.",
+    body: "Build Function → Failure → Mode worksheets where each maintenance decision links to the analysis that justifies it — and is checked again every time you open the study.",
   },
   {
     viz: <VizDatasets />,
@@ -137,7 +137,6 @@ const TIERS = (primaryHref, mcpOn = true) => [
     blurb: "The hosted app, ready in seconds. Everything you need to start.",
     features: [
       ...freeStorageLines(),
-      "RCM on your asset tree, every decision checked against its evidence",
       "Join team workspaces free (view-only)",
       "Sample data and worked examples included",
       "25 AI credits to try the assistant",
@@ -158,7 +157,7 @@ const TIERS = (primaryHref, mcpOn = true) => [
       "Unlimited saves: datasets, models, RBDs, fault trees, predictions and more",
       "1,000 AI credits included every month",
       "Unlimited fleet monitoring (degradation & RUL)",
-      "Unlimited evidence-linked RCM across your asset tree",
+      "Unlimited evidence-linked RCM studies",
       "Fleet failure forecasting — spares demand from your models",
       mcpOn
         ? "Unlimited use from AI agents (MCP) — Claude or any MCP client"
@@ -235,21 +234,21 @@ export default function Landing() {
           <div className="landing-eyebrow">Reliability centred maintenance</div>
           <h2>Maintenance decisions that prove themselves.</h2>
           <p>
-            Every RCM decision on your asset tree links to the analysis behind
-            it: a run-to-failure call cites the non-repairable model that shows
+            Each decision in an RCM study can link to the analysis behind it: a
+            run-to-failure call cites the non-repairable model that shows
             failures are random, a fixed interval cites the cost-optimal
             replacement analysis, condition monitoring cites the degradation
             model.
           </p>
           <p>
             And the links stay live — when new data shows a "random" failure
-            mode is actually wearing out, Reliafy flags the decision as
+            mode is actually wearing out, the study flags the decision as
             <strong> contradicted</strong> instead of letting it quietly go
             stale.
           </p>
         </div>
         <div className="spotlight-shot">
-          <img src="/landing/rcm-worksheet.png" alt="The Explorer's RCM tab: an asset tree with its functions, failure modes and decisions, each decision's evidence check beside it, including a contradicted run-to-failure decision" loading="lazy" />
+          <img src="/landing/rcm-worksheet.png" alt="An RCM study: functions, functional failures and failure modes, each decision with its evidence status, including a contradicted run-to-failure decision" loading="lazy" />
         </div>
       </section>
 

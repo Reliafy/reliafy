@@ -71,6 +71,23 @@ export function mergeLines(old = [], fresh = [], results = null) {
   return { lines: out, added };
 }
 
+// The conditions the server started a line from (those its position fixes, a sample part's own),
+// taken by a line on that part type with none of its own, so Conditions… shows what its rate was
+// worked out under. The same list back when nothing changes.
+export function adoptConditions(lines = [], fresh = []) {
+  const theirs = new Map(fresh.map((f) => [lineKey(f), f]));
+  const any = (c) => !!c && Object.keys(c).length > 0;
+  let changed = false;
+  const out = lines.map((l) => {
+    const f = theirs.get(lineKey(l));
+    if (!f || !f.record_id || f.record_id !== (l.record?.id || l.record_id) || !any(f.conditions) || any(l.conditions)) return l;
+    changed = true;
+    const cycles = f.cycles_per_hour != null && String(l.cycles_per_hour ?? "").trim() === "";
+    return { ...l, conditions: { ...f.conditions }, ...(cycles ? { cycles_per_hour: f.cycles_per_hour } : {}) };
+  });
+  return changed ? out : lines;
+}
+
 // The positions a part can go on, for the "On" pickers: the position and those inside it
 // (the server's branch), each with the parts already on its list (so they aren't offered again).
 export function branchPositions(branch = [], lines = []) {
@@ -125,6 +142,8 @@ export function lineChange(c = {}) {
     ...("record" in c ? { record: c.record, record_id: c.record ? c.record.id : null } : {}),
     // A new part type clears the last one's conditions.
     ...("record" in c && (c.record?.kind === "covariate_model" || isCovariateId(c.record?.id)) ? { conditions: {}, cycles_per_hour: "" } : {}),
+    // ... and a handbook part type's own environment and grade.
+    ...("record" in c ? { environment: "", quality: "" } : {}),
     ...("rate" in c ? { rate_per_million_hours: c.rate } : {}),
     ...("rateMode" in c ? { rate_mode: c.rateMode } : {}),
     ...("excluded" in c ? { excluded: c.excluded } : {}),

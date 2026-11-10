@@ -45,11 +45,17 @@ export const GUIDE_COVERAGE = [
   // Fleets.
   { feature: "Fleet failure and spares forecasts", href: "/forecasts" },
   { feature: "Condition monitoring (tracked items)", href: "/risk" },
-  // RCM lives on the Explorer's RCM tab (/asset-register/explorer?tab=rcm), a
+  // RCM.
+  { feature: "RCM studies", href: "/maintenance/rcm" },
+  // RCM is also on the Explorer's RCM tab (/asset-register/explorer?tab=rcm), a
   // page the guide check treats as operators-only while the Explorer is
-  // (guides/rcm-on-your-asset-tree.md describes it without a link). When the
-  // Explorer opens to every account, add:
+  // (guides/rcm-on-your-asset-tree.md, hidden, is opened from the tab itself and
+  // describes it without a link). When the Explorer opens to every account, add:
   //   { feature: "RCM on the asset tree", href: "/asset-register/explorer?tab=rcm" },
+  // Missions (the Explorer's and a product page's Missions tab, ?tab=missions) are on the same
+  // operators-only page: guides/missions-and-phases.md is opened from the tab itself (Show me how)
+  // and describes it without a link. When the Explorer opens, add:
+  //   { feature: "Missions on the asset tree", href: "/asset-register/explorer?tab=missions" },
   // Sharing, reports and teams.
   { feature: "Reports (reports, saved analyses, shared links)", href: "/reports" },
   { feature: "Teams", href: "/team" },

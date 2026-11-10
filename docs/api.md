@@ -216,9 +216,11 @@ priority, H, M or L) and `cm` (β × α × λ × t), never stored, and each posi
 in `get.rcm` carries an `fmea` summary (scored, high, medium, low, max_rpn,
 cr). A mode may sit directly under a function with no functional failure yet
 (`function_id` on `failure_modes.add`, `assign` and `move`); the RCM reads list
-it in the function's `modes`. `products.add_sample` adds the sample
-quadcopter product, its design fully scored (on Products, not in the asset
-tree).
+it in the function's `modes`. `products.add_sample` adds the Survey
+quadcopter, a ready-made product with invented numbers: its design fully
+scored (on Products, not in the asset tree), and the life models and analyses
+it stands on saved in the workspace as its own (`own_records`; `kept_shared`
+names any the plan's storage had no room for).
 
 How often to do a task: `maintenance rcm.pf_interval` needs only
 the P-F interval (`pf_interval` with `pf_unit`): it answers half the P-F
@@ -261,8 +263,8 @@ models attach as they are (their stress is set where they're used, an RBD block
 or a calculation). `prediction: {environment?, mission_time?, assign?}` (an
 `assign` entry for an NSWC-11 part type carries `conditions` and, for a rate per
 cycle, `cycles_per_hour`) makes a
-parts-count prediction from the position's parts list (and those inside it; a
-product design's bill of materials where they list none), `assign` giving each
+parts-count prediction from the position's parts list (and those inside it; on a
+product design, plus the bill-of-materials parts they don't list), `assign` giving each
 part number a handbook `record_id` (and `quality_factor`): it's saved as a
 reliability prediction (its page links back to the position) and as an
 exponential model at its rate, and attached with role `prediction`. The app
@@ -286,13 +288,62 @@ An RBD row: `rbd_id` links an existing diagram; `build_rbd: true` makes a new
 one from the positions one level inside (each block the child's model in use,
 or its own RBD as a sub-system; a flagged placeholder where it has none), wired
 by their connections and redundancy groups, in series where there are none,
-saved under Design › Systems as "<position> (from the tree)"; with
-`replace_link_id` (its RBD row) it's rebuilt into the same diagram, adding new
-positions and keeping edits. `use_link_id` makes one of the position's rows
+saved under Design › Systems as "<position> (from the tree)". A position has
+one built diagram: `build_rbd` where it already has one saves nothing and
+answers with that row and `existing: true`. With `replace_link_id` (its RBD
+row) it's rebuilt into the same diagram, adding new positions and keeping
+edits. `POST /api/rbds/validate` (and `GET /api/rbds/{id}/validate`) also
+answer `series_hints`: which of the `warnings` are the "like blocks wired in
+series" hints (one per run of like blocks), where there are any. `use_link_id` makes one of the position's rows
 its model in use (by default its own life model, else its RBD, else its
 prediction): what its roll-up reports, what the RCM offers first and what a
 parent's RBD block takes. `GET /api/maintenance/position-models/{id}?age=`
 adds an RBD's system reliability at that age.
+
+An item class's fleet (the Explorer arranged by Classes): `GET
+/api/maintenance/item-classes/{id}/fleet` lists the positions whose fitted
+item is of the class or a class inside it, as `members`: `{position: {id,
+name, tag, position_class}, item: {id, name, serial}, item_class, in_service,
+age` (days)`, model` (the condition and life model linked to the position, or
+its position class's; null with none)`, point, last_reading: {on, value,
+unit}, n_readings, covariates, scored, why}`. A scored member adds `risk`
+(the chance of failing within each of `horizons`: 30, 90 and 365 days from
+`today`), `survival`, `median_remaining` (days; `median_reached` false means
+at least that long) and `marker_now`; members come highest 90-day risk first.
+Each is scored from its own data: the item's age from its in-service date
+(else its first fitting), the readings of its condition point in the model's
+reading unit since then, and the model's covariates from value conditions of
+the same name. `scored` false with a model carries `why` in plain words and
+what to do. `?position_id=` answers that one `member` with `unit` (its
+survival curve from now and its reading's path, in its model's own time
+unit) and the `model`. The same read is `maintenance get.item_class` with
+`fleet: true` (`POST /api/v1/maintenance/get.item_class`; `reliafy
+maintenance get.item_class --id … --fleet true`).
+
+Missions (the Explorer's Missions tab): a non-repairable RBD can carry several
+named phased missions over the same blocks, in `graph.missions` (`[{id, name,
+phases}]`; the diagram's own `phases` reads as one more mission, id `mission`,
+named by `mission_name`). A phase is `{name, duration, not_needed?: [block
+id], votes?: {vote node id: inputs needed}, values?: {covariate name: value},
+block_values?: {block id: {input key: value}}}`: `values` sets a Use or
+Environment covariate once for every bound block it feeds in that phase,
+`block_values` one block's own. The blocks age across the whole mission; a
+block whose covariates change from phase to phase carries its age into the
+next. `GET /api/maintenance/position-missions?position_ids=` lists each
+position's RBDs and their missions (a position has its own RBDs' missions,
+never a parent's). A mission in a list is `{id, name, phases` (how many)`,
+phase_names, phase_durations` (each phase's own length, in the same
+order)`, duration` (the whole mission)`, unit, result?}`. On an RBD: `GET /api/rbds/{id}/missions`, `POST
+/api/rbds/{id}/missions {name?, phases?}`, `GET|PUT|DELETE
+/api/rbds/{id}/missions/{mission}` (`PUT {name?, phases?,
+expected_updated_at?}`; `GET` adds the blocks, vote nodes and every open
+covariate with the blocks it feeds and, per phase, the value each block uses
+and where it comes from), and `POST /api/rbds/{id}/missions/{mission}/calculate
+{phases?}`: the chance of completing it, each phase's failure probability,
+reliability at its end and weakest block (the one whose failures end the most
+missions in that phase). A phase missing a value waits: `reliability` is null,
+`through` says how far the mission was worked out and `needs` which blocks need
+what. Over MCP: `analyse rbd_mission` and `change rbd_mission`.
 `fit: true` with `data` (`position`, `class`, or `both`: the position's history
 with its class's other positions' history as the prior) and `method` (`mle`:
 a plain fit with 95% confidence bounds; `bayes`: with a `prior`, 90% credible
@@ -302,17 +353,21 @@ history as a power prior, SurPyval's `prior.from_data`, weighed by `trust`:
 model_id}`, `{kind: params, distribution, params, unit}`, `{kind: around,
 distribution, unit, params: {alpha: {about: 4, between: [3, 6]}, beta:
 {between: [1.5, 3]}}}` (90% between the bounds, "about" optional; a parameter
-left out is the data's), `{kind: library, record_id, shape?: [low, high]}` (a
-data library failure rate: on an exponential the record's gamma is the prior
-exactly, a closed-form update; on a Weibull or lognormal a prior on the mean
+left out is the data's), `{kind: library, record_id, covariates?, shape?: [low, high]}` (a
+data library record under its covariates: a pipe's length, the clock and
+running hours, the demands a year for a probability per demand; on an
+exponential the record's gamma, scaled by them, is the prior exactly, a
+closed-form update; on a Weibull or lognormal a prior on the mean
 life, `around(1/rate, between=(1/p95, 1/p05))`, with the shape between the
-bounds, 0.5 to 5 by default; a per-demand record is refused) or
+bounds, 0.5 to 5 by default; a handbook rate has no spread and is refused) or
 `{kind: b10, …}`.
 `library_record_id` attaches a data library failure rate as the position's
-model (role `library`): an exponential at the record's mean rate per hour,
-saved in Models with the source's 5–95% range as its interval and the record
-id and citation kept. Per-demand probabilities and handbook base rates are
-refused in words.
+model (role `library`) with every one of its `covariates` given (a pipe's
+length, the clock, the demands a year, a handbook part's environment): an
+exponential at the record's mean rate per hour under them, saved in Models
+with the source's 5–95% range as its interval and the record id, citation and
+covariates kept. To fix some at the position and set the rest in an RBD, use
+`bind` with `source: library` (any record) or `component`.
 The class can't be both the data and the prior. The app previews with
 `POST /api/maintenance/positions/{id}/fit-preview` (a refusal comes back as
 `{refused: words}`). `analyse bayes_update` takes `baseline:
@@ -507,14 +562,16 @@ everyone, so it's readable without an account:
 
 | Call | Does |
 |---|---|
-| `GET /api/library/search?q=…&source=…&equipment_type=…&kind=…&failure_mode=…&use=…&facets=true&page=1&page_size=25` | Matching records, best first, 25 a page (at most 100), with `total`, `pages` and `counts` by equipment type, kind and source. `kind` is `rate`, `per_demand`, `life` or `covariate_model`; `failure_mode` is a failure mode's name (any case). `facets=true` adds `facets`: for equipment type, failure mode and kind, how many records each choice would give with the other filters (and `use`) kept. `use` (`model` or `prior`) keeps only the records usable as that on their own (a failure rate counted from service; not a handbook base rate for a parts count, nor a probability per demand), and `left_out` counts what it hid, by why. |
-| `GET /api/library/records/{id}?environment=…` | One record in full (values, spread, evidence, conditions, citation, licence and notes) and `block_model`: the model an RBD block would use. A handbook rate (MIL-HDBK-217F) depends on the environment the part works in: give `environment` (e.g. `GF`, ground, fixed) for its block model; without it, `environments` lists the rate in each. |
-| `POST /api/library/records/{id}/evaluate` | A covariate model's rate (NSWC-11) under conditions: body `{values: {input: value}}` (a missing input takes the handbook's default). Answers `{ok: true, result: {total, unit, modes, derived}, warnings}` or `{ok: false, problems}`, each problem or warning naming the limit and the handbook's page. Saves nothing. |
+| `GET /api/library/search?q=…&source=…&equipment_type=…&kind=…&failure_mode=…&use=…&facets=true&page=1&page_size=25` | Matching records, best first, 25 a page (at most 100), with `total`, `pages` and `counts` by equipment type, kind and source. `kind` is `rate`, `per_demand`, `life` or `covariate_model`; `failure_mode` is a failure mode's name (any case). `facets=true` adds `facets`: for equipment type, failure mode and kind, how many records each choice would give with the other filters (and `use`) kept. `use` (`model` or `prior`) keeps only the records usable as that once their covariates are given (a model: every record but a covariate model, which goes on a position; a prior: those with a spread, so no handbook rate), and `left_out` counts what it hid, by why. |
+| `GET /api/library/records/{id}?environment=…` | One record in full (values, spread, evidence, conditions, citation, licence and notes), its `covariates` (below), the `components` it's a mode of, and `block_model`: the model an RBD block would use. A handbook rate (MIL-HDBK-217F) depends on the environment the part works in: give `environment` (e.g. `GF`, ground, fixed) for its block model; without it, `environments` lists the rate in each. |
+| `POST /api/library/records/{id}/evaluate` | A record's rate under its covariates, or a component's chance of failing over a period (`id` a component id): body `{covariates: {key: value}}` (`values` is the old name; a missing covariate takes its default). Answers `{ok: true, result, warnings}` or `{ok: false, problems, missing}`. A covariate model's (NSWC-11) `result` is `{total, unit, modes, derived}`, each problem or warning naming the limit and the handbook's page; any other record's is `{failure_rate, unit, clock, bounds, rate_uncertainty, assumptions, covariates}` (a probability per demand adds `probability`, and is a rate only with `demands_per_year`). Saves nothing. |
+| `GET /api/library/components?source=…&q=…` | The components (NRC/INL): an equipment type in one of the report's pooling groups (normally standby, normally running, a system), its failure modes together. |
+| `GET /api/library/components/{id}` | One component: its `modes` (each a record with its `trigger`: per demand, per hour of running (first hour, after the first hour) or per calendar hour; and whether it's added), its `inputs` and `how` they combine. |
 | `GET /api/library/sources` | The sources, their licences and what each holds. |
 
 The same reads are on the tools API: `POST /api/v1/list/library`
-(`query`, `source`, `equipment_type`, `record_kind`, `page`, `page_size`), `POST
-/api/v1/get/library_record` (`id`, `environment`, `conditions`: a covariate model's inputs, adding `evaluation`) and `POST
+(`query`, `source`, `equipment_type`, `record_kind`, `components`, `page`, `page_size`), `POST
+/api/v1/get/library_record` (`id`, a record or component id; `covariates`, adding `evaluation`; `conditions` and `environment` are the old names) and `POST
 /api/v1/list/library_sources`, and on the command line `reliafy list library --query "motor-driven pump"`. Library lookups are never counted against the
 Free plan's tool calls. These are generic estimates (today: U.S. nuclear
 power plant industry averages, and base failure rates for electronic parts
@@ -525,11 +582,33 @@ or approve Reliafy), not your own equipment's data;
 show each record's `licence.attribution` with its numbers. In the app the
 library is under Models › Library (`/models/library`, one page per source and
 per record). Its **Use as a model…** is `POST /api/models/from-library`
-(`record_id`, `name?`: a rate as an exponential model, counted against the Free
-plan's saved models) and **Use as a prior…** on a dataset is `POST
+(`record_id`, a record or component id; `covariates`; `name?`: an exponential model under them, counted against the Free
+plan's saved models; `length_ft` is the old name of the pipe's length) and **Use as a prior…** on a dataset is `POST
 /api/models/fit-with-prior` (`dataset_id`, `time_column`, `censor_column`,
 `c_invert`, `unit`, `distribution`, `prior: {kind: library, record_id,
-shape?}`, `save` with `name` to keep it). `GET /api/library/used` lists the
+covariates?, shape?}`, `save` with `name` to keep it).
+
+**A record's covariates.** Every input a record needs before it gives a rate is
+a covariate of the record, in the shape NSWC-11's inputs have (`key`, `label`,
+`unit`, `kind` number or choice, `role` design, use or environment, `default`,
+`limits`, `help`; `needed_if` asks for one only when another has a value, and
+`needed_when`, a list of `{key, op, value}`, only while every comparison holds):
+
+| Record | Covariates |
+|---|---|
+| NRC/INL pipe leak, per foot | `length_ft` (design; no default) |
+| NRC/INL rate per hour | `clock` (use: `calendar` or `operating`, the record's own by default); `running_hours_per_year` (use, 0 to 8,760; asked for only when the clock is changed) |
+| NRC/INL probability per demand | `demands_per_year` (use; no default): the probability × demands a year is its rate per calendar hour |
+| MIL-HDBK-217F | `environment` (environment: a handbook symbol, with its πE or generic rate; no default); `quality` (design: a parts-count part's grade, its lowest by default) or `quality_factor` (design: πQ as a number, 1, not applied, by default) |
+| NSWC-11 | its own inputs (its conditions), and `cycles_per_hour` (use) for a rate per cycle or operation |
+| NRC/INL component | `demands`, `running_hours` and `calendar_hours` (8,760 by default) over a period, and `length_ft` for a pipe |
+
+A covariate with no value and no default is never guessed: the answer says
+which are `missing`. A component's modes are independent competing risks:
+P(fails over the period) = 1 − Π(1 − q)^demands × exp(−Σ λ × its hours), each
+run's first hour at the first-hour rate where the source gives one; the plain
+sum (the rare-event approximation the NRC's risk models use for a mission) and
+the constant rate −ln(R) ÷ calendar hours come with it. `GET /api/library/used` lists the
 records behind the user's latest library models. The record format
 and the sources: [library.md](library.md).
 

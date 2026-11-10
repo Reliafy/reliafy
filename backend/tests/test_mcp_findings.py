@@ -369,6 +369,37 @@ def test_a_standby_nodes_own_label_is_not_a_redundant_pair():
     assert rbd_analysis.series_redundancy_warnings(rbd_graph.normalize_graph(graph))
 
 
+def test_a_run_of_like_blocks_in_series_is_one_warning():
+    """Four numbered motors in a row are one thing to check, not three pairs; each run is its own
+    warning, and a pair keeps its own words."""
+    from backend.services import rbd_analysis, rbd_graph
+
+    graph = rbd_graph.normalize_graph(_chain("Motor 1", "Motor 2", "Motor 3", "Motor 4", "ESC 1", "ESC 2", "Battery"))
+    motors, escs = rbd_analysis.series_redundancy_warnings(graph)
+    assert motors.startswith("“Motor 1”, “Motor 2”, “Motor 3” and “Motor 4” are wired in series but look like redundant units")
+    assert "keep them in series only if every one must work" in motors
+    assert escs.startswith("“ESC 1” and “ESC 2” are wired in series but look like a redundant pair")
+    assert rbd_analysis.design_warnings(graph) == [motors, escs]
+    # A run stops where the reason changes: "Pump 2" beside a spare is its own pair.
+    graph = rbd_graph.normalize_graph(_chain("Pump 1", "Pump 2", "Spare fan"))
+    assert len(rbd_analysis.series_redundancy_warnings(graph)) == 2
+
+
+def test_the_app_is_told_which_warnings_are_series_hints():
+    """REST only: ``series_hints`` names the warnings the app folds into one line. The tools' own
+    answers keep the plain ``warnings`` list."""
+    from backend.services import rbd_analysis, rbd_graph, rbds as rbds_service
+
+    graph = rbd_graph.normalize_graph(_chain("Motor 1", "Motor 2", "ESC 1", "ESC 2", "Battery"))
+    check = rbd_analysis.validate_graph(graph)
+    assert "series_hints" not in check and len(check["warnings"]) == 2
+    told = rbds_service.with_series_hints(check, graph)
+    assert told["series_hints"] == check["warnings"] and told["warnings"] == check["warnings"]
+    other = rbd_graph.normalize_graph(_chain("Motor", "Gearbox"))
+    plain = rbd_analysis.validate_graph(other)
+    assert rbds_service.with_series_hints(plain, other) is plain  # none of its warnings is a hint
+
+
 # ---- P2.8 conflicting inputs are refused, never resolved silently ----------------
 
 def test_conflicting_inputs_are_refused(samples):

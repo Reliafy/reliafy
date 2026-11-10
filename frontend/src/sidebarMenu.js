@@ -4,7 +4,8 @@
 // children such as Models) is a toggle: clicking it opens or closes its list
 // in place, without navigating, on desktop and phone alike. Its sub-pages are
 // links: exactly what navigation.js lists (an entry's own landing page, such
-// as /models, isn't added: it's reached from breadcrumbs and links). Entries
+// as /models, isn't added: it's reached from breadcrumbs and links; the one
+// exception is an entry with a `landingLabel`, see subItems). Entries
 // with nothing under them for this user stay plain links to their landing.
 // On the collapsed rail every entry is a link to where it opens.
 //
@@ -19,8 +20,15 @@ export const OPEN_STORAGE_KEY = "reliafy.sidebar.open";
 export const menuKey = (entry) => entry.id || entry.to;
 
 // What an entry shows beneath it when open: a group's entries, or an entry's
-// children. Nothing: the entry is a plain link.
-export const subItems = (entry) => entry.entries || entry.children || [];
+// children. Nothing: the entry is a plain link. An entry with a `landingLabel`
+// (Maintenance) lists its own landing page first, under that word: the entry
+// itself only opens the list, and the page must stay in the menu.
+export function subItems(entry) {
+  if (entry.entries) return entry.entries;
+  const children = entry.children || [];
+  if (!entry.landingLabel || !children.length) return children;
+  return [{ to: entry.to, label: entry.landingLabel, landing: true }, ...children];
+}
 
 // Whether an entry opens a list in place (a button) rather than navigating.
 export const toggles = (entry) => subItems(entry).length > 0;
@@ -60,6 +68,8 @@ export function parseStored(raw) {
 // it's a toggle whose list is closed, on all its pages (so the page's place
 // still shows).
 export function subItemLit(item, trail, isOpen = false) {
+  // An entry's own landing page, listed under it: lit on the entry's pages that no child names.
+  if (item.landing) return !trail.child && trail.entry?.to === item.to;
   if (item.id) return trail.entry === item && (!toggles(item) || !isOpen || !trail.child);
   return trail.child === item;
 }

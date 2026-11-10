@@ -8,6 +8,8 @@
 // rules (service: what a status may move to) are repeated here only to say
 // what the screen offers; the server checks again and its reason is shown.
 
+import { formatDateTime } from "./dates.js";
+
 // The loop in flow order, then the one outside it.
 export const STATUSES = ["reported", "investigating", "corrective_action", "verifying", "closed"];
 export const OPEN_STATUSES = STATUSES.slice(0, 4);
@@ -250,10 +252,8 @@ export function historyRows(history) {
   return [...(history || [])].reverse();
 }
 
-// A history line's time, for the page: the date and time in the browser's words.
+// A history line's time, for the page: "1 Nov 2026, 14:05" in the viewer's time zone.
 export function fmtWhen(iso) {
   if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatDateTime(new Date(iso)) || iso;
 }

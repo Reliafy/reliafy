@@ -1,5 +1,6 @@
 // Shared RBD validation feedback, used on both the Builder and Calculator tabs.
 import { NO_BLOCKS } from "../rbdReadiness.js";
+import { foldWarnings } from "../rbdWarnings.js";
 
 // A structural signature of the diagram (ignoring node positions): rbdSignature.js.
 export { graphSignature } from "../rbdSignature.js";
@@ -11,6 +12,32 @@ export function emptyStatus(validation) {
   return validation?.empty === NO_BLOCKS
     ? { icon: "+", text: "Nothing to check yet" }
     : { icon: "!", text: "Not connected yet" };
+}
+
+// A result's warnings: each on its own line, the "like blocks in series" hints
+// folded into one line that opens to the list when there are several
+// (rbdWarnings.js), so they never bury the answer.
+function Warnings({ validation }) {
+  const { plain, hints, summary } = foldWarnings(validation);
+  if (!plain.length && !hints.length) return null;
+  const list = (items) => (
+    <ul className="rbd-check-list rbd-check-warn">
+      {items.map((w, i) => (
+        <li key={i}>⚠ {w}</li>
+      ))}
+    </ul>
+  );
+  return (
+    <>
+      {plain.length > 0 && list(plain)}
+      {hints.length > 0 && (
+        <details className="rbd-check-fold rbd-check-warn">
+          <summary>⚠ {summary}</summary>
+          {list(hints)}
+        </details>
+      )}
+    </>
+  );
 }
 
 // Renders the outcome of a validate call: a green pass, an amber pass that
@@ -91,13 +118,7 @@ function routesSentence(routes) {
               ? "The simulation adds the spread of outcomes (distributions, criticality)."
               : routes.over_time?.reason || ""}
           </p>
-          {warnings && warnings.length > 0 && (
-            <ul className="rbd-check-list rbd-check-warn">
-              {warnings.map((w, i) => (
-                <li key={i}>⚠ {w}</li>
-              ))}
-            </ul>
-          )}
+          <Warnings validation={validation} />
         </div>
       </div>
     );
@@ -121,13 +142,7 @@ function routesSentence(routes) {
               {nonAnalyticList.map(([label, type]) => `${label} (${type})`).join(", ")}.
             </p>
           )}
-          {warnings && warnings.length > 0 && (
-            <ul className="rbd-check-list rbd-check-warn">
-              {warnings.map((w, i) => (
-                <li key={i}>⚠ {w}</li>
-              ))}
-            </ul>
-          )}
+          <Warnings validation={validation} />
         </div>
       </div>
     );
@@ -149,13 +164,7 @@ function routesSentence(routes) {
             )}
           </>
         )}
-        {warnings && warnings.length > 0 && (
-          <ul className="rbd-check-list rbd-check-warn">
-            {warnings.map((w, i) => (
-              <li key={i}>⚠ {w}</li>
-            ))}
-          </ul>
-        )}
+        <Warnings validation={validation} />
       </div>
     </div>
   );

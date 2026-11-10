@@ -60,8 +60,8 @@ export const STRUCTURE_PATH = "/systems/structure";
 //
 // `landingNeeds`: the entry's own landing page needs that; without it the
 // entry opens on its first live child instead, and that child isn't repeated
-// under it; with no live child either, the entry is left out (Maintenance
-// without Reliafy Maintenance).
+// under it; with no live child either, the entry is left out. (Maintenance
+// without Reliafy Maintenance opens on RCM studies.)
 //
 // An entry is the current one on any page under its `to` (or `match`); the
 // longest match wins, so a page under two entries' addresses belongs to the
@@ -99,8 +99,14 @@ export const ENTRIES = [
 
   {
     id: "maintenance", label: "Maintenance", to: "/maintenance", landingNeeds: "maintenance",
+    // With sub-pages the entry opens a list in place (sidebarMenu.js), so its
+    // own page is listed first under this word and stays one click away.
+    landingLabel: "Overview",
     children: [
-      { to: "/maintenance/inbox", label: "Field inbox", needs: "preview" },
+      // Standalone RCM worksheets, for every account: without Reliafy
+      // Maintenance, "Maintenance" opens on them.
+      { to: "/maintenance/rcm", label: "RCM studies" },
+      { to: "/maintenance/inbox", label: "Requests", needs: "preview" },
     ],
   },
 
@@ -241,6 +247,8 @@ function liveEntry(e, has) {
     children = children.slice(1);
   }
   const out = { ...e, to, match: e.match || [e.to] };
+  // No landing page of its own for this user: nothing to list under `landingLabel`.
+  if (to !== e.to) delete out.landingLabel;
   if (children.length) out.children = children;
   else delete out.children;
   return out;
@@ -335,6 +343,7 @@ export const COLLECTION_PATHS = {
   tracked_fleets: "/risk/",
   reliability_predictions: "/predictions/",
   libraries: "/models/library/",
+  rcm_studies: "/maintenance/rcm/",
 };
 
 export function itemPath(collection, id) {
@@ -344,6 +353,15 @@ export function itemPath(collection, id) {
 
 // A dataset's page.
 export const datasetPath = (id) => itemPath("datasets", id);
+
+// What the app uses of a user's saved roles. Where the deployment turns the
+// roles on (MENU_ROLES, from /api/config as `menu_roles`): the roles, and
+// `offer`, whether to ask a new user once. Off (the default): no roles and no
+// question, so the menu is the full list, Home has no role cards and Settings
+// no picker; roles already saved stay on the profile, unused.
+export function rolesInUse({ roles = [], offer = false } = {}, on = false) {
+  return on ? { roles, offer: !!offer, rolesOn: true } : { roles: [], offer: false, rolesOn: false };
+}
 
 // Home's role cards for these roles, in order: the primary role's first, then
 // the other roles'. Each card once. No roles: none (Home shows what it always

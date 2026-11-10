@@ -27,6 +27,7 @@ const AltHome = lazy(() => import("./views/AltHome.jsx"));
 const LibraryHome = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibraryHome })));
 const LibrarySource = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibrarySource })));
 const LibraryRecord = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibraryRecord })));
+const LibraryComponent = lazy(() => import("./views/LibraryPages.jsx").then((m) => ({ default: m.LibraryComponent })));
 const AltNewPage = lazy(() => import("./views/AltNewPage.jsx"));
 const AltModelPage = lazy(() => import("./views/AltModelPage.jsx"));
 const RbdHome = lazy(() => import("./views/RbdHome.jsx"));
@@ -58,6 +59,8 @@ const MaintainabilityHome = lazy(() => import("./views/MaintainabilityHome.jsx")
 const MaintainabilityNewPage = lazy(() => import("./views/MaintainabilityNewPage.jsx"));
 const MaintainabilityPage = lazy(() => import("./views/MaintainabilityPage.jsx"));
 const MaintenanceHome = lazy(() => import("./views/MaintenanceHome.jsx"));
+const RcmHome = lazy(() => import("./views/RcmHome.jsx"));
+const RcmStudyPage = lazy(() => import("./views/RcmStudyPage.jsx"));
 const MaintenanceAssets = lazy(() => import("./views/MaintenanceAssets.jsx"));
 const MaintenancePosition = lazy(() => import("./views/MaintenancePosition.jsx"));
 const FmeaPrint = lazy(() => import("./views/FmeaPrint.jsx"));
@@ -244,6 +247,11 @@ function Shell() {
             {maintenanceEnabled && <Route path="/asset-register/channels/:id" element={<ChannelRedirect />} />}
             {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome />} />}
             {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
+            {/* RCM studies: standalone worksheets, for every account (with or
+                without Reliafy Maintenance). They share no data with the RCM
+                on the asset tree (the Explorer's RCM tab). */}
+            <Route path="/maintenance/rcm" element={<RcmHome />} />
+            <Route path="/maintenance/rcm/:id" element={<RcmStudyPage />} />
             <Route path="/data-model" element={<DataModelPage />} />
             {/* Risk: models in use. Condition monitoring is the tracked items
                 against their degradation models. */}
@@ -299,6 +307,7 @@ function Shell() {
             <Route path="/models/library" element={<LibraryHome />} />
             <Route path="/models/library/:source" element={<LibrarySource />} />
             <Route path="/models/library/:source/:record" element={<LibraryRecord />} />
+            <Route path="/models/library/:source/components/:component" element={<LibraryComponent />} />
 
             <Route path="/reports" element={<ReportsPage />} />
             {agentEnabled && <Route path="/agent" element={<ReliabilityAgent />} />}

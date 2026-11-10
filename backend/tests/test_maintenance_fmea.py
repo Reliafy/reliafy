@@ -280,17 +280,17 @@ def test_the_sample_product_design_is_scored(m):
     belong to (four arms, motors, ESCs and propellers, two IMUs), all scored over a year's
     150 flight hours, each under a functional failure."""
     out = templates.add_sample_product(m, mongomock.MongoClient()["fmea_sample"])
-    assert out["added"] and out["product"]["name"] == "Survey quadcopter (sample)"
+    assert out["added"] and out["product"]["name"] == "Survey quadcopter"
     assert {k: out[k] for k in ("positions", "functions", "failure_modes", "scored")} == {
-        "positions": 33, "functions": 47, "failure_modes": 83, "scored": 83}
-    assert "83 failure modes, each scored as an FME(C)A and all but 2 decided" in out["message"]
+        "positions": 33, "functions": 47, "failure_modes": 84, "scored": 84}
+    assert "84 failure modes, each scored as an FME(C)A and all but 2 decided" in out["message"]
     assert [p["id"] for p in templates.sample_products(m)] == [out["product"]["id"]]  # a design, not an asset
     sheet = m.rcm_worksheet(out["product"]["id"], "below")
     modes = _all_modes(sheet)
-    assert len(modes) == 83 and all(mo["rpn"] is not None for mo in modes)
+    assert len(modes) == 84 and all(mo["rpn"] is not None for mo in modes)
     summaries = [p["fmea"] for p in sheet["positions"]]
     assert sum(s["high"] for s in summaries) == 16 and sum(s["medium"] for s in summaries) == 29
-    assert sum(s["low"] for s in summaries) == 38 and max(s["max_rpn"] or 0 for s in summaries) == 240
+    assert sum(s["low"] for s in summaries) == 39 and max(s["max_rpn"] or 0 for s in summaries) == 240
     assert sum(len(fn["modes"]) for p in sheet["positions"] for fn in p["functions"]) == 0  # none directly under
     assert sum(len(p["unassigned"]) for p in sheet["positions"]) == 0
     motor = next(p for p in sheet["positions"] if p["name"] == "Motor 1")
@@ -307,6 +307,8 @@ def test_the_sample_product_design_is_scored(m):
     assert by_text["Antenna connector works loose"]["ap"] == "L"
     assert by_text["Gimbal motor stalls on a snagged cable"]["consequence"] == "non_operational"
     assert by_text["Internal cell short (thermal runaway)"]["decision"] is None
+    stored = by_text["Stored pack self-discharges below its safe voltage"]
+    assert stored["rpn"] == 63 and stored["ap"] == "L" and stored["decision"]["outcome"] == "on_condition"
 
     assert not hasattr(templates, "add_sample_uav")  # no asset-tree copy any more
     assert not hasattr(templates, "add_sample_truck")  # nor the sample truck
@@ -444,17 +446,17 @@ def test_over_the_routes_with_the_excel_export(api):  # noqa: F811
     # The sample quadcopter is the sample product; the asset-tree copy's route is gone.
     assert api.post(f"{M}/sample-uav", json={}).status_code in (404, 405)
     made = api.post(f"{M}/sample-product", json={}).json()
-    assert made["added"] and made["failure_modes"] == 83
+    assert made["added"] and made["failure_modes"] == 84
     # The FME(C)A of a design position (the product's top), exported like any other.
     uav = api.get(f"{M}/positions/{made['product']['id']}/fmea.xlsx").content
     ws = load_workbook(io.BytesIO(uav))["FMECA"]
     # The header, a row per performance standard (63), one per mode and one per functional failure
     # explained by those below it (the product's, its groups' and the gimbal's picture: 19).
-    assert ws.max_row == 1 + 63 + 83 + 19
-    assert 'filename="Survey quadcopter (sample) FMECA.xlsx"' in \
+    assert ws.max_row == 1 + 63 + 84 + 19
+    assert 'filename="Survey quadcopter FMECA.xlsx"' in \
         api.get(f"{M}/positions/{made['product']['id']}/fmea.xlsx").headers["content-disposition"]
     sheet = api.get(f"{M}/positions/{made['product']['id']}/rcm?scope=below")
-    assert sheet.status_code == 200 and len(_all_modes(sheet.json())) == 83
+    assert sheet.status_code == 200 and len(_all_modes(sheet.json())) == 84
 
 
 def test_over_mcp(env):  # noqa: F811
@@ -501,4 +503,4 @@ def test_over_mcp(env):  # noqa: F811
     assert rcm["positions"][0]["fmea"]["modes"] == 1 and rcm["positions"][0]["analysed"] is False
     assert [g["id"] for g in gaps["no_functional_failure"]] == [mode["id"]] and gaps["counts"]["no_functional_failure"] == 1
     assert assigned["from_function_id"] == fn_read["id"] and back["from_functional_failure_id"] == fn_read["failures"][0]["id"]
-    assert uav["added"] and uav["failure_modes"] == 83 and twice["added"] is False
+    assert uav["added"] and uav["failure_modes"] == 84 and twice["added"] is False

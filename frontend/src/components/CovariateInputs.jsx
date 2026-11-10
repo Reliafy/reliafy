@@ -1,11 +1,16 @@
 import Field from "./ui/Field.jsx";
 import { Select, TextInput } from "./ui/Controls.jsx";
-import { ROLES, defaultText, groupInputs, limitProblem, limitText } from "../covariate.js";
+import { ROLES, defaultText, groupInputs, limitProblem, limitText, neededInputs } from "../covariate.js";
 import "./CovariateCalculator.css";
 
 // A covariate model's inputs, grouped Design / Use / Environment: the one input component for
-// NSWC-11, accelerated life and proportional-hazards models wherever their covariates are set (the
-// record page's Try it, a prediction line's Conditions…, fixing them at a position, an RBD block).
+// every library record's covariates (a pipe's length, the clock and running hours, the demands a
+// year, a handbook part's environment and quality, NSWC-11's conditions, a component's demands and
+// hours), accelerated life and proportional-hazards models, wherever they're set (a record's or
+// component's Try it, Use as a model…, a prior in the Fit dialog, a prediction line's Conditions…,
+// fixing them at a position, an RBD block). An input another one's value makes unnecessary
+// (``needed_if``: running hours when the clock is the record's own; ``needed_when``: a winding's
+// temperature rise while its insulation class isn't known) isn't shown.
 // Each shows its unit, its default (and where that comes from) and its limits; a value past a
 // limit says which, and the page, as it's typed. Options add what a place needs:
 //
@@ -16,17 +21,22 @@ import "./CovariateCalculator.css";
 //   conditions [{name, role, unit, value}] with map {key: name} and onMap(key, name): take the
 //            diagram's value of another name
 //   readOnly true: shown, not changed
+//   extra    (input) => what goes under an input's field (a mission phase: the blocks it feeds and
+//            their own values)
+//   bare     the inputs alone, not grouped under Design / Use / Environment (one block's override)
 
 export default function CovariateInputs({
   inputs = [], values = {}, onChange, idPrefix = "cov", fix = null, onRole = null, sources = null, conditions = null,
-  map = {}, onMap = null, readOnly = false,
+  map = {}, onMap = null, readOnly = false, extra = null, bare = false,
 }) {
   const set = (key, v) => onChange?.({ ...values, [key]: v });
+  const shown = neededInputs(inputs, values);
+  const groups = bare ? [{ role: "all", label: "", what: "", inputs: shown }] : groupInputs(shown);
   return (
-    <div className="cov-inputs">
-      {groupInputs(inputs).map((g) => (
+    <div className={"cov-inputs" + (bare ? " cov-bare" : "")}>
+      {groups.map((g) => (
         <fieldset key={g.role} className="cov-group">
-          <legend className="cov-legend">{g.label}</legend>
+          {!bare && <legend className="cov-legend">{g.label}</legend>}
           {g.what && <p className="cov-what">{g.what}</p>}
           <div className="cov-grid">
             {g.inputs.map((i) => {
@@ -86,6 +96,7 @@ export default function CovariateInputs({
                       )}
                     </div>
                   )}
+                  {extra?.(i)}
                 </div>
               );
             })}

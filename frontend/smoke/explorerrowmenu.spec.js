@@ -7,6 +7,9 @@
 // before. A refusal from the server shows its reason in the dialog.
 // Locations: new inside, rename, move, delete. The RCM tab keeps its
 // own menu. At 400 px the ⋯ opens it and nothing scrolls sideways.
+// The LSA tab: Package the tasks here… leads a position's menu and opens the
+// drafts in the tab beside the tree (?packaging=, never a dialog). The tree's
+// last row (+ New position) shows on the Summary tab only.
 // Each test makes its own small plant through the API.
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
@@ -209,4 +212,79 @@ test("Locations: a location's menu has new inside, rename, move and delete; at 4
   await shot(page, "rowmenu-4-phone-400-rename");
   await page.keyboard.press("Escape");
   await expectHealthy(page, problems, { label: "row menu locations and phone", root: ".tx" });
+});
+
+test("the LSA tab: Package the tasks here… leads a position's menu and opens in the tab; the tree's last row is Summary's alone", async ({ page, request, problems }) => {
+  const tag = `p${Date.now()}`;
+  const p = await plant(request, tag, { small: true });
+  for (const [name, interval, unit] of [["Skim", 1, "weeks"], ["Test water", 1, "weeks"]]) {
+    const res = await request.post(`${M}/positions/${p.circ.id}/tasks`, { data: { name: `${name} ${tag}`, interval, unit } });
+    expect(res.ok(), `tasks: ${res.status()} ${await res.text()}`).toBeTruthy();
+  }
+  const addRow = page.locator(".tp-addrow");
+  const packaging = page.locator(".pk-panel").getByRole("region", { name: "Package the tasks" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}`);
+  // Summary: the tree ends with its quiet "+ New position" row.
+  await expect(addRow).toHaveText("+New position");
+
+  // LSA: the tree ends at its last row, and a position's menu leads with the tab's own action.
+  await page.getByRole("tab", { name: "LSA" }).click();
+  await expect.poll(() => query(page).get("tab")).toBe("lsa");
+  await expect(row(page, `Menu circulation ${tag}`)).toBeVisible();
+  await expect(addRow).toHaveCount(0);
+  let menu = await menuOf(page, `Menu circulation ${tag}`);
+  await expect(menu.getByRole("menuitem")).toHaveText(
+    ["Package the tasks here…", "New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Focus", "Pin this branch", "Delete…"]);
+  await expect(menu.getByRole("menuitem", { name: "Package the tasks here…" })).toBeFocused();
+  await shot(page, "rowmenu-5-lsa-row-menu-1440");
+
+  // It opens in the tab, beside the tree: the row picked, kept in the address, no dialog.
+  await menu.getByRole("menuitem", { name: "Package the tasks here…" }).click();
+  await expect(packaging).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(row(page, `Menu circulation ${tag}`)).toHaveAttribute("aria-selected", "true");
+  expect(query(page).get("packaging")).toBe(p.circ.id);
+  expect(query(page).get("sel")).toBe(p.circ.id);
+  await expect(packaging.getByRole("list", { name: "Packages to make" }).getByRole("listitem")).toHaveCount(1);
+  await shot(page, "rowmenu-6-lsa-packaging-1440");
+  // Back to the tasks, then make the package from the menu again.
+  await packaging.getByRole("button", { name: "← All tasks here" }).click();
+  await expect(packaging).toHaveCount(0);
+  expect(query(page).get("packaging")).toBeNull();
+  menu = await menuOf(page, `Menu circulation ${tag}`);
+  await menu.getByRole("menuitem", { name: "Package the tasks here…" }).click();
+  await packaging.getByRole("button", { name: "Make 1 package" }).click();
+  await expect(packaging).toHaveCount(0);
+  await expect(page.locator(".pk-panel")).toContainText("Made 1 package.");
+  expect(query(page).get("packaging")).toBeNull();
+
+  // RCM: no last row either; back on Summary it returns.
+  await page.getByRole("tab", { name: "RCM", exact: true }).click();
+  await expect.poll(() => query(page).get("tab")).toBe("rcm");
+  // Here the tree is the RCM grid: its rows are grid rows, not tree items.
+  await expect(page.getByRole("treegrid", { name: /and their RCM/ }).getByRole("row", { name: new RegExp(`^Menu circulation ${tag}`) })).toBeVisible();
+  await expect(addRow).toHaveCount(0);
+  await page.getByRole("tab", { name: "Summary" }).click();
+  await expect(addRow).toHaveText("+New position");
+
+  // A phone: the ⋯ opens the same menu, and the drafts fill the screen without scrolling it sideways.
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, `/asset-register/explorer?arrange=positions&tab=lsa&sel=${p.pool.id}`);
+  await expect(row(page, `Menu circulation ${tag}`)).toBeVisible();
+  await expect(addRow).toHaveCount(0);
+  await row(page, `Menu circulation ${tag}`).getByRole("button", { name: /^Actions for / }).click();
+  menu = rowMenu(page, `Menu circulation ${tag}`);
+  await expect(menu.getByRole("menuitem").first()).toHaveText("Package the tasks here…");
+  await shot(page, "rowmenu-7-lsa-row-menu-400");
+  await menu.getByRole("menuitem", { name: "Package the tasks here…" }).click();
+  await expect(packaging).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
+  await shot(page, "rowmenu-8-lsa-packaging-400");
+  // The drafts are their own screen on a phone: Back returns to the tree.
+  await page.goBack();
+  await expect(packaging).toHaveCount(0);
+  await expect(row(page, `Menu circulation ${tag}`)).toBeVisible();
+  await expectHealthy(page, problems, { label: "row menu on the LSA tab", root: ".tx" });
 });

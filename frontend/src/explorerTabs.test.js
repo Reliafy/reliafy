@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_TAB, EXPLORER_PARTS_CLASSES_TABS, EXPLORER_SIGNALS_TAB, TABS, branchOf, classesInBranch, isDesignRow, isProductRow, partsInBranch, rowKind, shownTab, tabParam, tabsFor,
+  addressTab, hasTabBar, tabForArrangement,
 } from "./explorerTabs.js";
 
 const pos = { type: "pos" };
@@ -45,12 +46,12 @@ test("Parts and stock and Classes are hidden for now, on assets and designs alik
   // Their entries stay, for when they come back.
   assert.equal(TABS.find((t) => t.id === "parts").label, "Parts and stock");
   assert.equal(TABS.find((t) => t.id === "classes").label, "Classes");
-  assert.deepEqual(tabsFor(pos).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "models", "measurements", "lsa", "signals"]));
-  assert.deepEqual(tabsFor(product).map((t) => t.id), ["summary", "rcm", "fmea", "models", "lsa"]);
+  assert.deepEqual(tabsFor(pos).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "models", "missions", "measurements", "lsa", "signals"]));
+  assert.deepEqual(tabsFor(product).map((t) => t.id), ["summary", "rcm", "fmea", "models", "missions", "lsa"]);
 });
 
 test("a position has Summary, RCM, FME(C)A, Failure reports, Parts and stock, Classes and Signals; an item Summary, Failure reports and Signals; a location all but Signals; headings only Summary", () => {
-  assert.deepEqual(tabsFor(pos).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "parts", "classes", "models", "measurements", "lsa", "signals"]));
+  assert.deepEqual(tabsFor(pos).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "parts", "classes", "models", "missions", "measurements", "lsa", "signals"]));
   assert.equal(TABS.find((t) => t.id === "fmea").label, "FME(C)A");
   assert.equal(shownTab("fmea", pos), "fmea");
   assert.equal(shownTab("fmea", item), "summary");
@@ -117,7 +118,7 @@ test("a product's design has no maintenance: no Failure reports, Measurements, S
   const asset = { type: "pos", ref: { name: "Pump" } };
   for (const r of [top, inside]) {
     assert.ok(isDesignRow(r));
-    assert.deepEqual(tabsFor(r).map((t) => t.id), shown(["summary", "rcm", "fmea", "parts", "classes", "models", "lsa"]));
+    assert.deepEqual(tabsFor(r).map((t) => t.id), shown(["summary", "rcm", "fmea", "parts", "classes", "models", "missions", "lsa"]));
     if (EXPLORER_PARTS_CLASSES_TABS) assert.equal(tabsFor(r).find((t) => t.id === "parts").label, "Parts");
     // The LSA keeps its name; its title says it's the design's tasks (no packaging there).
     const lsa = tabsFor(r).find((t) => t.id === "lsa");
@@ -136,11 +137,12 @@ test("a product's design has no maintenance: no Failure reports, Measurements, S
   assert.equal(rowKind(inside), "Position");
   assert.equal(rowKind(asset), "Position");
   assert.equal(rowKind({ type: "item", ref: {} }), "Item");
+  assert.equal(rowKind({ type: "cls", ref: {} }), "Item class"); // the Explorer by Classes
   assert.equal(rowKind({ type: "group", ref: {} }), "");
   // An asset (an item's tree built from a design is an asset too) keeps everything.
   assert.ok(!isDesignRow(asset));
   assert.ok(!isDesignRow({ type: "pos", ref: { design_position_id: "d1" } }));
-  assert.deepEqual(tabsFor(asset).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "parts", "classes", "models", "measurements", "lsa", "signals"]));
+  assert.deepEqual(tabsFor(asset).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "parts", "classes", "models", "missions", "measurements", "lsa", "signals"]));
   if (EXPLORER_PARTS_CLASSES_TABS) assert.equal(tabsFor(asset).find((t) => t.id === "parts").label, "Parts and stock");
   // The tab list itself is unchanged by a design row.
   assert.equal(TABS.find((t) => t.id === "parts").label, "Parts and stock");
@@ -185,5 +187,56 @@ test("a product's design locations have the design's tabs: no Failure reports, S
   assert.equal(rowKind(carried), "Location");
   // A design's positions keep their Parts (the parts list).
   const designPos = { type: "pos", ref: { name: "Motor 1", in_design: true } };
-  assert.deepEqual(tabsFor(designPos).map((t) => t.id), shown(["summary", "rcm", "fmea", "parts", "classes", "models", "lsa"]));
+  assert.deepEqual(tabsFor(designPos).map((t) => t.id), shown(["summary", "rcm", "fmea", "parts", "classes", "models", "missions", "lsa"]));
+});
+
+test("an item class has one tab, Condition monitoring, and opens on it", () => {
+  const cls = { type: "cls", ref: { id: "c1", name: "Pumps" } };
+  const tabs = tabsFor(cls);
+  assert.deepEqual(tabs.map((t) => t.id), ["condition"]);
+  assert.equal(tabs[0].label, "Condition monitoring");
+  assert.equal(tabs[0].title, "Each position of this class with its risk now, highest first");
+  // The address names it (?tab=condition).
+  assert.equal(tabParam("condition"), "condition");
+  // A class has no Summary: with no tab picked, or one a class doesn't have, it shows its own.
+  assert.equal(shownTab(DEFAULT_TAB, cls), "condition");
+  assert.equal(shownTab("condition", cls), "condition");
+  for (const other of ["rcm", "reports", "lsa", "models", "nope"]) assert.equal(shownTab(other, cls), "condition");
+  // Walking from a class to another row keeps the usual rule: the tab picked if the row has it, else Summary.
+  for (const r of [pos, item, loc, { type: "group" }, { type: "pos", ref: { in_design: true } }]) {
+    assert.ok(!tabsFor(r).some((t) => t.id === "condition"));
+    assert.equal(shownTab("condition", r), "summary");
+  }
+  assert.equal(shownTab("rcm", pos), "rcm");
+  assert.equal(shownTab("condition", null), "summary");
+});
+
+test("the tab bar: two tabs or more, or one that isn't Summary", () => {
+  assert.ok(hasTabBar({ type: "cls", ref: {} })); // one tab, Condition monitoring
+  assert.ok(hasTabBar(pos));
+  assert.ok(hasTabBar(item));
+  assert.ok(!hasTabBar({ type: "group" })); // Summary alone
+  assert.ok(!hasTabBar(null));
+});
+
+test("a class's tab stays behind when the tree leaves Classes", () => {
+  assert.equal(tabForArrangement("condition", "classes"), "condition");
+  assert.equal(tabForArrangement("condition", "positions"), "summary");
+  assert.equal(tabForArrangement("condition", "locations"), "summary");
+  for (const m of ["positions", "locations", "classes"]) {
+    assert.equal(tabForArrangement("reports", m), "reports");
+    assert.equal(tabForArrangement("summary", m), "summary");
+  }
+});
+
+test("an address with a class picked by Classes opens on the class's tab, whatever tab it names", () => {
+  const cls = { arrange: "classes", sel: "cls:pump" };
+  assert.equal(addressTab("rcm", cls), "condition");
+  assert.equal(addressTab("reports", cls), "condition");
+  assert.equal(addressTab(null, cls), "condition");
+  // A position picked, or another arrangement: the tab asked for, as ever.
+  assert.equal(addressTab("rcm", { arrange: "classes", sel: "p1" }), "rcm");
+  assert.equal(addressTab("rcm", { arrange: "positions", sel: "cls:pump" }), "rcm");
+  assert.equal(addressTab("packages", {}), "lsa");
+  assert.equal(addressTab("nonsense"), "summary");
 });

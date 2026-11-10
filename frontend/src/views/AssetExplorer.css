@@ -261,6 +261,25 @@
   box-shadow: 0 3px 6px -2px rgba(20, 23, 28, 0.14);
 }
 
+/* More levels above the first row than there's room to pin: the top one and the
+   nearest are pinned, and this mark on the line between them stands for the rest. */
+.tp-row.pin.pin-gap::before {
+  content: "⋮";
+  position: absolute;
+  left: 4px;
+  top: -9px;
+  z-index: 1;
+  width: 14px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surf);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+
 .tp-row.grp .tp-nm {
   font-weight: 600;
 }
@@ -879,7 +898,12 @@ button.rw-cklink {
 .tp-row.tt .tp-ic.rw-ic { margin: 0 4px 0 1px; }
 .tt-fn .tp-ic { color: var(--acc-d); }
 .tt-fail .tp-ic, .tt-unassigned .tp-ic { color: var(--warn); }
-.tt-side {
+/* The panel beside the table keeps its width whatever the table's (every tab:
+   Summary, RCM, FME(C)A …). The selector names its parent so this outranks
+   `.rw` (RcmWorksheet.css), which the panel also carries and which lets a flex
+   item shrink: with only the class, whichever file came last in the bundle
+   won, and a wide table (the FME(C)A's) squeezed the panel to under 200 px. */
+.tt-main > .tt-side {
   flex: none;
   /* A little narrower on a laptop, so the table beside it still shows its
      main columns (failure effects, consequence, decision, task). */
@@ -1238,7 +1262,7 @@ button.rw-cklink {
 .tp-row button.tp-unpin:hover { background: var(--acc-t); }
 .tp-mk + .tp-unpin, .tt-st + .tp-unpin, .tp-unpin + .tt-more { margin-left: 2px; }
 
-/* The empty tree's "New here? Open the sample UAV product" card. */
+/* The empty tree's "New here? Open the Survey quadcopter" card. */
 .ae-sample {
   margin: 1.25rem auto 0;
   max-width: 34rem;

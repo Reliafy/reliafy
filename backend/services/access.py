@@ -361,6 +361,22 @@ def refs_of_decision(decision) -> list[tuple[str, str]]:
     return refs
 
 
+def evidence_refs(functions) -> list[tuple[str, str]]:
+    """(collection, id) pairs an RCM study's decisions link as evidence."""
+    refs: list[tuple[str, str]] = []
+    for fn in functions or []:
+        if not isinstance(fn, dict):
+            continue
+        for failure in fn.get("failures") or []:
+            if not isinstance(failure, dict):
+                continue
+            for mode in failure.get("modes") or []:
+                if not isinstance(mode, dict):
+                    continue
+                refs.extend(refs_of_decision(mode.get("decision")))
+    return refs
+
+
 def refs_of(collection: str, doc: dict) -> list[tuple[str, str]]:
     """(collection, id) pairs this artifact references, from its raw doc."""
     refs: list[tuple[str, str]] = []

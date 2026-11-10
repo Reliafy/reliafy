@@ -2,6 +2,8 @@
 // which one a task's kind opens, and the words they write: the interval in a unit people
 // schedule in, and the one paragraph appended to the failure mode's notes and rationale.
 
+import { formatDate } from "./dates.js";
+
 export const TIME_UNITS = ["hours", "days", "weeks", "months", "years"];
 
 // The calculator for a task's kind (its decision member's outcome), or null.
@@ -59,7 +61,7 @@ export function roundDown(value) {
 }
 
 // "9 Nov 2026".
-export const dateText = (date = new Date()) => date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+export const dateText = (date = new Date()) => formatDate(date);
 
 // The one paragraph a used calculation adds to the failure mode's notes and rationale.
 export function rationale(key, inputs, result, use, date = new Date()) {

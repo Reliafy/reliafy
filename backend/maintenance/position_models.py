@@ -26,6 +26,9 @@ Events (new types only; older logs replay unchanged):
 * ``position.model_in_use_set {position_id, link_id}`` (Nov 2026): which of a position's
   rows is the model in use (one at a time). Without one, the in-use row is its own life
   model, else its RBD, else its prediction (:meth:`PositionModelOps.in_use_link`).
+* ``position.model_relinked {id, model_id, name, note}`` (Nov 2026): a link pointed at
+  another saved model of the same kind (or the same one), with the name and note it
+  carries from then on. The link itself and what it is for stay as they were.
 
 An RBD is a row too (``model_type`` and ``role`` ``rbd``, Nov 2026: "every position can
 either have a life model, an RBD, or a prediction"): a saved diagram, built from the
@@ -91,10 +94,15 @@ def _model_in_use_set(s: GraphStore, org: str, p: dict) -> None:
         s.patch_node(org, x["id"], {"in_use": x["id"] == p["link_id"]})
 
 
+def _model_relinked(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"model_id": p["model_id"], "name": p["name"], "note": p["note"]})
+
+
 PROJECTORS = {
     "position.model_linked": _model_linked,
     "position.model_unlinked": _model_unlinked,
     "position.model_in_use_set": _model_in_use_set,
+    "position.model_relinked": _model_relinked,
 }
 
 
@@ -257,6 +265,20 @@ class PositionModelOps:
             raise _sv().Invalid("That model was already taken off.")
         self._emit("position.model_unlinked", {"id": link_id, "on": self.today()})
         return {"unlinked": link_id, "position_id": link.get("position_id"), "name": link.get("name") or ""}
+
+    def relink_position_model(self, link_id: str, model_id: str, name: str, note: str = "") -> dict:
+        """Point a link at another saved model of its kind (or leave it on the same one),
+        with the name and note it carries from now on. The link, its position and the
+        failure modes it is for stay."""
+        sv = _sv()
+        link = self._get(link_id, "ModelLink")
+        if link.get("removed"):
+            raise sv.Invalid("That model was taken off its position.")
+        self._emit("position.model_relinked", {
+            "id": link_id, "model_id": sv._text(model_id, "model id", required=True),
+            "name": sv._text(name, "model's name", required=True)[:sv.SHORT_TEXT],
+            "note": sv._text(note, "note")})
+        return self.model_link(link_id)
 
     def _copy_model_links(self, mapping: dict) -> int:
         """A built item's positions take their design positions' models (role design),
@@ -596,6 +618,14 @@ def describe(m, db, owners, hidden, links: list[dict], age: float | None = None)
         text = (model or {}).get("bayes_source") or source_text(link)
         if (link.get("source") or {}).get("binding_words"):  # covariates fixed here (covariate_positions.py)
             text = f"{text} ({link['source']['binding_words']})"
+        elif link.get("role") == "library" and doc is not None and link["model_type"] == "model":
+            # A record with every covariate set here (a pipe's length...): its covariates, fixed, read
+            # from the saved model (one saved before covariates kept only its length).
+            from backend.maintenance.library_models import covariates_of
+
+            fixed = covariates_of(getattr(doc, "results", None))
+            if fixed["words"]:
+                text = f"{text} (fixed here: {fixed['words']})"
         if link["model_type"] == "rbd":
             text = rbd_source(link, model)
         if model and model.get("covariate_words") and link.get("role") in ("assigned", "design"):
@@ -1037,8 +1067,9 @@ def bayes_position(m, db, owners, hidden, position_id: str, baseline: dict | Non
 # A position's predicted failure rate from its parts list (Derryn, 9 Nov 2026: "failure
 # prediction in the sense of the parts/component method; this is the only place that should
 # go"): the parts listed at the position and every position inside it (replacement parts and
-# components; consumables aren't in it), or a product design's bill of materials where its
-# positions list none. Each part takes a handbook part type (MIL-HDBK-217F base rate) and a
+# components; consumables aren't in it), together with, on a product's design, the parts of its
+# bill of materials that no parts list in it has (a part on both is counted once, from the parts
+# lists, with what's inside it). Each part takes a handbook part type (MIL-HDBK-217F base rate) and a
 # quality factor, or an NSWC-11 mechanical component with its conditions (a covariate model); the environment is set once on the position (default: the nearest position
 # above with a prediction, else the handbook's ground fixed). The parts count itself is
 # backend/services/reliability_prediction.py. It's saved as a reliability prediction (on the
@@ -1076,6 +1107,11 @@ def _line_type(a: dict) -> dict:
         out["conditions"] = dict(a["conditions"])
     if a.get("record_id") and a.get("cycles_per_hour") not in (None, ""):
         out["cycles_per_hour"] = a["cycles_per_hour"]
+    for k in ("environment", "quality"):  # a handbook part's own covariates (record_covariates.py)
+        if a.get("record_id") and a.get(k) not in (None, ""):
+            out[k] = a[k]
+    if a.get("record_id") and isinstance(a.get("covariates"), dict) and a["covariates"]:
+        out["covariates"] = dict(a["covariates"])
     if a.get("rate_per_million_hours") not in (None, ""):
         out["rate_per_million_hours"] = a["rate_per_million_hours"]
     if a.get("excluded"):
@@ -1087,12 +1123,41 @@ def _left_out_keys(left_out) -> set[str]:
     return {str(k) for k in (left_out or []) if isinstance(k, (str, int)) and str(k)}
 
 
+def _sample_tree(m, position_id: str) -> bool:
+    """Whether the position is in a copy of the sample product: its design, or a unit built from it."""
+    from backend.maintenance import templates
+
+    top, seen = m.s.node(m.org, position_id, "Position"), set()
+    while top and top["id"] not in seen:
+        seen.add(top["id"])
+        parent = m._parent(top["id"])
+        if not parent or parent.get("label") != "Position":
+            break
+        top = parent
+    design = top if not top or top.get("design") else m.s.node(m.org, top.get("design_position_id") or "", "Position")
+    return templates.is_sample_product(design)
+
+
+def _started(a: dict, reference: str, sample: bool) -> dict:
+    """A line's assignment, with the sample's conditions for its part where it has an NSWC-11
+    model and none of its own yet (the sample product only: its motors, templates.py)."""
+    if not sample or not a.get("record_id") or a.get("conditions"):
+        return a
+    from backend.maintenance import templates
+
+    start = templates.sample_part_conditions(reference, a["record_id"])
+    return {**a, "conditions": start} if start else a
+
+
 def prediction_lines(m, position_id: str, assign: dict | None = None, previous: dict | None = None,
                      left_out=None) -> dict:
     """The parts-count lines for a position: {lines (each with part_id, and listing_id and
-    position {id, name} when it's on a parts list), source ("parts lists" or "bill of materials"),
-    positions, warnings}. ``assign`` {part id or part number: {record_id, quality_factor} or
-    {rate_per_million_hours} or {excluded: true}} and ``previous`` (the last prediction's, by part
+    position {id, name} when it's on a parts list), source ("parts lists", "bill of materials" or
+    "parts lists and bill of materials"), positions, warnings}. A product's design counts both: its
+    positions' parts lists, then the parts of its bill of materials that none of them lists (so a
+    part added to a parts list never takes the bill of materials' other lines away, and a part on
+    both is counted once, as its parts lists have it). ``assign`` {part id or part number:
+    {record_id, quality_factor} or {rate_per_million_hours} or {excluded: true}} and ``previous`` (the last prediction's, by part
     number) give part types. ``left_out`` [listing id or part number]: lines left out of this
     prediction (they stay on the parts list); None takes the last prediction's (``previous``'s
     ``_left_out``)."""
@@ -1101,6 +1166,7 @@ def prediction_lines(m, position_id: str, assign: dict | None = None, previous: 
     root = m._get(position_id, "Position")
     previous = previous or {}
     out_keys = _left_out_keys(previous.get("_left_out") if left_out is None else left_out)
+    sample = _sample_tree(m, position_id)
     lines, warnings, n, branch = [], [], 0, []
     for pid, path in _branch(m, position_id):
         n += 1
@@ -1122,19 +1188,25 @@ def prediction_lines(m, position_id: str, assign: dict | None = None, previous: 
                 if fixed:
                     a = {**a, "conditions": {k: v for k, v in fixed.items() if k != "cycles_per_hour"},
                          **({"cycles_per_hour": fixed["cycles_per_hour"]} if "cycles_per_hour" in fixed else {})}
+            a = _started(a, ref, sample)
             lines.append({"part_id": part["id"], "listing_id": view["id"], "position": dict(here), "role": view["role"],
                           "name": part.get("name") or ref or "Part", "reference": ref,
                           "quantity": view.get("quantity") or 1, "assembly": list(path), **_line_type(a),
                           "left_out": view["id"] in out_keys})
     source = "parts lists"
-    if not lines and root.get("design"):
-        bom = rp.lines_from_product(m, position_id)
-        warnings += bom.get("warnings") or []
+    if root.get("design"):
+        # A product's design: its bill of materials too, less the parts a parts list has already.
+        on_lists = len(lines)
+        bom = rp.lines_from_product(m, position_id, skip=frozenset(ln["reference"].lower() for ln in lines
+                                                                   if ln["reference"]))
+        if bom.get("lines") or not on_lists:
+            warnings += bom.get("warnings") or []
         for ln in bom.get("lines") or []:
-            a = _assigned(assign, previous, None, ln.get("reference"))
+            a = _started(_assigned(assign, previous, None, ln.get("reference")), ln.get("reference") or "", sample)
             lines.append({**ln, "part_id": None, **_line_type(a),
                           "left_out": bool(ln.get("reference")) and ln.get("reference") in out_keys})
-        source = "bill of materials"
+        if len(lines) > on_lists or not on_lists:
+            source = "parts lists and bill of materials" if on_lists else "bill of materials"
     return {"lines": lines, "source": source, "positions": n, "warnings": warnings,
             "position": {"id": root["id"], "name": root["name"]}, "branch": branch}
 
@@ -1145,7 +1217,9 @@ def _prediction_links(m, position_id: str) -> list[dict]:
 
 def default_environment(m, position_id: str) -> str:
     """The environment a new prediction starts from: this position's last, else the nearest
-    position above with one, else the handbook's default."""
+    position above with one, else the handbook's default (the sample product: its own,
+    templates.SAMPLE_PRODUCT_ENVIRONMENT)."""
+    from backend.maintenance import templates
     from backend.services import reliability_prediction as rp
 
     pid = position_id
@@ -1158,7 +1232,7 @@ def default_environment(m, position_id: str) -> str:
                 return env
         parent = m._parent(pid)
         pid = parent["id"] if parent and parent.get("label") == "Position" else None
-    return rp.DEFAULT_ENVIRONMENT
+    return templates.SAMPLE_PRODUCT_ENVIRONMENT if _sample_tree(m, position_id) else rp.DEFAULT_ENVIRONMENT
 
 
 def _previous_types(db, owners, m, position_id: str) -> dict:
@@ -1361,12 +1435,17 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
     else a placeholder, flagged, never invented), wired by their connections and redundancy
     groups (in series with none), saved under Design › Systems and linked here (role rbd).
     ``replace_link_id`` (the position's built RBD row): rebuild into the same diagram, adding the
-    positions inside that aren't blocks yet and keeping every edit made to it."""
+    positions inside that aren't blocks yet and keeping every edit made to it.
+
+    One built diagram per position: asked to build where there is one already (no
+    ``replace_link_id``), nothing is made or saved and that row comes back with ``existing``
+    true, so building twice never leaves two diagrams. Where its diagram has since been deleted,
+    the row is built again in place."""
     from collections import Counter
 
     from backend.maintenance import rbd_derive
     from backend.services import rbds as rbds_service
-    from backend.services.rbd_graph import GraphError, normalize_graph
+    from backend.services.rbd_graph import GraphError, normalize_graph, wrap_layout
     from backend.units import canonical_unit
 
     sv = _sv()
@@ -1406,6 +1485,12 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
                 f"{child['name']}'s model ({d.name}) is in {r.get('unit')}: its numbers were put in {unit}.")
 
     old_link = None
+    if not replace_link_id:
+        had = built_rbd_link(m.position_models(position_id))
+        if had is not None and fetch("rbd", had["model_id"]) is not None:
+            return {**had, "existing": True, "notes": [], "placeholders": []}
+        if had is not None:  # its diagram is gone: built again into the same row
+            replace_link_id = had["id"]
     if replace_link_id:
         old_link = next((x for x in m.position_models(position_id) if x["id"] == replace_link_id), None)
         if old_link is None or old_link["model_type"] != "rbd":
@@ -1414,6 +1499,7 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
     resolve = lambda mid: fetch("model", mid)  # noqa: E731
     try:
         graph = normalize_graph(built["graph"], resolve_saved_model=resolve)
+        graph["nodes"] = wrap_layout(graph["nodes"])  # a long chain folds to fit the pane it opens in
         existing = None
         if old_link is not None:
             existing = fetch("rbd", old_link["model_id"])
@@ -1432,10 +1518,16 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
     return {**link, "notes": built["notes"], "placeholders": built["placeholders"]}
 
 
+def built_rbd_link(links: list) -> dict | None:
+    """Of a position's model rows, its RBD built from what's inside (the one in use first), or None."""
+    built = [x for x in links or [] if x.get("model_type") == "rbd" and (x.get("source") or {}).get("built_from") is not None]
+    return next((x for x in built if x.get("in_use")), built[0] if built else None)
+
+
 def _add_new_blocks(old: dict, fresh: dict, resolve) -> dict:
     """The diagram as it was, with the positions inside that aren't blocks yet added in series
     before the output (their models as built); every edit to the rest is kept."""
-    from backend.services.rbd_graph import normalize_graph
+    from backend.services.rbd_graph import normalize_graph, wrap_layout
 
     have = {n.get("id") for n in old.get("nodes") or []}
     new = [n for n in fresh.get("nodes") or [] if n.get("type") == "component" and n["id"] not in have]
@@ -1447,8 +1539,10 @@ def _add_new_blocks(old: dict, fresh: dict, resolve) -> dict:
         into_out = [e for e in edges if e["target"] == "out"]
         edges = [e for e in edges if e["target"] != "out"] + [{"source": e["source"], "target": b["id"]} for e in into_out]
         edges.append({"source": b["id"], "target": "out"})
-    return normalize_graph({**{k: v for k, v in old.items() if k not in ("nodes", "edges")}, "nodes": nodes,
-                            "edges": edges}, resolve_saved_model=resolve)
+    out = normalize_graph({**{k: v for k, v in old.items() if k not in ("nodes", "edges")}, "nodes": nodes,
+                           "edges": edges}, resolve_saved_model=resolve)
+    out["nodes"] = wrap_layout(out["nodes"])
+    return out
 
 
 def link_rbd(m, db, owners, hidden, position_id: str, rbd_id: str, note: str = "",

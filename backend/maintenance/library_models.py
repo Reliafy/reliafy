@@ -76,44 +76,75 @@ def _per_hour(rec: dict) -> bool:
     return (rec.get("kind") == "rate") and str((rec.get("units") or {}).get("value") or "").startswith("per_hour")
 
 
-def _refuse_per_demand(rec: dict, use: str):
-    b = brief(rec)
-    return _sv().Invalid(
-        f"“{b['label']}” is a probability per demand ({b['mean']:.3g} {b['units']}), not a life over time, so it can't "
-        + ("be a position's life model: Reliafy's per-demand models are fitted from counts of demands and failures, "
-           "which a library record doesn't give. Use its mean where a probability on demand is asked for."
-           if use == "model" else
-           "be a prior on a life model: it would be a prior on a probability per demand, and this position's history "
-           "counts lives, not demands."))
-
-
 def why_not(rec: dict, use: str = "model") -> str | None:
-    """Why a record can't be a model (or a prior), in words; None when it can (the library's
-    ``usable_as``, which the pickers search by, says the same)."""
-    if rec.get("basis") == "prediction_model":
-        b = brief(rec)
-        return (f"“{b['label']}” is a handbook base rate for a parts count: on its own it isn't a model (the "
-                "environment and quality factors make the rate). Use it in a prediction (Prediction › Add a "
-                "prediction on a position).")
-    if rec.get("kind") == "life":
+    """Why a record can't be a model (or a prior), in words; None when it can once its covariates are
+    given (the library's ``usable_as``, which the pickers search by, says the same)."""
+    from backend.library import service as library_service
+
+    if library_service.usable_as(rec, use):
         return None
-    if not _per_hour(rec):
-        return str(_refuse_per_demand(rec, use))
-    return None
+    b = brief(rec)
+    if rec.get("kind") == "covariate_model":
+        return (f"“{b['label']}” is a handbook covariate model: its rate depends on the conditions it works in, and it "
+                "gives a point rate with no spread. Attach it at a position (Life model › From the data library…, "
+                "fixing its covariates there or in the RBD), or use it in a prediction.")
+    if rec.get("basis") == "prediction_model":
+        return (f"“{b['label']}” is a handbook rate: a point value with no spread from plant to plant, so it can't be a "
+                "prior. Use it as a model (with its environment), or in a prediction.")
+    return f"“{b['label']}” can't be {library_service.USES.get(use, use)}."
+
+
+def record_covariates(rec: dict, covariates: dict | None = None, length_ft: float | None = None) -> dict:
+    """The covariates a model or prior from ``rec`` is made with: ``covariates`` over the old
+    ``length_ft`` argument (an alias)."""
+    from backend.library import record_covariates as rc
+
+    return rc.from_legacy({"length_ft": length_ft}, covariates)
+
+
+def _evaluate(rec: dict, covariates: dict, time_unit: str = "hours") -> dict:
+    """The one evaluator on a record's covariates, or Invalid with everything still missing."""
+    from backend.library import record_covariates as rc
+
+    try:
+        return rc.evaluate(rec, covariates, time_unit)
+    except rc.RecordCovariateError as exc:
+        err = _sv().Invalid(" ".join(exc.problems))
+        err.missing = exc.missing
+        raise err from None
+
+
+def covariates_of(results: dict | None) -> dict:
+    """The covariates a model from the library was made with (read-time: a model saved before
+    covariates kept only ``length_ft``, and the clock of the record's own): {values, words, legacy}."""
+    lib = (results or {}).get("library") or {}
+    if isinstance(lib.get("covariates"), dict):
+        return {"values": lib["covariates"], "words": lib.get("covariates_words") or "", "legacy": False}
+    vals = {}
+    if lib.get("length_ft") is not None:
+        vals["length_ft"] = lib["length_ft"]
+    words = f"Pipe length {lib['length_ft']:g} ft" if vals else ""
+    return {"values": vals, "words": words, "legacy": True}
 
 
 def save_record_model(db, owner_id: str, record_id: str, name: str | None = None, owners=None,
-                      length_ft: float | None = None):
-    """A rate record saved as an exponential model in the owner's models: the record's mean rate per
-    hour, with the record's distribution on that rate kept (``results.rate_uncertainty``: NRC/INL give
-    the rate as a gamma across plants) and its 5–95% range as the interval, labelled as the source's
-    spread, not a fit's confidence; the record id and citation kept. A rate per foot of pipe takes
-    ``length_ft`` (one foot when it's left out, and the notes say so). A life record is saved as a
-    model of its own family with the record's parameters and bounds. ``owners``: the principals whose
-    own libraries the record may come from (the owner alone by default)."""
-    from backend.library import convert
+                      length_ft: float | None = None, covariates: dict | None = None):
+    """A record saved as an exponential model in the owner's models, under its covariates (a pipe's
+    length, the clock and running hours, the demands a year for a probability per demand, a handbook
+    part's environment and quality: backend/library/record_covariates.py). The model is the record's
+    mean rate (per hour, on the clock asked for), with the record's distribution on that rate kept
+    (``results.rate_uncertainty``: NRC/INL give the rate as a gamma across plants) and its 5–95% range
+    as the interval, labelled as the source's spread, not a fit's confidence; the record id, its
+    citation and the covariates kept. ``length_ft`` is the old name of the pipe's length. Nothing
+    missing is guessed: a covariate with no value and no default is refused in words. A life record
+    is saved as a model of its own family with the record's parameters and bounds. ``owners``: the
+    principals whose own libraries the record may come from (the owner alone by default)."""
+    from backend.library import components
+    from backend.library import record_covariates as rc
     from backend.services import models as models_service
 
+    if components.is_component_id(record_id):
+        return save_component_model(db, owner_id, record_id, covariates, name), None
     mine = mine_for(db, owners if owners is not None else [owner_id])
     rec = record(record_id, db, owners if owners is not None else [owner_id])
     words = why_not(rec, "model")
@@ -122,48 +153,83 @@ def save_record_model(db, owner_id: str, record_id: str, name: str | None = None
     b = brief(rec, mine)
     if rec.get("kind") == "life":
         return _save_life_model(db, owner_id, rec, b, name, mine), rec
-    per_foot = (rec.get("units") or {}).get("value") == "per_hour_per_foot"
-    if length_ft is not None and not per_foot:
+    cov = record_covariates(rec, covariates, length_ft)
+    if rc.LENGTH in cov and not rc.per_foot(rec):
         raise _sv().Invalid(f"“{b['label']}” isn't a rate per foot of pipe: leave out the length.")
-    if length_ft is not None:
-        try:
-            length_ft = float(length_ft)
-        except (TypeError, ValueError):
-            length_ft = -1.0
-        if not 0 < length_ft < 1e9:
-            raise _sv().Invalid("The pipe's length must be a number of feet above 0.")
-    feet = (length_ft or 1.0) if per_foot else None
-    try:
-        made = convert.rate_to_exponential(rec, "hours", length_ft=feet)
-    except convert.ConversionError as exc:
-        raise _sv().Invalid(str(exc)) from None
+    made = _evaluate(rec, cov)
+    used = made["covariates"]
+    said = rc.words(rec, {k: v for k, v in used.items() if made["covariates_from"].get(k) == "given"})
     rate = float(made["failure_rate"])
-    lo, hi = made["bounds"]["p05"], made["bounds"]["p95"]
+    bounds = made.get("bounds_rate") or made.get("bounds") or {}
+    lo, hi = bounds.get("p05"), bounds.get("p95")
     default = f"{b['label']} ({b['source']})"
-    if per_foot and length_ft:
-        default = f"{b['label']}, {length_ft:g} ft ({b['source']})"
+    if rc.per_foot(rec):
+        default = f"{b['label']}, {used[rc.LENGTH]:g} ft ({b['source']})"
     name = (name or default)[:200]
     notes = f"From the reliability data library: {cite(rec)}."
-    if per_foot:
-        notes += (f" The source's rate is per foot of pipe; this model is for {length_ft:g} feet." if length_ft else
-                  " The source's rate is per foot of pipe and no length was given, so this model is for one foot.")
+    if said:
+        notes += f" Its covariates: {said}."
+    if rc.per_foot(rec):
+        notes += f" The source's rate is per foot of pipe; this model is for {used[rc.LENGTH]:g} feet."
+    notes += " " + " ".join(made.get("assumptions") or [])
     model = models_service.import_model(db, owner_id, name, "exponential", unit="Hours",
-                                        params=[{"name": "failure_rate", "value": rate}], notes=notes)
+                                        params=[{"name": "failure_rate", "value": rate}], notes=notes.strip())
     changes = {
         "results.method": "library",
-        "results.params.0.ci": [lo, hi],
-        "results.ci_note": CI_NOTE,
         "results.library": {"record_id": rec["id"], "source": b.get("source"), "label": b.get("label"),
                             "citation": b.get("citation"), "units": b.get("units"), "distribution": b.get("distribution"),
                             "mean": b.get("mean"), "p05": b.get("p05"), "p95": b.get("p95"),
-                            **({"length_ft": feet} if per_foot else {})},
+                            "covariates": used, "covariates_words": said, "clock": made.get("clock"),
+                            **({"length_ft": used[rc.LENGTH]} if rc.per_foot(rec) else {})},
         "spec.library_record_id": rec["id"],
     }
+    if lo is not None and hi is not None:
+        changes["results.params.0.ci"] = [lo, hi]
+        changes["results.ci_note"] = CI_NOTE
     unc = made.get("rate_uncertainty")
     if unc:
         changes["results.rate_uncertainty"] = with_source(unc, b)
     db.models.update_one({"_id": model.id}, {"$set": changes})
     return models_service.get_model(db, model.id), rec
+
+
+def save_component_model(db, owner_id: str, component_id: str, covariates: dict | None, name: str | None = None,
+                         binding: dict | None = None):
+    """An NRC/INL component (its failure modes together) saved as an exponential at its constant rate
+    over the period its covariates give (−ln R ÷ the calendar hours), the modes' 5–95% range across
+    plants as the interval, the component and its covariates kept."""
+    from backend.library import components
+    from backend.services import models as models_service
+
+    sv = _sv()
+    try:
+        comp = components.get(component_id)
+        got = components.evaluate(comp, covariates or {})
+    except components.ComponentNotFound as exc:
+        raise sv.Invalid(str(exc)) from None
+    except components.ComponentError as exc:
+        err = sv.Invalid(" ".join(exc.problems))
+        err.missing = exc.missing
+        raise err from None
+    rate = got["rate_per_calendar_hour"]
+    if not rate > 0:
+        raise sv.Invalid("Its rate comes out at 0 for these covariates: give some demands, running or calendar hours.")
+    model = models_service.import_model(
+        db, owner_id, (name or f"{comp['label']} (NRC/INL 2020)")[:200], "exponential", unit="Hours",
+        params=[{"name": "failure_rate", "value": rate}],
+        notes=(f"From the reliability data library: the NRC/INL 2020 component {comp['label']}, its failure modes as "
+               f"competing risks. {got['words']} As a constant rate per calendar hour: −ln(R) ÷ the calendar hours. "
+               "Industry averages, not this equipment's own data."))
+    lib = {"component_id": comp["id"], "source": "NRC/INL 2020", "label": comp["label"],
+           "citation": "INL/EXT-21-65055, Table 1 and Appendix A", "covariates": got["covariates"],
+           "probability": got["probability"]}
+    changes = {"results.method": "library", "spec.library_component_id": comp["id"], "results.library": lib,
+               "results.params.0.ci": [got["bounds_rate"]["p05"], got["bounds_rate"]["p95"]],
+               "results.ci_note": "5–95% from the modes' spread across plants (the source's), not a fit's confidence."}
+    if binding:
+        changes["results.covariate_binding"] = binding
+    db.models.update_one({"_id": model.id}, {"$set": changes})
+    return models_service.get_model(db, model.id)
 
 
 #: What a library model's interval is, on the model page.
@@ -240,15 +306,23 @@ def _save_life_model(db, owner_id: str, rec: dict, b: dict, name: str | None, mi
 
 
 def attach(m, db, owner_id: str, position_id: str, record_id: str, failure_mode_ids=None, note: str = "",
-           replace_link_id: str | None = None, owners=None, length_ft: float | None = None) -> dict:
-    """A library record as the position's model: an exponential at the record's mean rate (per hour),
-    the record's 5–95% range as its interval (a life record: a model of its own family with the
-    record's parameters); the link's source names the record and cites it."""
+           replace_link_id: str | None = None, owners=None, length_ft: float | None = None,
+           covariates: dict | None = None) -> dict:
+    """A library record as the position's model with every covariate set: an exponential at the
+    record's mean rate (per hour) under them, the record's 5–95% range as its interval (a life record:
+    a model of its own family with the record's parameters); the link's source names the record, cites
+    it and keeps the covariates. To fix some and set the rest in an RBD, bind it instead
+    (covariate_positions.bind with source library)."""
     modes = m._mode_ids_on(position_id, failure_mode_ids)
-    model, rec = save_record_model(db, owner_id, record_id, owners=owners, length_ft=length_ft)
+    model, rec = save_record_model(db, owner_id, record_id, owners=owners, length_ft=length_ft, covariates=covariates)
+    if rec is None:  # a component: its modes together
+        return m.link_position_model(position_id, "model", model.id, "library", modes, model.name, note,
+                                     {"library": dict((model.results or {}).get("library") or {})}, replace_link_id)
     b = brief(rec, mine_for(db, owners if owners is not None else [owner_id]))
+    lib = (model.results or {}).get("library") or {}
     source = {"library": {"record_id": rec["id"], "source": b.get("source"), "label": b.get("label"),
-                          "citation": b.get("citation")}}
+                          "citation": b.get("citation"),
+                          **({"covariates": lib["covariates"]} if lib.get("covariates") else {})}}
     return m.link_position_model(position_id, "model", model.id, "library", modes, model.name, note, source,
                                  replace_link_id)
 
@@ -343,24 +417,41 @@ def prior_base(prior: dict, distribution: str, db=None, owners=None) -> dict:
     b = brief(rec, mine)
     if rec.get("kind") == "life":
         return _life_prior_base(rec, b, mine, sp, bl, sv)
-    mean, p05, p95 = float(b["mean"]), b.get("p05"), b.get("p95")
-    dist_id = distribution if distribution in bl.DISTS else "exponential"
+    from backend.library import record_covariates as rc
+
+    cov = record_covariates(rec, prior.get("covariates"), prior.get("length_ft"))
+    made = _evaluate(rec, cov)
+    s_ = float(made["scale"])  # the rate (per hour, on its clock) over the record's own mean
+    used = made["covariates"]
+    said = rc.words(rec, {k: v for k, v in used.items() if made["covariates_from"].get(k) == "given"})
     params = rec.get("distribution") or {}
     family = params.get("family")
     named = {p["name"]: float(p["value"]) for p in params.get("params") or []}
+    if rec.get("kind") == "per_demand":
+        mean, p05, p95 = float(made["failure_rate"]), made["bounds_rate"]["p05"], made["bounds_rate"]["p95"]
+    else:
+        mean, p05, p95 = float(made["failure_rate"]), made["bounds"]["p05"], made["bounds"]["p95"]
+    clock = made.get("clock") or "calendar"
+    per = "per calendar hour" if clock == "calendar" else "per hour of running"
+    cov_note = (f" Its covariates: {said}, so the rate is {bl.num(mean)} {per} (the record's × {bl.num(s_)})."
+                if said and abs(s_ - 1) > 1e-12 else (f" Its covariates: {said}." if said else ""))
+    dist_id = distribution if distribution in bl.DISTS else "exponential"
     name = cite(rec)
+    extra = {"covariates": used, "covariates_words": said, "clock": clock}
     if dist_id == "exponential":
-        if family == "gamma" and {"alpha", "beta"} <= set(named):
-            priors = {"failure_rate": sp.Gamma.from_params([named["alpha"], named["beta"]])}
+        if family == "gamma" and {"alpha", "beta"} <= set(named) and rec.get("kind") == "rate":
+            # A gamma(α, β) on λ is a gamma(α, β / s) on s × λ: the record's prior, scaled exactly.
+            priors = {"failure_rate": sp.Gamma.from_params([named["alpha"], named["beta"] / s_])}
             note = ("The record's gamma on the failure rate is the prior exactly; with an exponential the update is "
-                    "in closed form (conjugate).")
+                    "in closed form (conjugate).") + cov_note
         elif p05 and p95:
             priors = {"failure_rate": sp.prior.around(mean, between=(float(p05), float(p95)))}
-            note = "The record's mean rate, 90% between its 5% and 95% values, is the prior on the failure rate."
+            note = ("The record's mean rate, 90% between its 5% and 95% values, is the prior on the failure rate."
+                    + cov_note)
         else:
             raise sv.Invalid("That record gives no uncertainty range to use as a prior.")
         return {"source": "library", "name": name, "distribution": "exponential", "unit": "hours",
-                "params": {"failure_rate": mean}, "priors": priors, "note": note}
+                "params": {"failure_rate": mean}, "priors": priors, "note": note, **extra}
     if not (p05 and p95):
         raise sv.Invalid("That record gives no uncertainty range to use as a prior.")
     shape = prior.get("shape") or list(DEFAULT_SHAPE)
@@ -370,15 +461,15 @@ def prior_base(prior: dict, distribution: str, db=None, owners=None) -> dict:
     shape_name = "beta" if dist_id == "weibull" else "sigma"
     priors = sp.prior.on_quantities(bl.DISTS[dist_id], mean=sp.prior.around(1 / mean, between=(1 / float(p95), 1 / float(p05))),
                                     **{shape_name: sp.prior.between(lo, hi)})
-    said = "the default" if not prior.get("shape") else "as given"
+    said_shape = "the default" if not prior.get("shape") else "as given"
     # around() puts the prior's median at the geometric middle of the bounds: say what was built.
     middle = (1 / float(p95) * 1 / float(p05)) ** 0.5
     note = (f"The record gives a failure rate; for a {bl.LABELS[dist_id]} it's a prior on the mean life (one over the "
             f"rate: 90% between {bl.num(1 / float(p95))} and {bl.num(1 / float(p05))} hours, centred on about "
             f"{bl.num(middle)}), with the {'shape' if dist_id == 'weibull' else 'spread'} between {bl.num(lo)} and "
-            f"{bl.num(hi)} ({said}).")
+            f"{bl.num(hi)} ({said_shape}).") + cov_note
     return {"source": "library", "name": name, "distribution": dist_id, "unit": "hours", "params": {},
-            "priors": priors, "note": note}
+            "priors": priors, "note": note, **extra}
 
 
 #: The prior width (each parameter within this fraction of its value) a life record with no bounds gets.

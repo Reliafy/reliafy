@@ -144,6 +144,27 @@ def public_graph(graph: dict) -> dict:
     return {**graph, "nodes": nodes}
 
 
+def resolvers(db, owner_id):
+    """``(resolve_subsystem, resolve_model)`` in the caller's scope: a nested diagram's graph, and a
+    saved model's live fit (``alt:<id>``: an accelerated life model, for a block at a stress)."""
+
+    def resolve_subsystem(sub_id: str) -> dict | None:
+        sub = get_rbd(db, sub_id, owner_id)
+        return sub.graph if sub is not None else None
+
+    def resolve_model(model_id: str) -> dict | None:
+        if str(model_id).startswith("alt:"):  # a block on an ALT model at a stress (covariate_binding)
+            from backend.services import alt as alt_service
+
+            ref = str(model_id)[4:]
+            doc = alt_service.get_model(db, ref, owner_id)
+            live = alt_service.get_live_model(db, ref, owner_id) if doc is not None else None
+            return {"model": live, "name": doc.name, "unit": (doc.results or {}).get("unit")} if live is not None else None
+        return models_service.get_live_model(db, model_id, owner_id)
+
+    return resolve_subsystem, resolve_model
+
+
 def bind_covariates(db, owner_id, graph: dict, covariates: dict | None = None) -> tuple[dict, dict | None]:
     """Blocks whose covariates were left open at their position, made concrete from the blocks'
     and the diagram's values (backend/services/covariate_binding.py). Raises AnalysisError naming
@@ -193,20 +214,7 @@ def analyze_graph(
     (repairable) make a quick, time-capped availability run (#147).
     """
 
-    def resolve_subsystem(sub_id: str) -> dict | None:
-        sub = get_rbd(db, sub_id, owner_id)
-        return sub.graph if sub is not None else None
-
-    def resolve_model(model_id: str) -> dict | None:
-        if str(model_id).startswith("alt:"):  # a block on an ALT model at a stress (covariate_binding)
-            from backend.services import alt as alt_service
-
-            ref = str(model_id)[4:]
-            doc = alt_service.get_model(db, ref, owner_id)
-            live = alt_service.get_live_model(db, ref, owner_id) if doc is not None else None
-            return {"model": live, "name": doc.name, "unit": (doc.results or {}).get("unit")} if live is not None else None
-        return models_service.get_live_model(db, model_id, owner_id)
-
+    resolve_subsystem, resolve_model = resolvers(db, owner_id)
     graph, covariates = bind_covariates(db, owner_id, graph, covariates)
 
     # A repairable diagram is a distinct modelling choice: it reports
@@ -332,6 +340,14 @@ def validate_graph(db, graph: dict, owner_id: str) -> dict:
     out = rbd_analysis.validate_graph(graph, resolve_subsystem=resolve_subsystem)
     extra = rbd_phases.validation_warnings(graph)
     return {**out, "warnings": [*(out.get("warnings") or []), *extra]} if extra else out
+
+
+def with_series_hints(check: dict, graph: dict) -> dict:
+    """A check plus ``series_hints``: which of its warnings are the "like blocks wired in series"
+    hints, so the app can fold several of them into one line. Left out where there are none."""
+    hints = set(rbd_analysis.series_redundancy_warnings(graph or {}))
+    found = [w for w in check.get("warnings") or [] if w in hints]
+    return {**check, "series_hints": found} if found else check
 
 
 def validate_rbd(db, rbd_id: str, owner_id: str) -> dict:

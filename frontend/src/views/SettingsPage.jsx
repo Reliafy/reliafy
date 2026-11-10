@@ -9,6 +9,7 @@ import TeamInvites from "../components/TeamInvites.jsx";
 import TimeZonePicker from "../components/TimeZonePicker.jsx";
 import { RolesCard } from "../components/RolePicker.jsx";
 import CurrencyPicker from "../components/CurrencyPicker.jsx";
+import { useRoles } from "../RolesProvider.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { initials } from "../components/Sidebar.jsx";
 import Button from "../components/ui/Button.jsx";
@@ -158,6 +159,7 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { billing } = useAppConfig();
+  const { rolesOn } = useRoles();
   const { personalTimeZone, savePersonalTimeZone, personalCurrency, savePersonalCurrency } = useWorkspace();
 
   const initial = new URLSearchParams(location.search).get("tab");
@@ -209,8 +211,9 @@ export default function SettingsPage() {
             </div>
           </Card>
 
-          {/* What do you do: shapes the menu's order and what Home leads with. */}
-          <RolesCard style={{ marginTop: "1rem" }} />
+          {/* What do you do: shapes the menu's order and what Home leads with.
+              Only where the deployment turns the roles on. */}
+          {rolesOn && <RolesCard style={{ marginTop: "1rem" }} />}
 
           <Card style={{ marginTop: "1rem" }}>
             <CardHeader

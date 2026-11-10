@@ -118,10 +118,10 @@ test("a product's layout (design locations) and a built item's copies stay off t
   assert.equal(scopeTree(all).scope, undefined);
 });
 
-test("a copy of the sample product's own row offers Make this my own… after Build an item…", () => {
+test("an earlier copy that still says (sample) offers Make this my own… after Build an item…; a copy added now never does", () => {
   const actions = [{ id: "tree-new" }];
   const sample = { type: "pos", key: "d", ref: { name: "Survey quadcopter (sample)", design: { rev: "C", sample: true } } };
-  const own = { type: "pos", key: "d", ref: { name: "Survey quadcopter", design: { rev: "C" } } };
+  const own = { type: "pos", key: "d", ref: { name: "Survey quadcopter", design: { rev: "C", sample: false, template: "survey-quadcopter" } } };
   assert.ok(isSampleRow(sample));
   assert.ok(!isSampleRow(own));
   assert.ok(!isSampleRow({ type: "pos", ref: { in_design: true } }));
@@ -136,7 +136,14 @@ test("a copy of the sample product's own row offers Make this my own… after Bu
   assert.equal(greyed.reason, "View only");
   const ask = makeOwnConfirm("Survey quadcopter (sample)");
   assert.match(ask.body, /“Survey quadcopter \(sample\)” becomes your own product/);
+  assert.equal(ask.title, "Make this product your own?");
+  // It says what else is renamed, and that its models become the person's own.
+  assert.match(ask.body, /its part, built items, RBD and maintainability prediction/);
+  assert.match(ask.body, /life models and strategy analyses are saved in your workspace as your own/);
   assert.equal(ask.destructive, false);
+  // What it did, in the server's words (what it renamed and saved); a plain line without them.
+  assert.equal(madeOwnText({ was: "Survey quadcopter (sample)", name: "Survey quadcopter", message: "“Survey quadcopter (sample)” is “Survey quadcopter” now. Renamed or reworded with it: part SQ-4." }),
+    "“Survey quadcopter (sample)” is “Survey quadcopter” now. Renamed or reworded with it: part SQ-4.");
   assert.equal(madeOwnText({ was: "Survey quadcopter (sample)", name: "Survey quadcopter" }),
     "“Survey quadcopter (sample)” is your own product now, as “Survey quadcopter”.");
 });

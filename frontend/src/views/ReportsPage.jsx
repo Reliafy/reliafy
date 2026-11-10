@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { listAllPublicLinks, listReportItems, listReports, listStrategyAnalyses } from "../api.js";
+import { formatDate } from "../dates.js";
 import { relativeTime } from "../instrument.js";
 import { itemPath } from "../navigation.js";
 import Chip from "../components/ui/Chip.jsx";
@@ -188,7 +189,7 @@ function SharedLinks({ reports }) {
                     <td className="lib-opt">{LINK_KIND[l.collection] || l.collection}</td>
                     <td>
                       <a href={l.path} target="_blank" rel="noreferrer">Open the shared page</a>
-                      {l.expires_at && <div className="lib-date">until {new Date(l.expires_at).toLocaleDateString()}</div>}
+                      {l.expires_at && <div className="lib-date">until {formatDate(new Date(l.expires_at))}</div>}
                     </td>
                     <td className="lib-date lib-opt">{relativeTime(l.created_at)}</td>
                   </tr>

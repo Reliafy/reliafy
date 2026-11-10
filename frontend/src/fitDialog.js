@@ -87,6 +87,7 @@ export function problem(s) {
   if (method === "bayes" && priorKind === "around") return aroundParams(s).problem || null;
   if (method === "bayes" && priorKind === "library") {
     if (!s.recordId) return "Pick a library record.";
+    if (s.libMissing?.length) return `Give the record's ${s.libMissing.join(", ")}.`;
     const lo = num(s.libShape?.lo), hi = num(s.libShape?.hi);
     if ((lo != null || hi != null) && !(lo > 0 && hi > lo)) return "The shape's bounds must be low < high, both above 0.";
     return null;
@@ -108,6 +109,7 @@ export function bodyOf(s) {
     out.prior = priorKind === "class" ? { kind: "class" }
       : priorKind === "around" ? { kind: "around", distribution: aroundDist(s), unit: s.unit, params: aroundParams(s).params || {} }
         : priorKind === "library" ? { kind: "library", record_id: s.recordId,
+          ...(s.libCov && Object.keys(s.libCov).length ? { covariates: s.libCov } : {}),
           ...(aroundDist(s) !== "exponential" && num(s.libShape?.lo) > 0 && num(s.libShape?.hi) > 0
             ? { shape: [num(s.libShape.lo), num(s.libShape.hi)] } : {}) }
         : { kind: priorKind, ...(baselineOf({ ...s, kind: priorKind }) || {}) };
@@ -190,6 +192,8 @@ export function initialFit(start = {}, link = null) {
     data: start.data || "position", method: start.method || "mle", priorKind: start.priorKind || "class",
     modelId: start.modelId || null, distribution: start.priorKind === "library" ? "exponential" : "weibull", trust: "guide", unit: "hours",
     params: {}, b10: {}, shape: {}, around: {}, recordId: start.recordId || null, libShape: {},
+    // The library record's covariates (a pipe's length, the clock...) and the labels of those still needed.
+    libCov: start.covariates || {}, libMissing: [],
     modes: (link?.failure_modes || []).map((f) => f.id), exclude: new Set(), age: "",
   };
 }
@@ -214,10 +218,37 @@ function settled(v) {
 // Has anything in the fit been changed since it opened? Leaving it for another row asks
 // "Discard this fit?" only then.
 export function fitChanged(opened, now) {
-  const { age: _a, ...a } = opened || {};
-  const { age: _b, ...b } = now || {};
+  // libMissing is worked out from the record's covariates, not chosen.
+  const { age: _a, libMissing: _m, ...a } = opened || {};
+  const { age: _b, libMissing: _n, ...b } = now || {};
   return JSON.stringify(settled(a)) !== JSON.stringify(settled(b));
 }
 
 // The pane's heading: what it does, then the position it's for.
-export const fitTitle = (link = null) => (link ? "Refit the life model" : "Fit a life model");
+export const fitTitle = (link = null, start = {}) => (start?.update ? "Update with new failures" : link ? "Refit the life model" : "Fit a life model");
+
+// A model row as the prior of a fit (its ⋯ "Update with new failures…" / "Update with this
+// position's history…"): {start, link}. An earlier fit with a prior (role bayesian) is updated in
+// place: its own prior kept, the position's history now, the row replaced. Any other Weibull,
+// exponential or lognormal model starts a new fit with it as the prior.
+export function priorFrom(row) {
+  const start = { method: "bayes", priorKind: "model", modelId: row.model_id };
+  return row.role === "bayesian" ? { start: { ...start, update: true }, link: row } : { start, link: null };
+}
+
+// What the fit pane opens with: what the opener chose (`seed`), else, on a reload, the row named in
+// the address (?fit=<position>&prior=<row>) as its prior; null while the rows are still being read.
+export function fitPreset(seed = null, from = null, rows = null) {
+  if (seed) return { start: seed.start || {}, link: seed.link || null };
+  if (!from) return { start: {}, link: null };
+  if (!rows) return null;
+  const row = rows.find((l) => l.id === from);
+  return row ? priorFrom(row) : { start: {}, link: null };
+}
+
+// An earlier update as the prior brings its own prior with it, so how much to trust it isn't asked:
+// the preview says so (trust "kept"); before it answers, an update opened on its own row.
+export function keepsOwnPrior(s, start = {}, preview = null) {
+  if (preview) return preview.trust?.id === "kept";
+  return !!start?.update && effective(s).priorKind === "model" && s.modelId === start.modelId;
+}

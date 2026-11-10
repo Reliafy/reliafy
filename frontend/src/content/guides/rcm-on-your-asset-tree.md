@@ -2,8 +2,12 @@
 title: "Build RCM on your asset tree, every decision backed by evidence"
 task: "How do I record a position's functions, functional failures and failure modes, choose a maintenance task for each, and show the analysis behind it?"
 category: "Maintenance strategy"
-prerequisites: "A position in your asset tree, or the sample UAV product. Fitted models or saved strategy analyses to cite help, but you can start without them."
+prerequisites: "A position in your asset tree, or the Survey quadcopter. Fitted models or saved strategy analyses to cite help, but you can start without them."
 order: 25
+# Reliafy Maintenance is operators-only for now: this guide is linked from the
+# Explorer's RCM tab itself and stays out of the index until Maintenance opens.
+# The public guide to RCM is rcm-study.md.
+hidden: true
 ---
 
 Reliability-centred maintenance (RCM) asks one question per failure mode: *what
@@ -19,18 +23,18 @@ that justifies it: a non-repairable model, a degradation model or a saved
 strategy analysis. Reliafy checks the link every time you open the tree, and
 marks each decision **Supported**, **Contradicted** or **Inconclusive**.
 
-## Start from the sample UAV product
+## Start from the Survey quadcopter
 
 Open **Assets → Explorer** and pick the **RCM** tab. The tree of
 positions is the first column, and under each position sit its functions,
 their performance standards, functional failures and failure modes, with the
 RCM's columns beside every row.
 
-The sample is a product: *Survey quadcopter (sample)*, a small fictional
-inspection quadcopter's design with a complete RCM study on it. If your tree
-is empty, press **Open the sample UAV product**. (With positions already
+The Survey quadcopter is a made-up product: its numbers are invented. It is a
+small inspection quadcopter's design with a complete RCM study on it. If your tree
+is empty, press **Open the Survey quadcopter**. (With positions already
 there, it's in the **⋯** beside the tree's search box; on **Products**, **Add
-the sample UAV product** adds it too.) It is added to your workspace the first
+the Survey quadcopter** adds it too.) It is added to your workspace the first
 time, and its **Functional structure** opens on the **RCM** tab: the same
 Explorer, scoped to the design.
 
@@ -44,20 +48,23 @@ it. The 33 positions (the airframe with its four arms, centre frame and
 landing gear; four motors, speed controllers and propellers; flight control
 with its two IMUs, GPS and compass; the battery pack and its BMS; comms; the
 gimbal and its camera) carry 47 functions with 63 performance standards, 79
-functional failures and 83 failure modes, each with its consequence and, all
+functional failures and 84 failure modes, each with its consequence and, all
 but two, its decision. The decisions use the whole logic: on-condition checks,
 scheduled discards (the propellers at 130 hours, the battery at 300 cycles)
 and restorations (the arm bolts re-torqued), failure-finding tests for the
 hidden protective functions, redesigns, run-to-failure and accepted risks.
 Read together, their tasks are the aircraft's maintenance programme: a
 pre-flight check before every flight, a flight log review every 10 hours, the
-25-hour, 100-hour and annual inspections and the failsafe function tests, each
-a shared task on the product with the modes' checks as its checklist, plus the
-parts' own limits. The higher positions' failures are explained by those below
+25-hour, 100-hour and annual inspections, the monthly failsafe function tests
+and a battery storage check every three months, each a shared task on the
+product with the modes' checks as its checklist, plus the parts' own limits.
+The tasks that wear with use go by flight hours or flights; the ones whose
+failures come with time (a configuration change, a pack draining in storage)
+go by the calendar. The higher positions' failures are explained by those below
 them (see *Working top down or bottom up*, below), and some decisions link the
 evidence behind them.
 
-![The RCM tab on the sample UAV product: its functions, failures and modes, each decision with its evidence check](/guides/img/rcm-01-explorer.png)
+![The RCM tab on the Survey quadcopter: its functions, failures and modes, each decision with its evidence check](/guides/img/rcm-01-explorer.png)
 
 The five levels under a position are the ones classic RCM uses, and the tasks
 that answer them:
@@ -139,14 +146,14 @@ To find your way around a big tree:
   column's edge to resize it. The Explorer remembers these choices on this
   device.
 
-One decision in the sample is red on purpose, on each of the four motors. The
+One decision in it is red on purpose, on each of the four motors. The
 first build's plan ran the motor bearings to failure, on the grounds that
 bearing failures are random. The linked bearing model says otherwise: *β = 2.50
 [1.88, 3.32] — the CI excludes 1: this is wear-out.* That's the point of linking
 evidence. The worksheet says what was decided; the check says whether the data
 still agree.
 
-The rest of the sample shows the other cases. The propeller replacement and
+The rest of the product shows the other cases. The propeller replacement and
 the BMS cut-off test are **Supported** by the analyses they link; so are the
 speed controllers' thermal-pad check (a degradation model of their temperature
 rise), the radio's run-to-failure (an exponential fit: its failures are random)
@@ -159,12 +166,13 @@ failures (the four failsafes, each IMU failing silently, the BMS cut-off and
 its state of charge), each with its failure-finding task (**Show only → Hidden
 failures**).
 
-The sample product is yours to edit, so try things on it. Your own equipment
+The Survey quadcopter is yours to edit, so try things on it. Your own equipment
 goes the same way: on any position.
 
 ## Build the RCM on a position
 
-Pick a position in the tree on the RCM tab. Build from the top down:
+Pick a position in the tree on the RCM tab. Every row's menu starts with what
+you can add inside it, then **Open…** and the rest. Build from the top down:
 
 1. **Add function** in the position's row menu (right-click the row, press
    its **⋯** button, or Shift+F10). Type

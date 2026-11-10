@@ -4758,6 +4758,20 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             self._write_mode_notes(fm, notes_now)
         return self.rcm_mode(mode_id)
 
+    def relink_evidence(self, mode_id: str, evidence: dict) -> bool:
+        """Point a failure mode's decision at another saved record as its evidence
+        ({type, id}); the decision, its task and its notes stay. False when it links
+        that record already."""
+        fm, _ = self._live_mode(mode_id)
+        try:
+            cleaned = rcm_decisions._clean_evidence(evidence)
+        except rcm_decisions.RcmValidationError as err:
+            raise Invalid(str(err)) from None
+        if not fm.get("outcome") or fm.get("evidence") == cleaned:
+            return False
+        self._emit("failure_mode.analysed", {"id": mode_id, "changes": {"evidence": cleaned}})
+        return True
+
     @staticmethod
     def _on_found(fm: dict, outcome, given: dict, prev: dict | None = None) -> str:
         """What's done when the check finds it, for a decision (or a combination's
@@ -9679,8 +9693,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         each: where it is, the failure modes it prevents (each with its function ›
         functional failure), its kind (the decision's outcome), interval or trigger,
         trade, next due, its package (if any), whether it can join one (an item's
-        task, a task by use and a round can't: ``why_not``) and what it needs
-        (``resources``: its LSA record)."""
+        task, a task by use and a round can't: ``why_not``), what it needs
+        (``resources``: its LSA record) and its ``instructions``."""
         scope = self._package_scope(position_id, location_id)
         if scope is None:
             raise Invalid("Give position_id or location_id.")
@@ -9730,7 +9744,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                          "trigger": self._trigger_view(task.get("trigger")) if task.get("trigger") else None,
                          "on_event": _on_event_only(task), "trade": task.get("trade", ""),
                          "next_due": view["next_due"], "overdue": bool(view["overdue"]), "package": pkg,
-                         "why_not": why_not, "resources": view["resources"]})
+                         "why_not": why_not, "resources": view["resources"],
+                         "instructions": task.get("instructions") or ""})
         rows.sort(key=lambda r: (r["subject"]["name"].lower(), r["name"].lower(), r["id"]))
         # A product's design (or one of its design locations): its programme, packaged on the built items.
         return {"scope": self._subject_brief(scope), "tasks": rows[:limit], "total": len(rows),
@@ -13359,7 +13374,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def tree_rows(self) -> dict:
         """The asset trees for the app's tree pane, flat: every live position once
         (id, name, parent_id, and when set: tag, position_class, item (with the
-        item's own status, when it has any), location_id (set on it), location
+        item's own status, when it has any), item_class_id (the fitted item's
+        item class: its own, else its part's), location_id (set on it), location
         (where it is), carried_by, status, inside, context: it has an operating
         context), with the
         locations, the items placed at one now (spares) and the items neither fitted
@@ -13369,6 +13385,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         _, inside = self._tree_rollup(rows)
         rcm = self._rcm_index()
         context = {p["id"] for p in self.s.nodes(self.org, "Position") if p.get("operating_context")}
+        from backend.maintenance import class_fleet
+
+        item_classes = class_fleet.item_class_ids(self)  # item -> its effective item class
 
         def lean(d: dict | None) -> dict | None:
             return {k: v for k, v in d.items() if v} or None if d else None
@@ -13384,6 +13403,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 item_status = lean(r["item_status"])
                 if item_status:
                     row["item"]["status"] = item_status
+                if r["item"]["id"] in item_classes:  # the Classes arrangement groups by it
+                    row["item_class_id"] = item_classes[r["item"]["id"]]
             for key, value in (("status", lean(r["status"])), ("inside", lean(inside.get(pid)))):
                 if value:
                     row[key] = value

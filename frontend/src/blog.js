@@ -3,6 +3,7 @@
 // import.meta.glob, so there's no backend, database, or runtime fetch involved.
 // Adding a post = committing a .md file.
 // Markdown rendering (sanitized in the browser) is shared: markdown.js.
+import * as dates from "./dates.js";
 import { renderMarkdown } from "./markdown.js";
 // The frontmatter parser and slug rule live in frontmatter.js (pure, so the
 // build-time feeds and `node --test` share them); re-exported for the other
@@ -69,11 +70,5 @@ export { renderMarkdown };
 
 export function formatDate(iso) {
   if (!iso) return "";
-  const d = new Date(iso + (iso.length === 10 ? "T00:00:00" : ""));
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  return dates.formatDate(iso, { long: true }) || iso;
 }

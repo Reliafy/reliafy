@@ -13,8 +13,10 @@
 // visits, LsaPanel; it was "Packages" until 9 Nov 2026, and ?tab=packages
 // still opens it); Signals for a
 // position or an item (sensor snapshots and their spectra); Modelling for a position (the
-// life models attached to it and to the positions inside it, a design's too). A tab a kind
-// doesn't have isn't shown (never greyed out).
+// life models attached to it and to the positions inside it, a design's too); Condition
+// monitoring for an item class (the tree by Classes: the class's positions with their risk now,
+// ClassFleet; a class's only tab, so the one it opens on). A tab a kind doesn't have isn't shown
+// (never greyed out).
 //
 // A product is a design, not an operated thing: its rows (a design's
 // positions) have no maintenance done to them, so no Failure reports,
@@ -70,6 +72,12 @@ export const TABS = [
   // The life models on each position (Derryn, 9 Nov 2026): a design's positions carry them too
   // (a built item inherits its design's), so no `asset`. Drawn as a tree-table (explorerModels.js).
   { id: "models", label: "Modelling", title: "The life models on this position and the positions inside it: what each says, where it came from and what uses it", kinds: ["pos"] },
+  // The missions flown on each position's RBD (Derryn, 9 Nov 2026: "Products need an RBD tab,
+  // called Missions"; "Missions are RBDs, so they belong to positions"): a design's positions too,
+  // so no `asset`. Drawn as a tree-table (explorerMissions.js); a mission opens in the table area.
+  { id: "missions", label: "Missions", title: "The missions flown on this position's RBD and the positions inside it: each mission's phases and its chance of completing", kinds: ["pos"] },
+  // An item class (a row of the tree by Classes) has this one tab and no Summary: its fleet.
+  { id: "condition", label: "Condition monitoring", title: "Each position of this class with its risk now, highest first", kinds: ["cls"] },
   { id: "measurements", label: "Measurements", title: "Every measuring point here and inside it: the latest reading, its limits and whether it's past them", kinds: ["pos", "loc", "item"], asset: true },
   {
     id: "lsa", label: "LSA", title: "Logistic support analysis: what each task needs to be done, and how the tasks are packaged into visits",
@@ -105,7 +113,7 @@ export function isProductRow(row) {
 
 // The word over a picked row's name: what kind of row it is. A product's own
 // row says "Product"; the positions of its design below it stay "Position".
-export const ROW_KINDS = { pos: "Position", loc: "Location", item: "Item", group: "" };
+export const ROW_KINDS = { pos: "Position", loc: "Location", item: "Item", cls: "Item class", group: "" };
 export function rowKind(row) {
   if (row?.type === "loc" && isDesignRow(row)) return "Design location";
   return isProductRow(row) ? "Product" : ROW_KINDS[row?.type] || "";
@@ -119,9 +127,37 @@ export function tabsFor(row) {
     .map((t) => (design && (t.designLabel || t.designTitle) ? { ...t, label: t.designLabel || t.label, title: t.designTitle || t.title } : t));
 }
 
-// The tab to show for a row: the one picked if the row has it, else Summary.
+// The tab to show for a row: the one picked if the row has it, else Summary; a row with no
+// Summary (an item class) shows its first tab, never a blank panel.
 export function shownTab(wanted, row) {
-  return tabsFor(row).some((t) => t.id === wanted) ? wanted : DEFAULT_TAB;
+  const tabs = tabsFor(row);
+  if (tabs.some((t) => t.id === wanted)) return wanted;
+  return tabs.length && !tabs.some((t) => t.id === DEFAULT_TAB) ? tabs[0].id : DEFAULT_TAB;
+}
+
+// Does the row's panel have a tab bar? With two tabs or more, and with one that isn't Summary
+// (an item class's Condition monitoring): a row with Summary alone (a group) has none.
+export function hasTabBar(row) {
+  const tabs = tabsFor(row);
+  return tabs.length > 1 || (tabs.length === 1 && tabs[0].id !== DEFAULT_TAB);
+}
+
+// The tab an address opens on: the one it asks for (tabParam), except with an item class picked
+// by Classes (?arrange=classes&sel=cls:…, the key assetTree.js classKey makes). A class has only
+// its own tab, so a tab of the tree-tables in the address (RCM and the rest are by position)
+// doesn't take the tree off the class: the class shows its Condition monitoring.
+export function addressTab(value, { arrange = null, sel = null } = {}) {
+  const tab = tabParam(value);
+  if (arrange === "classes" && typeof sel === "string" && sel.startsWith("cls:")) return shownTab(tab, { type: "cls" });
+  return tab;
+}
+
+// The tab to keep in the address when the tree's arrangement changes to `mode`: a tab only the
+// rows of another arrangement have (an item class's, off Classes) is left behind.
+export function tabForArrangement(tab, mode) {
+  const only = BY_ID.get(tab)?.kinds;
+  if (only && only.every((k) => k === "cls") && mode !== "classes") return DEFAULT_TAB;
+  return tab;
 }
 
 // Every row in a branch: the row's own key and everything inside it in the

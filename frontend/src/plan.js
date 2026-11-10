@@ -33,6 +33,7 @@ export const FREE_CAPS = Object.freeze({
   rbds: 1,
   degradation_models: 1,
   tracked_items: 3,
+  rcm_studies: 1,
   fleets: 1,
   outage_logs: 1,
   fault_trees: 1,
@@ -49,6 +50,7 @@ export const CAPPED_KINDS = [
   ["rbds", "RBDs", "RBD", "RBDs"],
   ["degradation_models", "Degradation models", "degradation model", "degradation models"],
   ["tracked_items", "Tracked items", "tracked item", "tracked items"],
+  ["rcm_studies", "RCM studies", "RCM study", "RCM studies"],
   ["fleets", "Fleet forecasts", "fleet failure forecast", "fleet failure forecasts"],
   ["outage_logs", "Outage logs", "outage log", "outage logs"],
   ["fault_trees", "Fault trees", "fault tree", "fault trees"],
@@ -77,7 +79,7 @@ export function freeStorageLines(caps = FREE_CAPS) {
     joinAnd([p("rbds"), p("fault_trees"), p("outage_logs")]),
     joinAnd([p("reliability_predictions"), p("maintainability_predictions"), p("libraries")]),
     `Degradation tracking: ${joinAnd([p("degradation_models"), p("tracked_items")])}`,
-    p("fleets"),
+    joinAnd([p("fleets"), p("rcm_studies")]),
   ];
   return lines.map((l) => l.charAt(0).toUpperCase() + l.slice(1));
 }

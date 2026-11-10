@@ -3773,6 +3773,18 @@ h1 .chip,
   color: var(--warn);
 }
 
+/* Several "like blocks in series" hints, folded into one line (rbdWarnings.js). */
+.rbd-check-fold {
+  margin: 0.35rem 0 0;
+  font-size: var(--fs-14);
+}
+.rbd-check-fold > summary {
+  cursor: pointer;
+}
+.rbd-check-fold > summary:hover {
+  text-decoration: underline;
+}
+
 .rbd-section-head {
   font-size: var(--fs-14);
   font-weight: 600;
@@ -9604,6 +9616,21 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
 .plot-dl { opacity: 0; transition: opacity 0.15s; }
 .plot-frame:hover .plot-dl, .plot-dl:focus-within { opacity: 1; }
 @media (hover: none) { .plot-dl { opacity: 1; } }
+/* A narrow screen or a touch one: the legend above the plot runs the chart's whole width there (and on
+   a touch screen the buttons never hide), so they'd sit on its last entry. They take a row of their
+   own above the chart: in the frame's flow, or, where the chart fills a box of a set height
+   (.plot-fill), with the chart starting under them. */
+@media (max-width: 640px), (hover: none) {
+  .plot-frame > .plot-dl { position: static; display: flex; justify-content: flex-end; }
+  .plot-fill > .plot-dl { position: absolute; }
+  .plot-fill > .plot-dl + .plot-fill-inner { top: 32px; }
+}
+/* A wide screen, and legend text reaches that corner (Plot.jsx measures it and sets .plot-dl-own): a
+   slimmer row of their own above the chart, which is drawn that much shorter, so the frame is no
+   taller and the buttons still show only on hover. */
+.plot-frame.plot-dl-own:not(.plot-fill) { padding-top: 24px; }
+.plot-fill.plot-dl-own > .plot-dl + .plot-fill-inner { top: 24px; }
+.plot-dl-own > .plot-dl .plot-dl-btn { height: 24px; }
 .plot-dl-btn:focus-visible { outline: none; box-shadow: var(--focus); border-color: var(--acc); }
 
 /* Fit statistics in their modal: the table is the dialog's content, not a card in it. */

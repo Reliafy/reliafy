@@ -1,13 +1,13 @@
-// Products and Items: "Add the sample UAV product" on Products (a copy there
+// Products and Items: "Add the Survey quadcopter" on Products (a copy there
 // already: Add another copy), the product's page (the tree on its design, its
 // facts and sections on the product's Summary, no maintenance tabs), Build an item
 // (check first: the positions it will make; then build; the same serial again
 // is refused in plain words), the item's page, the failure reports rolled up
 // across the items, linking to each on its item, and the Items list with its
 // filters. The Assets list leaves the products' trees out. At 400 px nothing
-// scrolls the page sideways. smoke/seed.js adds one sample product first.
-// Make this my own… turns a copy of the sample (a bare product with its name)
-// into the user's product in place, and the copy is deleted after.
+// scrolls the page sideways. smoke/seed.js adds one Survey quadcopter first.
+// Make this my own… turns a copy from before (a bare product with the name those
+// had, ending "(sample)") into the user's product in place, and the copy is deleted after.
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
@@ -39,18 +39,19 @@ const pickTab = async (page, name) => {
 };
 
 for (const [width, height] of [[1440, 900], [400, 860]]) {
-  test(`Products at ${width} px: the sample, the tree on its design, Build an item, the item and the reports roll-up`, async ({ page, request, problems }) => {
+  test(`Products at ${width} px: the Survey quadcopter, the tree on its design, Build an item, the item and the reports roll-up`, async ({ page, request, problems }) => {
     test.setTimeout(300000);
     await page.setViewportSize({ width, height });
     const w = width;
     const phone = width < 600;
-    // The seeded sample (smoke/seed.js). Asking for it again offers another copy; keeping ours adds none.
+    // The seeded Survey quadcopter (smoke/seed.js). Asking for it again offers another copy; keeping ours adds none.
     await open(page, "/products");
     await expect(page.getByRole("heading", { name: "Products", level: 1 })).toBeVisible();
     await shot(page, `${w}-products-landing`);
     await page.getByRole("button", { name: "More actions" }).click();
-    await page.getByRole("button", { name: "Add the sample UAV product" }).click();
-    await expect(page.getByText("The sample product is already in your workspace")).toBeVisible();
+    await page.getByRole("button", { name: "Add the Survey quadcopter" }).click();
+    await expect(page.getByText("Add another Survey quadcopter?")).toBeVisible();
+    await expect(page.getByText(/^Survey quadcopter is already in your workspace as “Survey quadcopter( \d+)?”\. Add another copy, or keep the one you have\.$/)).toBeVisible();
     await shot(page, `${w}-sample-already-there`);
     await page.getByRole("button", { name: "Keep the one I have" }).click();
     await expect(page).toHaveURL(/\/products\/[^/?]+(\?|$)/);
@@ -58,7 +59,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
 
     // The product's page is the tree on its design, as Assets › Explorer is:
     // no page header or page tabs, the tree's title the product's name.
-    await expect(page.locator(".tp-title")).toContainText("Survey quadcopter (sample");
+    await expect(page.locator(".tp-title")).toContainText("Survey quadcopter");
     await expect(page.getByRole("tab", { name: "Functional structure" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Items", exact: true })).toHaveCount(0);
     await expect(page.locator(".pp-head")).toHaveCount(0);
@@ -67,11 +68,13 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     // The Positions / Locations switch (its layout is the design's locations), opening on Positions;
     // the tree's last row adds inside the product.
     await expect(page.getByRole("radiogroup", { name: "Arrange by" }).getByRole("radio", { name: "Positions" })).toHaveAttribute("aria-checked", "true");
-    await expect(page.locator(".tp-addrow")).toHaveText(/^\+New position inside Survey quadcopter \(sample/);
+    // No Classes there: nothing is fitted in a design (an asset's own tree has it).
+    await expect(page.getByRole("radiogroup", { name: "Arrange by" }).getByRole("radio", { name: "Classes" })).toHaveCount(0);
+    await expect(page.locator(".tp-addrow")).toHaveText(/^\+New position inside Survey quadcopter/);
     // At most one h1: the product's row's name.
     expect(await page.getByRole("heading", { level: 1 }).count()).toBeLessThanOrEqual(1);
-    if (phone) await page.getByRole("treeitem", { name: /^Survey quadcopter \(sample/ }).first().click();
-    await expect(page.getByRole("heading", { level: 1 })).toContainText("Survey quadcopter (sample");
+    if (phone) await page.getByRole("treeitem", { name: /^Survey quadcopter/ }).first().click();
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Survey quadcopter");
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
     // The product's own row is headed "Product" (its design's positions stay "Position").
     await expect(page.locator(".tt-kind").first()).toHaveText("Product");
@@ -131,9 +134,9 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await shot(page, `${w}-product-reports`);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
 
-    // Analyses of this design: its RBD (placeholder failure rates, said so in its name).
+    // Analyses of this design: its RBD (its placeholder failure rates are flagged on its blocks).
     const analyses = page.getByRole("region", { name: "Analyses of this design" });
-    await expect(analyses.getByRole("link", { name: /flight-critical RBD \(placeholder failure rates\)/ })).toBeVisible();
+    await expect(analyses.getByRole("link", { name: /^Survey quadcopter( \d+)?: flight-critical RBD$/ })).toBeVisible();
     await analyses.scrollIntoViewIfNeeded();
     await shot(page, `${w}-product-analysis`);
 
@@ -147,7 +150,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     // hidden for now, so an earlier ?tab=parts lands on the Summary), with no stock.
     await open(page, `/products/${product.id}?tab=parts`);
     await expect(page).not.toHaveURL(/view=parts/);
-    if (phone) await page.getByRole("treeitem", { name: /^Survey quadcopter \(sample/ }).first().click();
+    if (phone) await page.getByRole("treeitem", { name: /^Survey quadcopter/ }).first().click();
     await expect(page.getByRole("tab", { name: "Parts", exact: true })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Summary", exact: true })).toHaveAttribute("aria-selected", "true");
     const bom = page.getByRole("region", { name: "Bill of materials", exact: true });
@@ -163,7 +166,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     // The item's own page, from the product's Built items: under Items, with its product.
     await open(page, `/products/${product.id}?tab=items`);
     await expect(page).not.toHaveURL(/tab=items/);
-    if (phone) await page.getByRole("treeitem", { name: /^Survey quadcopter \(sample/ }).first().click();
+    if (phone) await page.getByRole("treeitem", { name: /^Survey quadcopter/ }).first().click();
     await page.getByRole("region", { name: "Built items", exact: true }).getByRole("link", { name: "0007", exact: true }).click();
     await expect(page).toHaveURL(/\/asset-register\/items\//);
     await expect(page.getByRole("heading", { level: 1 })).toContainText("· 0007");
@@ -177,10 +180,10 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
     await open(page, "/items");
     await expect(page.getByRole("heading", { name: "Items", level: 1 })).toBeVisible();
-    await expect(page.locator(".pp-table")).toContainText("Survey quadcopter (sample) · 0007");
+    await expect(page.locator(".pp-table")).toContainText("Survey quadcopter · 0007");
     await shot(page, `${width}-items-landing`);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
-    await page.getByLabel("Product").selectOption({ label: "Survey quadcopter (sample)" });
+    await page.getByLabel("Product").selectOption({ label: "Survey quadcopter" });
     await expect(page.locator(".tablebar .count")).toHaveText(/^\d+ matches$/);
     await expect(page.locator(".pp-table")).toContainText("· 0007");
     await page.getByLabel("Product").selectOption({ label: "No product" });
@@ -190,23 +193,23 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
   });
 }
 
-// The one quadcopter example is the sample product: its functional structure's
+// The one quadcopter example is the Survey quadcopter: its functional structure's
 // FME(C)A tab works as on the Explorer (scored rows, the row menus of a design,
 // Focus on incomplete rows, the print view and back), at both widths.
 for (const [width, height] of [[1440, 900], [400, 860]]) {
-  test(`the sample UAV product's FME(C)A at ${width} px`, async ({ page, request, problems }) => {
+  test(`the Survey quadcopter's FME(C)A at ${width} px`, async ({ page, request, problems }) => {
     test.setTimeout(120000);
     await page.setViewportSize({ width, height });
     const { products } = await (await request.get(`${M}/products`)).json();
-    const product = products.find((p) => /^Survey quadcopter \(sample/.test(p.name));
+    const product = products.find((p) => /^Survey quadcopter/.test(p.name));
     await open(page, `/products/${product.id}?view=fmea&sel=${product.id}`);
     await expect(page.getByRole("tab", { name: "FME(C)A" })).toHaveAttribute("aria-selected", "true");
     if (width < 600) {
       // A phone: the tree, the FME(C)A tab picked; nothing scrolls the page sideways.
-      await expect(page.getByText(/Survey quadcopter \(sample/).first()).toBeVisible();
+      await expect(page.getByText(/Survey quadcopter/).first()).toBeVisible();
       await shot(page, `${width}-product-fmea`);
       expect(await sideways(page)).toBeLessThanOrEqual(0);
-      await expectHealthy(page, problems, { label: `sample product fmea ${width}` });
+      await expectHealthy(page, problems, { label: `survey quadcopter fmea ${width}` });
       return;
     }
     const table = page.getByRole("treegrid", { name: /and their FME\(C\)A/ });
@@ -217,7 +220,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await shot(page, `${width}-product-fmea`);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
     // The design's top row: its FME(C)A menu, with no failure report (a report is about an item).
-    const top = table.getByRole("row", { name: /^Survey quadcopter \(sample/ }).first();
+    const top = table.getByRole("row", { name: /^Survey quadcopter/ }).first();
     await top.locator(".tt-tree").click({ button: "right" });
     const menu = page.getByRole("menu", { name: /^Actions for Survey quadcopter/ });
     // As on the Explorer's FME(C)A tab: Add function, the worksheet in and out, Print view, Isolate, Pin, Delete… last.
@@ -227,7 +230,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     // no decision, on purpose).
     await page.getByRole("tab", { name: "RCM" }).click();
     const rcm = page.getByRole("treegrid", { name: /and their RCM/ });
-    await rcm.getByRole("row", { name: /^Survey quadcopter \(sample/ }).first().locator(".tt-tree").click({ button: "right" });
+    await rcm.getByRole("row", { name: /^Survey quadcopter/ }).first().locator(".tt-tree").click({ button: "right" });
     await menu.getByRole("menuitem", { name: "Focus on incomplete rows" }).click();
     await expect(page.locator(".sr-only[role='status']")).toContainText(/Collapsed the rest of the tree: \d+ incomplete rows? under Survey quadcopter/);
     await expect(rcm.getByRole("row", { name: /^Failure mode: / }).first()).toBeVisible();
@@ -243,7 +246,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await shot(page, `${width}-product-fmea-print`);
     await page.getByRole("button", { name: "Back" }).click();
     await expect(page).toHaveURL(new RegExp(`/products/${product.id}\\?.*view=fmea`));
-    await expectHealthy(page, problems, { label: `sample product fmea ${width}` });
+    await expectHealthy(page, problems, { label: `survey quadcopter fmea ${width}` });
   });
 }
 
@@ -265,10 +268,10 @@ test("Assets leaves the products' designs and items' trees out", async ({ page, 
   await expectHealthy(page, problems, { label: "assets without products" });
 });
 
-// Assets' sample is the quadcopter: "Open the sample quadcopter" (the ⋯ menu, and the
-// empty page) opens the first item built from the sample product on its own tree.
+// Assets' ready-made one is a quadcopter: "Open a Survey quadcopter" (the ⋯ menu, and
+// the empty page) opens the first item built from the product on its own tree.
 // smoke/seed.js added it, so nothing more is added and nothing is asked.
-test("Assets opens the sample quadcopter: an item built from the sample product, on its tree", async ({ page, problems }) => {
+test("Assets opens a Survey quadcopter: an item built from the product, on its tree", async ({ page, problems }) => {
   for (const [width, height] of [[1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
     const posted = [];
@@ -277,9 +280,9 @@ test("Assets opens the sample quadcopter: an item built from the sample product,
     await open(page, "/asset-register");
     await page.getByRole("button", { name: "More actions" }).click();
     await expect(page.getByRole("button", { name: /sample truck/ })).toHaveCount(0);
-    await page.getByRole("button", { name: "Open the sample quadcopter" }).click();
+    await page.getByRole("button", { name: "Open a Survey quadcopter" }).click();
     await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=positions&root=/);
-    if (width < 600) await page.getByRole("treeitem", { name: /^Survey quadcopter \(sample\) · 0007/ }).first().click();
+    if (width < 600) await page.getByRole("treeitem", { name: /^Survey quadcopter · 0007/ }).first().click();
     await expect(page.getByRole("heading", { level: 1 }).first()).toContainText("· 0007");
     await expect(page.getByRole("tab", { name: "Failure reports" })).toBeVisible(); // an operated thing, not a design
     page.off("request", watch);
@@ -293,13 +296,14 @@ test("Assets opens the sample quadcopter: an item built from the sample product,
   await open(page, "/asset-register");
   const empty = page.locator(".section-empty");
   await expect(empty).toContainText("No assets yet");
-  await expect(empty).toContainText("sample quadcopter");
-  await expect(empty.getByRole("button", { name: "Open the sample quadcopter" })).toBeVisible();
-  await expectHealthy(page, problems, { label: "assets sample quadcopter" });
+  await expect(empty).toContainText("Or open a Survey quadcopter: one of three built from a ready-made product");
+  await expect(empty).not.toContainText(/sample/i);
+  await expect(empty.getByRole("button", { name: "Open a Survey quadcopter" })).toBeVisible();
+  await expectHealthy(page, problems, { label: "assets survey quadcopter" });
 });
 
-// With no products (the read answered empty here), the page says what a product is and offers the sample and the guide.
-test("Products and Items empty states offer the sample and the guide", async ({ page, problems }) => {
+// With no products (the read answered empty here), the page says what a product is and offers the Survey quadcopter and the guide.
+test("Products and Items empty states offer the Survey quadcopter and the guide", async ({ page, problems }) => {
   await page.route("**/api/maintenance/products", (route) => (route.request().method() === "GET"
     ? route.fulfill({ json: { products: [] } }) : route.continue()));
   await page.route("**/api/maintenance/items/overview*", (route) => route.fulfill({
@@ -309,7 +313,7 @@ test("Products and Items empty states offer the sample and the guide", async ({ 
     await open(page, "/products");
     const empty = page.locator(".section-empty");
     await expect(empty).toContainText("No products yet");
-    await expect(empty.getByRole("button", { name: "Add the sample UAV product" })).toBeVisible();
+    await expect(empty.getByRole("button", { name: "Add the Survey quadcopter" })).toBeVisible();
     await expect(empty.getByRole("button", { name: "How products and items work" })).toBeVisible();
     await shot(page, `${width}-products-empty`);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
@@ -439,9 +443,9 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
   });
 }
 
-test("Make this my own… turns a copy of the sample into your own product, in place", async ({ page, request, problems }) => {
+test("Make this my own… turns a copy from before, still named (sample), into your own product, in place", async ({ page, request, problems }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  // A copy of the sample is a product with the sample's name. Adding a whole second sample (its RCM,
+  // A copy from before is known by the name those had. Adding a whole second product (its RCM,
   // items and reports) is slow on a busy shared server and isn't what's tested: a bare copy by name is.
   const n = 100 + (Date.now() % 900);
   const copy = { product: await postOk(request, `${M}/products`, { name: `Survey quadcopter (sample ${n})`, part_number: `SQ-MO-${n}-${Date.now()}` }) };
@@ -451,12 +455,13 @@ test("Make this my own… turns a copy of the sample into your own product, in p
     await expect(page.getByRole("heading", { level: 1 })).toContainText(copy.product.name);
     await page.locator(".tt-actions").getByRole("button", { name: "More actions" }).click();
     await page.locator(".tt-actions .ovm-menu").getByRole("button", { name: "Make this my own…" }).click();
-    const dialog = page.getByRole("alertdialog", { name: "Make the sample your own?" });
+    const dialog = page.getByRole("alertdialog", { name: "Make this product your own?" });
     await expect(dialog).toContainText("becomes your own product, exactly as it is");
     await shot(page, "1440-make-own-confirm");
     await dialog.getByRole("button", { name: "Make it my own" }).click();
     await expect(dialog).toHaveCount(0, { timeout: 60000 });
-    await expect(page.getByText(/is your own product now, as “Survey quadcopter( \d+)?”/)).toBeVisible();
+    // What it renamed and saved is a list to read: it stays until dismissed.
+    await expect(page.locator(".rcm-toast")).toContainText(/is “Survey quadcopter( \d+)?” now, a product like any of your own/);
     await expect(page.locator(".tp-title")).toHaveText(/^Survey quadcopter( \d+)?$/);
     await expect(page.getByRole("heading", { level: 1 })).not.toContainText("(sample");
     await shot(page, "1440-made-own");
@@ -466,7 +471,7 @@ test("Make this my own… turns a copy of the sample into your own product, in p
     await expect(page.getByLabel("Summary").getByRole("button", { name: "Make this my own…" })).toHaveCount(0);
     await page.keyboard.press("Escape");
     expect((await (await request.get(`${M}/products/${id}`)).json()).sample).toBe(false);
-    await expectHealthy(page, problems, { label: "make the sample your own" });
+    await expectHealthy(page, problems, { label: "make an earlier copy your own" });
   } finally {
     const { items } = await (await request.get(`${M}/products/${id}/items`)).json();
     for (const it of items || []) await request.post(`${M}/positions/${it.top_position_id}/retire`, { data: { cascade: true } });

@@ -76,6 +76,7 @@ from backend.routers import degradation_induced as degradation_induced_router
 from backend.routers import recurrent as recurrent_router
 from backend.routers import alt as alt_router
 from backend.routers import joint as joint_router
+from backend.routers import rcm as rcm_router
 from backend.routers import excel as excel_router
 from backend.routers import teams as teams_router
 from backend.routers import shares as shares_router
@@ -257,6 +258,7 @@ app.include_router(degradation_induced_router.router)
 app.include_router(recurrent_router.router)
 app.include_router(alt_router.router)
 app.include_router(joint_router.router)
+app.include_router(rcm_router.router)
 app.include_router(maintenance_router.router)
 app.include_router(maintenance_router.public_router)
 app.add_exception_handler(maintenance_router.WriteDenied, maintenance_router.write_denied_handler)
@@ -344,6 +346,8 @@ def app_config() -> dict:
         "maintenance": bool(config.MAINTENANCE_ENABLED),
         # Placeholder menu entries, on a private test site only.
         "menu_preview": bool(config.MENU_PREVIEW),
+        # "What do you do?": the roles picker and the menu and Home it shapes.
+        "menu_roles": bool(config.MENU_ROLES),
     }
 
 

@@ -84,7 +84,7 @@ test("each row's menu on the FME(C)A tab: a function adds a failure mode directl
   assert.equal(rowActions(d.rows.get("motor")).at(-1).label, "Delete…");
   assert.equal(rowActions(d.rows.get("f1")).at(-1).label, "Delete function…");
   assert.equal(rowActions(d.rows.get("m1")).at(-1).label, "Delete failure mode…");
-  assert.deepEqual(ids("f1"), ["open", "add-mode", "rename", "delete"]);
+  assert.deepEqual(ids("f1"), ["add-mode", "open", "rename", "delete"]); // the add first
   assert.deepEqual(ids("m1"), ["open", "score", "rename", "delete"]);
   assert.deepEqual(ids("U:motor"), ["add-mode"]);
   assert.deepEqual(ids("m1", { canRename: false }), ["open", "score", "delete"]);

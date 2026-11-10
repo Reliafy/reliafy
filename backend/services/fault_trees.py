@@ -710,9 +710,10 @@ def _sample_uav_tree() -> dict:
     """A small quadcopter's loss of thrust or control, in hours. Invented
     figures, in line with the sample UAV product's FME(C)A. A quadcopter
     can't fly on three motors, so losing any one arm (its motor or its speed
-    controller) is enough: an OR of the four arms. The flight controller
-    votes between three IMUs, so it loses attitude only when two of the
-    three have failed: a 2-of-3 vote."""
+    controller) is enough: an OR of the four arms. The design has two IMUs
+    (as its bill of materials and its RBD do) and the flight controller
+    carries on with either, so it loses attitude only when both have
+    failed: 1-of-2 redundancy, an AND of the two."""
     nodes = [
         {"id": "top", "type": "gate", "gate": "or", "label": "Loss of thrust or control in flight",
          "inputs": ["thrust", "battery", "control"]},
@@ -734,12 +735,12 @@ def _sample_uav_tree() -> dict:
         {"id": "control", "type": "gate", "gate": "or", "label": "Flight control lost",
          "inputs": ["fc", "imus"]},
         {"id": "fc", "type": "event", "label": "Flight controller fails", "model": _exp(1e-5)},
-        {"id": "imus", "type": "gate", "gate": "vote", "k": 2, "label": "Two of three IMUs fail",
-         "note": "The flight controller votes between three IMUs: one failure is outvoted.",
-         "inputs": ["imu_a", "imu_b", "imu_c"]},
+        {"id": "imus", "type": "gate", "gate": "and", "label": "Both IMUs fail",
+         "note": "The flight controller carries on with either of its two IMUs: it needs one of the two.",
+         "inputs": ["imu_1", "imu_2"]},
     ]
-    for c in "abc":
-        nodes.append({"id": f"imu_{c}", "type": "event", "label": f"IMU {c.upper()} fails", "model": _exp(2e-5)})
+    for i in (1, 2):
+        nodes.append({"id": f"imu_{i}", "type": "event", "label": f"IMU {i} fails", "model": _exp(2e-5)})
     return {"unit": "Hours", "top": "top", "nodes": nodes}
 
 

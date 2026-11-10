@@ -17,14 +17,14 @@ import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { NewProductModal } from "../components/ProductPanels.jsx";
 import { DeleteTreeModal, DeletedToast } from "../components/DeleteTree.jsx";
 import AssetExplorer from "./AssetExplorer.jsx";
-import { SAMPLES, addSample } from "../sampleProduct.js";
+import { SAMPLES, addSample, addedNote, hasCopy } from "../sampleProduct.js";
 import { PRODUCTS_GUIDE, PRODUCTS_PATH, productPath, productTab } from "../products.js";
 import "./Maintenance.css";
 import "./MaintenanceProducts.css";
 
 const HELP = { guide: PRODUCTS_GUIDE };
 
-// "Add the sample UAV product": once; with a copy there, asked whether to add another.
+// "Add the Survey quadcopter": once; with a copy there, asked whether to add another.
 function useSampleProduct(onAdded) {
   const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
@@ -35,7 +35,7 @@ function useSampleProduct(onAdded) {
     setError(null);
     addSample(addSampleProduct, confirm, "product")
       .then((r) => onAdded(r))
-      .catch((e) => setError(`The sample product wasn't added: ${e.message}`))
+      .catch((e) => setError(`The Survey quadcopter wasn't added: ${e.message}`))
       .finally(() => setBusy(false));
   };
   return { add, busy, error };
@@ -60,7 +60,7 @@ export default function MaintenanceProducts() {
     // Shown once: a reload of the page doesn't bring the toast back.
     if (location.state?.deleted) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const sample = useSampleProduct((r) => navigate(productPath(r.product?.id || r.position.id)));
+  const sample = useSampleProduct((r) => navigate(productPath(r.product?.id || r.position.id), { state: { note: addedNote(r) } }));
   const newProduct = <button onClick={() => setModal(true)}><PlusIcon /> New product</button>;
   const sampleButton = (
     <button type="button" className="secondary" onClick={sample.add} disabled={sample.busy}>
@@ -85,6 +85,7 @@ export default function MaintenanceProducts() {
       <RegisterList
         title="Products" purpose="What you design and build: each product's structure, and the items built from it."
         help={HELP} primary={newProduct}
+        actions={rows?.length && !hasCopy(rows) ? sampleButton : null}
         menu={<button type="button" className="ovm-item" onClick={sample.add} disabled={sample.busy}>{SAMPLES.product.label}</button>}
         error={error || sample.error} rows={rows} noun={["product", "products"]}
         count={`${n} ${n === 1 ? "product" : "products"}`}

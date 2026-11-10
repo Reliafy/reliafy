@@ -1032,11 +1032,15 @@ def failure_mode_interval_inputs(mode_id: str, session=Depends(get_session), ctx
 @router.post("/sample-product")
 def add_sample_product(body: dict | None = Body(None), session=Depends(get_session),
                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Add the sample product: a quadcopter's design (its RCM, some decisions linked to sample evidence, and
-    every failure mode scored as an FME(C)A), its part with
-    a bill of materials, three items built from it with two failure reports, and a flight-critical RBD with
-    placeholder failure rates. When a copy is there already nothing is added (added false) unless again is
-    true."""
+    """Add the Survey quadcopter, a ready-made product whose numbers are invented: a quadcopter's design
+    (its RCM, some decisions linked to evidence, and every failure mode scored as an FME(C)A; its
+    maintenance programme with each task's LSA record; life models on its motors, propellers, battery pack
+    and radio), its part with a bill of materials, three items built from it with two failure reports (the
+    first with its calendar tasks in a monthly work package), a flight-critical RBD with placeholder failure
+    rates and a maintainability prediction. Its life models and the analyses behind its decisions are saved
+    in the workspace as its own records (own_records; a second copy uses the first one's), except any the
+    plan's storage has no room for, which stay linked to the shared library's (kept_shared names them).
+    When a copy is there already nothing is added (added false) unless again is true."""
     from backend.maintenance import templates
 
     return _run(templates.add_sample_product, m, session, bool((body or {}).get("again")))
@@ -1216,6 +1220,18 @@ def position_models(position_ids: str | None = None, session=Depends(get_session
     return _run(lambda: {"links": pm.describe(m, session, ctx.read_owners, ctx.hidden, m.all_position_models(ids))})
 
 
+@router.get("/position-missions")
+def position_missions(position_ids: str | None = None, session=Depends(get_session),
+                      ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The missions on each position: for every RBD linked to a position (position_ids: only these,
+    comma-separated), its missions with their phases, length and last result (rbd_missions.py).
+    A position has its own RBDs' missions; nothing comes from the position above it."""
+    from backend.services import rbd_missions
+
+    ids = [x for x in (position_ids or "").split(",") if x] or None
+    return _run(lambda: {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids)})
+
+
 @router.get("/position-models/{link_id}")
 def position_model(link_id: str, age: float | None = None, session=Depends(get_session),
                    ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
@@ -1246,7 +1262,8 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
         from backend.maintenance import library_models
 
         return _run(library_models.attach, m, session, ctx.write_owner, position_id, body["library_record_id"], modes, note,
-                    replace, owners=ctx.read_owners, length_ft=body.get("length_ft"))
+                    replace, owners=ctx.read_owners, length_ft=body.get("length_ft"),
+                    covariates=body.get("covariates") if isinstance(body.get("covariates"), dict) else None)
     if isinstance(body.get("bind"), dict):
         # A covariate model (NSWC-11, ALT or PH) with some, all or none of its covariates fixed here.
         from backend.maintenance import covariate_positions
@@ -1320,7 +1337,7 @@ def preview_position_prediction(position_id: str, body: dict = Body(default={}),
                                 ctx: AccessCtx = Depends(get_access),
                                 m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """A parts-count prediction of this position from its parts list (and those of the positions inside
-    it; a product design's bill of materials where they list none), previewed: environment (a handbook
+    it; on a product design, plus the bill-of-materials parts they don't list), previewed: environment (a handbook
     symbol; default this position's last, else the nearest above, else GF), mission_time (hours), assign
     ({part id or part number: {record_id, quality_factor} (an NSWC-11 record: {record_id, conditions,
     cycles_per_hour}) or {rate_per_million_hours} or {excluded: true}}), left_out ([parts-list entry id]: lines kept on the parts list but left out of this prediction; omitted,
@@ -1757,10 +1774,18 @@ def build_item(product_id: str, body: dict = Body(...), m: Maintenance = Depends
 
 
 @router.post("/products/{product_id}/make-own")
-def make_sample_own(product_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Make a copy of the sample product your own, in place: "(sample)" goes from its name, nothing
-    inside changes, and the sample is never added again beside it unless asked."""
-    return _run(m.clear_sample, product_id)
+def make_sample_own(product_id: str, session=Depends(get_session),
+                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Bring a copy of the Survey quadcopter added earlier as "… (sample)" to how it is added now, in
+    place: "(sample)" goes from its name and from what was added with it (its part, the items built from
+    it, its RBD, its maintainability prediction and the names and notes of its life-model links), and its
+    life models and the analyses behind its decisions are saved in the workspace as its own records, with
+    its positions' links and its decisions' evidence pointed at them (own_records; kept_shared names any
+    the plan's storage had no room for). Ids stay, and it is never added again beside this copy unless
+    asked. renamed lists what was renamed."""
+    from backend.maintenance import templates
+
+    return _run(templates.make_sample_own, m, session, product_id)
 
 
 @router.delete("/products/{product_id}/design")
@@ -2090,6 +2115,17 @@ def mark_interchangeable(part_id: str, body: dict = Body(...), m: Maintenance = 
 def item_classes(m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The item class tree with counts, and every class flat by path (for pickers)."""
     return _run(lambda: {**m.item_class_tree(), "classes": m.item_classes()})
+
+
+@router.get("/item-classes/{class_id}/fleet")
+def get_class_fleet(class_id: str, position_id: str | None = None, session=Depends(get_session),
+                    ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """An item class's fleet: the positions whose fitted item is of the class or a class inside it,
+    each with its risk now where its position has a condition and life model; ``position_id`` for
+    one of them with its curves."""
+    from backend.maintenance import class_fleet
+
+    return _run(class_fleet.fleet, m, session, ctx.read_owners, ctx.hidden, class_id, position_id)
 
 
 @router.post("/item-classes")

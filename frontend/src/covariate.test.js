@@ -77,7 +77,7 @@ test("an NSWC-11 line sends its conditions and cycles, never a quality factor", 
   assert.equal(conditionsLabel(line), "Conditions (2 set)…");
   assert.equal(conditionsLabel({}), "Conditions…");
   assert.deepEqual(lineChange({ record: { id: "nswc-11:x", kind: "covariate_model" } }),
-    { record: { id: "nswc-11:x", kind: "covariate_model" }, record_id: "nswc-11:x", conditions: {}, cycles_per_hour: "" });
+    { record: { id: "nswc-11:x", kind: "covariate_model" }, record_id: "nswc-11:x", conditions: {}, cycles_per_hour: "", environment: "", quality: "" });
 });
 
 test("the result names the handbooks, the Navy's statement and the lines needing conditions", () => {
@@ -134,4 +134,88 @@ test("the diagram's Use and Environment values as the server keeps them", () => 
   assert.deepEqual(cleanConditions([{ name: " Temperature ", role: "environment", unit: "°C", value: "40" }, { name: "", value: "1" }, { name: "Duty", value: "" }]),
     [{ name: "Temperature", role: "environment", unit: "°C", value: 40 }]);
   assert.equal(boundNodes({ nodes: [{ data: { model: { kind: "bound" } } }, { data: { model: {} } }] }).length, 1);
+});
+
+import { bindingForRecord, covariatesToSave, isNeeded, missingInputs as missingOf, neededInputs, recordAnswer } from "./covariate.js";
+import { handbookConditionsLabel, handbookCovariates } from "./predictions.js";
+
+const CLOCK = { key: "clock", kind: "choice", role: "use", default: "operating", choices: [{ code: "calendar" }, { code: "operating" }] };
+const HOURS = { key: "running_hours_per_year", kind: "number", role: "use", needed_if: { clock: ["calendar"] } };
+const LEN = { key: "length_ft", kind: "number", role: "design" };
+
+test("a record's covariates: running hours only when the clock is changed", () => {
+  assert.equal(isNeeded(HOURS, [CLOCK, HOURS], {}), false);
+  assert.equal(isNeeded(HOURS, [CLOCK, HOURS], { clock: "calendar" }), true);
+  assert.deepEqual(neededInputs([CLOCK, HOURS], {}).map((i) => i.key), ["clock"]);
+  assert.deepEqual(missingOf([CLOCK, HOURS, LEN], { clock: "calendar" }).map((i) => i.key), ["running_hours_per_year", "length_ft"]);
+  assert.deepEqual(missingOf([CLOCK, HOURS], {}), []);
+  // What's saved: the typed ones asked for (a running hours typed then the clock put back is dropped).
+  assert.deepEqual(covariatesToSave([CLOCK, HOURS, LEN], { clock: "", running_hours_per_year: "4380", length_ft: "120" }), { length_ft: 120 });
+  assert.deepEqual(covariatesToSave([CLOCK, HOURS], { clock: "calendar", running_hours_per_year: "4380" }), { clock: "calendar", running_hours_per_year: 4380 });
+});
+
+test("an input the model reads only under a condition isn't asked for until it holds", () => {
+  const CLASS = { key: "ins_class", kind: "choice", default: "unknown", choices: [{ code: "unknown" }, { code: "F" }] };
+  const RISE = { key: "rise", kind: "number", needed_when: [{ key: "ins_class", op: "!=", value: "unknown" }] };
+  assert.equal(isNeeded(RISE, [CLASS, RISE], {}), false);
+  assert.equal(isNeeded(RISE, [CLASS, RISE], { ins_class: "F" }), true);
+  assert.deepEqual(missingOf([CLASS, RISE], {}), []);
+  assert.deepEqual(missingOf([CLASS, RISE], { ins_class: "F" }).map((i) => i.key), ["rise"]);
+  // Numbers compare as numbers; a length still to type can't be told, so its diameter is asked for.
+  const LEN_X = { key: "shaft.len_X", kind: "number" };
+  const D_X = { key: "shaft.D_X", kind: "number", needed_when: [{ key: "shaft.len_X", op: ">", value: 0 }] };
+  assert.equal(isNeeded(D_X, [LEN_X, D_X], {}), true);
+  assert.equal(isNeeded(D_X, [LEN_X, D_X], { "shaft.len_X": "0" }), false);
+  assert.equal(isNeeded(D_X, [LEN_X, D_X], { "shaft.len_X": "1.2" }), true);
+  assert.equal(isNeeded(D_X, [LEN_X, D_X], { "shaft.len_X": "abc" }), true);
+  const LEN_L = { key: "shaft.len_L", kind: "number", default: 0 };
+  const D_L = { key: "shaft.D_L", kind: "number", needed_when: [{ key: "shaft.len_L", op: ">", value: 0 }] };
+  assert.deepEqual(neededInputs([LEN_L, D_L], {}).map((i) => i.key), ["shaft.len_L"]);
+  assert.deepEqual(neededInputs([LEN_L, D_L], { "shaft.len_L": "2" }).map((i) => i.key), ["shaft.len_L", "shaft.D_L"]);
+  // Every term must hold; the other input not entered here (fixed elsewhere): asked for.
+  const FINISH = { key: "finish", kind: "choice", default: "polished" };
+  const T_S = { key: "T_S", kind: "number", needed_when: [{ key: "finish", op: "!=", value: "polished" }, { key: "finish", op: "!=", value: "ground" }] };
+  assert.equal(isNeeded(T_S, [FINISH, T_S], {}), false);
+  assert.equal(isNeeded(T_S, [FINISH, T_S], { finish: "ground" }), false);
+  assert.equal(isNeeded(T_S, [FINISH, T_S], { finish: "machined" }), true);
+  assert.equal(isNeeded(T_S, [T_S], {}), true);
+  // What's saved leaves out a value typed for an input no longer asked for.
+  assert.deepEqual(covariatesToSave([CLASS, RISE], { rise: "85" }), {});
+});
+
+test("a library record's binding at a position, and what's ticked", () => {
+  assert.deepEqual(bindingForRecord({ id: "nswc-11:bearing", kind: "covariate_model" }), { source: "nswc", ref: "nswc-11:bearing" });
+  assert.deepEqual(bindingForRecord({ id: "nrc-inl-2020:pipe-sws-els", kind: "rate" }), { source: "library", ref: "nrc-inl-2020:pipe-sws-els" });
+  assert.deepEqual(bindingForRecord({ id: "nrc-inl-2020:component:pipe-service-water" }), { source: "component", ref: "nrc-inl-2020:component:pipe-service-water" });
+  assert.deepEqual(bindingFromParam("library:nrc-inl-2020:aov-fto"), { source: "library", ref: "nrc-inl-2020:aov-fto" });
+  assert.deepEqual(bindingFromParam("component:nrc-inl-2020:component:x"), { source: "component", ref: "nrc-inl-2020:component:x" });
+  // Design ticked by default for a library record (the pipe's length), use left to the RBD.
+  assert.deepEqual(initialFix("library", [LEN, CLOCK]), { length_ft: true, clock: false });
+  const got = bindingToSave({ source: "library", ref: "r", inputs: [LEN, CLOCK, HOURS], fix: { length_ft: true, running_hours_per_year: true }, values: { length_ft: "50" } });
+  assert.deepEqual(got.binding, { source: "library", ref: "r", fixed: { length_ft: 50 } }); // running hours not asked for: not saved
+  assert.match(bindSummary("library", [LEN, CLOCK, HOURS], { length_ft: true }, {}), /^1 of 2 fixed here/);
+});
+
+test("a record's answer in words, the answer first", () => {
+  const rate = recordAnswer({ failure_rate: 6.89e-8, clock: "calendar", bounds: { p05: 2.71e-10, p95: 2.65e-7 }, mean_time_to_failure: 14512000, assumptions: ["100 feet of pipe."] });
+  assert.match(rate.big, /^6\.89e−8 failures per calendar hour$/);
+  assert.ok(rate.sub.some((x) => /5–95% across plants/.test(x)) && rate.sub.includes("100 feet of pipe."));
+  const pd = recordAnswer({ probability: 3.04e-4, failure_rate: 3.47e-7, clock: "calendar", covariates: { demands_per_year: 10 }, bounds_rate: { p05: 2.7e-7, p95: 4.3e-7 } });
+  assert.match(pd.big, /per demand/);
+  assert.match(pd.sub[0], /at 10 demands a year/);
+  assert.match(recordAnswer({ probability: 3.04e-4, bounds: {} }).sub.at(-1), /demands a year/);
+  const comp = recordAnswer({ component_id: "c", probability: 0.0101, rare_event_sum: 0.0101, bounds: { p05: 0.003, p95: 0.021 },
+    rate_per_calendar_hour: 1.15e-6, modes: [{ counted: true, mode: "Fails to start", trigger: "demand", mean: 5.9e-4, unit: "per demand", exposure: 12, exposure_unit: "demands", probability: 0.007 },
+      { counted: false, mode: "Alt" }] });
+  assert.match(comp.big, /chance it fails over the period/);
+  assert.equal(comp.modes.length, 1);
+  assert.equal(recordAnswer({ total: 1, modes: [] }), null); // NSWC-11: its own view
+});
+
+test("a handbook line's own environment and grade", () => {
+  assert.deepEqual(handbookCovariates({ environment: "NS", quality: "" }), { environment: "NS" });
+  assert.equal(handbookConditionsLabel({ record: { quality_factors: { levels: [] } } }), "Grade and environment…");
+  assert.equal(handbookConditionsLabel({ record: {}, environment: "NS" }), "Environment (set)…");
+  assert.deepEqual(linesForServer([{ name: "IC", quantity: 1, record_id: "mil:x", quality: "B", environment: "" }]),
+    [{ name: "IC", quantity: 1, record_id: "mil:x", quality: "B" }]);
 });
