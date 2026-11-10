@@ -21,7 +21,7 @@ import "./RegisterList.css";
 // `onDelete(row)`: a bin at the end of each row (Delete…); the `after` rows
 // then end in an empty cell of their own.
 export default function RegisterList({
-  title, purpose, help, primary, menu, error, rows, noun, count, search, placeholder, columns, name, after = null, empty,
+  title, purpose, help, primary, actions = null, menu, error, rows, noun, count, search, placeholder, columns, name, after = null, empty,
   className = "", onDelete = null,
 }) {
   const navigate = useNavigate();
@@ -31,7 +31,7 @@ export default function RegisterList({
   const [one, many] = noun;
   return (
     <div className={"app reg-page" + (className ? ` ${className}` : "")}>
-      <SectionHeader title={title} purpose={purpose} help={help} primary={primary} menu={menu} />
+      <SectionHeader title={title} purpose={purpose} help={help} primary={primary} actions={actions} menu={menu} />
       {error && <div className="card error">{error}</div>}
       {rows === null ? (
         !error && <div className="card empty">Loading…</div>

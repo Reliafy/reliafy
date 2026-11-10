@@ -301,11 +301,13 @@ def test_the_sample_is_seeded_from_the_sample_products_electronics(client):
     assert "Power › BMS board" in labels and labels.index("Power") < labels.index("Power › BMS board")
     assert [c["name"] for c in r["pareto"]["by_category"][:2]] == [
         "Electric motors", "Microcircuits (integrated circuits, memories, SAW devices)"]
-    # The sample names the sample product as backend/maintenance/templates.py spells it.
+    # The library's record names the product as backend/maintenance/templates.py spells it, with the
+    # library's own "(sample)" (a copy added to a workspace is plain "Survey quadcopter").
     from backend.maintenance import templates
 
     product = samples.SAMPLE_PREDICTION["inputs"]["product"]
-    assert product["name"] == templates.SAMPLE_PRODUCT_NAME and product["part_number"] == templates.SAMPLE_PRODUCT_PART
+    assert product["name"] == f"{templates.SAMPLE_PRODUCT_NAME} (sample)"
+    assert product["part_number"] == templates.SAMPLE_PRODUCT_PART
     assert product["rev"] == templates.SAMPLE_PRODUCT_REV
     from backend.db import get_db
 
@@ -341,7 +343,7 @@ def test_a_products_parts_list_over_the_app(monkeypatch):
         r = tc.get(f"/api/predictions/from-product/{added['product']['id']}")
         assert r.status_code == 200, r.text
         out = r.json()
-        assert out["product"]["name"] == "Survey quadcopter (sample)" and out["product"]["part_number"] == "SQ-4"
+        assert out["product"]["name"] == "Survey quadcopter" and out["product"]["part_number"] == "SQ-4"
         by_ref = {ln["reference"]: ln for ln in out["lines"]}
         assert by_ref["SQ-M2210"]["quantity"] == 4 and by_ref["SQ-M2210"]["name"] == "Brushless motor 2210"
         assert len(out["lines"]) == 11 and out["assemblies"] == 0  # the sample's bill of materials is one level

@@ -14,7 +14,7 @@
 // the shared workspace holds (rows below the fold aren't drawn).
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots at 1280 and 400 px: the
-// sample UAV product, and a function with three standards (for the pull request).
+// Survey quadcopter, and a function with three standards (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { frameOf, movedBetween } from "./explorer.js";
 
@@ -491,11 +491,11 @@ test("at 400 px the rows held at the top while scrolling are the first row's own
   expect(await overflow(page)).toBe(0);
 });
 
-test("screenshots: the sample UAV product, and a function with three standards (SMOKE_SHOTS_DIR)", async ({ page, request }) => {
+test("screenshots: the Survey quadcopter, and a function with three standards (SMOKE_SHOTS_DIR)", async ({ page, request }) => {
   test.skip(!SHOTS, "only when saving screenshots");
   const tag = "shot";
   const p = await plant(request, tag);
-  // smoke/seed.js added the sample product: once, so this adds nothing.
+  // smoke/seed.js added the Survey quadcopter: once, so this adds nothing.
   const sample = await postOk(request, `${M}/sample-product`, {});
   const sampleId = sample.product?.id || sample.position.id;
   for (const [w, h] of [[1280, 800], [400, 860]]) {

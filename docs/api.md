@@ -216,9 +216,11 @@ priority, H, M or L) and `cm` (β × α × λ × t), never stored, and each posi
 in `get.rcm` carries an `fmea` summary (scored, high, medium, low, max_rpn,
 cr). A mode may sit directly under a function with no functional failure yet
 (`function_id` on `failure_modes.add`, `assign` and `move`); the RCM reads list
-it in the function's `modes`. `products.add_sample` adds the sample
-quadcopter product, its design fully scored (on Products, not in the asset
-tree).
+it in the function's `modes`. `products.add_sample` adds the Survey
+quadcopter, a ready-made product with invented numbers: its design fully
+scored (on Products, not in the asset tree), and the life models and analyses
+it stands on saved in the workspace as its own (`own_records`; `kept_shared`
+names any the plan's storage had no room for).
 
 How often to do a task: `maintenance rcm.pf_interval` needs only
 the P-F interval (`pf_interval` with `pf_unit`): it answers half the P-F

@@ -422,13 +422,13 @@ test("the calculator's Axes dialog", async ({ page, problems }) => {
   await expectHealthy(page, problems, { label: "calculator axes", chart: true });
 });
 
-// "Open the sample UAV product" (the Explorer's ⋯ menu, and the empty tree's card): the
-// one sample for the RCM and FME(C)A tabs is the sample product. smoke/seed.js added it,
+// "Open the Survey quadcopter" (the Explorer's ⋯ menu, and the empty tree's card): the
+// one worked example for the RCM and FME(C)A tabs is that product. smoke/seed.js added it,
 // so nothing more is added and nothing is asked; from the RCM tab it opens on the
 // product structure's RCM tab: its functions top down, the evidence check (supported,
 // contradicted on purpose, inconclusive) and the RCM's Show only chips.
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
-test("the Explorer's menu opens the sample UAV product on its RCM tab, evidence checked", async ({ page, problems }) => {
+test("the Explorer's menu opens the Survey quadcopter on its RCM tab, evidence checked", async ({ page, problems }) => {
   // Wide enough for the usual columns to include the Evidence check.
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, "/asset-register/explorer?arrange=positions&tab=rcm");
@@ -437,10 +437,10 @@ test("the Explorer's menu opens the sample UAV product on its RCM tab, evidence 
   await page.getByRole("button", { name: /^Tree options/ }).click();
   const options = page.getByRole("menu", { name: "Tree options" });
   await expect(options.getByRole("menuitem", { name: "Add the sample truck" })).toHaveCount(0); // gone
-  await options.getByRole("menuitem", { name: "Open the sample UAV product" }).click();
+  await options.getByRole("menuitem", { name: "Open the Survey quadcopter" }).click();
   await expect(page).toHaveURL(/\/products\/[^/?]+\?view=rcm&sel=/);
   expect(opened).toEqual([{ again: false }]);
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Survey quadcopter (sample");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Survey quadcopter");
   await expect(page.getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
   const grid = page.getByRole("treegrid", { name: /and their RCM/ });
   // Top down: the product's own function, its failures explained by those below.
@@ -488,7 +488,7 @@ test("the Explorer's menu opens the sample UAV product on its RCM tab, evidence 
   await expect(grid.getByRole("row", { name: /^Functional failure: Does not cut off when a cell is outside its limits/ }).first())
     .toContainText("1 supported");
   await done("Hidden failures");
-  await expectHealthy(page, problems, { label: "the sample product on the RCM tab" });
+  await expectHealthy(page, problems, { label: "the Survey quadcopter on the RCM tab" });
   if (SHOTS) {
     await page.setViewportSize({ width: 400, height: 860 });
     await page.reload();
@@ -510,7 +510,7 @@ test("the Explorer's menu opens the sample UAV product on its RCM tab, evidence 
   }
 });
 
-test("the empty tree offers only the sample UAV product; it opens on the RCM tab, or the FME(C)A from there", async ({ page, problems }) => {
+test("the empty tree offers only the Survey quadcopter; it opens on the RCM tab, or the FME(C)A from there", async ({ page, problems }) => {
   // The tree read as empty (the suite's own isn't): only on the Explorer, not on the product's page.
   let empty = true;
   await page.route("**/api/maintenance/tree", async (route) => {
@@ -530,8 +530,8 @@ test("the empty tree offers only the sample UAV product; it opens on the RCM tab
     await page.setViewportSize({ width: 1280, height: 720 });
     await open(page, "/asset-register/explorer?arrange=positions");
   }
-  await expect(card).toContainText("New here? Open the sample UAV product to see an RCM and an FME(C)A built on a design, with decisions checked against their evidence.");
-  await expect(card.getByRole("button")).toHaveText(["Open the sample UAV product"]); // no truck, no asset-tree UAV
+  await expect(card).toContainText("New here? Open the Survey quadcopter to see an RCM and an FME(C)A built on a design, with decisions checked against their evidence.");
+  await expect(card.getByRole("button")).toHaveText(["Open the Survey quadcopter"]); // no truck, no asset-tree UAV
   await expect(page.locator(".section-empty").first()).toContainText("Add the first position, or import a worksheet.");
   await expectHealthy(page, problems, { label: "the empty tree" });
   // The card opens the product on its structure's RCM tab (smoke/seed.js added it, so
@@ -539,17 +539,17 @@ test("the empty tree offers only the sample UAV product; it opens on the RCM tab
   const opened = [];
   page.on("request", (r) => { if (r.url().endsWith("/api/maintenance/sample-product")) opened.push(r.postDataJSON()); });
   empty = false;
-  await card.getByRole("button", { name: "Open the sample UAV product" }).click();
+  await card.getByRole("button", { name: "Open the Survey quadcopter" }).click();
   await expect(page).toHaveURL(/\/products\/[^/?]+\?view=rcm&sel=/);
   expect(opened).toEqual([{ again: false }]);
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Survey quadcopter (sample");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Survey quadcopter");
   await expect(page.getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("treegrid", { name: /and their RCM/ })).toBeVisible();
   await page.unrouteAll({ behavior: "ignoreErrors" });
   // From the FME(C)A tab, the tree's ⋯ menu opens it on its structure's FME(C)A tab.
   await open(page, "/asset-register/explorer?arrange=positions&tab=fmea");
   await page.getByRole("button", { name: /^Tree options/ }).click();
-  await page.getByRole("menu", { name: "Tree options" }).getByRole("menuitem", { name: "Open the sample UAV product" }).click();
+  await page.getByRole("menu", { name: "Tree options" }).getByRole("menuitem", { name: "Open the Survey quadcopter" }).click();
   await expect(page).toHaveURL(/\/products\/[^/?]+\?view=fmea&sel=/);
   expect(opened).toEqual([{ again: false }, { again: false }]);
   await expect(page.getByRole("tab", { name: "FME(C)A" })).toHaveAttribute("aria-selected", "true");
@@ -557,7 +557,7 @@ test("the empty tree offers only the sample UAV product; it opens on the RCM tab
   // A position's row sums up its own failure modes (the airframe's are on its frame, arms and landing gear).
   await expect(page.getByRole("treegrid", { name: /and their FME\(C\)A/ }).getByRole("row", { name: /^Payload gimbal/ }).first())
     .toContainText("3 of 3 scored");
-  await expectHealthy(page, problems, { label: "the sample product's FME(C)A" });
+  await expectHealthy(page, problems, { label: "the Survey quadcopter's FME(C)A" });
 });
 
 // Maintenance on a phone: a task named with one unbreakable code (as imported

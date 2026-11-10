@@ -107,7 +107,7 @@ function BillOfMaterials({ product }) {
     let live = true;
     getPartStructure(part.id).then((d) => live && setStructure(d)).catch((e) => live && setError(e.message));
     return () => { live = false; };
-  }, [part?.id]);
+  }, [part?.id, part?.name]);
   const empty = !(structure?.tree?.children || []).length;
   return (
     <Section title="Bill of materials" id="bill-of-materials"
@@ -216,7 +216,7 @@ export function ProductPartsList({ productId }) {
   const part = product?.part;
   useEffect(() => {
     if (part?.id) getPartStructure(part.id).then(setStructure).catch((e) => setError(e.message));
-  }, [part?.id]);
+  }, [part?.id, part?.name]);
   if (productError) return <div className="card error">The product didn't load: {productError}</div>;
   if (!product) return <div className="card empty">Loading…</div>;
   if (!part) {

@@ -356,6 +356,15 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setToast({ text: d.text, restore: { kind: d.kind, id: d.id, name: d.name }, at: Date.now() });
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
   }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
+  // So does a few words about what was just added (Products' ready-made product):
+  // beside the heading for a while, or, with more to read, in a toast that stays.
+  useEffect(() => {
+    const note = location.state?.note;
+    if (!note?.text) return;
+    if (note.fade) say(note.text, "ok", { fade: true });
+    else setToast({ text: note.text, stay: true, at: Date.now() });
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The RCM tab: the RCM read into the tree, and what's being worked on.
   const askText = useAskText();
@@ -412,14 +421,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // the Move to… dialog, and the words said to screen readers.
   const [picked, setPicked] = useState(() => new Set());
   // A delete's toast has restore ({kind, id, name}) in place of undo.
-  const [toast, setToast] = useState(null); // {text, undo, extra, show, at, busy, restore}
+  const [toast, setToast] = useState(null); // {text, undo, extra, show, at, busy, restore, stay}
   const [moving, setMoving] = useState(null); // {src} or {taskFrom}: the Move to… dialog
   // A move asking what its tasks by use count there: {need, choose, cancel}.
   const [measuring, setMeasuring] = useState(null);
   const [spoken, setSpoken] = useState("");
   const announce = useCallback((text) => setSpoken((was) => (was === text ? `${text}\u00a0` : text)), []);
   useEffect(() => {
-    if (!toast || toast.busy) return undefined;
+    if (!toast || toast.busy || toast.stay) return undefined; // stay: more to read, there until dismissed
     const t = setTimeout(() => setToast((x) => (x === toast ? null : x)), toast.undo || toast.restore ? 12000 : 5000);
     return () => clearTimeout(t);
   }, [toast]);
@@ -1792,7 +1801,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setModal(null);
     setNewParent(null);
   };
-  // "Open the sample UAV product", the one sample for the RCM and FME(C)A tabs:
+  // "Open the Survey quadcopter", the one worked example for the RCM and FME(C)A tabs:
   // the quadcopter is a design, so it lives on Products; it opens there on its
   // structure's FME(C)A tab when that's the tab in view, its RCM tab otherwise,
   // added first when there's none (never a second copy from here).
@@ -1806,7 +1815,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setAddingSample(true);
     addSampleProduct(false) // never a second copy from here: nothing to ask
       .then((r) => navigate(productViewPath(sampleProductId(r), sampleProductView(tab))),
-        (e) => say(`The sample product didn't open: ${e.message}`, "error"))
+        (e) => say(`The Survey quadcopter didn't open: ${e.message}`, "error"))
       .finally(() => setAddingSample(false));
   };
   // After a rename, move or retire from the row menu: the tree read again,
@@ -1829,17 +1838,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const buildFrom = (id) => {
     getProduct(id).then(setBuildFor, (e) => say(`The product didn't load: ${e.message}`, "error"));
   };
-  // A copy of the sample product's Make this my own…: asked, then done in the dialog;
-  // the tree and the page's title read again, and a few words.
+  // Make this my own… on a copy of the Survey quadcopter that still says "(sample)":
+  // asked, then done in the dialog; the tree and the page's title read again, and
+  // what it renamed and saved is said in a toast that stays (it is a list to read).
   const makeOwn = (r) => {
     confirm({ ...makeOwnConfirm(r.ref.name), run: () => makeSampleOwn(r.key) }).then((out) => {
       if (!out) return;
       load();
       onProductChanged?.(out);
-      say(madeOwnText(out), "ok", { fade: true });
+      setToast({ text: madeOwnText(out), stay: true, at: Date.now() });
+      announce(madeOwnText(out));
     });
   };
-  // A copy of the sample product: Make this my own… heads its own row's "…" too.
+  // Such a copy: Make this my own… heads its own row's "…" too.
   const ownMenu = (r) => (designScope && isSampleRow(r) && !viewOnly
     ? [{ ...MAKE_OWN, onSelect: () => makeOwn(r) }] : []);
   const built = (out) => {
@@ -1904,7 +1915,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       </div>
       {mode !== "locations" && (
         <div className="ae-sample">
-          <p><strong>New here?</strong> Open the sample UAV product to see an RCM and an FME(C)A built on a design, with decisions checked against their evidence.</p>
+          <p><strong>New here?</strong> Open the Survey quadcopter to see an RCM and an FME(C)A built on a design, with decisions checked against their evidence.</p>
           <div className="ae-sample-btns">
             <button type="button" className="secondary" onClick={openSample} disabled={addingSample}>
               {addingSample ? "Opening…" : OPEN_SAMPLE_PRODUCT_LABEL}

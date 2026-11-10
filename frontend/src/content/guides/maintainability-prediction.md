@@ -101,9 +101,9 @@ Below it:
 
 Numbers are shown to three or four figures with their unit. Open the sample,
 *Survey quadcopter — maintainability prediction (sample)*, to see a finished
-one. With Reliafy Maintenance, adding the sample UAV product also saves the
-same prediction among your own, as *Survey quadcopter (sample) —
-maintainability*, with the sample product as its product.
+one. With Reliafy Maintenance, adding the Survey quadcopter on **Products**
+also saves the same prediction among your own, as *Survey quadcopter —
+maintainability*, attached to that product.
 
 ## How the numbers are worked out
 

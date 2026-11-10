@@ -321,7 +321,7 @@ def test_cli_adds_the_sample_product_and_the_truck_action_is_gone(server, capsys
     code, out, _ = run(capsys, "maintenance", "products.add_sample", "--json")
     assert code == 0 and json.loads(out)["added"] is False
     code, out, _ = run(capsys, "maintenance", "products.add_sample", "--again", "--json")
-    assert code == 0 and json.loads(out)["product"]["name"] == "Survey quadcopter (sample 2)"
+    assert code == 0 and json.loads(out)["product"]["name"] == "Survey quadcopter 2"
     sheet = Client().call("maintenance", "get.rcm", id=made["product"]["id"], scope="below")
     assert sheet["rollup"]["modes"] == 84
     code, _, err = run(capsys, "maintenance", "positions.add_sample_truck", "--json")
@@ -336,7 +336,7 @@ def test_cli_adds_the_sample_product(server, capsys):
     code, out, _ = run(capsys, "maintenance", "products.add_sample", "--json")
     assert code == 0 and json.loads(out)["added"] is False
     code, out, _ = run(capsys, "maintenance", "products.add_sample", "--again", "--json")
-    assert code == 0 and json.loads(out)["product"]["name"] == "Survey quadcopter (sample 2)"
+    assert code == 0 and json.loads(out)["product"]["name"] == "Survey quadcopter 2"
 
 
 def test_cli_and_client_add_a_worksheet_to_a_position(server, capsys):

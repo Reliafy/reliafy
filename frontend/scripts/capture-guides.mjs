@@ -431,25 +431,46 @@ async function scrollTo(locator, offset = 80) {
   await wait(600);
 }
 
-// RCM and FME(C)A guides: the sample UAV product (the one sample for both tabs), its
-// design with its RCM (some decisions linked to sample evidence) and every failure
+// RCM and FME(C)A guides: the Survey quadcopter (the one worked example for both tabs), its
+// design with its RCM (some decisions linked to the evidence saved with it) and every failure
 // mode scored. When this run added it, the cleanup retires its design and items and
-// deletes its RBD; one already there is left alone. null when Reliafy Maintenance is
+// deletes its RBD, its maintainability prediction and the records the add saved with it;
+// one already there is left alone. null when Reliafy Maintenance is
 // off on this server (then those shots are skipped, out loud, and keep their images).
 // Teams guide: a team with one pending invitation (single-user mode can create one:
 // no billing).
 async function seedSampleProduct(config) {
   if (!config.maintenance) return null;
+  const before = await savedIds();
   const made = await api("/maintenance/sample-product", {});
+  // What the add saved in the workspace as its own (its life models, the analyses behind
+  // its decisions, their datasets): only the ones that weren't there before, so the
+  // cleanup deletes those and nothing a workspace already had.
+  const after = made.added ? await savedIds() : before;
+  const saved = SAVED_KINDS.flatMap((kind) => after[kind].filter((x) => !before[kind].includes(x)).map((x) => `${kind}/${x}`));
   const id = made.product?.id || made.position.id;
   const items = made.items || (await api(`/maintenance/products/${id}/items`)).items;
   // The design's positions by name (Motor 1, Propeller 1, ...), for the shots that pick one.
   const sheet = await api(`/maintenance/positions/${id}/rcm?scope=below`);
   const at = Object.fromEntries(sheet.positions.map((p) => [p.name, p.id]));
-  return { id, added: !!made.added, tops: items.map((it) => it.top_position_id), rbdId: made.rbd?.id, at };
+  return {
+    id, added: !!made.added, tops: items.map((it) => it.top_position_id), rbdId: made.rbd?.id, at, saved,
+    predictionId: made.maintainability?.added ? made.maintainability.id : null,
+  };
 }
-// Failure reports guide: a report filed on the first quadcopter built from the sample
-// product (serial 0007, which has the sample's own report on its Motor 1) and taken
+// The ids of every saved model, degradation model, strategy analysis and dataset the
+// workspace lists (models and analyses before the datasets they were fitted to).
+const SAVED_KINDS = ["/models", "/degradation/models", "/strategy/analyses", "/datasets"];
+async function savedIds() {
+  const out = {};
+  for (const kind of SAVED_KINDS) {
+    const got = await api(kind).catch(() => ({}));
+    out[kind] = (Object.values(got).find(Array.isArray) || []).map((row) => row.id);
+  }
+  return out;
+}
+// Failure reports guide: a report filed on the first quadcopter built from that
+// product (serial 0007, which has the product's own report on its Motor 1) and taken
 // part way round the loop (investigated, one corrective action), so the list and the
 // report have something to show. Reports are never deleted (rejected at most); when
 // this run added the product, retiring its items in the cleanup takes it out of the
@@ -832,7 +853,7 @@ async function main() {
 
   // Shots needing purpose-built fixtures (created below, deleted afterwards).
   const fixtureShots = (fx) => [
-    // --- RCM on the asset tree: the RCM tab of the sample UAV product's functional
+    // --- RCM on the asset tree: the RCM tab of the Survey quadcopter's functional
     // structure (the same Explorer, on the design), its top picked: its function top
     // down, failures explained below, with the evidence checks; then the decision
     // dialog on one of its modes (Propeller 1's blade fatigue: a fixed interval, 130
@@ -862,7 +883,7 @@ async function main() {
         await page.getByRole("menu").getByRole("menuitem", { name: "Change the decision…" }).click();
         await page.getByRole("dialog", { name: /^Decision/ }).waitFor({ timeout: 20000 }); await wait(800);
       } },
-    // --- FME(C)A: the FME(C)A tab of the sample UAV product's functional
+    // --- FME(C)A: the FME(C)A tab of the Survey quadcopter's functional
     // structure (the same Explorer, on the design; its motor picked, so the worksheet columns show scored rows),
     // then the root picked for the criticality matrix in its Details. Skipped,
     // like the RCM shots, without Maintenance.
@@ -881,7 +902,7 @@ async function main() {
         await page.getByRole("complementary", { name: "Details" }).getByText(/matrix/i).first().waitFor({ timeout: 20000 }); await wait(600);
       } },
     // --- Failure reports on the asset tree: the Explorer's Failure reports tab on
-    // a quadcopter built from the sample product (its tree, serial 0007, with a
+    // a quadcopter built from the Survey quadcopter product (its tree, serial 0007, with a
     // report filed on it in the fixture step, part way round the loop), then the
     // report itself: its stage, facts, investigation and corrective action.
     // Skipped, like the RCM shots, without Maintenance.
@@ -1199,6 +1220,8 @@ async function main() {
           }).catch(() => {});
         }
         if (fx.uav.rbdId) await fetch(`${BASE}/api/rbds/${fx.uav.rbdId}`, { method: "DELETE" }).catch(() => {});
+        if (fx.uav.predictionId) await fetch(`${BASE}/api/maintainability/predictions/${fx.uav.predictionId}`, { method: "DELETE" }).catch(() => {});
+        for (const path of fx.uav.saved) await fetch(`${BASE}/api${path}`, { method: "DELETE" }).catch(() => {});
       }
       if (fx.signals) {
         await fetch(`${BASE}/api/maintenance/signals/channels/${fx.signals.channelId}`, {

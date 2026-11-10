@@ -1018,10 +1018,10 @@ test("the prediction's lines: add a part on a child, leave one out and put it ba
   await expectHealthy(page, problems, { label: "adding and removing prediction lines" });
 });
 
-test("a product's Modelling tab: Add a prediction… in the table area, on the sample quadcopter", async ({ page, request, problems }) => {
+test("a product's Modelling tab: Add a prediction… in the table area, on the Survey quadcopter", async ({ page, request, problems }) => {
   const { products } = await (await request.get(`${M}/products`)).json();
   const quad = products.find((p) => /^Survey quadcopter/.test(p.name));
-  expect(quad, "the seeded sample product").toBeTruthy();
+  expect(quad, "the seeded Survey quadcopter").toBeTruthy();
   for (const [width, height] of [[1920, 1080], [1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });
     // The address alone opens it (a link, or a reload).
@@ -1069,16 +1069,16 @@ test("a product's Modelling tab: Add a prediction… in the table area, on the s
   await expectHealthy(page, problems, { label: "a product's prediction pane" });
 });
 
-// A long diagram built from the tree (the sample quadcopter's Propulsion: twelve like blocks in
+// A long diagram built from the tree (the Survey quadcopter's Propulsion: twelve like blocks in
 // series) opens with every block in view, and its "like blocks in series" hints are one line on
 // the Calculator that opens to the list, under the answer.
 test("a built RBD opens whole, and its like-blocks hints fold into one line", async ({ page, request, problems }) => {
   const { products } = await (await request.get(`${M}/products`)).json();
   const quad = products.find((p) => /^Survey quadcopter/.test(p.name));
-  expect(quad, "the seeded sample product").toBeTruthy();
+  expect(quad, "the seeded Survey quadcopter").toBeTruthy();
   const { positions } = await (await request.get(`${M}/tree`)).json();
   const prop = positions.find((p) => p.name === "Propulsion" && p.parent_id === quad.id);
-  expect(prop, "the sample product's Propulsion").toBeTruthy();
+  expect(prop, "the Survey quadcopter's Propulsion").toBeTruthy();
   const built = await postOk(request, `${M}/positions/${prop.id}/models`, { build_rbd: true });
   for (const [width, height] of [[1440, 900], [400, 860]]) {
     await page.setViewportSize({ width, height });

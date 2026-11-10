@@ -280,7 +280,7 @@ def test_the_sample_product_design_is_scored(m):
     belong to (four arms, motors, ESCs and propellers, two IMUs), all scored over a year's
     150 flight hours, each under a functional failure."""
     out = templates.add_sample_product(m, mongomock.MongoClient()["fmea_sample"])
-    assert out["added"] and out["product"]["name"] == "Survey quadcopter (sample)"
+    assert out["added"] and out["product"]["name"] == "Survey quadcopter"
     assert {k: out[k] for k in ("positions", "functions", "failure_modes", "scored")} == {
         "positions": 33, "functions": 47, "failure_modes": 84, "scored": 84}
     assert "84 failure modes, each scored as an FME(C)A and all but 2 decided" in out["message"]
@@ -453,7 +453,7 @@ def test_over_the_routes_with_the_excel_export(api):  # noqa: F811
     # The header, a row per performance standard (63), one per mode and one per functional failure
     # explained by those below it (the product's, its groups' and the gimbal's picture: 19).
     assert ws.max_row == 1 + 63 + 84 + 19
-    assert 'filename="Survey quadcopter (sample) FMECA.xlsx"' in \
+    assert 'filename="Survey quadcopter FMECA.xlsx"' in \
         api.get(f"{M}/positions/{made['product']['id']}/fmea.xlsx").headers["content-disposition"]
     sheet = api.get(f"{M}/positions/{made['product']['id']}/rcm?scope=below")
     assert sheet.status_code == 200 and len(_all_modes(sheet.json())) == 84

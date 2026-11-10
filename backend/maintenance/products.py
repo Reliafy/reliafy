@@ -34,9 +34,13 @@ Events (new types only; older logs replay unchanged):
   one a built unit carries (copied from its product's design locations when it
   was built, or made inside one later), named by the unit's top position.
 * ``position.sample_cleared {id, name, sample_key}``: a copy of the sample product
-  (templates.py) made the user's own, in place: its name without "(sample)" and
-  marked ``from_sample`` (the sample's key), so the sample is never added again
-  beside it unless asked. Nothing inside it changes; ids stay.
+  (templates.py) added under its earlier name ("… (sample)") made the user's own,
+  in place: its name without "(sample)" and marked ``from_sample`` (the sample's
+  key), so the sample is never added again beside it unless asked. Nothing inside
+  it changes; ids stay.
+* ``design.template_marked {position_id, template}`` (Nov 2026): a product was added
+  from a ready-made one (``template``: its key). The copy is named like any product,
+  so this mark, not its name, is how it is recognised (``from_template``).
 
 Design locations are the product's physical layout: the design's positions can
 be placed at them (``location_id``, inherited down the tree as everywhere), and
@@ -56,8 +60,10 @@ import re
 
 from backend.maintenance.store import GraphStore
 
-#: The sample product's copies by name ("Survey quadcopter (sample)", "… (sample 2)"),
-#: and the key a copy made the user's own keeps (templates.py adds the sample).
+#: The sample product's key (templates.py adds the sample): a copy is marked with it
+#: when added (``from_template``). Copies added before Nov 2026 have no mark: they are
+#: known by the name they were given then ("Survey quadcopter (sample)", "… (sample 2)"),
+#: and keep the key once made the user's own (``from_sample``).
 SAMPLE_NAME = re.compile(r"^Survey quadcopter \(sample(?: (\d+))?\)$")
 SAMPLE_KEY = "survey-quadcopter"
 
@@ -104,15 +110,30 @@ def _sample_cleared(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["id"], {"name": p["name"], "from_sample": p.get("sample_key") or "sample"})
 
 
+def _template_marked(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["position_id"], {"from_template": p["template"]})
+
+
 def is_sample(node: dict | None) -> bool:
-    """A copy of the sample product, not yet made the user's own: a design's top with the
-    sample's name."""
+    """A copy of the sample product under its earlier name, not yet made the user's own:
+    a design's top named "… (sample)" (how copies were added before Nov 2026)."""
     return bool(node and node.get("design") and not node.get("from_sample")
                 and SAMPLE_NAME.match(node.get("name") or ""))
 
 
+def template_of(node: dict | None) -> str | None:
+    """The ready-made product a design's top is a copy of (its key), or None: marked when
+    added, or an earlier copy known by its name, or one made the user's own."""
+    if not node or not node.get("design"):
+        return None
+    if is_sample(node):
+        return SAMPLE_KEY
+    return node.get("from_template") or (SAMPLE_KEY if node.get("from_sample") == SAMPLE_KEY else None)
+
+
 PROJECTORS = {
     "position.sample_cleared": _sample_cleared,
+    "design.template_marked": _template_marked,
     "design.declared": _design_declared,
     "design.cleared": _design_cleared,
     "position.implements": _position_implements,
@@ -370,28 +391,39 @@ class ProductOps:
                                        "rev": rev, "on": self.today()})
         return self.product(root["id"])
 
+    def mark_template(self, product_id: str, template: str) -> dict:
+        """Record that a product was added from a ready-made one (``template``: its key)."""
+        node = self._live_design(product_id)
+        self._emit("design.template_marked", {"position_id": node["id"], "template": template})
+        return self.product(node["id"])
+
     def clear_sample(self, product_id=None) -> dict:
-        """Make a copy of the sample product the user's own, in place: "(sample)" goes
-        from its name (the next free "Survey quadcopter 2" when the plain name is another
-        product's), and from its part's and its built items' names where they carry the
-        sample's name. Its design, RCM, tasks, items and reports stay as they are, ids
-        and all; the sample is never added again beside it unless asked. product_id:
-        the copy (default: the only one)."""
+        """Make a copy of the sample product added under its earlier name ("… (sample)")
+        the user's own, in place: "(sample)" goes from its name (the next free "Survey
+        quadcopter 2" when the plain name is another product's), and from its part's and
+        its built items' names where they carry the sample's name. Its design, RCM,
+        tasks, items and reports stay as they are, ids and all; the sample is never
+        added again beside it unless asked. product_id: the copy (default: the only
+        one). templates.make_sample_own does this and then renames what the add saved
+        outside the graph (its RBD, its maintainability prediction) and its life-model
+        links."""
         sv = _sv()
         if product_id in (None, ""):
             copies = sorted((p for p in self.s.nodes(self.org, "Position") if is_sample(p) and not p.get("retired")
                              and self._parent(p["id"]) is None), key=lambda p: p["name"])
             if not copies:
-                raise sv.Invalid("There's no copy of the sample product in your workspace to make your own.")
+                raise sv.Invalid("No product in your workspace carries “(sample)” in its name, so there's "
+                                 "nothing to rename.")
             if len(copies) > 1:
-                raise sv.Invalid(f"There are {len(copies)} copies of the sample product ("
-                                 + ", ".join(p["name"] for p in copies) + "): give product_id for the one to make "
-                                 "your own.")
+                raise sv.Invalid(f"{len(copies)} products carry “(sample)” in their names ("
+                                 + ", ".join(p["name"] for p in copies) + "): give product_id for the one to "
+                                 "rename.")
             node = copies[0]
         else:
             node = self._live_design(product_id)
             if not is_sample(node):
-                raise sv.Invalid(f"{node['name']} isn't a copy of the sample product: it's your own already.")
+                raise sv.Invalid(f"{node['name']} doesn't carry “(sample)” in its name: it's your own already, "
+                                 "and there's nothing to rename.")
         old = node["name"]
         base = old[:old.rindex(" (sample")]
         taken = {p["name"].lower() for p in self.s.nodes(self.org, "Position")
@@ -419,9 +451,9 @@ class ProductOps:
             renamed.append(new_name)
         also = f" Renamed with it: {', '.join(renamed)}." if renamed else ""
         return self.product(node["id"]) | {
-            "made_own": True, "was": old,
-            "message": f"“{old}” is your own product now, as “{name}”: change anything in it, and the sample is "
-                       f"never added again beside it unless you ask.{also}"}
+            "made_own": True, "was": old, "renamed": renamed,
+            "message": f"“{old}” is “{name}” now, a product like any of your own: change anything in it. It "
+                       f"isn't added again beside this one unless you ask.{also}"}
 
     # -- reading products
 
@@ -476,7 +508,7 @@ class ProductOps:
             "declared_on": design.get("on"), "retired": bool(node.get("retired")),
             "positions": sum(1 for p in self._tree_positions(node["id"]) if not p.get("retired")),
             "items_built": len(tops), "open_reports": sum(self._open_reports_in(t["id"]) for t in tops),
-            "sample": is_sample(node),
+            "sample": is_sample(node), "template": template_of(node),
         }
 
     def products(self) -> dict:

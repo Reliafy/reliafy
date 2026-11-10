@@ -2275,14 +2275,15 @@ export function removeMaintenanceItem(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/remove`, body);
 }
 
-// The sample product: a quadcopter's design with its RCM (some decisions linked to
-// sample evidence) and FME(C)A, its part and bill
+// The Survey quadcopter, a ready-made product: a quadcopter's design with its RCM
+// (some decisions linked to evidence saved with it) and FME(C)A, its part and bill
 // of materials, three items built from it with two failure reports, and a
 // flight-critical RBD (placeholder failure rates). Once, unless again.
 export function addSampleProduct(again = false) {
   return postJson("/api/maintenance/sample-product", { again: !!again });
 }
-// Make a copy of the sample product your own, in place ("(sample)" leaves its name).
+// Make a copy that still says "(sample)" your own, in place: the word leaves its
+// name and everything named after it, and its life models are saved as your own.
 export function makeSampleOwn(productId) {
   return postJson(`/api/maintenance/products/${encodeURIComponent(productId)}/make-own`, {});
 }

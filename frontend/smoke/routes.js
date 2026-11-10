@@ -108,7 +108,7 @@ export const DETAIL_IDS = {
   "/asset-register/positions/:id/fmea": ["/api/maintenance/overview", list("tree")],
   "/maintenance/work-orders/:id": ["/api/maintenance/work-orders", list("work_orders")],
   "/asset-register/items/:id": ["/api/maintenance/items", list("items")],
-  // A product: smoke/seed.js adds the sample UAV product.
+  // A product: smoke/seed.js adds the Survey quadcopter.
   "/products/:id": ["/api/maintenance/products", list("products")],
   "/asset-register/locations/:id": ["/api/maintenance/locations", list("locations")],
   // A class's old addresses (they open the Explorer's Classes tab on that
@@ -117,7 +117,7 @@ export const DETAIL_IDS = {
   "/maintenance/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
   "/asset-register/parts/:id": ["/api/maintenance/parts", list("parts")],
   // A measuring point's earlier own page (it now redirects into the Explorer's
-  // Measurements tab, &point=): every one added (the sample product's items' hour meters, and the
+  // Measurements tab, &point=): every one added (the Survey quadcopter's items' hour meters, and the
   // smoke test position's condition point that smoke/seed.js adds), from the event log.
   "/asset-register/points/:id": ["/api/maintenance/events?type=point.added&limit=500",
     (body) => (body.events || []).map((e) => ({ id: e.payload?.id })).filter((x) => x.id)],
