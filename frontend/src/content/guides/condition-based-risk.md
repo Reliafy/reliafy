@@ -132,12 +132,6 @@ fleet of 40 pumps in this guide has four still running, and pump P6, whose
 vibration has climbed fastest, has a 92% chance of failing in the next 30 days.
 That's the one to look at first.
 
-Where your workspace has the asset tree, **Risk now** isn't a tab on the model:
-it is in the Explorer, for the equipment in service. Arrange the tree by
-**Classes** and choose a class to see its positions, highest risk first, each
-from its own item's age and readings. The model page says so in a line under
-its tabs, with a link.
-
 The **Effects** tab charts each hazard ratio with its interval and puts the
 fitted effects in words: *each 1 mm/s higher vibration multiplies the failure
 rate by 2.79*. A hazard ratio of 2 doubles the failure rate at any moment; 0.5
