@@ -39,7 +39,7 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 
-from backend.services import rbd_analysis
+from backend.services import rbd_analysis, repy_compat
 from backend.services.rbd_analysis import AnalysisError
 
 NONREPAIRABLE_METHODS = ("equal", "simple", "minimum_effort", "improvement", "cost_based")
@@ -203,7 +203,7 @@ def _allocated_probabilities(rbd, t: float, allocated: dict) -> dict:
     perfect, so they stay at 1 here too; any other node the allocation
     doesn't name keeps its reliability at ``t``."""
     probs = {nid: np.atleast_1d(np.asarray(v, dtype=float)) for nid, v in rbd.node_sf(t).items()}
-    for nid in rbd._junctions():
+    for nid in repy_compat.voting_nodes(rbd):
         probs[nid] = np.atleast_1d(1.0)
     for nid, v in allocated.items():
         probs[nid] = np.atleast_1d(np.asarray(v, dtype=float))
