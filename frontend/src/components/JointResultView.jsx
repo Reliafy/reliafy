@@ -7,14 +7,15 @@ import { bandPair, dataPoints, fitLine, referenceShape } from "../plotTheme.js";
 import { medianText, paramGroups, parseReadings, readingsText, riskText, riskTone, sortRiskRows } from "../joint.js";
 import { ModelTabs } from "./model/ModelFrame.jsx";
 import { PlotCard, ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
+import ChartPair from "./model/ChartPair.jsx";
 import { JointEffects } from "./model/Effects.jsx";
 import { JointDiagnostics } from "./model/Diagnostics.jsx";
 import { modelTabs, resolveTab } from "../modelFrame.js";
 
 // A fitted condition and life model in the model frame's five tabs:
-//   Risk now     the running units' risk (highest first) beside the chosen
-//                unit's updating prediction (its survival from now and its
-//                reading's path)
+//   Risk now     the running units' risk (highest first) and the chosen unit
+//                in words; under them its updating prediction (its survival
+//                from now and its reading's path)
 //   Calculator   enter a unit (age, covariates, readings so far) and predict;
 //                before that, a new unit's survival with typical covariates
 //   Effects      what changes the risk: the hazard ratios, charted and in words
@@ -165,30 +166,45 @@ function RiskTable({ results, selected, onPick, live = true }) {
   );
 }
 
-// A unit's prediction in words, then its two charts side by side.
-function UnitPrediction({ view, results, name }) {
+// A unit's prediction in words.
+function UnitSummary({ view, results }) {
   const unit = results.unit || "";
   return (
-    <>
-      <p className="joint-unit-sum" role="status">
-        {view.unit_id ? <>Unit <b>{view.unit_id}</b>, </> : "This unit, "}
-        age {n3(view.age)}{unit ? ` ${unit.toLowerCase()}` : ""}, {view.markers.length} reading{view.markers.length === 1 ? "" : "s"}.{" "}
-        {(results.horizons?.labels || []).map((l, i) => `${riskText(view.risk?.[i])} chance of failing in the next ${l}`).join("; ")}.
-        {" "}Median life left: {medianText(view, unit)}.
-      </p>
-      <div className="mf-unit-charts">
-        <PlotCard title="Survival from now">
-          <SurvivalChart fill curve={view.prediction} unit={unit} name={name} title="unit survival" age={view.age} />
-        </PlotCard>
-        <PlotCard title={`Its ${results.marker || "reading"}`}>
-          <MarkerChart fill pred={view.prediction} results={results} name={name} />
-        </PlotCard>
-      </div>
-    </>
+    <p className="joint-unit-sum" role="status">
+      {view.unit_id ? <>Unit <b>{view.unit_id}</b>, </> : "This unit, "}
+      age {n3(view.age)}{unit ? ` ${unit.toLowerCase()}` : ""}, {view.markers.length} reading{view.markers.length === 1 ? "" : "s"}.{" "}
+      {(results.horizons?.labels || []).map((l, i) => `${riskText(view.risk?.[i])} chance of failing in the next ${l}`).join("; ")}.
+      {" "}Median life left: {medianText(view, unit)}.
+    </p>
   );
 }
 
-// Risk now: the table, and the chosen unit's updating prediction.
+// Its two charts, read together (its survival from now follows from where
+// its reading is heading): side by side where each is wide enough to read,
+// else one under the other (ChartPair).
+function UnitCharts({ view, results, name }) {
+  const unit = results.unit || "";
+  return (
+    <ChartPair
+      together
+      items={[
+        { id: "survival", label: "Survival from now", node: (
+          <PlotCard title="Survival from now">
+            <SurvivalChart fill curve={view.prediction} unit={unit} name={name} title="unit survival" age={view.age} />
+          </PlotCard>
+        ) },
+        { id: "reading", label: `Its ${results.marker || "reading"}`, node: (
+          <PlotCard title={`Its ${results.marker || "reading"}`}>
+            <MarkerChart fill pred={view.prediction} results={results} name={name} />
+          </PlotCard>
+        ) },
+      ]}
+    />
+  );
+}
+
+// Risk now: the table and the chosen unit in words across the top, its two
+// charts under them over the whole width.
 function RiskNow({ modelId, results, name, unitId, onUnitId, onEnter }) {
   const [view, setView] = useState(null);
   const [error, setError] = useState(null);
@@ -205,34 +221,32 @@ function RiskNow({ modelId, results, name, unitId, onUnitId, onEnter }) {
   }, [modelId, unitId]);
   const shown = view && view.unit_id === unitId ? view : null;
   return (
-    <TablePanel
-      className="mf-l5-joint"
-      main={
+    <div className={"detail-panel mf-joint-risk" + (shown ? "" : " mf-joint-risk-table")}>
+      <div className="mf-joint-risk-top">
         <ScrollCard title="Running units' risk"
                     sub={`highest chance of failing in the next ${(results.horizons?.labels || [])[sortColumn(results.horizons?.labels)] || "stretch"} first`}>
           <RiskTable results={results} selected={unitId} onPick={onUnitId} live={!!modelId} />
         </ScrollCard>
-      }
-      side={
-        <section className="mf-unit" id="joint-unit-view" aria-label="A unit's updating prediction">
-          <p className="hint" style={{ margin: 0 }}>
+        <section className="mf-joint-risk-words" id="joint-unit-view" aria-label="A unit's updating prediction">
+          {shown && <UnitSummary view={shown} results={results} />}
+          <p className="hint">
             Each unit's chance of failing over the next stretch, given its own readings so far. Each new reading
             moves the curve: a unit whose {results.marker || "reading"} climbs faster than the fleet's carries more risk.
             {" "}“&gt; 99.9%” means very likely, not certain.
           </p>
-          {!modelId && <p className="muted-line" style={{ margin: 0 }}>{SIGN_IN}</p>}
+          {!modelId && <p className="muted-line">{SIGN_IN}</p>}
           {error && <div className="card error" role="alert">{error}</div>}
-          {busy && !shown && <p className="hint" style={{ margin: 0 }}>Working…</p>}
-          {!unitId && modelId && <p className="muted-line" style={{ margin: 0 }}>Choose a unit in the table to see its prediction.</p>}
-          {shown && <UnitPrediction view={shown} results={results} name={name} />}
+          {busy && !shown && <p className="hint">Working…</p>}
+          {!unitId && modelId && <p className="muted-line">Choose a unit in the table to see its prediction.</p>}
           {shown && shown.markers?.length > 0 && (
-            <p className="hint" style={{ margin: 0 }}>To try newer readings for this unit, enter it in the Calculator:{" "}
+            <p className="hint">To try newer readings for this unit, enter it in the Calculator:{" "}
               <button type="button" className="link" onClick={() => onEnter(shown)}>copy its readings</button>.
             </p>
           )}
         </section>
-      }
-    />
+      </div>
+      {shown && <UnitCharts view={shown} results={results} name={name} />}
+    </div>
   );
 }
 
@@ -289,7 +303,10 @@ function JointCalculator({ modelId, results, name, entered, setEntered }) {
       </div>
       <div className="mf-joint-calc-out mf-unit">
         {view ? (
-          <UnitPrediction view={view} results={results} name={name} />
+          <>
+            <UnitSummary view={view} results={results} />
+            <UnitCharts view={view} results={results} name={name} />
+          </>
         ) : (
           <>
             <p className="joint-unit-sum">

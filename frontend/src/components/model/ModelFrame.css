@@ -95,15 +95,13 @@
 .mf-plot-controls .plot-option-row { margin: 0; }
 
 /* L1: a chart and a panel beside it. The panel scrolls inside itself. */
-.detail-panel.mf-l1,
-.detail-panel.mf-l2 {
+.detail-panel.mf-l1 {
   flex: 1 1 auto;
   min-height: 0;
   margin-top: 0;
   gap: 18px;
 }
-.mf-l1 > .mf-main,
-.mf-l2 .mf-main {
+.mf-l1 > .mf-main {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
@@ -118,7 +116,6 @@
   overscroll-behavior: contain;
   padding: 1px 2px 2px 1px;
 }
-.mf-l2 .mf-l2-plots { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; gap: 14px; }
 
 /* L3: the checks grid of the Diagnostics tab. */
 .detail-panel.mf-l3 {
@@ -279,15 +276,32 @@
 .mf-effects-words .mf-effect-p { color: var(--muted); }
 .mf-l1 .mf-effects-table { flex: 0 1 auto; max-height: 42%; }
 
-/* Condition and life: the risk table and the unit beside it. */
-.mf-l5 .joint-risk tr.is-selected td { background: var(--acc-t); }
-.mf-l5 .joint-risk tbody tr { cursor: pointer; }
+/* Condition and life. Risk now: the risk table and the chosen unit in words
+   across the top (the table scrolls inside its card), its two charts under
+   them over the whole width. */
+.detail-panel.mf-joint-risk { flex: 1 1 auto; min-height: 0; margin-top: 0; display: flex; flex-direction: column; gap: 12px; }
+.mf-joint-risk-top {
+  flex: 0 1 auto;
+  min-height: 150px;
+  max-height: 46%;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 16px;
+}
+/* No unit shown (none chosen, or a shared page): the table has the height. */
+.mf-joint-risk-table > .mf-joint-risk-top { flex: 1 1 auto; max-height: none; }
+.mf-joint-risk > .chart-pair { flex: 1 0 300px; }
+.mf-joint-risk-words { min-height: 0; min-width: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; }
+.mf-joint-risk-words > * { flex: none; margin: 0; }
+.mf-joint-risk .joint-risk tr.is-selected td { background: var(--acc-t); }
+.mf-joint-risk .joint-risk tbody tr { cursor: pointer; }
+/* A unit's name and its figures stay on one line, so every row is one line high. */
+.mf-joint-risk .joint-risk tbody td { white-space: nowrap; }
 .mf-unit { display: flex; flex-direction: column; gap: 8px; min-height: 0; flex: 1 1 auto; }
-.mf-unit .joint-unit-sum { flex: none; margin: 0; font-size: var(--fs-14); line-height: 1.5; }
+.joint-unit-sum { flex: none; margin: 0; font-size: var(--fs-14); line-height: 1.5; }
 .detail-panel .model-chars-card .model-chars-blives { display: block; padding: 0 16px 14px; }
 .mf-check .mini-table th, .mf-check .mini-table td { padding-left: 0; }
-.mf-unit-charts { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
-.mf-unit-charts > div { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .mf-joint-calc { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; }
 .mf-joint-calc .joint-enter { display: flex; flex-direction: column; gap: 10px; }
 .mf-joint-calc .joint-enter .dist-field,
@@ -303,8 +317,7 @@
   .model-frame .card.mf-card { padding: 2px 12px 14px; }
   .model-frame .mf-header .title-row h1 { font-size: var(--fs-20); }
   .plot-fill { flex: none; height: 55vh; min-height: 300px; }
-  .detail-panel.mf-l1, .detail-panel.mf-l2 { flex-direction: column; }
-  .mf-l2 .mf-l2-plots { flex-direction: column; }
+  .detail-panel.mf-l1 { flex-direction: column; }
   .detail-panel .aside.mf-side { width: auto; overflow: visible; }
   .detail-panel.mf-l3, .detail-panel.mf-l5, .detail-panel.mf-l5.mf-l5-wide { display: flex; flex-direction: column; }
   .mf-checks { display: flex; flex-direction: column; }
@@ -317,7 +330,9 @@
   .mf-scroll { max-height: 60vh; }
   .mf-l1 .mf-effects-table { max-height: none; }
   .mf-body .calc-side-rail { overflow: visible; }
-  .mf-unit-charts { display: flex; flex-direction: column; }
+  .mf-joint-risk-top { display: flex; flex-direction: column; max-height: none; min-height: 0; }
+  .mf-joint-risk > .chart-pair { flex: none; }
+  .mf-joint-risk-words { overflow: visible; }
   .mf-joint-calc { display: flex; flex-direction: column; }
   .mf-joint-calc-form { overflow: visible; }
   .calc-cov-row .calc-cov input { width: 6.5em; min-height: 40px; }
