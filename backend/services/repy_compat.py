@@ -25,6 +25,12 @@ def node_actions(rbd, node, availability: float) -> tuple[float, float]:
     return _node_actions(rbd, node, availability)
 
 
+def voting_nodes(rbd) -> frozenset:
+    """The ids of a diagram's voting (k-out-of-n) nodes: they are no blocks,
+    and the allocation methods hold them perfect."""
+    return rbd._junctions()
+
+
 def crew_served(rbd) -> list:
     """The jobs a repairable diagram's repair crews work on: its own
     components (not a nested diagram's) and each unit of a standby group."""
