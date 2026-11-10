@@ -69,6 +69,7 @@ export default function RcmHome() {
         section="maintenance"
         title="RCM studies"
         purpose="Your RCM studies: every maintenance decision links to the analysis behind it, re-checked each time you open the study."
+        help={{ guide: "rcm-study" }}
         primary={newStudy}
       />
 
