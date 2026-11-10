@@ -8,10 +8,13 @@
 // position (?rbd=<RBD id>&on=<position id>): `on` names the position whose row it opens beside.
 
 export const TABLE_PANES = {
-  // A fit can start from a model row as its prior (&from=<row>: fitDialog.priorFrom).
+  // A fit can start from a model row as its prior (&prior=<row>: fitDialog.priorFrom). `extra`:
+  // what the pane calls it, and its key in the address. The key is the pane's own word, never a
+  // general one: a link from outside may carry ?from= or ?source=, and the Explorer clears a
+  // pane's keys when another row is picked.
   fit: {
     param: "fit",
-    extra: ["from"],
+    extra: { from: "prior" },
     discard: {
       title: "Discard this fit?", body: "What you've chosen in Fit a life model isn't saved.",
       confirmLabel: "Discard the fit", cancelLabel: "Keep fitting",
@@ -60,7 +63,7 @@ export function paneFromQuery(params) {
     const value = params?.get?.(p.param);
     if (!value) continue;
     if (!p.on) {
-      const more = Object.fromEntries((p.extra || []).map((k) => [k, params.get(k)]).filter(([, v]) => v));
+      const more = Object.fromEntries(Object.entries(p.extra || {}).map(([name, k]) => [name, params.get(k)]).filter(([, v]) => v));
       return { kind, id: value, ...more };
     }
     const on = params.get(p.on);
@@ -70,10 +73,10 @@ export function paneFromQuery(params) {
 }
 
 // Every pane's address parameters, for clearing them all.
-export const PANE_PARAMS = [...new Set(Object.values(TABLE_PANES).flatMap((p) => [p.param, ...(p.on ? [p.on] : []), ...(p.extra || [])]))];
+export const PANE_PARAMS = [...new Set(Object.values(TABLE_PANES).flatMap((p) => [p.param, ...(p.on ? [p.on] : []), ...Object.values(p.extra || {})]))];
 
 // Put the pane `kind` for `positionId` in the address `q` (URLSearchParams), any other pane's
-// taken out; an RBD's `rbd`, the diagram; a fit's `from`, the model row it starts from.
+// taken out; an RBD's `rbd`, the diagram; a fit's `from`, the model row it starts from (&prior=).
 export function setPaneQuery(q, kind, positionId, { rbd = null, from = null } = {}) {
   for (const k of PANE_PARAMS) q.delete(k);
   const p = TABLE_PANES[kind];
@@ -83,6 +86,6 @@ export function setPaneQuery(q, kind, positionId, { rbd = null, from = null } = 
   } else {
     q.set(p.param, positionId);
   }
-  if (from && (p.extra || []).includes("from")) q.set("from", from);
+  if (from && p.extra?.from) q.set(p.extra.from, from);
   return q;
 }
