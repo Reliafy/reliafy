@@ -144,7 +144,7 @@ test("the fit pane's preset: the opener's, else the address's row once the rows 
   const seed = { start: { data: "class" }, link: { id: "l3" } };
   assert.deepEqual(fitPreset(seed, "l1", rows), { start: { data: "class" }, link: { id: "l3" } });
   assert.deepEqual(fitPreset(null, null, null), { start: {}, link: null });
-  // A reload of ?fit=p1&from=l1: waits for the rows, then opens as the menu did.
+  // A reload of ?fit=p1&prior=l1: waits for the rows, then opens as the menu did.
   assert.equal(fitPreset(null, "l1", null), null);
   assert.deepEqual(fitPreset(null, "l1", rows), { start: { method: "bayes", priorKind: "model", modelId: "m1", update: true }, link: rows[0] });
   assert.deepEqual(fitPreset(null, "l2", rows).link, null);
