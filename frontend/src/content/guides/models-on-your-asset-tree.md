@@ -235,12 +235,18 @@ readings.
 
 To see it for every item of a kind, arrange the
 Explorer by **Classes** (beside
-**Positions** and **Locations**, above the tree) and choose an item class. The
-table beside the tree lists every position whose fitted item is of that class,
-or of a class inside it, highest risk first: the position, its position class,
-the item and its serial, its age, its last reading, the three chances and the
-**Median life left**. Choose a row for that item's two charts: its survival
-from now and its reading's path.
+**Positions** and **Locations**, above the tree) and choose an item class. It
+opens on its one tab, **Condition monitoring**. The table there lists every
+position whose fitted item is of that class, or of a class inside it, highest
+risk first: the position, its position class, the item and its serial, its
+age, its last reading, the three chances and the **Median life left**. Choose
+a row for that item's two charts: its survival from now and its reading's
+path.
+
+With one asset's tree open (the **One tree** note shows above the tree),
+**Classes** covers only that asset: the classes, their counts and the table
+list the positions inside it and nothing else. **Show every asset** goes back
+to the whole register.
 
 Each position is scored with its own model: the condition and life model
 attached to it, or else its position class's. So one class can hold positions

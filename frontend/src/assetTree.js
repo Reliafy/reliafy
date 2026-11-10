@@ -49,12 +49,19 @@ export function arrangementOf(param, remembered) {
 // The arrangement the Explorer shows: by positions on the RCM and FME(C)A
 // tabs (they're by position); one tree on show (`scoped`: a product's page, an
 // item's tree) by positions unless its address says Locations (its own layout,
-// never the arrangement remembered for the whole register); else as
-// arrangementOf.
-export function arrangementFor({ param = null, remembered = null, rcm = false, scoped = false } = {}) {
+// never the arrangement remembered for the whole register) or, where the tree
+// is one asset's (`classes`: not a product's design, whose positions have
+// nothing fitted), Classes; else as arrangementOf.
+export function arrangementFor({ param = null, remembered = null, rcm = false, scoped = false, classes = false } = {}) {
   if (rcm) return "positions";
-  if (scoped) return param === "locations" ? "locations" : "positions";
+  if (scoped) return param === "locations" || (classes && param === "classes") ? param : "positions";
   return arrangementOf(param, remembered);
+}
+
+// The arrangements one tree on show offers: an asset's tree, all three; a
+// product's design, Positions and Locations (`classes` as arrangementFor's).
+export function scopedArrangements(classes = false) {
+  return classes ? ARRANGEMENTS : ARRANGEMENTS.filter((a) => a.value !== "classes");
 }
 
 // One tree's address for an arrangement (a product's page leaves Positions

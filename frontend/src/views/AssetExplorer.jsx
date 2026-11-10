@@ -74,7 +74,7 @@ import { saveErrorText } from "../confirm.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
 import { hasOpenLayer, isFullScreenKey, isTyping } from "../fullScreen.js";
-import { isDesignRow, rowKind, shownTab, tabParam, tabsFor } from "../explorerTabs.js";
+import { addressTab, isDesignRow, rowKind, shownTab, tabForArrangement, tabsFor } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { openGuide } from "../components/HelpButton.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
@@ -82,7 +82,7 @@ import { NewLocationModal } from "./MaintenanceLists.jsx";
 import { ImportModal, NewPositionModal } from "./MaintenanceHome.jsx";
 import { DEFAULT_LEVEL, changedFromUsual, levelShown, showingOnly } from "../treeControls.js";
 import {
-  ARRANGEMENTS, CHIPS, PANE, ancestorsOf, arrangementFor, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath, fitTreeWidth,
+  ARRANGEMENTS, CHIPS, PANE, ancestorsOf, arrangementFor, scopedArrangeQuery, scopedArrangements, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath, fitTreeWidth,
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
 import { keepLevel } from "../outlineTree.js";
@@ -100,7 +100,7 @@ import LogEventModal from "../components/LogEventModal.jsx";
 import usePhone from "../usePhone.js";
 import { OPEN_SAMPLE_PRODUCT_LABEL, sampleProductId, sampleProductView } from "../sampleProduct.js";
 import {
-  MAKE_OWN, PRODUCTS_PATH, designActions, isDesignScope, isSampleRow, madeOwnText, makeOwnConfirm, productViewPath, scopeTree,
+  MAKE_OWN, PRODUCTS_PATH, designActions, isDesignScope, isSampleRow, madeOwnText, makeOwnConfirm, productViewPath, scopeHasClasses, scopeTree,
 } from "../products.js";
 import { BuildItemModal, DesignReports } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
@@ -213,7 +213,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const narrow = useNarrowTable();
   const wide = useWideTable();
   const saved = useMemo(() => loadTreeState(workspace), [workspace]);
-  const tab = tabParam(params.get(tabKey));
+  const tab = addressTab(params.get(tabKey), { arrange: params.get("arrange"), sel: params.get("sel") });
   // The tree-table: the RCM tab, or the FME(C)A tab (the same table with the
   // worksheet's columns and its own graft; `fmeaOn` says which).
   const fmeaOn = tab === "fmea";
@@ -230,7 +230,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // RCM (and the FME(C)A) is by position: on its tab the tree is arranged by positions.
   // One tree on show (a product's design, an item's tree) opens by positions; its
   // Locations (?arrange=locations) are its own layout, never what's remembered here.
-  const mode = arrangementFor({ param: params.get("arrange"), remembered: saved.mode, rcm: tableOn, scoped: !!root });
+  // An asset's tree has Classes too (?arrange=classes): the classes of what's fitted
+  // inside that asset, and nothing else's (a design has nothing fitted, so no Classes).
+  const [data, setData] = useState(null);
+  const scopedClasses = !!root && scopeHasClasses(data, { ownPage: !!rootProp });
+  const mode = arrangementFor({ param: params.get("arrange"), remembered: saved.mode, rcm: tableOn, scoped: !!root, classes: scopedClasses });
   const notPlaced = mode === "positions" && params.get("place") === "none";
   const title = titleProp || EXPLORER_LABEL;
   // Inside a product's page (its own h1), the picked row's name is an h2.
@@ -259,7 +263,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     navigate(`${location.pathname}?${q}${location.hash}`, { state });
   }, [params, navigate, location]);
 
-  const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [version, setVersion] = useState(0);
   const [openBy, setOpenBy] = useState(saved.open);
@@ -1238,6 +1241,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
 
   const viewOnly = viewOnlyReason(activeTeam);
   const designScope = isDesignScope(data, root);
+  // One asset's tree on show: the positions inside it (a class's fleet covers only these).
+  const scopeIds = useMemo(() => (root && data?.positions ? new Set(data.positions.map((p) => p.id)) : null), [root, data]);
   const kids = useMemo(() => liveKids(data?.positions), [data]);
   // A measurement row's ⋯ (the Measurements tab).
   // A measurement row's details spread across the table, the tree kept (as an
@@ -1729,17 +1734,20 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const nextSelected = keep ? { ...selected, [m]: keep } : selected;
     setSelected(nextSelected);
     pending.current = keep;
+    // A class's own tab (Condition monitoring) stays behind when the tree leaves Classes.
+    const nextTab = tabForArrangement(tab, m);
     if (root) {
       // One tree on show: its own address, the arrangement in it (a product's page
       // says only Locations: Positions is how it opens).
       const q = scopedArrangeQuery(params, m, { ownPage: !!rootProp });
+      if (nextTab !== tab) q.delete(tabKey);
       navigate(`${location.pathname}?${q}${location.hash}`, { replace: true, state: location.state });
       return;
     }
     latest.current = { ...latest.current, mode: m, selected: nextSelected };
     saveTreeState(workspace, latest.current);
     // The tab comes along.
-    navigate(explorerPath(m, { tab: tab === "summary" ? null : tab }),
+    navigate(explorerPath(m, { tab: nextTab === "summary" ? null : nextTab }),
              { state: keep ? { treeReveal: keep } : undefined });
   };
 
@@ -2325,7 +2333,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <TreeDetail ref={headingRef} display={whole} row={data && !nothing ? row : null} today={data?.today || ""}
                     onSelect={selectFromPanel} onCrumb={(k) => crumbGo(k, selectFromPanel)} above={above}
                     back={back} version={version} empty={emptyDetail} headless={!phone} heading={heading}
-                    tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi}
+                    tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi} within={scopeIds}
                     menu={[...ownMenu(data && !nothing ? row : null), ...(tabMenu || [])]} onMenu={setTabMenu}
                     actions={summaryActionsOf(data && !nothing ? row : null)} />
       )}
@@ -2481,8 +2489,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         onCollapse={setCollapsed}
         addRow={addRow}
         canArrange={!root || !!data?.scope}
-        // One tree on show (a product's design, an item's tree) is by Positions or Locations only.
-        arrangements={root ? ARRANGEMENTS.filter((a) => a.value !== "classes") : null}
+        // One tree on show: an asset's has all three; a product's design, Positions and Locations.
+        arrangements={root ? scopedArrangements(scopedClasses) : null}
         level={level}
         changed={changed}
         onReset={resetView}

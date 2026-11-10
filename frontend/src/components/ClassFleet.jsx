@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { getClassFleet } from "../api.js";
 import { formatNumber } from "../format.js";
-import { fleetAnswer } from "../joint.js";
+import { fleetAnswer, fleetWithin } from "../joint.js";
 import { RiskTable, UnitCharts, UnitSummary, riskOrder, sortColumn } from "./model/RiskTable.jsx";
 import "./ClassFleet.css";
 
@@ -13,7 +13,9 @@ import "./ClassFleet.css";
 // model linked to its own position (the Modelling tab), so one fleet can mix
 // members with a model, members without one (a dash) and members that can't
 // be scored yet (the reason, in words). The table and a chosen member's two
-// charts are the model page's own (model/RiskTable.jsx).
+// charts are the model page's own (model/RiskTable.jsx). `within` (a Set of
+// position ids: the Explorer opened on one asset): only the members inside
+// that asset, in the answer line, the table and the charts alike.
 
 const n3 = (v) => formatNumber(v);
 
@@ -22,7 +24,7 @@ function readingText(r) {
   return `${n3(r.value)}${r.unit ? ` ${r.unit}` : ""}`;
 }
 
-export default function ClassFleet({ row, version, onSelect }) {
+export default function ClassFleet({ row, version, onSelect, within = null }) {
   const classId = row.ref.id;
   const [fleet, setFleet] = useState(null);
   const [error, setError] = useState(null);
@@ -39,7 +41,7 @@ export default function ClassFleet({ row, version, onSelect }) {
     return () => { live = false; };
   }, [classId, version]);
 
-  const mine = fleet && fleet.item_class.id === classId ? fleet : null;
+  const mine = useMemo(() => (fleet && fleet.item_class.id === classId ? fleetWithin(fleet, within) : null), [fleet, classId, within]);
   const labels = mine?.horizons.labels || [];
   const rows = useMemo(() => (mine?.members || []).map((m) => ({ ...m, id: m.position.id, risk: m.scored ? m.risk : null })), [mine]);
   // The member whose charts show: the one chosen, else the one at highest risk.
