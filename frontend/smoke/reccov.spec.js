@@ -17,7 +17,8 @@ const shot = async (page, name, full = false) => {
 const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 // After a resize the phone layout settles over a frame or two: ask until it has.
 const noSideways = (page) => expect.poll(() => sideways(page), { timeout: 5_000 }).toBeLessThanOrEqual(0);
-const re = (text) => new RegExp(text.replace(/[()]/g, "\\$&"));
+// The text itself as a pattern: every character that means something in one is escaped.
+const re = (text) => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 
 async function headPick(page, group, item) {
   await headMenu(page);
