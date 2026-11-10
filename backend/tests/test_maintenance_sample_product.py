@@ -296,8 +296,14 @@ def test_the_sample_product_has_its_own_maintainability_prediction(store, db):
     assert doc["inputs"]["lines"] == shared["inputs"]["lines"] == samples.SAMPLE_MAINTAINABILITY_INPUTS["lines"]
     assert shared["inputs"] == samples.SAMPLE_MAINTAINABILITY_INPUTS and shared["results"]["product"] is None
     assert "product_id" not in samples.SAMPLE_MAINTAINABILITY_INPUTS
-    assert ({k: v for k, v in doc["results"].items() if k != "product"}
-            == {k: v for k, v in shared["results"].items() if k != "product"})
+    # The same figures; only where the rates are compared differs (the shared one is set beside
+    # the sample parts count, this product has no parts count of its own yet).
+    def figures(results):
+        return {**{k: v for k, v in results.items() if k not in ("product", "weights", "lines")},
+                "lines": [{k: v for k, v in ln.items() if k != "parts_count_rate"} for ln in results["lines"]]}
+    assert figures(doc["results"]) == figures(shared["results"])
+    assert doc["results"]["weights"]["source"] == shared["results"]["weights"]["source"] == "typed"
+    assert "no saved parts count" in doc["results"]["weights"]["note"]
     assert doc["results"]["mct"] > 0 and doc["results"]["counts"]["lines"] == len(templates.SAMPLE_PRODUCT_BOM)
     # It is the workspace's own, read and listed like any saved prediction.
     assert maintainability.get_prediction(db, doc["_id"], ORG).name == doc["name"]

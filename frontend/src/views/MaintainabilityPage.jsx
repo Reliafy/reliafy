@@ -65,7 +65,8 @@ export default function MaintainabilityPage() {
     r.product?.name ? `Product: ${r.product.name}` : null,
     `${r.counts?.lines ?? "?"} ${r.counts?.lines === 1 ? "line" : "lines"}`,
     `times in ${r.unit || "hours"}`,
-    "results as computed when it was saved",
+    r.weights?.parts_count?.taken && !r.weights?.as_saved
+      ? "failure rates follow the parts count" : "results as computed when it was saved",
   ].filter(Boolean).join(" · ");
 
   return (

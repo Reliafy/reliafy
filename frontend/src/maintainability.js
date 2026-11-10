@@ -280,6 +280,9 @@ export function weightsText(result) {
   const w = result?.weights;
   if (!w) return "";
   if (w.source === "equal") return "Every line counts the same (no failure rates).";
+  // Results worked out since rates could follow a parts count say where each
+  // rate comes from and how the MTBF compares with the parts count's.
+  if (w.note && "parts_count" in w) return [w.note, w.compare?.note, w.as_saved].filter(Boolean).join(" ");
   if (w.source === "reliability_prediction") return `Weighted by failure rate × quantity, from the reliability prediction “${w.prediction?.name}”.`;
   if (w.source === "mixed") return `Weighted by failure rate × quantity (typed, and from “${w.prediction?.name}”).`;
   return `Weighted by failure rate × quantity (${rateUnitText(result.failure_rate_unit)}).`;

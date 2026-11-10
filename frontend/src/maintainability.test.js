@@ -150,4 +150,10 @@ test("the weights' source in words", () => {
   assert.match(weightsText({ weights: { source: "typed" }, failure_rate_unit: "per_hour" }), /per hour/);
   assert.match(weightsText({ weights: { source: "reliability_prediction", prediction: { name: "Rates" } } }), /“Rates”/);
   assert.equal(weightsText(null), "");
+  // Newer results carry the sentence themselves: where the rates come from, and the MTBF beside the parts count's.
+  assert.equal(weightsText({ weights: { source: "mixed", note: "2 lines take their rate from the parts count “Rates”.",
+                                        parts_count: { id: "rp" }, compare: { note: "The MTBF agrees." } } }),
+    "2 lines take their rate from the parts count “Rates”. The MTBF agrees.");
+  assert.match(weightsText({ weights: { source: "typed", note: "Its own rates, typed here.", parts_count: null, compare: null } }),
+    /^Its own rates, typed here\.$/);
 });

@@ -22,9 +22,20 @@ The method is the handbook one (MIL-HDBK-472 style), in plain words:
   a system MTBF (1 / Σλ·q), or one is typed in;
 * the Pareto: each line's share of the maintenance time, λ·q·MTTR / Σ.
 
+Where the failure rates come from. A line's rate is typed with it, or, when
+the prediction is for a product (or position) that has a saved parts count (a
+reliability prediction), read from that: the rate of one part, matched by
+part number and never by name. A typed rate always wins and is shown as the
+prediction's own; a line left blank takes the parts count's and follows it.
+The results say which lines did which, and how the MTBF here compares with
+the parts count's, with the reason when the two differ.
+
 Saved predictions keep the inputs and the results computed from them at save
 time (never results from the client), owner-scoped like the other stores
-(:mod:`backend.services.strategy_store`).
+(:mod:`backend.services.strategy_store`). A prediction whose lines take the
+parts count's rates is worked out again when it is read, if that parts count
+has changed since (:func:`current`); one that uses only its own rates keeps
+the results it was saved with.
 """
 
 from __future__ import annotations
@@ -260,47 +271,92 @@ def check_inputs(inputs: dict) -> dict:
 
 # ---- the computation -----------------------------------------------------------------------
 
-def _rates_note(source: str, missing: list[str], prediction: dict | None, rate_unit: str) -> str | None:
+#: How close two rates or MTBFs must be to read as the same at the figures shown.
+_SAME = 5e-4
+
+
+def ref_key(text) -> str:
+    """A part number as lines are matched by it: lower-case, spaces squeezed."""
+    return " ".join(str(text or "").split()).lower()
+
+
+def _some(labels: list[str], most: int = 5) -> str:
+    return ", ".join(labels[:most]) + (", …" if len(labels) > most else "")
+
+
+def _count(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
+def _rates_note(source: str, missing: list[str], prediction: dict | None, rate_unit: str,
+                tally: dict | None = None, product_name: str | None = None, has_product: bool = False,
+                ) -> str | None:
+    """Where the failure rates come from, in a line."""
+    tally = tally or {}
+    count = f"the parts count “{prediction.get('name')}”" if prediction else None
     if source == "equal":
-        if missing:
-            shown = ", ".join(missing[:5]) + (", …" if len(missing) > 5 else "")
-            return (f"{len(missing)} line{'s have' if len(missing) != 1 else ' has'} no failure rate ({shown}), "
-                    "so every line counts the same. Give a rate for each line, or a saved reliability "
-                    "prediction for the product, to weight them and to get availability.")
-        return "No failure rates were given, so every line counts the same."
-    if source == "reliability_prediction" and prediction:
-        return f"Failure rates come from the reliability prediction “{prediction.get('name')}”."
-    if source == "mixed" and prediction:
-        return (f"Failure rates come from the reliability prediction “{prediction.get('name')}” where a line "
-                "matches it, else as typed.")
-    return f"Failure rates as typed, {RATE_UNIT_TEXT[rate_unit]}."
+        if not missing:
+            return "No failure rates were given, so every line counts the same."
+        head = (f"{len(missing)} line{'s have' if len(missing) != 1 else ' has'} no failure rate "
+                f"({_some(missing)}), so every line counts the same.")
+        if count:
+            return (f"{head} {count[0].upper()}{count[1:]} has no rate for {'them' if len(missing) != 1 else 'it'} "
+                    "(lines are matched by part number): type a rate for each, or give the parts count one, to "
+                    "weight the lines and to get availability.")
+        return (f"{head} Give a rate for each line, or a saved reliability prediction for the product, to "
+                "weight them and to get availability.")
+    if source == "reliability_prediction" and count:
+        return (f"Every line's failure rate comes from {count}, matched by part number, and follows it when "
+                "it changes.")
+    if source == "mixed" and count:
+        typed = tally.get("typed") or []
+        return (f"{_count(tally.get('taken') or 0, 'line takes its', 'lines take their')} failure rate from "
+                f"{count}, matched by part number, and {_count(len(typed), 'line uses', 'lines use')} a rate "
+                f"typed here ({_some(typed)}).")
+    own = f"This prediction uses its own failure rates, typed here ({RATE_UNIT_TEXT[rate_unit]})."
+    if count:
+        have = tally.get("available") or 0
+        if have and tally.get("same") == have:
+            return (f"{own} {count[0].upper()}{count[1:]} has a rate for {have} of these "
+                    f"{_count(len(tally.get('typed') or []), 'line', 'lines')}, and the rates typed here are "
+                    "the same.")
+        if have:
+            return (f"{own} {count[0].upper()}{count[1:]} has a rate for {have} of these "
+                    f"{_count(len(tally.get('typed') or []), 'line', 'lines')}: clear a line's typed rate to "
+                    "take it from there.")
+        return (f"{own} {count[0].upper()}{count[1:]} has no rate for any of these lines (they are matched "
+                "by part number).")
+    if has_product:
+        return (f"{own} There is no saved parts count (reliability prediction) for "
+                f"{product_name or 'the product'} to take them from.")
+    return own
 
 
 def compute(inputs: dict, prediction: dict | None = None) -> dict:
     """The results for ``inputs`` (see the module docstring). ``prediction``:
-    a saved reliability prediction's rates for the same product
-    ({id, name, rates: {ref or name (lower-case): rate}, unit}), used for
-    the lines that match it and have no rate typed."""
+    the saved parts count for the same product, as :func:`prediction_rates`
+    gives it ({id, name, rates: {part number, lower-case: one part's rate},
+    unit, …}). A line with no rate typed takes the rate of its part number
+    there; a typed rate is kept and the parts count's shown beside it."""
     chk = check_inputs(inputs)
     unit, rate_unit, p, lines = chk["unit"], chk["failure_rate_unit"], chk["percentile"], chk["lines"]
     to_hours = UNITS[unit]
     rate_per_hour = RATE_UNITS[rate_unit]
 
-    # Each line's failure rate, in the inputs' unit: typed, else the reliability prediction's.
+    # Each line's failure rate, in the inputs' unit: typed, else the parts count's for its part number.
     found = 0
     pred_rates = (prediction or {}).get("rates") or {}
     pred_unit = (prediction or {}).get("unit")
-    pred_factor = (RATE_UNITS.get(pred_unit, rate_per_hour) / rate_per_hour) if pred_rates else 1.0
+    pred_factor = (RATE_UNITS.get(pred_unit, rate_per_hour) / rate_per_hour) if prediction else 1.0
     for ln in lines:
+        key = ref_key(ln["ref"])
+        hit = pred_rates.get(key) if key else None
+        ln["parts_count_rate"] = float(hit) * pred_factor if hit is not None else None
         ln["rate_source"] = "typed" if ln["failure_rate"] is not None else None
-        if ln["failure_rate"] is None and pred_rates:
-            for key in (ln["ref"], ln["name"]):
-                hit = pred_rates.get(key.lower()) if key else None
-                if hit is not None:
-                    ln["failure_rate"] = float(hit) * pred_factor
-                    ln["rate_source"] = "reliability_prediction"
-                    found += 1
-                    break
+        if ln["failure_rate"] is None and ln["parts_count_rate"] is not None:
+            ln["failure_rate"] = ln["parts_count_rate"]
+            ln["rate_source"] = "reliability_prediction"
+            found += 1
     counted = [ln for ln in lines if ln["quantity"] > 0]
     missing = [ln["label"] for ln in counted if ln["failure_rate"] is None]
     typed = sum(1 for ln in counted if ln["rate_source"] == "typed")
@@ -375,6 +431,7 @@ def compute(inputs: dict, prediction: dict | None = None) -> dict:
         out_lines.append({
             "ref": ln["ref"], "name": ln["name"], "assembly": " › ".join(ln["assembly"]),
             "quantity": ln["quantity"], "failure_rate": ln["failure_rate"], "rate_source": ln["rate_source"],
+            "parts_count_rate": ln["parts_count_rate"],
             "mttr": ln["mttr"], "elements": dict(ln["elements"]), "sigma": ln["sigma"],
             "m_max": (math.exp(ln["mu"] + z * ln["sigma"]) if ln["sigma"] else None),
             "weight": ln["weight"], "share": share, "index": i,
@@ -404,13 +461,17 @@ def compute(inputs: dict, prediction: dict | None = None) -> dict:
             "share": (a["time"] / total_time) if total_time > 0 else 0.0,
         })
 
+    tally, parts_count, compare = _against_parts_count(prediction, counted, mtbf_hours, mtbf_source,
+                                                        pred_factor)
     return {
         "unit": unit, "failure_rate_unit": rate_unit, "percentile": p,
         "product": ({"id": chk["product_id"], "name": chk["product_name"]} if chk["product_id"] else None),
-        "weights": {"source": source, "note": _rates_note(source, missing, prediction, rate_unit),
+        "weights": {"source": source,
+                    "note": _rates_note(source, missing, prediction, rate_unit, tally, chk["product_name"],
+                                        bool(chk["product_id"])),
                     "prediction": ({"id": prediction.get("id"), "name": prediction.get("name")}
                                    if prediction and found else None),
-                    "missing": missing},
+                    "missing": missing, "parts_count": parts_count, "compare": compare},
         "mct": mct, "mct_hours": mct_hours, "elements": elements,
         "m_max": m_max, "m_max_note": m_max_note,
         "mtbf_hours": mtbf_hours, "mtbf_source": mtbf_source,
@@ -421,51 +482,196 @@ def compute(inputs: dict, prediction: dict | None = None) -> dict:
     }
 
 
-# ---- failure rates from a saved reliability prediction -------------------------------------
+def _against_parts_count(prediction: dict | None, counted: list[dict], mtbf_hours, mtbf_source, factor: float,
+                         ) -> tuple[dict, dict | None, dict | None]:
+    """How the lines stand against the product's parts count: the tally the
+    note is written from, the ``parts_count`` block of the results (None with
+    no parts count) and the MTBF comparison (None when either has no MTBF)."""
+    if not prediction:
+        return {}, None, None
+    taken = [ln["label"] for ln in counted if ln["rate_source"] == "reliability_prediction"]
+    typed = [ln for ln in counted if ln["rate_source"] == "typed"]
+    replaced, same, not_in = [], [], []
+    for ln in typed:
+        theirs = ln["parts_count_rate"]
+        if theirs is None:
+            not_in.append(ln["label"])
+        elif abs(ln["failure_rate"] - theirs) <= _SAME * max(theirs, 1e-300):
+            same.append(ln["label"])
+        else:
+            replaced.append(ln["label"])
+    ours: dict[str, float] = {}
+    for ln in counted:
+        key = ref_key(ln["ref"])
+        if key:
+            ours[key] = ours.get(key, 0.0) + ln["quantity"]
+    extra = [row["label"] for row in prediction.get("lines") or [] if row.get("key") not in ours]
+    quantities = prediction.get("quantities") or {}
+    labels = {ref_key(ln["ref"]): ln["label"] for ln in reversed(counted)}
+    differ = [labels[key] for key in ours
+              if key in quantities and abs(quantities[key] - ours[key]) > 1e-9 * max(ours[key], 1.0)]
+    tally = {"taken": len(taken), "typed": [ln["label"] for ln in typed], "available": len(replaced) + len(same),
+             "same": len(same)}
+    total = prediction.get("failure_rate")
+    theirs_mtbf = prediction.get("mtbf_hours")
+    parts_count = {
+        "id": prediction.get("id"), "name": prediction.get("name"), "stamp": prediction.get("stamp"),
+        "failure_rate": (total * factor) if isinstance(total, (int, float)) else None,
+        "mtbf_hours": theirs_mtbf, "taken": len(taken), "typed_over": replaced, "typed_same": same,
+        "not_in": not_in, "extra": extra, "quantities_differ": differ,
+    }
+    compare = None
+    if mtbf_hours and theirs_mtbf:
+        agree = abs(mtbf_hours - theirs_mtbf) <= _SAME * theirs_mtbf
+        reasons: list[str] = []
+        if not agree:
+            if mtbf_source == "typed":
+                reasons.append("the MTBF here was typed in, in place of 1 ÷ the summed failure rates")
+            else:
+                if replaced:
+                    reasons.append(f"{_count(len(replaced), 'line uses', 'lines use')} a rate typed here in place "
+                                   f"of the parts count's ({_some(replaced)})")
+                if not_in:
+                    reasons.append(f"{_count(len(not_in), 'line has', 'lines have')} a rate typed here and none "
+                                   f"in the parts count ({_some(not_in)})")
+                if extra:
+                    reasons.append(f"the parts count has {_count(len(extra), 'line that is', 'lines that are')} "
+                                   f"not in this list ({_some(extra)})")
+                if differ:
+                    reasons.append(f"the quantities differ for {_some(differ)}")
+                if not reasons:
+                    reasons.append("the two were worked out from different lines")
+        note = (f"The MTBF, {fmt_num(mtbf_hours)} hours, agrees with the parts count's." if agree else
+                f"The MTBF here is {fmt_num(mtbf_hours)} hours; the parts count gives {fmt_num(theirs_mtbf)} "
+                f"hours. They differ because {'; '.join(reasons)}.")
+        compare = {"mtbf_hours": mtbf_hours, "parts_count_mtbf_hours": theirs_mtbf, "agree": agree,
+                   "reasons": reasons, "note": note}
+    return tally, parts_count, compare
 
-_RATE_KEYS = ("failure_rate", "lambda", "rate")
-_NAME_KEYS = ("ref", "part_number", "reference", "name", "part", "label")
+
+# ---- failure rates from a saved parts count (a reliability prediction) ----------------------
+
+_REF_KEYS = ("reference", "ref", "part_number")
 
 
-def prediction_rates(db, product_id, owners) -> dict | None:
-    """The failure rates a saved reliability prediction holds for ``product_id``
-    (the newest one of the caller's or the samples'), keyed by the line's ref
-    and name, lower-case: {id, name, rates, unit}. None when there's no such
-    prediction, or the collection isn't there. Its shape isn't ours, so this
+def _number(x) -> float | None:
+    if isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(float(x)):
+        return None
+    return float(x)
+
+
+def _reliability_docs(db, owners) -> list[dict]:
+    """The readers' saved reliability predictions, newest first. Another
+    feature's collection: an unreadable one is none, never an error here."""
+    try:
+        return list(db["reliability_predictions"].find(
+            {"owner_id": {"$in": list(owners)}}).sort("updated_at", -1).limit(100))
+    except Exception:  # noqa: BLE001 - never block this feature on that one
+        return []
+
+
+def _is_for(doc: dict, product_id) -> bool:
+    """Whether a saved reliability prediction is the parts count of this
+    product: made from its parts list (``inputs.product``), or on the product
+    as a position (``inputs.position``; a product's id is its design
+    position's)."""
+    inputs = doc.get("inputs") if isinstance(doc.get("inputs"), dict) else {}
+    results = doc.get("results") if isinstance(doc.get("results"), dict) else {}
+    ids = [doc.get("product_id"), inputs.get("product_id")]
+    for holder in (inputs.get("product"), inputs.get("position"), results.get("product")):
+        if isinstance(holder, dict):
+            ids.append(holder.get("id"))
+    return str(product_id) in {str(x) for x in ids if x}
+
+
+def prediction_rates(db, product_id, owners, docs: list[dict] | None = None) -> dict | None:
+    """The parts count saved for ``product_id`` (a product, or the position it
+    was made on): the newest of the readers' reliability predictions for it.
+    None when there is none.
+
+    {id, name, stamp, unit: "per_million_hours", rates: {part number
+    (lower-case): the failure rate of ONE part}, quantities: {part number: how
+    many the parts count has}, lines: [{key, label, total}] for every line
+    with a rate (key "" with no part number), unrated: [names with no rate
+    there], failure_rate (the whole count's, per million hours), mtbf_hours}.
+
+    Lines are matched by part number only: names repeat ("Chip resistors"
+    under three boards), so a name alone never picks a rate. A part number on
+    several lines gets its parts' mean rate. Its shape isn't ours, so this
     reads what it can and never fails."""
     if not product_id:
         return None
-    try:
-        docs = list(db["reliability_predictions"].find(
-            {"owner_id": {"$in": list(owners)}}).sort("updated_at", -1).limit(100))
-    except Exception:  # noqa: BLE001 - another feature's collection: never block this one
-        return None
-    for doc in docs:
-        inputs = doc.get("inputs") if isinstance(doc.get("inputs"), dict) else {}
-        results = doc.get("results") if isinstance(doc.get("results"), dict) else {}
-        pid = doc.get("product_id") or inputs.get("product_id") or (results.get("product") or {}).get("id")
-        if str(pid or "") != str(product_id):
+    for doc in (docs if docs is not None else _reliability_docs(db, owners)):
+        if not isinstance(doc, dict) or not _is_for(doc, product_id):
             continue
-        rows = results.get("lines") or inputs.get("lines") or doc.get("lines") or []
-        rates: dict[str, float] = {}
-        for row in rows if isinstance(rows, list) else []:
+        results = doc.get("results") if isinstance(doc.get("results"), dict) else {}
+        rows = results.get("lines")
+        if not isinstance(rows, list) or not rows:
+            continue
+        sums: dict[str, list[float]] = {}
+        lines, unrated = [], []
+        for row in rows:
             if not isinstance(row, dict):
                 continue
-            rate = next((row[k] for k in _RATE_KEYS if isinstance(row.get(k), (int, float))), None)
-            if rate is None or not math.isfinite(float(rate)):
+            ref = next((" ".join(str(row.get(k)).split()) for k in _REF_KEYS if str(row.get(k) or "").strip()), "")
+            label = " ".join(str(row.get("name") or "").split()) or ref or "a line"
+            quantity = _number(row.get("quantity"))
+            quantity = 1.0 if quantity is None else quantity
+            total = _number(row.get("rate_per_million_hours"))
+            each = _number(row.get("each_per_million_hours"))
+            if total is None and each is not None:
+                total = each * quantity
+            if total is None or row.get("excluded") or quantity <= 0:
+                unrated.append(label)
                 continue
-            for k in _NAME_KEYS:
-                key = " ".join(str(row.get(k) or "").split()).lower()
-                if key:
-                    rates.setdefault(key, float(rate))
-        if not rates:
-            continue
-        unit = next((x for x in (doc.get("failure_rate_unit"), inputs.get("failure_rate_unit"),
-                                 results.get("failure_rate_unit"), results.get("rate_unit"))
-                     if isinstance(x, str) and x in RATE_UNITS), None)
-        return {"id": doc.get("_id"), "name": doc.get("name") or "reliability prediction", "rates": rates,
-                "unit": unit}
+            key = ref_key(ref)
+            if key:
+                held = sums.setdefault(key, [0.0, 0.0])
+                held[0] += total
+                held[1] += quantity
+            lines.append({"key": key, "label": label, "total": total})
+        return {
+            "id": doc.get("_id"), "name": doc.get("name") or "reliability prediction",
+            "stamp": str(doc.get("updated_at") or ""), "unit": "per_million_hours",
+            "rates": {key: held[0] / held[1] for key, held in sums.items()},
+            "quantities": {key: held[1] for key, held in sums.items()},
+            "lines": lines, "unrated": unrated,
+            "failure_rate": _number(results.get("failure_rate_per_million_hours")),
+            "mtbf_hours": _number(results.get("mtbf_hours")),
+        }
     return None
+
+
+def follows_parts_count(results: dict | None) -> bool:
+    """Whether saved results have lines that took a parts count's rates (and
+    say which parts count): those are worked out again when it changes."""
+    held = ((results or {}).get("weights") or {}).get("parts_count")
+    return isinstance(held, dict) and bool(held.get("taken"))
+
+
+def current(db, doc, owners, docs: list[dict] | None = None):
+    """``doc`` with its results as they stand now. A prediction that uses only
+    its own rates (and any saved before lines could follow a parts count) is
+    returned as saved. One whose lines take a parts count's rates is worked
+    out again, in memory, when that parts count has changed or been replaced;
+    if the parts count can't be found the saved figures stay and say so."""
+    if doc is None or not follows_parts_count(doc.results):
+        return doc
+    weights = doc.results["weights"]
+    was = weights["parts_count"]
+    now = prediction_rates(db, (doc.inputs or {}).get("product_id"), owners, docs)
+    if now is None:
+        doc.results = {**doc.results, "weights": {**weights, "as_saved": (
+            "The parts count these failure rates came from can't be found now, so the figures are as they were "
+            "when this prediction was last saved.")}}
+        return doc
+    if now.get("id") == was.get("id") and now.get("stamp") == was.get("stamp"):
+        return doc
+    try:
+        doc.results = compute(doc.inputs, now)
+    except MaintainabilityError:
+        pass  # keep the saved figures
+    return doc
 
 
 # ---- lines from a product ------------------------------------------------------------------
@@ -556,23 +762,40 @@ def save_prediction(db, name: str, inputs: dict, owner_id: str, prediction: dict
     return doc
 
 
-def list_predictions(db, owner_id, hidden=frozenset(), shared=frozenset()) -> list[MaintainabilityPrediction]:
-    return [from_doc(MaintainabilityPrediction, d)
-            for d in db[COLLECTION].find(_list_query(owner_id, shared)).sort("created_at", -1)
-            if d["_id"] not in hidden]
+def list_predictions(db, owner_id, hidden=frozenset(), shared=frozenset(), rate_owners=None,
+                     ) -> list[MaintainabilityPrediction]:
+    """The saved predictions, each with its results as they stand now
+    (:func:`current`; ``rate_owners``: whose parts counts may be read,
+    by default the same owners)."""
+    out = [from_doc(MaintainabilityPrediction, d)
+           for d in db[COLLECTION].find(_list_query(owner_id, shared)).sort("created_at", -1)
+           if d["_id"] not in hidden]
+    following = [d for d in out if follows_parts_count(d.results)]
+    if following:
+        owners = rate_owners if rate_owners is not None else access.owner_in(owner_id)
+        docs = _reliability_docs(db, owners)
+        for doc in following:
+            current(db, doc, owners, docs)
+    return out
 
 
-def get_prediction(db, prediction_id: str, owner_id=None) -> MaintainabilityPrediction | None:
+def get_prediction(db, prediction_id: str, owner_id=None, as_saved: bool = False,
+                   ) -> MaintainabilityPrediction | None:
+    """One saved prediction, with its results as they stand now
+    (:func:`current`) unless ``as_saved``."""
     query: dict = {"_id": prediction_id}
     if owner_id is not None:
         query["owner_id"] = {"$in": access.owner_in(owner_id)}
-    return from_doc(MaintainabilityPrediction, db[COLLECTION].find_one(query))
+    doc = from_doc(MaintainabilityPrediction, db[COLLECTION].find_one(query))
+    if doc is not None and owner_id is not None and not as_saved:
+        current(db, doc, access.owner_in(owner_id))
+    return doc
 
 
 def update_prediction(db, prediction_id: str, owner_id: str, name=None, inputs=None,
                       prediction: dict | None = None) -> MaintainabilityPrediction:
     """Rename a prediction, or give it new inputs (its results are recomputed)."""
-    doc = get_prediction(db, prediction_id, owner_id)
+    doc = get_prediction(db, prediction_id, owner_id, as_saved=True)
     if doc is None or doc.owner_id != owner_id:
         raise PredictionNotFound(prediction_id)
     changes: dict = {}
