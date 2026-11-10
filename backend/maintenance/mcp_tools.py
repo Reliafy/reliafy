@@ -143,9 +143,12 @@ GET_KINDS: Table = {
     "measurement_point": ("id", "", """Kind, source and tag, latest reading, rate (counter) or trend and the
         date it should reach an alarm limit (condition), status, recent readings (each with status ok,
         correction, voided or replaced; reading ids for maintenance measurements.void / correct)."""),
-    "item_class": ("id", "", """Path, code, level, description, the classes inside it, attributes
-        (inherited first, each with the class it's from), and the items and parts in it or a class inside
-        it."""),
+    "item_class": ("id", "fleet position_id", """Path, code, level, description, the classes inside it,
+        attributes (inherited first, each with the class it's from), and the items and parts in it or a class
+        inside it. fleet=true: its fleet instead, the positions whose fitted item is of the class or a class
+        inside it, each with its duty, item, age, last condition reading and, where its position has a condition
+        and life model, its risk now from its own age, readings and covariates, highest first (why, where one
+        can't be scored); with position_id, that one alone with its curves."""),
     "manufacturer": ("id", "", "Its aliases and the items and parts linked to it."),
     "conditions": ("id", "", """id = a location, position, item or connection: the conditions that apply, each
         with value, note and source (own or where it's inherited from), and those excluded."""),
@@ -1206,7 +1209,11 @@ def register() -> None:
                             "How often stock is checked (default 0)."))] = None,
                         scope: Literal["below", "this"] | None = None,
                         position_id: Annotated[str | None, Field(description=(
-                            "task_measurement: a position the task would move to."))] = None) -> dict[str, Any]:
+                            "task_measurement: a position the task would move to. item_class with fleet: "
+                            "one member, for its curves."))] = None,
+                        fleet: Annotated[bool | None, Field(description=(
+                            "item_class: true for the class's fleet (its positions, with risk now) in place of "
+                            "the class record."))] = None) -> dict[str, Any]:
         """One maintenance record, or one answer about a record, by kind and id. Ids come from
         maintenance overview, maintenance list.… and the records themselves."""
         m = m_for(ctx)
@@ -1241,6 +1248,11 @@ def register() -> None:
             return run(document_link, base_url(ctx), m, rid)
         if kind == "task_measurement":
             return run(m.task_measurement, rid, position_id)
+        if kind == "item_class" and fleet:
+            from backend.maintenance import class_fleet
+
+            reader = _reader(_caller(ctx))
+            return run(class_fleet.fleet, m, _db(), reader.read_owners, reader.hidden, rid, position_id)
         read = {"position": m.position, "item": m.item, "work_order": m.work_order, "location": m.location,
                 "part": m.part, "measurement_point": m.point, "item_class": m.item_class,
                 "manufacturer": m.manufacturer, "task": m.explain_task, "class_life_data": m.class_life_data,

@@ -100,7 +100,14 @@ test("arranged by locations: placed positions, spares, then the places inside; n
 });
 
 test("the arrangement from the address, else the last one used; the Explorer's addresses", () => {
-  assert.deepEqual(ARRANGEMENTS.map((a) => a.label), ["Positions", "Locations"]);
+  assert.deepEqual(ARRANGEMENTS.map((a) => a.label), ["Positions", "Locations", "Classes"]);
+  assert.equal(arrangementOf("classes", "positions"), "classes");
+  assert.equal(arrangementOf(null, "classes"), "classes");
+  assert.equal(explorerPath("classes"), "/asset-register/explorer?arrange=classes");
+  // By-position tabs keep the positions tree; one tree on show has no Classes arrangement.
+  assert.equal(arrangementFor({ param: "classes", rcm: true }), "positions");
+  assert.equal(arrangementFor({ param: "classes", scoped: true }), "positions");
+  assert.equal(arrangementFor({ param: null, remembered: "classes" }), "classes");
   assert.equal(arrangementOf("locations", "positions"), "locations");
   assert.equal(arrangementOf(null, "locations"), "locations");
   assert.equal(arrangementOf("nonsense", null), "positions");
@@ -344,4 +351,79 @@ test("a product's design offers no chips about operated things; the RCM's own st
   assert.ok(!rcm.some((id) => ["overdue", "open", "alarm", "reports", "empty"].includes(id)));
   assert.ok(ids({ tab: "rcm" }).includes("overdue"));
   assert.ok(ids({ tab: "fmea", design: true }).includes("ap-high"));
+});
+
+// The item-class taxonomy as GET /api/maintenance/item-classes gives it, and
+// positions whose fitted items are of some of its classes.
+const TAXONOMY = [
+  { id: "rot", name: "Rotating equipment", children: [
+    { id: "pump", name: "Pump", children: [
+      { id: "cf", name: "Centrifugal pump", children: [] },
+      { id: "pd", name: "Positive displacement pump", children: [] },
+    ] },
+    { id: "fan", name: "Fan", children: [] },
+  ] },
+  { id: "elec", name: "Electrical", children: [{ id: "motor", name: "Motor", children: [] }] },
+];
+const CLASSED = {
+  classes: TAXONOMY,
+  positions: [
+    { id: "station", name: "Riverside pumping station", parent_id: null },
+    { id: "p10", name: "Pump 10", parent_id: "station", item: { id: "i10", name: "Unit 10" }, item_class_id: "cf", status: { overdue: 1 } },
+    { id: "p2", name: "Pump 2", parent_id: "station", item: { id: "i2", name: "Unit 2" }, item_class_id: "cf" },
+    { id: "boost", name: "Booster", parent_id: "station", item: { id: "i3", name: "Unit 3" }, item_class_id: "pump" },
+    { id: "m1", name: "Drive motor", parent_id: "p2", item: { id: "i4", name: "Motor 4" }, item_class_id: "motor" },
+    { id: "odd", name: "Old slot", parent_id: "station", item: { id: "i5", name: "Unit 5" }, item_class_id: "gone" },
+    { id: "empty", name: "Spare bay", parent_id: "station", position_class: "Feed pump" },
+  ],
+};
+
+test("Classes: the item-class taxonomy, each class opening to its sub-classes and then its positions", () => {
+  const d = buildDisplay(CLASSED, "classes");
+  // Classes with nothing under them anywhere (Fan, Positive displacement pump) aren't shown; No class is last.
+  assert.deepEqual(d.roots, ["cls:rot", "cls:elec", "G:noclass"]);
+  assert.deepEqual(names(d, d.roots), ["Rotating equipment", "Electrical", "No class"]);
+  assert.deepEqual(d.rows.get("cls:rot").kids, ["cls:pump"]);
+  // Sub-classes first, then the class's own positions, A–Z ("Pump 2" before "Pump 10").
+  assert.deepEqual(d.rows.get("cls:pump").kids, ["cls:cf", "boost"]);
+  assert.deepEqual(d.rows.get("cls:cf").kids, ["p2", "p10"]);
+  assert.equal(d.rows.has("cls:fan"), false);
+  assert.equal(d.rows.has("cls:pd"), false);
+  // A class row counts the positions under it, sub-classes included, and rolls their status up.
+  assert.equal(d.rows.get("cls:rot").sum.positions, 3);
+  assert.equal(d.rows.get("cls:pump").sum.positions, 3);
+  assert.equal(d.rows.get("cls:cf").sum.positions, 2);
+  assert.equal(d.rows.get("cls:rot").sum.overdue, 1);
+  assert.equal(d.rows.get("cls:cf").type, "cls");
+  assert.equal(d.rows.get("cls:cf").ref.name, "Centrifugal pump");
+  // Nothing fitted, an item with no class, or a class the taxonomy no longer has: the one last group.
+  assert.deepEqual(names(d, d.rows.get("G:noclass").kids), ["Old slot", "Riverside pumping station", "Spare bay"]);
+  // Every position appears exactly once, flat under its class (a position inside another has its own class).
+  const seen = [...d.rows.values()].filter((r) => r.type === "pos").map((r) => r.key).sort();
+  assert.deepEqual(seen, CLASSED.positions.map((p) => p.id).sort());
+  assert.equal(d.rows.get("m1").parent, "cls:motor");
+  assert.equal(d.positions, 7);
+  // Searching keeps the path to each match.
+  const f = computeFilter(d, { query: "pump 2" });
+  assert.ok(f.match.has("p2") && f.keep.has("cls:cf") && f.keep.has("cls:rot"));
+});
+
+test("Classes with no taxonomy loaded or nothing classed: everything is in No class", () => {
+  const d = buildDisplay({ positions: CLASSED.positions }, "classes");
+  assert.deepEqual(d.roots, ["G:noclass"]);
+  assert.equal(d.rows.get("G:noclass").kids.length, 7);
+  assert.deepEqual(buildDisplay({ positions: [], classes: TAXONOMY }, "classes").roots, []);
+});
+
+test("switching to and from Classes keeps a position picked; a class only within Classes", () => {
+  const cls = buildDisplay(CLASSED, "classes");
+  assert.equal(carryOver(cls.rows.get("p2"), "positions"), "p2");
+  assert.equal(carryOver(buildDisplay(CLASSED, "positions").rows.get("p2"), "classes"), "p2");
+  assert.equal(carryOver(cls.rows.get("cls:cf"), "classes"), "cls:cf");
+  assert.equal(carryOver(cls.rows.get("cls:cf"), "positions"), null);
+  assert.equal(carryOver(cls.rows.get("cls:cf"), "locations"), null);
+  // An item isn't a row in Classes: the position it's fitted to is; a spare has none.
+  assert.equal(carryOver({ type: "item", key: "i2", ref: { fitted_to: { id: "p2" } } }, "classes"), "p2");
+  assert.equal(carryOver({ type: "item", key: "sp", ref: {} }, "classes"), null);
+  assert.equal(carryOver({ type: "loc", key: "site", ref: {} }, "classes"), null);
 });

@@ -19,6 +19,7 @@ import { withFullPage } from "../panelMenu.js";
 const PartsPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m) => ({ default: m.PartsPanel })));
 // The LSA tab's body (what each task needs, and the work packages: tasks done together on one visit).
 const LsaPanel = lazy(() => import("./LsaPanel.jsx"));
+const ClassFleet = lazy(() => import("./ClassFleet.jsx"));
 const ClassesPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m) => ({ default: m.ClassesPanel })));
 
 // The panel beside the asset tree: what the selected row is, in a glance. A
@@ -327,6 +328,9 @@ const TreeDetail = forwardRef(function TreeDetail({
           ? <PartsTab row={row} display={display} />
           : shown === "classes"
           ? <ClassesTab row={row} display={display} />
+          // By Classes, a class's row: its fleet (every position under it, with risk now).
+          : row.type === "cls"
+          ? <Suspense fallback={loading}><ClassFleet row={row} version={version} onSelect={onSelect} /></Suspense>
           : <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} actions={actions} />}
       </div>
     </div>

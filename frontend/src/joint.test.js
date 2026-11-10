@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  covariateParts, guessLifetimeColumns, lifeLeftNumber, riskText, sortRiskRows, guessReadingColumns, jointBlockLine, jointBlockModel, medianText,
-  paramGroups, parseReadings, readingsText, riskTone,
+  covariateParts, fleetAnswer, guessLifetimeColumns, lifeLeftNumber, riskText, sortRiskRows, guessReadingColumns, jointBlockLine, jointBlockModel, medianText,
+  paramGroups, parseReadings, readingsText, riskTone, sortColumn,
 } from "./joint.js";
 
 const col = (name, dtype = "float64", values = null) => ({ name, dtype, values });
@@ -97,4 +97,22 @@ test("the risk table is sorted by the named column, ties by median life left", (
   const tied = [{ id: "a", risk: [0, 0.5], median_remaining: 30 }, { id: "b", risk: [0, 0.5], median_remaining: 20 }];
   assert.deepEqual(sortRiskRows(tied).map((r) => r.id), ["b", "a"]);
   assert.deepEqual(sortRiskRows(rows, 0).map((r) => r.id), ["P6", "P35", "P8", "P38", "P1"]);
+});
+
+test("a class's fleet in one line: how many positions, how many with risk now, and the highest", () => {
+  const horizons = { labels: ["30 days", "90 days", "365 days"], values: [30, 90, 365] };
+  const pump = (name, risk) => ({ position: { name }, scored: !!risk, risk });
+  assert.equal(sortColumn(horizons.labels), 1);
+  assert.equal(sortColumn(["30 days"]), 0);
+  assert.equal(fleetAnswer(null), "");
+  assert.equal(
+    fleetAnswer({ positions: 2, scored: 2, horizons, members: [pump("Pump 1", [0.28, 0.65, 0.997]), pump("Pump 4", [0.11, 0.32, 0.9])] }),
+    "2 positions · all with risk now · highest: Pump 1, 65% in the next 90 days",
+  );
+  // Members that can't be scored come after: the count says how many can, and the first scored one is the highest.
+  assert.equal(
+    fleetAnswer({ positions: 1200, scored: 1, horizons, members: [pump("", [0.0004, 0.9995, 1]), pump("Spare", null)] }),
+    "1,200 positions · 1 with risk now · highest: (no name), > 99.9% in the next 90 days",
+  );
+  assert.equal(fleetAnswer({ positions: 1, scored: 0, horizons, members: [pump("Valve", null)] }), "1 position · no risk now yet");
 });

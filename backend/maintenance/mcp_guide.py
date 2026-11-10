@@ -487,6 +487,20 @@ rbd for more).
 the RCM offers first and what a parent's RBD block takes; by default its own life model, else its RBD, else \
 its prediction. models.link with use_link_id changes it (get.position lists models; the in-use read is in the app).
 - Take off: maintenance models.unlink (link_id). The model stays in Models.
+- A class's fleet and its risk now: maintenance get.item_class with fleet true, id = an item class \
+(list.item_classes; the Explorer arranged by Classes). Every position whose fitted item is of the class or a class inside it: its duty \
+(position_class), the item, its age in days and the last reading of its condition measurement. A member whose \
+position has a condition and life model (models.link with its model_id; else its position class's) is scored \
+from its own data: the item's age since new (its in-service date, else its first fitting), the readings of its \
+condition measurement point in the model's reading unit (on the position or the item; each reading's date \
+becomes the item's age then), and the model's covariates from value conditions of the same name that reach it \
+(item_classes.create_condition with kind value, then apply_condition with a value). members come highest \
+risk first: risk (the chance of failing within each of horizons, from today), survival, median_remaining (days; \
+median_reached false = at least that long) and marker_now. model null = no model there (note says how to get \
+risk). scored false with a model carries why in plain words (no point in the model's unit, no readings, a \
+covariate with no value, a model whose ages aren't in days, weeks, months or years) and what to do: relay it, \
+never fill the gap with a guess. position_id: that one member with unit, its survival curve from now and its \
+reading's path in its model's own time unit.
 - How they feed the RCM: a failure mode's evidence picker offers the position's models first, those named for \
 that mode at the top; link one as the decision's evidence with failure_modes.decide (evidence {type: model, \
 id}). The interval calculators (rcm.pf_interval, rcm.ff_interval, the app's Calculate…) start from the \

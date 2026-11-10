@@ -13374,7 +13374,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def tree_rows(self) -> dict:
         """The asset trees for the app's tree pane, flat: every live position once
         (id, name, parent_id, and when set: tag, position_class, item (with the
-        item's own status, when it has any), location_id (set on it), location
+        item's own status, when it has any), item_class_id (the fitted item's
+        item class: its own, else its part's), location_id (set on it), location
         (where it is), carried_by, status, inside, context: it has an operating
         context), with the
         locations, the items placed at one now (spares) and the items neither fitted
@@ -13384,6 +13385,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         _, inside = self._tree_rollup(rows)
         rcm = self._rcm_index()
         context = {p["id"] for p in self.s.nodes(self.org, "Position") if p.get("operating_context")}
+        from backend.maintenance import class_fleet
+
+        item_classes = class_fleet.item_class_ids(self)  # item -> its effective item class
 
         def lean(d: dict | None) -> dict | None:
             return {k: v for k, v in d.items() if v} or None if d else None
@@ -13399,6 +13403,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 item_status = lean(r["item_status"])
                 if item_status:
                     row["item"]["status"] = item_status
+                if r["item"]["id"] in item_classes:  # the Classes arrangement groups by it
+                    row["item_class_id"] = item_classes[r["item"]["id"]]
             for key, value in (("status", lean(r["status"])), ("inside", lean(inside.get(pid)))):
                 if value:
                     row[key] = value
