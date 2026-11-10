@@ -1,0 +1,532 @@
+/* The RCM study page's frame (RcmStudyPage) and its worksheet, an outline
+   grid (RcmStudyWorksheet). Its classes are rsw-*: the asset tree's RCM table
+   has its own (rw-*, RcmWorksheet.css), and neither set touches the other. Desktop: the page is the window's height below the top
+   bar; the header and the tabs take what they need and the worksheet the
+   rest, its rows scrolling inside their card under a sticky header and
+   first column. Phone (720 px and under): the page scrolls as usual and the
+   worksheet is nearly a screen tall, with two-line rows. */
+
+.app.rcm-frame {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 32px 16px;
+  min-width: 0;
+}
+@media (min-width: 721px) {
+  .app.rcm-frame {
+    height: calc(100vh - 59px);
+    height: calc(100dvh - 59px);
+    overflow: hidden;
+  }
+}
+.rcm-frame > * { flex: none; }
+.rcm-frame > .page-header .title-row h1 { font-size: var(--fs-24); }
+.rcm-frame > .card { margin: 10px 0 0; }
+.rcm-frame > .tabs-strip { margin: 10px 0 0; }
+.rcm-frame > .rcm-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+}
+.rcm-body > .card.rcm-tree-card { flex: 1 1 auto; min-height: 0; overflow: auto; margin: 0; }
+.rcm-body > .card.rsw-card {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 10px 12px 12px;
+}
+
+/* ---- the worksheet ------------------------------------------------------------ */
+
+.rsw {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.rsw > * { flex: none; }
+
+.rsw-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.rsw-filter { flex: 1 1 260px; max-width: 380px; }
+.rsw-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+.rsw button.rsw-btn { min-height: 30px; padding: 0 12px; font-size: var(--fs-13); }
+
+.rsw button.tp-icon-btn {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--surf);
+  color: var(--muted);
+  box-shadow: none;
+}
+.rsw button.tp-icon-btn:hover:not(:disabled) { background: var(--surf-2); color: var(--ink); }
+
+.rsw-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.rsw button.rsw-chip {
+  flex: none;
+  min-height: 26px;
+  padding: 1px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surf);
+  color: var(--ink);
+  box-shadow: none;
+  font-size: var(--fs-12);
+  font-weight: 500;
+}
+.rsw button.rsw-chip:hover:not(:disabled) { border-color: var(--acc); background: var(--acc-hover); }
+.rsw button.rsw-chip.on { background: var(--acc-t); border-color: var(--acc-line); color: var(--acc-d); font-weight: 600; }
+.rsw-chip-n { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: 2px; }
+.rsw-chip.on .rsw-chip-n { color: inherit; }
+
+.rsw-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+.rsw-legend, .rsw-status {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+.rsw-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.rsw-legend > span { display: inline-flex; align-items: center; gap: 4px; }
+.rsw-legend .rsw-ic { margin: 0; }
+.rsw-status { font-variant-numeric: tabular-nums; }
+.rsw-msg.ok { color: var(--ok); }
+.rsw-msg.error { color: var(--danger); font-weight: 600; }
+
+/* The column chooser. */
+.rsw-cols { position: relative; }
+.rsw-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  width: 240px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 8px;
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-overlay);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rsw-pop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+.rsw-pop-item:hover { background: var(--acc-hover); }
+.rsw-pop-item input { margin: 0; }
+.rsw button.rsw-pop-reset { align-self: flex-start; margin: 6px 6px 2px; font-size: var(--fs-13); }
+.rsw-sig { color: var(--faint); font-weight: 500; }
+
+/* The grid and the panel beside it. */
+.rsw-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+  position: relative;
+}
+.rsw-grid {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  overscroll-behavior: contain;
+}
+
+.rsw-head {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  min-width: 100%;
+  background: var(--surf-2);
+  border-bottom: 1px solid var(--line);
+}
+.rsw-h {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 6px 0 8px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--muted);
+  min-width: 0;
+}
+.rsw-h.num { justify-content: flex-end; }
+.rsw-h.rsw-name { position: sticky; left: 0; z-index: 2; background: var(--surf-2); padding-left: 12px; border-right: 1px solid var(--line); }
+.rsw button.rsw-hs {
+  border: 0;
+  background: none;
+  box-shadow: none;
+  padding: 4px 2px;
+  min-height: 0;
+  font: inherit;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.rsw button.rsw-hs:hover { color: var(--ink); background: none; }
+.rsw-h[aria-sort] { color: var(--ink); }
+.rsw-rz {
+  position: absolute;
+  right: -4px;
+  top: 6px;
+  bottom: 6px;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 3;
+  border-right: 1px solid var(--line);
+  outline: none;
+}
+.rsw-rz:hover, .rsw-rz:focus-visible { border-right: 2px solid var(--acc); }
+.rsw-h.rsw-name .rsw-rz { right: -5px; border-right-color: transparent; }
+
+.rsw-pins { position: sticky; z-index: 5; height: 0; overflow: visible; }
+.rsw-pins-in { position: absolute; left: 0; top: 0; min-width: 100%; }
+.rsw-body { position: relative; min-width: 100%; }
+
+.rsw-row {
+  position: absolute;
+  left: 0;
+  min-width: 100%;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line2);
+  background: var(--surf);
+  font-size: 13.5px;
+  cursor: pointer;
+  outline: none;
+}
+.rsw-row.pin { position: relative; background: var(--surf-2); border-bottom-color: var(--line); }
+.rsw-pins-in .rsw-row:last-child { box-shadow: 0 3px 6px -2px rgba(20, 23, 28, 0.14); }
+/* The name cell is sticky and pinned rows cover the rows under them: both
+   need an opaque fill, so the hover tint goes over the row's solid colour. */
+.rsw-row:hover, .rsw-row:hover .rsw-name { background: linear-gradient(var(--acc-hover), var(--acc-hover)), var(--surf); }
+.rsw-row.rsw-fn, .rsw-row.rsw-fn .rsw-name { background: var(--surf-2); }
+.rsw-row.rsw-fn .rsw-nm { font-weight: 600; }
+.rsw-row.rsw-fail .rsw-nm { font-weight: 500; }
+.rsw-row.focus, .rsw-row.focus .rsw-name { background: linear-gradient(var(--acc-t), var(--acc-t)), var(--surf); }
+.rsw-row.focus { box-shadow: inset 3px 0 0 var(--acc); }
+.rsw-row:focus-visible { box-shadow: inset 0 0 0 2px var(--acc); z-index: 1; }
+.rsw-row.dim .rsw-nm { color: var(--muted); }
+.rsw-row.pin .rsw-name { background: var(--surf-2); }
+
+.rsw-c {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.rsw-c.num { justify-content: flex-end; font-variant-numeric: tabular-nums; }
+.rsw-c.can:hover { box-shadow: inset 0 0 0 1px var(--line); cursor: text; }
+.rsw-fill { flex: 1 0 0; }
+.rsw-name {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surf);
+  padding-left: 8px;
+  border-right: 1px solid var(--line);
+  gap: 2px;
+}
+.rsw-indent { flex: none; }
+.rsw-chev { cursor: pointer; }
+.rsw-ic { flex: none; color: var(--muted); margin: 0 4px 0 1px; }
+.rsw-fn .rsw-ic { color: var(--acc-d); }
+.rsw-fail .rsw-ic { color: var(--warn); }
+.rsw-ic-task { margin: 0 2px 0 0; }
+.rsw-nm, .rsw-txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rsw-nm { flex: 0 1 auto; }
+.rsw-task { display: inline-flex; align-items: center; max-width: 100%; }
+.rsw-task-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rsw-blank { color: var(--muted); font-style: italic; }
+.rsw-sum { color: var(--muted); font-size: var(--fs-12); overflow: hidden; text-overflow: ellipsis; }
+.rsw-todo {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border: 1px dashed var(--warn-line);
+  border-radius: 999px;
+  color: var(--warn);
+  background: var(--warn-bg);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.rsw button.rsw-todo-btn { min-height: 0; box-shadow: none; cursor: pointer; }
+.rsw button.rsw-todo-btn:hover { border-style: solid; }
+.rsw-done { color: var(--ok); }
+.rsw-checks { display: inline-flex; gap: 6px; font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
+.rsw-ck { font-weight: 600; white-space: nowrap; }
+.rsw-ck.contradicted { color: var(--danger); }
+.rsw-ck.unsure { color: var(--warn); }
+.rsw-ck.stale { color: var(--muted); }
+.rsw-ck.supported { color: var(--ok); }
+/* A decision with no evidence linked: quiet, not a warning. */
+.rsw-quiet { color: var(--muted); }
+.rsw-c .chip { flex: none; }
+
+/* A cell being edited. */
+.rsw-edit-wrap { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
+.rsw .rsw-edit {
+  flex: 1;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--surf);
+  min-width: 0;
+  width: 100%;
+  height: calc(100% - 6px);
+  min-height: 22px;
+  padding: 0 6px;
+  font-size: 13px;
+  border: 1px solid var(--acc);
+  border-radius: 4px;
+  box-shadow: var(--focus);
+}
+.rsw-unit { color: var(--muted); font-size: var(--fs-12); flex: none; }
+/* A function's text being typed in its cell: the counter at its end. */
+.rsw-count { font-size: 11px; margin-left: 0; }
+.rsw-flabel-count { display: flex; align-items: baseline; gap: 8px; }
+.rsw-flabel-count .char-count { font-weight: 500; }
+.rsw-flabel-count .char-count.near, .rsw-flabel-count .char-count.over { font-weight: 600; }
+.rsw-field textarea[aria-invalid="true"], .rsw-field input[aria-invalid="true"], .rsw .rsw-edit[aria-invalid="true"] { border-color: var(--danger); }
+
+.rsw-empty {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 64px;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+.rsw-empty p { margin: 0 0 10px; }
+
+/* Compact rows. */
+.rsw.compact .rsw-row { font-size: 13px; }
+.rsw.compact .rsw-c .chip { line-height: 16px; }
+
+/* The details panel. */
+.rsw-panel {
+  flex: none;
+  width: 340px;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  padding: 12px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rsw-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rsw-panel-kind { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-12); color: var(--muted); font-weight: 600; }
+.rsw button.rsw-x { min-height: 28px; padding: 0 10px; font-size: var(--fs-13); }
+.rsw-crumbs { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: var(--fs-12); }
+/* A long name is cut short with an ellipsis (the whole of it in its tooltip),
+   never clipped: a block, as the bare button's inline-flex can't ellipsise. */
+.rsw-crumbs button { display: block; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.rsw-crumbs button + button::before { content: "›"; color: var(--faint); margin-right: 8px; }
+/* A long description: two lines at most (the whole of it is in the tooltip,
+   and in the Description field below). */
+.rsw-panel-title {
+  margin: 0; font-size: var(--fs-16); line-height: 1.35; outline: none; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+  flex: none; /* clipped, it would otherwise shrink to nothing in the panel's column */
+}
+.rsw-inside { margin: 0; font-size: var(--fs-13); color: var(--muted); }
+.rsw-fields { display: flex; flex-direction: column; gap: 10px; }
+.rsw-field { display: flex; flex-direction: column; gap: 3px; }
+.rsw-flabel { font-size: var(--fs-12); font-weight: 600; color: var(--muted); }
+.rsw-fin { display: flex; align-items: center; gap: 6px; }
+.rsw-fin input, .rsw-fin textarea { flex: 1; min-width: 0; width: 100%; }
+.rsw-fin input, .rsw-fin textarea {
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: var(--fs-14);
+  line-height: 1.4;
+  color: var(--ink);
+  background: var(--bg);
+}
+.rsw-fin input:focus, .rsw-fin textarea:focus { outline: none; border-color: var(--acc); box-shadow: var(--focus); }
+.rsw-fin [aria-invalid="true"] { border-color: var(--danger); }
+.rsw-fin textarea { resize: vertical; min-height: 56px; }
+.rsw-field select { max-width: 100%; }
+.rsw-fval { font-size: var(--fs-14); overflow-wrap: anywhere; }
+.rsw-fhelp { font-size: var(--fs-12); color: var(--muted); }
+.rsw-ferr { font-size: var(--fs-12); color: var(--danger); font-weight: 600; }
+.rsw-decision { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.rsw-decision h3 { margin: 0; font-size: var(--fs-14); }
+.rsw-dline { margin: 0; font-size: var(--fs-14); }
+.rsw-evidence { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: var(--fs-13); }
+.rsw-evidence p { margin: 0; flex-basis: 100%; color: var(--muted); }
+p.rsw-evidence.rsw-unlinked { margin: 0; display: block; color: var(--muted); }
+.rsw-decision > button { align-self: flex-start; }
+.rsw-panel-acts { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+
+/* ---- phone ---------------------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  .app.rcm-frame { padding: 12px 16px 24px; }
+  .rcm-body > .card.rsw-card {
+    height: calc(100dvh - 80px);
+    min-height: 420px;
+    padding: 8px;
+  }
+  .rcm-body > .card.rcm-tree-card { overflow: visible; }
+  .rsw-filter { flex-basis: 100%; max-width: none; }
+  .rsw-tools { margin-left: 0; }
+  .rsw-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .rsw-legend { display: none; }
+}
+
+.rsw.phone .rsw-grid { border-radius: var(--r-sm); }
+.rsw.phone .rsw-row {
+  right: 0;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  font-size: var(--fs-14);
+}
+.rsw.phone .rsw-l1 { display: flex; align-items: center; height: 32px; padding-right: 8px; min-width: 0; }
+.rsw.phone .rsw-l1 .rsw-name { flex: 1 1 auto; position: static; border: 0; background: none; padding-left: 6px; min-width: 0; }
+.rsw.phone .rsw-row.focus .rsw-name, .rsw.phone .rsw-row:hover .rsw-name { background: none; }
+.rsw.phone .rsw-st { flex: none; display: flex; gap: 4px; }
+.rsw.phone .rsw-l2 {
+  height: 20px;
+  padding-right: 10px;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rsw.phone .rsw-chev, .rsw.phone .rsw-chev-sp { width: 30px; height: 30px; }
+.rsw.phone .rsw-main { gap: 0; }
+.rsw-panel.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  max-height: 78dvh;
+  z-index: 210;
+  border-radius: 14px 14px 0 0;
+  box-shadow: var(--shadow-overlay);
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.rsw-scrim { position: fixed; inset: 0; z-index: 209; background: var(--scrim); }
+
+/* ---- the working behind a performance standard ------------------------------------- */
+
+/* The (i) in a table cell: fixed size and never shrunk, so a row keeps its
+   height and the text beside it is what gives way. */
+.rsw-info {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; min-height: 0; padding: 0; margin-left: 4px;
+  border: 1px solid var(--acc); border-radius: 50%; background: var(--surf); color: var(--acc);
+  font: italic 700 12px/1 Georgia, "Times New Roman", serif; cursor: pointer;
+}
+.rsw-info:hover { background: var(--acc-t); }
+.rsw-info:focus-visible { outline: none; box-shadow: var(--focus); }
+.rsw-withinfo { display: flex; align-items: center; min-width: 0; width: 100%; }
+.rsw-withinfo > .rsw-txt { flex: 0 1 auto; min-width: 0; }
+.rsw-c .rsw-info:only-child { margin-left: 0; }
+.tt-tree .rsw-info { margin-left: 6px; }
+
+.rsw-basis { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; min-width: 0; }
+.rsw-basis-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.rsw-basis-head h3 { margin: 0; font-size: var(--fs-14); }
+.rsw-basis p { margin: 0; }
+.rsw-basis-meta { overflow-wrap: anywhere; }
+.rsw-basis-preview {
+  font-size: var(--fs-13); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.rsw-basis-more { align-self: flex-start; }
+.rsw-basis-links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-13); }
+.rsw-basis-edit { display: flex; flex-direction: column; gap: 6px; }
+.rsw-basis-area { min-height: 220px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--fs-13); resize: vertical; }
+.rsw-basis-count { font-size: var(--fs-12); text-align: right; }
+.rsw-basis-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rsw-basis-spacer { flex: 1 1 auto; }
+.rsw-basis-keys { font-size: var(--fs-12); }
+.rsw-basis-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-13); padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf-2); }
+.rsw-basis-ask > span { flex: 1 1 100%; overflow-wrap: anywhere; }
+.rsw-basis-attach { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf-2); }
+.rsw-basis-file { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rsw-basis-filename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+.rsw-pdfs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.rsw-pdf { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; font-size: var(--fs-13); }
+.rsw-pdf-mark { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .03em; color: #fff; background: #c0392b; border-radius: 3px; padding: 2px 4px; }
+.rsw-pdf-title { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; flex: 0 1 auto; }
+.rsw-pdf-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rsw-pdf .ovm { margin-left: auto; }
+.rsw-pdf .ovm-trigger { min-height: 28px; padding: 0 6px; }
+
+/* The rendered Markdown: headings kept small; tables and code scroll inside
+   their own blocks, so a wide one never widens the panel. */
+.rsw-md { font-size: var(--fs-13); line-height: 1.5; overflow-wrap: anywhere; min-width: 0; }
+.rsw-md > :first-child { margin-top: 0; }
+.rsw-md > :last-child { margin-bottom: 0; }
+.rsw-md h1, .rsw-md h2, .rsw-md h3, .rsw-md h4, .rsw-md h5, .rsw-md h6 { font-size: var(--fs-13); margin: 10px 0 4px; }
+.rsw-md p, .rsw-md ul, .rsw-md ol, .rsw-md blockquote { margin: 0 0 8px; }
+.rsw-md ul, .rsw-md ol { padding-left: 20px; }
+.rsw-md blockquote { padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); }
+.rsw-md pre { margin: 0 0 8px; padding: 8px; overflow-x: auto; background: var(--surf-2); border-radius: var(--r-sm); max-width: 100%; }
+.rsw-md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
+.rsw-md table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0 0 8px; }
+.rsw-md th, .rsw-md td { border: 1px solid var(--line); padding: 3px 7px; text-align: left; white-space: nowrap; }
+.rsw-md th { background: var(--surf-2); }

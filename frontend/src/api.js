@@ -1711,6 +1711,53 @@ export function getRcmOptions() {
   return request("/api/maintenance/rcm/options");
 }
 
+// ---- RCM studies: stand-alone worksheets (/maintenance/rcm). They share no
+// data with the RCM on the asset tree, and keep their own decision options.
+export function getRcmStudyOptions() {
+  return request("/api/rcm/options");
+}
+
+export function listRcmStudies() {
+  return request("/api/rcm/studies");
+}
+
+export function createRcmStudy(name, system, description) {
+  return withEvent(
+    request("/api/rcm/studies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, system: system || "", description: description || "" }),
+    }),
+    "rcm_create"
+  );
+}
+
+export function getRcmStudy(id) {
+  return request(`/api/rcm/studies/${id}`);
+}
+
+export function renameRcmStudy(id, name) {
+  return request(`/api/rcm/studies/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteRcmStudy(id) {
+  return request(`/api/rcm/studies/${id}`, { method: "DELETE" });
+}
+
+// Replace a study's whole worksheet; returns the study with its evidence
+// statuses freshly checked.
+export function putRcmTree(id, functions, expectedUpdatedAt) {
+  return request(`/api/rcm/studies/${id}/tree`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ functions, expected_updated_at: expectedUpdatedAt || null }),
+  });
+}
+
 // ---- Teams -------------------------------------------------------------------
 
 export function listTeams() {

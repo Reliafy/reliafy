@@ -14,14 +14,15 @@ test("entries with sub-pages toggle; the rest are links", () => {
   const live = liveEntries(ALL);
   const top = Object.fromEntries(live.map((e) => [e.id, toggles(e)]));
   assert.deepEqual(top, {
-    home: false, products: false, assets: false, items: false, maintenance: false,
+    home: false, products: false, assets: false, items: false, maintenance: true,
     modelling: true, decisions: true, reports: false, agent: false,
   });
   const second = (id) => Object.fromEntries(find(live, id).entries.map((e) => [e.id, toggles(e)]));
   assert.deepEqual(second("modelling"), { data: false, models: true, prediction: false, maintainability: false, systems: true });
   assert.deepEqual(second("decisions"), { strategy: true, forecasts: false, risk: true });
-  // Maintenance has sub-pages only where the menu preview is on.
+  // Maintenance has the RCM studies under it; without Reliafy Maintenance it is that page, a plain link.
   assert.equal(toggles(find(liveEntries(PREVIEW), "maintenance")), true);
+  assert.equal(toggles(find(liveEntries({}), "maintenance")), false);
 });
 
 test("a group lists its entries; an entry lists exactly its children, never its landing page", () => {
@@ -33,13 +34,15 @@ test("a group lists its entries; an entry lists exactly its children, never its 
     "Condition and life", "Library"]);
   assert.deepEqual(labels(subItems(find(live, "strategy"))), ["Optimal replacement", "Compare two models", "Failure finding",
     "Test planning"]);
-  assert.deepEqual(labels(subItems(find(live, "maintenance"))), ["Requests"]);
+  // Maintenance lists its own page first (it only opens the list itself), then its sub-pages.
+  assert.deepEqual(labels(subItems(find(live, "maintenance"))), ["Overview", "RCM studies", "Requests"]);
+  assert.equal(subItems(find(live, "maintenance"))[0].to, "/maintenance");
   assert.deepEqual(labels(subItems(find(live, "systems"))), ["RBDs", "Fault trees", "Simulation runs"]);
   assert.deepEqual(labels(subItems(find(live, "risk"))), ["Condition monitoring"]);
   // The landing pages that drop out of the full menu (still pages, reached by breadcrumbs and links).
   for (const has of [{}, ALL, PREVIEW]) {
     for (const e of flatEntries(liveEntries(has))) {
-      if (e.entries || e.opensOnFirstChild) continue;
+      if (e.entries || e.opensOnFirstChild || e.landingLabel) continue;
       for (const i of subItems(e)) assert.notEqual(i.to, e.to, `${e.id} lists its landing page`);
     }
   }
@@ -48,14 +51,24 @@ test("a group lists its entries; an entry lists exactly its children, never its 
 });
 
 test("an entry whose landing page isn't available opens on its first child; with nothing left under it, it's a link", () => {
-  // Maintenance without Reliafy Maintenance opens on the preview's Requests page.
-  const m = find(liveEntries({ preview: true }), "maintenance");
-  assert.equal(m.to, "/maintenance/inbox");
+  // Maintenance without Reliafy Maintenance is the RCM studies page: a link, nothing under it.
+  const m = find(liveEntries({}), "maintenance");
+  assert.equal(m.to, "/maintenance/rcm");
   assert.equal(toggles(m), false);
-  // With Reliafy Maintenance but no preview: no sub-pages, a link to /maintenance.
+  assert.deepEqual(subItems(m), []);
+  // With Reliafy Maintenance: its own page first, then the RCM studies.
   const m2 = find(liveEntries(ALL), "maintenance");
   assert.equal(m2.to, "/maintenance");
-  assert.equal(toggles(m2), false);
+  assert.deepEqual(labels(subItems(m2)), ["Overview", "RCM studies"]);
+  // The landing page's line is lit on the entry's pages that no child names.
+  const lit = (path) => {
+    const trail = activeTrail(liveEntries(ALL), path);
+    return labels(subItems(m2).filter((i) => subItemLit(i, trail)));
+  };
+  assert.deepEqual(lit("/maintenance"), ["Overview"]);
+  assert.deepEqual(lit("/maintenance/work-orders/w1"), ["Overview"]);
+  assert.deepEqual(lit("/maintenance/rcm/s1"), ["RCM studies"]);
+  assert.deepEqual(lit("/home"), []);
 });
 
 test("the current page's entry and its group start open; nothing else does", () => {
@@ -71,7 +84,8 @@ test("the current page's entry and its group start open; nothing else does", () 
   assert.deepEqual(startOpen(live, "/risk"), ["decisions", "risk"]);
   assert.deepEqual(startOpen(live, "/asset-register/explorer"), []);
   assert.deepEqual(startOpen(liveEntries(PREVIEW), "/maintenance/inbox"), ["maintenance"]);
-  assert.deepEqual(startOpen(liveEntries(ALL), "/maintenance"), []);
+  assert.deepEqual(startOpen(liveEntries(ALL), "/maintenance"), ["maintenance"]);
+  assert.deepEqual(startOpen(liveEntries({}), "/maintenance/rcm"), []);
   // Under More too: the roles don't change what's open.
   const { main, more } = buildMenu({ roles: ["technician"], has: ALL });
   assert.deepEqual(startOpen([...main, ...more], "/models/alt"), ["modelling", "models"]);

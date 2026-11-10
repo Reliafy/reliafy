@@ -114,10 +114,12 @@ test("no roles: every entry in one flat list, nothing under More", async ({ page
   await open(page, "/systems/fmeca");
   await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=fmea(&|$)/);
   await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
-  // Assets is one entry, lit on every page of the register. An RCM study's old
-  // address lands on the Explorer's RCM tab.
+  // RCM studies are a page under Maintenance.
   await open(page, "/maintenance/rcm");
-  await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=rcm(&|$)/);  // the Explorer adds its own view state
+  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("RCM studies");
+  await expect(page.locator(".crumb")).toHaveText("Maintenance");
+  // Assets is one entry, lit on every page of the register.
+  await open(page, "/asset-register/explorer?tab=rcm");
   await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
   await mainMenu(page).getByRole("link", { name: "Assets", exact: true }).click();
   await expect(page).toHaveURL(/\/asset-register$/);
@@ -174,9 +176,16 @@ test("switching roles in Settings: technician, then every role, then none", asyn
   const more = page.locator("#side-more");
   await expect(more.getByRole("button", { name: "Modelling", exact: true })).toBeVisible();
   await expect(more.getByRole("button", { name: "Decisions", exact: true })).toBeVisible();
-  await mainMenu(page).getByRole("link", { name: "Maintenance" }).click();
+  // Maintenance has pages under it, so it opens its list in place: its own
+  // page is the first of them, then RCM studies.
+  const maintenance = mainMenu(page).getByRole("button", { name: "Maintenance", exact: true });
+  await maintenance.click();
+  await expect(maintenance).toHaveAttribute("aria-expanded", "true");
+  await expect(mainMenu(page).getByRole("link", { name: "RCM studies", exact: true })).toBeVisible();
+  await mainMenu(page).getByRole("link", { name: "Overview", exact: true }).click();
   await expect(page).toHaveURL(/\/maintenance$/);
   await expect(page.getByRole("heading", { name: "Open work orders" })).toBeVisible();
+  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Overview");
   // A page under More keeps More open, with that page lit.
   await open(page, "/models");
   await expect(page.locator("#side-more").getByRole("button", { name: "Models", exact: true }))
@@ -350,7 +359,7 @@ for (const [width, phone] of [[400, true], [1440, false]]) {
 const PHONE_PAGES = [
   "/home", "/systems/rbds", "/asset-register", "/asset-register/explorer?arrange=positions", "/asset-register/explorer?arrange=locations",
   "/items", "/asset-register/explorer?tab=rcm", "/asset-register/parts",
-  "/asset-register/classes", "/products", "/maintenance", "/data",
+  "/asset-register/classes", "/products", "/maintenance", "/maintenance/rcm", "/data",
   "/models", "/models/recurrent", "/strategy", "/risk", "/forecasts", "/reports", "/settings",
 ];
 

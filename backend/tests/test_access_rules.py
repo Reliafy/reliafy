@@ -285,6 +285,24 @@ def test_rbd_update_keeps_existing_references(client):
     assert r.status_code == 422
 
 
+def test_rcm_tree_save_checks_evidence(client):
+    _register_all(client)
+    client.act_as(A)
+    a_model = _save_model(client, "A's model")
+    a_analysis = client.db.strategy_analyses.insert_one(
+        {"_id": "a-analysis", "owner_id": A, "name": "x", "kind": "replacement"}).inserted_id
+
+    client.act_as(B)
+    sid = client.post("/api/rcm/studies", json={"name": "S"}).json()["id"]
+    r = client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": _tree(a_model["id"])})
+    assert r.status_code == 422 and r.json()["code"] == "unreadable_reference"
+    r = client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": _tree(a_analysis, "strategy_analysis")})
+    assert r.status_code == 422
+    assert client.db.rcm_studies.find_one({"_id": sid}).get("functions") in (None, [])
+    b_model = _save_model(client, "B's model", seed=12)
+    assert client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": _tree(b_model["id"])}).status_code == 200
+
+
 def test_fleet_and_model_saves_check_references(client):
     _register_all(client)
     client.act_as(A)

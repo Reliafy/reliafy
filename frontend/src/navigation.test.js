@@ -87,9 +87,9 @@ test("Modelling and Decisions are groups: their entries, each with its children"
     "Test planning"]);
   assert.deepEqual(kids(live, "forecasts"), []);
   assert.deepEqual(kids(live, "risk"), ["Condition monitoring"]);
-  // Assets is one entry with no children; Maintenance has none outside the preview.
+  // Assets is one entry with no children; Maintenance has the RCM studies.
   assert.deepEqual(kids(live, "assets"), []);
-  assert.deepEqual(kids(live, "maintenance"), []);
+  assert.deepEqual(kids(live, "maintenance"), ["RCM studies"]);
   // Three levels at most: a group's entries have children, never entries.
   for (const e of live) for (const x of e.entries || []) assert.equal(x.entries, undefined, x.id);
 });
@@ -142,13 +142,18 @@ test("an entry's landing page is never also one of its children", () => {
   }
 });
 
-test("without Reliafy Maintenance: no Assets and no Maintenance", () => {
+test("without Reliafy Maintenance: no Assets, and Maintenance opens on RCM studies", () => {
   const none = liveEntries({});
-  assert.deepEqual(ids(none), ["home", "modelling", "decisions", "reports"]);
+  assert.deepEqual(ids(none), ["home", "maintenance", "modelling", "decisions", "reports"]);
   assert.ok(!everyLink(none).includes("/asset-register"));
+  // "Maintenance" is the RCM studies page itself, not repeated as a child.
+  const m = none.find((e) => e.id === "maintenance");
+  assert.equal(m.to, "/maintenance/rcm");
+  assert.equal(m.children, undefined);
+  // With Reliafy Maintenance it opens on its own page, with RCM studies under it.
   assert.equal(liveEntries(ALL).find((e) => e.id === "maintenance").to, "/maintenance");
-  // With only the preview, Maintenance opens on Requests.
-  assert.equal(liveEntries({ preview: true }).find((e) => e.id === "maintenance").to, "/maintenance/inbox");
+  // With only the preview, Requests is its one child.
+  assert.deepEqual(kids(liveEntries({ preview: true }), "maintenance"), ["Requests"]);
 });
 
 test("Risk shows where the workspace uses it", () => {
@@ -274,8 +279,10 @@ test("a page lights its place in the menu at every level", () => {
   assert.deepEqual(at("/modelsx"), [null, null, null]);
   assert.ok(entryActive(find(live, "models"), "/models"));
   assert.ok(childActive(find(live, "models").children[1], "/models/recurrent/x"));
-  // Without Reliafy Maintenance there is no Maintenance entry to light.
-  assert.equal(activeEntry(liveEntries({}), "/maintenance/work-orders/w1"), null);
+  assert.deepEqual(at("/maintenance/rcm"), ["maintenance", null, "RCM studies"]);
+  assert.deepEqual(at("/maintenance/rcm/s1"), ["maintenance", null, "RCM studies"]);
+  // Without Reliafy Maintenance the Maintenance entry is the RCM studies page.
+  assert.equal(activeEntry(liveEntries({}), "/maintenance/rcm/s1").id, "maintenance");
 });
 
 test("a page's breadcrumbs: its entry, then its child, never a group", () => {
@@ -291,9 +298,14 @@ test("a page's breadcrumbs: its entry, then its child, never a group", () => {
   // No crumb names a group.
   assert.deepEqual(crumbsFor(live, "modelling", "/models/life"), []);
   assert.deepEqual(crumbsFor(live, "decisions", "/strategy/compare"), []);
-  // Without Reliafy Maintenance there is no Maintenance entry: no crumb to a page the user doesn't have.
+  // An RCM study's crumbs: Maintenance, then RCM studies.
+  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/rcm", "/maintenance/rcm"), [{ label: "Maintenance", to: "/maintenance" }]);
+  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/rcm/s", "/maintenance/rcm"),
+    [{ label: "Maintenance", to: "/maintenance" }, { label: "RCM studies", to: "/maintenance/rcm" }]);
+  // Without Reliafy Maintenance, Maintenance is the RCM studies page: no crumb to a page the user doesn't have.
   const none = liveEntries({});
-  assert.deepEqual(crumbsFor(none, "maintenance", "/maintenance/work-orders/w"), []);
+  assert.deepEqual(crumbsFor(none, "maintenance", "/maintenance/rcm", "/maintenance/rcm"), []);
+  assert.deepEqual(crumbsFor(none, "maintenance", "/maintenance/rcm/s", "/maintenance/rcm"), [{ label: "Maintenance", to: "/maintenance/rcm" }]);
   // System models opens on its RBDs: a diagram's crumb is RBDs alone; a run's starts at System models.
   assert.deepEqual(crumbsFor(live, "systems", "/systems/rbds", "/systems/rbds"), []);
   assert.deepEqual(crumbsFor(live, "systems", "/systems/b/x", "/systems/rbds"), [{ label: "RBDs", to: "/systems/rbds" }]);
@@ -348,8 +360,7 @@ test("the roles are off unless the deployment turns them on: saved roles unused,
 
 test("saved items open at their new addresses", () => {
   assert.equal(itemPath("models", "m 1"), "/models/m/m%201");
-  // RCM studies are gone: the RCM is on the asset tree, not a saved item of its own.
-  assert.equal(itemPath("rcm_studies", "s"), null);
+  assert.equal(itemPath("rcm_studies", "s"), "/maintenance/rcm/s");
   assert.equal(itemPath("fleets", "f"), "/forecasts/f");
   assert.equal(itemPath("rbds", "r"), "/systems/b/r");
   assert.equal(itemPath("reports", "r"), null);
@@ -405,12 +416,10 @@ const OLD_TO_NEW = [
   ["/strategy/tracking", "/risk"],
   ["/strategy/tracking/x", "/risk"],
   ["/strategy/demonstration-test", "/strategy/test-planning"],
-  // The RCM studies, at /rcm and then under Maintenance: all to the Explorer's RCM tab (no study survives).
-  ["/rcm", "/asset-register/explorer?tab=rcm"],
-  ["/rcm/studies", "/asset-register/explorer?tab=rcm"],
-  ["/rcm/studies/x", "/asset-register/explorer?tab=rcm"],
-  ["/maintenance/rcm", "/asset-register/explorer?tab=rcm"],
-  ["/maintenance/rcm/x", "/asset-register/explorer?tab=rcm"],
+  // The RCM studies, first at /rcm: now under Maintenance.
+  ["/rcm", "/maintenance/rcm"],
+  ["/rcm/studies", "/maintenance/rcm"],
+  ["/rcm/studies/x", "/maintenance/rcm/x"],
   ["/maintenance/positions/x", "/asset-register/positions/x"],
   ["/maintenance/items", "/items"],
   ["/maintenance/items/x", "/asset-register/items/x"],
@@ -510,8 +519,8 @@ test("not-yet-built entries show only where the menu preview is on", () => {
   assert.deepEqual(kids(plain, "data"), []);
   // The library moved under Models, for everyone (9 Nov 2026): Data has no preview entries now.
   assert.deepEqual(kids(preview, "data"), []);
-  assert.deepEqual(kids(plain, "maintenance"), []);
-  assert.deepEqual(kids(preview, "maintenance"), ["Requests"]);
+  assert.deepEqual(kids(plain, "maintenance"), ["RCM studies"]);
+  assert.deepEqual(kids(preview, "maintenance"), ["RCM studies", "Requests"]);
   assert.deepEqual(kids(preview, "systems"), ["RBDs", "Fault trees", "Simulation runs"]);
   assert.deepEqual(kids(preview, "assets"), []);
 });
