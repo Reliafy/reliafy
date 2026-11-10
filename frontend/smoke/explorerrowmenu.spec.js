@@ -262,7 +262,8 @@ test("the LSA tab: Package the tasks here… leads a position's menu and opens i
   // RCM: no last row either; back on Summary it returns.
   await page.getByRole("tab", { name: "RCM", exact: true }).click();
   await expect.poll(() => query(page).get("tab")).toBe("rcm");
-  await expect(row(page, `Menu circulation ${tag}`)).toBeVisible();
+  // Here the tree is the RCM grid: its rows are grid rows, not tree items.
+  await expect(page.getByRole("treegrid", { name: /and their RCM/ }).getByRole("row", { name: new RegExp(`^Menu circulation ${tag}`) })).toBeVisible();
   await expect(addRow).toHaveCount(0);
   await page.getByRole("tab", { name: "Summary" }).click();
   await expect(addRow).toHaveText("+New position");
