@@ -10,6 +10,8 @@ import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
   ["GET", "/api/extensions"], // optional extensions' pages (an empty list without any)
+  // RCM studies (the standalone worksheets under Maintenance).
+  ["GET", "/api/rcm/studies"],
   // The interval calculators on an RCM task card.
   ["POST", "/api/maintenance/rcm/interval/on-condition"],
   ["POST", "/api/maintenance/rcm/interval/failure-finding"],

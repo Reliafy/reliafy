@@ -1280,6 +1280,7 @@ def seed_samples(db) -> None:
             logger.warning("Failed to seed sample model %r: %s", spec["id"], exc)
 
     _seed_strategy_analyses(db)
+    _seed_rcm_study(db)
     _seed_reliability_prediction(db)
     _seed_maintainability_predictions(db)
     _seed_fleet(db)
@@ -1461,6 +1462,42 @@ def seed_samples(db) -> None:
 
     # Last: groups the sample tracked items (needs the degradation model above).
     _seed_tracked_fleet(db)
+
+
+def _seed_rcm_study(db) -> None:
+    """Sample RCM study wiring every sample artifact together as evidence.
+
+    One decision — the legacy run-to-failure plan on the wheel bearings — is
+    deliberately linked to a model that CONTRADICTS it (the bearing Weibull
+    fits wear-out, β ≈ 2.5): the study opens with a red badge that demos the
+    live evidence validation.
+    """
+    from backend.schema import RcmStudy
+
+    if db.rcm_studies.find_one({"_id": "sample-rcm-truck"}) is not None:
+        return
+    try:
+        from backend.services.rcm_sample import sample_truck_functions
+
+        functions = sample_truck_functions()
+        from backend.services import rcm as rcm_service
+
+        study = RcmStudy(
+            id="sample-rcm-truck",
+            name="Delivery truck — RCM demo (sample)",
+            system="Delivery truck (brakes + drivetrain)",
+            description=(
+                "A worked RCM study with every decision linked to its evidence. "
+                "Note the legacy run-to-failure decision flagged as CONTRADICTED — "
+                "its own non-repairable model shows wear-out, not random failure."
+            ),
+            owner_id=SAMPLE_OWNER,
+            functions=rcm_service.clean_tree(functions),
+        )
+        db.rcm_studies.insert_one(to_doc(study))
+        logger.info("Seeded sample RCM study 'sample-rcm-truck'.")
+    except Exception as exc:  # pragma: no cover - defensive; never block boot
+        logger.warning("Failed to seed sample RCM study: %s", exc)
 
 
 def _seed_strategy_analyses(db) -> None:
@@ -1793,7 +1830,7 @@ def hide_sample(db, uid: str, sample_id: str) -> None:
 # Every collection that can hold a shared-sample artifact.
 _SAMPLE_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models", "tracked_items",
-    "tracked_fleets", "strategy_analyses", "fleets", "reliability_predictions", "fault_trees",
+    "tracked_fleets", "rcm_studies", "strategy_analyses", "fleets", "reliability_predictions", "fault_trees",
     "maintainability_predictions",
 )
 

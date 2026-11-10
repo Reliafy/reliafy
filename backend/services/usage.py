@@ -347,6 +347,9 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/alt/fit", "alt_fit"),
     ("POST", "/api/alt/models", "alt_save"),
     ("POST", "/api/alt/models/{id}/evaluate", "alt_evaluate"),
+    # RCM studies: created, renamed, worksheet saved
+    ("POST", "/api/rcm/studies", "rcm_create"),
+    ("PUT", "/api/rcm/studies/{id}/tree", "rcm_edit"),
     # RCM: a worksheet added to a position's RCM
     ("POST", "/api/maintenance/positions/{id}/rcm/import/preview", "rcm_import_preview"),
     ("POST", "/api/maintenance/positions/{id}/rcm/import", "rcm_import"),

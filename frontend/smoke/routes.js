@@ -89,6 +89,8 @@ export const DETAIL_IDS = {
   // A fault tree: the sample quadcopter tree is seeded.
   "/systems/fault-trees/:id": ["/api/fault-trees", list("fault_trees")],
   "/data/:id": ["/api/datasets", list("datasets")],
+  // An RCM study (the sample delivery truck is seeded).
+  "/maintenance/rcm/:id": ["/api/rcm/studies", list("studies")],
   "/strategy/analyses/:id": ["/api/strategy/analyses", list("analyses")],
   // A reliability prediction (the sample parts count).
   "/predictions/:id": ["/api/predictions", list("predictions")],
@@ -173,9 +175,7 @@ export const REDIRECTS_WITH_QUERY = [
   ["/datasets/d/sample-ds-bearings?compare=arm", "/data/sample-ds-bearings?compare=arm"],
   ["/modelling/new?mode=paste", "/models/new?mode=paste"],
   ["/modelling/m/sample-model-bearings-weibull?from=email#bounds", "/models/m/sample-model-bearings-weibull?from=email#bounds"],
-  // A study's old address lands on the Explorer's RCM tab: the tab is the target's own query, then the rest.
-  ["/rcm/studies/sample-rcm-truck?from=email", "/asset-register/explorer?tab=rcm&from=email"],
-  ["/maintenance/rcm/sample-rcm-truck?from=email", "/asset-register/explorer?tab=rcm&from=email"],
+  ["/rcm/studies/sample-rcm-truck?from=email", "/maintenance/rcm/sample-rcm-truck?from=email"],
   ["/strategy/demonstration-test?model=sample-model-bearings-weibull", "/strategy/test-planning?model=sample-model-bearings-weibull"],
   ["/asset-register/positions?place=none", "/asset-register/explorer?arrange=positions&place=none"],
   ["/maintenance/locations#top", "/asset-register/explorer?arrange=locations#top"],

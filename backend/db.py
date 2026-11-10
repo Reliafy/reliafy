@@ -122,6 +122,7 @@ def init_db() -> None:
     db.libraries.create_index([("owner_id", 1), ("created_at", -1)])
     db.library_records.create_index([("library_id", 1), ("created_at", -1)])
     db.library_records.create_index([("owner_id", 1), ("model_id", 1)])
+    db.rcm_studies.create_index([("owner_id", 1), ("created_at", -1)])
     db.degradation_models.create_index([("owner_id", 1), ("created_at", -1)])
     db.tracked_items.create_index([("owner_id", 1), ("model_id", 1)])
     db.tracked_items.create_index([("model_id", 1), ("created_at", -1)])
