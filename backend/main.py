@@ -344,6 +344,8 @@ def app_config() -> dict:
         "maintenance": bool(config.MAINTENANCE_ENABLED),
         # Placeholder menu entries, on a private test site only.
         "menu_preview": bool(config.MENU_PREVIEW),
+        # "What do you do?": the roles picker and the menu and Home it shapes.
+        "menu_roles": bool(config.MENU_ROLES),
     }
 
 

@@ -52,9 +52,7 @@ censoring covers most real cases.
 ## Loading it in
 
 Reliafy opens on [Home](/home): what changed, what needs attention and your
-recent work, with **Start here** cards while your workspace is new. (Tell it
-what you do under [Settings](/settings) → **What do you do?** and the menu puts
-what you use first, and Home leads with it.) From there,
+recent work, with **Start here** cards while your workspace is new. From there,
 go to **Modelling → Models → Non-repairable** and press **New model**, then choose **Upload a
 CSV or Excel file** (or **Paste values**). The fit runs in four steps, shown
 along the bottom: **Source**, **Data**, **Model** and **Result**. For the

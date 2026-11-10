@@ -35,7 +35,7 @@ def test_config_is_public_and_reports_capabilities(client, monkeypatch):
     assert r.status_code == 200
     assert r.json() == {"auth": True, "ai": True, "billing": True, "reliability_agent": False,
                         "mcp": False,  # the MCP connector: off by default on the cloud
-                        "maintenance": False, "menu_preview": False}
+                        "maintenance": False, "menu_preview": False, "menu_roles": False}
 
 
 def test_config_single_user_self_host(client, monkeypatch):
@@ -58,6 +58,7 @@ def test_config_single_user_self_host(client, monkeypatch):
         "mcp": True,  # on by default self-hosted
         "maintenance": False,
         "menu_preview": False,
+        "menu_roles": False,
     }
 
 
@@ -80,4 +81,5 @@ def test_config_byo_key_self_host_enables_ai_only(client, monkeypatch):
         "mcp": True,  # on by default self-hosted
         "maintenance": False,
         "menu_preview": False,
+        "menu_roles": False,
     }

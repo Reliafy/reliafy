@@ -345,6 +345,15 @@ export function itemPath(collection, id) {
 // A dataset's page.
 export const datasetPath = (id) => itemPath("datasets", id);
 
+// What the app uses of a user's saved roles. Where the deployment turns the
+// roles on (MENU_ROLES, from /api/config as `menu_roles`): the roles, and
+// `offer`, whether to ask a new user once. Off (the default): no roles and no
+// question, so the menu is the full list, Home has no role cards and Settings
+// no picker; roles already saved stay on the profile, unused.
+export function rolesInUse({ roles = [], offer = false } = {}, on = false) {
+  return on ? { roles, offer: !!offer, rolesOn: true } : { roles: [], offer: false, rolesOn: false };
+}
+
 // Home's role cards for these roles, in order: the primary role's first, then
 // the other roles'. Each card once. No roles: none (Home shows what it always
 // has: what changed, what needs attention, recent work).

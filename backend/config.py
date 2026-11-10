@@ -87,6 +87,11 @@ ALLOWED_EMAILS = {
 # can be tried; set on a private test site only. Off by default.
 MENU_PREVIEW = _truthy(os.environ.get("MENU_PREVIEW"))
 
+# Turns on "What do you do?": a user picks roles, the menu shows what those
+# roles use first and Home leads with them. Off by default: nobody is asked,
+# everyone has the full menu, and roles already saved are kept but not used.
+MENU_ROLES = _truthy(os.environ.get("MENU_ROLES"))
+
 # ---- Client address ----------------------------------------------------------
 # Rate limits and the visitor hash key on the client IP taken from
 # X-Forwarded-For (see backend/request_ip.py). Set TRUST_X_FORWARDED_FOR=false
