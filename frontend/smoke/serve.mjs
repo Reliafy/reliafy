@@ -19,6 +19,8 @@ const env = Object.fromEntries(keep.filter((k) => process.env[k]).map((k) => [k,
 Object.assign(env, {
   AUTH_DISABLED: "true",
   MAINTENANCE_ENABLED: "true",
+  // "What do you do?" (the roles picker, off by default), so its tests run.
+  MENU_ROLES: "true",
   MAINTENANCE_STORE: "mongo",
   // The single-user mode's fixed user, made an operator, so operator-only
   // behaviour (and any installed extension's operator pages) is tested too.

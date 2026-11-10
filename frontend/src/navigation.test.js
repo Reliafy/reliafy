@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import {
   ENTRIES, MENU_ENTRIES, RESERVED_IDS, ROLES, ROLE_IDS, activeEntry, activeTrail, buildMenu, childActive, crumbsFor,
-  datasetPath, entryActive, flatEntries, homeCards, itemPath, liveEntries,
+  datasetPath, entryActive, flatEntries, homeCards, itemPath, liveEntries, rolesInUse,
 } from "./navigation.js";
 import { MOVED, classesPath, movedHref, movedTo, partsPath } from "./redirects.js";
 import { EXPLORER_PARTS_CLASSES_TABS } from "./explorerTabs.js";
 import { PLANNED } from "./plannedPages.js";
+import { DEFAULT_CONFIG, settledConfig } from "./appConfig.js";
 import { appRoutes, hasParam } from "../smoke/routes.js";
 
 const ALL = { maintenance: true, agent: true, risk: true };
@@ -324,6 +325,25 @@ test("Home leads with the primary role's cards; none without roles", () => {
   assert.deepEqual(homeCards(["manager", "technician"]), ["waiting", "work-today"]);
   const cards = homeCards(ROLE_IDS);
   assert.equal(new Set(cards).size, cards.length);
+});
+
+test("the roles are off unless the deployment turns them on: saved roles unused, nobody asked", () => {
+  const saved = { roles: ["technician", "planner"], offer: true, loaded: true };
+  // Off (the default, and before the config has loaded): the full menu, no role cards, no question.
+  for (const off of [rolesInUse(saved), rolesInUse(saved, false)]) {
+    assert.deepEqual(off, { roles: [], offer: false, rolesOn: false });
+    assert.deepEqual(buildMenu({ roles: off.roles, has: ALL }), buildMenu({ has: ALL }));
+    assert.deepEqual(homeCards(off.roles), []);
+  }
+  assert.equal(DEFAULT_CONFIG.menu_roles, false);
+  assert.equal(settledConfig(null).menu_roles, false);
+  // On: the roles as saved, and the one-time question when the server offers it.
+  const on = rolesInUse(saved, true);
+  assert.deepEqual(on, { roles: ["technician", "planner"], offer: true, rolesOn: true });
+  assert.deepEqual(ids(buildMenu({ roles: on.roles, has: ALL }).more), ["products", "modelling", "agent"]);
+  assert.equal(homeCards(on.roles)[0], "work-today");
+  assert.deepEqual(rolesInUse({ roles: [], offer: false }, true), { roles: [], offer: false, rolesOn: true });
+  assert.deepEqual(rolesInUse(undefined, true), { roles: [], offer: false, rolesOn: true });
 });
 
 test("saved items open at their new addresses", () => {
