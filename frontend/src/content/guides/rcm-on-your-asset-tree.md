@@ -4,6 +4,10 @@ task: "How do I record a position's functions, functional failures and failure m
 category: "Maintenance strategy"
 prerequisites: "A position in your asset tree, or the Survey quadcopter. Fitted models or saved strategy analyses to cite help, but you can start without them."
 order: 25
+# Reliafy Maintenance is operators-only for now: this guide is linked from the
+# Explorer's RCM tab itself and stays out of the index until Maintenance opens.
+# The public guide to RCM is rcm-study.md.
+hidden: true
 ---
 
 Reliability-centred maintenance (RCM) asks one question per failure mode: *what

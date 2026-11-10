@@ -269,7 +269,7 @@ number.
 
 ## Use the models in the RCM
 
-On the [RCM tab](/guides/rcm-on-your-asset-tree), a failure mode's **Based
+On the **RCM** tab, a failure mode's **Based
 on: Link…** offers the position's models first, those attached for that
 failure mode at the top (one attached for that mode is picked for you when
 nothing is linked yet). The interval calculators on a task card start from the
