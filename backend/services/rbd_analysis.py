@@ -1330,6 +1330,12 @@ def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> li
 
     One warning per run of like blocks: "Motor 1" to "Motor 4" in a row is one
     thing to check, not three pairs."""
+    return [text for _, text in series_redundancy_runs(graph, labels)]
+
+
+def series_redundancy_runs(graph: dict, labels: Optional[dict] = None) -> list:
+    """Each :func:`series_redundancy_warnings` warning with the blocks it is
+    about: ``[(node ids in order, warning text)]``."""
     nodes = {n.get("id"): n for n in graph.get("nodes") or []}
     edges = [(e.get("source"), e.get("target")) for e in graph.get("edges") or []
              if e.get("source") in nodes and e.get("target") in nodes]
@@ -1368,15 +1374,15 @@ def series_redundancy_warnings(graph: dict, labels: Optional[dict] = None) -> li
             run.append(flagged[run[-1]][0])
         names = [f"“{label(nid)}”" for nid in run]
         if len(run) == 2:
-            out.append(
+            out.append((run, (
                 f"{names[0]} and {names[1]} are wired in series but look like a redundant pair ({why}). If either "
                 "one can do the job, put them in parallel (or use a standby or k-of-n node); keep them in series "
-                "only if both must work.")
+                "only if both must work.")))
         else:
-            out.append(
+            out.append((run, (
                 f"{', '.join(names[:-1])} and {names[-1]} are wired in series but look like redundant units ({why}). "
                 "If fewer than all of them can do the job, put them in parallel (or use a standby or k-of-n node); "
-                "keep them in series only if every one must work.")
+                "keep them in series only if every one must work.")))
     return out
 
 

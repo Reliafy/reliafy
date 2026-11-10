@@ -4142,6 +4142,14 @@ def edit_rbd(
                  for w in rbds_service.validate_graph(db, rbd.graph or {}, owners).get("warnings") or []}
     except Exception:  # pragma: no cover - a malformed saved draft: report everything
         known = set()
+    # A run of like blocks in series is one warning naming every block, so an
+    # edit that renames or removes one block rewords it (or splits it in two).
+    # Where every neighbouring pair it names was already flagged, it tells the
+    # agent nothing new.
+    was_flagged = {pair for ids, _ in rbd_analysis.series_redundancy_runs(rbd.graph or {})
+                   for pair in zip(ids, ids[1:])}
+    known |= {availability_answer.agent_text(text) for ids, text in rbd_analysis.series_redundancy_runs(graph)
+              if all(pair in was_flagged for pair in zip(ids, ids[1:]))}
     unchanged = [w for w in out["warnings"] if w in known]
     if unchanged:
         out["warnings"] = [w for w in out["warnings"] if w not in known]
