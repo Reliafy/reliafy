@@ -568,6 +568,7 @@ def analyze_graph(
     target_reliability: float | None = Body(default=None),
     quick: bool = Body(default=False),
     run_token: str | None = Body(default=None),
+    evaluate_at: float | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -596,6 +597,9 @@ def analyze_graph(
     and B-lives run from now — and ``target_reliability`` (e.g. 0.9) adds the
     design life, the time the system reliability falls to it (with an
     interval when ``band`` is asked for). Both are exact, free for everyone.
+    ``evaluate_at`` is the time the importance measures and the common-cause
+    comparison are worked out at (default: the time the system reliability
+    falls to 90%).
     """
     try:
         if graph.get("repairable"):
@@ -616,6 +620,7 @@ def analyze_graph(
                 band=band,
                 current_state=current_state,
                 target_reliability=target_reliability,
+                evaluate_at=evaluate_at,
             )
         )
     except AnalysisError as exc:

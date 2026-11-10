@@ -1507,6 +1507,67 @@ def _remaining_hi(model, age: float) -> Optional[float]:
     return v if np.isfinite(v) and v > 0 else None
 
 
+# The reliability the default evaluation time is found at.
+DEFAULT_EVALUATION_RELIABILITY = 0.9
+
+
+def parse_evaluate_at(value) -> Optional[float]:
+    """The time the importance measures are asked for at, or None for the
+    default. Raises :class:`AnalysisError`."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise AnalysisError(f"The time to evaluate at must be a positive number; got {value!r}.")
+    v = float(value)
+    if not (np.isfinite(v) and v > 0.0):
+        raise AnalysisError(f"The time to evaluate at must be a positive number; got {value!r}.")
+    return v
+
+
+def default_evaluation_time(system, grid, system_sf, s: float = 0.0, **sf_kwargs) -> tuple[float, str]:
+    """The one time a diagram's read-outs default to — the importance
+    measures, the common-cause comparison and the fault tree — and how it was
+    chosen: ``(time, basis)``.
+
+    It is the time the system reliability falls to 90%, solved exactly
+    (``"reliability_90"``) so it doesn't move with the number of points on
+    the time axis. When the reliability doesn't cross 90% on the axis (it
+    starts below it as of now, or the axis ends first), it is the point on
+    the axis where the reliability is closest to 90% (``"closest_to_90"``),
+    or the middle of the axis when that point is a certain 0 or 1
+    (``"axis_midpoint"``).
+    """
+    from scipy.optimize import brentq
+
+    grid = np.asarray(grid, dtype=float)
+    sf = np.asarray(system_sf, dtype=float)
+    target = DEFAULT_EVALUATION_RELIABILITY
+    if sf.size and np.isfinite(sf[0]) and sf[0] > target:
+        below = np.nonzero(np.isfinite(sf) & (sf <= target))[0]
+        if below.size:
+            i = int(below[0])
+            lo, hi = float(grid[i - 1]), float(grid[i])
+
+            def gap(t):
+                return float(_conditional_sf(system, np.array([float(t)]), s, **sf_kwargs)[0]) - target
+
+            try:
+                with np.errstate(all="ignore"):
+                    g_lo, g_hi = gap(lo), gap(hi)
+                    if g_hi == 0.0:
+                        return hi, "reliability_90"
+                    if g_lo > 0.0 > g_hi:
+                        root = float(brentq(gap, lo, hi, xtol=1e-12 * max(hi, 1.0), rtol=1e-12))
+                        if np.isfinite(root):
+                            return root, "reliability_90"
+            except Exception:  # noqa: BLE001 - fall back to the axis point below
+                pass
+    idx = int(np.argmin(np.abs(sf - target)))
+    if not (0.0 < sf[idx] < 1.0):
+        return float(grid[len(grid) // 2]), "axis_midpoint"
+    return float(grid[idx]), "closest_to_90"
+
+
 def _time_grid(reliabilities: dict, t_max: Optional[float] = None,
                ages: Optional[dict] = None) -> np.ndarray:
     """Time grid from 0 to ``t_max``. When ``t_max`` isn't given (or isn't
@@ -2039,6 +2100,7 @@ def analyze(
     band: Optional[dict] = None,
     current_state=None,
     target_reliability: Optional[float] = None,
+    evaluate_at: Optional[float] = None,
 ) -> dict:
     """Analyse a builder graph and return a JSON-serialisable result payload.
 
@@ -2060,15 +2122,21 @@ def analyze(
     from now and the MTTF and B-lives being the remaining life.
     ``target_reliability`` adds ``design_life``: the time the system
     reliability falls to it (from new, the survived age or now), with an
-    interval in the band when one is asked for. Raises :class:`AnalysisError`
-    with a user-facing message if the graph can't be turned into a valid RBD.
+    interval in the band when one is asked for. ``evaluate_at`` is the time
+    the importance measures and the common-cause comparison are worked out at
+    (on the same time axis as the curves: from new, past the survived age, or
+    from now); left out, they are at :func:`default_evaluation_time`.
+    ``importance`` says which in ``time_basis`` (``"given"`` for a time asked
+    for) with the system reliability there in ``reliability``. Raises
+    :class:`AnalysisError` with a user-facing message if the graph can't be
+    turned into a valid RBD.
 
     ``warnings`` lists RePyability's common-cause warnings (#210: a group on
     the probability basis evaluated past the small probabilities it is meant
     for), in Reliafy's words, and why the MTTF is missing when it is.
     """
     args = (graph, resolve_subsystem, t_max, covariates, resolve_model, conditional_age, at_times, band,
-            current_state, target_reliability)
+            current_state, target_reliability, evaluate_at)
     with warnings.catch_warnings(record=True) as caught:
         # Every time, not once per place: each analysis builds its own RBD.
         warnings.filterwarnings("always", message=_CCF_WARNING.pattern, category=UserWarning)
@@ -2086,11 +2154,12 @@ def analyze(
 
 
 def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditional_age, at_times, band,
-             current_state, target_reliability) -> tuple[dict, dict, list]:
+             current_state, target_reliability, evaluate_at=None) -> tuple[dict, dict, list]:
     """:func:`analyze`'s work: ``(result, block labels, notes for its warnings)``."""
     notes: list[str] = []
     state = parse_nonrepairable_state(graph, current_state)
     target = parse_target(target_reliability)
+    asked_at = parse_evaluate_at(evaluate_at)
     s = float(conditional_age) if conditional_age and conditional_age > 0 else 0.0
     if state and s > 0:
         raise AnalysisError("Give either a survived-to age or the blocks' states now (As of now), not both.")
@@ -2154,12 +2223,17 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
             }
         )
 
-    # Importances at a representative time: where the system reliability is
-    # closest to 0.9 (a typical design-life point), else the grid midpoint.
-    target_idx = int(np.argmin(np.abs(system_sf - 0.9)))
-    if not (0.0 < system_sf[target_idx] < 1.0):
-        target_idx = len(grid) // 2
-    t_rep = float(grid[target_idx])
+    # Importances (and the common-cause comparison) at one time: the one
+    # asked for, else the default every read-out of a diagram shares — the
+    # time the system reliability falls to 90%.
+    if asked_at is not None:
+        t_rep, t_basis = asked_at, "given"
+    else:
+        t_rep, t_basis = default_evaluation_time(system, grid, system_sf, s, **overrides)
+    try:
+        r_rep = _f(float(_conditional_sf(system, np.array([t_rep]), s, **overrides)[0]))
+    except Exception:  # noqa: BLE001 - the importances below say what they can
+        r_rep = None
 
     importance: dict[str, dict] = {}
     try:
@@ -2217,7 +2291,8 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
             measures["structural"] = rbd.structural_importance(working_nodes or None, broken_nodes or None)
         except Exception:  # noqa: BLE001 - a repeated block, say: left out
             pass
-        importance = {"time": t_rep, **{k: _imp(v) for k, v in measures.items()}}
+        importance = {"time": t_rep, "time_basis": t_basis, "reliability": r_rep,
+                      **{k: _imp(v) for k, v in measures.items()}}
         if fv_basis:
             importance["fussell_vesely_basis"] = fv_basis
         if rbd.ccf_groups:
@@ -2277,13 +2352,14 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
         structure["cut_sets_max_order"] = _LOW_ORDER_CUT_MAX
 
     # Common-cause impact: system reliability WITH vs WITHOUT the coupling, at the
-    # representative time and across the grid — the headline "CCF cost".
+    # same time as the importances and across the grid — the headline "CCF cost".
     ccf = None
     if baseline is not None:
         try:
             base_sf = _conditional_sf(baseline, grid, s, **overrides)
-            r_with = float(system_sf[target_idx])
-            r_without = float(base_sf[target_idx])
+            at_rep = np.array([t_rep])
+            r_with = float(_conditional_sf(system, at_rep, s, **overrides)[0])
+            r_without = float(_conditional_sf(baseline, at_rep, s, **overrides)[0])
             ccf = {
                 "groups": [
                     {"members": [labels.get(m, str(m)) for m in (g.get("members") or [])],
@@ -2293,6 +2369,7 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
                     and _valid_beta(g.get("beta"))
                 ],
                 "time": t_rep,
+                "time_basis": t_basis,
                 "reliability_with": r_with,
                 "reliability_without": r_without,
                 "baseline_sf": _clean(base_sf),
