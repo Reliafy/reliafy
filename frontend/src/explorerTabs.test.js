@@ -136,6 +136,7 @@ test("a product's design has no maintenance: no Failure reports, Measurements, S
   assert.equal(rowKind(inside), "Position");
   assert.equal(rowKind(asset), "Position");
   assert.equal(rowKind({ type: "item", ref: {} }), "Item");
+  assert.equal(rowKind({ type: "cls", ref: {} }), "Item class"); // the Explorer by Classes
   assert.equal(rowKind({ type: "group", ref: {} }), "");
   // An asset (an item's tree built from a design is an asset too) keeps everything.
   assert.ok(!isDesignRow(asset));

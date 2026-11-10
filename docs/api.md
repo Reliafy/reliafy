@@ -300,6 +300,26 @@ prediction): what its roll-up reports, what the RCM offers first and what a
 parent's RBD block takes. `GET /api/maintenance/position-models/{id}?age=`
 adds an RBD's system reliability at that age.
 
+An item class's fleet (the Explorer arranged by Classes): `GET
+/api/maintenance/item-classes/{id}/fleet` lists the positions whose fitted
+item is of the class or a class inside it, as `members`: `{position: {id,
+name, tag, position_class}, item: {id, name, serial}, item_class, in_service,
+age` (days)`, model` (the condition and life model linked to the position, or
+its position class's; null with none)`, point, last_reading: {on, value,
+unit}, n_readings, covariates, scored, why}`. A scored member adds `risk`
+(the chance of failing within each of `horizons`: 30, 90 and 365 days from
+`today`), `survival`, `median_remaining` (days; `median_reached` false means
+at least that long) and `marker_now`; members come highest 90-day risk first.
+Each is scored from its own data: the item's age from its in-service date
+(else its first fitting), the readings of its condition point in the model's
+reading unit since then, and the model's covariates from value conditions of
+the same name. `scored` false with a model carries `why` in plain words and
+what to do. `?position_id=` answers that one `member` with `unit` (its
+survival curve from now and its reading's path, in its model's own time
+unit) and the `model`. The same read is `maintenance get.item_class` with
+`fleet: true` (`POST /api/v1/maintenance/get.item_class`; `reliafy
+maintenance get.item_class --id … --fleet true`).
+
 Missions (the Explorer's Missions tab): a non-repairable RBD can carry several
 named phased missions over the same blocks, in `graph.missions` (`[{id, name,
 phases}]`; the diagram's own `phases` reads as one more mission, id `mission`,

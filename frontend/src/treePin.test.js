@@ -38,6 +38,9 @@ test("what can be pinned: positions, locations, items with something inside", ()
   const loc = buildDisplay(DATA, "locations");
   assert.equal(canPin(loc.rows.get("site"), "locations"), true);
   assert.equal(canPin(loc.rows.get("sp"), "locations"), false); // a spare with nothing inside
+  // By Classes: a class with something under it.
+  assert.equal(canPin({ type: "cls", kids: ["a"] }, "classes"), true);
+  assert.equal(canPin({ type: "cls", kids: [] }, "classes"), false);
   // RCM rows can't be pinned; their position can.
   const rcm = graftRcm(pos, { positions: [{ id: "pumpA", functions: [{ id: "fn1", text: "Pump", failures: [] }] }] });
   assert.equal(canPin(rcm.rows.get("fn1"), "positions"), false);

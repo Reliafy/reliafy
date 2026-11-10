@@ -21,14 +21,14 @@ import {
 } from "../explorerMissions.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
 import { bindingForRecord, bindingFromParam, bindingParam } from "../covariate.js";
-import { PANE_PARAMS, TABLE_PANES, paneFromQuery, setPaneQuery } from "../tablePane.js";
+import { PANE_PARAMS, TABLE_PANES, keepPaneFor, paneFromQuery, setPaneQuery } from "../tablePane.js";
 import { fitPreset, priorFrom } from "../fitDialog.js";
 import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, builtRbdLink, graftModels, inUseWords, isModelRow, modelKey, openForModels, rollupText as modelRollup, lifeModelOf,
   opensInPane, bindingOf,
 } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  addSampleProduct, createMission, deleteMission, getMission, updateMission, getFmeaExcelBlob, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
+  addSampleProduct, createMission, deleteMission, getMission, updateMission, getFmeaExcelBlob, getItemClasses, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
   hasFmeaExcel, linkPositionModel, makeSampleOwn, restoreRcm, restoreTree,
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
@@ -432,7 +432,20 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const t = setTimeout(() => setToast((x) => (x === toast ? null : x)), toast.undo || toast.restore ? 12000 : 5000);
     return () => clearTimeout(t);
   }, [toast]);
-  const base = useMemo(() => buildDisplay(data, mode), [data, mode]);
+  // By Classes: the item-class taxonomy, read with the tree (and again after each change). Until
+  // it's in, the tree is empty rather than every position under "No class" for a moment.
+  const [classTree, setClassTree] = useState(null);
+  const byClasses = mode === "classes";
+  useEffect(() => {
+    if (!byClasses) return undefined;
+    let live = true;
+    getItemClasses()
+      .then((d) => live && setClassTree(d.tree || []))
+      .catch(() => live && setClassTree([]));
+    return () => { live = false; };
+  }, [byClasses, version]);
+  const base = useMemo(() => buildDisplay(byClasses ? (data && classTree ? { ...data, classes: classTree } : null) : data, mode),
+    [data, mode, byClasses, classTree]);
   // The Measurements tab: every position's points, settings, channels and consumables.
   const meas = useTreeMeasurements({ on: measOn && !!data, display: data ? base : null });
   // The Modelling tab: every model attached to a position.
@@ -535,7 +548,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       // The packaging open in the LSA tab was the last row's as well.
       if (q.get("packaging") !== selPos) q.delete("packaging");
       for (const k of VIEW_PARAMS) q.delete(k);
-      for (const k of PANE_PARAMS) if (q.get(k) && q.get(k) !== selPos) q.delete(k);
+      keepPaneFor(q, selPos);
     });
   }, [data, selPos, params, setQuery_, tab]);
 
@@ -2410,6 +2423,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // item's tree), it goes inside that branch's top instead.
   const addRow = (() => {
     if (!data || nothing || !showsAddRow(tab)) return null; // the Summary tab only, as New … inside in a row's menu
+    if (mode === "classes") return null; // a class's rows come from what's fitted: positions are added by Positions
     const kind = mode === "locations" ? "location" : "position";
     const top = pinKey || root;
     let parent = TOP;
@@ -2467,6 +2481,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         onCollapse={setCollapsed}
         addRow={addRow}
         canArrange={!root || !!data?.scope}
+        // One tree on show (a product's design, an item's tree) is by Positions or Locations only.
+        arrangements={root ? ARRANGEMENTS.filter((a) => a.value !== "classes") : null}
         level={level}
         changed={changed}
         onReset={resetView}

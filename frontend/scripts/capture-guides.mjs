@@ -999,8 +999,8 @@ async function main() {
         await page.getByLabel("load changes the path").check();
         await wait(800);
       } },
-    { file: "cbr-02-risk.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000 },
-    { file: "cbr-03-unit.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000,
+    { file: "cbr-02-risk.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000, noTree: true },
+    { file: "cbr-03-unit.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000, noTree: true,
       async act(page) {
         // Risk now shows the riskiest unit beside the table (no scrolling: the tab fits the screen).
         await page.locator(".joint-unit-sum").waitFor({ timeout: 20000 }); await wait(2000);
@@ -1138,6 +1138,12 @@ async function main() {
   const failed = [];
   const skipped = [];
 
+  // The model page keeps its Risk now tab only where the account has no asset
+  // tree (with one, risk now is in the Explorer by Classes): those shots answer
+  // the access check as such an account would get it.
+  const NO_TREE = "**/api/maintenance/access";
+  const noTree = (route) => route.fulfill({ json: { allowed: false } });
+
   const shoot = async (list) => {
     for (const s of list) {
       // A shot that can't be taken on this server (a feature switched off)
@@ -1151,6 +1157,8 @@ async function main() {
       try {
         // Every shot starts in the personal workspace (the team shot switches).
         if (page.url().startsWith(BASE)) await page.evaluate(() => localStorage.removeItem("reliafy.workspace"));
+        // A shot of what an account without the asset tree sees (`noTree`).
+        if (s.noTree) await page.route(NO_TREE, noTree);
         await page.goto(`${BASE}${s.url}`, { waitUntil: "networkidle" });
         await wait(s.settle || 500);
         await assertNotSignIn(page, s.url);
@@ -1172,6 +1180,7 @@ async function main() {
         // A shot that saved something of its own removes it, so it can't show
         // up in a later shot's list.
         if (s.cleanup) await s.cleanup().catch(() => {});
+        if (s.noTree) await page.unroute(NO_TREE, noTree).catch(() => {});
       }
     }
   };

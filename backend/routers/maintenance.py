@@ -2117,6 +2117,17 @@ def item_classes(m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(lambda: {**m.item_class_tree(), "classes": m.item_classes()})
 
 
+@router.get("/item-classes/{class_id}/fleet")
+def get_class_fleet(class_id: str, position_id: str | None = None, session=Depends(get_session),
+                    ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """An item class's fleet: the positions whose fitted item is of the class or a class inside it,
+    each with its risk now where its position has a condition and life model; ``position_id`` for
+    one of them with its curves."""
+    from backend.maintenance import class_fleet
+
+    return _run(class_fleet.fleet, m, session, ctx.read_owners, ctx.hidden, class_id, position_id)
+
+
 @router.post("/item-classes")
 def create_item_class(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.create_item_class, body.get("name"), body.get("parent_id"), body.get("code", ""),

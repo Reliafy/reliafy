@@ -112,6 +112,27 @@ export function riskText(p) {
   return formatPercent(v);
 }
 
+// The column a risk table is sorted by: the middle horizon where there is
+// one, else the first.
+export const sortColumn = (labels) => ((labels || []).length > 1 ? 1 : 0);
+
+// A class's fleet in one line (the Explorer by Classes): how many positions,
+// how many have risk now, and the highest. Members come highest risk first.
+export function fleetAnswer(fleet) {
+  if (!fleet) return "";
+  const n = fleet.positions;
+  const parts = [`${n.toLocaleString("en-AU")} position${n === 1 ? "" : "s"}`];
+  if (fleet.scored) {
+    const top = fleet.members.find((m) => m.scored);
+    const col = sortColumn(fleet.horizons.labels);
+    parts.push(`${fleet.scored === n ? "all" : fleet.scored.toLocaleString("en-AU")} with risk now`);
+    if (top) parts.push(`highest: ${top.position.name || "(no name)"}, ${riskText(top.risk[col])} in the next ${fleet.horizons.labels[col]}`);
+  } else {
+    parts.push("no risk now yet");
+  }
+  return parts.join(" · ");
+}
+
 // The number riskText shows, for sorting: rows that show the same figure tie.
 function shownRisk(p) {
   const t = riskText(p);

@@ -1,21 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
-import Chip from "./ui/Chip.jsx";
 import { getJointUnit, predictJointUnit } from "../api.js";
 import { formatNumber } from "../format.js";
-import { bandPair, dataPoints, fitLine, referenceShape } from "../plotTheme.js";
-import { medianText, paramGroups, parseReadings, readingsText, riskText, riskTone, sortRiskRows } from "../joint.js";
+import { bandPair, fitLine } from "../plotTheme.js";
+import { medianText, paramGroups, parseReadings, readingsText, sortRiskRows } from "../joint.js";
 import { ModelTabs } from "./model/ModelFrame.jsx";
 import { PlotCard, ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
-import ChartPair from "./model/ChartPair.jsx";
+import { RiskTable, SurvivalChart, UnitCharts, UnitSummary, sortColumn } from "./model/RiskTable.jsx";
 import { JointEffects } from "./model/Effects.jsx";
 import { JointDiagnostics } from "./model/Diagnostics.jsx";
 import { modelTabs, resolveTab } from "../modelFrame.js";
+import { explorerPath } from "../assetTree.js";
 
 // A fitted condition and life model in the model frame's five tabs:
 //   Risk now     the running units' risk (highest first) and the chosen unit
 //                in words; under them its updating prediction (its survival
-//                from now and its reading's path)
+//                from now and its reading's path). The table and the charts
+//                are the shared ones (model/RiskTable.jsx); where the account
+//                has the Explorer, this tab is left out (`riskNow`) and the
+//                Explorer's class fleet shows risk now instead
 //   Calculator   enter a unit (age, covariates, readings so far) and predict;
 //                before that, a new unit's survival with typical covariates
 //   Effects      what changes the risk: the hazard ratios, charted and in words
@@ -83,126 +87,6 @@ export function PathChart({ results, name, fill = false }) {
   return <Plot fill={fill} data={traces} layout={layout} download={`${name || "Model"} — reading path`} />;
 }
 
-function SurvivalChart({ curve, unit, name, title, age = null, fill = false }) {
-  if (!curve?.x) return null;
-  const traces = [];
-  if (curve.sf_lower && curve.sf_upper) traces.push(...bandPair(curve.x, curve.sf_lower, curve.sf_upper, { name: "95% band" }));
-  traces.push(fitLine({ x: curve.x, y: curve.sf, name: "Survival" }));
-  const layout = {
-    height: 320,
-    xaxis: { title: { text: `Age since new${unit ? ` (${unit})` : ""}` } },
-    yaxis: { title: { text: "Probability still running" }, range: [0, 1.02] },
-    shapes: age != null ? [referenceShape({ x: age })] : [],
-    showlegend: true,
-  };
-  return <Plot fill={fill} data={traces} layout={layout} download={`${name || "Model"} — ${title}`} />;
-}
-
-function MarkerChart({ pred, results, name, fill = false }) {
-  const m = pred.marker || {};
-  const unit = results.unit || "";
-  const marker = results.marker || "reading";
-  const pts = pred.markers || [];
-  const traces = [
-    ...bandPair(m.x, m.lower, m.upper, { name: "95% interval of its path" }),
-    fitLine({ x: m.x, y: m.mean, name: "Its path (smoothed, then projected)" }),
-    dataPoints({ x: pts.map((p) => p[0]), y: pts.map((p) => p[1]), name: "Its readings" }),
-  ];
-  const layout = {
-    height: 320,
-    xaxis: { title: { text: `Age since new${unit ? ` (${unit})` : ""}` } },
-    yaxis: { title: { text: `${marker}${results.marker_unit ? ` (${results.marker_unit})` : ""}` } },
-    shapes: [referenceShape({ x: pred.age })],
-    showlegend: true,
-  };
-  return <Plot fill={fill} data={traces} layout={layout} download={`${name || "Model"} — reading trajectory`} />;
-}
-
-function RiskCells({ row, n = 3 }) {
-  return Array.from({ length: n }, (_, i) => (
-    <td key={i} className="num">
-      <Chip tone={riskTone(row.risk?.[i])}>{riskText(row.risk?.[i])}</Chip>
-    </td>
-  ));
-}
-
-// The column the risk table is sorted by: the middle horizon where there is
-// one, else the first.
-const sortColumn = (labels) => ((labels || []).length > 1 ? 1 : 0);
-
-function RiskTable({ results, selected, onPick, live = true }) {
-  const labels = results.horizons?.labels || [];
-  const rows = sortRiskRows(results.risk, sortColumn(labels));
-  const unit = results.unit || "";
-  if (!rows.length) return <p className="mf-note">No units are still running in the data.</p>;
-  return (
-    <table className="calc-table joint-risk">
-      <thead>
-        <tr>
-          <th>Unit</th>
-          <th className="num">Age{unit ? ` (${unit})` : ""}</th>
-          {labels.map((l) => <th key={l} className="num">Fails in next {l}</th>)}
-          <th className="num">Median life left</th>
-          <th><span className="sr-only">View</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => (
-          <tr key={r.id} className={selected === r.id ? "is-selected" : ""} onClick={() => onPick(r.id)}>
-            <td>{r.id}</td>
-            <td className="num">{n3(r.age)}</td>
-            <RiskCells row={r} n={labels.length} />
-            <td className="num">{medianText(r, unit)}</td>
-            <td>
-              <button type="button" className="link" aria-pressed={selected === r.id}
-                      onClick={(e) => { e.stopPropagation(); onPick(r.id); }}>
-                {selected === r.id && live ? "Shown" : "View"}
-              </button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-// A unit's prediction in words.
-function UnitSummary({ view, results }) {
-  const unit = results.unit || "";
-  return (
-    <p className="joint-unit-sum" role="status">
-      {view.unit_id ? <>Unit <b>{view.unit_id}</b>, </> : "This unit, "}
-      age {n3(view.age)}{unit ? ` ${unit.toLowerCase()}` : ""}, {view.markers.length} reading{view.markers.length === 1 ? "" : "s"}.{" "}
-      {(results.horizons?.labels || []).map((l, i) => `${riskText(view.risk?.[i])} chance of failing in the next ${l}`).join("; ")}.
-      {" "}Median life left: {medianText(view, unit)}.
-    </p>
-  );
-}
-
-// Its two charts, read together (its survival from now follows from where
-// its reading is heading): side by side where each is wide enough to read,
-// else one under the other (ChartPair).
-function UnitCharts({ view, results, name }) {
-  const unit = results.unit || "";
-  return (
-    <ChartPair
-      together
-      items={[
-        { id: "survival", label: "Survival from now", node: (
-          <PlotCard title="Survival from now">
-            <SurvivalChart fill curve={view.prediction} unit={unit} name={name} title="unit survival" age={view.age} />
-          </PlotCard>
-        ) },
-        { id: "reading", label: `Its ${results.marker || "reading"}`, node: (
-          <PlotCard title={`Its ${results.marker || "reading"}`}>
-            <MarkerChart fill pred={view.prediction} results={results} name={name} />
-          </PlotCard>
-        ) },
-      ]}
-    />
-  );
-}
-
 // Risk now: the table and the chosen unit in words across the top, its two
 // charts under them over the whole width.
 function RiskNow({ modelId, results, name, unitId, onUnitId, onEnter }) {
@@ -225,7 +109,8 @@ function RiskNow({ modelId, results, name, unitId, onUnitId, onEnter }) {
       <div className="mf-joint-risk-top">
         <ScrollCard title="Running units' risk"
                     sub={`highest chance of failing in the next ${(results.horizons?.labels || [])[sortColumn(results.horizons?.labels)] || "stretch"} first`}>
-          <RiskTable results={results} selected={unitId} onPick={onUnitId} live={!!modelId} />
+          <RiskTable rows={results.risk} labels={results.horizons?.labels || []} unit={results.unit || ""}
+                     selected={unitId} onPick={onUnitId} live={!!modelId} />
         </ScrollCard>
         <section className="mf-joint-risk-words" id="joint-unit-view" aria-label="A unit's updating prediction">
           {shown && <UnitSummary view={shown} results={results} />}
@@ -363,9 +248,11 @@ function JointData({ results }) {
   );
 }
 
-export default function JointResultView({ results, modelId, name, tab: wanted = undefined, onTab = null }) {
+// `riskNow: false` (the model's own page, where the account has the Explorer):
+// no Risk now tab; a line says where risk now is.
+export default function JointResultView({ results, modelId, name, tab: wanted = undefined, onTab = null, riskNow = true }) {
   const r = results || {};
-  const tabs = modelTabs({ ...r, kind: "joint" });
+  const tabs = modelTabs({ ...r, kind: "joint" }, { riskNow });
   const [own, setOwn] = useState(() => resolveTab(tabs, wanted));
   const tab = resolveTab(tabs, wanted !== undefined && onTab ? wanted : own);
   const setTab = (id) => { setOwn(id); onTab?.(id); };
@@ -399,10 +286,20 @@ export default function JointResultView({ results, modelId, name, tab: wanted = 
       tabs={tabs}
       value={tab}
       onChange={setTab}
-      before={!r.fit_ok && (
-        <p className="joint-warn mf-before" role="note">
-          The fit didn't reach a verified maximum: treat these numbers with care (Diagnostics says more).
-        </p>
+      before={(!r.fit_ok || !riskNow) && (
+        <>
+          {!riskNow && (
+            <p className="hint mf-before joint-risk-moved">
+              Risk now is in the Explorer: <Link to={explorerPath("classes")}>arrange it by Classes</Link> and
+              choose a class to see its positions, highest risk first.
+            </p>
+          )}
+          {!r.fit_ok && (
+            <p className="joint-warn mf-before" role="note">
+              The fit didn't reach a verified maximum: treat these numbers with care (Diagnostics says more).
+            </p>
+          )}
+        </>
       )}
     >
       {body}

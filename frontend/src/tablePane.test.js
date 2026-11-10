@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PANE_PARAMS, TABLE_PANES, paneFromQuery, setPaneQuery } from "./tablePane.js";
+import { PANE_PARAMS, TABLE_PANES, keepPaneFor, paneFromQuery, setPaneQuery } from "./tablePane.js";
 
 test("the pane the address asks for", () => {
   assert.equal(paneFromQuery(new URLSearchParams("sel=p1")), null);
@@ -59,4 +59,22 @@ test("no pane takes a general word for its own: a link's ?from= or ?utm_… is n
   const q = new URLSearchParams("tab=models&sel=p1&from=email");
   assert.equal(setPaneQuery(q, "fit", "p1", { from: "l1" }).toString(), "tab=models&sel=p1&from=email&fit=p1&prior=l1");
   assert.equal(setPaneQuery(q, "predict", "p1").toString(), "tab=models&sel=p1&from=email&predict=p1");
+});
+
+test("picking a row keeps a pane open for that position whole, and closes one for another", () => {
+  const after = (address, picked) => keepPaneFor(new URLSearchParams(address), picked).toString();
+  // The pane's own position: its other keys (not position ids) stay.
+  assert.equal(after("sel=p1&fit=p1&prior=model%3Am9", "p1"), "sel=p1&fit=p1&prior=model%3Am9");
+  assert.equal(after("rbd=r7&on=p1", "p1"), "rbd=r7&on=p1");
+  assert.equal(after("mission=r7%3Am2&on=p1", "p1"), "mission=r7%3Am2&on=p1");
+  assert.equal(after("bind=model%3Am9&on=p1", "p1"), "bind=model%3Am9&on=p1");
+  // Another position: the pane goes, every key of it, and nothing else in the address.
+  assert.equal(after("sel=p2&tab=modelling&fit=p1&prior=model%3Am9", "p2"), "sel=p2&tab=modelling");
+  assert.equal(after("rbd=r7&on=p1&tab=modelling", "p2"), "tab=modelling");
+  assert.equal(after("mission=r7%3Am2&on=p1", "p2"), "");
+  assert.equal(after("predict=p1", "p2"), "");
+  // Keys with no pane to belong to (an RBD with no position, a prior with no fit) go as well.
+  assert.equal(after("rbd=r7&sel=p1", "p1"), "sel=p1");
+  assert.equal(after("prior=model%3Am9&on=p1", "p1"), "");
+  assert.equal(after("sel=p1", "p1"), "sel=p1");
 });

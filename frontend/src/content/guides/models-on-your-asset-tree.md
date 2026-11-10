@@ -226,6 +226,41 @@ Use it when the data are sparse and the baseline is credible. With plenty of
 failures, fit the history instead: the data then speak for themselves. With no
 history at all the baseline stands as given.
 
+## Risk now for a class of equipment
+
+A [condition and life model](/guides/condition-based-risk) attached to a
+position gives that position's **risk now**: the chance its fitted item fails
+in the next 30, 90 and 365 days, from the item's age and its own condition
+readings.
+
+To see it for every item of a kind, arrange the
+Explorer by **Classes** (beside
+**Positions** and **Locations**, above the tree) and choose an item class. The
+table beside the tree lists every position whose fitted item is of that class,
+or of a class inside it, highest risk first: the position, its position class,
+the item and its serial, its age, its last reading, the three chances and the
+**Median life left**. Choose a row for that item's two charts: its survival
+from now and its reading's path.
+
+Each position is scored with its own model: the condition and life model
+attached to it, or else its position class's. So one class can hold positions
+on different models, and positions with none. For a number, a position needs:
+
+- **A model.** A position with none shows a dash. Attach one on its
+  **Modelling** tab.
+- **Readings.** A condition point on the position or its item, in the model's
+  unit (mm/s for a model fitted on mm/s), with at least one reading since the
+  item went into service. Readings taken on the position before that belonged
+  to an earlier item and aren't used.
+- **The model's covariates.** For each one, a value condition of the same name
+  applied to the position (or above it), such as **Load** with the value 1.
+- **A model in calendar time.** An item's age is counted in days from its
+  in-service date (or the day it was first fitted), so the model's ages must
+  be in days, weeks, months or years.
+
+When one of these is missing the row says which, and what to do, in place of a
+number.
+
 ## Use the models in the RCM
 
 On the [RCM tab](/guides/rcm-on-your-asset-tree), a failure mode's **Based

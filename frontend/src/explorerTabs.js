@@ -109,7 +109,7 @@ export function isProductRow(row) {
 
 // The word over a picked row's name: what kind of row it is. A product's own
 // row says "Product"; the positions of its design below it stay "Position".
-export const ROW_KINDS = { pos: "Position", loc: "Location", item: "Item", group: "" };
+export const ROW_KINDS = { pos: "Position", loc: "Location", item: "Item", cls: "Item class", group: "" };
 export function rowKind(row) {
   if (row?.type === "loc" && isDesignRow(row)) return "Design location";
   return isProductRow(row) ? "Product" : ROW_KINDS[row?.type] || "";

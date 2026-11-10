@@ -1090,3 +1090,57 @@ def test_a_consumable_used_through_the_record_action(env):
     salt, neither = _session(env["token"], flow)
     assert salt["consumable"]["name"] == "Pool salt" and salt["consumable"]["uses"][0]["qty"] == 20
     assert neither.is_error and "position_id" in neither.content[0].text
+
+
+def test_an_item_class_fleet_over_mcp_and_rest(env):
+    """get.item_class with fleet: the class's positions with risk now, each from its own
+    position's condition and life model (class_fleet.py); the same read over REST."""
+    from datetime import date, timedelta
+
+    from fastapi.testclient import TestClient
+
+    from backend.main import app
+    from backend.maintenance import position_models as pm
+    from backend.maintenance.service import Maintenance
+    from backend.routers import maintenance as router
+    from backend.services import samples
+
+    samples.seed_samples(env["db"])
+    m = Maintenance(router._store, UID, UID)
+    day = lambda ago: (date.fromisoformat(m.today()) - timedelta(days=ago)).isoformat()  # noqa: E731
+    pump = m.create_item_class("Pump")["id"]
+    load = m.create_condition("Load", kind="value")["id"]
+    ids = []
+    for i, heavy in ((1, 1), (2, 0)):
+        pid = m.create_position(f"Pump {i}", position_class="Feed pump")["id"]
+        item = m.fit(pid, new_item={"name": f"Unit {i}", "in_service_date": day(100)}, on=day(100))["fitted"]["item"]["id"]
+        m.assign_item_class(item, pump)
+        ids.append(pid)
+        if i == 2:
+            continue  # no model on the second: listed with a dash
+        point = m.add_point(pid, "Vibration", kind="condition", unit="mm/s")["id"]
+        for d in (0, 50, 100):
+            m.record_reading(point, 2 + 0.02 * d, on=day(100 - d))
+        m.apply_condition(pid, load, value=heavy)
+        pm.link_saved(m, env["db"], [UID, "__samples__"], set(), pid, "model", "sample-joint-feed-pumps", None)
+
+    async def flow(client):
+        plain = _ok(await _get(client, "item_class", pump))
+        fleet = _ok(await _get(client, "item_class", pump, fleet=True))
+        one = _ok(await _get(client, "item_class", pump, fleet=True, position_id=ids[0]))
+        guide = _ok(await client.call_tool("maintenance", {"action": "guide", "topic": "modelling"}))
+        return plain, fleet, one, guide
+
+    plain, fleet, one, guide = _session(env["token"], flow)
+    assert plain["name"] == "Pump" and "members" not in plain  # the class record, as before
+    assert (fleet["positions"], fleet["scored"], fleet["no_model"]) == (2, 1, 1)
+    first, second = fleet["members"]
+    assert first["position"]["id"] == ids[0] and first["scored"] and len(first["risk"]) == 3
+    assert second["model"] is None and "risk" not in second and "Modelling" in fleet["note"]
+    assert one["member"]["unit"]["prediction"] and one["member"]["risk"] == pytest.approx(first["risk"])
+    assert "get.item_class with fleet" in guide["guide"]
+
+    rest = TestClient(app).post("/api/v1/maintenance/get.item_class", json={"id": pump, "fleet": True},
+                                headers={"Authorization": f"Bearer {env['token']}"})
+    assert rest.status_code == 200, rest.text
+    assert rest.json()["members"][0]["risk"] == pytest.approx(first["risk"])

@@ -72,7 +72,9 @@ export function listN(m) {
 
 // The tabs of a model's page, in order: [{ id, label }]. Empty for a model
 // with one view (per demand); null for a kind the frame doesn't draw yet.
-export function modelTabs(result) {
+// `riskNow: false`: a condition and life model where risk now is shown in the
+// Explorer instead (by Classes: each class's fleet), so its tab is left out.
+export function modelTabs(result, { riskNow = true } = {}) {
   const r = result || {};
   const fns = !!r.functions;
   let ids;
@@ -85,7 +87,7 @@ export function modelTabs(result) {
       ids = ["modes", r.regression?.coefficients?.length && "effects", r.curves?.x?.length && "calc", "diag", "data"];
       break;
     case "joint":
-      ids = ["risk", "calc", "effects", "diag", "data"];
+      ids = [riskNow && "risk", "calc", "effects", "diag", "data"];
       break;
     case "regression":
       ids = ["effects", fns && "calc", fns && regressionChars(r) && "chars", "diag", "data"];
@@ -203,7 +205,7 @@ function strongestEffect(result) {
 // The three or four numbers that answer "what does this model say?", as
 // short phrases for the line under the model's name. ``saved`` (a phrase,
 // e.g. "saved 3 min ago") ends it.
-export function answerParts(result, { split = null, saved = null } = {}) {
+export function answerParts(result, { split = null, saved = null, riskNow = true } = {}) {
   const r = result || {};
   const parts = [];
   const add = (p) => p && parts.push(p);
@@ -223,7 +225,7 @@ export function answerParts(result, { split = null, saved = null } = {}) {
       const top = (r.risk || [])[0];
       const mid = r.horizons?.labels?.[1];
       // The Risk now table's words: "> 99.9%", never "100%".
-      if (top && mid) add(`highest risk: unit ${top.id}, ${riskText(top.risk?.[1])} in the next ${mid}`);
+      if (top && mid && riskNow) add(`highest risk: unit ${top.id}, ${riskText(top.risk?.[1])} in the next ${mid}`);
       add(r.fit_ok === false && "fit not verified");
       break;
     }
