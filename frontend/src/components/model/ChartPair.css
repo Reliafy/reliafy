@@ -1,0 +1,46 @@
+/* Two charts sharing a box (ChartPair.jsx; the rule is in chartPair.js).
+   In a tab that fits the screen the pair fills its box's height; on a phone
+   (720 px and under) the page scrolls and each chart has its own height. */
+.chart-pair {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* The gap is PAIR_GAP in chartPair.js. */
+.chart-pair-cells {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 14px;
+}
+.chart-pair-side > .chart-pair-cells { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* One under the other in a tab that fits the screen: each keeps a readable
+   height, and a short window scrolls inside the pair, not the page. */
+.chart-pair-stack > .chart-pair-cells {
+  grid-auto-rows: minmax(250px, 1fr);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.chart-pair-cell { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.chart-pair-cell > * { flex: 1 1 auto; min-height: 0; }
+.chart-pair-pick { flex: none; align-self: flex-start; flex-wrap: wrap; max-width: 100%; }
+.chart-pair-pick .seg-btn { display: inline-flex; align-items: center; gap: 6px; }
+/* In the Diagnostics grid of checks the pair takes the whole row. */
+.mf-checks > .chart-pair { grid-column: 1 / -1; }
+
+@media (max-width: 720px) {
+  .chart-pair { flex: none; }
+  .chart-pair-cells,
+  .chart-pair-stack > .chart-pair-cells { display: flex; flex-direction: column; flex: none; overflow: visible; }
+  .chart-pair-cell > * { flex: none; }
+  .chart-pair-pick .seg-btn { min-height: 40px; }
+}
+@media print {
+  .chart-pair, .chart-pair-cells { overflow: visible !important; }
+}

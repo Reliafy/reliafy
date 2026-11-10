@@ -1,8 +1,8 @@
-// The six layouts a model page's tab body uses (the frame is ModelFrame.jsx).
+// The layouts a model page's tab body uses (the frame is ModelFrame.jsx).
 // Each fills the body's height on a desktop screen and stacks on a phone:
 //
 //   PlotPanel     L1  a chart that fills the height, a panel beside it
-//   TwoPlots      L2  two charts side by side (one under the other on a phone)
+//   (ChartPair)   L2  two charts kept wide enough to read (ChartPair.jsx)
 //   ChecksGrid    L3  Diagnostics: small checks (CheckCard), a side column
 //   (Calculator)  L4  the calculator keeps its own layout (Calculator.jsx)
 //   TablePanel    L5  a table that scrolls inside its card, a panel beside it
@@ -24,18 +24,6 @@ export function PlotPanel({ plot, below, side, className, sideClassName }) {
         {below}
       </div>
       {side && <div className={cx("aside mf-side", sideClassName)}>{side}</div>}
-    </div>
-  );
-}
-
-export function TwoPlots({ first, second, side, className }) {
-  return (
-    <div className={cx("detail-panel mf-l2", className)}>
-      <div className="mf-l2-plots">
-        <div className="mf-main">{first}</div>
-        <div className="mf-main">{second}</div>
-      </div>
-      {side && <div className="aside mf-side">{side}</div>}
     </div>
   );
 }
@@ -67,13 +55,24 @@ export function ChecksGrid({ children, side, toolbar, className }) {
   );
 }
 
+// A check's verdict as a chip (good / caveat / bad); nothing for a check to
+// read rather than a test.
+export function VerdictChip({ tone }) {
+  const v = VERDICT[tone];
+  if (!v) return null;
+  return (
+    <Chip tone={tone === "good" ? "success" : tone === "bad" ? "danger" : "warning"} className="mf-verdict">
+      <span aria-hidden="true">{v.icon}</span> {v.label}
+    </Chip>
+  );
+}
+
 // One check. ``question`` is its title ("Does the curve follow the data?"),
 // ``term`` the technical name shown in brackets after it, ``tone`` its
 // verdict (good / caveat / bad, or none for a check to read rather than a
 // test) and ``verdict`` the one line that says what it found. ``chart``:
 // the children are a filling chart; otherwise they scroll inside the card.
 export function CheckCard({ question, term, tone, verdict, children, chart = false, className, footer }) {
-  const v = VERDICT[tone];
   return (
     <section className={cx("mf-check", chart && "mf-check-chart", className)} aria-label={question}>
       <div className="mf-check-head">
@@ -81,11 +80,7 @@ export function CheckCard({ question, term, tone, verdict, children, chart = fal
           {question}
           {term && <span className="mf-check-term"> ({term})</span>}
         </h3>
-        {v && (
-          <Chip tone={tone === "good" ? "success" : tone === "bad" ? "danger" : "warning"} className="mf-verdict">
-            <span aria-hidden="true">{v.icon}</span> {v.label}
-          </Chip>
-        )}
+        <VerdictChip tone={tone} />
       </div>
       {verdict && <p className="mf-check-verdict">{verdict}</p>}
       <div className={chart ? "mf-check-plot" : "mf-check-body"}>{children}</div>
