@@ -112,11 +112,9 @@ To find your way around a big tree:
   only**: **Needs a decision**, **Hidden failures**, **Evidence to look at**
   and **Not analysed** (positions with no RCM yet). **Reset to the usual view**
   puts it all back.
-- **Positions** / **Locations** / **Classes**, above the tree, switches how
-  it's arranged: by what each position is inside, by where things are, or by
-  what kind of thing is fitted (each item class opens to its sub-classes and
-  the positions whose item is of that class; positions with no class come
-  last, under **No class**). The RCM tab is always by position.
+- **Positions** / **Locations**, above the tree, switches how it's arranged:
+  by what each position is inside, or by where things are. The RCM tab is
+  always by position.
 - To add a position at the top of the tree, press **+ New position**, the last
   row of the tree. To add one inside another, choose **New position inside**
   in that row's menu.
