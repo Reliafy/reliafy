@@ -135,6 +135,15 @@ export function isDesignScope(data, root) {
   return !!(root && data?.positions?.find((p) => p.id === root)?.design);
 }
 
+// Does one tree on show offer the Classes arrangement (the item classes, each with its positions)?
+// An asset's tree opened on its own does: items are fitted there. A product's design doesn't, on
+// its own page (`ownPage`) or opened as a tree: nothing is fitted in a design. Until the tree is
+// read (`data` null) the address is taken at its word, so a reload by Classes stays by Classes.
+export function scopeHasClasses(data, { ownPage = false } = {}) {
+  if (ownPage) return false;
+  return !data || data.scope?.kind === "unit";
+}
+
 // A design's rows: no failure report is filed there (a report is about an item).
 // The product's own row (the design's top position, `r`) adds Build an item…
 // first, as its Summary does (greyed with the reason when the workspace is

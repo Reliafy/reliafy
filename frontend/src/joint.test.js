@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  covariateParts, fleetAnswer, guessLifetimeColumns, lifeLeftNumber, riskText, sortRiskRows, guessReadingColumns, jointBlockLine, jointBlockModel, medianText,
+  covariateParts, fleetAnswer, fleetWithin, guessLifetimeColumns, lifeLeftNumber, riskText, sortRiskRows, guessReadingColumns, jointBlockLine, jointBlockModel, medianText,
   paramGroups, parseReadings, readingsText, riskTone, sortColumn,
 } from "./joint.js";
 
@@ -115,4 +115,39 @@ test("a class's fleet in one line: how many positions, how many with risk now, a
     "1,200 positions · 1 with risk now · highest: (no name), > 99.9% in the next 90 days",
   );
   assert.equal(fleetAnswer({ positions: 1, scored: 0, horizons, members: [pump("Valve", null)] }), "1 position · no risk now yet");
+});
+
+test("a class's fleet inside one asset: only its positions, counted again", () => {
+  const horizons = { labels: ["30 days", "90 days", "1 year"] };
+  const member = (id, name, risk, model = { id: "m1", name: "Pumps" }) => (
+    { position: { id, name }, scored: !!risk, risk, model: risk || model ? model : null });
+  const fleet = {
+    item_class: { id: "c1" }, horizons, positions: 4, scored: 3, no_model: 1, not_scored: 0,
+    models: [{ id: "m1", name: "Pumps", path: "/models/joint/m1", positions: 3 }],
+    note: "1 of these positions has no condition and life model. To see risk, link one to the position on its Modelling tab.",
+    members: [member("a1", "Station A pump 1", [0.3, 0.7, 0.99]), member("b1", "Station B pump 1", [0.2, 0.5, 0.9]),
+      member("b2", "Station B pump 2", [0.1, 0.3, 0.8]), member("a2", "Station A pump 2", null, null)],
+  };
+  // The whole register: the fleet as read.
+  assert.equal(fleetWithin(fleet, null), fleet);
+  assert.equal(fleetWithin(null, new Set(["a1"])), null);
+  // Station B alone: its two pumps, both scored, the highest of them first; nothing about Station A.
+  const b = fleetWithin(fleet, new Set(["b", "b1", "b2"]));
+  assert.deepEqual(b.members.map((m) => m.position.id), ["b1", "b2"]);
+  assert.deepEqual([b.positions, b.scored, b.no_model, b.not_scored], [2, 2, 0, 0]);
+  assert.equal(b.note, null);
+  assert.equal(b.models[0].positions, 2);
+  assert.equal(fleetAnswer(b), "2 positions · all with risk now · highest: Station B pump 1, 50% in the next 90 days");
+  // Station A: one scored, one with no model, and the note counts that one only.
+  const a = fleetWithin(fleet, new Set(["a", "a1", "a2"]));
+  assert.deepEqual([a.positions, a.scored, a.no_model], [2, 1, 1]);
+  assert.match(a.note, /^1 of these positions has no condition and life model\./);
+  assert.equal(fleetAnswer(a), "2 positions · 1 with risk now · highest: Station A pump 1, 70% in the next 90 days");
+  // An asset with none of the class's positions that have a model.
+  const none = fleetWithin(fleet, new Set(["a2"]));
+  assert.match(none.note, /^None of these positions has a condition and life model\./);
+  assert.deepEqual(none.models, []);
+  assert.equal(fleetAnswer(none), "1 position · no risk now yet");
+  // The fleet as read is left as it was.
+  assert.equal(fleet.positions, 4);
 });

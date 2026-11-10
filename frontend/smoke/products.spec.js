@@ -68,6 +68,8 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     // The Positions / Locations switch (its layout is the design's locations), opening on Positions;
     // the tree's last row adds inside the product.
     await expect(page.getByRole("radiogroup", { name: "Arrange by" }).getByRole("radio", { name: "Positions" })).toHaveAttribute("aria-checked", "true");
+    // No Classes there: nothing is fitted in a design (an asset's own tree has it).
+    await expect(page.getByRole("radiogroup", { name: "Arrange by" }).getByRole("radio", { name: "Classes" })).toHaveCount(0);
     await expect(page.locator(".tp-addrow")).toHaveText(/^\+New position inside Survey quadcopter/);
     // At most one h1: the product's row's name.
     expect(await page.getByRole("heading", { level: 1 }).count()).toBeLessThanOrEqual(1);
