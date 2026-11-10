@@ -137,7 +137,6 @@ const TIERS = (primaryHref, mcpOn = true) => [
     blurb: "The hosted app, ready in seconds. Everything you need to start.",
     features: [
       ...freeStorageLines(),
-      "1 RCM study, each decision checked against its evidence",
       "Join team workspaces free (view-only)",
       "Sample data and worked examples included",
       "25 AI credits to try the assistant",

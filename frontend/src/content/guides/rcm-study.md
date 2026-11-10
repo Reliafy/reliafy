@@ -82,24 +82,6 @@ the page shows an **Unsaved** chip.
 
 On the Free plan you can keep one RCM study. Pro has no limit.
 
-### Or import an existing worksheet
-
-If your FMEA or RCM worksheet already lives in Excel, press **Import from
-Excel** on the RCM studies page instead. Drop the workbook in, pick the sheet, and map
-its columns: **Function**, **Functional failure**, **Failure mode**,
-**Effects**, **Consequence**, **Decision / task type**, **Task**, **Interval**
-and **Interval unit**. Only **Failure mode** is required. Blank function and
-failure cells carry down from the row above, as most worksheets expect.
-
-Reliafy lists the distinct values it finds in the consequence and decision
-columns, guesses what each means, and lets you correct any guess. Other columns,
-such as severity, occurrence and RPN, can be kept in each mode's notes. The
-**Result** line counts what will be created before you press **Create study**.
-
-To add a worksheet to a study you already have, use **Import from Excel** in
-the study's **⋯** menu. **Append** adds the imported rows after the existing
-ones; **Replace** swaps the whole worksheet, and asks you to confirm first.
-
 ## Make a decision for each failure mode
 
 Click **To decide** in a failure mode's **Decision** column, or **Decide…** in
@@ -108,8 +90,7 @@ its details. The dialog walks through the classic RCM decision logic.
 ![The decision dialog: the consequence, the suggested decisions, the task and the linked evidence](/guides/img/rcm-study-02-decision.png)
 
 **The consequence of failure.** Say what the failure does: **Safety**,
-**Environmental**, **Operational** or **Non-operational**, and whether it is
-**Hidden**. A hidden failure is one you can't see in normal operation, like a
+**Environmental**, **Operational**, **Non-operational** or **Hidden**. A hidden failure is one you can't see in normal operation, like a
 trip that won't trip until it's needed. Each choice shows the rule it implies.
 For *Operational*: a proactive task must cost less than the consequences it
 prevents, or the answer is run-to-failure.
