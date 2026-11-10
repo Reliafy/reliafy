@@ -104,8 +104,18 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   await expect(takeoff).toContainText("Completes");
   await expect(survey).toContainText("still going");
   await expect(survey).toContainText("Weakest:");
+  // Saving works the saved mission out for the table. That answer is held back here, so the table
+  // has read the missions again before it exists: the row still gets it (below, the pane closed).
+  const calculation = "**/api/rbds/*/missions/*/calculate";
+  await page.route(calculation, async (route) => {
+    await new Promise((done) => setTimeout(done, 1500));
+    await route.continue();
+  });
+  const workedOut = page.waitForResponse((res) => new URL(res.url()).pathname.endsWith("/calculate"));
   await pane.getByRole("button", { name: "Save" }).click();
   await expect(pane.getByRole("button", { name: "Save" })).toBeDisabled();
+  await workedOut;
+  await page.unroute(calculation);
 
   // Show the RBD for the survey: the diagram, drawn read-only.
   await survey.getByRole("button", { name: "Show the RBD" }).click();

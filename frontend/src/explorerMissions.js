@@ -29,6 +29,18 @@ export const phaseKey = (rbdId, missionId, i) => `MP:${rbdId}:${missionId}:${i}`
 // Phases a mission can have (the pane's Add a phase stops there too).
 export const MAX_PHASES = 50;
 
+// Reads of the missions that can overlap (one after a save, one more once the saved mission's
+// result is worked out): `const latest = asked()` as each read starts; when its answer comes,
+// `latest()` says whether it is still the last one asked for. An earlier read's answer, arriving
+// late, is then dropped rather than put over the newer one.
+export function latestOnly() {
+  let last = 0;
+  return () => {
+    const mine = ++last;
+    return () => mine === last;
+  };
+}
+
 // The pane's address value (?mission=<rbd id>:<mission id>&on=<position id>) and back.
 export const missionParam = (rbdId, missionId) => `${rbdId}:${missionId}`;
 export function parseMissionParam(value) {

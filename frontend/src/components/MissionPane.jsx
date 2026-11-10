@@ -132,7 +132,12 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
       const fresh = await getMission(rbdId, missionId);
       setDetail(fresh);
       onSaved?.(`Saved ${name.trim() || detail.mission.name}.`);
-      await calculateMission(rbdId, missionId).then(setResult, () => {});
+      // The saved mission worked out, its result kept for the table: the table is told again once
+      // it's there (its read after the save can come back before this has finished).
+      await calculateMission(rbdId, missionId).then((got) => {
+        setResult(got);
+        onSaved?.(null);
+      }, () => {});
     } catch (e) {
       setSaveError(saveErrorText(e, { offline: navigator.onLine === false }));
     } finally {

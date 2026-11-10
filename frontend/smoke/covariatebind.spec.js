@@ -43,8 +43,11 @@ test("covariates: fix some at a position from the library, set the rest in the R
   await pane.getByLabel("Dynamic load rating (catalogue) (L_S)").fill("5000");
   await expect(pane.getByRole("status")).toContainText("fixed here");
   await shot(page, "bind-pane-1440");
+  // The page changes to its phone layout a frame after the window narrows: the width is read
+  // until it has (expect.poll), never once straight after the resize.
   await page.setViewportSize({ width: 400, height: 860 });
-  expect(await sideways(page)).toBeLessThanOrEqual(0);
+  await expect(pane.getByRole("button", { name: "Back to the table" })).toBeVisible();
+  await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "bind-pane-400");
   await page.setViewportSize({ width: 1440, height: 900 });
   await pane.getByRole("button", { name: "Save at this position" }).click();
@@ -65,7 +68,7 @@ test("covariates: fix some at a position from the library, set the rest in the R
   await page.setViewportSize({ width: 400, height: 860 });
   await bar.getByRole("button", { name: "Covariates…" }).click();
   await expect(dlg).toBeVisible();
-  expect(await sideways(page)).toBeLessThanOrEqual(0);
+  await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "rbd-covariates-400");
   await dlg.getByRole("button", { name: "Cancel" }).click();
   await page.setViewportSize({ width: 1440, height: 900 });
