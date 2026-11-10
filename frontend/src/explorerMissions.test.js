@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildDisplay } from "./assetTree.js";
 import {
   MAX_PHASES, answerText, changedPhases, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow,
-  isPhaseRow, lengthText, missionKey, missionParam, missionRowActions, movePhase, newPhase, parseMissionParam, phaseCompletes,
+  isPhaseRow, latestOnly, lengthText, missionKey, missionParam, missionRowActions, movePhase, newPhase, parseMissionParam, phaseCompletes,
   phaseCovariates, phaseKey, phaseLengthText, phaseLine, phaseNeeds, phaseOfText, phasesText, positionMissionActions, rollupText, typed,
   withBlockValue, withNewPhase, withoutPhase, withValue,
 } from "./explorerMissions.js";
@@ -192,4 +192,18 @@ test("phases changed from the tree: added at the end, moved, taken out, saved as
   // A new phase's name skips one already taken.
   assert.equal(newPhase(1, [{ name: "phase 2" }]).name, "Phase 3");
   assert.equal(newPhase(0).name, "Phase 1");
+});
+
+test("of two reads out at once, only the one asked for last is used", () => {
+  const asked = latestOnly();
+  const first = asked();
+  assert.equal(first(), true); // alone, its answer is used
+  // A mission is saved (one read), then its result is worked out (another): the first read's
+  // answer, whenever it comes, is dropped; the second's is the table's.
+  const second = asked();
+  assert.equal(first(), false);
+  assert.equal(second(), true);
+  // Each table has its own count.
+  assert.equal(latestOnly()()(), true);
+  assert.equal(second(), true);
 });

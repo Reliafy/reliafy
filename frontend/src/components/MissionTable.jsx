@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listPositionMissions } from "../api.js";
 import Chip from "./ui/Chip.jsx";
-import { completesText, isPhaseRow, lengthText, phaseLengthText, phaseOfText, phasesText } from "../explorerMissions.js";
+import { completesText, isPhaseRow, latestOnly, lengthText, phaseLengthText, phaseOfText, phasesText } from "../explorerMissions.js";
 
 // The Explorer's Missions tab is the tree with each position's missions in it
 // (explorerMissions.js), like the Modelling tab: the read of every position's RBD missions, each
@@ -9,12 +9,19 @@ import { completesText, isPhaseRow, lengthText, phaseLengthText, phaseOfText, ph
 
 export { MISSION_COLUMNS, MISSION_TREE_HEAD } from "../explorerMissions.js";
 
-// Every position's RBDs and their missions, read when the tab is on (and again on `load`).
+// Every position's RBDs and their missions, read when the tab is on (and again on `load`). Two
+// reads can be out at once (a mission saved, then its result worked out): the one asked for last
+// is the one shown, whichever answers first.
 export function useTreeMissions({ on }) {
   const [state, setState] = useState({ links: null, error: null });
-  const load = useCallback(() => listPositionMissions()
-    .then((d) => setState({ links: d.links || [], error: null }))
-    .catch((e) => setState((s) => ({ links: s.links, error: e.message }))), []);
+  const asked = useRef(null);
+  if (!asked.current) asked.current = latestOnly();
+  const load = useCallback(() => {
+    const latest = asked.current();
+    return listPositionMissions()
+      .then((d) => latest() && setState({ links: d.links || [], error: null }))
+      .catch((e) => latest() && setState((s) => ({ links: s.links, error: e.message })));
+  }, []);
   useEffect(() => { if (on) load(); }, [on, load]);
   return { links: state.links, error: state.error, load };
 }
