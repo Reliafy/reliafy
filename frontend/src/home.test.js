@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  attentionRows, dayText, recentRows, dueRows, fleetRows, otherRecent, recentFor, sparesRows, waitingFigures, workTodayRows,
+  ATTENTION_ROWS, LITTLE_WORK, NEAR_EMPTY, RECENT_ROWS, attentionReady, attentionRest, attentionRows, dayText, recentRows,
+  dueRows, fleetRows, otherRecent, recentFor, sparesRows, startersPlace, waitingFigures, workTodayRows,
 } from "./home.js";
 
 test("needs attention: worst first, samples left out, only contradicted evidence", () => {
@@ -38,6 +39,54 @@ test("needs attention: worst first, samples left out, only contradicted evidence
 test("needs attention is empty with nothing to go on", () => {
   assert.deepEqual(attentionRows(), []);
   assert.deepEqual(attentionRows({ changes: null, tracked: null, maintenance: null }), []);
+});
+
+test("needs attention is ready only once every source it reads has answered", () => {
+  const loaded = { changes: { alerts: [] }, tracked: [], access: false };
+  // Nothing in yet, and each source alone still loading: not ready, so no "nothing needs you".
+  assert.equal(attentionReady(), false);
+  assert.equal(attentionReady({ ...loaded, changes: undefined }), false);
+  assert.equal(attentionReady({ ...loaded, tracked: undefined }), false);
+  assert.equal(attentionReady({ ...loaded, access: undefined }), false);
+  // Without Reliafy Maintenance the overview is never asked for.
+  assert.equal(attentionReady(loaded), true);
+  // With it, the overview must be in: this is the wait that showed the empty sentence too early.
+  assert.equal(attentionReady({ ...loaded, access: true }), false);
+  assert.equal(attentionReady({ ...loaded, access: true, maintenance: { due: [] } }), true);
+  // A source that failed (null) has answered: the page doesn't wait for ever.
+  assert.equal(attentionReady({ ...loaded, changes: null }), true);
+  assert.equal(attentionReady({ ...loaded, access: true, maintenance: null }), true);
+});
+
+test("needs attention: the rows not shown are linked to the pages that list them", () => {
+  const due = (n) => Array.from({ length: n }, (_, i) => ({ key: `due-t${i}` }));
+  // Everything fits: nowhere else to send anyone.
+  assert.deepEqual(attentionRest(due(ATTENTION_ROWS)), []);
+  assert.deepEqual(attentionRest([]), []);
+  assert.deepEqual(attentionRest(), []);
+  // 35 due tasks, 6 shown: the rest are on Maintenance, named once.
+  assert.deepEqual(attentionRest(due(35)), [{ to: "/maintenance", label: "Maintenance" }]);
+  // Only the rows left out count: a shown alert doesn't add its page.
+  assert.deepEqual(attentionRest([{ key: "alert-f1-x" }, ...due(ATTENTION_ROWS)]),
+    [{ to: "/maintenance", label: "Maintenance" }]);
+  // Mixed kinds left out: each page once, in the rows' order; alerts and RCM evidence share one.
+  const mixed = [...due(ATTENTION_ROWS), { key: "track-f2" }, { key: "alert-f1-x" }, { key: "rcm-p1-m-u" }, { key: "due-z" }];
+  assert.deepEqual(attentionRest(mixed).map((p) => [p.to, p.label]),
+    [["/risk", "Condition monitoring"], ["/changes", "What changed"], ["/maintenance", "Maintenance"]]);
+  // A smaller window, and a row of a kind with no page of its own.
+  assert.deepEqual(attentionRest([{ key: "due-a" }, { key: "track-b" }], 1).map((p) => p.to), ["/risk"]);
+  assert.deepEqual(attentionRest([{ key: "due-a" }, { key: "other-b" }], 1), []);
+});
+
+test("the ways to start: large and first when near-empty, compact and first with a little work, last with plenty", () => {
+  assert.equal(startersPlace(0), "large");
+  assert.equal(startersPlace(NEAR_EMPTY - 1), "large");
+  assert.equal(startersPlace(NEAR_EMPTY), "first");
+  assert.equal(startersPlace(LITTLE_WORK - 1), "first");
+  // From a full Recent list up, the order is as it was: the lists, then the ways to start.
+  assert.equal(LITTLE_WORK, RECENT_ROWS);
+  assert.equal(startersPlace(LITTLE_WORK), "last");
+  assert.equal(startersPlace(400), "last");
 });
 
 test("recent: own items only, newest save first, each linked to its page", () => {

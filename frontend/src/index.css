@@ -8766,9 +8766,16 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .help-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; }
 /* `display: block` is load-bearing: the global `button` rule is inline-flex, so
    without this the title and its task sit on one row and overflow the drawer. */
-.help-list button { display: block; width: 100%; text-align: left; background: none; border: none; color: inherit; padding: 10px 12px; border-radius: var(--r-sm); cursor: pointer; }
+/* `white-space: normal` too: the global rule keeps a button on one line, which
+   ran a long task line off the drawer's edge. */
+.help-list button { display: block; width: 100%; text-align: left; white-space: normal; background: none; border: none; color: inherit; padding: 10px 12px; border-radius: var(--r-sm); cursor: pointer; }
 .help-list button:hover { background: var(--acc-t); }
-.help-list .help-item-task { display: block; font-size: var(--fs-13); color: var(--muted); }
+.help-list .help-item-task { display: block; font-size: var(--fs-13); line-height: 1.4; color: var(--muted); }
+/* The list's filter box: the shared list search, the drawer's full width. */
+.help-filter.tablebar { margin: 0; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+.help-filter .search { flex: 1; width: auto; min-width: 0; }
+.help-filter .search.live input { flex: 1; width: auto; min-width: 0; }
+.help-none { margin: 0; padding: 10px 12px; font-size: var(--fs-14); color: var(--muted); }
 /* Help trigger in the top bar + inline "how do I…" links */
 .nav-help-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -9803,10 +9810,19 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 /* Home. */
 .home .wc-panel { margin-top: 24px; }
 .home-note { font-size: var(--fs-13); color: var(--muted); text-align: right; }
+/* A long note wraps beside the heading; the heading itself stays on one line. */
+.home-list .recent-models-head h2 { flex-shrink: 0; white-space: nowrap; }
 .home-none { margin: 0; padding: 14px 16px; font-size: var(--fs-14); color: var(--muted); }
 .home-none a { color: var(--acc); font-weight: 500; text-decoration: none; }
 .home-none a:hover, .home-none a:focus-visible { text-decoration: underline; }
 .home .start-compact { margin-top: 28px; }
+/* With only a little work saved, the ways to start sit first, under the title. */
+.home .home-start-first .start-compact { margin-top: 16px; }
+/* While it loads: a grey bar where a heading will be, and a card of placeholder rows. */
+.home-wait-title { width: 132px; height: 12px; margin: 5px 0; }
+.home-start-wait { margin-top: 16px; }
+/* Home's purpose says what Reliafy is for, so it wraps and is never cut short. */
+.home .sh-purpose-text { white-space: normal; overflow: visible; }
 
 /* Section landing pages: a compact header. The menu already says which
    section you're in, so the one-word breadcrumb only shows on a phone. */

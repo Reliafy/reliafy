@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { portalHost } from "../fullScreen.js";
 import { guidesByCategory, getGuide } from "../guides.js";
+import { filterGuideGroups } from "../guideFilter.js";
 import { getEntry } from "../reference.js";
 import { publicUrl } from "../firebase.js";
 import GuideBody from "./GuideBody.jsx";
 import ReferenceEntry from "./ReferenceEntry.jsx";
+import ListSearch from "./ListSearch.jsx";
 
 // Open the Help drawer at a specific guide from anywhere (contextual
 // "How do I…?" links on features). No shared store needed — a window event.
@@ -32,12 +34,18 @@ const QIcon = () => (
 // A "?" in the top bar that opens a Help drawer of the product guides, viewable
 // in-app next to the UI. Optionally opened straight to a specific guide (used by
 // contextual "How do I…" links on complex features), or to a reference entry.
+// The list has a filter box (guideFilter.js): what's typed stays while a guide
+// is read, so "← All guides" comes back to the same short list; opening the
+// drawer afresh clears it.
 export default function HelpButton({ openSlug = null }) {
   const [open, setOpen] = useState(false);
   const [slug, setSlug] = useState(openSlug);
   const [refId, setRefId] = useState(null);
+  const [query, setQuery] = useState("");
   const guide = slug ? getGuide(slug) : null;
   const entry = refId ? getEntry(refId) : null;
+  const listed = !guide && !entry;
+  const groups = listed ? filterGuideGroups(guidesByCategory(), query) : [];
 
   useEffect(() => {
     const onHelp = (e) => {
@@ -46,6 +54,7 @@ export default function HelpButton({ openSlug = null }) {
       const next = typeof d === "string" ? { guide: d } : d || {};
       setSlug(next.guide || null);
       setRefId(next.reference || null);
+      setQuery("");
       setOpen(true);
     };
     window.addEventListener("reliafy:help", onHelp);
@@ -67,7 +76,7 @@ export default function HelpButton({ openSlug = null }) {
   return (
     <>
       <button className="nav-help-btn" title="Guides & help" aria-label="Help"
-              onClick={() => { setSlug(openSlug); setRefId(null); setOpen(true); }}>
+              onClick={() => { setSlug(openSlug); setRefId(null); setQuery(""); setOpen(true); }}>
         <QIcon />
       </button>
       {open && createPortal(
@@ -82,6 +91,12 @@ export default function HelpButton({ openSlug = null }) {
               )}
               <button className="modal-close" onClick={() => setOpen(false)} aria-label="Close">×</button>
             </div>
+            {/* Above the scrolling list, so it stays in reach. */}
+            {listed && (
+              <div className="tablebar help-filter">
+                <ListSearch value={query} onChange={setQuery} placeholder="Filter guides…" />
+              </div>
+            )}
             <div className="help-drawer-body">
               {entry ? (
                 <>
@@ -103,10 +118,15 @@ export default function HelpButton({ openSlug = null }) {
                     </a>
                   </p>
                 </>
+              ) : groups.length === 0 ? (
+                <p className="help-none" role="status">
+                  No guide matches “{query.trim()}”.{" "}
+                  <button type="button" className="link" onClick={() => setQuery("")}>Show all guides</button>
+                </p>
               ) : (
                 // Same grouping as the public /guides index, so the two read
                 // the same way round.
-                guidesByCategory().map((group) => (
+                groups.map((group) => (
                   <div className="help-group" key={group.category}>
                     <h3 className="help-group-h">{group.category}</h3>
                     <ul className="help-list">
