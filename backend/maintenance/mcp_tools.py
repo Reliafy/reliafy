@@ -195,8 +195,8 @@ GET_KINDS: Table = {
 
 LIST_KINDS: Table = {
     "work_orders": ("", "status location_id", """Newest first, each with subject, position (where the work
-        is) and location. status 'open' (every one not done: open, planned, in_progress, waiting) or one
-        status exactly (closed, cancelled...). location_id: only work in that area (positions there, set or
+        is), location and overdue. status 'open' (every one not done: open, planned, in_progress, waiting;
+        listed by due date, most overdue first) or one status exactly (closed, cancelled...). location_id: only work in that area (positions there, set or
         inherited, items there now, the location itself)."""),
     "items": ("", "item_class_id manufacturer_id", """Every item with the position it's fitted to and where
         it is (location: fitted or placed; or last_at), item_class and manufacturer_entry. item_class_id (that
