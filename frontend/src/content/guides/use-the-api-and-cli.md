@@ -161,8 +161,7 @@ readings (`reliafy ingest measurements`) and new failures for a dataset
 `--measurements-for DATASET_ID`, as a dataset's measurements (readings on its
 units: unit id, age, value, for a condition and life model). `reliafy import rbd`
 brings in a diagram from BlockSim, Open-PSA, Galileo or RePyability JSON, and
-`reliafy import excel` reads an .xlsx workbook: a sheet as a dataset, an FMEA or
-RCM worksheet onto a position's RCM (`--target rcm --position ID`), or Reliafy's
+`reliafy import excel` reads an .xlsx workbook: a sheet as a dataset, or Reliafy's
 RBD template as a diagram. The details are on [Files and photos](/api-docs/files); to import
 from the app instead, see [import a diagram](/guides/import-a-diagram).
 

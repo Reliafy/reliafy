@@ -9,8 +9,8 @@ order: 46
 ---
 
 A **team** is a shared workspace. Everything made inside it belongs to the team
-rather than to one person: datasets, models, diagrams, strategy analyses and
-fleets. Everyone in the team sees all of it, so the work
+rather than to one person: datasets, models, diagrams, strategy analyses,
+fleets and RCM studies. Everyone in the team sees all of it, so the work
 outlives whoever built it, and the person covering next month doesn't have to
 ask anyone to send anything.
 
@@ -115,7 +115,7 @@ team workspace; for a model, fit it again from its dataset.
 For the other ways to show work to people (a public link, or one item shared
 with a named person), see [sharing your work](/guides/share-your-work).
 
-A team workspace suits work that lasts: the
-[RCM on an asset tree](/guides/rcm-on-your-asset-tree) several engineers
-maintain, or a [fleet forecast](/guides/forecast-fleet-failures-and-spares) the
-whole reliability group checks each month.
+A team workspace suits work that lasts: an
+[RCM study](/guides/rcm-study) several engineers maintain, or a
+[fleet forecast](/guides/forecast-fleet-failures-and-spares) the whole
+reliability group checks each month.

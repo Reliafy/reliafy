@@ -515,6 +515,22 @@ async function seedSignals(config) {
   }
   return { positionId: pump.id, channelId: channel.id };
 }
+// RCM study guide: a study of the user's own (the sample is read-only, so its
+// decision dialog can't open), with one mode still to decide.
+async function seedRcmStudy() {
+  const study = await api("/rcm/studies", { name: "Conveyor drive — RCM", system: "Conveyor line 2", description: "" });
+  const res = await fetch(`${BASE}/api/rcm/studies/${study.id}/tree`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ functions: [{ text: "Drive the belt at 4 m/s", failures: [{ text: "Belt stops", modes: [
+      { text: "Gearbox bearing fatigue", effects: "Line stops until the bearing is changed; about 8 hours lost.",
+        consequence: null, decision: null },
+      { text: "Motor overload trip fails to operate (hidden)", effects: "Motor burns out on the next jam.",
+        consequence: "hidden", decision: null },
+    ] }] }] }),
+  });
+  if (!res.ok) throw new Error(`rcm tree → ${res.status} ${await res.text()}`);
+  return study.id;
+}
 async function seedTeam() {
   const team = await api("/teams", { name: "Reliability team" });
   await api(`/teams/${team.id}/members`, { email: "colleague@example.com" });
@@ -755,6 +771,9 @@ async function main() {
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); await calculate(page); } },
     // --- Maintainability prediction: the sample quadcopter's saved prediction ---
     { file: "mp-01-result.png", url: "/maintainability/sample-maintainability-quadcopter", settle: 1500 },
+    // --- RCM study (guides/rcm-study.md): the sample, with its evidence statuses ---
+    { file: "rcm-study-01.png", url: "/maintenance/rcm/sample-rcm-truck", settle: 2000,
+      async act(page) { await page.getByRole("treegrid", { name: "RCM worksheet" }).waitFor({ timeout: 20000 }); await wait(400); } },
     // --- Failure-finding interval: a trip failing once a year (λ = 1/8,760 h), 99% ---
     { file: "ff-01-result.png", url: "/strategy/failure-finding", settle: 1200,
       async act(page) {
@@ -853,6 +872,18 @@ async function main() {
 
   // Shots needing purpose-built fixtures (created below, deleted afterwards).
   const fixtureShots = (fx) => [
+    // --- RCM study (guides/rcm-study.md): deciding a failure mode, with the sample
+    // analysis as evidence ---
+    { file: "rcm-study-02-decision.png", url: `/maintenance/rcm/${fx.rcmStudyId}`, settle: 1500,
+      async act(page) {
+        await page.getByRole("button", { name: "To decide" }).first().click(); await wait(600);
+        const m = page.locator(".decision-modal");
+        await m.getByRole("button", { name: /^Operational$/ }).click(); await wait(300);
+        await m.getByRole("button", { name: /Fixed-interval replacement/ }).click(); await wait(800);
+        await m.getByPlaceholder("e.g. Replace brake pads").fill("Replace the gearbox input bearing");
+        await m.getByPlaceholder("Interval").fill("580");
+        await m.locator(".evidence-option", { hasText: /Bearing preventive replacement/ }).click(); await wait(500);
+      } },
     // --- RCM on the asset tree: the RCM tab of the Survey quadcopter's functional
     // structure (the same Explorer, on the design), its top picked: its function top
     // down, failures explained below, with the evidence checks; then the decision
@@ -1203,6 +1234,7 @@ async function main() {
       outageId: await seedOutageRbd(),
       networkId: await seedNetworkRbd(),
       design: await seedDesignRbds(),
+      rcmStudyId: await seedRcmStudy(),
       uav: await seedSampleProduct(config),
       signals: await seedSignals(config),
       teamId: await seedTeam(),
@@ -1240,6 +1272,7 @@ async function main() {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "guide capture" }),
         }).catch(() => {});
       }
+      await fetch(`${BASE}/api/rcm/studies/${fx.rcmStudyId}`, { method: "DELETE" }).catch(() => {});
       await fetch(`${BASE}/api/teams/${fx.teamId}`, { method: "DELETE" }).catch(() => {});
       for (const id of [fx.loadshare.datasetId, ...fx.joint.datasetIds]) {
         await fetch(`${BASE}/api/datasets/${id}`, { method: "DELETE" }).catch(() => {});
