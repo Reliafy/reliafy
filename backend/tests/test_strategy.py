@@ -189,3 +189,74 @@ def test_compute_and_saved_analyses_keep_the_models_extras():
     assert ff["interval"] == pytest.approx(
         st.failure_finding("exponential", rate, 0.99, extras={"gamma": 500.0})["interval"])
     assert ff["interval"] > st.failure_finding("exponential", rate, 0.99)["interval"]
+
+
+# --- optimal replacement: the range, the reasons and the cost checks ----------
+
+_PUMP = [
+    {"name": "alpha", "value": 32.66, "se": 4.2, "ci": [25.32, 42.13]},
+    {"name": "beta", "value": 1.819, "se": 0.37, "ci": [1.215, 2.721]},
+]
+
+
+def test_optimal_replacement_range_comes_from_the_parameter_bounds():
+    res = st.optimal_replacement("weibull", _PUMP, 1000, 8000, unit="Months")
+    rng = res["optimal_time_range"]
+    assert rng["level"] == 0.95 and rng["always_beneficial"] is True
+    assert [(c["param"], c["bound"]) for c in rng["cases"]] == [
+        ("alpha", "lower"), ("alpha", "upper"), ("beta", "lower"), ("beta", "upper"),
+    ]
+    assert rng["lower"] < res["optimal_time"] < rng["upper"]
+    # Each end is the same calculation run on the moved parameter.
+    moved = [{"name": "alpha", "value": 25.32}, {"name": "beta", "value": 1.819}]
+    assert rng["cases"][0]["optimal_time"] == pytest.approx(
+        st.optimal_replacement("weibull", moved, 1000, 8000)["optimal_time"]
+    )
+    note = res["optimal_time_range_note"]
+    assert "months" in note and "not a confidence interval" in note
+
+
+def test_optimal_replacement_has_no_range_without_bounds():
+    plain = [{"name": "alpha", "value": 32.66}, {"name": "beta", "value": 1.819}]
+    entered = [{**p, "se": None, "ci": None} for p in plain]
+    for params in (plain, entered):
+        res = st.optimal_replacement("weibull", params, 1000, 8000)
+        assert res["beneficial"] is True
+        assert res["optimal_time_range"] is None
+        assert "without confidence bounds" in res["optimal_time_range_note"]
+
+
+def test_optimal_replacement_range_says_when_a_bound_stops_paying():
+    params = [_PUMP[0], {"name": "beta", "value": 1.819, "ci": [0.9, 3.6]}]
+    res = st.optimal_replacement("weibull", params, 1000, 8000)
+    assert res["beneficial"] is True
+    assert res["optimal_time_range"]["always_beneficial"] is False
+    assert "beta at its lower bound (0.9)" in res["optimal_time_range_note"]
+
+
+@pytest.mark.parametrize("dist, params, reason, words", [
+    ("exponential", [{"name": "failure_rate", "value": 0.001}], "constant_failure_rate", "failure rate is constant"),
+    ("weibull", [{"name": "alpha", "value": 30}, {"name": "beta", "value": 0.8}], "no_wear_out", "falls with age"),
+    ("weibull", [{"name": "alpha", "value": 30}, {"name": "beta", "value": 1.0}], "no_wear_out", "failure rate is constant"),
+])
+def test_optimal_replacement_says_why_no_age_pays(dist, params, reason, words):
+    res = st.optimal_replacement(dist, params, 1000, 8000)
+    assert res["beneficial"] is False and res["optimal_time"] is None
+    assert res["reason"] == reason
+    assert res["recommendation"].startswith("Replacing on age doesn't pay for this model")
+    assert words in res["recommendation"]
+
+
+def test_optimal_replacement_reason_is_none_when_it_pays():
+    assert st.optimal_replacement("weibull", _PUMP, 1000, 8000)["reason"] is None
+
+
+@pytest.mark.parametrize("cp, cu, words", [
+    (-5, 8000, "can't be negative"),
+    (0, 8000, "planned cost above 0"),
+    (8000, 8000, "must be higher than the planned cost"),
+    (9000, 8000, "must be higher than the planned cost"),
+])
+def test_optimal_replacement_cost_messages_say_what_to_do(cp, cu, words):
+    with pytest.raises(StrategyError, match=words):
+        st.optimal_replacement("weibull", _PUMP, cp, cu)
