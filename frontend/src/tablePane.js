@@ -75,6 +75,18 @@ export function paneFromQuery(params) {
 // Every pane's address parameters, for clearing them all.
 export const PANE_PARAMS = [...new Set(Object.values(TABLE_PANES).flatMap((p) => [p.param, ...(p.on ? [p.on] : []), ...Object.values(p.extra || {})]))];
 
+// Another row was picked: take out of the address `q` every pane open for a different position,
+// with all its keys. A pane for `positionId` itself stays whole (a fit's prior, an RBD's diagram,
+// a mission): its other keys aren't position ids, so they can't be compared with the row picked.
+export function keepPaneFor(q, positionId) {
+  for (const p of Object.values(TABLE_PANES)) {
+    if (!q.get(p.param) || q.get(p.on || p.param) === positionId) continue;
+    for (const k of [p.param, ...(p.on ? [p.on] : []), ...Object.values(p.extra || {})]) q.delete(k);
+  }
+  if (!paneFromQuery(q)) for (const k of PANE_PARAMS) q.delete(k);
+  return q;
+}
+
 // Put the pane `kind` for `positionId` in the address `q` (URLSearchParams), any other pane's
 // taken out; an RBD's `rbd`, the diagram; a fit's `from`, the model row it starts from (&prior=).
 export function setPaneQuery(q, kind, positionId, { rbd = null, from = null } = {}) {

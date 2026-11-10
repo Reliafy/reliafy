@@ -21,7 +21,7 @@ import {
 } from "../explorerMissions.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
 import { bindingForRecord, bindingFromParam, bindingParam } from "../covariate.js";
-import { PANE_PARAMS, TABLE_PANES, paneFromQuery, setPaneQuery } from "../tablePane.js";
+import { PANE_PARAMS, TABLE_PANES, keepPaneFor, paneFromQuery, setPaneQuery } from "../tablePane.js";
 import { fitPreset, priorFrom } from "../fitDialog.js";
 import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, builtRbdLink, graftModels, inUseWords, isModelRow, modelKey, openForModels, rollupText as modelRollup, lifeModelOf,
   opensInPane, bindingOf,
@@ -548,7 +548,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       // The packaging open in the LSA tab was the last row's as well.
       if (q.get("packaging") !== selPos) q.delete("packaging");
       for (const k of VIEW_PARAMS) q.delete(k);
-      for (const k of PANE_PARAMS) if (q.get(k) && q.get(k) !== selPos) q.delete(k);
+      keepPaneFor(q, selPos);
     });
   }, [data, selPos, params, setQuery_, tab]);
 
