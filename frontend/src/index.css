@@ -9625,6 +9625,12 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
   .plot-fill > .plot-dl { position: absolute; }
   .plot-fill > .plot-dl + .plot-fill-inner { top: 32px; }
 }
+/* A wide screen, and legend text reaches that corner (Plot.jsx measures it and sets .plot-dl-own): a
+   slimmer row of their own above the chart, which is drawn that much shorter, so the frame is no
+   taller and the buttons still show only on hover. */
+.plot-frame.plot-dl-own:not(.plot-fill) { padding-top: 24px; }
+.plot-fill.plot-dl-own > .plot-dl + .plot-fill-inner { top: 24px; }
+.plot-dl-own > .plot-dl .plot-dl-btn { height: 24px; }
 .plot-dl-btn:focus-visible { outline: none; box-shadow: var(--focus); border-color: var(--acc); }
 
 /* Fit statistics in their modal: the table is the dialog's content, not a card in it. */

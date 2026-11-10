@@ -8,34 +8,44 @@
 // are merged over the theme's, so a call site sets only what is particular to
 // its chart. `download="Bearings — probability plot"` adds small PNG and SVG
 // buttons that save the chart named after it (the Plotly toolbar is off).
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js-basic-dist-min";
-import { DATE_LOCALE, INK, SURFACE, chartFileName, themedConfig, themedLayout } from "../plotTheme.js";
+import {
+  DATE_LOCALE, DOWNLOAD_ROW, INK, SURFACE, chartFileName, downloadCorner, ownHeight, reachesCorner, shorterBy,
+  themedConfig, themedLayout,
+} from "../plotTheme.js";
 
 const PlotlyPlot = createPlotlyComponent(Plotly);
 
 const NARROW = "(max-width: 640px)";
+// Where the download buttons always have a row of their own (index.css, .plot-dl).
+const ROW_ALWAYS = "(max-width: 640px), (hover: none)";
+// Clear space kept between legend text and the buttons.
+const CORNER_GAP = 6;
 
-const media = () => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia(NARROW) : null);
+const media = (query) => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia(query) : null);
 
-function useNarrow() {
-  const [narrow, setNarrow] = useState(() => !!media()?.matches);
+function useMedia(query) {
+  const [matches, setMatches] = useState(() => !!media(query)?.matches);
   useEffect(() => {
-    const mq = media();
+    const mq = media(query);
     if (!mq) return undefined;
-    const on = () => setNarrow(mq.matches);
+    const on = () => setMatches(mq.matches);
+    on();
     mq.addEventListener?.("change", on);
     return () => mq.removeEventListener?.("change", on);
-  }, []);
-  return narrow;
+  }, [query]);
+  return matches;
 }
 
 // Save the chart as a PNG (2x, for slides) or an SVG (for print and editing):
-// on white, at a readable width, titled with its name.
-async function downloadImage(gd, title, format) {
+// on white, at a readable width, titled with its name. `height`: the chart's
+// height on screen plus any row it gave up to the buttons, so the image is the
+// same wherever the buttons sit.
+async function downloadImage(gd, title, format, height = 0) {
   if (!gd) return;
-  const height = gd.offsetHeight || gd.layout?.height || 400;
+  height = height || gd.offsetHeight || gd.layout?.height || 400;
   const layout = {
     ...gd.layout,
     paper_bgcolor: SURFACE,
@@ -80,34 +90,61 @@ export default function Plot({
   useResizeHandler = true,
   onInitialized,
   onUpdate,
+  onAfterPlot,
   fill = false,
   className,
   ...rest
 }) {
-  const narrow = useNarrow();
+  const narrow = useMedia(NARROW);
+  const rowAlways = useMedia(ROW_ALWAYS);
   const gd = useRef(null);
+  const frame = useRef(null);
   const box = useRef(null);
+  // The download buttons show over the chart's top right corner on hover and
+  // need no room of their own, unless legend text reaches that corner: then
+  // they take a slim row above the chart, cut from the chart's own height.
+  const [reached, setReached] = useState(false);
+  const ownRow = !!download && reached && !rowAlways;
+  const measure = useCallback(() => {
+    const el = gd.current;
+    const dl = frame.current?.querySelector(":scope > .plot-dl");
+    if (!el || !dl) return;
+    const chart = el.getBoundingClientRect();
+    if (!chart.width || !chart.height) return; // not on screen (a closed tab): keep the last answer
+    const texts = el.querySelectorAll(".legend .legendtext, .legend .legendtitletext");
+    const boxes = Array.from(texts, (t) => t.getBoundingClientRect());
+    setReached(reachesCorner(downloadCorner(chart, dl.offsetWidth + CORNER_GAP), boxes));
+  }, []);
+  // Text is measured again once the page's font has loaded: it sets the widths.
+  useEffect(() => {
+    if (!download || typeof document === "undefined" || !document.fonts?.ready) return undefined;
+    let live = true;
+    document.fonts.ready.then(() => { if (live) measure(); }).catch(() => {});
+    return () => { live = false; };
+  }, [download, measure]);
+
   const merged = useMemo(() => {
-    // The download button shows over the chart on hover, so it needs no room
-    // of its own. A filling chart has no height of its own.
-    const own = fill && layout ? { ...layout, height: undefined } : layout;
+    // A filling chart has no height of its own; one that has gives the
+    // buttons' row its height, so the chart is no taller with the row.
+    const own = fill ? (layout ? { ...layout, height: undefined } : layout) : ownRow ? shorterBy(layout, DOWNLOAD_ROW) : layout;
     return themedLayout(own, { narrow });
-  }, [layout, narrow, fill]);
+  }, [layout, narrow, fill, ownRow]);
   const cfg = useMemo(() => themedConfig(config), [config]);
 
   // A filling chart redraws at its box's size when the box changes (a panel
-  // beside it loading, the header wrapping), which no window event reports.
+  // beside it loading, the header wrapping, the buttons' row coming or
+  // going), which no window event reports.
   useEffect(() => {
     if (!fill || typeof ResizeObserver === "undefined" || !box.current) return undefined;
-    let frame = 0;
+    let raf = 0;
     const ro = new ResizeObserver(() => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
         if (gd.current && gd.current.isConnected) Plotly.Plots.resize(gd.current).catch?.(() => {});
       });
     });
     ro.observe(box.current);
-    return () => { cancelAnimationFrame(frame); ro.disconnect(); };
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
   }, [fill]);
 
   const plot = (
@@ -115,30 +152,38 @@ export default function Plot({
       {...rest}
       layout={merged}
       config={cfg}
-      style={fill ? { width: "100%", height: "100%", ...style } : { width: "100%", ...style }}
+      // A chart with a height of its own holds it on its box too: Plotly drops
+      // the layout's height when the window resizes and reads the box's.
+      style={fill
+        ? { width: "100%", height: "100%", ...style }
+        : { width: "100%", height: ownHeight(layout, ownRow ? DOWNLOAD_ROW : 0), ...style }}
       useResizeHandler={useResizeHandler}
-      onInitialized={(fig, div) => { gd.current = div; onInitialized?.(fig, div); }}
-      onUpdate={(fig, div) => { gd.current = div; onUpdate?.(fig, div); }}
+      onInitialized={(fig, div) => { gd.current = div; measure(); onInitialized?.(fig, div); }}
+      onUpdate={(fig, div) => { gd.current = div; measure(); onUpdate?.(fig, div); }}
+      onAfterPlot={(...args) => { measure(); onAfterPlot?.(...args); }}
     />
   );
+  const own = ownRow ? " plot-dl-own" : "";
+  // The saved image is as tall as the chart was before it gave up that row.
+  const height = () => (gd.current?.offsetHeight || 0) + (ownRow ? DOWNLOAD_ROW : 0);
   if (fill) {
     return (
-      <div className={"plot-fill plot-frame" + (className ? " " + className : "")} ref={box}>
-        {download && <DownloadButtons title={download} gd={gd} />}
-        <div className="plot-fill-inner">{plot}</div>
+      <div className={"plot-fill plot-frame" + own + (className ? " " + className : "")} ref={frame}>
+        {download && <DownloadButtons title={download} gd={gd} height={height} />}
+        <div className="plot-fill-inner" ref={box}>{plot}</div>
       </div>
     );
   }
   if (!download) return plot;
   return (
-    <div className="plot-frame">
-      <DownloadButtons title={download} gd={gd} />
+    <div className={"plot-frame" + own} ref={frame}>
+      <DownloadButtons title={download} gd={gd} height={height} />
       {plot}
     </div>
   );
 }
 
-function DownloadButtons({ title, gd }) {
+function DownloadButtons({ title, gd, height }) {
   return (
     <div className="plot-dl" role="group" aria-label={`Download ${title}`}>
       <DownloadIcon />
@@ -149,7 +194,7 @@ function DownloadButtons({ title, gd }) {
           className="plot-dl-btn"
           title={`Download ${format.toUpperCase()}`}
           aria-label={`Download ${title} as ${format.toUpperCase()}`}
-          onClick={() => downloadImage(gd.current, title, format)}
+          onClick={() => downloadImage(gd.current, title, format, height?.())}
         >
           {format.toUpperCase()}
         </button>

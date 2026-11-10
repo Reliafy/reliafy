@@ -223,6 +223,43 @@ export const pointMarker = (color = ACCENT) => ({
   hoverinfo: "y",
 });
 
+// ---- The download buttons' corner -------------------------------------------
+// The PNG and SVG buttons show over a chart's top right corner (Plot.jsx).
+// Where legend text reaches that corner they take a slim row of their own
+// instead, cut from the chart's height so the chart is no taller overall.
+export const DOWNLOAD_OVER = 32; // the buttons' height over the chart (.plot-dl-btn)
+export const DOWNLOAD_ROW = 24; // their own row's height (.plot-dl-own)
+export const PLOTLY_HEIGHT = 450; // Plotly's own, for a chart that sets none
+
+// The corner the buttons cover when they sit over the chart: `chart` is the
+// chart's box, `width` the buttons' width with a little clear space.
+export function downloadCorner(chart, width) {
+  return { left: chart.right - width, right: chart.right, top: chart.top, bottom: chart.top + DOWNLOAD_OVER };
+}
+
+// Whether any of `boxes` (legend text, each {left, right, top, bottom}) runs
+// into `corner`. Boxes that only touch its edge, and empty ones (text not
+// drawn), don't count.
+export function reachesCorner(corner, boxes) {
+  return boxes.some(
+    (b) =>
+      b.right > b.left && b.bottom > b.top &&
+      b.right > corner.left && b.left < corner.right && b.bottom > corner.top && b.top < corner.bottom,
+  );
+}
+
+// The height of a chart that has one of its own (not one filling its box),
+// `less` px of it given up to the buttons' row.
+export function ownHeight(layout, less = 0) {
+  const height = Number.isFinite(layout?.height) ? layout.height : PLOTLY_HEIGHT;
+  return Math.max(height - less, 0);
+}
+
+// That chart's layout, `px` shorter: room for the buttons' row above it.
+export function shorterBy(layout = {}, px = DOWNLOAD_ROW) {
+  return { ...layout, height: ownHeight(layout, px) };
+}
+
 // An axis title from the backend in sentence case: "test length" -> "Test length".
 export const sentence = (text) => (text ? String(text).charAt(0).toUpperCase() + String(text).slice(1) : text);
 
