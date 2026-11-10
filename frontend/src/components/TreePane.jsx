@@ -444,9 +444,12 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
         <div className="tt-tree" role="rowheader" style={{ width: table.treeW }}>
           <TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table onGoto={table.onGoto} />{more}
         </div>
-        {span != null && span !== false && r.type !== "meas" && r.type !== "pmodel" ? (
+        {/* No columns (a pane open beside the tree): no roll-up cell either. A width under zero
+            isn't applied, so the text kept its last (wide) one, the table kept its sideways
+            scroll and the tree column slid out of sight. */}
+        {!table.cols.length ? null : span != null && span !== false && r.type !== "meas" && r.type !== "pmodel" ? (
           <div role="gridcell" aria-colspan={table.cols.length} className="rw-c tt-rollup-c" style={{ width: allW }}>
-            {span && <span className="rw-sum tt-rollup-t" style={{ width: allW - 16 }} title={span}>{span}</span>}
+            {span && <span className="rw-sum tt-rollup-t" style={{ width: Math.max(0, allW - 16) }} title={span}>{span}</span>}
           </div>
         ) : table.cols.map((c) => (
           <div key={c.id} role="gridcell" className={"rw-c" + (c.num ? " num" : "") + ` mt-c-${c.id}`} style={{ width: table.widths[c.id] }}>
@@ -492,7 +495,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
         if (rollRun && ci < rollRun) {
           return (
             <div key={c.id} role="gridcell" className={"rw-c" + (ci === 0 ? " tt-rollup-c" : "")} style={{ width: table.widths[c.id] }}>
-              {ci === 0 && <span className="rw-sum tt-rollup-t" style={{ width: rollW - 16 }} title={rollup}>{rollup}</span>}
+              {ci === 0 && <span className="rw-sum tt-rollup-t" style={{ width: Math.max(0, rollW - 16) }} title={rollup}>{rollup}</span>}
             </div>
           );
         }
@@ -735,6 +738,12 @@ export default function TreePane({
     ro.observe(el);
     return () => ro.disconnect();
   }, [wideTable, paintShade]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Only the tree column on show (a pane or the details in the table's room): nothing is left
+  // to scroll sideways to, so the tree goes back to its left edge whatever the table was at.
+  useLayoutEffect(() => {
+    if (expanded && scroller.current) scroller.current.scrollLeft = 0;
+  }, [expanded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Drag the edge to resize; ← → when it has focus; double-click resets.
   const startResize = (e) => {

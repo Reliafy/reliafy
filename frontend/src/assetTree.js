@@ -551,6 +551,16 @@ export function fitTreeWidth(rows, windowWidth) {
   return Math.max(PANE.initial, Math.min(max, Math.ceil(need)));
 }
 
+// The tree column's width on a wide screen. A width the user dragged to always wins. Until then
+// the Explorer fits the column to its names (fitTreeWidth), and a product's page opens at the
+// usual width: a design's tree carries its long function and failure-mode texts, and fitted to
+// those the column took the room the Modelling, FME(C)A and LSA columns need at 1440 px.
+export function treeColumnWidth({ width, widthSet, fit, product }) {
+  if (widthSet) return width;
+  if (product) return PANE.initial;
+  return fit ?? width;
+}
+
 // The Summary tab's scroll area keeps room for the scrollbar (its width is the
 // tree's plus this gutter) so rows never narrow when the bar comes and goes.
 // The gutter measured after each render is taken only when it is wider than
