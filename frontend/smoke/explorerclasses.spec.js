@@ -2,7 +2,9 @@
 // assets carry items of one item class; opened on one of them (?root=), the
 // class tree, its count, "No class" and the class's fleet cover only the
 // positions inside that asset, while the whole Explorer covers both. A class
-// row has a tab bar with one tab, Condition monitoring: its fleet. A position
+// row has a tab bar with one tab, Condition monitoring: its fleet. Choosing
+// Classes with a row of an asset picked (an asset opened from the Assets page)
+// opens Classes on that asset alone. A position
 // on an asset has the tab too, in every arrangement: its own risk now in words
 // and two charts, or what's missing in words; the tab stays from a class to a
 // position and on to the next. A design's positions don't have it.
@@ -144,6 +146,59 @@ test("Classes on one asset's tree covers only that asset; a class opens on Condi
   await expect(classRow.locator(".tp-cnt")).toHaveText("3 positions");
 
   await expectHealthy(page, problems, { label: "the Explorer by Classes on one asset" });
+});
+
+test("an asset opened from Assets, then Classes: only that asset's classes, counts and fleet", async ({ page, request, problems }) => {
+  // Two places you look after, each a plant with pumps; one item class in both, one in the pool's only.
+  const tag = `a${Date.now()}`;
+  const shared = await postOk(request, `${M}/item-classes`, { name: `Booster pump ${tag}` });
+  const poolOnly = await postOk(request, `${M}/item-classes`, { name: `Pool pump ${tag}` });
+  const site = async (name, classes) => {
+    const loc = await postOk(request, `${M}/locations`, { name: `${name} ${tag}` });
+    const top = await postOk(request, `${M}/positions`, { name: `${name} plant ${tag}`, location_id: loc.id });
+    for (const [i, cls] of classes.entries()) {
+      const pos = await postOk(request, `${M}/positions`, { name: `${name} pump ${i + 1} ${tag}`, parent_id: top.id });
+      const fit = await postOk(request, `${M}/positions/${pos.id}/fit`, { new_item: { name: `${name} unit ${i + 1} ${tag}`, serial: `${name}-${i}-${tag}` } });
+      await postOk(request, `${M}/item-classes/assign`, { target_id: fit.fitted.item.id, item_class_id: cls.id });
+    }
+    return { loc, top };
+  };
+  const river = await site("Riverside", [shared, shared]);
+  await site("Pool", [shared, poolOnly]);
+  const sw = arrangeSwitch(page);
+
+  // From the Assets page's link (the Explorer by Locations, the place picked), then Classes.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=locations&sel=${river.loc.id}`);
+  await expect(row(page, `Riverside ${tag}`)).toHaveAttribute("aria-selected", "true");
+  await sw.getByRole("radio", { name: "Classes" }).click();
+  await expect(page).toHaveURL(new RegExp(`root=${river.loc.id}`));
+  await expect(page).toHaveURL(/arrange=classes/);
+  const sharedRow = row(page, `Booster pump ${tag}`);
+  await expect(sharedRow.locator(".tp-cnt")).toHaveText("2 positions");
+  await expect(row(page, `Pool pump ${tag}`)).toHaveCount(0);
+  await expect(row(page, `Pool pump 1 ${tag}`)).toHaveCount(0);
+  await expect(page.getByRole("treeitem")).toHaveCount(5); // the class, its two pumps, No class, the plant
+  await sharedRow.click();
+  await expect(page.locator(".cf-answer")).toContainText("2 positions");
+  const fleet = page.getByRole("region", { name: "Risk now" });
+  await expect(fleet.getByRole("button", { name: `Riverside pump 1 ${tag}` })).toBeVisible();
+  await expect(fleet.getByRole("button", { name: `Pool pump 1 ${tag}` })).toHaveCount(0);
+  await shot(page, "classes-asset-from-assets-1440");
+  // By Locations again: still that one asset.
+  await sw.getByRole("radio", { name: "Locations" }).click();
+  await expect(page).toHaveURL(new RegExp(`root=${river.loc.id}`));
+  await expect(row(page, `Riverside plant ${tag}`)).toBeVisible();
+  await expect(row(page, `Pool ${tag}`)).toHaveCount(0);
+
+  // Show every asset: the whole register by Classes, both assets' classes.
+  await sw.getByRole("radio", { name: "Classes" }).click();
+  await page.getByRole("link", { name: "Show every asset" }).click();
+  await expect(page).not.toHaveURL(/root=/);
+  await reveal(page, sharedRow);
+  await expect(sharedRow.locator(".tp-cnt")).toHaveText("3 positions");
+  await reveal(page, row(page, `Pool pump ${tag}`));
+  await expectHealthy(page, problems, { label: "Classes on an asset opened from Assets" });
 });
 
 test("a class on a phone: its heading, its one tab and the way back fit 400 px", async ({ page, request, problems }) => {

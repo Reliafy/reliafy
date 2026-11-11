@@ -2804,6 +2804,19 @@ PROJECTORS = {
 
 # ---- the domain ------------------------------------------------------------------
 
+
+def _walk_down(top: str, kids: dict) -> set[str]:
+    """``top`` and everything below it in a parent -> children map (no recursion
+    limit on deep trees)."""
+    out, stack = set(), [top]
+    while stack:
+        nid = stack.pop()
+        if nid not in out:
+            out.add(nid)
+            stack.extend(kids.get(nid, []))
+    return out
+
+
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps):
     """One organisation's maintenance graph, acted on by one person."""
 
@@ -13412,6 +13425,28 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             "unhomed": [{"id": iid, "name": i.get("name", ""), "serial": i.get("serial", ""), "status": status.get(iid)}
                         for iid, i in items.items() if iid not in fitted_at and iid not in placed_at],
         }
+
+    def positions_inside(self, root_id: str) -> set[str]:
+        """One asset's positions, as the Explorer opened on it shows them (its ?root=):
+        for a position, it and every position the tree nests inside it (one an item
+        carries sits in the position that item is fitted to); for a place (a location),
+        every position there or at a place inside it, set or inherited. From the tree
+        read itself, so "inside" means the same here as in the tree pane."""
+        node = self.s.node(self.org, root_id)
+        if node is None or node.get("retired") or node["label"] not in ("Position", "Location"):
+            raise NotFound(root_id)
+        read = self._tree_read()
+        rows = read["positions"]
+        if node["label"] == "Location":
+            kids: dict[str | None, list[str]] = {}
+            for loc in read["locations"]:
+                kids.setdefault(loc["parent_id"], []).append(loc["id"])
+            places = _walk_down(root_id, kids)
+            return {pid for pid, r in rows.items() if r["location"] and r["location"]["id"] in places}
+        kids = {}
+        for pid, r in rows.items():
+            kids.setdefault(r["parent_id"], []).append(pid)
+        return _walk_down(root_id, kids)
 
     def _tree_task_due(self, task: dict, subject_label: str) -> str | None:
         """A task's next due date, as _task_view gives it, without its store reads

@@ -335,7 +335,7 @@ const TreeDetail = forwardRef(function TreeDetail({
           : shown === "condition" && row.type === "pos"
           ? <Suspense fallback={loading}><PositionRisk positionId={row.key} version={version} detail onModelling={() => onTab("models")} /></Suspense>
           // By Classes, a class's row: the fleet (every position under it, with risk now; `within`:
-          // only the positions of the one asset on show).
+          // the one asset on show, its top position's id: only the positions inside it).
           : shown === "condition"
           ? <Suspense fallback={loading}><ClassFleet row={row} version={version} onSelect={onSelect} within={within} /></Suspense>
           : <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} actions={actions} />}

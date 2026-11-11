@@ -316,9 +316,15 @@ reading unit since then, and the model's covariates from value conditions of
 the same name. `scored` false with a model carries `why` in plain words and
 what to do. `?position_id=` answers that one `member` with `unit` (its
 survival curve from now and its reading's path, in its model's own time
-unit) and the `model`. The same read is `maintenance get.item_class` with
-`fleet: true` (`POST /api/v1/maintenance/get.item_class`; `reliafy
-maintenance get.item_class --id … --fleet true`).
+unit) and the `model`. `?within=` (one asset, as the Explorer opened on it
+shows it: a position id for that position's tree, positions its fitted items
+carry included; or a location id for every position at that place or a place
+inside it) keeps only the members inside it; the counts, `models`,
+`position_classes` and `note` are then that asset's alone (404 for an unknown
+id). The same read for the whole
+register is `maintenance get.item_class` with `fleet: true` (`POST
+/api/v1/maintenance/get.item_class`; `reliafy maintenance get.item_class
+--id … --fleet true`).
 
 One position on its own (the Explorer's Condition monitoring tab on a
 position): `GET /api/maintenance/positions/{id}/condition` answers `{position,

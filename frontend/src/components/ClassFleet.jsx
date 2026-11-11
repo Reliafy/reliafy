@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { getClassFleet } from "../api.js";
 import { formatNumber } from "../format.js";
-import { fleetAnswer, fleetWithin } from "../joint.js";
+import { fleetAnswer } from "../joint.js";
 import { RiskTable, riskOrder, sortColumn } from "./model/RiskTable.jsx";
 import PositionRisk from "./PositionRisk.jsx";
 import "./ClassFleet.css";
@@ -16,9 +16,9 @@ import "./ClassFleet.css";
 // be scored yet (the reason, in words). The table is the model page's own
 // (model/RiskTable.jsx); the member chosen is shown as a position shows its
 // own risk on its Condition monitoring tab (PositionRisk: its summary line
-// and two charts). `within` (a Set of position ids: the Explorer opened on
-// one asset): only the members inside that asset, in the answer line, the
-// table and the charts alike.
+// and two charts). `within` (a position id: the Explorer opened on one
+// asset): the server reads only the members inside that asset, so the answer
+// line, the table and the charts are that asset's alone.
 
 const n3 = (v) => formatNumber(v);
 
@@ -36,13 +36,14 @@ export default function ClassFleet({ row, version, onSelect, within = null }) {
   useEffect(() => {
     let live = true;
     setError(null);
-    getClassFleet(classId)
-      .then((d) => live && setFleet(d))
+    getClassFleet(classId, within)
+      .then((d) => live && setFleet({ ...d, within }))
       .catch((e) => live && setError(e.message));
     return () => { live = false; };
-  }, [classId, version]);
+  }, [classId, version, within]);
 
-  const mine = useMemo(() => (fleet && fleet.item_class.id === classId ? fleetWithin(fleet, within) : null), [fleet, classId, within]);
+  // The read for this class and this asset only (an earlier one stays hidden until it's in).
+  const mine = fleet && fleet.item_class.id === classId && (fleet.within ?? null) === (within ?? null) ? fleet : null;
   const labels = mine?.horizons.labels || [];
   const rows = useMemo(() => (mine?.members || []).map((m) => ({ ...m, id: m.position.id, risk: m.scored ? m.risk : null })), [mine]);
   // The member whose charts show: the one chosen, else the one at highest risk.

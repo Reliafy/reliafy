@@ -94,15 +94,44 @@ export function scopeLocations(locations = [], root = null, design = false) {
 // products' designs and the items' trees (they're under Products and Items).
 // Its locations as scopeLocations keeps them; with a root, `scope` says whose
 // tree it is ({kind: "design" | "unit", id, name}) for the Locations arrangement.
+// A root that's a place you look after (an asset on the Assets page, opened by
+// Classes): every position there or at a place inside it (set or inherited),
+// as the server's ?within= reads it; `scope` kind "place".
 export function scopeTree(data, root = null) {
   if (!data?.positions) return data;
   const top = root ? data.positions.find((p) => p.id === root) : null;
+  const place = root && !top ? scopeLocations(data.locations || []).find((l) => l.id === root) : null;
+  if (place) return scopePlace(data, place);
   const locations = root && !top ? [] : scopeLocations(data.locations || [], root, !!top?.design);
   // Nothing to leave out: the same read.
   if (!root && locations.length === (data.locations || []).length && !productTreeIds(data.positions).size) return data;
   const scoped = { ...data, locations: data.locations ? locations : data.locations };
   if (top) scoped.scope = { kind: top.design ? "design" : "unit", id: root, name: top.name || "" };
   return scopePositions(scoped, root);
+}
+
+function scopePlace(data, place) {
+  const all = scopeLocations(data.locations || []);
+  const kids = new Map();
+  for (const l of all) {
+    if (!kids.has(l.parent_id ?? null)) kids.set(l.parent_id ?? null, []);
+    kids.get(l.parent_id ?? null).push(l.id);
+  }
+  const places = new Set();
+  const stack = [place.id];
+  while (stack.length) {
+    const id = stack.pop();
+    if (places.has(id)) continue;
+    places.add(id);
+    stack.push(...(kids.get(id) || []));
+  }
+  const drop = productTreeIds(data.positions);
+  return {
+    ...data,
+    locations: all.filter((l) => places.has(l.id)),
+    positions: data.positions.filter((p) => !drop.has(p.id) && places.has(p.location?.id)),
+    scope: { kind: "place", id: place.id, name: place.name || "" },
+  };
 }
 
 function scopePositions(data, root) {
@@ -136,12 +165,12 @@ export function isDesignScope(data, root) {
 }
 
 // Does one tree on show offer the Classes arrangement (the item classes, each with its positions)?
-// An asset's tree opened on its own does: items are fitted there. A product's design doesn't, on
+// An asset's tree opened on its own does (a position's tree, or a place's): items are fitted there. A product's design doesn't, on
 // its own page (`ownPage`) or opened as a tree: nothing is fitted in a design. Until the tree is
 // read (`data` null) the address is taken at its word, so a reload by Classes stays by Classes.
 export function scopeHasClasses(data, { ownPage = false } = {}) {
   if (ownPage) return false;
-  return !data || data.scope?.kind === "unit";
+  return !data || data.scope?.kind === "unit" || data.scope?.kind === "place";
 }
 
 // A design's rows: no failure report is filed there (a report is about an item).

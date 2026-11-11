@@ -3175,9 +3175,11 @@ export function getItemClass(id) {
   return request(`/api/maintenance/item-classes/${id}`);
 }
 // An item class's fleet: every position whose fitted item is of the class (or a class inside it),
-// each with its risk now from the condition and life model linked to its position.
-export function getClassFleet(id) {
-  return request(`/api/maintenance/item-classes/${encodeURIComponent(id)}/fleet`);
+// each with its risk now from the condition and life model linked to its position. `within` (a
+// position id: one asset's tree): only the members inside it, counted by the server.
+export function getClassFleet(id, within = null) {
+  const q = within ? `?within=${encodeURIComponent(within)}` : "";
+  return request(`/api/maintenance/item-classes/${encodeURIComponent(id)}/fleet${q}`);
 }
 // One position's risk now: its row as a class's fleet gives it, with its curves when it is scored
 // (`member`, null with nothing fitted: `why`), and the condition and life model that scores it
