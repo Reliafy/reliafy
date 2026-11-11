@@ -344,40 +344,85 @@ def recently_used(db, owners, limit: int = 5) -> list[dict]:
     return out
 
 
-def fit_dataset(db, owners, dataset_id: str, time_column: str, censor_column: str | None, unit: str,
-                prior: dict, distribution: str = "exponential", trust: str = "guide", c_invert: bool = False):
-    """A saved dataset fitted with a library record as the prior (the Library page's "Use as a prior…"
-    from the Models area): (the SurPyval model or None, the result as the Fit dialog shows it)."""
+def fit_dataset(db, owners, dataset_id: str | None, time_column: str, censor_column: str | None, unit: str,
+                prior: dict, distribution: str = "exponential", trust: str = "guide", c_invert: bool = False,
+                hidden=(), content: bytes | None = None, c_map: dict | None = None, age=None):
+    """Life data fitted with a prior: a saved dataset (``dataset_id``) or a table given as CSV
+    (``content``: values pasted or a file, on New model), its ``time_column`` and ``censor_column``
+    (0 failed, 1 still running; ``c_invert`` flips 0/1, ``c_map`` maps other values to 0 or 1).
+    The prior is any but the class's history (fit_life.prior_base: a library record, a saved model,
+    numbers, around a value or a B10), read the way the Explorer's "Fit a life model…" reads it.
+    Returns (the SurPyval model or None, the result as the fit dialogs show it)."""
+    from backend import fitting
+    from backend.maintenance import fit_life
     from backend.services import bayes_life as bl
     from backend.services import datasets as datasets_service
 
     sv = _sv()
-    ds = datasets_service.get_dataset(db, dataset_id, owners)
-    if ds is None:
-        raise sv.NotFound(f"Dataset {dataset_id}")
-    df = datasets_service.load_dataframe(ds)
+    if (prior or {}).get("kind") == "class":
+        raise sv.Invalid("A class's history is a prior only on a position (in the Explorer); here choose a saved "
+                         "model, a library record, numbers you know, a range or a B10.")
+    if (prior or {}).get("kind") not in fit_life.PRIOR_KINDS:
+        raise sv.Invalid(f"The prior's kind is one of {', '.join(fit_life.PRIOR_KINDS)}.")
+    ds = None
+    if content is not None:
+        try:
+            df = fitting.read_dataframe(content)
+        except fitting.FitError as err:
+            raise sv.Invalid(str(err)) from None
+    else:
+        ds = datasets_service.get_dataset(db, str(dataset_id or ""), owners)
+        if ds is None:
+            raise sv.NotFound(f"Dataset {dataset_id}")
+        df = datasets_service.load_dataframe(ds)
     if time_column not in df.columns:
-        raise sv.Invalid(f"The dataset has no column '{time_column}'.")
+        raise sv.Invalid(f"The data has no column '{time_column}'.")
     if censor_column and censor_column not in df.columns:
-        raise sv.Invalid(f"The dataset has no column '{censor_column}'.")
-    base = prior_base(prior, distribution, db, owners)
-    per = _per(unit, base["unit"], sv)  # one dataset unit in the prior's unit
-    x = [float(v) * per for v in df[time_column].tolist()]
-    c = [int(v) for v in df[censor_column].tolist()] if censor_column else [0] * len(x)
-    if c_invert:
-        c = [1 - v for v in c]
+        raise sv.Invalid(f"The data has no column '{censor_column}'.")
+    base = fit_life.prior_base(prior, distribution, db, owners, hidden)
+    if not base.get("unit"):
+        base = {**base, "unit": unit}  # a prior with no unit of its own is in the data's
+    per = _per(unit, base["unit"], sv)  # one data unit in the prior's unit
+    times = df[time_column]
+    if not all(isinstance(v, (int, float)) for v in times.dropna().tolist()) or times.isna().any():
+        raise sv.Invalid(f"“{time_column}” must hold a number on every row: the time to failure or removal.")
+    x = [float(v) * per for v in times.tolist()]
+    c = [_flag(v, c_invert, c_map, censor_column, sv) for v in df[censor_column].tolist()] if censor_column \
+        else [0] * len(x)
     try:
         rows = bl.given_rows(x, c)
     except bl.BayesError as err:
         raise sv.Invalid(str(err)) from None
+    priors, extra = fit_life.prior_priors(base, trust)
     try:
-        model, result, _ = bl.update(base, trust, rows, None, base["priors"])
+        model, result, _ = bl.update(base, trust if base["source"] != "update" else "guide", rows,
+                                     float(age) * per if age else None, priors, subject="the best B10")
     except Exception as err:  # noqa: BLE001 - SurPyval's refusals in words
         raise sv.Invalid(f"The fit with that prior didn't work: {err}") from None
-    result.update(method="bayes", interval_label=f"{bl.LEVEL:.0%} credible interval", prior_note=base["note"],
-                  dataset={"id": ds.id, "name": ds.name})
-    result["words"] = f"{result.get('words', '')} {base['note']}".strip()
+    result.update(method="bayes", interval_label=f"{bl.LEVEL:.0%} credible interval", prior_kind=prior.get("kind"),
+                  dataset={"id": ds.id, "name": ds.name} if ds is not None else None)
+    if extra:
+        result["prior_note"] = extra
+        result["words"] = f"{result.get('words', '')} {extra}".strip()
     return model, result
+
+
+def _flag(v, c_invert: bool, c_map: dict | None, column: str, sv) -> int:
+    """A status cell as 0 (failed) or 1 (still running): through ``c_map`` (keys compared as text) when
+    given, else a 0/1 code, flipped by ``c_invert``."""
+    if c_map:
+        key = str(v).strip().lower()
+        if key.endswith(".0"):
+            key = key[:-2]
+        for k, meaning in c_map.items():
+            if str(k).strip().lower() == key:
+                return int(meaning)
+        raise sv.Invalid(f"“{column}” has the value “{v}”, which isn't given a meaning (failed or still running).")
+    try:
+        code = int(float(v))
+    except (TypeError, ValueError):
+        raise sv.Invalid(f"“{column}” has the value “{v}”: a status is 0 (failed) or 1 (still running).") from None
+    return 1 - code if c_invert and code in (0, 1) else code
 
 
 def _per(unit: str, base_unit: str, sv) -> float:

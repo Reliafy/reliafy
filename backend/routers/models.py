@@ -687,20 +687,31 @@ def library_used(session=Depends(get_session), ctx: AccessCtx = Depends(get_acce
 
 @router.post("/models/fit-with-prior")
 def fit_with_prior(body: dict = Body(...), session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
-    """A saved dataset fitted with a data library record as the prior (the Library page's Use as a
-    prior…): dataset_id, time_column, censor_column (0 failed, 1 still running; c_invert flips it),
-    unit (the times' unit), distribution (exponential, weibull, lognormal), prior {kind: library,
-    record_id, covariates?, shape?} (the record's covariates: a pipe's length, the clock, the demands a
-    year...), trust. Previewed (a refusal comes back as {refused}); with save true, saved as
-    a model (counts against the model cap)."""
+    """Life data fitted with a prior (New model's "With a prior", the Library page's Use as a prior…):
+    dataset_id (a saved dataset) or content (the table as CSV text: values pasted or a file),
+    time_column, censor_column (0 failed, 1 still running; c_invert flips it, c_map {value: 0 | 1} maps
+    other values), unit (the times' unit), distribution (exponential, weibull, lognormal), prior {kind:
+    library, record_id, covariates?, shape?} (the record's covariates: a pipe's length, the clock, the
+    demands a year...), {kind: model, model_id}, {kind: params, distribution, params, unit}, {kind:
+    around, distribution, params, unit} or {kind: b10, b10, shape, unit}: the priors the Explorer's
+    "Fit a life model…" takes, but the class's history), trust, age (adds the reliability there).
+    Previewed (a refusal comes back as {refused}); with save true, saved as a model (counts against the
+    model cap)."""
     from backend.maintenance import library_models
     from backend.services import bayes_life
 
+    content = body.get("content")
+    if content is not None:
+        content = str(content).encode()
+        if len(content) > config.MAX_UPLOAD_BYTES:
+            return JSONResponse(status_code=413, content={"detail": "That table is over the 5 MB limit."})
     try:
         model, result = library_models.fit_dataset(
             session, ctx.read_owners, str(body.get("dataset_id") or ""), str(body.get("time_column") or ""),
             body.get("censor_column") or None, body.get("unit") or "hours", body.get("prior") or {},
-            body.get("distribution") or "exponential", body.get("trust") or "guide", bool(body.get("c_invert")))
+            body.get("distribution") or "exponential", body.get("trust") or "guide", bool(body.get("c_invert")),
+            hidden=ctx.hidden, content=content,
+            c_map=body.get("c_map") if isinstance(body.get("c_map"), dict) else None, age=body.get("age"))
     except KeyError:
         return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
     except ValueError as exc:

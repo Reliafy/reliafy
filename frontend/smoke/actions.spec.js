@@ -46,6 +46,33 @@ test("fit a new model from a saved dataset picked in the list", async ({ page, p
   }
 });
 
+// New model › Model step › With a prior: the prior asked as the Explorer asks it, fitted through the
+// same prior path, the prior's curve under the fit, and saved as a Bayesian model keeping its prior.
+test("fit a new model with a prior and save it with its prior", async ({ page, problems }) => {
+  await open(page, "/models/new?dataset=sample-ds-bearings");
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("radio", { name: "With a prior" }).click();
+  await page.getByLabel("Prior", { exact: true }).selectOption("params");
+  await expect(page.getByRole("button", { name: "Fit with the prior" })).toBeDisabled();
+  await page.getByLabel("Characteristic life (alpha)").fill("1000");
+  await page.getByLabel("Shape (beta)").fill("2");
+  await page.getByRole("button", { name: "Fit with the prior" }).click();
+  await expect(page.getByText(/the best B10 is about/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("90% credible band")).toBeVisible();
+  await expectHealthy(page, problems, { label: "fit with a prior", chart: true });
+  await page.getByRole("textbox", { name: "Model name" }).fill("Smoke bearings with a prior");
+  await page.getByRole("button", { name: "Save this model", exact: true }).click();
+  await page.waitForURL(/\/models\/m\/[0-9a-f]{32}$/, { timeout: 30_000 });
+  const id = page.url().split("/").pop();
+  const model = await (await page.request.get(`/api/models/${id}`)).json();
+  try {
+    expect(model.results.method).toBe("bayesian_update");
+    expect(model.results.bayes.baseline.source).toBe("params");
+  } finally {
+    await page.request.delete(`/api/models/${id}`);
+  }
+});
+
 // #31: a class with a fitted model and a spare with a lead time shows how many to
 // hold, and the chance a typed stock runs out (smoke/seed.js makes the class).
 // The Classes tab is hidden for now (explorerTabs.js): a class's old address lands on the Explorer, and the
