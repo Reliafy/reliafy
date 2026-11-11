@@ -82,7 +82,7 @@ import { NewLocationModal } from "./MaintenanceLists.jsx";
 import { ImportModal, NewPositionModal } from "./MaintenanceHome.jsx";
 import { DEFAULT_LEVEL, changedFromUsual, levelShown, showingOnly } from "../treeControls.js";
 import {
-  ARRANGEMENTS, CHIPS, PANE, ancestorsOf, arrangementFor, scopedArrangeQuery, scopedArrangements, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath, fitTreeWidth,
+  ARRANGEMENTS, CHIPS, PANE, ancestorsOf, arrangementFor, scopedArrangeQuery, scopedArrangements, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath, fitTreeWidth, treeColumnWidth,
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
 import { keepLevel } from "../outlineTree.js";
@@ -500,8 +500,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // review, Nov 2026: at 1600 px names were cut to a few letters). The same width on every tab,
   // so switching tabs moves nothing: worked out from the tree with its RCM in it (read with the
   // tree, whatever the tab) and the rows open in this arrangement, not from the tab's own rows.
-  const fitTree = useMemo(() => (!phone && !widthSet && data ? (rcm ? graftRcm(base, rcm) : base) : null),
-    [phone, widthSet, data, rcm, base]);
+  // (A product's page doesn't fit: it opens at the usual width, treeColumnWidth.)
+  const fitTree = useMemo(() => (!phone && !widthSet && !rootProp && data ? (rcm ? graftRcm(base, rcm) : base) : null),
+    [phone, widthSet, rootProp, data, rcm, base]);
   const fitWidth = useMemo(() => {
     if (!fitTree) return null;
     const shown = pinKey && fitTree.rows.has(pinKey) ? pinDisplay(fitTree, pinKey) : fitTree;
@@ -513,7 +514,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       return { depth: v.depth, text: ((isRcmRow(r) ? r?.ref?.text : r?.ref?.name) || "") + on };
     }), window.innerWidth);
   }, [fitTree, pinKey, openBy, mode]);
-  const shownWidth = fitWidth ?? width;
+  const shownWidth = treeColumnWidth({ width, widthSet, fit: fitWidth, product: !!rootProp });
   // A row asked for (?sel=, a link, a new row) that's in the tree is the one
   // shown, even before the effect below reveals it: else the first row is shown
   // for a render and its panels ask for the wrong row's data.
