@@ -6,7 +6,7 @@ The counts are read off the same fit inputs SurPyval is given (censor flag 0
 = failed, 1 = still running, anything else another kind of censoring),
 weighted by the count column. A fit records them as ``split``; a model saved
 before that gets them from its dataset when it's opened (kept in memory).
-Interval data (``xl``/``xr``) has no simple split, so none is given.
+For inspection (interval) data, every unit found failed counts as failed.
 """
 
 from __future__ import annotations
@@ -26,7 +26,18 @@ def split_of_inputs(kwargs: dict) -> dict | None:
     """{failed, running, other} from built fit inputs, or None when the data
     aren't plain times with a censor flag."""
     x = kwargs.get("x")
-    if x is None or kwargs.get("xl") is not None or kwargs.get("xr") is not None:
+    xl, xr = kwargs.get("xl"), kwargs.get("xr")
+    if x is None and xl is not None and xr is not None:
+        # Inspection data: a unit found failed between two times (or at its
+        # first look) failed; only a unit that passed its last one is running.
+        xl = np.asarray(xl, dtype=float)
+        c = np.asarray(kwargs["c"], dtype=float) if kwargs.get("c") is not None else np.zeros_like(xl)
+        n = np.asarray(kwargs["n"], dtype=float) if kwargs.get("n") is not None else np.ones_like(xl)
+        if not (np.all(np.isfinite(c)) and np.all(np.isfinite(n))):
+            return None
+        running = float(n[c == 1].sum())
+        return {"failed": int(round(float(n.sum()) - running)), "running": int(round(running)), "other": 0}
+    if x is None or xl is not None or xr is not None:
         return None
     x = np.asarray(x, dtype=float)
     c = np.asarray(kwargs["c"], dtype=float) if kwargs.get("c") is not None else np.zeros_like(x)

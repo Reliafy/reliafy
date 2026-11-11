@@ -183,6 +183,19 @@ export function getColumns(file) {
 }
 
 
+// How a mapping reads the rows, before a fit: { failed, running, left,
+// interval, total, notes }, counted as the fit will count them. For
+// inspection data (earliest and latest times), which can't be counted from
+// the columns' values alone.
+export function getDataReading(file, mapping, datasetId = null) {
+  const form = new FormData();
+  if (datasetId) form.append("dataset_id", datasetId);
+  else if (file) form.append("file", file);
+  const { x, c, n, xl, xr, c_invert, c_map } = mapping || {};
+  appendMapping(form, { x, c, n, xl, xr, c_invert, c_map });
+  return request("/api/data-reading", { method: "POST", body: form });
+}
+
 // Advanced fit options shared by fit + save: offset (3-parameter), zero
 // inflation, limited failure population, fixed parameter values, and a mixture
 // component count (mutually exclusive with the rest — see normalize_options),

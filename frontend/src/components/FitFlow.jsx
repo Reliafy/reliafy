@@ -33,6 +33,7 @@ import { guessUnit, isNumeric } from "../datasetGuess.js";
 import {
   EMPTY_MAPPING, columnFacts, guessMapping, isSimplePaste, statusSummary, summaryParts,
   dataStepProblems, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped, mappingWords,
+  dataQuestions, answerQuestion,
 } from "../lifeData.js";
 import { RequiredUnit } from "./Units.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
@@ -44,7 +45,7 @@ import { METHOD_CHOICES, METHOD_LINE, initialFit, refusalWords, showsTrust } fro
 import {
   DATASET_PRIOR_CHOICES, priorAsksDistribution, priorBlocked, priorProblem, priorRequest,
 } from "../priorFit.js";
-import { fitDatasetWithPrior, getLibraryRecord, getLibrarySources, listModels } from "../api.js";
+import { fitDatasetWithPrior, getDataReading, getLibraryRecord, getLibrarySources, listModels } from "../api.js";
 import { rowFromDetail } from "../libraryPicker.js";
 
 const STEPS = ["Source", "Data", "Model", "Result"];
@@ -95,6 +96,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [sourceName, setSourceName] = useState("");
   const [csv, setCsv] = useState(null); // { columns, preview, n_rows, dtypes, blanks, values }
   const [mapping, setMapping] = useState(EMPTY_MAPPING);
+  // Questions about the first reading already answered "no" (see dataQuestions).
+  const [answered, setAnswered] = useState([]);
   const [unit, setUnit] = useState("");
   // A paste of one or two plain columns skips the mapping: only the unit is
   // asked for, with "Change columns" to see the full mapping (#291).
@@ -213,6 +216,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     const tvcMap = timeVarying && tvcMapping(map, "intervals", cols.columns, facts, cols.n_rows);
     const used = new Set(Object.values(tvcMap || {}).filter((v) => typeof v === "string" && v));
     setCsv(cols);
+    setAnswered([]);
     setMapping(tvcMap || map);
     setTvc(timeVarying ? "intervals" : null);
     const guessedUnit = simplePaste ? "" : (timeVarying && tvcUnit(timeVarying)) || g.unit || "";
@@ -273,10 +277,13 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     const facts = columnFacts(cols);
     const g = guessMapping(cols.columns, facts);
     const status = statusSummary(g.mapping, facts, cols.n_rows);
+    // Where the reading is a guess, the pane asks rather than counts.
+    const questions = dataQuestions(g.mapping, facts, cols.columns, cols.n_rows);
     return {
       words: mappingWords(g.mapping, facts, g.unit),
       problems: dataStepProblems(g.mapping, facts, cols.n_rows),
-      summary: status ? summaryParts(status) : [],
+      summary: status && !questions.length ? summaryParts(status) : [],
+      questions,
     };
   }, [picked?.detail]);
   // Next on a picked dataset: its columns into the Data step — no re-upload needed.
@@ -379,7 +386,33 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setTvc(layout);
     setMapping((m) => tvcMapping(m, layout, csv.columns, facts, csv.n_rows));
   };
-  const mappingValid = problems.length === 0;
+  // Where the first reading is a guess (a blank failure mode, a status-like
+  // column left unused), the step asks before it counts or fits.
+  const questions = useMemo(
+    () => (csv && !tvc && !simple ? dataQuestions(mapping, facts, csv.columns, csv.n_rows, answered) : []),
+    [csv, tvc, simple, mapping, facts, answered]
+  );
+  const answer = (q, yes) => {
+    const next = answerQuestion(mapping, q, yes, facts, answered);
+    setMapping(next.mapping);
+    setAnswered(next.answered);
+  };
+  // Inspection data (an earliest and a latest time) is read row by row, so
+  // its count comes from the server, as the fit will read it:
+  // { failed, running, left, interval, notes } or { error }.
+  const [reading, setReading] = useState(null);
+  const inspection = !!(csv && !tvc && mapping.xl && mapping.xr);
+  useEffect(() => {
+    setReading(null);
+    if (!inspection || problems.length > 0 || (!file && !datasetId)) return undefined;
+    let live = true;
+    getDataReading(file, mapping, datasetId).then(
+      (r) => live && setReading(r),
+      (err) => live && setReading({ error: err.message }),
+    );
+    return () => { live = false; };
+  }, [inspection, problems.length, file, datasetId, mapping]);
+  const mappingValid = problems.length === 0 && questions.length === 0 && !reading?.error;
   // With a count column the value counts aren't units: read the file instead.
   const [fileSplit, setFileSplit] = useState(null);
   useEffect(() => {
@@ -392,7 +425,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     }
     return () => { live = false; };
   }, [file, mapping]);
-  const summary = csv && !tvc ? statusSummary(mapping, facts, csv.n_rows) || fileSplit : null;
+  const summary = !csv || tvc || questions.length ? null
+    : inspection ? (reading && !reading.error ? reading : null)
+    : statusSummary(mapping, facts, csv.n_rows) || fileSplit;
   // Most units still running often means the sheet's flags are 1 = failed:
   // say so on the Data step, with the same flip the column mapper uses.
   const swapped = flagsLookSwapped(mapping, summary);
@@ -459,7 +494,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         ...(hasCovariates ? coxFit : byMode ? {} : { fitOptions: fitOpts }),
       };
       const res = await fitModel(distribution, file, fitMapping, opts);
-      setSplit(await dataSplit(file, mapping).catch(() => null));
+      setSplit((await dataSplit(file, mapping).catch(() => null)) || res.split || null);
       setResult(res);
       const src = file?.name || sourceName || "dataset";
       setName(`${res.distribution} — ${src.replace(/\.csv$/i, "")}`);
@@ -672,6 +707,10 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                         <ul className="ds-problems" role="status">
                           {pickedGuess.problems.map((p) => <li key={p}>{p}</li>)}
                         </ul>
+                      ) : pickedGuess.questions.length > 0 ? (
+                        <p className="ds-flag-notice" role="status">
+                          <span>{pickedGuess.questions[0].text} The next step asks.</span>
+                        </p>
                       ) : pickedGuess.summary.length > 0 ? (
                         <p className="ds-summary" role="status">
                           {pickedGuess.summary.map((part, i) => {
@@ -849,7 +888,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             </p>
           ) : summary ? (
             <p className="ds-summary" role="status">
-              {summaryParts(summary).map((part, i) => {
+              {summaryParts(summary, { inspection }).map((part, i) => {
                 const [num, ...rest] = part.split(" ");
                 return (
                   <span key={part}>
@@ -862,11 +901,25 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                 <span className="ds-summary-note">
                   {simple ? " · every value is a time to failure"
                     : mapping.e ? " · a blank failure mode is a unit still running"
+                    : inspection ? (summary.running ? " · a blank latest time is a unit still running" : "")
                     : " · no status column, so every row is a failure"}
                 </span>
               )}
             </p>
           ) : null}
+          {problems.length === 0 && questions.map((q) => (
+            <div className="ds-flag-notice" role="group" aria-label="A question about this file" key={q.id}>
+              <span>{q.text}</span>
+              <button type="button" className="secondary" onClick={() => answer(q, true)}>{q.yes}</button>
+              <button type="button" className="secondary" onClick={() => answer(q, false)}>{q.no}</button>
+            </div>
+          ))}
+          {problems.length === 0 && reading?.error && (
+            <ul className="ds-problems" role="status"><li>{reading.error}</li></ul>
+          )}
+          {problems.length === 0 && (reading?.notes || []).map((note) => (
+            <p className="ds-flag-notice" role="status" key={note}><span>{note}</span></p>
+          ))}
           {problems.length === 0 && swapped && (
             <div className="ds-flag-notice" role="status">
               <span>

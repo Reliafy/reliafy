@@ -897,7 +897,8 @@ def _fit_failure_hint(exc: Exception, kwargs: dict, distribution_name: str,
     if support_msg:
         return support_msg
     failures, total = failure_count(kwargs)
-    raw = str(exc) or type(exc).__name__
+    # SurPyval prints the arrays it was given after its message: keep the message.
+    raw = re.split(r"\n\s*x:\s*\n", str(exc))[0].strip() or type(exc).__name__
     if total and failures <= 1:
         return (
             f"Only {failures} of the {total} rows is marked as a failure — too "
@@ -949,7 +950,178 @@ def build_fit_inputs(df: pd.DataFrame, mapping: dict) -> dict:
             _check_counts(name, col)
         kwargs[field] = col
 
+    if ("xl" in kwargs or "xr" in kwargs) and "x" not in kwargs and "i" not in kwargs:
+        if "xl" in kwargs and "xr" in kwargs:
+            kwargs.update(read_interval_rows(kwargs["xl"], kwargs["xr"], kwargs.get("c"),
+                                             mapping["xl"], mapping["xr"], mapping.get("c")))
     return kwargs
+
+
+def _row_list(mask: np.ndarray, limit: int = 5) -> str:
+    """'row 3' / 'rows 3, 7 and 9 and 4 more': data rows counted from 1 under the header."""
+    rows = [str(int(r) + 1) for r in np.flatnonzero(mask)]
+    shown, more = rows[:limit], len(rows) - limit
+    text = shown[0] if len(shown) == 1 else ", ".join(shown[:-1]) + " and " + shown[-1]
+    return f"row{'s' if len(rows) != 1 else ''} {text}" + (f" and {more} more" if more > 0 else "")
+
+
+def read_interval_rows(xl, xr, c=None, xl_name: str = "xl", xr_name: str = "xr",
+                       c_name: Optional[str] = None) -> dict:
+    """Inspection data as SurPyval takes it: ``{"xl", "xr", "c"}``.
+
+    Each row is a unit seen working at the earliest time (``xl``) and found
+    failed by the latest (``xr``). Field data also holds the units that never
+    failed, written the way a spreadsheet writes them:
+
+    - a blank latest time: the unit passed its last inspection, so it is
+      still running at the earliest time (right-censored);
+    - a blank earliest time: found failed at its first look (left-censored
+      at the latest time);
+    - a status column that says "failed" beside two different times: the
+      failure lies between them (interval-censored), and "still running"
+      beside one time, or the same time twice, is right-censored there.
+
+    Rows already coded the SurPyval way (2 with two times, 1 or 0 or -1 with
+    the same time twice) pass through as they are, and with no blank cell and
+    no status column ``c`` stays ``None`` (SurPyval reads equal times as an
+    exact failure). A row that can't be read is refused in plain words.
+    """
+    xl = np.array(xl, dtype=float)
+    xr = np.array(xr, dtype=float)
+    no_l, no_r = np.isnan(xl), np.isnan(xr)
+    if np.any(no_l & no_r):
+        raise FitError(f"{_row_list(no_l & no_r).capitalize()} {'has' if (no_l & no_r).sum() == 1 else 'have'} "
+                       f"no time in '{xl_name}' or '{xr_name}'. Fill one in, or delete "
+                       f"{'that row' if (no_l & no_r).sum() == 1 else 'those rows'}.")
+    backwards = ~no_l & ~no_r & (xl > xr)
+    if np.any(backwards):
+        raise FitError(f"In {_row_list(backwards)} the earliest time ('{xl_name}') is after the latest "
+                       f"('{xr_name}'). Check the two columns are the right way round.")
+    if c is None:
+        if not (no_l.any() or no_r.any()):
+            return {"xl": xl, "xr": xr}
+        out = np.where(no_r, 1, np.where(no_l, -1, np.where(xl == xr, 0, 2)))
+    else:
+        out = np.array(c, dtype=float)
+        label = f"'{c_name}'" if c_name else "the status column"
+        if np.any(np.isnan(out)):
+            bad = np.isnan(out)
+            raise FitError(f"{_row_list(bad).capitalize()} {'has' if bad.sum() == 1 else 'have'} no value in "
+                           f"{label}. Fill in whether each unit failed or was still running.")
+        two = ~no_l & ~no_r & (xl < xr)
+        running_window = two & (out == 1)
+        if np.any(running_window):
+            raise FitError(f"{_row_list(running_window).capitalize()} "
+                           f"{'is' if running_window.sum() == 1 else 'are'} marked still running but "
+                           f"{'has' if running_window.sum() == 1 else 'have'} two different times. A unit still "
+                           f"running has one time (when it was last seen working): leave '{xr_name}' blank, "
+                           "or repeat the same time.")
+        one_time_interval = (no_l | no_r) & (out == 2)
+        if np.any(one_time_interval):
+            raise FitError(f"{_row_list(one_time_interval).capitalize()} "
+                           f"{'is' if one_time_interval.sum() == 1 else 'are'} marked as an interval but "
+                           f"{'has' if one_time_interval.sum() == 1 else 'have'} only one time. Fill in both "
+                           f"'{xl_name}' and '{xr_name}'.")
+        # Failed between two different times: the failure lies in the interval.
+        out = np.where(two & (out == 0), 2, out)
+        # Failed with only a latest time: found failed at the first look.
+        out = np.where(no_l & (out == 0), -1, out)
+    xl, xr = np.where(no_l, xr, xl), np.where(no_r, xl, xr)
+    return {"xl": xl, "xr": xr, "c": out.astype(int)}
+
+
+#: Fit option: refuse a row whose two times differ but whose flag is 0 (see :func:`fit`).
+STRICT_INTERVALS_KEY = "strict_intervals"
+
+
+def _check_interval_flags(df: pd.DataFrame, mapping: dict) -> None:
+    names = [mapping.get(k) for k in ("xl", "xr", "c")]
+    if mapping.get("i"):  # start and stop rows of an item, not an inspection window
+        return
+    if not all(names) or any(n not in df.columns for n in names):
+        return
+    xl, xr, c = (pd.to_numeric(df[n], errors="coerce").to_numpy(dtype=float) for n in names)
+    if np.any((c == 0) & (xl < xr)):
+        raise FitError("Censor flag indicates not interval censored but has interval window.")
+
+
+def interval_frame(df: pd.DataFrame, mapping: dict) -> tuple[pd.DataFrame, dict]:
+    """``df`` and ``mapping`` with inspection rows read by
+    :func:`read_interval_rows`, for the fitters that take columns
+    (``fit_from_df``). Unchanged when the mapping holds no interval pair."""
+    if not (mapping.get("xl") and mapping.get("xr")) or mapping.get("x") or mapping.get("i"):
+        return df, mapping
+    for name in (mapping["xl"], mapping["xr"], mapping.get("c")):
+        if name and name not in df.columns:
+            raise FitError(f"The data has no column named '{name}'.")
+
+    def numbers(name):
+        return pd.to_numeric(df[name], errors="coerce").to_numpy(dtype=float)
+
+    read = read_interval_rows(numbers(mapping["xl"]), numbers(mapping["xr"]),
+                              numbers(mapping["c"]) if mapping.get("c") else None,
+                              mapping["xl"], mapping["xr"], mapping.get("c"))
+    out = df.copy()
+    out[mapping["xl"]], out[mapping["xr"]] = read["xl"], read["xr"]
+    if "c" in read:
+        c_col = mapping.get("c") or next(n for n in ("status", "_status", "__status__") if n not in df.columns)
+        out[c_col] = read["c"]
+        mapping = {**mapping, "c": c_col}
+    return out, mapping
+
+
+def data_reading(df: pd.DataFrame, mapping: dict) -> dict:
+    """How a mapping reads the rows, weighted by the count column:
+    ``{failed, running, left, interval, total}``. ``failed`` are exact failure
+    times, ``interval`` failures between two times, ``left`` failures found
+    at the first look (before the latest time, with no earlier time the unit
+    was seen working), ``running`` units that hadn't failed. The censor
+    column is already the right way round (``map_censor_column`` /
+    ``invert_censor_column``). Raises :class:`FitError` as a fit would."""
+    kwargs = build_fit_inputs(df, {k: v for k, v in (mapping or {}).items()
+                                   if k in ("x", "c", "n", "xl", "xr") and v})
+    first = kwargs.get("x") if kwargs.get("x") is not None else kwargs.get("xl")
+    if first is None:
+        raise FitError("Pick the column that holds the time to failure or removal.")
+    size = np.size(first)
+    n = np.asarray(kwargs["n"], dtype=float) if kwargs.get("n") is not None else np.ones(size)
+    xl, xr = kwargs.get("xl"), kwargs.get("xr")
+    if kwargs.get("c") is not None:
+        c = np.asarray(kwargs["c"], dtype=float)
+    elif xl is not None and xr is not None:
+        c = np.where(xl == xr, 0, 2).astype(float)
+    else:
+        c = np.zeros(size)
+    keep = np.isfinite(first) & np.isfinite(c) & np.isfinite(n)
+    # A window that opens at zero is a failure found at the first look.
+    from_zero = (c == 2) & (np.asarray(xl) <= 0) if xl is not None else np.zeros(size, dtype=bool)
+
+    def count(mask):
+        return int(round(float(n[keep & mask].sum())))
+
+    return {"failed": count(c == 0), "running": count(c == 1), "left": count((c == -1) | from_zero),
+            "interval": count((c == 2) & ~from_zero), "total": count(np.ones(size, dtype=bool))}
+
+
+def reading_notes(df: pd.DataFrame, mapping: dict) -> list[str]:
+    """Where a reading of the rows rests on a guess, in plain words, so the
+    Data step can say so before the fit: today, inspection data with no status
+    column whose two times are the same on some rows (an exact failure time,
+    or a unit that was still running?)."""
+    mapping = {k: v for k, v in (mapping or {}).items() if v}
+    if not (mapping.get("xl") and mapping.get("xr")) or mapping.get("c"):
+        return []
+    xl = pd.to_numeric(df[mapping["xl"]], errors="coerce").to_numpy(dtype=float)
+    xr = pd.to_numeric(df[mapping["xr"]], errors="coerce").to_numpy(dtype=float)
+    same = int(np.sum(xl == xr))
+    if not same or same == len(xl):
+        return []
+    return [
+        f"{same} row{'s have' if same != 1 else ' has'} the same earliest and latest time, so "
+        f"{'they are' if same != 1 else 'it is'} read as a failure at exactly that time. If "
+        f"{'those units were' if same != 1 else 'that unit was'} still running, pick the status column that "
+        f"says so, or leave '{mapping['xr']}' blank on {'those rows' if same != 1 else 'that row'}."
+    ]
 
 
 def _covariance_of(model):
@@ -1550,6 +1722,11 @@ def fit(
         c_invert = False
     if c_invert:
         df = invert_censor_column(df, mapping["c"])
+    # Callers that send censor codes themselves (the API and MCP tools) keep
+    # the strict reading: a row with two different times must be flagged 2.
+    # The pages read "failed" beside two times as failed between them.
+    if options.pop(STRICT_INTERVALS_KEY, False):
+        _check_interval_flags(df, mapping)
     # Cox PH's tie method, strata and cluster columns (#61): regression only.
     cox_opts = options.pop(regression_diagnostics.COX_KEY, None)
     # #179: the Group by column is a frailty model's alone.
@@ -2917,6 +3094,8 @@ def _fit_regression(
             raise FitError("Cox PH can't fit interval-censored (inspection) data: its partial likelihood "
                            "needs each failure's exact time. Choose a parametric regression model (e.g. "
                            "Weibull PH), which takes the intervals as they are.")
+        # Blank bounds and a failed / still running status, read as a plain fit reads them.
+        df, mapping = interval_frame(df, mapping)
         fit_kwargs = {"xl_col": mapping["xl"], "xr_col": mapping["xr"]}
     else:
         fit_kwargs = {"x_col": mapping.get("x")}

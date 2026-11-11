@@ -13,6 +13,7 @@ import { boundWords, checkTime, perUnit, precisePercent, timeAtValue, timeInWord
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
 import { unitInText } from "./unitText.js";
+import { applyAnswer, curveIsCurrent, markPending, requestKey } from "../calcSeries.js";
 import { SPREAD_LABEL, spreadCurves, spreadRangeText, spreadTime, spreadWords } from "../rateSpread.js";
 
 // The calculator's inputs (covariate combinations, active function, evaluation
@@ -355,18 +356,19 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const timers = useRef({});
   const seriesRef = useRef(series);
   seriesRef.current = series;
-  const runEval = (id, values) => {
+  // The series is pending from the keystroke until the curve for exactly
+  // these values (and range) is back: nothing is read off the curve it holds
+  // meanwhile, and an answer for values since changed is dropped (calcSeries.js).
+  const runEval = (id, values, newValues) => {
+    const key = requestKey(values, evalRange);
+    setSeries((prev) => markPending(prev, id, key, newValues));
     clearTimeout(timers.current[id]);
     timers.current[id] = setTimeout(async () => {
       try {
         const res = await evaluateAt(evaluatePath, values || {}, evalRange);
-        setSeries((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, curves: res.curves, error: null } : s))
-        );
+        setSeries((prev) => applyAnswer(prev, id, key, { curves: res.curves }));
       } catch (err) {
-        setSeries((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, error: err.message } : s))
-        );
+        setSeries((prev) => applyAnswer(prev, id, key, { error: err.message }));
       }
     }, 300);
   };
@@ -384,10 +386,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const updateValue = (id, name, value) => {
     const current = series.find((s) => s.id === id);
     const updated = { ...current.values, [name]: value };
-    setSeries((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, values: updated } : s))
-    );
-    runEval(id, updated);
+    runEval(id, updated, updated);
   };
 
   const addSeries = () => {
@@ -395,7 +394,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
     const id = nextIdRef.current++;
     const values = { ...(series[series.length - 1]?.values || defaults()) };
     setSeries((prev) => [...prev, { id, values, curves: null, error: null }]);
-    runEval(id, values);
+    runEval(id, values);  // pending until its curve arrives
   };
 
   const removeSeries = (id) =>
@@ -412,9 +411,16 @@ export default function Calculator({ functions, unit, params, state, setState, n
   // The time at the target reliability for each series, and (one series with
   // a life path) the model's exact value with its bound(s).
   const tarPoint = timeMode && lifePath && tar.key === tarKey ? tar.data?.points?.[0] : null;
+  // Read off a curve only when it is the curve for the values on screen.
+  const current = series.map(curveIsCurrent);
   const tarTimes = series.map((s, i) =>
-    i === 0 && tarPoint && !multi ? tarPoint.time : rValid ? timeAtValue(views[i]?.x, views[i]?.sf, rNum / 100) : null
+    i === 0 && tarPoint && !multi ? tarPoint.time
+      : rValid && current[i] ? timeAtValue(views[i]?.x, views[i]?.sf, rNum / 100) : null
   );
+  // The answer is on its way: say so, rather than show the one before.
+  const working = timeMode ? tarTimes[0] == null && rValid && (!!series[0]?.pending || (lifePath && tar.key !== tarKey))
+    : !!series[0]?.pending;
+  const WORKING = "Working it out…";
 
   // Backend flags impossible reliability (sf > 1 from a negative cumulative
   // hazard — additive-hazards models). Surface it rather than hide it.
@@ -474,7 +480,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
       if (tarTimes[i] != null) traces.push({ ...pointMarker(color), x: [tarTimes[i]], y: [rNum / 100] });
       return;
     }
-    const y = interp(cv.x, cv[active], Number(t));
+    const y = current[i] ? interp(cv.x, cv[active], Number(t)) : null;
     if (y != null) {
       traces.push({ ...pointMarker(color), x: [Number(t)], y: [y] });
     }
@@ -532,7 +538,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
           </span>
           {!multi && (
             <span className="calc-answer-value">
-              <b>{tarTimes[0] != null ? fmtTime(tarTimes[0]) : "—"}</b>
+              <b aria-live="polite">{tarTimes[0] != null ? fmtTime(tarTimes[0]) : working ? WORKING : "—"}</b>
               {spread && !lifePath && rValid && (() => {
                 const r = spreadTime(spread, rNum / 100);
                 return r ? <span className="calc-answer-ci"> — {spreadRangeText(r.lower, r.upper, fmtTime)}</span> : null;
@@ -553,8 +559,9 @@ export default function Calculator({ functions, unit, params, state, setState, n
         </span>
         {!multi && (
           <span className="calc-answer-value">
-            <b>{tCheck.ok ? fmtFn(active, interp(views[0]?.x, views[0]?.[active], Number(t)), unit) : "—"}</b>
-            {band && tCheck.ok && (() => {
+            <b aria-live="polite">{working ? WORKING
+              : tCheck.ok && current[0] ? fmtFn(active, interp(views[0]?.x, views[0]?.[active], Number(t)), unit) : "—"}</b>
+            {band && tCheck.ok && current[0] && (() => {
               // In words (#292): "we're 90% sure it's at least 38%".
               const lo = band.lower ? interp(band.x, band.lower, Number(t)) : null;
               const hi = band.upper ? interp(band.x, band.upper, Number(t)) : null;
@@ -601,7 +608,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
                   <span className="combo-dot" style={{ background: COLORS[i % COLORS.length] }} />
                   {labelOf(s)}
                 </td>
-                <td>{tarTimes[i] != null ? formatNumber(tarTimes[i]) : "—"}</td>
+                <td>{tarTimes[i] != null ? formatNumber(tarTimes[i]) : s.pending ? WORKING : "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -633,7 +640,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 </td>
                 {meta.map((m) => (
                   <td key={m.id}>
-                    {fmtFn(m.id, interp(views[i]?.x, views[i]?.[m.id], Number(t)))}
+                    {s.pending ? "…" : current[i] ? fmtFn(m.id, interp(views[i]?.x, views[i]?.[m.id], Number(t))) : "—"}
                   </td>
                 ))}
               </tr>
