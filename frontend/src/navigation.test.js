@@ -322,6 +322,11 @@ test("a page's breadcrumbs: its entry, then its child, never a group", () => {
   assert.deepEqual(crumbsFor(live, "systems", "/systems/rbds", "/systems/rbds"), []);
   assert.deepEqual(crumbsFor(live, "systems", "/systems/b/x", "/systems/rbds"), [{ label: "RBDs", to: "/systems/rbds" }]);
   assert.deepEqual(crumbsFor(live, "systems", "/systems/b/x"), [{ label: "RBDs", to: "/systems/rbds" }]);
+  // A sibling's page named with no child (the shared header's crumbs) starts at its entry,
+  // never at the child the entry opens on.
+  assert.deepEqual(crumbsFor(live, "systems", "/systems/runs"), [{ label: "System models", to: "/systems/rbds" }]);
+  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/packages"), [{ label: "Maintenance", to: "/maintenance/work-orders" }]);
+  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/work-orders/w"), [{ label: "Orders", to: "/maintenance/work-orders" }]);
   assert.deepEqual(crumbsFor(live, "systems", "/systems/runs/x", "/systems/runs"),
     [{ label: "System models", to: "/systems/rbds" }, { label: "Simulation runs", to: "/systems/runs" }]);
   assert.deepEqual(crumbsFor(none, "assets", "/asset-register/classes"), []);
