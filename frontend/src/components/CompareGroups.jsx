@@ -29,7 +29,7 @@ const fmtP = (p) => (p == null ? "—" : p < 0.001 ? "< 0.001" : p < 0.01 ? p.to
 
 // Where to fit a model to rows that are unit histories, not one row per unit.
 const HISTORY_FIT = {
-  recurrent: { to: "/models/recurrent/new", label: "fit a recurrent model", what: "repair history" },
+  recurrent: { to: "/models/recurrent/new", label: "fit a repairable model", what: "repair history" },
   degradation: { to: "/models/degradation", label: "fit a degradation model", what: "measurements" },
   time_varying: {
     to: "/models/new", label: "fit a non-repairable model with covariates that change over time",

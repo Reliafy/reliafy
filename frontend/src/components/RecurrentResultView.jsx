@@ -42,7 +42,7 @@ export default function RecurrentResultView({
     setOwn(id);
     onTab?.(id);
   };
-  const label = name || r.model?.name || "Recurrent model";
+  const label = name || r.model?.name || "Repairable model";
   const causes = (r.by_cause?.causes || []).length > 0;
   const [chosen, setChosen] = useState(() => r.by_cause?.causes?.[0]?.label ?? null);
   const onStats = tabs.some((t) => t.id === "diag") ? () => setTab("diag") : null;

@@ -115,7 +115,7 @@ both as covariates instead: see
 Each row must be one unit. A dataset with several rows per unit (a repair
 history, or repeated measurements) isn't offered for comparison, because it
 would count one unit many times. Fit a
-[recurrent-event model](/guides/recurrent-events) to a repair history instead.
+[repairable model](/guides/recurrent-events) to a repair history instead.
 
 ## Compare two items
 

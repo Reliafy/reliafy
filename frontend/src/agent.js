@@ -101,7 +101,7 @@ const ARTIFACTS = {
   degradation_models: ["degradation model", getDegradationModel],
   strategy_analyses: ["strategy analysis", getStrategyAnalysis],
   fleets: ["failure forecast", getFleet],
-  recurrent_models: ["recurrent-event model", getRecurrentModel],
+  recurrent_models: ["repairable model", getRecurrentModel],
 };
 
 async function artifactName(collection, id) {

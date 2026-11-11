@@ -234,7 +234,7 @@ export default function FleetForecasts() {
                 options={[
                   { value: "life", label: "Replaceable — a life, regression or ALT model",
                     hint: "Failures until each item is replaced (first failures, or with replacement)." },
-                  { value: "recurrent", label: "Repairable — a recurrent model",
+                  { value: "recurrent", label: "Repairable — a model of repeat failures",
                     hint: "Each item is repaired and fails again: every repeat failure counted." },
                 ]}
               />

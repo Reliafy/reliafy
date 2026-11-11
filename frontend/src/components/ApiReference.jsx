@@ -1056,7 +1056,7 @@ reliafy photo add IMG_*.jpg --to POSITION_ID   # Reliafy Maintenance users`}</Co
 const MCP_TOOLS = [
   { name: "guide", desc: "Short how-tos by topic — life data and censoring, units, accelerated tests, repairable systems, building RBDs, analysing them, strategy, fleets, uploads, sharing, published failure data, reliability prediction, the workspace, plans — so the agent reads the one it needs before a task. Never counted against the allowance. guide(action=\"analyse.fit\") gives any action’s full argument schema." },
   { name: "get", desc: "One saved item in full, by kind and id; your account and the upgrade link.", actions: [
-    ["model", "A saved life or recurrent model — distribution, parameters with confidence intervals, goodness of fit, MTTF and B-lives with lower bounds. Regression models add how good the model is (Harrell’s C, the integrated Brier score, the time-dependent AUC) and whether it holds (the proportional-hazards test with a plain verdict; for Cox PH robust standard errors, the tie method and strata). A model fitted by failure mode reports each mode’s share with 95% intervals and Gray’s test. Recurrent models give the growth verdict, ROCOF and MTBF with bounds and the trend tests."],
+    ["model", "A saved non-repairable or repairable model — distribution, parameters with confidence intervals, goodness of fit, MTTF and B-lives with lower bounds. Regression models add how good the model is (Harrell’s C, the integrated Brier score, the time-dependent AUC) and whether it holds (the proportional-hazards test with a plain verdict; for Cox PH robust standard errors, the tie method and strata). A model fitted by failure mode reports each mode’s share with 95% intervals and Gray’s test. Repairable models give the growth verdict, ROCOF and MTBF with bounds and the trend tests."],
     ["dataset", "A dataset’s columns and rows, a page at a time."],
     ["rbd", "A diagram’s structure."],
     ["fault_tree", "A fault tree’s gates and basic events, with those on guessed data or none yet."],
@@ -1069,7 +1069,7 @@ const MCP_TOOLS = [
     ["upgrade_link", "A Stripe checkout link for Reliafy Pro, for you to open and pay yourself — nothing is charged until you complete it. Works before you have Pro."],
   ] },
   { name: "list", desc: "Your saved items of one kind, with the shared samples; what changed; the published failure-data library.", actions: [
-    ["models / datasets / rbds / fault_trees", "Your models (life or recurrent), datasets, diagrams and fault trees."],
+    ["models / datasets / rbds / fault_trees", "Your models (non-repairable or repairable), datasets, diagrams and fault trees."],
     ["rbd_runs", "Simulation history, from the app or any connector: who ran each run and from where, its status, method, runtime and result. Kept 7 days on the free plan and 90 on Pro."],
     ["fleets / fleet_alerts", "Your fleet forecasts and a fleet’s email alerts (Pro)."],
     ["share_links", "Your live share links."],
@@ -1089,8 +1089,8 @@ const MCP_TOOLS = [
     ["next_failure", "A system’s next failure at its current age: the chance of a failure within a time (say, before its next service), and the mean and percentiles of the time to it."],
     ["growth_projection", "Reliability growth projection (MIL-HDBK-189C, AMSAA-Crow): the MTBF a growth test reaches once its delayed fixes are in. Inline data is Pro (it fits)."],
     ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function — for a saved Weibull fitted to data, at each end of the shape’s 95% interval too, with a note when that makes the recommendation less firm."],
-    ["optimal_overhaul", "Optimal overhaul interval from a minimal-repair recurrent model."],
-    ["fleet_forecast", "Expected failures across a fleet of in-service items, with exact P10–P90 intervals per period and each item’s chance of failing; regression and ALT fleets at each item’s covariates or stress; recurrent fleets count every repeat failure. Pro."],
+    ["optimal_overhaul", "Optimal overhaul interval from a minimal-repair repairable model."],
+    ["fleet_forecast", "Expected failures across a fleet of in-service items, with exact P10–P90 intervals per period and each item’s chance of failing; regression and ALT fleets at each item’s covariates or stress; repairable fleets count every repeat failure. Pro."],
     ["rbd", "System reliability, MTTF, B-lives and importance; for a repairable diagram exact availability over time, the window’s expected failures, downtime and cost, a safety function’s PFDavg and SIL, a priced diagram’s cost of ownership and capacities’ production availability — from new or from the blocks’ state now. The Monte-Carlo simulation adds the spread and the time to the next failure (Pro; a long one comes back as a job)."],
     ["rbd_quote_simulation", "How long a simulation should take, before anything runs."],
     ["rbd_sensitivity", "What to improve first in a repairable diagram: every lever moved a step, ranked by the gain in availability or cost, in plain words — by benefit per unit of cost when you price the changes — plus over_time, shares, joint, rate and uncertainty measures."],
@@ -1108,7 +1108,7 @@ const MCP_TOOLS = [
     ["model_fit", "The same fit as analyse fit, saved as a model; with demand_batches, a per-demand model. Pro."],
     ["model_save", "Save a model from a distribution and parameters your agent fitted itself — e.g. locally with SurPyval."],
     ["model_fit_alt", "Fit and save an accelerated life test model — failure times at several stress levels and a life-stress relationship, inspection data and delayed entry included. Pro."],
-    ["model_fit_recurrent", "Fit and save a recurrent-event (repairable-system) model: Crow-AMSAA and the other minimal-repair models, proportional intensity, or imperfect repair (Kijima I/II, ARA, ARI, G1). Pro."],
+    ["model_fit_recurrent", "Fit and save a repairable model (recurrent events): Crow-AMSAA and the other minimal-repair models, proportional intensity, or imperfect repair (Kijima I/II, ARA, ARI, G1). Pro."],
     ["model_update / model_delete", "Rename or annotate your own models, or delete one (never shared samples; not one a fleet forecast runs on)."],
     ["dataset_upload", "Save CSV text, or a CSV or Excel file sent with change upload_create."],
     ["dataset_update / dataset_delete", "Rename or annotate your own datasets, or delete one (not one a model was fitted to)."],

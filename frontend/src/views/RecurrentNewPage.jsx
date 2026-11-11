@@ -167,7 +167,7 @@ export default function RecurrentNewPage() {
     }
   };
 
-  // ?dataset=<id> (a dataset page's "Fit a recurrent model") starts on that
+  // ?dataset=<id> (a dataset page's "Fit a repairable model") starts on that
   // dataset, at the column mapping.
   const [params] = useSearchParams();
   const startDataset = params.get("dataset");
@@ -289,7 +289,7 @@ export default function RecurrentNewPage() {
           <h1>
             {mode === "data" ? "Fit to event data"
               : mode === "params" ? "From parameters"
-              : "New recurrent model"}
+              : "New repairable model"}
           </h1>
           <p>
             {mode === "data" ? "Pick a repairable fleet's event history, map columns, fit a growth model, then review and save."

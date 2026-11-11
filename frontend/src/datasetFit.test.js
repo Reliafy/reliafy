@@ -46,7 +46,7 @@ test("data with covariates that change over time offers a non-repairable fit", (
 test("the dataset page's other actions are unchanged", () => {
   const t = (tags, kind, extra = {}) => datasetActions({ id: "x", tags, profile: kind ? { repeated_units: { column: "u", kind } } : {}, ...extra });
   assert.deepEqual(t(["Measurements"], "degradation"), { primary: { label: "Fit a degradation model", to: "/models/degradation?dataset=x" }, secondary: null });
-  assert.equal(t(["Repairable"], "recurrent").primary.to, "/models/recurrent/new?dataset=x");
+  assert.deepEqual(t(["Repairable"], "recurrent").primary, { label: "Fit a repairable model", to: "/models/recurrent/new?dataset=x" });
   assert.deepEqual(t(["Non-repairable"], null).primary, { label: "Fit a model", to: "/models/new?dataset=x" });
   assert.equal(t(["Non-repairable", "Measurements"], null, { measurements: { columns: [] } }).primary.to, "/models/joint/new?dataset=x");
 });
