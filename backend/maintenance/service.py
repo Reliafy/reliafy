@@ -796,10 +796,11 @@ def _item_created(s: GraphStore, org: str, p: dict) -> None:
 # replaced by mistake can be read back. Events logged before 13 Oct 2026 carry
 # no date on an edit: those versions have "on": None.
 
-def _note_entry(history: list, on, change: str, text: str) -> list:
+def _note_entry(history: list, on, change: str, text: str, at: str | None = None) -> list:
     if change == "set" and not text and not history:
         return []
-    return (list(history) + [{"on": on, "change": change, "text": text}])[-NOTE_HISTORY:]
+    entry = {"on": on, "change": change, "text": text} | ({"at": at} if at else {})
+    return (list(history) + [entry])[-NOTE_HISTORY:]
 
 
 def _patch_noted(s: GraphStore, org: str, p: dict) -> None:
@@ -818,7 +819,7 @@ def _note_appended(s: GraphStore, org: str, p: dict) -> None:
     notes = node.get("notes") or ""
     s.patch_node(org, p["id"], {"notes": f"{notes}\n{line}" if notes else line,
                                 "note_history": _note_entry(node.get("note_history") or [], p["on"], "appended",
-                                                            p["text"])})
+                                                            p["text"], p.get("at"))})
 
 
 def _patch(s: GraphStore, org: str, p: dict) -> None:
@@ -1692,7 +1693,8 @@ def _reading_time(at, precision, tz, now: datetime, what: str = "reading") -> tu
             day = day.replace(month=1, day=1)
         elif precision == "month":
             day = day.replace(day=1)
-        if day > now.astimezone(tz or timezone.utc).date():
+        # A day alone gets the same tolerance: a clock a little fast just before midnight says tomorrow.
+        if day > (now + CLOCK_TOLERANCE).astimezone(tz or timezone.utc).date():
             raise _future_reading(now, tz, what=what)
         return day.isoformat(), None, precision
     zone_ = tz or timezone.utc
@@ -2872,6 +2874,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     def today(self) -> str:
         """Today's date in the workspace's time zone, as ISO text."""
         return time_zones.today(self.time_zone).isoformat()
+
+    def latest_day(self) -> str:
+        """The latest day a change may carry: the workspace's day CLOCK_TOLERANCE from now,
+        so a clock a few minutes fast isn't "in the future" just before midnight."""
+        return time_zones.day_of(time_zones.now() + CLOCK_TOLERANCE, self.tz)
 
     def check_limits(self) -> None:
         """Before a change: refuse when the organisation has started too many
@@ -7464,7 +7471,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             if precision not in (None, "", "day"):
                 raise Invalid("Give the time in at (e.g. 2026-10-19T10:14) to say how precisely it's known.")
             day = _day(on, today=self.today())
-        if day > self.today():
+        if day > self.latest_day():
             raise _future_reading(time_zones.now(), self.tz)
         lo, hi = point.get("range_min"), point.get("range_max")
         if (lo is not None and value < lo) or (hi is not None and value > hi):
@@ -8299,17 +8306,33 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         restored = self._restore_tasks_retired_with(item_id, "Its item was retired.")
         return {**self.item(item_id), "tasks_restored": restored}
 
-    def _note_to_append(self, node: dict, text) -> dict | None:
+    def _note_to_append(self, node: dict, text, at=None) -> dict | None:
         """The note.appended payload for adding ``text`` as a dated line to a node's
-        notes (checked before anything is written), or None with no text."""
+        notes (checked before anything is written), or None with no text. ``at``: when
+        it was written, if not now (a time with Z or an offset: a note made on a phone
+        with no signal and sent later). The line is dated the workspace day ``at`` falls
+        on, and the moment is kept (UTC) beside it."""
         if text is None or not str(text).strip():
             return None
         text = _text(text, "note")
-        on = self.today()
+        on, timed = self.today(), {}
+        if at not in (None, ""):
+            on, stamp = self._note_time(at)
+            timed = {"at": stamp}
         if len(node.get("notes") or "") + len(on) + len(text) + 3 > MAX_NOTES:
             raise Invalid(f"The notes would be over {MAX_NOTES:,} characters. Replace them with a shorter "
                           "summary first.")
-        return {"id": node["id"], "on": on, "text": text}
+        return {"id": node["id"], "on": on, "text": text, **timed}
+
+    def _note_time(self, at) -> tuple[str, str]:
+        """``(on, at)`` for a note written at ``at``: the workspace day and the moment in
+        UTC to the second. A time of day is needed (a note's day alone is its ``on``).
+        Up to CLOCK_TOLERANCE ahead of the server it was written now; past that it's
+        refused, like a reading's."""
+        day, stamp, _precision = _reading_time(at, None, self.tz, time_zones.now(), what="note")
+        if stamp is None:
+            raise Invalid(f"“{at}” needs its time of day: write 2026-10-19T10:14:05+10:00.")
+        return day, stamp[:19] + "Z"
 
     def move_item(self, item_id: str, to_position_id: str, on=None) -> dict:
         """Move an item from wherever it's fitted to an empty position (a planned
@@ -8427,9 +8450,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return f"{name}{serial}, fitted {where} {when}"
 
     def update_work_order(self, work_order_id: str, title=None, due=None, notes=None, type=None,
-                          assignee=None, planned_for=None, append_note=None, trade=None, readings=None) -> dict:
+                          assignee=None, planned_for=None, append_note=None, trade=None, readings=None,
+                          note_at=None) -> dict:
         """Change an open work order. ``notes`` replaces the whole note; ``append_note``
         adds a dated line to the end of it (on any work order, closed or cancelled too).
+        ``note_at``: when the appended note was written, if not now (see _note_to_append).
         Every version is kept in note_history. trade: who may do the work. ``readings``
         records readings and settings taken at it now (as close does; a closed one
         too), each linked to the work order."""
@@ -8458,7 +8483,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             changes["planned_for"] = _day(planned_for, "planned date") if planned_for else None
         if trade is not None:
             changes["trade"] = _text(trade, "trade")
-        appended = self._note_to_append({**wo, **changes}, append_note)
+        if note_at not in (None, "") and (append_note is None or not str(append_note).strip()):
+            raise Invalid("note_at goes with append_note: the time that note was written.")
+        appended = self._note_to_append({**wo, **changes}, append_note, note_at)
         if changes:
             self._emit("work_order.updated", {"id": work_order_id, "changes": changes,
                                               "on": self.today()})
