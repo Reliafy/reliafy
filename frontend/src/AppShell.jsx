@@ -60,6 +60,7 @@ const MaintainabilityNewPage = lazy(() => import("./views/MaintainabilityNewPage
 const MaintainabilityPage = lazy(() => import("./views/MaintainabilityPage.jsx"));
 const MaintenanceOrders = lazy(() => import("./views/MaintenanceOrders.jsx"));
 const MaintenancePackages = lazy(() => import("./views/MaintenancePackages.jsx"));
+const MaintenanceFieldReports = lazy(() => import("./views/MaintenanceFieldReports.jsx"));
 const MaintenancePackage = lazy(() => import("./views/MaintenancePackage.jsx"));
 const RcmHome = lazy(() => import("./views/RcmHome.jsx"));
 const RcmStudyPage = lazy(() => import("./views/RcmStudyPage.jsx"));
@@ -250,6 +251,7 @@ function Shell() {
             {/* Maintenance opens on Orders (/maintenance redirects there, redirects.js), then Packages. */}
             {maintenanceEnabled && <Route path="/maintenance/work-orders" element={<MaintenanceOrders />} />}
             {maintenanceEnabled && <Route path="/maintenance/packages" element={<MaintenancePackages />} />}
+            {maintenanceEnabled && <Route path="/maintenance/field-reports" element={<MaintenanceFieldReports />} />}
             {maintenanceEnabled && <Route path="/maintenance/packages/:id" element={<MaintenancePackage />} />}
             {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
             {/* RCM studies: standalone worksheets, for every account (with or
