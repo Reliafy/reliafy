@@ -332,7 +332,10 @@ export function activeTrail(entries, pathname) {
 export function crumbsFor(entries, entryId, pathname, childTo = null) {
   const entry = flatEntries(entries).find((e) => e.id === entryId);
   if (!entry || pathname === entry.to) return [];
-  const opensOn = entry.opensOnFirstChild && entry.children?.[0]?.to === entry.to ? entry.children[0] : null;
+  // The child it opens on, when the page is that child's (a sibling's page, such as
+  // Maintenance › Packages, is under the entry, not under the child it opens on).
+  const first = entry.children?.[0];
+  const opensOn = entry.opensOnFirstChild && first?.to === entry.to && childActive(first, pathname) ? first : null;
   const child = (childTo && (entry.children || []).find((c) => c.to === childTo)) || (!childTo && opensOn) || null;
   // An entry that opens on this child: the child's crumb alone (RBDs, not System models › RBDs).
   if (child && child.to === entry.to) return [{ label: child.label, to: child.to }];
