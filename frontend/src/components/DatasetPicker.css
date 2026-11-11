@@ -80,3 +80,10 @@
 .dsp-reads { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; font-size: var(--fs-13); }
 .dsp-reads dt { color: var(--muted); }
 .dsp-reads dd { margin: 0; overflow-wrap: anywhere; }
+.dsp-use { display: flex; justify-content: flex-end; }
+/* Narrow wherever it sits (a dialog, a side pane): the pane goes under the list. */
+.dsp-c { container-type: inline-size; min-width: 0; }
+@container (max-width: 720px) {
+  .dsp { grid-template-columns: minmax(0, 1fr); }
+  .dsp:not(.dsp-has-pick) .dsp-pane { display: none; }
+}

@@ -46,7 +46,9 @@ the same.
 
 ## Choosing the model
 
-Go to **Modelling → Models → Accelerated life → New model**. The flow asks for the
+Go to **Modelling → Models → Accelerated life → New model** and pick your data: a saved
+dataset under **Saved data** (those with times to failure and a stress column come first), or a
+file under **Upload a file**. The flow then asks for the
 **model before the data**, which is deliberate — the life-stress relationship
 determines how many stress columns you'll be mapping.
 

@@ -72,9 +72,9 @@ def test_status_words_flipped_flags_and_unit_conversion(web):
     flipped = "time,c\n120,1\n340,1\n510,0\n700,1\n"
     out = web.post("/api/models/fit-with-prior", json=_body(content=flipped, c_invert=True)).json()
     assert out["counts"] == {"failures": 3, "suspensions": 1}
-    # Data in days, the prior in hours: converted to the prior's unit.
+    # Data in days, the prior typed in hours: the prior moves to days, and so does the result.
     days = web.post("/api/models/fit-with-prior", json=_body(content=flipped, c_invert=True, unit="days")).json()
-    assert days.get("refused") is None and days["unit"] == "hours"
+    assert days.get("refused") is None and days["unit"] == "days"
 
 
 def test_refusals_come_back_in_words(web):
@@ -101,3 +101,61 @@ def test_the_explorer_path_reads_priors_through_the_same_functions():
     assert "prior_priors(" in inspect.getsource(fit_life._fit_on)
     src = inspect.getsource(library_models.fit_dataset)
     assert "fit_life.prior_base(" in src and "fit_life.prior_priors(" in src
+
+
+def test_a_prior_in_another_unit_gives_the_result_in_the_datas_unit(web):
+    """Data in days, the prior in hours: the prior is moved to days (alpha / 24, a rate x 24, mu - log 24), so
+    the fit, its numbers, the curves and the saved model are all in days, and the result says so."""
+    hours_rows = "time,c\n" + "\n".join(f"{t},{k}" for t, k in [(240, 0), (480, 0), (720, 1), (960, 0), (1200, 0)])
+    days_rows = "time,c\n" + "\n".join(f"{t // 24},{k}" for t, k in [(240, 0), (480, 0), (720, 1), (960, 0), (1200, 0)])
+    baseline = _params_model(web, "Hours baseline", params=[{"name": "alpha", "value": 1000.0}, {"name": "beta", "value": 2.0}])
+    prior = {"kind": "model", "model_id": baseline["id"]}
+    in_hours = web.post("/api/models/fit-with-prior", json=_body(content=hours_rows, prior=prior)).json()
+    in_days = web.post("/api/models/fit-with-prior", json=_body(content=days_rows, prior=prior, unit="days")).json()
+    assert in_hours["unit"].lower() == "hours" and in_days["unit"] == "days"
+    assert "moved from hours to days" in in_days["prior_note"]
+    a_h = next(p["median"] for p in in_hours["posterior"] if p["name"] == "alpha")
+    a_d = next(p["median"] for p in in_days["posterior"] if p["name"] == "alpha")
+    assert a_d == pytest.approx(a_h / 24, rel=0.03)
+    assert in_days["b10"]["point"] == pytest.approx(in_hours["b10"]["point"] / 24, rel=0.03)
+    # The prior's own numbers are shown in days too.
+    prior_alpha = next(p for p in in_days["prior"] if p["name"] == "alpha")
+    assert prior_alpha["median"] == pytest.approx(1000 / 24, rel=0.05)
+    saved = web.post("/api/models/fit-with-prior", json=_body(content=days_rows, prior=prior, unit="days", save=True,
+                                                              name="Days with an hours prior")).json()
+    doc = web.db.models.find_one({"_id": saved["id"]})
+    assert doc["results"]["unit"].lower().startswith("day")
+    assert doc["results"]["params"][0]["value"] == pytest.approx(a_d, rel=0.03)
+
+
+def test_scale_param_moves_lives_rates_and_mu():
+    import math
+
+    from backend.maintenance.library_models import scale_param
+
+    assert scale_param("alpha", 2400, 24) == pytest.approx(100)
+    assert scale_param("failure_rate", 0.001, 24) == pytest.approx(0.024)
+    assert scale_param("mu", 7.0, 24) == pytest.approx(7.0 - math.log(24))
+    assert scale_param("beta", 2.0, 24) == 2.0 and scale_param("sigma", 0.5, 24) == 0.5
+
+
+def test_a_library_record_in_hours_fits_data_in_days_in_days(web):
+    lid = web.post("/api/library/mine", json={"name": "Priors"}).json()["id"]
+    model, _ = _fitted_model(web)
+    rec = web.post(f"/api/library/mine/{lid}/records", json={"model_id": model["id"]}).json()["record"]
+    days = "time,c\n5,0\n14,0\n21,1\n29,0\n41,0\n50,1\n"
+    out = web.post("/api/models/fit-with-prior", json=_body(content=days, unit="days",
+                                                            prior={"kind": "library", "record_id": rec["id"]})).json()
+    assert out.get("refused") is None and out["unit"] == "days", out
+    alpha_prior = next(p for p in out["prior"] if p["name"] == "alpha")
+    record_alpha = next(p["value"] for p in rec["distribution"]["params"] if p["name"] == "alpha")
+    assert alpha_prior["median"] == pytest.approx(record_alpha / 24, rel=0.1)
+    # A rate record (a published gamma on the rate per hour) moves too: the rate per day is 24 times it.
+    from backend.maintenance import library_models
+
+    rid = "nrc-inl-2020:aov-fc"
+    hours = library_models.prior_base({"kind": "library", "record_id": rid}, "exponential", web.db, [PRO])
+    in_days = library_models.prior_base({"kind": "library", "record_id": rid}, "exponential", web.db, [PRO], to_unit="days")
+    assert hours["unit"] == "hours" and in_days["unit"] == "days"
+    assert in_days["params"]["failure_rate"] == pytest.approx(hours["params"]["failure_rate"] * 24)
+    assert in_days["priors"]["failure_rate"].mean() == pytest.approx(hours["priors"]["failure_rate"].mean() * 24, rel=1e-6)

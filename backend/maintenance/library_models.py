@@ -379,10 +379,17 @@ def fit_dataset(db, owners, dataset_id: str | None, time_column: str, censor_col
         raise sv.Invalid(f"The data has no column '{time_column}'.")
     if censor_column and censor_column not in df.columns:
         raise sv.Invalid(f"The data has no column '{censor_column}'.")
-    base = fit_life.prior_base(prior, distribution, db, owners, hidden)
-    if not base.get("unit"):
-        base = {**base, "unit": unit}  # a prior with no unit of its own is in the data's
-    per = _per(unit, base["unit"], sv)  # one data unit in the prior's unit
+    # The prior is built in the data's unit, so the fit, its numbers and the saved model are all in it.
+    prior = _typed_in_unit(dict(prior), unit, sv)
+    if prior.get("kind") == "library":
+        base = prior_base(prior, distribution, db, owners, to_unit=unit)
+    else:
+        base = fit_life.prior_base(prior, distribution, db, owners, hidden)
+        if not base.get("unit"):
+            base = {**base, "unit": unit}  # a prior with no unit of its own is in the data's
+        if prior.get("kind") == "model":
+            base = _base_in_unit(base, unit, sv)
+    per = _per(unit, base["unit"], sv)  # 1 unless the data's unit isn't one of time
     times = df[time_column]
     if not all(isinstance(v, (int, float)) for v in times.dropna().tolist()) or times.isna().any():
         raise sv.Invalid(f"“{time_column}” must hold a number on every row: the time to failure or removal.")
@@ -394,6 +401,8 @@ def fit_dataset(db, owners, dataset_id: str | None, time_column: str, censor_col
     except bl.BayesError as err:
         raise sv.Invalid(str(err)) from None
     priors, extra = fit_life.prior_priors(base, trust)
+    if base.get("unit_note"):
+        extra = f"{extra} {base['unit_note']}".strip()
     try:
         model, result, _ = bl.update(base, trust if base["source"] != "update" else "guide", rows,
                                      float(age) * per if age else None, priors, subject="the best B10")
@@ -405,6 +414,70 @@ def fit_dataset(db, owners, dataset_id: str | None, time_column: str, censor_col
         result["prior_note"] = extra
         result["words"] = f"{result.get('words', '')} {extra}".strip()
     return model, result
+
+
+def scale_param(name: str, value, k: float):
+    """A parameter in the data's unit, from one in a unit ``k`` times as long as it is short: one data unit is
+    ``k`` of the prior's (days data, an hours prior: k = 24). Lives (alpha, a mean, a B10) divide by k, a rate
+    multiplies, a lognormal's mu moves by log k; a shape or a spread doesn't change."""
+    import math
+
+    if value is None:
+        return None
+    v = float(value)
+    if name in ("alpha", "mean", "B10", "b10", "value", "low", "high"):
+        return v / k
+    if name == "failure_rate":
+        return v * k
+    if name == "mu":
+        return v - math.log(k)
+    return v
+
+
+def _typed_in_unit(prior: dict, unit: str, sv) -> dict:
+    """Numbers typed for the prior (params, around, a B10) in the data's unit: converted when given in another
+    unit of time; with no unit, they are the data's."""
+    kind = prior.get("kind")
+    if kind not in ("params", "around", "b10"):
+        return prior
+    given = prior.get("unit") or unit
+    k = _per(unit, given, sv)
+    out = {**prior, "unit": unit}
+    if k == 1.0:
+        return out
+    if kind == "params":
+        raw = prior.get("params") or []
+        items = raw if isinstance(raw, list) else [{"name": n, "value": v} for n, v in raw.items()]
+        out["params"] = [{"name": p.get("name"), "value": scale_param(str(p.get("name")), p.get("value"), k)} for p in items]
+    elif kind == "around":
+        moved = {}
+        for name, spec in (prior.get("params") or {}).items():
+            spec = dict(spec or {})
+            if spec.get("about") is not None:
+                spec["about"] = scale_param(name, spec["about"], k)
+            if spec.get("between"):
+                spec["between"] = sorted(scale_param(name, v, k) for v in spec["between"])
+            moved[name] = spec
+        out["params"] = moved
+    else:
+        out["b10"] = {key: scale_param(key, v, k) for key, v in (prior.get("b10") or {}).items()}
+    return out
+
+
+def _base_in_unit(base: dict, unit: str, sv) -> dict:
+    """A saved model (or an earlier update) as the prior, in the data's unit: its numbers moved to it and the
+    prior built from them (fit_life.prior_priors), and said so. In the same unit it's kept as it is."""
+    k = _per(unit, base["unit"], sv)
+    if k == 1.0:
+        return base
+    from backend.services import bayes_life as bl
+
+    params = {n: scale_param(n, v, k) for n, v in (base.get("params") or {}).items()}
+    out = {key: v for key, v in base.items() if key not in ("live", "recipe")}
+    note = (f"The prior's numbers were moved from {bl._unit_word(base['unit'])} to {bl._unit_word(unit)}, the data's "
+            "unit, so the result is in the data's unit.")
+    return {**out, "source": "model" if base.get("source") == "update" else base.get("source"), "params": params,
+            "unit": unit, "unit_note": note}
 
 
 def _flag(v, c_invert: bool, c_map: dict | None, column: str, sv) -> int:
@@ -446,9 +519,11 @@ def source_text(src: dict) -> str:
     return f"Library: {lib.get('source')}, {label}" + (f" ({lib['citation']})" if lib.get("citation") else "")
 
 
-def prior_base(prior: dict, distribution: str, db=None, owners=None) -> dict:
+def prior_base(prior: dict, distribution: str, db=None, owners=None, to_unit: str | None = None) -> dict:
     """A library record as a prior: the base the update reads, {source: library, name, distribution, unit,
-    params, priors, note}. ``db`` and ``owners`` let the record be one of the owners' own libraries."""
+    params, priors, note}. ``db`` and ``owners`` let the record be one of the owners' own libraries.
+    ``to_unit``: build it in this time unit (the data's) rather than the record's own, so the fit and
+    its result are in the data's unit."""
     import surpyval as sp
 
     from backend.services import bayes_life as bl
@@ -461,7 +536,7 @@ def prior_base(prior: dict, distribution: str, db=None, owners=None) -> dict:
         raise sv.Invalid(words)
     b = brief(rec, mine)
     if rec.get("kind") == "life":
-        return _life_prior_base(rec, b, mine, sp, bl, sv)
+        return _life_prior_base(rec, b, mine, sp, bl, sv, to_unit)
     from backend.library import record_covariates as rc
 
     cov = record_covariates(rec, prior.get("covariates"), prior.get("length_ft"))
@@ -480,13 +555,20 @@ def prior_base(prior: dict, distribution: str, db=None, owners=None) -> dict:
     per = "per calendar hour" if clock == "calendar" else "per hour of running"
     cov_note = (f" Its covariates: {said}, so the rate is {bl.num(mean)} {per} (the record's × {bl.num(s_)})."
                 if said and abs(s_ - 1) > 1e-12 else (f" Its covariates: {said}." if said else ""))
+    # In the data's unit: a rate per hour times the hours in one data unit is the rate per data unit.
+    unit_out, k = "hours", 1.0
+    if to_unit:
+        k = _per(to_unit, "hours", sv)
+        unit_out = to_unit
+        mean, p05, p95 = mean * k, (float(p05) * k if p05 else p05), (float(p95) * k if p95 else p95)
+    u_word = "hours" if unit_out == "hours" else unit_out
     dist_id = distribution if distribution in bl.DISTS else "exponential"
     name = cite(rec)
     extra = {"covariates": used, "covariates_words": said, "clock": clock}
     if dist_id == "exponential":
         if family == "gamma" and {"alpha", "beta"} <= set(named) and rec.get("kind") == "rate":
             # A gamma(α, β) on λ is a gamma(α, β / s) on s × λ: the record's prior, scaled exactly.
-            priors = {"failure_rate": sp.Gamma.from_params([named["alpha"], named["beta"] / s_])}
+            priors = {"failure_rate": sp.Gamma.from_params([named["alpha"], named["beta"] / (s_ * k)])}
             note = ("The record's gamma on the failure rate is the prior exactly; with an exponential the update is "
                     "in closed form (conjugate).") + cov_note
         elif p05 and p95:
@@ -495,7 +577,7 @@ def prior_base(prior: dict, distribution: str, db=None, owners=None) -> dict:
                     + cov_note)
         else:
             raise sv.Invalid("That record gives no uncertainty range to use as a prior.")
-        return {"source": "library", "name": name, "distribution": "exponential", "unit": "hours",
+        return {"source": "library", "name": name, "distribution": "exponential", "unit": unit_out,
                 "params": {"failure_rate": mean}, "priors": priors, "note": note, **extra}
     if not (p05 and p95):
         raise sv.Invalid("That record gives no uncertainty range to use as a prior.")
@@ -510,10 +592,10 @@ def prior_base(prior: dict, distribution: str, db=None, owners=None) -> dict:
     # around() puts the prior's median at the geometric middle of the bounds: say what was built.
     middle = (1 / float(p95) * 1 / float(p05)) ** 0.5
     note = (f"The record gives a failure rate; for a {bl.LABELS[dist_id]} it's a prior on the mean life (one over the "
-            f"rate: 90% between {bl.num(1 / float(p95))} and {bl.num(1 / float(p05))} hours, centred on about "
+            f"rate: 90% between {bl.num(1 / float(p95))} and {bl.num(1 / float(p05))} {u_word}, centred on about "
             f"{bl.num(middle)}), with the {'shape' if dist_id == 'weibull' else 'spread'} between {bl.num(lo)} and "
             f"{bl.num(hi)} ({said_shape}).") + cov_note
-    return {"source": "library", "name": name, "distribution": dist_id, "unit": "hours", "params": {},
+    return {"source": "library", "name": name, "distribution": dist_id, "unit": unit_out, "params": {},
             "priors": priors, "note": note, **extra}
 
 
@@ -521,7 +603,7 @@ def prior_base(prior: dict, distribution: str, db=None, owners=None) -> dict:
 DEFAULT_WITHIN = 0.30
 
 
-def _life_prior_base(rec: dict, b: dict, mine: dict | None, sp, bl, sv) -> dict:
+def _life_prior_base(rec: dict, b: dict, mine: dict | None, sp, bl, sv, to_unit: str | None = None) -> dict:
     """A life record (a saved model's snapshot) as the prior: in the record's own family and unit.
     With bounds on every parameter, each is "about its value, (the bounds' level) between them"
     (SurPyval's ``around``); without, each is within about 30% of its value (``from_params``), and
@@ -536,6 +618,13 @@ def _life_prior_base(rec: dict, b: dict, mine: dict | None, sp, bl, sv) -> dict:
     bounds = {p["name"]: p["ci"] for p in d["params"] if p.get("ci")}
     level = float(d.get("level") or 0.9)
     unit = (rec.get("units") or {}).get("value") or "hours"
+    if to_unit:
+        # In the data's unit: each parameter (and its bounds) moved to it.
+        k = _per(to_unit, unit, sv)
+        if k != 1.0:
+            values = {n: scale_param(n, v, k) for n, v in values.items()}
+            bounds = {n: sorted(scale_param(n, float(v), k) for v in ci) for n, ci in bounds.items()}
+            unit = to_unit
     name = cite(rec, mine)
     if all(n in bounds for n in dist.parameter_names):
         priors = {n: sp.prior.around(values[n], between=(float(bounds[n][0]), float(bounds[n][1])), mass=level)
