@@ -78,7 +78,7 @@ def mean_life(model, alpha: float, tau=None) -> dict:
     with np.errstate(all="ignore"), warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         try:
-            out["value"] = _num(model.mean(horizon))
+            out["value"] = _num(model.mean(tau=horizon))
         except Exception:  # noqa: BLE001 - no mean: shown as a dash
             return out
         try:
@@ -86,7 +86,7 @@ def mean_life(model, alpha: float, tau=None) -> dict:
         except Exception:  # noqa: BLE001 - say restricted: the safe reading
             out["restricted"] = True
         try:
-            lo, hi = np.ravel(np.asarray(model.mean_cb(horizon, alpha_ci=min(2 * alpha, 0.999)), dtype=float))[:2]
+            lo, hi = np.ravel(np.asarray(model.mean_cb(tau=horizon, alpha_ci=min(2 * alpha, 0.999)), dtype=float))[:2]
             out["lower"], out["upper"] = _num(lo), _num(hi)
         except Exception:  # noqa: BLE001 - the value stands without its bounds
             pass
