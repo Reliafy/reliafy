@@ -9029,6 +9029,24 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         memo[key] = out
         return out
 
+    def _package_next_visits(self, root: dict, count: int) -> list[tuple[str, set]]:
+        """The top package's next ``count`` visits (after its open work order's, else from
+        the next), each with the tasks due on it: the visits themselves, whether or not
+        every member has its date yet (unlike _package_upcoming)."""
+        state = self._package_state(root)
+        tree = self._package_tree(root, active_only=True)
+        if state["open"]:
+            day = self._next_root_visit(root, state["open"].get("covers_to") or state["open"]["visit_on"])
+        else:
+            day = state["next_visit"]
+        until = (date.fromisoformat(self.today()) + timedelta(days=self._LOOKAHEAD_DAYS)).isoformat()
+        out: list[tuple[str, set]] = []
+        while day and day <= until and len(out) < count:
+            number = self._visit_number(root, day, state["raised"] + len(out))
+            out.append((day, {t["id"] for t, _, _ in self._visit_tasks(root, tree, day, number, skip=state["on_open"])}))
+            day = self._next_root_visit(root, day)
+        return out
+
     def _later_visit(self, root: dict, pkg: dict, member: dict, after: str) -> str | None:
         """A member's next visit past the look-ahead: its own package's next date by its
         visit rule (covering by other tasks aside)."""
@@ -9825,8 +9843,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
     def package(self, package_id: str) -> dict:
         """A package in full: its cadence, tolerance, layers, its tasks (each with its visit
-        rule, what it covers, last done and next due), its next visits (a top package's,
-        with how many tasks each) and its recent work orders."""
+        rule, what it covers, last done and next due), its next six visits (a top
+        package's, with how many tasks each) and its recent work orders (a finished one with
+        what was done: done)."""
         pkg = self._get(str(package_id or ""), "WorkPackage")
         out = {**self._package_brief(pkg), "notes": pkg.get("notes", ""), "created": pkg.get("created"),
                "paused_reason": pkg.get("paused_reason", "") if pkg.get("paused") else "",
@@ -9856,9 +9875,14 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         out["work_orders"] = [self._wo_brief(w) for w in sorted(
             (w for w in self.s.inn(self.org, root["id"], "RAISED_FROM") if w["label"] == "WorkOrder"),
             key=lambda w: w["number"], reverse=True)[:10]]
+        for row in out["work_orders"]:
+            # A finished visit says what was done on it (its outcome).
+            if row["status"] in DONE_STATUSES:
+                row["done"] = self._wo_done(row["id"])
         out["next_visits"] = []
         if out["status"] == "active" and root["id"] == pkg["id"]:
-            out["next_visits"] = [{"on": d, "tasks": len(ids)} for d, ids in self._package_upcoming(root)[:5]]
+            out["next_visits"] = [{"on": d, "tasks": len(ids), "task_ids": sorted(ids)}
+                                  for d, ids in self._package_next_visits(root, 6)]
         return out
 
     # -- proposing packages from the decided tasks --
@@ -13737,10 +13761,14 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         out = [self._wo_brief(w) for w in wos]
         if status == "done":
             for row in out:
-                # What was done, for the history's list ("Checked, nothing done", "Replaced").
-                row["done"] = [{"kind": a["kind"], "finding": a.get("finding")}
-                               for a in sorted(self.s.out(self.org, row["id"], "INCLUDES"), key=lambda a: a["on"])]
+                row["done"] = self._wo_done(row["id"])
         return out
+
+    def _wo_done(self, work_order_id: str) -> list[dict]:
+        """What a finished work order's actions did, in order (kind and finding), for a
+        history's list ("Checked, nothing done", "Replaced")."""
+        return [{"kind": a["kind"], "finding": a.get("finding")}
+                for a in sorted(self.s.out(self.org, work_order_id, "INCLUDES"), key=lambda a: a["on"])]
 
     def work_order(self, id: str) -> dict:
         """A work order in full. On a position: the item fitted there and its failure

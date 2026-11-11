@@ -593,3 +593,23 @@ button.maint-toggle {
 }
 .maint-dl dt { color: var(--muted); }
 .maint-dl dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+/* A work package's own page: the content, and Edit in a pane beside it. */
+.pkg-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.pkg-page.is-editing { grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); }
+.pkg-main { min-width: 0; }
+.pkg-main > .card:first-child { margin-top: 0; }
+.pkg-page.is-editing .pkg-edit { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+.pkg-edit-form { padding: 12px 18px 18px; display: flex; flex-direction: column; gap: 4px; }
+.pkg-edit-form textarea { width: 100%; resize: vertical; }
+.pkg-rules { border: 1px solid var(--line2); border-radius: var(--r-sm); padding: 8px 12px; margin: 8px 0; min-width: 0; }
+.pkg-rules legend { font-size: var(--fs-13); color: var(--muted); padding: 0 4px; }
+.pkg-rule { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 6px 0; }
+.pkg-rule + .pkg-rule { border-top: 1px solid var(--line2); }
+.pkg-rule-name { flex: 1 1 100%; font-size: var(--fs-14); overflow-wrap: anywhere; }
+.pkg-rule-n { width: 5em; }
+.pkg-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.pkg-notes { white-space: pre-wrap; }
+@media (max-width: 1100px) {
+  .pkg-page.is-editing { grid-template-columns: minmax(0, 1fr) minmax(300px, 340px); }
+}
