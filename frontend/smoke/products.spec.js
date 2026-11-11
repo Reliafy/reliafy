@@ -78,12 +78,13 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
     // The product's own row is headed "Product" (its design's positions stay "Position").
     await expect(page.locator(".tt-kind").first()).toHaveText("Product");
-    // A design has no maintenance: no Failure reports or Signals tab. Parts and Classes are hidden tabs for
+    // A design has no maintenance of its own: no Signals tab. Parts and Classes are hidden tabs for
     // now (the parts list is the Summary's Bill of materials).
     await expect(page.getByRole("tab", { name: "RCM" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Parts", exact: true })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Classes" })).toHaveCount(0);
-    await expect(page.getByRole("tab", { name: "Failure reports" })).toHaveCount(0);
+    // A product has its own Failure reports tab: the reports on the items built from it.
+    await expect(page.getByRole("tab", { name: "Failure reports" })).toHaveCount(1);
     await expect(page.getByRole("tab", { name: "Signals" })).toHaveCount(0);
     // The product's facts, in place of an asset's (nothing fitted, no location, no work).
     const facts = page.getByRole("region", { name: "Facts", exact: true });
