@@ -21,7 +21,7 @@ import PreviewTable from "./PreviewTable.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import CompetingRisksStep, { CR_OPTIONS } from "./CompetingRisksStep.jsx";
 import { frailtyFitOptions, groupProblem, withGroup } from "../moreModels.js";
-import { usableDatasets } from "../datasetFit.js";
+import DatasetPicker, { DatasetGlance } from "./DatasetPicker.jsx";
 import ResultView from "./ResultView.jsx";
 import ModelFrame, { AnswerLine } from "./model/ModelFrame.jsx";
 import ModelNextSteps from "./ModelNextSteps.jsx";
@@ -32,11 +32,17 @@ import { guessTvc, tvcMapping, tvcProblems, tvcSummaryParts } from "../tvcData.j
 import { guessUnit, isNumeric } from "../datasetGuess.js";
 import {
   EMPTY_MAPPING, columnFacts, guessMapping, isSimplePaste, statusSummary, summaryParts,
-  dataStepProblems, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped,
+  dataStepProblems, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped, mappingWords,
 } from "../lifeData.js";
 import { RequiredUnit } from "./Units.jsx";
 
 const STEPS = ["Source", "Data", "Model", "Result"];
+// Where the data comes from: a saved dataset first (most users have one), then typed or pasted values, then a file.
+const SOURCES = [
+  { value: "saved", label: "Saved data" },
+  { value: "paste", label: "Paste or type" },
+  { value: "upload", label: "Upload a file" },
+];
 const PASTED = "pasted-values.csv";
 
 // A saved dataset's detail in the shape /api/columns gives.
@@ -57,11 +63,14 @@ export { parsePastedValues };
 // (+ unit, covariates), (3) pick a model and fit, (4) review the fit, then
 // name it beside Save and save — with Back to change anything and re-fit before saving. Calls
 // ``onSaved`` with the saved model; ``onCancel`` backs out to the list.
-// ``initialSource`` opens the source step on "upload" (default) or "paste".
+// ``initialSource`` opens the source step on "saved" (default: the user's
+// datasets and the samples), "paste" or "upload".
 export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDatasetId, autoFit, initialSource }) {
   const [step, setStep] = useState(1);
-  // Source step: "upload" (dropzone) or "paste" (values typed / pasted in).
-  const [source, setSource] = useState(initialSource === "paste" ? "paste" : "upload");
+  // Source step: "saved" (a saved dataset), "paste" (values typed / pasted in) or "upload" (a file).
+  const [source, setSource] = useState(SOURCES.some((o) => o.value === initialSource) ? initialSource : "saved");
+  // The saved dataset picked on the source step, before Next: { summary, detail, error }.
+  const [picked, setPicked] = useState(null);
   const [pasted, setPasted] = useState("");
   // A paste mixing bare times with "time flag" lines: the lines to offer
   // "Add 0 (failed)" for, shown with the error and applied only on a click.
@@ -91,7 +100,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [coxOpts, setCoxOpts] = useState({}); // Cox PH: ties, strata, cluster (#61)
   // A shared-frailty model's Group by column (#179), sent with the mapping.
   const [group, setGroup] = useState("");
-  const [datasets, setDatasets] = useState([]);
+  const [datasets, setDatasets] = useState(null); // null while the list loads
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -113,7 +122,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         setDistributions([{ id: "weibull", name: "Weibull", covariates: false }])
       );
     listDatasets()
-      .then((d) => setDatasets(d.datasets))
+      .then((d) => setDatasets(d.datasets || []))
       .catch(() => setDatasets([]));
   }, []);
 
@@ -201,23 +210,41 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     }
   };
 
-  // Use an already-saved dataset as the source — no re-upload needed.
-  const pickDataset = async (d) => {
+  // A saved dataset picked in the list: read its detail for the pane beside
+  // the list (its first rows and how its columns will be read). Nothing in
+  // the flow changes until Next.
+  const pickSaved = (d) => {
+    setError(null);
+    setPicked({ summary: d, detail: null, error: null });
+    getDataset(d.id).then(
+      (full) => setPicked((p) => (p?.summary.id === d.id ? { ...p, detail: full } : p)),
+      (err) => setPicked((p) => (p?.summary.id === d.id ? { ...p, error: err.message } : p)),
+    );
+  };
+  // The picked dataset's guessed columns, for the pane (the Data step starts from the same guess).
+  const pickedGuess = useMemo(() => {
+    if (!picked?.detail) return null;
+    const cols = datasetColumns(picked.detail);
+    const facts = columnFacts(cols);
+    const g = guessMapping(cols.columns, facts);
+    const status = statusSummary(g.mapping, facts, cols.n_rows);
+    return {
+      words: mappingWords(g.mapping, facts, g.unit),
+      problems: dataStepProblems(g.mapping, facts, cols.n_rows),
+      summary: status ? summaryParts(status) : [],
+    };
+  }, [picked?.detail]);
+  // Next on a picked dataset: its columns into the Data step — no re-upload needed.
+  const useSaved = () => {
+    const full = picked?.detail;
+    if (!full) return;
     setFile(null);
     setHeaderNote(null);
-    setDatasetId(d.id);
-    setSourceName(d.name);
+    setDatasetId(full.id);
+    setSourceName(full.name);
     setError(null);
-    setLoading(true);
-    try {
-      const full = await getDataset(d.id);
-      loadColumns(datasetColumns(full));
-      setStep(2);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    loadColumns(datasetColumns(full));
+    setStep(2);
   };
 
   // Guided first-run: when handed a dataset id (e.g. the bearings sample), skip
@@ -472,11 +499,16 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
-        <span className="hint" style={{ margin: 0 }}>
-          {source === "paste"
-            ? "Paste your values, or pick a dataset, to continue"
-            : "Upload a CSV or Excel file, or pick a dataset, to continue"}
-        </span>
+        {source === "saved" ? (
+          <button data-wt="fit-source-next" onClick={useSaved} disabled={!picked?.detail || loading}
+                  title={picked ? undefined : "Pick a dataset first"}>
+            Next
+          </button>
+        ) : (
+          <span className="hint" style={{ margin: 0 }}>
+            {source === "paste" ? "Paste your values to continue" : "Upload a CSV or Excel file to continue"}
+          </span>
+        )}
       </>
     );
   } else if (step === 2) {
@@ -505,26 +537,54 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     <div className="card fit-flow">
       {step === 1 && (
         <>
-          <div className="source-toggle" role="tablist" aria-label="Data source">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={source === "upload"}
-              className={`source-tab${source === "upload" ? " active" : ""}`}
-              onClick={() => { setSource("upload"); setError(null); }}
-            >
-              Upload CSV / Excel
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={source === "paste"}
-              className={`source-tab${source === "paste" ? " active" : ""}`}
-              onClick={() => { setSource("paste"); setError(null); }}
-            >
-              Paste values
-            </button>
+          <div className="source-toggle" role="tablist" aria-label="Where the data comes from">
+            {SOURCES.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                role="tab"
+                aria-selected={source === o.value}
+                className={`source-tab${source === o.value ? " active" : ""}`}
+                onClick={() => { setSource(o.value); setError(null); }}
+              >
+                {o.label}
+              </button>
+            ))}
           </div>
+
+          {source === "saved" && (
+            <DatasetPicker kind="life" datasets={datasets} value={picked?.summary.id} onPick={pickSaved} disabled={loading}>
+              {picked && (
+                <DatasetGlance summary={picked.summary} detail={picked.detail} error={picked.error}>
+                  {pickedGuess && (
+                    <>
+                      <div className="dsp-quiet">How its columns will be read (change them on the next step):</div>
+                      <dl className="dsp-reads">
+                        {pickedGuess.words.map((w) => (
+                          <div key={w.label} style={{ display: "contents" }}>
+                            <dt>{w.label}</dt>
+                            <dd>{w.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                      {pickedGuess.problems.length > 0 ? (
+                        <ul className="ds-problems" role="status">
+                          {pickedGuess.problems.map((p) => <li key={p}>{p}</li>)}
+                        </ul>
+                      ) : pickedGuess.summary.length > 0 ? (
+                        <p className="ds-summary" role="status">
+                          {pickedGuess.summary.map((part, i) => {
+                            const [num, ...rest] = part.split(" ");
+                            return <span key={part}>{i > 0 && ", "}<b>{num}</b> {rest.join(" ")}</span>;
+                          })}
+                        </p>
+                      ) : null}
+                    </>
+                  )}
+                </DatasetGlance>
+              )}
+            </DatasetPicker>
+          )}
 
           {source === "paste" && (
             <div className="paste-source">
@@ -598,31 +658,6 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
           </div>
           )}
           {sheetModal}
-
-          {usableDatasets("life", datasets).length > 0 && (
-            <div className="recent">
-              <div className="recent-h">Or use a saved dataset</div>
-              {usableDatasets("life", datasets).slice(0, 5).map((d) => (
-                <button
-                  key={d.id}
-                  type="button"
-                  className="recent-row"
-                  disabled={loading}
-                  onClick={() => pickDataset(d)}
-                >
-                  <span className="recent-ic">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M14 3v5h5M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" />
-                    </svg>
-                  </span>
-                  <span className="recent-name">{d.name}</span>
-                  <span className="recent-meta">
-                    {d.n_rows.toLocaleString()} rows · {d.n_columns} cols
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
 
           {onPerDemand && (
             <div className="perdemand-cta">

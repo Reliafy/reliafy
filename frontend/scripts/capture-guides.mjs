@@ -664,7 +664,11 @@ async function main() {
   // list pages like Saved models, which real users would never see.
   const sampleShots = [
     // --- Fit your first model ---
-    { file: "fit-01-new.png", url: "/models/new?mode=data", settle: 1200 },
+    { file: "fit-01-new.png", url: "/models/new?mode=saved", settle: 1200,
+      async act(page) {
+        await page.getByRole("radio", { name: /Bearing fatigue test/ }).click();
+        await page.locator(".dsp-reads").waitFor({ timeout: 15000 }); await wait(600);
+      } },
     { file: "fit-02-result.png", url: `/models/m/${S.bearings}`, settle: 2500 },
     { file: "fit-03-calculator.png", url: `/models/m/${S.bearings}`, settle: 2000, act: modelCalculator },
     // --- Censored data (the pump model is right-censored) ---

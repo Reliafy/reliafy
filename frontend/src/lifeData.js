@@ -453,3 +453,32 @@ export const UNITLESS = "units";
 export function isUnitless(unit) {
   return ["units", "unitless", "no unit"].includes(String(unit ?? "").trim().toLowerCase());
 }
+
+const MEANING_WORDS = { 0: "failed", 1: "still running", "-1": "found failed", 2: "interval" };
+
+// How a mapping reads a table, in words, for the saved-data picker's pane:
+// [{ label, value }]. The status line spells out each flag's meaning
+// (0 = failed, 1 = still running, or the other way round when flipped).
+export function mappingWords(mapping, facts = {}, unit = "") {
+  const u = unit ? ` (${unit})` : " (no unit yet)";
+  const out = [];
+  if (mapping.xl || mapping.xr) {
+    out.push({ label: "Time", value: `between “${mapping.xl || "?"}” and “${mapping.xr || "?"}”${u}` });
+  } else {
+    out.push({ label: "Time", value: mapping.x ? `“${mapping.x}”${u}` : "not found: pick it on the next step" });
+  }
+  if (mapping.c) {
+    const flags = statusValues(facts[mapping.c]?.values)
+      .map((v) => {
+        const m = statusMeaning(v.label, mapping);
+        return `${v.label} = ${m == null ? "not said yet" : MEANING_WORDS[m]}`;
+      });
+    out.push({ label: "Status", value: `“${mapping.c}”${flags.length ? `: ${flags.join(", ")}` : ""}` });
+  } else {
+    out.push({ label: "Status", value: "none: every row is a failure" });
+  }
+  if (mapping.n) out.push({ label: "Count", value: `“${mapping.n}”` });
+  if (mapping.tl) out.push({ label: "Observed from", value: `“${mapping.tl}”` });
+  if (mapping.tr) out.push({ label: "Observed until", value: `“${mapping.tr}”` });
+  return out;
+}

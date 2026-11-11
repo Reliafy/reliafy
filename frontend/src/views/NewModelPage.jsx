@@ -17,10 +17,14 @@ const FEATURED_SAMPLES = [
 const N_SAMPLES = 3;
 
 // Dedicated page for building a new model. First question: where does the
-// model come from — a CSV, values pasted in, known parameters, or one of the
-// built-in sample datasets. All four are equals: most visitors arrive with no
-// file to hand. Per-demand (Binomial) is reachable from the parameters panel
-// and from the fit-to-data source step.
+// model come from — data (a saved dataset, values pasted in or a file: one
+// choice, the fit flow's source step), known parameters, or one of the
+// built-in sample datasets. Per-demand (Binomial) is reachable from the
+// parameters panel and from the fit-to-data source step.
+//
+// ?mode=: saved (the fit flow on the saved-data list), paste, upload (also
+// "data", the older name for it), params, perdemand.
+const FIT_SOURCE = { saved: "saved", paste: "paste", upload: "upload", data: "upload" };
 export default function NewModelPage() {
   const navigate = useNavigate();
   const query = new URLSearchParams(useLocation().search);
@@ -30,9 +34,9 @@ export default function NewModelPage() {
   const queryDatasetId = query.get("dataset") || null;
   const autoFit = query.get("auto") === "1";
   const [mode, setMode] = useState(
-    queryDatasetId ? "data"
-    : ["data", "paste", "params", "perdemand"].includes(initialMode) ? initialMode : null
-  ); // null | "data" | "paste" | "params" | "perdemand"
+    queryDatasetId ? "saved"
+    : (FIT_SOURCE[initialMode] || ["params", "perdemand"].includes(initialMode)) ? initialMode : null
+  ); // null | "saved" | "paste" | "upload" | "data" | "params" | "perdemand"
   // Dataset the fit flow should open on (a sample picked here, or the deep link).
   const [datasetId, setDatasetId] = useState(queryDatasetId);
   const [samples, setSamples] = useState([]);
@@ -41,7 +45,7 @@ export default function NewModelPage() {
   useEffect(() => {
     if (queryDatasetId) {
       setDatasetId(queryDatasetId);
-      setMode("data");
+      setMode("saved");
     }
   }, [queryDatasetId]);
 
@@ -68,7 +72,7 @@ export default function NewModelPage() {
     setMode(next);
   };
 
-  const fitting = mode === "data" || mode === "paste";
+  const fitting = !!FIT_SOURCE[mode];
   const heading =
     mode === "params" ? "From parameters"
     : mode === "perdemand" ? "Per-demand"
@@ -88,24 +92,17 @@ export default function NewModelPage() {
         meta={sub}
       />
 
-      {/* First question: choose how to build the model. Four equal entry
-          points — no file needed for three of them. */}
+      {/* First question: choose how to build the model. Three equal entry
+          points — none of them needs a file. */}
       {mode === null && (
         <div className="card">
           <div className="ds-choose new-model-choose">
-            <button className="ds-choice" onClick={() => start("data")}>
-              <span className="ds-choice-h">Upload a CSV or Excel file</span>
+            <button className="ds-choice" onClick={() => start("saved")}>
+              <span className="ds-choice-h">Fit to data</span>
               <span className="ds-choice-b">
-                Drop in a file with a time column (and optionally censoring and
-                covariates) — fit a distribution or PH model with a probability
-                plot and goodness of fit.
-              </span>
-            </button>
-            <button className="ds-choice" onClick={() => start("paste")}>
-              <span className="ds-choice-h">Paste values</span>
-              <span className="ds-choice-b">
-                No file? Paste times to failure straight from a spreadsheet or
-                notebook — one per line, with an optional 0/1 censoring flag.
+                Use one of your saved datasets, paste times to failure, or upload
+                a CSV or Excel file. Then map the columns, fit a distribution or
+                regression, and check the fit.
               </span>
             </button>
             <button className="ds-choice" onClick={() => start("params")}>
@@ -131,7 +128,7 @@ export default function NewModelPage() {
                       key={d.id}
                       type="button"
                       className="recent-row"
-                      onClick={() => start("data", d.id)}
+                      onClick={() => start("saved", d.id)}
                     >
                       <span className="recent-ic">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -160,7 +157,7 @@ export default function NewModelPage() {
           onPerDemand={() => start("perdemand")}
           initialDatasetId={datasetId}
           autoFit={autoFit}
-          initialSource={mode === "paste" ? "paste" : "upload"}
+          initialSource={FIT_SOURCE[mode]}
         />
       )}
 
