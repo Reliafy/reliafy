@@ -21,9 +21,10 @@ const fromStored = (p) => ({
   duration: p.duration ?? "",
   not_needed: [...(p.not_needed || [])],
   votes: { ...(p.votes || {}) },
-  // Set on the Missions tab: kept as they are when the phases are edited here.
+  // Set on the Missions tab (standby blocks, covariate values): kept as they are when the phases are edited here.
   values: p.values || null,
   block_values: p.block_values || null,
+  standby: [...(p.standby || [])],
 });
 
 export default function RbdPhasesModal({ initial, nodes, edges, unit, onClose, onSubmit }) {
@@ -39,6 +40,7 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, onClose, o
   const toggleBlock = (row, id) =>
     update(row.key, {
       not_needed: row.not_needed.includes(id) ? row.not_needed.filter((b) => b !== id) : [...row.not_needed, id],
+      standby: (row.standby || []).filter((b) => b !== id),
     });
   const move = (i, dir) =>
     setRows((rs) => {

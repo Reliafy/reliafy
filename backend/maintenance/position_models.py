@@ -1428,27 +1428,13 @@ def _factor(model_unit: str, diagram_unit: str) -> float | None:
     return None
 
 
-def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = None,
-              replace_link_id: str | None = None, note: str = "") -> dict:
-    """"Build an RBD from what's inside": a new diagram whose blocks are the positions one level
-    inside (each block the child's model in use: a saved model, or its own RBD as a sub-system;
-    else a placeholder, flagged, never invented), wired by their connections and redundancy
-    groups (in series with none), saved under Design › Systems and linked here (role rbd).
-    ``replace_link_id`` (the position's built RBD row): rebuild into the same diagram, adding the
-    positions inside that aren't blocks yet and keeping every edit made to it.
-
-    One built diagram per position: asked to build where there is one already (no
-    ``replace_link_id``), nothing is made or saved and that row comes back with ``existing``
-    true, so building twice never leaves two diagrams. Where its diagram has since been deleted,
-    the row is built again in place."""
+def _tree_parts(m, db, owners, hidden, position_id: str):
+    """What Build from what's inside works from: (position, fetch, the live positions inside, the
+    diagram's unit, block(child) -> (block data, note))."""
     from collections import Counter
 
-    from backend.maintenance import rbd_derive
-    from backend.services import rbds as rbds_service
-    from backend.services.rbd_graph import GraphError, normalize_graph, wrap_layout
     from backend.units import canonical_unit
 
-    sv = _sv()
     p = m._get(position_id, "Position")
     fetch = fetcher(db, owners, hidden)
     children = [c for c in m.s.inn(m.org, position_id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
@@ -1484,6 +1470,44 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
                            **({"extras": r["extras"]} if r.get("extras") else {})}},
                 f"{child['name']}'s model ({d.name}) is in {r.get('unit')}: its numbers were put in {unit}.")
 
+    return p, fetch, children, unit, block
+
+
+def _tree_graph(m, db, owners, hidden, position_id: str):
+    """A new diagram from the positions inside (normalised and laid out): (graph, built, position,
+    children, fetch). Raises Invalid where it can't be made."""
+    from backend.maintenance import rbd_derive
+    from backend.services.rbd_graph import GraphError, normalize_graph, wrap_layout
+
+    p, fetch, children, unit, block = _tree_parts(m, db, owners, hidden, position_id)
+    built = rbd_derive.build(m, position_id, block_model=block, unit=unit)
+    try:
+        graph = normalize_graph(built["graph"], resolve_saved_model=lambda mid: fetch("model", mid))
+    except GraphError as err:
+        raise _sv().Invalid(f"The diagram couldn't be made: {err}") from None
+    graph["nodes"] = wrap_layout(graph["nodes"])
+    return graph, built, p, children, fetch
+
+
+def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = None,
+              replace_link_id: str | None = None, note: str = "") -> dict:
+    """"Build an RBD from what's inside": a new diagram whose blocks are the positions one level
+    inside (each block the child's model in use: a saved model, or its own RBD as a sub-system;
+    else a placeholder, flagged, never invented), wired by their connections and redundancy
+    groups (in series with none), saved under Design › Systems and linked here (role rbd).
+    ``replace_link_id`` (the position's built RBD row): rebuild into the same diagram, adding the
+    positions inside that aren't blocks yet and keeping every edit made to it.
+
+    One built diagram per position: asked to build where there is one already (no
+    ``replace_link_id``), nothing is made or saved and that row comes back with ``existing``
+    true, so building twice never leaves two diagrams. Where its diagram has since been deleted,
+    the row is built again in place."""
+    from backend.maintenance import rbd_derive
+    from backend.services import rbds as rbds_service
+    from backend.services.rbd_graph import GraphError, normalize_graph, wrap_layout
+
+    sv = _sv()
+    p, fetch, children, unit, block = _tree_parts(m, db, owners, hidden, position_id)
     old_link = None
     if not replace_link_id:
         had = built_rbd_link(m.position_models(position_id))
@@ -1522,6 +1546,65 @@ def built_rbd_link(links: list) -> dict | None:
     """Of a position's model rows, its RBD built from what's inside (the one in use first), or None."""
     built = [x for x in links or [] if x.get("model_type") == "rbd" and (x.get("source") or {}).get("built_from") is not None]
     return next((x for x in built if x.get("in_use")), built[0] if built else None)
+
+
+#: Keys of a position's diagram a mission's copy of it leaves behind (its missions and links).
+_NOT_COPIED = ("phases", "missions", "mission_name", "mission_of")
+
+
+def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, name: str | None = None) -> dict:
+    """A new mission on a position, with an RBD of its own (one RBD per mission): built from what's
+    inside the position as Build from what's inside builds (placeholders flagged, never a made-up
+    figure); a position with nothing inside starts from a copy of its own non-repairable RBD.
+    Saved once as "<position> — <mission>", marked ``mission_of`` the position (not linked as one
+    of its models). {rbd: {id, name}, mission: summary, notes, placeholders}."""
+    from backend.services import rbd_missions
+    from backend.services import rbds as rbds_service
+    from backend.services.rbd_graph import GraphError, normalize_graph
+
+    sv = _sv()
+    p = m._get(position_id, "Position")
+    if p.get("retired"):
+        raise sv.Invalid(f"{p['name']} has been retired: restore it first.")
+    taken = {x["name"].casefold() for x in rbd_missions.own_missions(m, db, owners, position_id)}
+    if name is not None and str(name).strip():
+        try:
+            name = rbd_missions._name(name)
+        except rbd_missions.MissionError as exc:
+            raise sv.Invalid(str(exc)) from None
+        if name.casefold() in taken:
+            raise sv.Invalid(f"{p['name']} already has a mission named “{name}”: give this one its own name.")
+    else:
+        k = len(taken) + 1
+        while f"mission {k}" in taken:
+            k += 1
+        name = f"Mission {k}"
+    kids = [c for c in m.s.inn(m.org, position_id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
+    notes, placeholders = [], []
+    if kids:
+        graph, built, _, _, _ = _tree_graph(m, db, owners, hidden, position_id)
+        notes, placeholders = built["notes"], built["placeholders"]
+    else:
+        fetch = fetcher(db, owners, hidden)
+        own = [fetch("rbd", x["model_id"]) for x in m.position_models(position_id) if x.get("model_type") == "rbd"]
+        own = [d for d in own if d is not None and not (d.graph or {}).get("repairable")
+               and not (d.graph or {}).get("network")]
+        if not own:
+            raise sv.Invalid(f"{p['name']} has no positions inside to build the mission's RBD from. Add the "
+                             "positions inside it first, or link a non-repairable RBD to it.")
+        src = own[0]
+        graph = {k: v for k, v in (src.graph or {}).items() if k not in _NOT_COPIED}
+        notes = [f"Started from a copy of {src.name}: {p['name']} has no positions inside."]
+    graph = {**graph, "mission_of": {"position_id": position_id}, "mission_name": name}
+    try:
+        graph = normalize_graph(graph, resolve_saved_model=lambda mid: fetcher(db, owners, hidden)("model", mid))
+        rbd = rbds_service.save_rbd(db, f"{p['name']} — {name}"[:200], graph, owner_id)
+    except GraphError as err:
+        raise sv.Invalid(f"The mission's RBD couldn't be made: {err}") from None
+    mission = rbd_missions.find(rbd.graph or graph, rbd_missions.LEGACY_ID)
+    return {"rbd": {"id": rbd.id, "name": rbd.name, "updated_at": rbd.updated_at.isoformat() if rbd.updated_at else None},
+            "mission": rbd_missions.summary(rbd.graph or graph, mission), "position_id": position_id,
+            "notes": notes[:20], "placeholders": placeholders}
 
 
 def _add_new_blocks(old: dict, fresh: dict, resolve) -> dict:

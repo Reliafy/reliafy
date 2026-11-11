@@ -332,14 +332,34 @@ Missions (the Explorer's Missions tab): a non-repairable RBD can carry several
 named phased missions over the same blocks, in `graph.missions` (`[{id, name,
 phases}]`; the diagram's own `phases` reads as one more mission, id `mission`,
 named by `mission_name`). A phase is `{name, duration, not_needed?: [block
-id], votes?: {vote node id: inputs needed}, values?: {covariate name: value},
-block_values?: {block id: {input key: value}}}`: `values` sets a Use or
-Environment covariate once for every bound block it feeds in that phase,
-`block_values` one block's own. The blocks age across the whole mission; a
-block whose covariates change from phase to phase carries its age into the
-next. `GET /api/maintenance/position-missions?position_ids=` lists each
+id], standby?: [block id], votes?: {vote node id: inputs needed}, values?:
+{covariate name: value}, block_values?: {block id: {input key: value}}}`:
+each block is working in a phase unless listed. `not_needed`: the phase works
+without it, while its clock keeps running (a failure then is found by a later
+phase that needs it). `standby`: it is there but not running, so its clock
+stops for the phase (it neither ages nor fails in it) and it counts as working
+if it was working when the phase began; switching over is taken as perfect.
+A block is in one list or neither. `values` sets a Use or Environment
+covariate once for every bound block it feeds in that phase, `block_values`
+one block's own. The blocks age across the whole mission; a block whose
+covariates change from phase to phase carries its age into the next (and
+can't also stand by). A calculation's phase rows add `not_needed` and
+`standby` (block labels) and its `notes` say what each state means.
+
+One RBD per mission: `POST /api/maintenance/positions/{id}/missions {name?}`
+adds a mission to a position with an RBD of its own, built from the positions
+inside (as Build from what's inside builds it: placeholders flagged), or
+copied from the position's non-repairable RBD where it has nothing inside.
+It is saved as "<position> — <mission>" with `graph.mission_of:
+{position_id}` and answers `{rbd: {id, name, updated_at}, mission, position_id,
+notes, placeholders}`. The mission is that RBD's own (id `mission`, named by
+`mission_name`, kept with no phases); it isn't linked as one of the position's
+models. Deleting it (`DELETE /api/rbds/{id}/missions/mission`) deletes its
+RBD. Missions stored on a position's RBD keep working as before.
+`GET /api/maintenance/position-missions?position_ids=` lists each
 position's RBDs and their missions (a position has its own RBDs' missions,
-never a parent's). A mission in a list is `{id, name, phases` (how many)`,
+never a parent's); a mission's own RBD is a row with `link_id` null and
+`rbd.mission_rbd` true. A mission in a list is `{id, name, phases` (how many)`,
 phase_names, phase_durations` (each phase's own length, in the same
 order)`, duration` (the whole mission)`, unit, result?}`. On an RBD: `GET /api/rbds/{id}/missions`, `POST
 /api/rbds/{id}/missions {name?, phases?}`, `GET|PUT|DELETE

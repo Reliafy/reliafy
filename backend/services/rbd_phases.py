@@ -35,6 +35,15 @@ Each phase's diagram is the drawn diagram with:
   with it;
 * each vote node's required count taken from ``votes`` where given.
 
+A block can also be on ``standby`` in a phase (``"standby": ["c2"]``): there,
+ready, but not running. RePyability's standby groups are one block holding its
+spares, not a setting per phase, so a block on standby is modelled as not
+exposed in that phase: its clock stops for the phase (it neither ages nor
+fails in it) and the phase's diagram keeps it, working if it was still working
+when the phase began. Its age carries on when it next runs. The result says so
+(``STANDBY_NOTE``). A block whose covariates change by phase can't also stand
+by (its life is already a function of the mission's clock).
+
 Blocks pinned working or failed are perfectly reliable or failed throughout.
 Covariates set per phase (``values``, ``block_values``) reach the blocks whose
 covariates were left open at their positions (:mod:`.covariate_binding`): such
@@ -50,6 +59,8 @@ from __future__ import annotations
 import math
 import warnings
 from typing import Any, Callable, Optional
+
+import numpy as np
 
 from backend.errors import client_message
 from backend.services import rbd_repeats
@@ -76,6 +87,15 @@ SCHEDULE_NOTE = ("Blocks with a covariate schedule follow it through the mission
                  "with time as the schedule says; the other blocks keep one non-repairable model throughout.")
 
 
+#: What "not needed" and "standby" mean, for the result.
+NOT_NEEDED_NOTE = ("Not needed: the phase works without the block. Its clock keeps running, so if it fails then, a "
+                   "later phase that needs it finds it failed.")
+STANDBY_NOTE = ("Standby: the block is there but not running, so it neither ages nor fails in that phase; it counts "
+                "as working if it was still working when the phase began, and its age carries on when it next runs. "
+                "Switching over is taken as perfect, and a standby block's running time after it takes over within "
+                "the phase isn't counted.")
+
+
 class PhaseError(ValueError):
     """A ``phases`` setting that can't be read (user-facing text)."""
 
@@ -83,15 +103,15 @@ class PhaseError(ValueError):
 # ---------------------------------------------------------------------------
 # The setting
 # ---------------------------------------------------------------------------
-def _ids(value, where: str) -> list[str]:
+def _ids(value, where: str, field: str = "not_needed") -> list[str]:
     if value is None:
         return []
     if not isinstance(value, (list, tuple)):
-        raise PhaseError(f"{where}: not_needed must be a list of block ids.")
+        raise PhaseError(f"{where}: {field} must be a list of block ids.")
     out = []
     for v in value:
         if not isinstance(v, (str, int)) or isinstance(v, bool) or str(v).strip() == "":
-            raise PhaseError(f"{where}: not_needed must be a list of block ids.")
+            raise PhaseError(f"{where}: {field} must be a list of block ids.")
         out.append(str(v).strip())
     return list(dict.fromkeys(out))
 
@@ -210,6 +230,12 @@ def parse_phases(raw) -> list[dict]:
         not_needed = _ids(phase.get("not_needed"), where)
         if not_needed:
             clean["not_needed"] = not_needed
+        standby = _ids(phase.get("standby"), where, "standby")
+        both = [b for b in standby if b in not_needed]
+        if both:
+            raise PhaseError(f"{where}: a block is either on standby or not needed, not both ({', '.join(both)}).")
+        if standby:
+            clean["standby"] = standby
         votes = _votes(phase.get("votes"), where)
         if votes:
             clean["votes"] = votes
@@ -291,7 +317,7 @@ def validation_warnings(graph: dict) -> list[str]:
             feeding[e["target"]] = feeding.get(e["target"], 0) + 1
     out = []
     for phase in phases:
-        gone = [b for b in phase.get("not_needed", []) if b not in nodes]
+        gone = [b for b in [*phase.get("not_needed", []), *phase.get("standby", [])] if b not in nodes]
         if gone:
             out.append(f"Phase “{phase['name']}” lists blocks that aren't in the diagram any more "
                        f"({', '.join(gone)}); they're ignored.")
@@ -313,6 +339,71 @@ def validation_warnings(graph: dict) -> list[str]:
 def _stand_in(nid: str, j: int) -> str:
     """The name of block ``nid``'s perfectly reliable stand-in in phase ``j``."""
     return f"{nid}~phase{j + 1}"
+
+
+class _Paused:
+    """A block's life with its clock stopped while it stands by: at mission time ``t`` it has run
+    ``t`` less the time spent on standby before ``t``, so R(t) = R₀(running time). Standby phases
+    (``paused``: [(start, end)] of the mission's clock) neither age it nor fail it."""
+
+    def __init__(self, base, paused):
+        self.base = base
+        self.dist = getattr(base, "dist", None)
+        spans = sorted((float(a), float(b)) for a, b in paused if b > a)
+        merged: list = []
+        for a, b in spans:
+            if merged and a <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+            else:
+                merged.append((a, b))
+        self.paused = merged
+
+    def running(self, x) -> np.ndarray:
+        """The time the block has run by mission time ``x``."""
+        x = np.atleast_1d(np.asarray(x, dtype=float))
+        out = x.copy()
+        for a, b in self.paused:
+            out -= np.clip(x - a, 0.0, b - a)
+        return np.maximum(out, 0.0)
+
+    def sf(self, x) -> np.ndarray:
+        return np.ravel(np.asarray(self.base.sf(self.running(x)), dtype=float))
+
+    def ff(self, x) -> np.ndarray:
+        return np.ravel(np.asarray(self.base.ff(self.running(x)), dtype=float))
+
+    def random(self, size) -> np.ndarray:
+        """A life drawn in running time, put on the mission's clock: each standby span that starts
+        before the block has run out adds its length."""
+        life = np.ravel(np.asarray(self.base.random(size), dtype=float))
+        out = life.copy()
+        done = 0.0  # standby time before each span
+        for a, b in self.paused:
+            out = np.where(life > a - done, out + (b - a), out)
+            done += b - a
+        return out
+
+    def cs(self, x, X) -> np.ndarray:
+        from backend.services.rbd_analysis import conditional_survival
+
+        return conditional_survival(self, x, X)
+
+
+def _standby_spans(phases: list[dict], repeats: dict) -> dict:
+    """{block id: [(start, end)]}: the stretches of the mission's clock each block stands by in
+    (a repeated block's copy names its original)."""
+    out: dict = {}
+    start = 0.0
+    for phase in phases:
+        end = start + float(phase["duration"])
+        for nid in phase.get("standby", []):
+            out.setdefault(repeats.get(nid, nid), []).append((start, end))
+        start = end
+    return out
+
+
+def has_standby(phases) -> bool:
+    return any(p.get("standby") for p in phases or [])
 
 
 def _refuse(graph: dict) -> None:
@@ -389,6 +480,14 @@ def build_mission(
     for nid in perfect:
         if nid in base:
             base[nid] = PerfectReliability
+    # Blocks on standby in some phases: their clocks stop there (one model through the mission,
+    # so every phase's diagram shares it).
+    for nid, spans in _standby_spans(phases, repeats).items():
+        model = base.get(nid)
+        if model is None or isinstance(model, str) or model is PerfectReliability or model is PerfectUnreliability \
+                or node_types.get(nid) == "knode":
+            continue
+        base[nid] = _Paused(model, spans)
 
     built = []
     for j, phase in enumerate(phases):
@@ -504,6 +603,9 @@ def analyze_phases(
         nn = [labels.get(n, n) for n in phase.get("not_needed", []) if n in labels]
         if nn:
             row["not_needed"] = nn
+        sb = [labels.get(n, n) for n in phase.get("standby", []) if n in labels]
+        if sb:
+            row["standby"] = sb
         votes = [{"id": n, "label": labels.get(n, n), "n": v} for n, v in (phase.get("votes") or {}).items()
                  if n in labels]
         if votes:
@@ -525,6 +627,10 @@ def analyze_phases(
                                                           for n in graph.get("nodes") or [] if n.get("id") not in varying)
                   else [] if varying else [STRESS_NOTE]) + ([PHASE_VALUES_NOTE, *schedule_notes] if varying else []),
     }
+    if any(p.get("not_needed") for p in phases):
+        out["notes"].append(NOT_NEEDED_NOTE)
+    if has_standby(phases):
+        out["notes"].append(STANDBY_NOTE)
     if interval is not None:
         out["interval"] = interval
     if reason:
@@ -722,6 +828,10 @@ def python_section(body: str, graph: dict, script) -> str:
     if ccf:
         note = ("# The diagram's phased mission isn't exported: a phased mission doesn't model\n"
                 "# common-cause groups (Reliafy doesn't analyse it either).")
+        return f"{head}\n\n\n{note}\n\n\nif __name__ == \"__main__\":\n    main()\n"
+    if has_standby(phases):
+        note = ("# The diagram's phased mission isn't exported: some of its blocks stand by in\n"
+                "# some phases (their clocks stop there), which this script doesn't model.")
         return f"{head}\n\n\n{note}\n\n\nif __name__ == \"__main__\":\n    main()\n"
     ids = {n.get("id") for n in graph.get("nodes") or []}
     knodes = {n.get("id") for n in graph.get("nodes") or [] if n.get("type") == "knode"}

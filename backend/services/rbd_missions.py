@@ -15,6 +15,12 @@ covariates they set::
                   {"name": "Transit", "duration": 0.4, "not_needed": ["cam"]}]},
     ]
 
+A mission can also have an RBD of its own (one RBD per mission, built from what's inside its
+position): that diagram carries ``graph["mission_of"] = {"position_id": …}`` and its own mission
+(``phases``, named by ``mission_name``) is the mission, kept even before it has phases. The
+position finds it by that key; it isn't one of the position's models, so it never becomes the
+model a parent's block takes. Deleting that mission deletes its RBD.
+
 ``graph["phases"]`` (the builder's "Phased mission…", #160) is the diagram's own mission and
 stays where it is: it reads as one more mission (id ``mission``, named by ``mission_name`` or
 "Mission"), so diagrams saved before missions keep working unchanged. A position has the
@@ -103,8 +109,20 @@ def carry(graph: dict, out: dict) -> None:
     missions = parse_missions(graph.get("missions"))
     if missions:
         out["missions"] = missions
-    if graph.get("mission_name") and graph.get("phases"):
+    owner = mission_of(graph)
+    if owner:
+        out["mission_of"] = owner
+    if graph.get("mission_name") and (graph.get("phases") or owner):
         out["mission_name"] = _name(graph["mission_name"])
+
+
+def mission_of(graph: dict) -> Optional[dict]:
+    """The position a mission's own RBD belongs to ({position_id}), or None for any other diagram."""
+    raw = (graph or {}).get("mission_of")
+    if not isinstance(raw, dict):
+        return None
+    pid = str(raw.get("position_id") or "").strip()
+    return {"position_id": pid[:80]} if pid else None
 
 
 def missions_of(graph: dict) -> list[dict]:
@@ -112,12 +130,12 @@ def missions_of(graph: dict) -> list[dict]:
     phases, own (the diagram's own)}; a setting that can't be read is left out."""
     graph = graph or {}
     out = []
-    if graph.get("phases"):
+    if graph.get("phases") or mission_of(graph):
         try:
-            phases = rbd_phases.parse_phases(graph["phases"])
+            phases = rbd_phases.parse_phases(graph.get("phases"))
         except rbd_phases.PhaseError:
             phases = None
-        if phases:
+        if phases or (phases is not None and mission_of(graph)):
             name = " ".join(str(graph.get("mission_name") or "").split())[:MAX_NAME] or LEGACY_NAME
             out.append({"id": LEGACY_ID, "name": name, "phases": phases, "own": True})
     try:
@@ -159,21 +177,27 @@ def save(graph: dict, mission_id: Optional[str] = None, name: Optional[str] = No
         if name.casefold() in others:
             raise MissionError(f"There's already a mission named “{name}”: give this one its own name.")
     if mission_id == LEGACY_ID:
-        if not graph.get("phases"):
+        if not graph.get("phases") and not mission_of(graph):
             raise MissionError("This diagram has no mission of its own.")
         if phases is not None:
             clean = _phases(phases, "the mission")
-            if not clean:
+            if clean:
+                graph["phases"] = clean
+            elif mission_of(graph):  # a mission's own RBD keeps its mission with no phases
+                graph.pop("phases", None)
+            else:
                 graph.pop("phases", None)
                 graph.pop("mission_name", None)
                 return graph, {"id": LEGACY_ID, "name": LEGACY_NAME, "phases": [], "own": True}
-            graph["phases"] = clean
         if name is not None:
             if name == LEGACY_NAME:
                 graph.pop("mission_name", None)
             else:
                 graph["mission_name"] = name
         return graph, find(graph, LEGACY_ID)
+    if mission_id is None and mission_of(graph):
+        raise MissionError("This RBD is one mission's own. Add a new mission on its position: it gets an RBD "
+                           "of its own.")
     if mission_id is None:
         if len(missions_of(graph)) >= MAX_MISSIONS:
             raise MissionError(f"A diagram can have at most {MAX_MISSIONS} missions.")
@@ -203,6 +227,8 @@ def remove(graph: dict, mission_id: str) -> dict:
     """The graph without that mission. Raises :class:`MissionError`."""
     graph = dict(graph or {})
     if mission_id == LEGACY_ID:
+        if mission_of(graph):
+            raise MissionError("This RBD is the mission's own: delete the mission to delete its RBD with it.")
         if not graph.get("phases"):
             raise MissionError("This diagram has no mission of its own.")
         graph.pop("phases", None)
@@ -498,6 +524,12 @@ def analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None
                 "unreliability": None, "duration": duration(clean), "riskiest": None, "through": None,
                 "phases": [_waiting(p, s) for p, s in zip(clean, starts)], "needs": needs, "notes": []}
     merged, merged_covs, varying = combine(bound, covs, starts[:gap])
+    both = sorted({b for p in clean[:gap] for b in p.get("standby", [])} & varying)
+    if both:
+        labels = {n.get("id"): (n.get("data") or {}).get("label") or n.get("id") for n in graph.get("nodes") or []}
+        raise AnalysisError(f"{', '.join(labels.get(b, b) for b in both)}: its covariates change from phase to phase, "
+                            "so it can't also stand by in a phase. Set it Working or Not needed there, or give it the "
+                            "same values in every phase.")
     resolve_subsystem, resolve_model = rbds_service.resolvers(db, owner_id)
     out = rbd_phases.analyze_phases(merged, resolve_subsystem, resolve_model, merged_covs or None,
                                     phases=clean[:gap], varying=varying, weakest=weakest)
@@ -551,8 +583,15 @@ def detail(db, owner_id, graph: dict, mission: dict, inputs_for: Optional[Callab
 
 def position_missions(m, db, owners, hidden=frozenset(), position_ids=None) -> list[dict]:
     """For each RBD linked to a position (its own, never a parent's): {position_id, link_id,
-    in_use, rbd: {id, name, unit, repairable} (None for one that's gone), missions: [summary]}."""
+    in_use, rbd: {id, name, unit, repairable, network, mission_rbd} (None for one that's gone),
+    missions: [summary]}; then each mission's own RBD (``mission_of``) as a row of its position
+    with no link (``link_id`` None) and that one mission."""
     from backend.services import rbds as rbds_service
+
+    def brief(rbd, graph) -> dict:
+        return {"id": rbd.id, "name": rbd.name, "unit": graph.get("unit") or "",
+                "repairable": bool(graph.get("repairable")), "network": bool(graph.get("network")),
+                "mission_rbd": bool(mission_of(graph))}
 
     out = []
     for link in m.all_position_models(position_ids):
@@ -564,8 +603,30 @@ def position_missions(m, db, owners, hidden=frozenset(), position_ids=None) -> l
         if rbd is not None and rbd.id not in hidden:
             graph = rbd.graph or {}
             doc = db.rbds.find_one({"_id": rbd.id}, {"mission_results": 1}) or {}
-            row["rbd"] = {"id": rbd.id, "name": rbd.name, "unit": graph.get("unit") or "",
-                          "repairable": bool(graph.get("repairable")), "network": bool(graph.get("network"))}
+            row["rbd"] = brief(rbd, graph)
             row["missions"] = [summary(graph, x, doc.get("mission_results") or {}) for x in missions_of(graph)]
         out.append(row)
+    live = {p["id"] for p in m.s.nodes(m.org, "Position") if not p.get("retired")}
+    wanted = live & set(position_ids) if position_ids is not None else live
+    if not wanted:
+        return out
+    from backend.services.access import owner_in
+
+    query = {"graph.mission_of.position_id": {"$in": sorted(wanted)}, "owner_id": {"$in": owner_in(owners)}}
+    for doc in db.rbds.find(query).sort("created_at", 1):
+        if doc["_id"] in hidden:
+            continue
+        rbd = rbds_service.get_rbd(db, doc["_id"], owners)
+        if rbd is None:
+            continue
+        graph = rbd.graph or {}
+        out.append({"position_id": mission_of(graph)["position_id"], "link_id": None, "in_use": False,
+                    "rbd": brief(rbd, graph),
+                    "missions": [summary(graph, x, doc.get("mission_results") or {}) for x in missions_of(graph)]})
     return out
+
+
+def own_missions(m, db, owners, position_id: str) -> list[dict]:
+    """The missions on one position (every RBD of its own, and each mission's own RBD), as
+    summaries: for naming a new one."""
+    return [x for row in position_missions(m, db, owners, position_ids=[position_id]) for x in row["missions"]]

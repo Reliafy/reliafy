@@ -28,7 +28,7 @@ import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, builtRbdLink, graftMod
 } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  addSampleProduct, createMission, deleteMission, getMission, updateMission, getFmeaExcelBlob, getItemClasses, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
+  addSampleProduct, createPositionMission, deleteMission, getMission, updateMission, getFmeaExcelBlob, getItemClasses, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
   hasFmeaExcel, linkPositionModel, makeSampleOwn, restoreRcm, restoreTree,
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
@@ -1411,9 +1411,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     pending.current = phases.length ? phaseKey(r.ref.rbd.id, r.ref.mission.id, Math.min(index, phases.length - 1)) : missionKey(r.ref.rbd.id, r.ref.mission.id);
     reopenIfShown(r, null);
   };
-  const removeMission = async (positionId, rbdId, mission) => {
+  const removeMission = async (positionId, rbdId, mission, ownRbd = false) => {
     const ok = await confirm({
-      title: `Delete ${mission.name}?`, body: "The mission and its phases go; the RBD stays as it is.",
+      title: `Delete ${mission.name}?`,
+      body: ownRbd ? "The mission, its phases and its own RBD go. Other missions and the position's RBDs stay as they are."
+        : "The mission and its phases go; the RBD stays as it is.",
       confirmLabel: "Delete the mission", cancelLabel: "Keep it", destructive: true,
     });
     if (!ok) return false;
@@ -1427,13 +1429,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       return false;
     }
   };
-  const addMission = async (positionId, rbdId) => {
+  // Add a mission: one RBD per mission, built from what's inside the position (placeholders flagged).
+  const addMission = async (positionId, positionName) => {
+    if (!(await leavePane())) return;
     try {
-      const made = await createMission(rbdId);
-      say(`Added ${made.mission.name}: give it its phases.`);
+      const made = await createPositionMission(positionId);
+      const ph = made.placeholders?.length ? ` ${made.placeholders.length} block${made.placeholders.length === 1 ? " is a placeholder" : "s are placeholders"}: give ${made.placeholders.length === 1 ? "it a model" : "them models"} in its RBD.` : "";
+      say(`Added ${made.mission.name} with an RBD of its own, built from what's inside ${positionName}.${ph} Now give it its phases.`);
       pmissions.load();
-      pending.current = missionKey(rbdId, made.mission.id);
-      openMission(positionId, rbdId, made.mission.id);
+      pending.current = missionKey(made.rbd.id, made.mission.id);
+      openMission(positionId, made.rbd.id, made.mission.id);
     } catch (e) {
       say(saveErrorText(e, { offline: navigator.onLine === false }), "error");
     }
@@ -1447,8 +1452,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (id === "mission-phase-earlier" || id === "mission-phase-later") return stepPhase(r, id === "mission-phase-earlier" ? -1 : 1);
     if (id === "mission-phase-delete") return removePhase(r);
     if (id === "mission-rbd") return openRbd(position, r.ref.rbd.id);
-    if (id === "mission-delete") return removeMission(pid, r.ref.rbd.id, r.ref.mission);
-    if (id.startsWith("mission-add:")) return addMission(pid, id.slice(12));
+    if (id === "mission-delete") return removeMission(pid, r.ref.rbd.id, r.ref.mission, !!r.ref.rbd.mission_rbd);
+    if (id === "mission-new") return addMission(pid, position.name);
     if (id.startsWith("mission-open-rbd:")) return openRbd(position, id.slice(17));
     if (id === "mission-build-rbd") return buildRbd(position);
     return undefined;
@@ -2416,10 +2421,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                    headingRef={paneHeading} onClose={() => leavePane().then((ok) => ok && closePane())}
                    onDirty={(d) => { paneDirty.current = d; }}
                    onSaved={(text) => { if (text) say(text); pmissions.load(); }}
+                   onOpenRbd={() => openRbd(panePosition, parseMissionParam(paneAt.mission).rbdId)}
                    onDelete={() => {
                      const { rbdId, missionId } = parseMissionParam(paneAt.mission);
-                     const m = (whole.rows.get(missionKey(rbdId, missionId))?.ref.mission) || { id: missionId, name: "this mission" };
-                     removeMission(panePosition.id, rbdId, m).then((gone) => gone && closePane());
+                     const ref = whole.rows.get(missionKey(rbdId, missionId))?.ref;
+                     const m = ref?.mission || { id: missionId, name: "this mission" };
+                     removeMission(panePosition.id, rbdId, m, !!ref?.rbd?.mission_rbd).then((gone) => gone && closePane());
                    }} />
     </div>
   ) : paneKind === "bind" && bindingFromParam(paneAt.bind) ? (
