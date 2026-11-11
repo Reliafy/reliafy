@@ -48,7 +48,9 @@ This is a judgement call, and it's yours to make. It's usually a standard, a
 manufacturer's limit, or the point past which secondary damage begins. It's worth
 being deliberate about, because everything downstream is expressed relative to it.
 
-Go to **Modelling → Models → Degradation → New model**, pick your dataset, choose the
+Go to **Modelling → Models → Degradation → New model** and pick your dataset under **Saved
+data** (datasets of readings come first; the rest are greyed out, with the reason), or upload a
+file. Then choose the
 item id, time and measurement columns, and set the **Failure threshold** along
 with the **Time unit** and **Measurement unit** so the outputs are labelled
 properly. A dataset that holds life data with its **Measurements** (readings on

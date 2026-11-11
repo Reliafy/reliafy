@@ -11,14 +11,27 @@ const WHY_NOT = {
     t.includes("Repairable") ? "Repeated failures of the same units: fit a repairable model instead."
     : t.includes("Measurements") ? "Readings with no failure times: fit a degradation model instead."
     : "No column of times to failure found.",
-  repairable: () => "No repeated failures of the same units found.",
-  accelerated: (t) => (t.includes("Non-repairable") ? "No stress column (a covariate) found." : "No times to failure found."),
-  degradation: () => "No readings (measurements) found.",
-  joint: () => "Needs life data with its measurements.",
+  repairable: (t) =>
+    t.includes("Non-repairable") ? "One life per unit, not repeated failures: fit a non-repairable model instead."
+    : t.includes("Measurements") ? "Readings with no failures: fit a degradation model instead."
+    : "No repeated failures of the same units found.",
+  accelerated: (t) =>
+    t.includes("Repairable") ? "Repeated failures of the same units: fit a repairable model instead."
+    : t.includes("Non-repairable") ? "No stress column (a covariate such as temperature or load) found."
+    : "No times to failure found.",
+  degradation: (t) =>
+    t.includes("Repairable") ? "Repeated failures of the same units: fit a repairable model instead."
+    : "No readings (measurements) found: fit a non-repairable model instead.",
+  joint: (t) =>
+    t.includes("Repairable") ? "Repeated failures of the same units: fit a repairable model instead."
+    : t.includes("Non-repairable") ? "Life data with no measurements yet: add them on its page under Data."
+    : t.includes("Measurements") ? "Readings with no failures: fit a degradation model instead."
+    : "Needs life data with its measurements.",
 };
 
-export function unsuitableReason(kind, d) {
-  if (usableFor(kind, d)) return null;
+// ``extra``: the flow's own rule on top of the tags, (dataset) => reason | null.
+export function unsuitableReason(kind, d, extra = null) {
+  if (usableFor(kind, d)) return extra ? extra(d) || null : null;
   const rule = WHY_NOT[kind];
   return rule ? rule(d.tags || []) : "Not suited to this fit.";
 }
@@ -35,11 +48,12 @@ function matches(d, q) {
 // { groups: [{ key, label, rows: [{ dataset, reason }] }], total, shown, usable }
 //   kind    the fit ("life", "repairable", ...: datasetFit.usableFor's kinds)
 //   query   the search box's text
-export function pickerGroups(kind, datasets, query = "") {
+//   extra   the flow's own rule (unsuitableReason), optional
+export function pickerGroups(kind, datasets, query = "", extra = null) {
   const q = String(query || "").trim().toLowerCase();
   const all = Array.isArray(datasets) ? datasets : [];
   const rowsOf = (list) => {
-    const rows = list.filter((d) => matches(d, q)).map((d) => ({ dataset: d, reason: unsuitableReason(kind, d) }));
+    const rows = list.filter((d) => matches(d, q)).map((d) => ({ dataset: d, reason: unsuitableReason(kind, d, extra) }));
     // Suited first; otherwise the list's own order (newest first) is kept.
     return [...rows.filter((r) => !r.reason), ...rows.filter((r) => r.reason)];
   };

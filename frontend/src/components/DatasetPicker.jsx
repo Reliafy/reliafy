@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Chip from "./ui/Chip.jsx";
 import PreviewTable from "./PreviewTable.jsx";
+import { getDataset } from "../api.js";
 import { pickerGroups, rowsWords, shortDate, shownName } from "../datasetPicker.js";
 import "./DatasetPicker.css";
 
@@ -17,9 +18,11 @@ import "./DatasetPicker.css";
 //   value     the picked dataset's id
 //   onPick    (dataset) => void
 //   children  the picked dataset's pane (DatasetGlance, plus what the caller adds)
-export default function DatasetPicker({ kind, datasets, value, onPick, children, disabled = false }) {
+//   extra     the flow's own rule on top of the tags: (dataset) => reason | null
+//   empty     the pane's words before anything is picked
+export default function DatasetPicker({ kind, datasets, value, onPick, children, disabled = false, extra = null, empty = null }) {
   const [query, setQuery] = useState("");
-  const out = useMemo(() => pickerGroups(kind, datasets, query), [kind, datasets, query]);
+  const out = useMemo(() => pickerGroups(kind, datasets, query, extra), [kind, datasets, query, extra]);
   const loading = datasets === null;
   // Stacked (a phone), the picked dataset's pane is under the list: bring it into view.
   const pane = useRef(null);
@@ -32,6 +35,7 @@ export default function DatasetPicker({ kind, datasets, value, onPick, children,
     }
   }, [value]);
   return (
+    <div className="dsp-c">
     <div className={"dsp" + (value ? " dsp-has-pick" : "")}>
       <div className="dsp-list">
         <input
@@ -89,31 +93,86 @@ export default function DatasetPicker({ kind, datasets, value, onPick, children,
       <div className="dsp-pane" aria-live="polite" ref={pane}>
         {children || (
           <p className="dsp-quiet dsp-pane-empty">
-            {out.usable > 0 ? "Pick a dataset to see its first rows and how its columns will be read." : null}
+            {out.usable > 0 ? empty || "Pick a dataset to see its first rows and how its columns will be read." : null}
           </p>
         )}
       </div>
+    </div>
     </div>
   );
 }
 
 // The picked dataset at a glance: its name, what it holds and its first rows.
 //   detail  the dataset's detail (/api/datasets/:id), or null while it loads
-export function DatasetGlance({ summary, detail, error, rows = 5, children }) {
+//   part    "measurements": show its readings (its measurements part, when it has one)
+export function DatasetGlance({ summary, detail, error, rows = 5, part = null, children }) {
   if (error) return <p className="error" role="alert">{error}</p>;
   if (!detail) return <p className="dsp-quiet" role="status">Reading {shownName(summary)}…</p>;
-  const cols = detail.preview_columns || [];
+  const table = part === "measurements" && detail.measurements ? detail.measurements : detail;
+  const cols = table.preview_columns || [];
   return (
     <div className="dsp-glance">
       <div className="dsp-glance-h">
         <b>{shownName(detail)}</b>
         <span className="dsp-quiet-inline">
-          {rowsWords(detail.n_rows)} · {cols.length} column{cols.length === 1 ? "" : "s"}
+          {table !== detail ? `${(table.n_rows ?? 0).toLocaleString("en-GB")} readings` : rowsWords(detail.n_rows)} · {cols.length} column{cols.length === 1 ? "" : "s"}
           {detail.summary ? ` · ${detail.summary}` : ""}
         </span>
       </div>
-      <PreviewTable columns={cols} rows={(detail.preview || []).slice(0, rows)} className="dsp-preview" />
+      <PreviewTable columns={cols} rows={(table.preview || []).slice(0, rows)} className="dsp-preview" />
       {children}
     </div>
+  );
+}
+
+// A picked dataset's detail, read when it's picked (the pane's first rows): { summary, detail, error }.
+export function usePickedDataset() {
+  const [picked, setPicked] = useState(null);
+  const pick = (d) => {
+    setPicked({ summary: d, detail: null, error: null });
+    getDataset(d.id).then(
+      (full) => setPicked((p) => (p?.summary.id === d.id ? { ...p, detail: full } : p)),
+      (err) => setPicked((p) => (p?.summary.id === d.id ? { ...p, error: err.message } : p)),
+    );
+  };
+  return [picked, pick];
+}
+
+// The first step of a new-model flow: where the data comes from. "Saved data" (the picker, the
+// picked dataset's first rows and Use this dataset) first, then "Upload a file" (the flow's own
+// drop zone, passed as ``upload``). The New model page's FitFlow adds pasting and its own pane.
+//   kind, datasets, extra   as DatasetPicker
+//   onUse      (dataset) => void: the flow's own "use a saved dataset"
+//   upload     the upload tab's content
+//   part       "measurements": the pane shows the readings (DatasetGlance)
+//   busy       the flow is reading something: Use waits
+export function DataSourceStep({ kind, datasets, onUse, upload, extra = null, part = null, busy = false }) {
+  const [source, setSource] = useState("saved");
+  const [picked, pick] = usePickedDataset();
+  return (
+    <>
+      <div className="source-toggle" role="tablist" aria-label="Where the data comes from">
+        {[["saved", "Saved data"], ["upload", "Upload a file"]].map(([v, label]) => (
+          <button key={v} type="button" role="tab" aria-selected={source === v}
+                  className={`source-tab${source === v ? " active" : ""}`} onClick={() => setSource(v)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {source === "saved" ? (
+        <DatasetPicker kind={kind} datasets={datasets} value={picked?.summary.id} onPick={pick} extra={extra} disabled={busy}
+                       empty="Pick a dataset to see its first rows.">
+          {picked && (
+            <DatasetGlance summary={picked.summary} detail={picked.detail} error={picked.error} part={part}>
+              <div className="dsp-use">
+                <button type="button" onClick={() => onUse(picked.summary)} disabled={busy || !picked.detail}>
+                  {busy ? "Reading…" : "Use this dataset"}
+                </button>
+              </div>
+            </DatasetGlance>
+          )}
+        </DatasetPicker>
+      ) : upload}
+    </>
   );
 }

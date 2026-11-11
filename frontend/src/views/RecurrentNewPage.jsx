@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { DataSourceStep } from "../components/DatasetPicker.jsx";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Select from "../components/Select.jsx";
-import { usableDatasets } from "../datasetFit.js";
 import SegmentedControl from "../components/ui/SegmentedControl.jsx";
 import { ResultDetails } from "../components/ui/ResultSummary.jsx";
 import RefLink from "../components/RefLink.jsx";
@@ -68,7 +68,7 @@ export default function RecurrentNewPage() {
   const { toCsv, modal: sheetModal } = useSpreadsheet();
 
   const [modelOpts, setModelOpts] = useState([]);
-  const [datasets, setDatasets] = useState([]);
+  const [datasets, setDatasets] = useState(null); // null while the list loads
 
   const [file, setFile] = useState(null);
   const [headerNote, setHeaderNote] = useState(null); // a file with no header row (#434)
@@ -96,7 +96,7 @@ export default function RecurrentNewPage() {
       setModelOpts(o.models || []);
       setBaselines(o.baselines || []);
     }).catch(() => {});
-    listDatasets().then((d) => setDatasets(d.datasets)).catch(() => setDatasets([]));
+    listDatasets().then((d) => setDatasets(d.datasets || [])).catch(() => setDatasets([]));
   }, []);
 
   const modelEntry = modelOpts.find((m) => m.id === model);
@@ -251,7 +251,7 @@ export default function RecurrentNewPage() {
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
-        <span className="hint" style={{ margin: 0 }}>Upload a CSV or Excel file, or pick a dataset, to continue</span>
+        <span className="hint" style={{ margin: 0 }}>Pick a saved dataset, or upload a CSV or Excel file, to continue</span>
       </>
     );
   } else if (step === 2) {
@@ -331,6 +331,13 @@ export default function RecurrentNewPage() {
       <div className="card fit-flow">
         {step === 1 && (
           <>
+            <DataSourceStep
+              kind="repairable"
+              datasets={datasets}
+              onUse={pickDataset}
+              busy={loading}
+              upload={(
+                <>
             <div
               className={`dropzone${dragging ? " dragging" : ""}`}
               onClick={() => inputRef.current?.click()}
@@ -356,24 +363,9 @@ export default function RecurrentNewPage() {
                      onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
               {sheetModal}
             </div>
-
-            {usableDatasets("repairable", datasets).length > 0 && (
-              <div className="recent">
-                <div className="recent-h">Or use a saved dataset</div>
-                {usableDatasets("repairable", datasets).slice(0, 5).map((d) => (
-                  <button key={d.id} type="button" className="recent-row" disabled={loading}
-                          onClick={() => pickDataset(d)}>
-                    <span className="recent-ic">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M14 3v5h5M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" />
-                      </svg>
-                    </span>
-                    <span className="recent-name">{d.name}</span>
-                    <span className="recent-meta">{(d.n_rows ?? 0).toLocaleString()} rows · {d.n_columns} cols</span>
-                  </button>
-                ))}
-              </div>
-            )}
+                </>
+              )}
+            />
           </>
         )}
 

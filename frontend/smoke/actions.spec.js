@@ -73,6 +73,42 @@ test("fit a new model with a prior and save it with its prior", async ({ page, p
   }
 });
 
+// Every new-model flow picks its data from the one shared list (DatasetPicker): the datasets
+// that kind of model takes first, the rest greyed with what to fit them with instead.
+test("repairable, accelerated, degradation and condition-and-life flows share the saved-data list", async ({ page, problems }) => {
+  await open(page, "/models/recurrent/new");
+  await page.getByRole("button", { name: /Fit to event data/ }).click();
+  await page.getByRole("searchbox", { name: "Search datasets" }).fill("bearing fatigue");
+  await expect(page.getByRole("radio", { name: /Bearing fatigue test/ }).first()).toBeDisabled();
+  await expect(page.getByText(/fit a non-repairable model instead/).first()).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search datasets" }).fill("compressor fleet");
+  await page.getByRole("radio", { name: /Compressor fleet/ }).click();
+  await page.getByRole("button", { name: "Use this dataset" }).click();
+  await expect(page.getByText(/Compressor fleet — repair history \(sample\) · 30 rows/)).toBeVisible();
+
+  await open(page, "/models/alt/new");
+  await page.getByRole("radio", { name: /Insulating fluid/ }).click();
+  await page.getByRole("button", { name: "Use this dataset" }).click();
+  await expect(page.getByText("Life-stress relationship")).toBeVisible();
+  // The upload tab still takes a file.
+  await open(page, "/models/alt/new");
+  await page.getByRole("tab", { name: "Upload a file" }).click();
+  await expect(page.locator('input[type="file"]')).toHaveCount(1);
+
+  await open(page, "/models/degradation");
+  await page.getByRole("button", { name: "New model" }).first().click();
+  await page.getByRole("radio", { name: /Brake pad wear/ }).click();
+  await page.getByRole("button", { name: "Use this dataset" }).click();
+  await expect(page.getByText("Failure threshold *")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await open(page, "/models/joint/new");
+  await page.getByRole("searchbox", { name: "Search datasets" }).fill("feed pumps");
+  await page.getByRole("radio", { name: /Feed pumps/ }).click();
+  await expect(page.getByText(/Measurements · 314 readings/)).toBeVisible();
+  await expectHealthy(page, problems, { label: "condition and life dataset picked" });
+});
+
 // #31: a class with a fitted model and a spare with a lead time shows how many to
 // hold, and the chance a typed stock runs out (smoke/seed.js makes the class).
 // The Classes tab is hidden for now (explorerTabs.js): a class's old address lands on the Explorer, and the

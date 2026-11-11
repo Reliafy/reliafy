@@ -55,3 +55,27 @@ test("names, dates and counts read plainly", () => {
   assert.equal(rowsWords(1), "1 row");
   assert.equal(rowsWords(1234), "1,234 rows");
 });
+
+test("each model kind lists its own datasets first, the rest with what to fit instead", () => {
+  const list = [ds("life", ["Non-repairable"]), ds("rep", ["Repairable"]), ds("reads", ["Measurements"]),
+    ds("alt", ["Non-repairable", "Covariates"]), ds("both", ["Non-repairable", "Measurements"])];
+  const order = (kind) => pickerGroups(kind, list).groups[0].rows.map((r) => [r.dataset.id, r.reason ? "off" : "on"]);
+  assert.deepEqual(order("repairable")[0], ["rep", "on"]);
+  assert.deepEqual(order("accelerated")[0], ["alt", "on"]);
+  assert.deepEqual(order("degradation").slice(0, 2), [["reads", "on"], ["both", "on"]]);
+  assert.deepEqual(order("joint")[0], ["both", "on"]);
+  assert.match(unsuitableReason("repairable", list[0]), /non-repairable model instead/);
+  assert.match(unsuitableReason("accelerated", list[1]), /repairable model instead/);
+  assert.match(unsuitableReason("accelerated", list[0]), /stress column/);
+  assert.match(unsuitableReason("degradation", list[0]), /non-repairable model instead/);
+  assert.match(unsuitableReason("joint", list[0]), /add them on its page/);
+  assert.match(unsuitableReason("joint", list[2]), /degradation model instead/);
+  assert.match(unsuitableReason("joint", list[1]), /repairable model instead/);
+});
+
+test("a flow's own rule greys a dataset its tags would allow", () => {
+  const narrow = (d) => ((d.n_columns ?? 0) >= 3 ? null : "Needs an item id, a time and a measurement column.");
+  const list = [ds("wide", ["Measurements"], { n_columns: 3 }), ds("thin", ["Measurements"], { n_columns: 2 })];
+  const rows = pickerGroups("degradation", list, "", narrow).groups[0].rows;
+  assert.deepEqual(rows.map((r) => [r.dataset.id, r.reason]), [["wide", null], ["thin", "Needs an item id, a time and a measurement column."]]);
+});
