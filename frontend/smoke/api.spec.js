@@ -30,6 +30,9 @@ const SIGNED_IN = [
   ["GET", "/api/predictions/smoke"],
   ["GET", "/api/predictions/from-product/smoke"],
   ["POST", "/api/v1/analyse/prediction"],
+  // A device that works offline: its queued changes pushed in a batch, and a queued photo.
+  ["POST", "/api/v1/maintenance/sync/push"],
+  ["POST", "/api/v1/maintenance/sync/photo"],
   // Maintainability prediction: the calculator, the saved predictions, a product's lines.
   ["POST", "/api/maintainability/analyse"],
   ["GET", "/api/maintainability/predictions"],

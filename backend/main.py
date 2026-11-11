@@ -88,6 +88,7 @@ from backend.routers import ingest as ingest_router
 from backend.routers import public_api as public_api_router
 from backend.routers import api_tools as api_tools_router
 from backend.routers import field_reports as field_reports_router
+from backend.routers import maintenance_sync as maintenance_sync_router
 from backend.routers import support as support_router
 from backend.routers import email_prefs as email_prefs_router
 from backend.routers import walkthroughs as walkthroughs_router
@@ -280,6 +281,8 @@ app.include_router(field_reports_router.router)
 # Every MCP tool action over REST (POST /api/v1/{tool}/{action}), its OpenAPI
 # spec and the REST-only photo upload. After public_api: its fixed /api/v1
 # routes win over the generic {tool}/{action} ones.
+# A device that works offline: its queued changes, once each (fixed routes, before the generic ones).
+app.include_router(maintenance_sync_router.router)
 app.include_router(api_tools_router.router)
 app.include_router(email_prefs_router.router)
 app.include_router(walkthroughs_router.router)

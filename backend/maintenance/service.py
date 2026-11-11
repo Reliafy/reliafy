@@ -2629,6 +2629,29 @@ def _failure_report_action_updated(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["id"], {"actions": actions, "history": _report_history(r, p, _report_line(label, what))})
 
 
+def op_node_id(op_id: str) -> str:
+    """The id of the node that remembers a device's change by the id the device gave it."""
+    return f"op:{op_id}"
+
+
+def _op_applied(s: GraphStore, org: str, p: dict) -> None:
+    """op.applied: one change a device queued and sent later (sync.py), as the events
+    it comes to, in order. One event in the log, so it is recorded whole or not at
+    all; and its op_id is remembered on a SyncOp node, so the same change sent again
+    (a lost answer, two sends that crossed) is recognised: the first one in the log
+    counts and a later one changes nothing."""
+    nid = op_node_id(p["op_id"])
+    if s.node(org, nid) is not None:
+        return
+    for e in p["events"]:
+        PROJECTORS[e["type"]](s, org, e["payload"])
+    s.put_node(org, nid, "SyncOp", {
+        "op_id": p["op_id"], "apply_id": p["apply_id"], "device_id": p.get("device_id"),
+        "device_seq": p.get("device_seq"), "command": p["command"], "on": p["on"],
+        "device_time": p.get("device_time"), "ref": p.get("ref") or {}, "events": len(p["events"]),
+    })
+
+
 def _failure_report_verified(s: GraphStore, org: str, p: dict) -> None:
     r = s.node(org, p["id"])
     verification = {"result": p["result"], "notes": p.get("notes", ""), "verified_on": p["verified_on"],
@@ -2833,10 +2856,26 @@ PROJECTORS = {
     "failure_report.action_added": _failure_report_action_added,
     "failure_report.action_updated": _failure_report_action_updated,
     "failure_report.verified": _failure_report_verified,
+    # One change sent by a device that works offline, whole or not at all (Nov 2026).
+    "op.applied": _op_applied,
 }
 
 
 # ---- the domain ------------------------------------------------------------------
+
+
+def _flat_events(events: list[dict]) -> list[dict]:
+    """Events as recorded one by one: an op.applied (a device's change, one event in
+    the log) as the events inside it, each with the op's time and actor."""
+    out = []
+    for e in events:
+        if e["type"] == "op.applied":
+            inner = e["payload"].get("events") or []
+            # Newest first, as the log is read: the op's own events in reverse too.
+            out += [{**e, "type": i["type"], "payload": i["payload"]} for i in reversed(inner)]
+        else:
+            out.append(e)
+    return out
 
 
 def _walk_down(top: str, kids: dict) -> set[str]:
@@ -2856,8 +2895,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
-                 time_zone: str | None = None):
+                 time_zone: str | None = None, as_of: str | None = None):
         self.s = store
+        # The day a change was made, when that isn't now: one queued on a device with
+        # no signal and sent later (sync.py). It is "today" for what the change
+        # records; "in the future" is still judged by the clock (latest_day).
+        self.as_of = as_of
         self.org = org
         self.actor = actor
         # The workspace's time zone (an IANA name, or None: the server's): "today"
@@ -2872,8 +2915,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         self._memo: dict = {}
 
     def today(self) -> str:
-        """Today's date in the workspace's time zone, as ISO text."""
-        return time_zones.today(self.time_zone).isoformat()
+        """Today's date in the workspace's time zone, as ISO text (the day the change
+        was made, for one sent later: ``as_of``)."""
+        return self.as_of or time_zones.today(self.time_zone).isoformat()
 
     def latest_day(self) -> str:
         """The latest day a change may carry: the workspace's day CLOCK_TOLERANCE from now,
@@ -12743,7 +12787,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         proposals behind them, newest first."""
         task = self._get(task_id, "Task")
         mine = []
-        for e in self.s.events(self.org, 5000):
+        for e in _flat_events(self.s.events(self.org, 5000)):
             pl = e["payload"]
             if pl.get("id") == task_id or pl.get("task_id") == task_id:
                 mine.append({"on": e["at"][:10], "type": e["type"], "by": e.get("actor"),
