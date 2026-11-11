@@ -69,6 +69,8 @@ from backend.maintenance.rcm_delete import PROJECTORS as _RCM_DELETE_PROJECTORS
 from backend.maintenance.rcm_delete import RcmDeleteOps
 from backend.maintenance.position_models import PROJECTORS as _POSITION_MODEL_PROJECTORS
 from backend.maintenance.position_models import PositionModelOps
+from backend.maintenance.captures import PROJECTORS as _CAPTURE_PROJECTORS
+from backend.maintenance.captures import CaptureOps
 
 logger = logging.getLogger(__name__)
 
@@ -2847,7 +2849,8 @@ def _walk_down(top: str, kids: dict) -> set[str]:
     return out
 
 
-class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps):
+class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
+                  CaptureOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -13124,7 +13127,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 raise LimitReached(f"This maintenance workspace can hold at most {MAX_PHOTOS:,} photos. "
                                    "Remove some first.")
 
-    PHOTO_KINDS = ("Position", "Location", "Item", "WorkOrder", "FailureReport")
+    PHOTO_KINDS = ("Position", "Location", "Item", "WorkOrder", "FailureReport", "Capture")
 
     def photo_targets(self, photo_id: str) -> list[dict]:
         """Every place a photo shows: positions, then locations, items, work orders
@@ -14599,5 +14602,7 @@ PROJECTORS.update(_TREE_DELETE_PROJECTORS)
 PROJECTORS.update(_RCM_DELETE_PROJECTORS)
 # Life models attached to positions (Nov 2026, position_models.py).
 PROJECTORS.update(_POSITION_MODEL_PROJECTORS)
+# Field reports (Nov 2026, captures.py): notes, photos and sound from the field.
+PROJECTORS.update(_CAPTURE_PROJECTORS)
 
 PROJECTION_VERSION = 5

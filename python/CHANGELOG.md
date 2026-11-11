@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Field reports** (Reliafy Maintenance): `reliafy capture new notes.txt
+  IMG_*.heic noise.m4a --about POSITION_ID` sends notes, photos, sound
+  recordings and PDFs as one report, in pieces that carry on after a dropped
+  connection and never arrive twice; `capture list | get | status | keep |
+  unkeep | delete | download`. In Python: `rf.new_capture(...)`,
+  `rf.captures()`, `rf.capture(id)`, `rf.set_capture_status(...)`. Needs a
+  server with `/api/v1/maintenance/captures`.
+
 ## 0.5.4 (11 Nov 2026)
 
 No change to the client's own code: the tools, routes and flags below come

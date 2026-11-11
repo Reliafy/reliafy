@@ -845,6 +845,45 @@ the node with who and when (`history`), the way a work order keeps its notes.
   `Maintenance._report_scope`, which the list reads and the tree roll-up
   (`open_reports` on each row and inside it) follows.
 
+## Field reports: what someone saw, as they recorded it
+
+A field report (`captures.py`; "capture" in code) is a bundle of notes,
+photos, sound recordings and PDFs made in the field, often offline, and sent
+later. It may be about positions, locations, items or work orders. It is a
+plain data dump: it changes nothing else and proposes nothing; a person or
+their agent acts on it with the ordinary tools and marks it `parsed`, then
+`done`.
+
+- `Capture` {number, title, status (new, parsed, done), status_note,
+  status_by, status_on, taken_at (device time with offset), device_tz,
+  received_at, created_on, by, by_name, via, has_notes, has_location,
+  media_expected, about_missing, clock_suspect, media ([{id, kind (audio,
+  file), mime, size, sha256, name, duration_s, added_on}]), keep, expires_on,
+  expired, expired_on, expired_reason}.
+- `Capture ABOUT Position | Location | Item | WorkOrder` (any number; an id
+  that no longer exists when the report arrives is kept in `about_missing`
+  rather than refusing the report).
+- `Photo OF Capture`: a report's photo is an ordinary photo (`photo.added`,
+  `via: report`), cleaned the same way, so showing it on the pump it is of is
+  `photo.linked` or a move, never a copy.
+- **Content is outside the log.** Notes, the location and every byte live in
+  a content store (MongoDB or a folder); the events carry only what a report
+  is. That is what lets retention, or a privacy request, delete them: the log
+  is never rewritten.
+- **Sent twice, recorded once.** The report's id and each attachment's id are
+  made by the sender (a UUID). Creating a report that exists answers that
+  report; an attachment goes up in pieces by offset and resumes from what the
+  content store holds; the projector ignores a second `capture.media_added`
+  for the same id.
+- **Retention.** `expires_on` is 90 days after the report was made, or 30
+  days after it was marked done if sooner; none while `keep`. The daily run
+  emits `capture.expired` and deletes the content. A photo that also shows
+  somewhere else is taken off the report (`photo.unlinked`) and stays; the
+  rest are removed (`photo.removed`).
+
+Events: `capture.created`, `capture.media_added`, `capture.status`,
+`capture.kept`, `capture.expired`.
+
 ## Products: design trees and the items built from them
 
 For a user who designs and builds things, not only runs a plant. A product is
