@@ -48,7 +48,7 @@ import urllib.request
 
 from reliafy import config as _saved
 
-__version__ = "0.5.3"
+__version__ = "0.5.4"
 __all__ = ["configure", "default_client", "call", "Client", "models", "data", "strategy", "fleet", "ReliafyError",
            "ServerTooOld", "push", "push_params", "push_usage", "push_readings", "push_snapshot", "push_lives",
            "push_measurements"]
