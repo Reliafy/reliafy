@@ -82,7 +82,7 @@ import { NewLocationModal } from "./MaintenanceLists.jsx";
 import { ImportModal, NewPositionModal } from "./MaintenanceHome.jsx";
 import { DEFAULT_LEVEL, changedFromUsual, levelShown, showingOnly } from "../treeControls.js";
 import {
-  ARRANGEMENTS, CHIPS, PANE, ancestorsOf, arrangementFor, scopedArrangeQuery, scopedArrangements, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath, fitTreeWidth, treeColumnWidth,
+  ARRANGEMENTS, CHIPS, PANE, ancestorsOf, arrangementFor, assetOf, scopedArrangeQuery, scopedArrangements, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath, fitTreeWidth, treeColumnWidth,
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
 import { keepLevel } from "../outlineTree.js";
@@ -233,7 +233,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // An asset's tree has Classes too (?arrange=classes): the classes of what's fitted
   // inside that asset, and nothing else's (a design has nothing fitted, so no Classes).
   const [data, setData] = useState(null);
-  const scopedClasses = !!root && scopeHasClasses(data, { ownPage: !!rootProp });
+  // The tree read is for the root it was read with: a new root (Classes on the picked row's asset)
+  // takes the address at its word until its own read is in.
+  const [dataRoot, setDataRoot] = useState(root);
+  const scopedClasses = !!root && scopeHasClasses(dataRoot === root ? data : null, { ownPage: !!rootProp });
   const mode = arrangementFor({ param: params.get("arrange"), remembered: saved.mode, rcm: tableOn, scoped: !!root, classes: scopedClasses });
   const notPlaced = mode === "positions" && params.get("place") === "none";
   const title = titleProp || EXPLORER_LABEL;
@@ -346,6 +349,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       .then((d) => {
         forgetPositions();
         setData(scopeTree(d, root));
+        setDataRoot(root);
         setVersion((v) => v + 1);
       })
       .catch((e) => setError({ text: e.message, notAllowed: e.status === 404 || e.status === 403 }));
@@ -1257,8 +1261,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
 
   const viewOnly = viewOnlyReason(activeTeam);
   const designScope = isDesignScope(data, root);
-  // One asset's tree on show: the positions inside it (a class's fleet covers only these).
-  const scopeIds = useMemo(() => (root && data?.positions ? new Set(data.positions.map((p) => p.id)) : null), [root, data]);
   const kids = useMemo(() => liveKids(data?.positions), [data]);
   // A measurement row's ⋯ (the Measurements tab).
   // A measurement row's details spread across the table, the tree kept (as an
@@ -1764,6 +1766,13 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       const q = scopedArrangeQuery(params, m, { ownPage: !!rootProp });
       if (nextTab !== tab) q.delete(tabKey);
       navigate(`${location.pathname}?${q}${location.hash}`, { replace: true, state: location.state });
+      return;
+    }
+    // Classes covers one asset, the one the picked row is in (Derryn, 11 Nov 2026: "an asset
+    // should be self contained"); with nothing picked, the whole register. "Show every asset" there.
+    const asset = m === "classes" ? assetOf(data, focus != null ? display.rows.get(focus) : null) : null;
+    if (asset) {
+      navigate(explorerPath(m, { root: asset, sel: keep, tab: nextTab === "summary" ? null : nextTab }));
       return;
     }
     latest.current = { ...latest.current, mode: m, selected: nextSelected };
@@ -2353,7 +2362,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <TreeDetail ref={headingRef} display={whole} row={data && !nothing ? row : null} today={data?.today || ""}
                     onSelect={selectFromPanel} onCrumb={(k) => crumbGo(k, selectFromPanel)} above={above}
                     back={back} version={version} empty={emptyDetail} headless={!phone} heading={heading}
-                    tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi} within={scopeIds}
+                    tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi} within={root}
                     menu={[...ownMenu(data && !nothing ? row : null), ...(tabMenu || [])]} onMenu={setTabMenu}
                     actions={summaryActionsOf(data && !nothing ? row : null)} />
       )}

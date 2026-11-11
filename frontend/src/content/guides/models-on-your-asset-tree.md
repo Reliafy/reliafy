@@ -243,10 +243,12 @@ age, its last reading, the three chances and the **Median life left**. Choose
 a row for that item's two charts: its survival from now and its reading's
 path.
 
-With one asset's tree open (the **One tree** note shows above the tree),
-**Classes** covers only that asset: the classes, their counts and the table
-list the positions inside it and nothing else. **Show every asset** goes back
-to the whole register.
+**Classes** covers one asset at a time: the one the row you have picked is in
+(the place it's at, as on the **Assets** page, or else its top position), or
+the asset's tree you have open. The **One tree** note shows above the tree, and
+the classes, their counts and the table list the positions inside that asset
+and nothing else. With nothing picked, or after **Show every asset**, it's the
+whole register.
 
 A position has the **Condition monitoring** tab too, however the tree is
 arranged (**Positions**, **Locations** or **Classes**). It shows that one

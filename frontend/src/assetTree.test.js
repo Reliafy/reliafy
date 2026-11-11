@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  nextGutter,
+  assetOf, nextGutter,
   ARRANGEMENTS, CHIPS, CHIP_MARK, chipsFor, ancestorsOf, arrangementFor, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, findByPrefix, flatten, insideWords, levelSet, loadTreeState, markersOf, TREE_ROW_MARKERS, pinnedRows, saveTreeState,
   classKey, scopedArrangeQuery, scopedArrangements, statusWords, windowOf,
@@ -484,4 +484,90 @@ test("switching to and from Classes keeps a position picked; a class only within
 
 test("a class's row key is the one the address rule knows a class by", () => {
   assert.equal(addressTab("rcm", { arrange: "classes", sel: classKey("pump") }), "condition");
+});
+
+test("one asset's tree by Classes: a position its fitted item carries is inside it; a class only another asset uses isn't shown", () => {
+  // The tree read nests a carried position (an engine's turbo) in the position its item is fitted to,
+  // the same rule the server's class-fleet read uses for ?within=.
+  const data = {
+    classes: TAXONOMY,
+    positions: [
+      { id: "a", name: "Station A", parent_id: null },
+      { id: "a1", name: "A pump 1", parent_id: "a", item: { id: "ia1" }, item_class_id: "cf" },
+      { id: "at", name: "A pump 1 motor", parent_id: "a1", carried_by: { id: "ia1", name: "A unit" }, item: { id: "iam" }, item_class_id: "motor" },
+      { id: "b", name: "Station B", parent_id: null },
+      { id: "b1", name: "B pump 1", parent_id: "b", item: { id: "ib1" }, item_class_id: "cf" },
+      { id: "bf", name: "B fan", parent_id: "b", item: { id: "ibf" }, item_class_id: "fan" },
+    ],
+  };
+  const a = buildDisplay(scopeTree(data, "a"), "classes");
+  assert.deepEqual(a.roots, ["cls:rot", "cls:elec", "G:noclass"]);
+  assert.deepEqual(a.rows.get("cls:motor").kids, ["at"]);
+  assert.deepEqual(a.rows.get("cls:cf").kids, ["a1"]);
+  assert.equal(a.rows.get("cls:rot").sum.positions, 1);
+  assert.equal(a.rows.has("cls:fan"), false);
+  assert.ok(![...a.rows.keys()].some((k) => k.startsWith("b")));
+  // Unscoped: every asset, as before.
+  const all = buildDisplay(scopeTree(data), "classes");
+  assert.equal(all.rows.get("cls:rot").sum.positions, 3);
+  assert.ok(all.rows.has("cls:fan"));
+});
+
+test("an asset opened by Classes: the place it's at (an asset on the Assets page) or its top position; never another asset's classes", () => {
+  // Two places you look after, each with a plant whose pumps are of different classes; a pump at no place.
+  const data = {
+    classes: TAXONOMY,
+    locations: [
+      { id: "river", name: "Riverside pumping station", parent_id: null },
+      { id: "hall", name: "Pump hall", parent_id: "river" },
+      { id: "pool", name: "Backyard pool", parent_id: null },
+      { id: "q-bay", name: "Battery bay", parent_id: null, carried_by: "q" },
+    ],
+    positions: [
+      { id: "rp", name: "Riverside plant", parent_id: null, location_id: "hall", location: { id: "hall" } },
+      { id: "r1", name: "River pump 1", parent_id: "rp", item: { id: "i1" }, item_class_id: "cf", location: { id: "hall", inherited: true } },
+      { id: "r2", name: "River pump 2", parent_id: null, location_id: "river", location: { id: "river" }, item: { id: "i2" }, item_class_id: "cf" },
+      { id: "pp", name: "Pool plant", parent_id: null, location_id: "pool", location: { id: "pool" } },
+      { id: "p1", name: "Pool pump", parent_id: "pp", item: { id: "i3" }, item_class_id: "pd", location: { id: "pool", inherited: true } },
+      { id: "lone", name: "Bench pump", parent_id: null, item: { id: "i4" }, item_class_id: "fan" },
+      { id: "lone1", name: "Bench pump seal", parent_id: "lone" },
+    ],
+  };
+  const whole = scopeTree(data);
+  const d = buildDisplay(whole, "locations");
+  // The asset of a picked row: its top place, whatever arrangement; else its top position.
+  assert.equal(assetOf(whole, d.rows.get("hall")), "river");
+  assert.equal(assetOf(whole, { type: "pos", key: "r1", ref: whole.positions[1] }), "river");
+  assert.equal(assetOf(whole, { type: "pos", key: "p1" }), "pool");
+  assert.equal(assetOf(whole, { type: "pos", key: "lone1" }), "lone");
+  assert.equal(assetOf(whole, { type: "item", key: "x", ref: { location_id: "hall" } }), "river");
+  assert.equal(assetOf(whole, { type: "item", key: "x", ref: {} }), null);
+  assert.equal(assetOf(whole, { type: "cls", key: "cls:cf" }), null);
+  assert.equal(assetOf(whole, null), null);
+  // Riverside by Classes: its two pumps (one set at the station, one inherited from the hall); nothing of the pool.
+  const river = scopeTree(data, "river");
+  assert.deepEqual(river.scope, { kind: "place", id: "river", name: "Riverside pumping station" });
+  assert.ok(scopeHasClasses(river));
+  assert.deepEqual(river.locations.map((l) => l.id), ["river", "hall"]);
+  const rc = buildDisplay(river, "classes");
+  assert.deepEqual(rc.roots, ["cls:rot", "G:noclass"]);
+  assert.deepEqual(rc.rows.get("cls:cf").kids, ["r1", "r2"]);
+  assert.equal(rc.rows.get("cls:rot").sum.positions, 2);
+  assert.equal(rc.rows.has("cls:pd"), false);
+  assert.equal(rc.rows.has("cls:fan"), false);
+  assert.deepEqual(names(rc, rc.rows.get("G:noclass").kids), ["Riverside plant"]);
+  // The pool by Classes: its one pump.
+  const pc = buildDisplay(scopeTree(data, "pool"), "classes");
+  assert.deepEqual(pc.rows.get("cls:pd").kids, ["p1"]);
+  assert.equal(pc.rows.has("cls:cf"), false);
+  // An asset at no place: its top position's tree, as before.
+  const lc = buildDisplay(scopeTree(data, "lone"), "classes");
+  assert.deepEqual(lc.rows.get("cls:fan").kids, ["lone"]);
+  assert.equal(lc.rows.has("cls:cf"), false);
+  // A built item's own layout isn't a place you look after: not a root of this kind.
+  assert.equal(scopeTree(data, "q-bay").positions.length, 0);
+  // By Locations, the place's own layout and what's there.
+  const rl = buildDisplay(river, "locations");
+  assert.deepEqual(rl.roots, ["river"]);
+  assert.ok(rl.rows.has("r1") && !rl.rows.has("p1") && !rl.rows.has("pool"));
 });

@@ -133,28 +133,6 @@ export function fleetAnswer(fleet) {
   return parts.join(" · ");
 }
 
-// A class's fleet as one asset's tree shows it (the Explorer opened on one asset, by Classes):
-// only the members whose position is inside that asset (`within`: a Set of position ids; null,
-// the whole register, the fleet as read). The counts, the models in use and the note about
-// positions with no model are worked out again from the members kept, so the answer line and the
-// table say the same. A member the read didn't score still says why on its own row.
-export function fleetWithin(fleet, within) {
-  if (!fleet || !within) return fleet;
-  const members = (fleet.members || []).filter((m) => within.has(m.position.id));
-  const scored = members.filter((m) => m.scored).length;
-  const noModel = members.filter((m) => !m.model).length;
-  const used = new Map();
-  for (const m of members) if (m.model) used.set(m.model.id, (used.get(m.model.id) || 0) + 1);
-  const models = (fleet.models || []).filter((x) => used.has(x.id)).map((x) => ({ ...x, positions: used.get(x.id) }));
-  let note = null;
-  if (noModel) {
-    const which = noModel === members.length ? "None of these positions has a"
-      : `${noModel.toLocaleString("en-AU")} of these positions ${noModel === 1 ? "has" : "have"} no`;
-    note = `${which} condition and life model. To see risk, link one to the position on its Modelling tab.`;
-  }
-  return { ...fleet, members, positions: members.length, scored, no_model: noModel, not_scored: members.length - scored - noModel, models, note };
-}
-
 // One position's risk now (the Explorer's Condition monitoring tab on a position, and the member
 // a class's fleet has chosen), from its read (api.js getPositionCondition): what to show.
 // "scored": its summary and charts. Else why there is no risk, in words, never a blank panel:

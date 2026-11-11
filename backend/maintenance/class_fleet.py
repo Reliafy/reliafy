@@ -82,15 +82,16 @@ def item_class_ids(m) -> dict[str, str]:
     return out
 
 
-def _members(m, class_id: str) -> tuple[dict, list[tuple[dict, dict, dict, dict]]]:
+def _members(m, class_id: str, within: set[str] | None = None) -> tuple[dict, list[tuple[dict, dict, dict, dict]]]:
     """The class, and ``(position, fitment, item, item class)`` for every live
-    position whose fitted item is of the class or a class inside it, by name."""
+    position whose fitted item is of the class or a class inside it, by name.
+    ``within``: only those positions (one asset's tree)."""
     node = m._get(class_id, "ItemClass")
     inside = {c["id"]: c for c in m._class_subtree(class_id)}
     classes = item_class_ids(m)
     found = []
     for p in m.s.nodes(m.org, "Position"):
-        if p.get("retired"):
+        if p.get("retired") or (within is not None and p["id"] not in within):
             continue
         f = m.current_fitment(p["id"])
         item = f and next((x for x in m.s.inn(m.org, f["id"], "IN") if x["label"] == "Item"), None)
@@ -313,19 +314,25 @@ def _scorer(m, db, owners, hidden):
     return row_for, models, fetch, today, horizons
 
 
-def fleet(m, db, owners, hidden, item_class_id: str, position_id: str | None = None) -> dict:
+def fleet(m, db, owners, hidden, item_class_id: str, position_id: str | None = None,
+          within: str | None = None) -> dict:
     """The class's members (every position whose fitted item is of the class or
     a class inside it) with duty, item, age and last reading, and each one's
     risk now where its position has a condition and life model, highest first.
     With ``position_id``: that one member alone, with its curves (``unit``: its
     survival from now and its reading's path, as the model page draws them, in
-    its model's own time unit)."""
+    its model's own time unit). With ``within`` (one asset: its top position, or
+    the place it's at): only the members inside it (``positions_inside``), so
+    the counts, the models in use, the duties and the notes are that asset's
+    alone."""
     sv = _sv()
-    node, members = _members(m, item_class_id)
+    inside = m.positions_inside(within) if within is not None else None
+    node, members = _members(m, item_class_id, inside)
     if position_id is not None:
         members = [x for x in members if x[0]["id"] == position_id]
         if not members:
-            raise sv.Invalid(f"That position has no item of the class {node['name']} fitted.")
+            raise sv.Invalid(f"That position has no item of the class {node['name']} fitted"
+                             + (" inside that tree." if inside is not None else "."))
     row_for, models, fetch, today, horizons = _scorer(m, db, owners, hidden)
     out = {"item_class": m._class_brief(node), "today": today, "age_unit": AGE_UNIT,
            "horizons": {"labels": horizons["labels"], "values": horizons["values"]}}
