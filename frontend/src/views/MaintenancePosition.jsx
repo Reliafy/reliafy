@@ -38,6 +38,7 @@ import {
 } from "../components/MaintenanceParts.jsx";
 import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import { roughDateValue } from "../maintenanceFields.js";
+import { deviceClockDiffers, workspaceClock, workspaceMoment, workspaceZoneName } from "../workspaceDate.js";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
 import Modal from "../components/Modal.jsx";
 import { liveReadings, readingWhen } from "../maintenanceReadings.js";
@@ -848,16 +849,22 @@ export function PointModal({ target, kind = "condition", onClose, onDone }) {
 export function PointReadingModal({ point, onClose, onDone }) {
   const [value, setValue] = useState("");
   const [on, setOn] = useState(today());
-  // The time of day it was read, now by default: clear it when it isn't known.
-  const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5));
+  // The time of day it was read, now by default, on the workspace's clock (as the
+  // date is: the device's own clock is hours out when it's in another time zone).
+  // Clear it when it isn't known.
+  const [time, setTime] = useState(() => workspaceClock());
+  const zone = workspaceZoneName();
   const setting = point.kind === "setting";
   return (
     <FormModal title={`${setting ? "New setting" : "Reading"}: ${point.name}`} submitLabel="Save" canSubmit={value !== ""} onClose={onClose}
-               onSubmit={async () => onDone(await recordMeasurementReading(point.id, Number(value), on, time ? `${on}T${time}` : undefined))}>
+               onSubmit={async () => onDone(await recordMeasurementReading(point.id, Number(value), on, time ? workspaceMoment(on, time) : undefined))}>
       <Field label={`${setting ? "Set to" : "Reading"}${point.unit ? ` (${point.unit})` : ""}`}><input type="number" step="any" autoFocus value={value}
              placeholder={point.reading != null ? `${setting ? "now" : "last"}: ${point.reading}` : ""} onChange={(e) => setValue(e.target.value)} /></Field>
       <Field label={setting ? "Changed on" : "Read on"}><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
-      <Field label="At (clear it if not known)"><input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></Field>
+      <Field label={`At, ${zone} time (clear it if not known)`}><input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></Field>
+      {deviceClockDiffers() && (
+        <p className="lib-date">The date and time are on this workspace&apos;s clock ({zone}), not this device&apos;s.</p>
+      )}
     </FormModal>
   );
 }

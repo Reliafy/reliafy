@@ -90,6 +90,34 @@ test("LSA: search and sort the tasks below, tick two and package them", async ({
   await expectHealthy(page, problems, { label: "packages", root: ".tx" });
 });
 
+// Package the tasks…, then Make: each trade's visit holds tasks on different
+// positions (the short one on the battery, its layer's on the alternator), and
+// every draft is made.
+test("LSA: Package the tasks… makes every draft when a visit's tasks are on different positions", async ({ page, request, problems }) => {
+  const tag = `g${Date.now()}`;
+  const post = (path, data) => postOk(request, path, data);
+  const set = await post(`${M}/positions`, { name: `Genset ${tag}` });
+  const battery = await post(`${M}/positions`, { name: `Battery ${tag}`, parent_id: set.id });
+  const alternator = await post(`${M}/positions`, { name: `Alternator ${tag}`, parent_id: set.id });
+  await post(`${M}/positions/${battery.id}/tasks`, { name: `Test battery ${tag}`, interval: 3, unit: "months", trade: "Electrician" });
+  await post(`${M}/positions/${alternator.id}/tasks`, { name: `Load bank test ${tag}`, interval: 6, unit: "months", trade: "Electrician" });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${set.id}&tab=lsa`);
+  await expect(rows(page)).toHaveCount(2);
+  await (await headMenu(page)).locator(".ovm-menu .ovm-item", { hasText: "Package the tasks…" }).click();
+  const packaging = panel(page).getByRole("region", { name: "Package the tasks" });
+  await expect(packaging.locator(".pk-prow")).toHaveCount(2);
+  await shot(page, "lsa-package-drafts");
+  await packaging.getByRole("button", { name: "Make 2 packages" }).click();
+  await expect(panel(page)).toContainText("Made 2 packages.");
+  await expect(rows(page)).toHaveCount(2);
+  for (const r of await rows(page).all()) await expect(r).toContainText("check (Electrician)");
+  await shot(page, "lsa-package-made");
+  const made = await (await request.get(`${M}/packages?position_id=${set.id}`)).json();
+  expect(made.packages).toHaveLength(2);
+  await expectHealthy(page, problems, { label: "Package the tasks, made" });
+});
+
 test("LSA: Next due follows a task's first due date (start)", async ({ page, request, problems }) => {
   const tag = `s${Date.now()}`;
   const pool = await postOk(request, `${M}/positions`, { name: `Start pool ${tag}` });

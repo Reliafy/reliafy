@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   addPackageTask, changePackage, createPackage, createPackages, getPackage, getTaskTable, listPackages, proposePackages,
@@ -148,6 +148,9 @@ export function PackageTasks({ scope, where, onBack, onDone }) {
     const out = await createPackages(proposalBatch(rows, { tolerance }));
     onDone(`Made ${plural(out.created.length, "package")}.`);
   }, can);
+  // A refusal shows above the buttons, which a long list of drafts puts off screen.
+  const refusal = useRef(null);
+  useEffect(() => { if (send.error) refusal.current?.scrollIntoView?.({ block: "nearest" }); }, [send.error]);
   return (
     <div className="pk-view pk-packaging" role="region" aria-label="Package the tasks">
       <button type="button" className="link pk-back" onClick={onBack} disabled={send.busy}>← All tasks here</button>
@@ -198,7 +201,7 @@ export function PackageTasks({ scope, where, onBack, onDone }) {
         </details>
       )}
       {data && rows.length > 0 && problem && <p className="lib-date" role="alert">{problem}</p>}
-      {send.error && <div className="card error">{send.error}</div>}
+      {send.error && <div className="card error" role="alert" ref={refusal}>{send.error}</div>}
       <div className="pk-packaging-foot">
         <button type="button" onClick={send.submit} disabled={send.busy || !can} aria-busy={send.busy || undefined}>
           {send.busy ? "Making…" : data && rows.some((r) => r.ticked) ? `Make ${plural(rows.filter((r) => r.ticked).length, "package")}` : "Make packages"}
