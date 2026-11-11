@@ -16,6 +16,7 @@
 // (backend/tests/test_spa_routes.py) all read it.
 //
 import { EXPLORER_PARTS_CLASSES_TABS } from "./explorerTabs.js";
+import { ORDERS_PATH } from "./maintenanceOrders.js";
 
 // A `:name` in `to` takes the value of the same `:name` in `path`.
 //
@@ -89,8 +90,11 @@ export const MOVED = [
   { path: "/rcm", to: "/maintenance/rcm" },
   { path: "/rcm/studies", to: "/maintenance/rcm" },
   { path: "/rcm/studies/:id", to: "/maintenance/rcm/:id" },
-  // Reliafy Maintenance's register → Operate › Assets. (/maintenance itself
-  // stays: it's the due tasks and work orders now; the positions tree is
+  // Maintenance's own page (what's due, the open work orders) → its sub-pages:
+  // Maintenance › Orders, with tabs for the open work orders, what's due soon and
+  // the closed ones. Its ?location= filter comes along.
+  { path: "/maintenance", to: ORDERS_PATH },
+  // Reliafy Maintenance's register → Operate › Assets. (The positions tree is
   // Assets › Explorer, and Assets opens on the top-level places.)
   { path: "/maintenance/positions/:id", to: "/asset-register/positions/:id" },
   // The register's items list, then the Explorer's Items arrangement (gone):

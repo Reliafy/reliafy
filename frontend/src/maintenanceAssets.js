@@ -4,6 +4,7 @@
 // arranged by positions, filtered to them (AssetExplorer's ?place=none).
 
 import { explorerPath } from "./assetTree.js";
+import { ordersPath } from "./maintenanceOrders.js";
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -20,8 +21,8 @@ export const placePath = (id) => `/asset-register/locations/${id}`;
 // that place picked (opened to it) so you land in the tree.
 export const assetPath = (id) => explorerPath("locations", { sel: id });
 
-// The open work orders in a place's area (Maintenance, filtered by location).
-export const openWorkPath = (id) => `/maintenance?location=${encodeURIComponent(id)}`;
+// The open work orders in a place's area (Maintenance › Orders, filtered by location).
+export const openWorkPath = (id) => ordersPath("open", { location: id });
 
 // What's inside a place, in words: "4 places inside" ("" for none).
 export function insideText(place) {

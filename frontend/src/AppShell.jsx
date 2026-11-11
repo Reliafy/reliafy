@@ -58,7 +58,9 @@ const ReliabilityPredictionPage = lazy(() => import("./views/ReliabilityPredicti
 const MaintainabilityHome = lazy(() => import("./views/MaintainabilityHome.jsx"));
 const MaintainabilityNewPage = lazy(() => import("./views/MaintainabilityNewPage.jsx"));
 const MaintainabilityPage = lazy(() => import("./views/MaintainabilityPage.jsx"));
-const MaintenanceHome = lazy(() => import("./views/MaintenanceHome.jsx"));
+const MaintenanceOrders = lazy(() => import("./views/MaintenanceOrders.jsx"));
+const MaintenancePackages = lazy(() => import("./views/MaintenancePackages.jsx"));
+const MaintenancePackage = lazy(() => import("./views/MaintenancePackages.jsx").then((m) => ({ default: m.MaintenancePackage })));
 const RcmHome = lazy(() => import("./views/RcmHome.jsx"));
 const RcmStudyPage = lazy(() => import("./views/RcmStudyPage.jsx"));
 const MaintenanceAssets = lazy(() => import("./views/MaintenanceAssets.jsx"));
@@ -245,7 +247,10 @@ function Shell() {
             {maintenanceEnabled && <Route path="/asset-register/parts/:id" element={<MaintenancePart />} />}
             {maintenanceEnabled && <Route path="/asset-register/points/:id" element={<PointRedirect />} />}
             {maintenanceEnabled && <Route path="/asset-register/channels/:id" element={<ChannelRedirect />} />}
-            {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome />} />}
+            {/* Maintenance opens on Orders (/maintenance redirects there, redirects.js), then Packages. */}
+            {maintenanceEnabled && <Route path="/maintenance/work-orders" element={<MaintenanceOrders />} />}
+            {maintenanceEnabled && <Route path="/maintenance/packages" element={<MaintenancePackages />} />}
+            {maintenanceEnabled && <Route path="/maintenance/packages/:id" element={<MaintenancePackage />} />}
             {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
             {/* RCM studies: standalone worksheets, for every account (with or
                 without Reliafy Maintenance). They share no data with the RCM

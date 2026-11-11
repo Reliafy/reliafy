@@ -86,6 +86,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/tree"], // the asset tree pane
   ["GET", "/api/maintenance/places"], // Assets: the top-level places
   ["GET", "/api/maintenance/work-orders"],
+  ["GET", "/api/maintenance/due"], // Maintenance › Orders › Due soon, by window
   ["GET", "/api/maintenance/packages"], // work packages: tasks done on one visit
   ["GET", "/api/maintenance/packages/propose"],
   ["GET", "/api/maintenance/tasks/smoke/lsa"], // a task's LSA (what it needs to be done)
