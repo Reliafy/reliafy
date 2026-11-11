@@ -6,10 +6,10 @@ import { useEffect, useRef, useState } from "react";
 import Plot from "./Plot.jsx";
 import { COLORWAY, bandPair, pointMarker, referenceShape } from "../plotTheme.js";
 import { confidenceAt, evaluateAt, lifeAt } from "../api.js";
-import { formatNumber, formatPercent } from "../format.js";
+import { formatNumber } from "../format.js";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
-import { boundWords, timeAtValue } from "../lifeResults.js";
+import { boundWords, checkTime, perUnit, precisePercent, timeAtValue, timeInWords } from "../lifeResults.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
 import { unitInText } from "./unitText.js";
@@ -80,15 +80,21 @@ function interp(x, y, xq) {
 const FUNCTIONS = {
   sf: { label: "Reliability R(t)", axis: "Reliability, R(t)", pct: true },
   ff: { label: "Probability of failure F(t)", axis: "Probability of failure, F(t)", pct: true },
-  hf: { label: "Hazard rate", axis: "Hazard rate, h(t)" },
+  hf: { label: "Hazard rate", axis: "Hazard rate, h(t)", rate: true },
   Hf: { label: "Cumulative hazard", axis: "Cumulative hazard, H(t)" },
-  df: { label: "Density", axis: "Density, f(t)" },
+  df: { label: "Density", axis: "Density, f(t)", rate: true },
 };
 const fnLabel = (id, meta) => FUNCTIONS[id]?.label || meta.find((m) => m.id === id)?.label || id;
 
-// A value of function ``id``: a probability as a percentage, else a number.
-const fmtFn = (id, v) =>
-  v == null ? "—" : FUNCTIONS[id]?.pct ? formatPercent(v, { sig: 3 }) : formatNumber(v, { sig: 4 });
+// A value of function ``id``: a probability as a percentage that keeps its
+// decimals near 0% and 100% (99.82%, never a rounded "100%"); a hazard or a
+// density with its unit ("per month") when ``unit`` is given.
+const fmtFn = (id, v, unit = null) => {
+  if (v == null) return "—";
+  if (FUNCTIONS[id]?.pct) return precisePercent(v);
+  const per = FUNCTIONS[id]?.rate ? perUnit(unit) : "";
+  return `${formatNumber(v, { sig: 4 })}${per ? ` ${per}` : ""}`;
+};
 
 // Condition a set of curves on having already survived to age s: the time axis
 // becomes additional time t (= x - s) and each function is recomputed as the
@@ -299,7 +305,8 @@ export default function Calculator({ functions, unit, params, state, setState, n
     return () => timers.forEach((id) => id && clearTimeout(id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ciValid, active, ciAlpha, ci.bound, confidencePath, xLoNum, xHiNum, bandValues]);
-  const bandError = banded.map((s) => bands[s.id]?.error).find(Boolean);
+  // No error left over from a level that has since been changed to a bad one.
+  const bandError = ciValid ? banded.map((s) => bands[s.id]?.error).find(Boolean) : null;
 
   // Time at a reliability (#288): the model's own quantile and its bound(s)
   // from the life path; without one (regression, or parameters only), read
@@ -330,7 +337,10 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const x = functions.curves.x;
 
   const cond = condAge === "" ? 0 : Number(condAge);
-  const sLabel = `${cond}${unit ? ` ${unit}` : ""}`;
+  const sLabel = timeInWords(cond, unit);
+  // The time as typed, checked: blank is not zero, and a negative time is
+  // refused with a message beside its box.
+  const tCheck = checkTime(t, { example: x.length ? Number(x[Math.floor(x.length / 2)].toPrecision(2)) : null });
   const view = (curves) => (cond > 0 && curves ? conditionalize(curves, cond) : curves);
   const xMaxView = cond > 0 ? x[x.length - 1] - cond : x[x.length - 1];
 
@@ -418,7 +428,9 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const bandOf = (s) => {
     if (spreadBand) return s === series[0] ? spreadBand : null;
     const b = bands[s.id]?.data;
-    return ci.bound !== "none" && b && b.on === active && cond === 0 ? b : null;
+    // No band while the level typed isn't usable: the sentence must not say
+    // "we're NaN% sure" or "150% sure" about bounds worked out at another level.
+    return ci.bound !== "none" && ciOk && b && b.on === active && cond === 0 ? b : null;
   };
   const band = series[0] ? bandOf(series[0]) : null;
 
@@ -536,21 +548,21 @@ export default function Calculator({ functions, unit, params, state, setState, n
       <div className="calc-answer">
         <span>
           {fnLabel(active, meta)} {cond > 0 ? "for a further" : "at"}{" "}
-          <b>{Number(t).toLocaleString(undefined, { maximumFractionDigits: 6 })}{unit ? ` ${unitInText(unit)}` : ""}</b>
+          <b>{timeInWords(tCheck.ok ? tCheck.value : null, unit)}</b>
           {cond > 0 ? `, having survived ${sLabel}` : ""}{multi ? "" : ":"}
         </span>
         {!multi && (
           <span className="calc-answer-value">
-            <b>{fmtFn(active, interp(views[0]?.x, views[0]?.[active], Number(t)))}</b>
-            {band && (() => {
+            <b>{tCheck.ok ? fmtFn(active, interp(views[0]?.x, views[0]?.[active], Number(t)), unit) : "—"}</b>
+            {band && tCheck.ok && (() => {
               // In words (#292): "we're 90% sure it's at least 38%".
               const lo = band.lower ? interp(band.x, band.lower, Number(t)) : null;
               const hi = band.upper ? interp(band.x, band.upper, Number(t)) : null;
               if (band.spread) {
                 return lo != null && hi != null
-                  ? <span className="calc-answer-ci"> — {spreadRangeText(lo, hi, (v) => fmtFn(active, v))}</span> : null;
+                  ? <span className="calc-answer-ci"> — {spreadRangeText(lo, hi, (v) => fmtFn(active, v, unit))}</span> : null;
               }
-              const words = boundWords(ciLevel, band.bound, lo, hi, (v) => fmtFn(active, v));
+              const words = boundWords(ciLevel, band.bound, lo, hi, (v) => fmtFn(active, v, unit));
               return words ? <span className="calc-answer-ci"> — {words}</span> : null;
             })()}
           </span>
@@ -691,11 +703,13 @@ export default function Calculator({ functions, unit, params, state, setState, n
                     min={0}
                     max={xMaxView}
                     step="any"
+                    aria-invalid={!tCheck.ok || undefined}
                     onChange={(e) => setT(e.target.value)}
                   />
+                  {!tCheck.ok && <span className="combo-err" role="alert">{tCheck.message}</span>}
                 </label>
                 <label className="calc-t">
-                  <span>Given survived to{unit ? ` (${unit})` : ""}</span>
+                  <span>Given survived to{unit ? ` (${unitInText(unit)})` : ""}</span>
                   <input
                     type="number" inputMode="decimal"
                     value={condAge}
