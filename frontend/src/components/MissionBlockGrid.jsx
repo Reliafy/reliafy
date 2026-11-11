@@ -1,10 +1,13 @@
+import Chip from "./ui/Chip.jsx";
 import { BLOCK_STATES, blockState, withBlockState } from "../explorerMissions.js";
 
 // Each block's state in each phase of a mission (MissionPane.jsx): a grid with a row per block of
 // the mission's RBD and a column per phase, each cell Working (the default), Standby or Not
 // needed, changed in place. Wide missions scroll inside the grid's own box, never the page.
 //
-//   blocks: [{id, label}]   phases: the pane's editable phases ({key, name, standby, not_needed})
+// A block with no model (a placeholder stands in) says so beside its name.
+//
+//   blocks: [{id, label, placeholder}]   phases: the pane's editable phases ({key, name, standby, not_needed})
 //   readOnly                onChange(phaseKey, {standby, not_needed})
 
 const SHORT = { working: "Working", standby: "Standby", off: "Not needed" };
@@ -32,7 +35,10 @@ export default function MissionBlockGrid({ blocks = [], phases = [], readOnly = 
             <tbody>
               {blocks.map((b) => (
                 <tr key={b.id}>
-                  <th scope="row">{b.label}</th>
+                  <th scope="row">
+                    {b.label}
+                    {b.placeholder && <> <Chip tone="warning" title="No model: a placeholder life stands in, so results that need this block aren't real figures">Placeholder</Chip></>}
+                  </th>
                   {phases.map((p, i) => {
                     const state = blockState(p, b.id);
                     return (

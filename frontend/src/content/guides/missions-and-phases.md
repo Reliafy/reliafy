@@ -126,6 +126,22 @@ chance the mission completes. Then, for each phase:
 - **Weakest**: the block whose failures end the most missions in that phase,
   and its share of the phase's failures.
 
+### Blocks with no model
+
+A position with no model becomes a **placeholder** block: a stand-in life, so
+the diagram can be drawn, not a real figure. A mission that needs such a block
+says so with its answer. It names the blocks, shows the chance with the
+placeholders and the chance from the blocks with models alone, and never names
+a placeholder the weakest block. The grid marks each one **Placeholder**, and
+the Missions tab shows the result with "placeholders" beside it.
+
+You choose what to do with them:
+
+- **Give them a model**: open the mission's RBD and set each block's model.
+- **Leave them out**: mark them **Not needed** in every phase, so the mission
+  is worked out from the blocks with models.
+- Or set one **Not needed** only in the phases that don't use it.
+
 The parts age across the **whole** mission, not afresh in each phase: wear in a
 hot climb stays with a motor for the rest of the flight (except while a part
 stands by). The result's notes say what **Standby** and **Not needed** mean. When a block's
