@@ -68,8 +68,12 @@ def analyse(inputs: dict = Body(default={}), session=Depends(get_session), ctx: 
 
 @router.get("/products/{product_id}/lines")
 def product_lines(product_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
-    """A product's parts list as lines to fill in (Reliafy Maintenance), with
-    the failure rates of a saved reliability prediction for it, if any."""
+    """A product's parts list as lines to fill in (Reliafy Maintenance), and
+    the product's saved parts count (a reliability prediction), if any: each
+    line's ``parts_count_rate`` is the rate of one part there, matched by part
+    number. The lines' own ``failure_rate`` is left blank, so a prediction made
+    from them takes the parts count's rates and follows it; ``rates.by_ref``
+    has every part number's rate for lines typed or pasted later."""
     if not config.MAINTENANCE_ENABLED:
         return JSONResponse(status_code=404, content={"detail": "Products need Reliafy Maintenance."})
     from backend.maintenance.service import Invalid, NotFound
@@ -84,16 +88,14 @@ def product_lines(product_id: str, session=Depends(get_session), ctx: AccessCtx 
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     rates = service.prediction_rates(session, product_id, ctx.read_owners)
     found = 0
-    if rates:
-        for line in out["lines"]:
-            for key in (line.get("ref"), line.get("name")):
-                hit = rates["rates"].get(str(key or "").lower()) if key else None
-                if hit is not None:
-                    line["failure_rate"] = hit
-                    found += 1
-                    break
+    for line in out["lines"] if rates else []:
+        hit = rates["rates"].get(service.ref_key(line.get("ref"))) if line.get("ref") else None
+        line["parts_count_rate"] = hit
+        found += hit is not None
     out["rates"] = ({"source": "reliability_prediction", "prediction": {"id": rates["id"], "name": rates["name"]},
-                     "unit": rates.get("unit"), "matched": found} if rates and found else {"source": None})
+                     "unit": rates["unit"], "matched": found, "by_ref": rates["rates"],
+                     "failure_rate": rates["failure_rate"], "mtbf_hours": rates["mtbf_hours"]}
+                    if rates else {"source": None})
     return JSONResponse(content=out)
 
 
@@ -119,8 +121,8 @@ def save_prediction(name: str = Body(...), inputs: dict = Body(default={}), sess
 
 @router.get("/predictions")
 def list_predictions(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
-    return {"predictions": [_summary(d, ctx)
-                            for d in service.list_predictions(session, ctx.list_owners, ctx.hidden)]}
+    rows = service.list_predictions(session, ctx.list_owners, ctx.hidden, rate_owners=ctx.read_owners)
+    return {"predictions": [_summary(d, ctx) for d in rows]}
 
 
 @router.get("/predictions/{prediction_id}")
@@ -129,7 +131,8 @@ def get_prediction(prediction_id: str, session=Depends(get_session), ctx: Access
     doc, _ = access_service.fetch_readable(session, COLLECTION, MaintainabilityPrediction, prediction_id, ctx)
     if doc is None or doc.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Prediction not found."})
-    return JSONResponse(content=_full(doc, ctx))
+    # Lines that take the product's parts-count rates follow it: worked out again if it changed.
+    return JSONResponse(content=_full(service.current(session, doc, ctx.read_owners), ctx))
 
 
 @router.patch("/predictions/{prediction_id}")

@@ -71,9 +71,14 @@ average, however long or short its repair.
 
 - Type a failure rate per line, in the unit chosen at the top (**Failure rates
   in**: per million hours by default, or per hour).
-- With a product chosen, a saved **reliability prediction** for that product
-  supplies the rates where a line's part number or name matches, and the
-  result says so.
+- With a product chosen, a saved **reliability prediction** (parts count) for
+  that product supplies the rate of every line you leave blank, matched by part
+  number (never by name). Those lines follow the parts count: when it changes,
+  so does this prediction. A rate you type is used instead, for that line only.
+- The result says in a line where the rates come from, which lines the parts
+  count has no rate for, and how the MTBF compares with the parts count's
+  (they differ when lines here have their own rates, or the two lists don't
+  hold the same parts).
 - With no rates at all, every line counts the same. The result says that too,
   and availability isn't available: it needs the system's MTBF, which comes from
   the rates (1 ÷ their sum, times quantities) or from the **System MTBF** box.

@@ -1743,10 +1743,15 @@ def _seed_reliability_prediction(db) -> None:
 def _seed_maintainability_predictions(db) -> None:
     """The shared sample maintainability prediction: the sample survey
     quadcopter's parts list (backend/maintenance/templates.py,
-    SAMPLE_PRODUCT_BOM) with invented repair times and failure rates. It is the
-    example for every account, so it names no product: a workspace that adds
-    the sample product gets its own prediction beside it, from the same lines
-    and attached to that product (templates.add_sample_product)."""
+    SAMPLE_PRODUCT_BOM) with invented repair times. Its electronics and motor
+    lines carry the failure rates of the sample parts count (SAMPLE_PREDICTION),
+    and its results say how the two MTBFs compare. It is the example for every
+    account, so it names no product: a workspace that adds the sample product
+    gets its own prediction beside it, from the same lines and attached to that
+    product (templates.add_sample_product). A copy seeded with earlier lines or
+    results is brought up to date."""
+    from datetime import datetime, timezone
+
     from backend.schema import MaintainabilityPrediction
     from backend.services import maintainability
 
@@ -1756,9 +1761,14 @@ def _seed_maintainability_predictions(db) -> None:
         "inputs": sample_maintainability_inputs(),
     }
     try:
-        if db.maintainability_predictions.find_one({"_id": spec["id"]}) is not None:
+        results = maintainability.compute(spec["inputs"], sample_maintainability_parts_count(db))
+        existing = db.maintainability_predictions.find_one({"_id": spec["id"]})
+        if existing is not None:
+            if existing.get("inputs") != spec["inputs"] or existing.get("results") != results:
+                db.maintainability_predictions.update_one({"_id": spec["id"]}, {"$set": {
+                    "inputs": spec["inputs"], "results": results, "updated_at": datetime.now(timezone.utc)}})
+                logger.info("Refreshed sample maintainability prediction %r.", spec["id"])
             return
-        results = maintainability.compute(spec["inputs"])
         doc = MaintainabilityPrediction(id=spec["id"], name=spec["name"], owner_id=SAMPLE_OWNER,
                                         inputs=spec["inputs"], results=results)
         db.maintainability_predictions.insert_one(to_doc(doc))
@@ -1768,9 +1778,17 @@ def _seed_maintainability_predictions(db) -> None:
 
 
 # The sample quadcopter's lines: the bill of materials' lowest-level parts with
-# the assembly each sits in, a guessed failure rate per million flight hours,
-# and repair times in minutes split into the handbook's elements, with the
-# time 95% of that line's repairs are done by. All invented.
+# the assembly each sits in, a failure rate per million flight hours, and
+# repair times in minutes split into the handbook's elements, with the time
+# 95% of that line's repairs are done by. The repair times are invented.
+#
+# The failure rates of the electronics and the motor are the sample parts
+# count's (SAMPLE_PREDICTION, to four figures: one board's or one motor's
+# rate there), so the two samples agree line for line;
+# SAMPLE_MAINTAINABILITY_FROM says which of its lines make up each line here,
+# and a test holds the figures to it. The airframe, propellers, battery pack
+# and gimbal aren't electronic parts, so that parts count has no rate for them:
+# theirs are invented, and are why this prediction's MTBF is the lower one.
 def _mline(ref, name, assembly, quantity, rate, isolation, access, replace, restore, checkout, maximum):
     return {"ref": ref, "name": name, "assembly": assembly, "quantity": quantity, "failure_rate": rate,
             "elements": {"isolation": isolation, "access": access, "replace": replace, "restore": restore,
@@ -1783,18 +1801,68 @@ SAMPLE_MAINTAINABILITY_INPUTS = {
     "percentile": 0.95,
     "lines": [
         _mline("SQ-AF", "Airframe kit, carbon arms", "Airframe", 1, 40, 10, 20, 45, 25, 15, 220),
-        _mline("SQ-M2210", "Brushless motor 2210", "Propulsion", 4, 180, 10, 5, 15, 5, 10, 90),
-        _mline("SQ-ESC30", "Speed controller 30 A", "Propulsion", 4, 120, 15, 10, 15, 10, 10, 120),
+        _mline("SQ-M2210", "Brushless motor 2210", "Propulsion", 4, 42.90, 10, 5, 15, 5, 10, 90),
+        _mline("SQ-ESC30", "Speed controller 30 A", "Propulsion", 4, 24.59, 15, 10, 15, 10, 10, 120),
         _mline("SQ-P1045", "Propeller 10x4.5", "Propulsion", 4, 600, 2, 1, 3, 1, 3, 20),
-        _mline("SQ-FC7", "Flight controller", "Flight control", 1, 90, 20, 10, 10, 10, 30, 160),
-        _mline("SQ-IMU9", "Inertial measurement unit", "Flight control", 2, 60, 25, 10, 10, 10, 25, 160),
-        _mline("SQ-GPS8", "GPS module", "Flight control", 1, 70, 15, 5, 5, 5, 15, 90),
+        _mline("SQ-FC7", "Flight controller", "Flight control", 1, 39.19, 20, 10, 10, 10, 30, 160),
+        _mline("SQ-IMU9", "Inertial measurement unit", "Flight control", 2, 4.67, 25, 10, 10, 10, 25, 160),
+        _mline("SQ-GPS8", "GPS module", "Flight control", 1, 10.22, 15, 5, 5, 5, 15, 90),
         _mline("SQ-BP6S", "Battery pack 6S 10 Ah", "Power", 1, 250, 5, 2, 3, 2, 5, 35),
-        _mline("SQ-BMS6", "Battery management board", "Power", 1, 80, 20, 15, 10, 15, 10, 140),
-        _mline("SQ-RL24", "Telemetry radio 2.4 GHz", "Comms", 1, 100, 15, 5, 5, 5, 15, 90),
+        _mline("SQ-BMS6", "Battery management board", "Power", 1, 16.30, 20, 15, 10, 15, 10, 140),
+        _mline("SQ-RL24", "Telemetry radio 2.4 GHz", "Comms", 1, 14.43, 15, 5, 5, 5, 15, 90),
         _mline("SQ-GB2", "Camera gimbal, 2 axis", "Payload gimbal", 1, 150, 15, 10, 20, 10, 15, 140),
     ],
 }
+
+#: Which lines of the sample parts count make up each line above: the lines in
+#: one assembly of it (its path), or the line with that part number.
+SAMPLE_MAINTAINABILITY_FROM = {
+    "SQ-M2210": {"reference": "SQ-M2210"},
+    "SQ-ESC30": {"assembly": ["Speed controllers (4)"]},
+    "SQ-FC7": {"assembly": ["Flight controller"]},
+    "SQ-IMU9": {"assembly": ["IMUs (2)"]},
+    "SQ-GPS8": {"assembly": ["GPS module"]},
+    "SQ-BMS6": {"assembly": ["Power", "BMS board"]},
+    "SQ-RL24": {"assembly": ["Telemetry radio"]},
+}
+
+
+def sample_maintainability_parts_count(db) -> dict | None:
+    """The sample parts count as the sample maintainability prediction's lines
+    see it (the shape of maintainability.prediction_rates): one board's or
+    motor's rate per line above, by SAMPLE_MAINTAINABILITY_FROM, and the parts
+    count's lines that are in none of them. None before that sample is seeded."""
+    doc = db.reliability_predictions.find_one({"_id": SAMPLE_PREDICTION["id"]})
+    results = (doc or {}).get("results") or {}
+    rows = [r for r in results.get("lines") or [] if isinstance(r, dict)]
+    if not rows:
+        return None
+    quantity = {ln["ref"]: float(ln["quantity"]) for ln in SAMPLE_MAINTAINABILITY_INPUTS["lines"]}
+    names = {ln["ref"]: ln["name"] for ln in SAMPLE_MAINTAINABILITY_INPUTS["lines"]}
+    totals = {ref: 0.0 for ref in SAMPLE_MAINTAINABILITY_FROM}
+    others, unrated = [], []
+    for row in rows:
+        rate = row.get("rate_per_million_hours")
+        if row.get("excluded") or not isinstance(rate, (int, float)):
+            unrated.append(row.get("name") or "")
+            continue
+        ref = next((ref for ref, part in SAMPLE_MAINTAINABILITY_FROM.items()
+                    if (part.get("reference") and part["reference"] == row.get("reference"))
+                    or (part.get("assembly") and part["assembly"] == row.get("assembly"))), None)
+        if ref is None:
+            others.append({"key": "", "label": row.get("name") or "", "total": float(rate)})
+        else:
+            totals[ref] += float(rate)
+    return {
+        "id": doc["_id"], "name": doc.get("name"), "stamp": str(doc.get("updated_at") or ""),
+        "unit": "per_million_hours",
+        "rates": {ref.lower(): totals[ref] / quantity[ref] for ref in totals},
+        "quantities": {ref.lower(): quantity[ref] for ref in totals},
+        "lines": [{"key": ref.lower(), "label": names[ref], "total": totals[ref]} for ref in totals] + others,
+        "unrated": unrated,
+        "failure_rate": results.get("failure_rate_per_million_hours"),
+        "mtbf_hours": results.get("mtbf_hours"),
+    }
 
 
 def sample_maintainability_inputs(product: dict | None = None) -> dict:
