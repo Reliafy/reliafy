@@ -205,3 +205,9 @@
 }
 .ds-tu { font-size: 13px; color: var(--muted); }
 .ds-tu-none { color: var(--faint); }
+
+/* The dataset page's fit action can be a long label ("Fit a non-repairable
+   model with covariates that change over time"): it wraps at phone width
+   rather than running off the page. */
+.page-header .head-actions { max-width: 100%; }
+.page-header .head-actions > button.ds-fit-action { white-space: normal; max-width: 100%; text-align: left; }

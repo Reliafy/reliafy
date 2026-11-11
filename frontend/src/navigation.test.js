@@ -87,9 +87,10 @@ test("Modelling and Decisions are groups: their entries, each with its children"
     "Test planning"]);
   assert.deepEqual(kids(live, "forecasts"), []);
   assert.deepEqual(kids(live, "risk"), ["Condition monitoring"]);
-  // Assets is one entry with no children; Maintenance has the RCM studies.
+  // Assets is one entry with no children; Maintenance opens on Orders and lists it,
+  // then Packages and the RCM studies.
   assert.deepEqual(kids(live, "assets"), []);
-  assert.deepEqual(kids(live, "maintenance"), ["RCM studies"]);
+  assert.deepEqual(kids(live, "maintenance"), ["Orders", "Packages", "RCM studies"]);
   // Three levels at most: a group's entries have children, never entries.
   for (const e of live) for (const x of e.entries || []) assert.equal(x.entries, undefined, x.id);
 });
@@ -110,7 +111,7 @@ test("a group opens on its first live entry; an entry with no landing page opens
   assert.equal(to("risk"), "/risk");
   assert.equal(find(live, "risk").children[0].label, "Condition monitoring");
   assert.equal(to("assets"), "/asset-register");
-  assert.equal(to("maintenance"), "/maintenance");
+  assert.equal(to("maintenance"), "/maintenance/work-orders");
 });
 
 test("a menu word is the title of the page it opens", () => {
@@ -150,8 +151,8 @@ test("without Reliafy Maintenance: no Assets, and Maintenance opens on RCM studi
   const m = none.find((e) => e.id === "maintenance");
   assert.equal(m.to, "/maintenance/rcm");
   assert.equal(m.children, undefined);
-  // With Reliafy Maintenance it opens on its own page, with RCM studies under it.
-  assert.equal(liveEntries(ALL).find((e) => e.id === "maintenance").to, "/maintenance");
+  // With Reliafy Maintenance it opens on Orders, with Packages and RCM studies under it.
+  assert.equal(liveEntries(ALL).find((e) => e.id === "maintenance").to, "/maintenance/work-orders");
   // With only the preview, Requests is its one child.
   assert.deepEqual(kids(liveEntries({ preview: true }), "maintenance"), ["Requests"]);
 });
@@ -200,7 +201,7 @@ test("a technician sees Home, Assets, Items and Maintenance; the rest is under M
   const { main, more } = buildMenu({ roles: ["technician"], has: ALL });
   assert.deepEqual(ids(main), ["home", "assets", "items", "maintenance"]);
   assert.deepEqual(ids(more), ["products", "modelling", "decisions", "reports", "agent"]);
-  assert.equal(main[3].to, "/maintenance");
+  assert.equal(main[3].to, "/maintenance/work-orders");
 });
 
 test("a role keeps the menu's own order", () => {
@@ -272,7 +273,11 @@ test("a page lights its place in the menu at every level", () => {
   assert.deepEqual(at("/products/p1"), ["products", null, null]);
   assert.deepEqual(at("/items"), ["items", null, null]);
   assert.deepEqual(at("/asset-register/items/i1"), ["items", null, null]);
-  assert.deepEqual(at("/maintenance/work-orders/w1"), ["maintenance", null, null]);
+  // Maintenance's sub-pages, and a work order's or a package's own page under them.
+  assert.deepEqual(at("/maintenance/work-orders"), ["maintenance", null, "Orders"]);
+  assert.deepEqual(at("/maintenance/work-orders/w1"), ["maintenance", null, "Orders"]);
+  assert.deepEqual(at("/maintenance/packages"), ["maintenance", null, "Packages"]);
+  assert.deepEqual(at("/maintenance/packages/p1"), ["maintenance", null, "Packages"]);
   assert.deepEqual(at("/reports"), ["reports", null, null]);
   assert.deepEqual(at("/settings"), [null, null, null]);
   // A prefix of a word isn't a match.
@@ -294,14 +299,21 @@ test("a page's breadcrumbs: its entry, then its child, never a group", () => {
   assert.deepEqual(crumbsFor(live, "models", "/models/m/x", "/models/life"),
     [{ label: "Models", to: "/models" }, { label: "Non-repairable", to: "/models/life" }]);
   assert.deepEqual(crumbsFor(live, "data", "/data/library"), [{ label: "Data", to: "/data" }]);
-  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/work-orders/w"), [{ label: "Maintenance", to: "/maintenance" }]);
+  // Maintenance opens on Orders: Orders' own page has none, a work order's names Orders alone,
+  // and Packages (and a package) name Maintenance, which opens on Orders.
+  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/work-orders"), []);
+  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/work-orders/w"), [{ label: "Orders", to: "/maintenance/work-orders" }]);
+  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/packages", "/maintenance/packages"),
+    [{ label: "Maintenance", to: "/maintenance/work-orders" }]);
+  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/packages/p", "/maintenance/packages"),
+    [{ label: "Maintenance", to: "/maintenance/work-orders" }, { label: "Packages", to: "/maintenance/packages" }]);
   // No crumb names a group.
   assert.deepEqual(crumbsFor(live, "modelling", "/models/life"), []);
   assert.deepEqual(crumbsFor(live, "decisions", "/strategy/compare"), []);
   // An RCM study's crumbs: Maintenance, then RCM studies.
-  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/rcm", "/maintenance/rcm"), [{ label: "Maintenance", to: "/maintenance" }]);
+  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/rcm", "/maintenance/rcm"), [{ label: "Maintenance", to: "/maintenance/work-orders" }]);
   assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/rcm/s", "/maintenance/rcm"),
-    [{ label: "Maintenance", to: "/maintenance" }, { label: "RCM studies", to: "/maintenance/rcm" }]);
+    [{ label: "Maintenance", to: "/maintenance/work-orders" }, { label: "RCM studies", to: "/maintenance/rcm" }]);
   // Without Reliafy Maintenance, Maintenance is the RCM studies page: no crumb to a page the user doesn't have.
   const none = liveEntries({});
   assert.deepEqual(crumbsFor(none, "maintenance", "/maintenance/rcm", "/maintenance/rcm"), []);
@@ -310,6 +322,11 @@ test("a page's breadcrumbs: its entry, then its child, never a group", () => {
   assert.deepEqual(crumbsFor(live, "systems", "/systems/rbds", "/systems/rbds"), []);
   assert.deepEqual(crumbsFor(live, "systems", "/systems/b/x", "/systems/rbds"), [{ label: "RBDs", to: "/systems/rbds" }]);
   assert.deepEqual(crumbsFor(live, "systems", "/systems/b/x"), [{ label: "RBDs", to: "/systems/rbds" }]);
+  // A sibling's page named with no child (the shared header's crumbs) starts at its entry,
+  // never at the child the entry opens on.
+  assert.deepEqual(crumbsFor(live, "systems", "/systems/runs"), [{ label: "System models", to: "/systems/rbds" }]);
+  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/packages"), [{ label: "Maintenance", to: "/maintenance/work-orders" }]);
+  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/work-orders/w"), [{ label: "Orders", to: "/maintenance/work-orders" }]);
   assert.deepEqual(crumbsFor(live, "systems", "/systems/runs/x", "/systems/runs"),
     [{ label: "System models", to: "/systems/rbds" }, { label: "Simulation runs", to: "/systems/runs" }]);
   assert.deepEqual(crumbsFor(none, "assets", "/asset-register/classes"), []);
@@ -420,6 +437,8 @@ const OLD_TO_NEW = [
   ["/rcm", "/maintenance/rcm"],
   ["/rcm/studies", "/maintenance/rcm"],
   ["/rcm/studies/x", "/maintenance/rcm/x"],
+  // Maintenance's own page → its Orders (Open, Due soon, Closed).
+  ["/maintenance", "/maintenance/work-orders"],
   ["/maintenance/positions/x", "/asset-register/positions/x"],
   ["/maintenance/items", "/items"],
   ["/maintenance/items/x", "/asset-register/items/x"],
@@ -465,7 +484,7 @@ test("every earlier address redirects to its page's new place, with its id", () 
   assert.equal(movedTo("/asset-register/parts/pt1"), null);
   assert.equal(movedTo("/modelling/m/"), null);
   // Addresses that didn't move (a position's, item's or location's own page among them).
-  for (const path of ["/home", "/strategy", "/strategy/replacement", "/maintenance", "/maintenance/work-orders/w",
+  for (const path of ["/home", "/strategy", "/strategy/replacement", "/maintenance/work-orders", "/maintenance/work-orders/w",
     "/asset-register/positions/p1", "/asset-register/items/i1", "/asset-register/locations/l1"]) {
     assert.equal(movedTo(path), null, path);
   }
@@ -485,6 +504,8 @@ test("an earlier address keeps its query: the target's first, then the rest", ()
   assert.equal(movedHref("/asset-register/explorer?arrange=locations", "?sel=l1", "#top"),
     "/asset-register/explorer?arrange=locations&sel=l1#top");
   assert.equal(movedHref("/items", "?sel=i1"), "/items?sel=i1");
+  // Maintenance's open work orders in an area land on Orders, still in that area.
+  assert.equal(movedHref(movedTo("/maintenance"), "?location=l1"), "/maintenance/work-orders?location=l1");
 });
 
 test("every redirect lands on a page of the app, and no page is also a redirect", () => {
@@ -519,8 +540,8 @@ test("not-yet-built entries show only where the menu preview is on", () => {
   assert.deepEqual(kids(plain, "data"), []);
   // The library moved under Models, for everyone (9 Nov 2026): Data has no preview entries now.
   assert.deepEqual(kids(preview, "data"), []);
-  assert.deepEqual(kids(plain, "maintenance"), ["RCM studies"]);
-  assert.deepEqual(kids(preview, "maintenance"), ["RCM studies", "Requests"]);
+  assert.deepEqual(kids(plain, "maintenance"), ["Orders", "Packages", "RCM studies"]);
+  assert.deepEqual(kids(preview, "maintenance"), ["Orders", "Packages", "RCM studies", "Requests"]);
   assert.deepEqual(kids(preview, "systems"), ["RBDs", "Fault trees", "Simulation runs"]);
   assert.deepEqual(kids(preview, "assets"), []);
 });

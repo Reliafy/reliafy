@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  covariateParts, fleetAnswer, fleetWithin, guessLifetimeColumns, lifeLeftNumber, riskText, sortRiskRows, guessReadingColumns, jointBlockLine, jointBlockModel, medianText,
-  paramGroups, parseReadings, readingsText, riskTone, sortColumn,
+  covariateParts, fleetAnswer, guessLifetimeColumns, lifeLeftNumber, riskText, sortRiskRows, guessReadingColumns, jointBlockLine, jointBlockModel, medianText,
+  paramGroups, parseReadings, positionFacts, positionRisk, readingsText, riskTone, sortColumn,
 } from "./joint.js";
 
 const col = (name, dtype = "float64", values = null) => ({ name, dtype, values });
@@ -117,37 +117,59 @@ test("a class's fleet in one line: how many positions, how many with risk now, a
   assert.equal(fleetAnswer({ positions: 1, scored: 0, horizons, members: [pump("Valve", null)] }), "1 position · no risk now yet");
 });
 
-test("a class's fleet inside one asset: only its positions, counted again", () => {
+test("a class's fleet answer line: its positions, how many with risk now and the highest", () => {
+  // The fleet as the server reads it (for one asset, ?within=: only that asset's members, counted there).
   const horizons = { labels: ["30 days", "90 days", "1 year"] };
-  const member = (id, name, risk, model = { id: "m1", name: "Pumps" }) => (
-    { position: { id, name }, scored: !!risk, risk, model: risk || model ? model : null });
-  const fleet = {
-    item_class: { id: "c1" }, horizons, positions: 4, scored: 3, no_model: 1, not_scored: 0,
-    models: [{ id: "m1", name: "Pumps", path: "/models/joint/m1", positions: 3 }],
-    note: "1 of these positions has no condition and life model. To see risk, link one to the position on its Modelling tab.",
-    members: [member("a1", "Station A pump 1", [0.3, 0.7, 0.99]), member("b1", "Station B pump 1", [0.2, 0.5, 0.9]),
-      member("b2", "Station B pump 2", [0.1, 0.3, 0.8]), member("a2", "Station A pump 2", null, null)],
-  };
-  // The whole register: the fleet as read.
-  assert.equal(fleetWithin(fleet, null), fleet);
-  assert.equal(fleetWithin(null, new Set(["a1"])), null);
-  // Station B alone: its two pumps, both scored, the highest of them first; nothing about Station A.
-  const b = fleetWithin(fleet, new Set(["b", "b1", "b2"]));
-  assert.deepEqual(b.members.map((m) => m.position.id), ["b1", "b2"]);
-  assert.deepEqual([b.positions, b.scored, b.no_model, b.not_scored], [2, 2, 0, 0]);
-  assert.equal(b.note, null);
-  assert.equal(b.models[0].positions, 2);
+  const member = (id, name, risk) => ({ position: { id, name }, scored: !!risk, risk });
+  const b = { horizons, positions: 2, scored: 2,
+    members: [member("b1", "Station B pump 1", [0.2, 0.5, 0.9]), member("b2", "Station B pump 2", [0.1, 0.3, 0.8])] };
   assert.equal(fleetAnswer(b), "2 positions · all with risk now · highest: Station B pump 1, 50% in the next 90 days");
-  // Station A: one scored, one with no model, and the note counts that one only.
-  const a = fleetWithin(fleet, new Set(["a", "a1", "a2"]));
-  assert.deepEqual([a.positions, a.scored, a.no_model], [2, 1, 1]);
-  assert.match(a.note, /^1 of these positions has no condition and life model\./);
+  const a = { horizons, positions: 2, scored: 1,
+    members: [member("a1", "Station A pump 1", [0.3, 0.7, 0.99]), member("a2", "Station A pump 2", null)] };
   assert.equal(fleetAnswer(a), "2 positions · 1 with risk now · highest: Station A pump 1, 70% in the next 90 days");
-  // An asset with none of the class's positions that have a model.
-  const none = fleetWithin(fleet, new Set(["a2"]));
-  assert.match(none.note, /^None of these positions has a condition and life model\./);
-  assert.deepEqual(none.models, []);
-  assert.equal(fleetAnswer(none), "1 position · no risk now yet");
-  // The fleet as read is left as it was.
-  assert.equal(fleet.positions, 4);
+  assert.equal(fleetAnswer({ horizons, positions: 1, scored: 0, members: [member("a2", "A", null)] }), "1 position · no risk now yet");
+  assert.equal(fleetAnswer(null), "");
+});
+
+test("one position's risk now: its summary and charts, or why there are none, in words", () => {
+  const model = { id: "m1", name: "Feed pumps", path: "/models/joint/m1", unit: "Days" };
+  const member = (over = {}) => ({
+    position: { id: "p1", name: "Pump 1" }, item: { id: "i1", name: "Unit 7", serial: "S-7" }, age: 120, model: { id: "m1", name: "Feed pumps" },
+    point: { id: "pt", name: "Vibration", unit: "mm/s", on: "position" }, last_reading: { on: "2026-11-01", value: 4.23456, unit: "mm/s" },
+    n_readings: 12, scored: false, why: null, ...over,
+  });
+  assert.equal(positionRisk(null), null);
+  // Scored, with its curves: the summary and the charts.
+  const scored = member({ scored: true, risk: [0.1, 0.3, 0.8], unit: { unit_id: "Pump 1", age: 120, markers: [], prediction: {} } });
+  assert.deepEqual(positionRisk({ member: scored, model, age_unit: "Days" }), { state: "scored", why: null, facts: null });
+  // No model linked: no reason from the read (the tab says how to link one), and what is known all the same.
+  const none = positionRisk({ member: member({ model: null }), model: null, age_unit: "Days" });
+  assert.equal(none.state, "no-model");
+  assert.equal(none.why, null);
+  assert.equal(none.facts, "Fitted here: Unit 7 (S-7), age 120 days. Last reading of Vibration: 4.23 mm/s on 2026-11-01.");
+  // A model that can't score it yet: the read's own reason.
+  const why = "No vibration readings since this item went into service (2026-07-01). Record one on “Vibration”.";
+  const not = positionRisk({ member: member({ why, last_reading: null, n_readings: 0 }), model, age_unit: "Days" });
+  assert.equal(not.state, "not-scored");
+  assert.equal(not.why, why);
+  assert.equal(not.facts, "Fitted here: Unit 7 (S-7), age 120 days. No readings of Vibration since this item went in.");
+  // Scored in the table but read without its curves, or with no reason given: still words, never a blank.
+  const bare = positionRisk({ member: member({ scored: true }), model, age_unit: "Days" });
+  assert.equal(bare.state, "not-scored");
+  assert.match(bare.why, /^The model gave no risk for this position/);
+  // Nothing fitted: the read says so, with or without a model; no facts.
+  const empty = "No item is fitted here, so there is no age or readings to work a risk out from. Fit an item to see its risk.";
+  assert.deepEqual(positionRisk({ member: null, model: null, why: empty }), { state: "no-model", why: empty, facts: null });
+  assert.deepEqual(positionRisk({ member: null, model, why: empty }), { state: "not-scored", why: empty, facts: null });
+});
+
+test("a member's facts: numbers to three figures with their units, never NaN", () => {
+  assert.equal(positionFacts(null), null);
+  assert.equal(positionFacts({ item: { name: "", serial: "" }, age: 1 }, "Days"), "Fitted here: (no name), age 1 day.");
+  assert.equal(
+    positionFacts({ item: { name: "Unit" }, age: 12345.678, point: { name: "Wear" }, last_reading: { on: "2026-10-30", value: 0.000123456, unit: "" } }),
+    "Fitted here: Unit, age 12,300 days. Last reading of Wear: 1.23e-4 on 2026-10-30.",
+  );
+  const odd = positionFacts({ item: { name: "Unit" }, age: NaN, last_reading: { on: "2026-10-30", value: Infinity, unit: "mm" } });
+  assert.ok(!/NaN|Infinity/.test(odd));
 });

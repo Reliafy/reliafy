@@ -1224,12 +1224,38 @@ def position_models(position_ids: str | None = None, session=Depends(get_session
 def position_missions(position_ids: str | None = None, session=Depends(get_session),
                       ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The missions on each position: for every RBD linked to a position (position_ids: only these,
-    comma-separated), its missions with their phases, length and last result (rbd_missions.py).
+    comma-separated), its missions with their phases, length and last result (rbd_missions.py);
+    has_model: the positions whose model in use can be a mission's one block.
     A position has its own RBDs' missions; nothing comes from the position above it."""
     from backend.services import rbd_missions
 
+    from backend.maintenance import position_models as pm
+
     ids = [x for x in (position_ids or "").split(",") if x] or None
-    return _run(lambda: {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids)})
+    # has_model: positions whose model in use a mission's one-block RBD can take (a leaf's Add a mission).
+    return _run(lambda: {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids),
+                         "has_model": pm.blockable_positions(m, session, ctx.read_owners, ctx.hidden,
+                                                             m.all_position_models(ids))})
+
+
+@router.post("/positions/{position_id}/missions")
+def add_position_mission(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                         ctx: AccessCtx = Depends(get_access),
+                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A new mission on a position with an RBD of its own (one RBD per mission): built from the
+    positions inside (placeholders flagged), or a copy of the position's non-repairable RBD where
+    it has nothing inside; saved as "<position> — <mission>". name: the mission's (default
+    "Mission N"). Its phases are then set through /api/rbds/{rbd id}/missions/mission."""
+    from backend.maintenance import position_models as pm
+    from backend.services import billing as billing_service
+
+    # A new RBD counts toward the Free plan's cap, as one saved in the builder does.
+    if ctx.is_personal and not billing_service.is_admin_user(ctx.user) \
+            and billing_service.would_exceed_cap(session, ctx.uid, "rbds"):
+        return JSONResponse(status_code=402, content={
+            "detail": billing_service.cap_message(session, ctx.uid, "rbds"), "code": "cap", "upgrade": True})
+    name = body.get("name") if isinstance(body, dict) else None
+    return _run(pm.build_mission_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner, name)
 
 
 @router.get("/position-models/{link_id}")
@@ -1908,12 +1934,27 @@ def create_location(body: dict = Body(...), m: Maintenance = Depends(maintenance
 # ---- work orders -------------------------------------------------------------------------
 
 @router.get("/work-orders")
-def list_work_orders(status: str | None = None, location_id: str | None = None,
-                     m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    """Work orders, newest first; status 'open' for every one not yet done; location_id for
-    the work in that area: on positions there, items there now, and the location itself (or
-    locations inside it)."""
-    return _run(lambda: {"work_orders": m.work_orders(status, location_id)})
+def list_work_orders(status: str | None = None, location_id: str | None = None, q: str | None = None,
+                     limit: int | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Work orders, newest first; status 'open' for every one not yet done (by due date,
+    the most overdue first), 'done' for the closed and cancelled ones with what was done;
+    location_id for the work in that area: on positions there, items there now, and the
+    location itself (or locations inside it); q to search them; limit for the first so many
+    (total: how many matched)."""
+    def read():
+        found = m.work_orders(status, location_id, q)
+        cap = None if limit is None else max(1, min(limit, 1000))
+        return {"work_orders": found if cap is None else found[:cap], "total": len(found)}
+    return _run(read)
+
+
+@router.get("/due")
+def due_tasks(horizon_days: int = 30, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The tasks falling due within the horizon (overdue ones too), soonest first: each with
+    its due date (an open work order's own when it has one), its package and open work order."""
+    days = max(0, min(horizon_days, 366))
+    return _run(lambda: {"due": m.due_tasks(days), "horizon_days": days, "today": m.today(),
+                         "time_zone": m.time_zone})
 
 
 @router.post("/work-orders")
@@ -2118,14 +2159,27 @@ def item_classes(m: Maintenance = Depends(maintenance)) -> JSONResponse:
 
 
 @router.get("/item-classes/{class_id}/fleet")
-def get_class_fleet(class_id: str, position_id: str | None = None, session=Depends(get_session),
-                    ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+def get_class_fleet(class_id: str, position_id: str | None = None, within: str | None = None,
+                    session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                    m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """An item class's fleet: the positions whose fitted item is of the class or a class inside it,
     each with its risk now where its position has a condition and life model; ``position_id`` for
-    one of them with its curves."""
+    one of them with its curves; ``within`` (one asset: a position, or a place) for only the
+    members inside it."""
     from backend.maintenance import class_fleet
 
-    return _run(class_fleet.fleet, m, session, ctx.read_owners, ctx.hidden, class_id, position_id)
+    return _run(class_fleet.fleet, m, session, ctx.read_owners, ctx.hidden, class_id, position_id,
+                within or None)
+
+
+@router.get("/positions/{position_id}/condition")
+def get_position_condition(position_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                           m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """One position's risk now, from the item fitted there and the condition and life model linked to
+    the position: its row as a class's fleet gives it, with its curves; whatever its item's class."""
+    from backend.maintenance import class_fleet
+
+    return _run(class_fleet.position, m, session, ctx.read_owners, ctx.hidden, position_id)
 
 
 @router.post("/item-classes")

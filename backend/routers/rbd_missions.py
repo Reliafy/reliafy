@@ -191,9 +191,25 @@ def update_mission(rbd_id: str, mission_id: str, name: str | None = Body(default
 @router.delete("/rbds/{rbd_id}/missions/{mission_id}")
 def delete_mission(rbd_id: str, mission_id: str, session=Depends(get_session),
                    ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
-    """Delete a mission (the diagram stays as it is)."""
+    """Delete a mission (the diagram stays as it is). A mission with an RBD of its own (one built
+    for it on its position) goes with that RBD."""
+    from backend.services import access as access_service
     from backend.services import rbd_missions
+    from backend.services import rbds as rbds_service
 
+    rbd, err = _rbd_or_404(session, rbd_id, ctx)
+    if err:
+        return err
+    if mission_id == rbd_missions.LEGACY_ID and rbd_missions.mission_of(rbd.graph or {}):
+        denial = access_service.write_denial(ctx, rbd.owner_id)
+        if denial:
+            status, payload = denial
+            return JSONResponse(status_code=status, content=payload)
+        try:
+            rbds_service.delete_rbd(session, rbd.id, ctx.write_owner)
+        except rbds_service.RbdNotFound:
+            return JSONResponse(status_code=404, content={"detail": "RBD not found."})
+        return JSONResponse(content={"deleted": {"mission": mission_id, "rbd": rbd.id}})
     resp = _write(session, ctx, rbd_id, lambda g: (rbd_missions.remove(g, mission_id), None))
     if resp.status_code == 200:
         session.rbds.update_one({"_id": rbd_id}, {"$unset": {f"mission_results.{mission_id}": ""}})

@@ -318,6 +318,39 @@ def test_reports_are_refused_on_a_design_and_roll_up_across_items(m):
     _rebuilt_matches(m)
 
 
+def test_the_reports_list_on_a_design_position_rolls_up_the_built_items(m):
+    ids, units = _three(m)
+    a = m.file_failure_report(units["0007"]["Motor 1"], "Overheat", occurred_on="2026-05-01")
+    m.file_failure_report(units["0009"]["Motor 1"], "Overheat again", occurred_on="2026-06-01")
+    m.file_failure_report(units["0008"]["Battery"], "Swelling", occurred_on="2026-06-02")
+    m.verify_failure_report(a["id"], "worked")
+    m.set_failure_report_status(a["id"], "closed")
+    # A design position: the reports at the position implementing it on each item, and below.
+    motor = m.failure_reports(position_id=ids["motor"], status="all", sort="status")
+    assert motor["scope"] == {"kind": "design", "id": ids["motor"], "name": "Motor 1", "positions": 3, "items": 3}
+    assert [x["title"] for x in motor["reports"]] == ["Overheat again", "Overheat"]  # open first, then closed
+    assert [x["unit"]["serial"] for x in motor["reports"]] == ["0009", "0007"]
+    assert motor["reports"][0]["level"] == [] and motor["counts"]["open"] == 1 and motor["counts"]["closed"] == 1
+    assert motor["reports"][0]["unit"]["top_position_id"] == m.design_rollup(ids["motor"])["items"][2]["top_position_id"]
+    # The product's top: every item's reports, each level under its own item's top.
+    top = m.failure_reports(position_id=ids["root"])
+    assert top["scope"]["kind"] == "design" and top["scope"]["items"] == 3
+    assert top["total"] == 3 and top["counts"]["open"] == 2
+    assert next(x for x in top["reports"] if x["title"] == "Swelling")["level"] == ["Power", "Battery"]
+    assert [x["title"] for x in m.failure_reports(position_id=ids["root"], q="swell")["reports"]] == ["Swelling"]
+    # below=False: the implementing positions alone.
+    assert m.failure_reports(position_id=ids["root"], below=False)["total"] == 0
+    assert m.failure_reports(position_id=ids["prop"], status="all")["total"] == 2
+    # A built item's own position is unchanged: its reports, no unit.
+    own = m.failure_reports(position_id=units["0007"]["Motor 1"], status="all")
+    assert own["scope"]["kind"] == "position" and "unit" not in own["reports"][0]
+    # A product with nothing built: an empty list, not an error.
+    other = m.create_product("Rover", rev="A")
+    assert m.failure_reports(position_id=other["id"]) | {"scope": None} == {
+        "reports": [], "total": 0, "counts": {s: 0 for s in service_mod.REPORT_STATUSES} | {"open": 0}, "scope": None}
+    assert m.failure_reports(position_id=other["id"])["scope"]["items"] == 0
+
+
 def test_a_retired_design_position_reads_as_gone(m):
     ids = _uav(m)
     _, at = _built(m, ids["root"], "0007")
@@ -450,6 +483,10 @@ def test_the_routes(api):
     assert [x["serial"] for x in roll["items"]] == ["0007"]
     refused = api.post(f"{M}/failure-reports", json={"position_id": motor, "title": "Overheat"})
     assert refused.status_code == 422 and refused.json()["detail"].startswith("A report is about an item")
+    filed = api.post(f"{M}/failure-reports", json={"position_id": roll["items"][0]["position"]["id"], "title": "Overheat"})
+    assert filed.status_code == 200, filed.text
+    listed = api.get(f"{M}/failure-reports", params={"position_id": pid}).json()
+    assert listed["scope"]["kind"] == "design" and [x["unit"]["serial"] for x in listed["reports"]] == ["0007"]
     over = api.get(f"{M}/items/overview", params={"product_id": pid, "q": "0007"}).json()
     assert over["total"] == 1 and over["items"][0]["product"]["built"] is True
     assert api.get(f"{M}/items/overview", params={"limit": 0}).status_code == 422

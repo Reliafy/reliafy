@@ -435,9 +435,10 @@ def _moved(base: dict, post: list[dict], rows: list[dict], unit: str) -> str:
 
 
 def update(base: dict, trust: str, rows: list[dict], age: float | None = None,
-           priors=None) -> tuple[Any, dict, Any]:
+           priors=None, subject: str = "the position's best B10") -> tuple[Any, dict, Any]:
     """The update: (the SurPyval model or None with no data, the result for the reader, the prior).
-    ``priors``: built by the caller (a power prior from the class's history: fit_life.py)."""
+    ``priors``: built by the caller (a power prior from the class's history: fit_life.py).
+    ``subject``: what the result's words call the B10 (a dataset's fit isn't a position's)."""
     dist_id = base["distribution"]
     if priors is not None:
         pass
@@ -513,7 +514,7 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None,
     how = ("its earlier prior" if base["source"] == "update" else "as stated" if base["source"] in ("around", "belief", "library")
            else t["label"].lower())
     result["words"] = (f"{result['moved']} Starting from {base['name']} ({how}), "
-                       f"the position's best B10 is about {num(b['point'])}{(' ' + u) if u else ''}: there's a "
+                       f"{subject} is about {num(b['point'])}{(' ' + u) if u else ''}: there's a "
                        f"{LEVEL:.0%} chance it lies between {num(b['lower'])} and {num(b['upper'])}.")
     return model, result, priors
 

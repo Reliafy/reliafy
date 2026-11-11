@@ -27,6 +27,7 @@
 //
 // Pure data and functions (no React): the Sidebar draws it, section headers
 // take their breadcrumbs from it, Home reads the roles, and the tests check it.
+import { ORDERS_PATH, PACKAGES_PATH } from "./maintenanceOrders.js";
 
 // System models' block diagrams: the menu's word, the list page's title
 // (so the two agree) and its address. Change them here, in this one place.
@@ -39,6 +40,10 @@ export const FAULT_TREES_LABEL = "Fault trees";
 export const FAULT_TREES_TITLE = "Fault trees";
 export const FAULT_TREES_PATH = "/systems/fault-trees";
 export const MODELS_LABEL = "Models";
+// Maintenance's sub-pages: the menu's words (each page's title) and addresses.
+export const ORDERS_LABEL = "Orders";
+export const PACKAGES_LABEL = "Packages";
+export { ORDERS_PATH, PACKAGES_PATH };
 
 // The Explorer, Assets' tree pane over the register: its name on the page and
 // in breadcrumbs (change it here, in this one place) and its address. It isn't
@@ -98,11 +103,14 @@ export const ENTRIES = [
   { id: "items", label: "Items", to: "/items", needs: "maintenance", match: ["/items", `${ASSETS_PATH}/items`] },
 
   {
-    id: "maintenance", label: "Maintenance", to: "/maintenance", landingNeeds: "maintenance",
-    // With sub-pages the entry opens a list in place (sidebarMenu.js), so its
-    // own page is listed first under this word and stays one click away.
-    landingLabel: "Overview",
+    // Maintenance opens on Orders (/maintenance itself redirects there,
+    // redirects.js): the work orders, by tab (Open, Due soon, Closed), then
+    // the work packages. Both are Reliafy Maintenance's.
+    id: "maintenance", label: "Maintenance", to: ORDERS_PATH, match: ["/maintenance"], landingNeeds: "maintenance",
+    opensOnFirstChild: true,
     children: [
+      { to: ORDERS_PATH, label: ORDERS_LABEL, needs: "maintenance" },
+      { to: PACKAGES_PATH, label: PACKAGES_LABEL, needs: "maintenance" },
       // Standalone RCM worksheets, for every account: without Reliafy
       // Maintenance, "Maintenance" opens on them.
       { to: "/maintenance/rcm", label: "RCM studies" },
@@ -247,8 +255,12 @@ function liveEntry(e, has) {
     children = children.slice(1);
   }
   const out = { ...e, to, match: e.match || [e.to] };
-  // No landing page of its own for this user: nothing to list under `landingLabel`.
-  if (to !== e.to) delete out.landingLabel;
+  // No landing page of its own for this user: nothing to list under `landingLabel`,
+  // and the child it opened on (the landing page) isn't there to open on.
+  if (to !== e.to) {
+    delete out.landingLabel;
+    delete out.opensOnFirstChild;
+  }
   if (children.length) out.children = children;
   else delete out.children;
   return out;
@@ -320,7 +332,10 @@ export function activeTrail(entries, pathname) {
 export function crumbsFor(entries, entryId, pathname, childTo = null) {
   const entry = flatEntries(entries).find((e) => e.id === entryId);
   if (!entry || pathname === entry.to) return [];
-  const opensOn = entry.opensOnFirstChild && entry.children?.[0]?.to === entry.to ? entry.children[0] : null;
+  // The child it opens on, when the page is that child's (a sibling's page, such as
+  // Maintenance › Packages, is under the entry, not under the child it opens on).
+  const first = entry.children?.[0];
+  const opensOn = entry.opensOnFirstChild && first?.to === entry.to && childActive(first, pathname) ? first : null;
   const child = (childTo && (entry.children || []).find((c) => c.to === childTo)) || (!childTo && opensOn) || null;
   // An entry that opens on this child: the child's crumb alone (RBDs, not System models › RBDs).
   if (child && child.to === entry.to) return [{ label: child.label, to: child.to }];

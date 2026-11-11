@@ -167,7 +167,7 @@ def _planned(m: Maintenance, positions: list[dict], starts: list[str], end: str)
         for task in m._tasks_on(p["id"]):
             if task.get("outcome") != "fixed_interval":
                 continue
-            due = m._task_view(task)["next_due"]
+            due = m._task_view(task)["scheduled_due"]
             seen = 0
             while due and due < end and seen < 1000:
                 k = max(0, sum(1 for s in starts if s <= due) - 1)

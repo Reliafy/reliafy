@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DataSourceStep } from "../components/DatasetPicker.jsx";
 import { useNavigate } from "react-router-dom";
 import Select from "../components/Select.jsx";
-import { usableDatasets } from "../datasetFit.js";
 import RefLink from "../components/RefLink.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
@@ -27,7 +27,7 @@ export default function AltNewPage() {
 
   const [lifeModels, setLifeModels] = useState([]);
   const [dists, setDists] = useState([]);
-  const [datasets, setDatasets] = useState([]);
+  const [datasets, setDatasets] = useState(null); // null while the list loads
 
   const [file, setFile] = useState(null);
   const [headerNote, setHeaderNote] = useState(null); // a file with no header row (#434)
@@ -55,7 +55,7 @@ export default function AltNewPage() {
 
   useEffect(() => {
     getAltOptions().then((o) => { setLifeModels(o.life_models || []); setDists(o.distributions || []); }).catch(() => {});
-    listDatasets().then((d) => setDatasets(d.datasets)).catch(() => setDatasets([]));
+    listDatasets().then((d) => setDatasets(d.datasets || [])).catch(() => setDatasets([]));
   }, []);
 
   const lm = useMemo(() => lifeModels.find((m) => m.id === lifeModel), [lifeModels, lifeModel]);
@@ -168,7 +168,7 @@ export default function AltNewPage() {
   let nav;
   if (step === 1) {
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
-      <span className="hint" style={{ margin: 0 }}>Upload a CSV or Excel file, or pick a dataset, to continue</span></>);
+      <span className="hint" style={{ margin: 0 }}>Pick a saved dataset, or upload a CSV or Excel file, to continue</span></>);
   } else if (step === 2) {
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Back</button>
       <button onClick={() => setStep(3)}>Next</button></>);
@@ -199,6 +199,13 @@ export default function AltNewPage() {
       <div className="card fit-flow">
         {step === 1 && (
           <>
+            <DataSourceStep
+              kind="accelerated"
+              datasets={datasets}
+              onUse={pickDataset}
+              busy={loading}
+              upload={(
+                <>
             <div className={`dropzone${dragging ? " dragging" : ""}`}
                  onClick={() => inputRef.current?.click()}
                  onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
@@ -216,22 +223,9 @@ export default function AltNewPage() {
                      onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
               {sheetModal}
             </div>
-            {usableDatasets("accelerated", datasets).length > 0 && (
-              <div className="recent">
-                <div className="recent-h">Or use a saved dataset</div>
-                {usableDatasets("accelerated", datasets).slice(0, 5).map((d) => (
-                  <button key={d.id} type="button" className="recent-row" disabled={loading} onClick={() => pickDataset(d)}>
-                    <span className="recent-ic">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M14 3v5h5M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" />
-                      </svg>
-                    </span>
-                    <span className="recent-name">{d.name}</span>
-                    <span className="recent-meta">{(d.n_rows ?? 0).toLocaleString()} rows · {d.n_columns} cols</span>
-                  </button>
-                ))}
-              </div>
-            )}
+                </>
+              )}
+            />
           </>
         )}
 

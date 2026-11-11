@@ -2288,12 +2288,16 @@ export function getMaintenanceTree() {
   return request("/api/maintenance/tree");
 }
 
-// Work orders, newest first: status "open" for every one not yet done; locationId for
-// those on positions at that location or a location inside it.
-export function listMaintenanceWorkOrders({ status, locationId } = {}) {
+// Work orders, newest first: status "open" for every one not yet done (most overdue
+// first), "done" for the closed and cancelled ones; locationId for those on positions
+// at that location or a location inside it; query to search them; limit for the first
+// so many ({work_orders, total}).
+export function listMaintenanceWorkOrders({ status, locationId, query, limit } = {}) {
   const q = new URLSearchParams();
   if (status) q.set("status", status);
   if (locationId) q.set("location_id", locationId);
+  if (query && query.trim()) q.set("q", query.trim());
+  if (limit) q.set("limit", String(limit));
   const qs = q.toString();
   return request(`/api/maintenance/work-orders${qs ? `?${qs}` : ""}`);
 }
@@ -2403,6 +2407,11 @@ export function placeMaintenanceItem(itemId, locationId) {
 
 export function openWorkOrder(body) {
   return postJson("/api/maintenance/work-orders", body);
+}
+
+// The tasks falling due within the window (overdue ones too), soonest first.
+export function listDueTasks(horizonDays = 30) {
+  return request(`/api/maintenance/due?horizon_days=${encodeURIComponent(horizonDays)}`);
 }
 
 export function generateWorkOrders(horizonDays = 30) {
@@ -3166,11 +3175,17 @@ export function getItemClass(id) {
   return request(`/api/maintenance/item-classes/${id}`);
 }
 // An item class's fleet: every position whose fitted item is of the class (or a class inside it),
-// each with its risk now from the condition and life model linked to its position. With
-// positionId: that one member, with its curves.
-export function getClassFleet(id, positionId = null) {
-  const q = positionId ? `?position_id=${encodeURIComponent(positionId)}` : "";
+// each with its risk now from the condition and life model linked to its position. `within` (a
+// position id: one asset's tree): only the members inside it, counted by the server.
+export function getClassFleet(id, within = null) {
+  const q = within ? `?within=${encodeURIComponent(within)}` : "";
   return request(`/api/maintenance/item-classes/${encodeURIComponent(id)}/fleet${q}`);
+}
+// One position's risk now: its row as a class's fleet gives it, with its curves when it is scored
+// (`member`, null with nothing fitted: `why`), and the condition and life model that scores it
+// (`model`, null with none linked). Whatever its item's class.
+export function getPositionCondition(id) {
+  return request(`/api/maintenance/positions/${encodeURIComponent(id)}/condition`);
 }
 export function createItemClass(body) {
   return postJson("/api/maintenance/item-classes", body);
@@ -3391,6 +3406,16 @@ export function addPackageTask(id, body) {
 export function removePackageTask(id, taskId) {
   return request(`/api/maintenance/packages/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
 }
+// Change a package: name, timing (timing, every, unit, weekday, nth, day, clear_pattern),
+// tolerance (tolerance, tolerance_unit; 0 removes it), trade, notes, or its tasks' visit
+// rules (tasks: [{task_id, visit_rule, every_nth?, suppresses}]). Answers the package.
+export function updatePackage(id, body) {
+  return request(`/api/maintenance/packages/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+}
 // change: pause ({reason, until?, full_visit?}), resume, retire ({reason?}) or restore.
 export function changePackage(id, change, body = {}) {
   return postJson(`/api/maintenance/packages/${encodeURIComponent(id)}/${change}`, body);
@@ -3557,6 +3582,10 @@ export function getMission(rbdId, missionId) {
 }
 export function createMission(rbdId, { name = null, phases = null } = {}) {
   return request(missionPath(rbdId), asJson("POST", { ...(name ? { name } : {}), ...(phases ? { phases } : {}) }));
+}
+// A new mission on a position with an RBD of its own, built from what's inside it: {rbd, mission, notes, placeholders}.
+export function createPositionMission(positionId, { name = null } = {}) {
+  return request(`/api/maintenance/positions/${encodeURIComponent(positionId)}/missions`, asJson("POST", name ? { name } : {}));
 }
 // {name?, phases?, expected_updated_at?}
 export function updateMission(rbdId, missionId, body) {

@@ -1,36 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import {
-  createMaintenancePosition,
-  generateWorkOrders,
-  getMaintenanceOverview,
-  getMaintenanceSettings,
-  importMaintenanceSheet,
-  listMaintenanceLocations,
-  listMaintenanceWorkOrders,
-  setMaintenanceSettings,
-  setTeamTimeZone,
-} from "../api.js";
-import { SectionHeader } from "../components/SectionPage.jsx";
-import ListSearch, { matches } from "../components/ListSearch.jsx";
-import NewWorkOrderModal from "../components/NewWorkOrderModal.jsx";
-import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
-import {
-  DueChip, Field, FormModal, LocationPicker, PositionPicker, Proposals, flatten, fmtDate,
-} from "../components/MaintenanceParts.jsx";
+// Pieces Maintenance's pages share: the time-zone line, what a row is on, and
+// the New position and Import from a spreadsheet forms. (Maintenance's own page
+// is now its sub-pages: Orders, MaintenanceOrders.jsx, and Packages.)
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { createMaintenancePosition, importMaintenanceSheet, setTeamTimeZone } from "../api.js";
+import { Field, FormModal, PositionPicker } from "../components/MaintenanceParts.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { browserTimeZone, shouldSuggestTimeZone } from "../workspaceDate.js";
 import { itemAtText, subjectBadge, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
-import { partsPath } from "../redirects.js";
-
-const HELP = { guide: "maintenance-work-orders" };
 
 // One quiet line when the workspace has no time zone and this device isn't on
 // UTC: the dates here follow UTC until it's set. One button sets this device's
 // zone (the same call as Settings, or Team settings for a team's owner).
-function TimeZoneNudge({ zone, onSet }) {
+export function TimeZoneNudge({ zone, onSet }) {
   const { workspace, activeTeam, savePersonalTimeZone, refreshTeams } = useWorkspace();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
@@ -67,211 +51,9 @@ function TimeZoneNudge({ zone, onSet }) {
   );
 }
 
-// The due table's rows a search matches: the task's name or what it's on.
-function dueMatches(rows, query) {
-  return (rows || []).filter((t) => matches(query, t.name, t.subject?.name));
-}
-
-// Maintenance: proposed changes, critical spares short, what's due and
-// the open work orders. (The positions tree is AssetExplorer.)
-export default function MaintenanceHome() {
-  const navigate = useNavigate();
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
-  const [modal, setModal] = useState(null); // "position" | "import" | "wo"
-  const [dueQuery, setDueQuery] = useState("");
-  const [generating, setGenerating] = useState(false);
-
-  const [digest, setDigest] = useState(null);
-  // Open work orders by area: ?location=<id> (that location and those inside it).
-  const [params, setParams] = useSearchParams();
-  const locationId = params.get("location") || "";
-  const [locations, setLocations] = useState(null);
-  const [inArea, setInArea] = useState(null);
-  const refresh = useCallback(() => {
-    getMaintenanceOverview().then(setData).catch((e) => setError(e.message));
-  }, []);
-  useEffect(() => refresh(), [refresh]);
-  useEffect(() => {
-    listMaintenanceLocations().then((d) => setLocations(d.locations || [])).catch(() => setLocations([]));
-  }, []);
-  useEffect(() => {
-    setInArea(null);
-    if (!locationId) return;
-    listMaintenanceWorkOrders({ status: "open", locationId })
-      .then((d) => setInArea(d.work_orders)).catch((e) => setError(e.message));
-  }, [locationId, data]);
-  const openWork = locationId ? inArea : data?.open_work_orders;
-  useEffect(() => {
-    getMaintenanceSettings().then((s) => setDigest(s.digest)).catch(() => {});
-  }, []);
-  const toggleDigest = async (on) => {
-    setDigest(on);
-    await setMaintenanceSettings({ digest: on }).catch(() => setDigest(!on));
-  };
-
-  const onGenerate = async () => {
-    setGenerating(true);
-    try {
-      await generateWorkOrders(30);
-      refresh();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const positions = flatten(data?.tree);
-  const unscheduled = (data?.due || []).filter((t) => !t.open_work_order);
-  const dueShown = dueMatches(data?.due, dueQuery);
-
-  return (
-    <div className="app">
-      <SectionHeader
-        title="Maintenance"
-        purpose="What's due from your scheduled tasks, the work orders, and the changes proposed."
-        help={HELP}
-        primary={data?.tree?.length > 0 ? <button onClick={() => setModal("wo")}><PlusIcon /> New work order</button> : null}
-        actions={<button className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>}
-      />
-      {error && <div className="card error">{error}</div>}
-      {data && <TimeZoneNudge zone={data.time_zone} onSet={refresh} />}
-      {data === null ? (
-        <div className="card empty">Loading…</div>
-      ) : data.tree.length === 0 ? (
-        <div className="card empty">
-          <h2>Nothing here yet</h2>
-          <p>
-            Add a position by hand, or build the tree on the <Link to="/asset-register/explorer">Explorer</Link>, where
-            each position's RCM gives it its tasks.
-          </p>
-          <div className="maint-row" style={{ justifyContent: "center", marginTop: "1rem" }}>
-            <button onClick={() => setModal("position")}><PlusIcon /> New position</button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <Proposals proposals={data.proposals} onDecided={refresh} />
-          {data.critical_spares?.length > 0 && (
-            <section className="card">
-              <div className="maint-head">
-                <h2>Critical spares short</h2>
-                <Link to={partsPath()} className="lib-date">Parts and stock</Link>
-              </div>
-              <ul className="maint-list">
-                {data.critical_spares.map((v) => (
-                  <li key={v.id}>
-                    <Link to={`/asset-register/positions/${v.position.id}`}>{v.position.name}</Link>: {v.part.part_number} {v.part.name}
-                    <span className={v.usable_on_hand > 0 ? "lib-date" : "maint-overdue"}> · {v.usable_on_hand} usable, keep {v.min_on_hand}</span>
-                    {v.use_instead && <span className="lib-date"> · use {v.use_instead.part_number} instead</span>}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-          <section className="card">
-            <div className="maint-head">
-              <h2>Due in the next 30 days</h2>
-              {unscheduled.length > 0 && (
-                <button onClick={onGenerate} disabled={generating}>
-                  {generating ? "Creating…" : `Create ${unscheduled.length} work order${unscheduled.length === 1 ? "" : "s"}`}
-                </button>
-              )}
-            </div>
-            {data.due.length === 0 ? (
-              <p className="lib-date">Nothing due.</p>
-            ) : (
-              <>
-              <div className="tablebar section-tablebar">
-                <span className="count">{dueQuery ? `${dueShown.length} of ${data.due.length} tasks` : `${data.due.length} ${data.due.length === 1 ? "task" : "tasks"}`}</span>
-                <span className="grow" />
-                <ListSearch value={dueQuery} onChange={setDueQuery} placeholder="Search what's due…" />
-              </div>
-              {dueShown.length === 0 ? <p className="lib-date">Nothing due matches.</p> : (
-              <div className="maint-scroll"><table className="lib-table">
-                <thead><tr><th>Task</th><th>On</th><th>Due</th><th>Work order</th></tr></thead>
-                <tbody>
-                  {dueShown.map((t) => (
-                    <tr key={t.id}>
-                      <td>{t.name}</td>
-                      <td><SubjectCell subject={t.subject} at={t.at} /></td>
-                      <td><DueChip task={t} /></td>
-                      <td>{t.open_work_order
-                        ? <Link to={`/maintenance/work-orders/${t.open_work_order.id}`}>#{t.open_work_order.number}</Link>
-                        : <span className="lib-date">none yet</span>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table></div>
-              )}
-              </>
-            )}
-          </section>
-
-          <section className="card">
-            <div className="maint-head" style={{ flexWrap: "wrap" }}>
-              <h2>Open work orders</h2>
-              {locations?.length > 0 && (
-                <label className="maint-row lib-date" style={{ marginTop: 0, gap: "0.5rem" }}>
-                  In
-                  <LocationPicker locations={locations} value={locationId} emptyLabel="Every location"
-                                  onChange={(v) => setParams(v ? { location: v } : {}, { replace: true })} />
-                </label>
-              )}
-            </div>
-            {openWork == null ? (
-              <p className="lib-date">Loading…</p>
-            ) : openWork.length === 0 ? (
-              <p className="lib-date">{locationId ? "None open there." : "None open."}</p>
-            ) : (
-              <div className="maint-scroll"><table className="lib-table">
-                <thead><tr><th>#</th><th>Title</th><th>On</th><th>Location</th><th>Type</th><th>Trade</th><th>Due</th></tr></thead>
-                <tbody>
-                  {openWork.map((w) => (
-                    <tr key={w.id} className="lib-row" onClick={rowOpen(navigate, `/maintenance/work-orders/${w.id}`)}>
-                      <td>{w.number}</td>
-                      <td><RowLink to={`/maintenance/work-orders/${w.id}`}>{w.title}</RowLink>{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
-                      <td><SubjectCell subject={w.subject} at={w.item_at} link={false} /></td>
-                      <td className="lib-date">{w.location?.name || "—"}</td>
-                      <td>{w.type}</td>
-                      <td className="lib-date">{w.trade || "—"}</td>
-                      <td className="lib-date">{fmtDate(w.due)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table></div>
-            )}
-          </section>
-
-          {digest !== null && (
-            <label className="maint-row lib-date" style={{ gap: "0.5rem" }}>
-              <input type="checkbox" checked={digest} onChange={(e) => toggleDigest(e.target.checked)} />
-              Email me when new work orders are raised for tasks coming due
-            </label>
-          )}
-        </>
-      )}
-
-      {modal === "position" && (
-        <NewPositionModal
-          positions={positions}
-          onClose={() => setModal(null)}
-          onCreated={(p) => navigate(`/asset-register/positions/${p.id}`)}
-        />
-      )}
-      {modal === "wo" && (
-        <NewWorkOrderModal positions={positions} onClose={() => setModal(null)}
-                           onDone={(wo) => navigate(`/maintenance/work-orders/${wo.id}`)} />
-      )}
-      {modal === "import" && <ImportModal onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
-    </div>
-  );
-}
-
 // What a due task or open work order is on: its position, or an item (and where
 // it is now) or a location, marked.
-function SubjectCell({ subject, at, link = true }) {
+export function SubjectCell({ subject, at, link = true }) {
   if (!subject) return null;
   const name = link ? <Link to={subjectPath(subject)}>{subject.name}</Link> : subject.name;
   const badge = subjectBadge(subject);

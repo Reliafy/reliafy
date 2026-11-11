@@ -2,12 +2,13 @@ import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { calculateMission, getMission, getRbd, updateMission } from "../api.js";
 import TablePane from "./TablePane.jsx";
 import CovariateInputs from "./CovariateInputs.jsx";
+import MissionBlockGrid from "./MissionBlockGrid.jsx";
 import ResultSummary from "./ui/ResultSummary.jsx";
 import Chip from "./ui/Chip.jsx";
 import { saveErrorText } from "../confirm.js";
 import { ShowMe } from "./SectionPage.jsx";
 import {
-  SOURCE_WORDS, answerText, cleanPhases, editablePhase, feedsText, fmt, lengthText, movePhase, newPhase, pct, phaseCompletes,
+  SOURCE_WORDS, answerText, cleanPhases, editablePhase, fadedIn, feedsText, fmt, lengthText, movePhase, newPhase, pct, phaseCompletes,
   phaseCovariates, phaseLine, phaseNeeds, unitWord, withBlockValue, withValue,
 } from "../explorerMissions.js";
 import "./CovariateCalculator.css";
@@ -32,11 +33,12 @@ const RbdDiagramView = lazy(() => import("./RbdDiagramView.jsx"));
 //   phase                the phase to open on (its index, from a phase row in the tree): opened,
 //                        its name field focused; else the first phase is opened
 //   onSaved(text)        onDeleted(text)      onDirty(changed)
+//   onOpenRbd()          the mission's RBD opened in the shared RBD builder, in this table area
 //   phone, headingRef, onClose: TablePane's
 
 const valueText = (v, unit) => (v == null ? "—" : `${typeof v === "number" ? fmt(v) : v}${unit ? (unit === "%" ? "%" : ` ${unit}`) : ""}`);
 
-export default function MissionPane({ rbdId, missionId, position, phase = null, phone = false, headingRef = null, onClose, onSaved, onDirty, onDelete }) {
+export default function MissionPane({ rbdId, missionId, position, phase = null, phone = false, headingRef = null, onClose, onSaved, onDirty, onDelete, onOpenRbd }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState(null);
   const [name, setName] = useState("");
@@ -174,14 +176,16 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
                        onChange={(e) => { setName(e.target.value); setDirty(true); onDirty?.(true); }} />
               </label>
               <p className="rim-tquiet mission-on">
-                Flown on <b>{detail.rbd.name}</b>{u ? `, in ${u}` : ""}: {rows.length} phase{rows.length === 1 ? "" : "s"},{" "}
-                {lengthText(total, unit)} in all. The blocks age through the whole mission: wear in one phase stays for the next.{" "}
+                Flown on <b>{detail.rbd.name}</b>{onOpenRbd ? <> (<button type="button" className="link" onClick={onOpenRbd}>open it</button>)</> : null}{u ? `, in ${u}` : ""}: {rows.length} phase{rows.length === 1 ? "" : "s"},{" "}
+                {lengthText(total, unit)} in all. The blocks age through the whole mission, except while they stand by: wear in one phase stays for the next.{" "}
                 <ShowMe help={{ guide: "missions-and-phases" }}>Show me how</ShowMe>
               </p>
             </div>
 
             <MissionAnswer result={calc.stale ? null : result} busy={calc.busy} error={calc.error} stale={calc.stale}
                            total={total} unit={unit} />
+
+            <MissionBlockGrid blocks={blocks} phases={rows} readOnly={readOnly} onChange={patch} />
 
             {detail.problems?.length > 0 && (
               <p className="field-error">{detail.problems.map((p) => `${p.label}: ${p.problem}`).join(" · ")}</p>
@@ -247,24 +251,6 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
                                              onChange={(next) => patch(row.key, next)} />
                           )}
                         </section>
-                        {blocks.length > 0 && (
-                          <div className="rbd-phase-blocks">
-                            <span className="mission-k">Blocks needed in this phase</span>
-                            <div className="chip-row">
-                              {blocks.map((b) => {
-                                const needed = !row.not_needed.includes(b.id);
-                                return (
-                                  <button key={b.id} type="button" aria-pressed={needed} disabled={readOnly}
-                                          className={"chip chip-btn rbd-need " + (needed ? "chip-accent" : "chip-neutral is-off")}
-                                          onClick={() => patch(row.key, { not_needed: needed ? [...row.not_needed, b.id] : row.not_needed.filter((x) => x !== b.id) })}
-                                          title={needed ? "Needed: click if this phase doesn't need it (it still ages)" : "Not needed in this phase: treated as working. Click to need it"}>
-                                    {b.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
                         {votes.map((v) => (
                           <label key={v.id} className="rbd-phase-vote">
                             <span>{v.label}: working inputs needed</span>
@@ -281,10 +267,10 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
                           graph ? (
                             <figure className="mission-rbd">
                               <Suspense fallback={<p className="rim-tquiet">Drawing the RBD…</p>}>
-                                <RbdDiagramView graph={graph} dim={new Set(row.not_needed)} label={`The RBD in ${row.name}: faded blocks aren't needed`} />
+                                <RbdDiagramView graph={graph} dim={fadedIn(row)} label={`The RBD in ${row.name}: faded blocks aren't needed or are standing by`} />
                               </Suspense>
                               <figcaption className="rim-tquiet">
-                                {row.not_needed.length ? "Faded blocks aren't needed in this phase (they still age)." : "This phase needs every block."}
+                                {fadedIn(row).size ? "Faded blocks aren't needed in this phase (they still age) or stand by (they don't)." : "Every block runs in this phase."}
                               </figcaption>
                             </figure>
                           ) : <p className="rim-tquiet">Drawing the RBD…</p>

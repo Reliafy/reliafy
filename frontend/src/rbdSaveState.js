@@ -32,6 +32,16 @@ export function rbdSaveSnapshot({ nodes = [], edges = [], ...rest } = {}) {
   }
 }
 
+// Changed since it was opened or saved. `rebasing`: a diagram has just been
+// loaded and its snapshot is still to be taken (an effect after this render),
+// so the render in between compares the new diagram with the old snapshot and
+// would call it changed. Told to the Explorer's pane, that one render made Esc
+// ask "Discard your changes?" about a diagram nobody had touched.
+export function rbdDirty({ tracked = true, rebasing = false, graph, savedSnap }) {
+  if (!tracked || rebasing || savedSnap == null) return false;
+  return rbdSaveSnapshot(graph) !== savedSnap;
+}
+
 // The words for the status: { text, tone, title }. Tone is a hint for the
 // styling only; the text says it.
 export function rbdSaveStatus({ savedId, readOnly, dirty }) {

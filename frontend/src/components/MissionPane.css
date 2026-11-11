@@ -43,3 +43,18 @@
 .mission-foot-gap { flex: 1 1 auto; }
 .mission-answer { margin: 0; }
 .mission-own-pick { align-self: flex-start; max-width: 100%; font-size: var(--fs-12, 12px); padding: 2px 6px; min-height: 32px; }
+/* MissionBlockGrid.jsx: each block's state in each phase. Scrolls inside its own box. */
+.mission-grid { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.mission-grid-scroll { max-width: 100%; }
+.mission-grid-table { border-collapse: collapse; font-size: var(--fs-13); min-width: 100%; }
+.mission-grid-table th, .mission-grid-table td { border-bottom: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: middle; }
+.mission-grid-table thead th { font-weight: 600; white-space: nowrap; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; }
+.mission-grid-table tbody th { font-weight: 600; max-width: 14rem; overflow-wrap: anywhere; }
+.mission-grid-n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.mission-grid-table select { min-height: 36px; font-size: var(--fs-13); }
+.mission-grid-table td.is-standby select { font-style: italic; }
+.mission-grid-table td.is-off select { color: var(--muted); }
+.mission-grid-key { margin: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-12, 12px); color: var(--muted); }
+.mission-grid-key > div { display: flex; flex-wrap: wrap; gap: 0 6px; }
+.mission-grid-key dt { font-weight: 600; color: var(--text, inherit); }
+.mission-grid-key dd { margin: 0; }

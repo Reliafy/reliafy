@@ -39,7 +39,7 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 
-from backend.services import rbd_analysis
+from backend.services import rbd_analysis, repy_compat
 from backend.services.rbd_analysis import AnalysisError
 
 NONREPAIRABLE_METHODS = ("equal", "simple", "minimum_effort", "improvement", "cost_based")
@@ -196,6 +196,20 @@ def _model_mean(model) -> Optional[float]:
 # ---------------------------------------------------------------------------
 # Non-repairable
 # ---------------------------------------------------------------------------
+def _allocated_probabilities(rbd, t: float, allocated: dict) -> dict:
+    """Every node's probability with the allocation applied, for
+    ``system_probability``, which needs a value for each node. The
+    allocation methods leave out voting (k-out-of-n) nodes and hold them
+    perfect, so they stay at 1 here too; any other node the allocation
+    doesn't name keeps its reliability at ``t``."""
+    probs = {nid: np.atleast_1d(np.asarray(v, dtype=float)) for nid, v in rbd.node_sf(t).items()}
+    for nid in repy_compat.voting_nodes(rbd):
+        probs[nid] = np.atleast_1d(1.0)
+    for nid, v in allocated.items():
+        probs[nid] = np.atleast_1d(np.asarray(v, dtype=float))
+    return probs
+
+
 def _nonrepairable(graph, target, method, t, options, resolve_model, resolve_subsystem) -> dict:
     if t is None:
         raise AllocationError("Give the mission time the target reliability is for.")
@@ -245,8 +259,7 @@ def _nonrepairable(graph, target, method, t, options, resolve_model, resolve_sub
     if any("may not be the cheapest" in str(w.message) for w in caught):
         notes.append("The cost search stopped before it fully converged: this allocation meets the target, but "
                      "may not be the cheapest.")
-    achieved = float(np.ravel(rbd.system_probability(
-        {nid: np.atleast_1d(v) for nid, v in allocated.items()}))[0])
+    achieved = float(np.ravel(rbd.system_probability(_allocated_probabilities(rbd, t, allocated)))[0])
     rows = []
     for nid, label in blocks.items():
         need = float(allocated.get(nid, current[nid]))

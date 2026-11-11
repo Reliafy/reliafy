@@ -84,6 +84,8 @@ ACTION_KINDS = ("replace", "repair", "inspect", "other")
 FINDINGS = ("ok", "degraded", "found_failed")
 WORK_ORDER_TYPES = ("preventive", "corrective", "inspection", "other")
 OPEN_STATUSES = ("open", "planned", "in_progress", "waiting")
+# A work order that is finished with: the history.
+DONE_STATUSES = ("closed", "cancelled")
 END_REASONS = ("failure", "planned", "other")
 # Where a task added by hand comes from: the maker's manual, a law or standard,
 # the organisation's own practice, or something else. (A task from an RCM
@@ -2801,6 +2803,19 @@ PROJECTORS = {
 
 
 # ---- the domain ------------------------------------------------------------------
+
+
+def _walk_down(top: str, kids: dict) -> set[str]:
+    """``top`` and everything below it in a parent -> children map (no recursion
+    limit on deep trees)."""
+    out, stack = set(), [top]
+    while stack:
+        nid = stack.pop()
+        if nid not in out:
+            out.add(nid)
+            stack.extend(kids.get(nid, []))
+    return out
+
 
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps):
     """One organisation's maintenance graph, acted on by one person."""
@@ -6232,7 +6247,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             limits.append(self._due_by(task, task["also_interval"], task["also_unit"]))
         dues = [lim["next_due"] for lim in limits if lim["next_due"]]
         nxt = min(dues) if dues else None
-        open_wo = next((w for w in self.s.inn(self.org, task["id"], "FOR") if w.get("status") in OPEN_STATUSES), None)
+        open_wo = self._open_wo_for(self.s.inn(self.org, task["id"], "FOR"))
         mode = sorted(self.s.out(self.org, task["id"], "MITIGATES"), key=lambda m: (m.get("text") or "", m["id"]))
         subject = _subject(self.s, self.org, task)
         out = {
@@ -6256,7 +6271,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # The date it was set to fall due next (start), while that stands; else null.
             "first_due": _first_due(task),
             "overdue": bool(nxt and nxt < self.today()),
-            "open_work_order": open_wo and {"id": open_wo["id"], "number": open_wo["number"]},
+            # Its open work order, with that work order's own due date and whether it's overdue.
+            "open_work_order": open_wo and {"id": open_wo["id"], "number": open_wo["number"],
+                                            "due": open_wo.get("due"), "overdue": self._wo_overdue(open_wo)},
             "proposal": next(({"id": p["id"], "proposed": p.get("proposed"), "kind": p.get("kind")}
                               for p in self.s.inn(self.org, task["id"], "ABOUT")
                               if p["label"] == "Proposal" and p.get("status") == "pending"), None),
@@ -6276,6 +6293,14 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         entry = self._package_index().get(task["id"]) if not task.get("retired") and not on_event else None
         if entry:
             out |= self._package_due(task, entry)
+        # The schedule's own date, whatever is open for it (forecasts and package drafts go by it).
+        scheduled = out["next_due"]
+        if open_wo and open_wo.get("due"):
+            # Owed on an open work order: due when the work order is, and overdue when it
+            # is, so the task's row and the work order's page give one date.
+            out["next_due"], out["overdue"] = open_wo["due"], self._wo_overdue(open_wo)
+            if not open_wo.get("visit_on"):
+                out["due_by"] = "work_order"
         # On something out of service: not due (nor late) until it's back.
         held = subject and not task.get("retired") and self._out_of_service_on(subject["id"], self.today())
         if held:
@@ -6283,7 +6308,35 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             out["overdue"] = False
             if out["next_due"] and (not held.get("until") or out["next_due"] < held["until"]):
                 out["next_due"] = held.get("until")
+            if scheduled and (not held.get("until") or scheduled < held["until"]):
+                scheduled = held.get("until")
+        out["scheduled_due"] = scheduled
         return out
+
+    @staticmethod
+    def _open_wo_for(work_orders) -> dict | None:
+        """A task's open work order, of the work orders raised for it: the one due first
+        (one with no due date last), then the lowest number."""
+        return min((w for w in work_orders if w.get("status") in OPEN_STATUSES),
+                   key=lambda w: (w.get("due") or "9999-12-31", w["number"]), default=None)
+
+    def _wo_overdue(self, w: dict) -> bool:
+        """Whether a work order is overdue: it's open and its due date is before today.
+        The one rule behind every list, count and badge. A work package's visit keeps its
+        on-time days, pauses and season (_lateness), so its work order is overdue once
+        the visit is late; with its due date changed by hand, that date is what counts."""
+        if w.get("status") not in OPEN_STATUSES or not w.get("due"):
+            return False
+        today = self.today()
+        if w.get("visit_on") and w["due"] == w["visit_on"]:
+            memo = self._memo.setdefault("wo_late", {})
+            key = (w["id"], today)
+            if key not in memo:
+                raised = self.s.out(self.org, w["id"], "RAISED_FROM")
+                memo[key] = (self._lateness(raised[0], w["visit_on"], self._tolerance_days(raised[0]), today)["late"]
+                             if raised else w["due"] < today)
+            return memo[key]
+        return w["due"] < today
 
     # ---- parts and stock ----------------------------------------------------------
 
@@ -8855,10 +8908,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return raised + 1
 
     def _visit_tasks(self, root: dict, tree: list[dict], visit_on: str, number: int, skip=frozenset(),
-                     covered_by=()) -> list[tuple[dict, dict, dict]]:
+                     covered_by=(), owed: bool = True) -> list[tuple[dict, dict, dict]]:
         """The tasks due on one visit of a top package, in order, as (task, package,
         member): the top package's by their visit rule, each layer's on its own visits,
-        and any owed task. skip: tasks left off (on the work order already, or with a
+        and (owed) any owed task. skip: tasks left off (on the work order already, or with a
         work order of their own). A task covered by another on the visit (or by
         ``covered_by``: members already on its work order) is left off."""
         due = []
@@ -8878,7 +8931,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     continue
                 by_rule = on_visit and (member.get("visit_rule", "every") != "nth"
                                         or (n - 1) % int(member.get("every_nth") or 1) == 0)
-                if by_rule or self._owed(task):
+                if by_rule or (owed and self._owed(task)):
                     due.append((task, pkg, member))
         covering = {sid for member in [*(m for _, _, m in due), *covered_by] for sid in member.get("suppresses") or []}
         return [x for x in due if x[0]["id"] not in covering]
@@ -8988,6 +9041,32 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             day = self._next_root_visit(root, day)
         memo[key] = out
         return out
+
+    def _package_next_visits(self, root: dict, count: int) -> list[dict]:
+        """The top package's visits to come, for its page: the open visit first (its work
+        order's tasks, its number and whether it's late), then the next ``count`` visits,
+        each with the tasks its visit rules put on it (every task on every visit, an every-Nth
+        task on its visits). A task on the open work order still falls on the later visits by
+        its rule; one owed from the last visit goes on the first visit to come only."""
+        state = self._package_state(root)
+        tree = self._package_tree(root, active_only=True)
+        out: list[dict] = []
+        wo = state["open"]
+        if wo:
+            out.append({"on": wo["visit_on"], "task_ids": sorted(state["on_open"]),
+                        "open_work_order": {"id": wo["id"], "number": wo["number"], "late": bool(state.get("late"))}})
+            day = self._next_root_visit(root, wo.get("covers_to") or wo["visit_on"])
+        else:
+            day = state["next_visit"]
+        until = (date.fromisoformat(self.today()) + timedelta(days=self._LOOKAHEAD_DAYS)).isoformat()
+        coming = 0
+        while day and day <= until and coming < count:
+            number = self._visit_number(root, day, state["raised"] + coming)
+            ids = {t["id"] for t, _, _ in self._visit_tasks(root, tree, day, number, owed=not wo and coming == 0)}
+            out.append({"on": day, "task_ids": sorted(ids)})
+            coming += 1
+            day = self._next_root_visit(root, day)
+        return [{**v, "tasks": len(v["task_ids"])} for v in out]
 
     def _later_visit(self, root: dict, pkg: dict, member: dict, after: str) -> str | None:
         """A member's next visit past the look-ahead: its own package's next date by its
@@ -9785,8 +9864,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
     def package(self, package_id: str) -> dict:
         """A package in full: its cadence, tolerance, layers, its tasks (each with its visit
-        rule, what it covers, last done and next due), its next visits (a top package's,
-        with how many tasks each) and its recent work orders."""
+        rule, what it covers, last done and next due), its open visit and next six
+        visits (a top package's, with the tasks on each) and its recent work orders (a finished one with
+        what was done: done)."""
         pkg = self._get(str(package_id or ""), "WorkPackage")
         out = {**self._package_brief(pkg), "notes": pkg.get("notes", ""), "created": pkg.get("created"),
                "paused_reason": pkg.get("paused_reason", "") if pkg.get("paused") else "",
@@ -9816,9 +9896,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         out["work_orders"] = [self._wo_brief(w) for w in sorted(
             (w for w in self.s.inn(self.org, root["id"], "RAISED_FROM") if w["label"] == "WorkOrder"),
             key=lambda w: w["number"], reverse=True)[:10]]
+        for row in out["work_orders"]:
+            # A finished visit says what was done on it (its outcome).
+            if row["status"] in DONE_STATUSES:
+                row["done"] = self._wo_done(row["id"])
         out["next_visits"] = []
         if out["status"] == "active" and root["id"] == pkg["id"]:
-            out["next_visits"] = [{"on": d, "tasks": len(ids)} for d, ids in self._package_upcoming(root)[:5]]
+            out["next_visits"] = self._package_next_visits(root, 6)
         return out
 
     # -- proposing packages from the decided tasks --
@@ -9911,7 +9995,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                             "trade": task.get("trade", ""), "tasks": []})
             view = self._task_view(task)
             group["tasks"].append({**brief, "interval": task["interval"], "unit": task["unit"],
-                                   "next_due": view["next_due"], "open_work_order": view["open_work_order"],
+                                   "next_due": view["scheduled_due"], "open_work_order": view["open_work_order"],
                                    "why": f"every {task['interval']:g} {task['unit']}: {bucket}"})
         order = {name: i for i, (name, *_rest) in enumerate(self._BUCKETS)}
         drafts = []
@@ -12388,7 +12472,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         (set or inherited), items (fitted to those positions, or placed there), open
         work orders (in its area, as work_orders' location_id) and tasks due within the
         horizon (due, overdue, next_due). not_placed: the same for the positions with
-        no location, set or inherited, and the work on them; position_ids lists them."""
+        no location, set or inherited, and the work on them; position_ids lists them.
+        not_placed.roots: the top position of each of their trees (a pumping station
+        with no location set yet), by name, with the same counts for it and what's
+        inside it: an asset too, so a list of assets can show and find it."""
         until = (date.fromisoformat(self.today()) + timedelta(days=horizon_days)).isoformat()
 
         def blank() -> dict:
@@ -12412,6 +12499,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             path = self._location_path(loc["id"])
             return out.get(path[0]["id"] if path else loc["id"], not_placed)
 
+        loose: dict[str, dict] = {}  # the positions with no location
+        fitted: set = set()
         for p in self.s.nodes(self.org, "Position"):
             if p.get("retired") or p["id"] in products:
                 continue
@@ -12420,8 +12509,48 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             b["positions"] += 1
             if loc is None:
                 not_placed["position_ids"].append(p["id"])
+                loose[p["id"]] = p
             if self.current_fitment(p["id"]):
                 b["items"] += 1
+                fitted.add(p["id"])
+
+        # The top of each tree of positions with no location: an asset with no location yet.
+        roots = {pid: {"id": pid, "name": p["name"], "tag": p.get("tag", ""),
+                       "description": p.get("description", ""), **blank()}
+                 for pid, p in loose.items() if self._parent(pid) is None}
+        top_of: dict[str, str | None] = {}
+
+        def root_of(position_id: str | None) -> dict | None:
+            """The root a position with no location is under (None: it has a location, or
+            it's inside an item that isn't fitted anywhere)."""
+            chain, node, found = [], position_id, None
+            while node and node not in chain:
+                if node in top_of:
+                    found = top_of[node]
+                    break
+                chain.append(node)
+                up = self._parent(node)
+                if up is None:
+                    found = node
+                    break
+                # Inside an item: where the item is fitted, if it is.
+                node = self._work_position(up) if up["label"] == "Item" else up["id"]
+            for c in chain:
+                top_of[c] = found
+            return roots.get(found) if found else None
+
+        def buckets(subject: dict) -> list[dict]:
+            """The asset a subject's work counts toward; with no location, the positions
+            with none and (when it's under one) their root."""
+            b = bucket(self._wo_area(subject))
+            root = root_of(self._work_position(subject)) if b is not_placed else None
+            return [b, root] if root else [b]
+
+        for pid in loose:
+            root = root_of(pid)
+            if root:
+                root["positions"] += 1
+                root["items"] += pid in fitted
         for item in self.s.nodes(self.org, "Item"):
             placed = self._placement_now(item["id"])
             if placed:
@@ -12429,17 +12558,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         for w in self.s.nodes(self.org, "WorkOrder"):
             subject = w["status"] in OPEN_STATUSES and self.s.out(self.org, w["id"], "ON")
             if subject and subject[0]["id"] not in products:
-                bucket(self._wo_area(subject[0]))["open_work_orders"] += 1
+                for b in buckets(subject[0]):
+                    b["open_work_orders"] += 1
         for task in self.s.nodes(self.org, "Task"):
             subject = not task.get("retired") and _subject(self.s, self.org, task)
             if not subject or subject.get("retired") or subject["id"] in products:
                 continue
             view = self._task_view(task)
             if view["next_due"] and view["next_due"] <= until:
-                b = bucket(self._wo_area(subject))
-                b["due"] += 1
-                b["overdue"] += 1 if view["overdue"] else 0
-                b["next_due"] = min(filter(None, (b["next_due"], view["next_due"])))
+                for b in buckets(subject):
+                    b["due"] += 1
+                    b["overdue"] += 1 if view["overdue"] else 0
+                    b["next_due"] = min(filter(None, (b["next_due"], view["next_due"])))
+        not_placed["roots"] = sorted(roots.values(), key=lambda r: (r["name"].lower(), r["id"]))
         return {"places": list(out.values()), "not_placed": not_placed, "horizon_days": horizon_days}
 
     def position_classes(self) -> list[dict]:
@@ -13214,16 +13345,26 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return False
 
         designs = self._design_ids()
+        work_orders = s.nodes(org, "WorkOrder")
+        open_wos = {w["id"]: w for w in work_orders if w["status"] in OPEN_STATUSES}
+        raised_for: dict[str, list] = {}  # task -> its open work orders
+        for src, dst in s.pairs(org, "FOR"):
+            if src in open_wos:
+                raised_for.setdefault(dst, []).append(open_wos[src])
         for t in s.nodes(org, "Task"):
             subject = on.get(t["id"])
             if t.get("retired") or not subject:
                 continue
             tasks[subject] = tasks.get(subject, 0) + 1
             packaged = self._package_index().get(t["id"])
+            open_wo = self._open_wo_for(raised_for.get(t["id"], ()))
             if out_of_service(subject) or subject in designs:
                 # Not due while what it's on is out of service, nor on a product's design
                 # (its programme: the items built from it carry the copies that fall due).
                 due, overdue = None, False
+            elif open_wo and open_wo.get("due"):
+                # Owed on an open work order: due, and overdue, when the work order is.
+                due, overdue = open_wo["due"], self._wo_overdue(open_wo)
             elif packaged and (packaged["active"] or packaged["held"]):
                 # Due on its work package's visits, overdue once the visit is late.
                 by_package = self._package_due(t, packaged)
@@ -13235,8 +13376,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 st = on_node(subject)
                 st["next_due"] = min(st["next_due"] or due, due)
                 st["overdue"] += overdue
-        for w in s.nodes(org, "WorkOrder"):
-            if w["status"] in OPEN_STATUSES and on.get(w["id"]):
+        for w in open_wos.values():
+            if on.get(w["id"]):
                 on_node(on[w["id"]])["open_work"] += 1
         for r in s.nodes(org, "FailureReport"):
             if r["status"] in OPEN_REPORT_STATUSES and r.get("position_id") in live:
@@ -13284,6 +13425,28 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             "unhomed": [{"id": iid, "name": i.get("name", ""), "serial": i.get("serial", ""), "status": status.get(iid)}
                         for iid, i in items.items() if iid not in fitted_at and iid not in placed_at],
         }
+
+    def positions_inside(self, root_id: str) -> set[str]:
+        """One asset's positions, as the Explorer opened on it shows them (its ?root=):
+        for a position, it and every position the tree nests inside it (one an item
+        carries sits in the position that item is fitted to); for a place (a location),
+        every position there or at a place inside it, set or inherited. From the tree
+        read itself, so "inside" means the same here as in the tree pane."""
+        node = self.s.node(self.org, root_id)
+        if node is None or node.get("retired") or node["label"] not in ("Position", "Location"):
+            raise NotFound(root_id)
+        read = self._tree_read()
+        rows = read["positions"]
+        if node["label"] == "Location":
+            kids: dict[str | None, list[str]] = {}
+            for loc in read["locations"]:
+                kids.setdefault(loc["parent_id"], []).append(loc["id"])
+            places = _walk_down(root_id, kids)
+            return {pid for pid, r in rows.items() if r["location"] and r["location"]["id"] in places}
+        kids = {}
+        for pid, r in rows.items():
+            kids.setdefault(r["parent_id"], []).append(pid)
+        return _walk_down(root_id, kids)
 
     def _tree_task_due(self, task: dict, subject_label: str) -> str | None:
         """A task's next due date, as _task_view gives it, without its store reads
@@ -13556,8 +13719,14 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # A work package's: its visit, and how late it is while open.
             out["package"] = {"id": raised[0]["id"], "name": raised[0]["name"]}
             out["visit_on"] = w.get("visit_on")
+            # How far through its lines it is ("13 of 29"): each task line answered, done or not.
+            task_lines = [c for c in w.get("checklist") or [] if c.get("task_id") and not c.get("step")]
+            out["lines_answered"] = sum(1 for c in task_lines if self._line_state(c) != "todo")
+            out["lines_total"] = len(w.get("lines") or [])
             if w["status"] in OPEN_STATUSES:
                 out |= self._lateness(raised[0], w["visit_on"], self._tolerance_days(raised[0]), self.today())
+        # Open with its due date passed (the same rule as its task's row, and every count).
+        out["overdue"] = self._wo_overdue(w)
         return out
 
     def _package_wo_view(self, w: dict) -> dict:
@@ -13589,16 +13758,35 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return {"lines": lines, "line_positions": positions, "released": released,
                 "visit_number": w.get("visit_number"), "covers_to": w.get("covers_to")}
 
-    def work_orders(self, status: str | None = None, location_id: str | None = None) -> list[dict]:
-        """Work orders, newest first. status 'open' means every not-yet-done status.
+    def work_orders(self, status: str | None = None, location_id: str | None = None,
+                    q: str | None = None) -> list[dict]:
+        """Work orders, newest first. status 'open' means every not-yet-done status, and
+        lists them by due date instead, the most overdue first (those with no due date
+        last; the lower number first on a tie): each carries overdue. status 'done':
+        closed and cancelled together (the history), each with what was done (done:
+        its actions' kind and finding).
         location_id: only the work in that area (at that location or a location inside
         it): on positions there, on items there now (fitted or placed), and on the
-        location itself or one inside it."""
+        location itself or one inside it.
+        q: only those whose number, title, notes or what they're on contain it (any case)."""
         def keep(w):
             if not status:
                 return True
-            return w["status"] in OPEN_STATUSES if status == "open" else w["status"] == status
+            if status == "open":
+                return w["status"] in OPEN_STATUSES
+            if status == "done":
+                return w["status"] in DONE_STATUSES
+            return w["status"] == status
         wos = [w for w in self.s.nodes(self.org, "WorkOrder") if keep(w)]
+        needle = (q or "").strip().lower()
+        if needle:
+            def found(w):
+                subject = self.s.out(self.org, w["id"], "ON")
+                text = " ".join(str(x) for x in (
+                    w["number"], w.get("title"), w.get("notes"), w.get("close_notes"), w.get("cancel_reason"),
+                    subject and subject[0].get("name"), subject and subject[0].get("tag")) if x)
+                return needle in text.lower() or needle.lstrip("#") == str(w["number"])
+            wos = [w for w in wos if found(w)]
         if location_id:
             self._get(location_id, "Location")
             inside = set(self._location_ids_in(location_id))
@@ -13608,7 +13796,21 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 where = subject and self._wo_area(subject[0])
                 return bool(where) and where["id"] in inside
             wos = [w for w in wos if there(w)]
-        return [self._wo_brief(w) for w in sorted(wos, key=lambda w: w["number"], reverse=True)]
+        if status == "open":
+            wos = sorted(wos, key=lambda w: (w.get("due") or "9999-12-31", w["number"]))
+        else:
+            wos = sorted(wos, key=lambda w: w["number"], reverse=True)
+        out = [self._wo_brief(w) for w in wos]
+        if status == "done":
+            for row in out:
+                row["done"] = self._wo_done(row["id"])
+        return out
+
+    def _wo_done(self, work_order_id: str) -> list[dict]:
+        """What a finished work order's actions did, in order (kind and finding), for a
+        history's list ("Checked, nothing done", "Replaced")."""
+        return [{"kind": a["kind"], "finding": a.get("finding")}
+                for a in sorted(self.s.out(self.org, work_order_id, "INCLUDES"), key=lambda a: a["on"])]
 
     def work_order(self, id: str) -> dict:
         """A work order in full. On a position: the item fitted there and its failure
@@ -14096,7 +14298,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         description, who found it, the failure mode and the position's name. sort:
         newest (default), oldest, status (in flow order), consequence (safety first) or
         position. counts are by status over the scope and the other filters, so the
-        chips say how many each status has."""
+        chips say how many each status has. A product's design position (scope kind
+        design) lists the reports on the items built from it, each with its unit."""
         given = [k for k, v in (("position_id", position_id), ("location_id", location_id), ("item_id", item_id)) if v]
         if len(given) > 1:
             raise Invalid("One scope at a time: position_id (with below), location_id or item_id; none for the "
@@ -14120,9 +14323,21 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
         reports = self.s.nodes(self.org, "FailureReport")
         root_id = None
-        if position_id:
-            position = self._get(position_id, "Position")
-            ids = self._report_scope(position_id, _flag_value(below, "below") if isinstance(below, str) else bool(below))
+        # A design position (a product's, or one inside it): no report is filed there,
+        # so its list is the reports on the items built from the product, each at the
+        # position implementing it and below (products.py _design_report_scope). Each
+        # row's level is under its own item's position, and it says which item (unit).
+        units: dict = {}
+        position = self._get(position_id, "Position") if position_id else None
+        below_on = (_flag_value(below, "below") if isinstance(below, str) else bool(below)) if position else True
+        if position and self._design_root_of(position_id):
+            at = self._design_report_scope(position_id, below=below_on)
+            reports = [r for r in reports if r.get("position_id") in at]
+            units = {r["id"]: at[r["position_id"]] for r in reports}
+            scope = {"kind": "design", "id": position_id, "name": position["name"], "positions": len(at),
+                     "items": len({unit["top_position_id"] for _, unit in at.values()})}
+        elif position:
+            ids = self._report_scope(position_id, below_on)
             wanted = set(ids)
             reports = [r for r in reports if r.get("position_id") in wanted]
             root_id = position_id
@@ -14142,6 +14357,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                      "positions": sum(1 for p in self.s.nodes(self.org, "Position") if not p.get("retired"))}
 
         cache: dict = {}
+
+        def brief(r: dict) -> dict:
+            if r["id"] in units:
+                root, unit = units[r["id"]]
+                return self._report_brief(r, root, cache) | {"unit": unit}
+            return self._report_brief(r, root_id, cache)
+
         if failure_mode_id:
             reports = [r for r in reports if r.get("failure_mode_id") == failure_mode_id]
         if part_id:
@@ -14155,9 +14377,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         words = " ".join(str(q or "").lower().split())
         if words:
             def matches(r):
-                brief = self._report_brief(r, root_id, cache)
-                haystack = [r.get("title"), r.get("description"), r.get("found_by"), brief["position"]["name"],
-                            brief["failure_mode"] and brief["failure_mode"]["text"]]
+                b = brief(r)
+                haystack = [r.get("title"), r.get("description"), r.get("found_by"), b["position"]["name"],
+                            b["failure_mode"] and b["failure_mode"]["text"]]
                 return any(words in str(h).lower() for h in haystack if h)
             reports = [r for r in reports if matches(r)]
         counts = {s: 0 for s in REPORT_STATUSES} | {"open": 0}
@@ -14180,9 +14402,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             reports.sort(key=lambda r: REPORT_CONSEQUENCES.index(r["consequence"])
                          if r.get("consequence") in REPORT_CONSEQUENCES else len(REPORT_CONSEQUENCES))
         elif sort == "position":
-            reports.sort(key=lambda r: " › ".join(n for n in self._report_brief(r, root_id, cache)["level"] if n).lower())
+            reports.sort(key=lambda r: " › ".join(n for n in brief(r)["level"] if n).lower())
         page = reports[offset:offset + limit]
-        return {"reports": [self._report_brief(r, root_id, cache) for r in page], "total": len(reports),
+        return {"reports": [brief(r) for r in page], "total": len(reports),
                 "counts": counts, "scope": scope}
 
     def _position_reports(self, position_id: str) -> dict:

@@ -18,6 +18,123 @@ test("fit and save a Weibull model from a sample dataset", async ({ page, proble
   await expectHealthy(page, problems, { label: "saved model", chart: true });
 });
 
+// Start and stop rows with a failure flag (covariates that change over time):
+// the dataset page offers the non-repairable fit, not a degradation one, and
+// it opens with the columns mapped and fits to a covariate schedule.
+test("data with covariates that change over time fits a non-repairable model", async ({ page, problems }) => {
+  await open(page, "/data/sample-ds-pump-load");
+  await expect(page.getByRole("button", { name: "Fit a degradation model" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Fit a non-repairable model with covariates that change over time" }).click();
+  await expect(page).toHaveURL(/\/models\/new\?dataset=sample-ds-pump-load/);
+  // The Data step opens with start and stop rows mapped.
+  await expect(page.getByText("Start of the row", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/start_h \(start of the row\), stop_h \(end of the row\)/)).toBeVisible();
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByText(/Covariates change over time/)).toBeVisible();
+  await page.getByRole("button", { name: "Fit Weibull PH" }).click();
+  await expect(page.getByText(/Weibull PH, covariates changing over time/)).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("tab", { name: "Calculator" }).click();
+  await expect(page.getByText("Covariate schedule").first()).toBeVisible();
+  await expectHealthy(page, problems, { label: "time-varying fit", chart: true });
+
+  // The shared picker offers it for a non-repairable fit (not greyed).
+  await open(page, "/models/new");
+  await page.getByRole("button", { name: /Fit to data/ }).click();
+  await page.getByRole("searchbox", { name: "Search datasets" }).fill("changing load");
+  await expect(page.getByRole("radio", { name: /Pump bearings under changing load/ })).toBeEnabled();
+});
+
+// New model › Fit to data opens on the saved-data list: every saved dataset (yours, then the
+// samples), a picked one previewed with how its columns read, then fitted like any other.
+test("fit a new model from a saved dataset picked in the list", async ({ page, problems }) => {
+  const made = await postOk(page.request, "/api/datasets/paste",
+    { name: "Smoke saved lives", content: "hours,censored\n120,0\n340,0\n500,1\n610,0\n800,1\n" });
+  try {
+    await open(page, "/models/new");
+    await page.getByRole("button", { name: /Fit to data/ }).click();
+    await expect(page.getByRole("tab", { name: "Saved data" })).toHaveAttribute("aria-selected", "true");
+    await page.getByRole("searchbox", { name: "Search datasets" }).fill("smoke saved");
+    await page.getByRole("radio", { name: /Smoke saved lives/ }).click();
+    await expect(page.locator(".dsp-reads")).toContainText("0 = failed, 1 = still running");
+    await expect(page.getByText(/3\s+failures, 2 still running/)).toBeVisible();
+    // A repairable sample is listed, greyed, with what to fit it with instead.
+    await page.getByRole("searchbox", { name: "Search datasets" }).fill("compressor fleet");
+    await expect(page.getByRole("radio", { name: /Compressor fleet/ })).toBeDisabled();
+    await expect(page.getByText("Repeated failures of the same units: fit a repairable model instead.")).toBeVisible();
+    await page.getByRole("button", { name: "Next" }).click();
+    await expect(page.getByText(/Smoke saved lives · 5 rows/)).toBeVisible();
+    await page.getByRole("button", { name: "Next" }).click();
+    await page.getByRole("button", { name: "Fit Weibull" }).click();
+    await expect(page.getByText("Shape β").first()).toBeVisible({ timeout: 30_000 });
+    await expectHealthy(page, problems, { label: "fit from a saved dataset", chart: true });
+  } finally {
+    await page.request.delete(`/api/datasets/${made.id}`);
+  }
+});
+
+// New model › Model step › With a prior: the prior asked as the Explorer asks it, fitted through the
+// same prior path, the prior's curve under the fit, and saved as a Bayesian model keeping its prior.
+test("fit a new model with a prior and save it with its prior", async ({ page, problems }) => {
+  await open(page, "/models/new?dataset=sample-ds-bearings");
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("radio", { name: "With a prior" }).click();
+  await page.getByLabel("Prior", { exact: true }).selectOption("params");
+  await expect(page.getByRole("button", { name: "Fit with the prior" })).toBeDisabled();
+  await page.getByLabel("Characteristic life (alpha)").fill("1000");
+  await page.getByLabel("Shape (beta)").fill("2");
+  await page.getByRole("button", { name: "Fit with the prior" }).click();
+  await expect(page.getByText(/the best B10 is about/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("90% credible band")).toBeVisible();
+  await expectHealthy(page, problems, { label: "fit with a prior", chart: true });
+  await page.getByRole("textbox", { name: "Model name" }).fill("Smoke bearings with a prior");
+  await page.getByRole("button", { name: "Save this model", exact: true }).click();
+  await page.waitForURL(/\/models\/m\/[0-9a-f]{32}$/, { timeout: 30_000 });
+  const id = page.url().split("/").pop();
+  const model = await (await page.request.get(`/api/models/${id}`)).json();
+  try {
+    expect(model.results.method).toBe("bayesian_update");
+    expect(model.results.bayes.baseline.source).toBe("params");
+  } finally {
+    await page.request.delete(`/api/models/${id}`);
+  }
+});
+
+// Every new-model flow picks its data from the one shared list (DatasetPicker): the datasets
+// that kind of model takes first, the rest greyed with what to fit them with instead.
+test("repairable, accelerated, degradation and condition-and-life flows share the saved-data list", async ({ page, problems }) => {
+  await open(page, "/models/recurrent/new");
+  await page.getByRole("button", { name: /Fit to event data/ }).click();
+  await page.getByRole("searchbox", { name: "Search datasets" }).fill("bearing fatigue");
+  await expect(page.getByRole("radio", { name: /Bearing fatigue test/ }).first()).toBeDisabled();
+  await expect(page.getByText(/fit a non-repairable model instead/).first()).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search datasets" }).fill("compressor fleet");
+  await page.getByRole("radio", { name: /Compressor fleet/ }).click();
+  await page.getByRole("button", { name: "Use this dataset" }).click();
+  await expect(page.getByText(/Compressor fleet — repair history \(sample\) · 30 rows/)).toBeVisible();
+
+  await open(page, "/models/alt/new");
+  await page.getByRole("radio", { name: /Insulating fluid/ }).click();
+  await page.getByRole("button", { name: "Use this dataset" }).click();
+  await expect(page.getByText("Life-stress relationship")).toBeVisible();
+  // The upload tab still takes a file.
+  await open(page, "/models/alt/new");
+  await page.getByRole("tab", { name: "Upload a file" }).click();
+  await expect(page.locator('input[type="file"]')).toHaveCount(1);
+
+  await open(page, "/models/degradation");
+  await page.getByRole("button", { name: "New model" }).first().click();
+  await page.getByRole("radio", { name: /Brake pad wear/ }).click();
+  await page.getByRole("button", { name: "Use this dataset" }).click();
+  await expect(page.getByText("Failure threshold *")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await open(page, "/models/joint/new");
+  await page.getByRole("searchbox", { name: "Search datasets" }).fill("feed pumps");
+  await page.getByRole("radio", { name: /Feed pumps/ }).click();
+  await expect(page.getByText(/Measurements · 314 readings/)).toBeVisible();
+  await expectHealthy(page, problems, { label: "condition and life dataset picked" });
+});
+
 // #31: a class with a fitted model and a spare with a lead time shows how many to
 // hold, and the chance a typed stock runs out (smoke/seed.js makes the class).
 // The Classes tab is hidden for now (explorerTabs.js): a class's old address lands on the Explorer, and the
@@ -561,7 +678,7 @@ test("the empty tree offers only the Survey quadcopter; it opens on the RCM tab,
 });
 
 // Maintenance on a phone: a task named with one unbreakable code (as imported
-// ones often are) widens the "Due in the next 30 days" table, which then
+// ones often are) widens Orders' Due soon table, which then
 // scrolls inside its card; the page itself never scrolls sideways.
 test("Maintenance at 400 px: a wide due table scrolls in its card, not the page", async ({ page, request, problems }) => {
   const tag = `${Date.now() % 1000000}`;
@@ -569,7 +686,7 @@ test("Maintenance at 400 px: a wide due table scrolls in its card, not the page"
   await postOk(request, `/api/maintenance/positions/${p.id}/tasks`,
                { name: `PM_WEEKLY_LUBRICATION_CHECK_GEARBOX_BEARINGS_${tag}`, interval: 1, unit: "days", outcome: "on_condition" });
   await page.setViewportSize({ width: 400, height: 860 });
-  await open(page, "/maintenance");
+  await open(page, "/maintenance/work-orders?tab=due");
   const row = page.getByRole("row", { name: new RegExp(`PM_WEEKLY_LUBRICATION_CHECK_GEARBOX_BEARINGS_${tag}`) });
   await expect(row).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);

@@ -9,6 +9,11 @@
 // explorerMissions.test.js; the cells are drawn by MissionTable.jsx, a mission opens in the table
 // area (MissionPane.jsx). The links come from GET /api/maintenance/position-missions.
 //
+// One RBD per mission: Add a mission builds the new mission an RBD of its own from what's inside
+// the position (rows with rbd.mission_rbd); missions stored on a position's RBD before that keep
+// working as they were. Each phase sets each block Working, Standby or Not needed (blockState,
+// withBlockState: the pane's phase × block grid, MissionBlockGrid.jsx).
+//
 // Under each mission hang its phases, one row each, in order (Derryn, 10 Nov 2026: "on the
 // missions page I need to be able to add phases below the mission in the tree"). The menus
 // (right-click, ⋯, Shift+F10) start with what goes under the row: a position's Add a mission (or
@@ -88,12 +93,15 @@ export function completesText(m) {
 
 // The tree with each position's missions in it. The display given is left as it is; position rows
 // gain `msum` (their own: rbds, missions), `mall` (theirs and inside) and `rbds` (their RBD links).
-export function graftMissions(display, links = []) {
+// `hasModel`: the positions whose model in use can be a mission's one block (GET
+// /position-missions: has_model), so a leaf can have a mission too.
+export function graftMissions(display, links = [], hasModel = []) {
+  const withModel = new Set(hasModel || []);
   const rows = new Map();
   for (const [k, r] of display.rows) rows.set(k, { ...r, kids: [...r.kids] });
   const out = { ...display, rows, missions: true };
   for (const r of rows.values()) {
-    if (r.type === "pos") Object.assign(r, { msum: { rbds: 0, missions: 0 }, mall: { rbds: 0, missions: 0 }, rbds: [] });
+    if (r.type === "pos") Object.assign(r, { msum: { rbds: 0, missions: 0 }, mall: { rbds: 0, missions: 0 }, rbds: [], hasModel: withModel.has(r.key) });
   }
   const byPos = new Map();
   for (const link of links) {
@@ -158,18 +166,22 @@ export function graftMissions(display, links = []) {
 const hasInside = (r) => (r?.kids || []).some((k) => !String(k).startsWith("MS:"));
 const count = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 
-// A position row's roll-up: open, its own ("No RBD yet · Build from what's inside…", "No missions
-// yet", "2 missions"); closed, everything inside it too ("5 missions inside").
+// The position's own linked RBDs (not a mission's own) a mission can start from a copy of.
+const usableRbds = (r) => (r?.rbds || []).filter((l) => l.rbd && !l.rbd.mission_rbd && !l.rbd.repairable && !l.rbd.network);
+// A position can have a mission when its RBD can be built: from the positions inside, a copy of its
+// own non-repairable RBD, or (a leaf) one block from its own model in use.
+export const canAddMission = (r) => hasInside(r) || !!r?.hasModel || usableRbds(r).length > 0;
+
+// A position row's roll-up: its own ("2 missions", or "No missions yet · Add a mission" wherever
+// one can be added); closed, everything inside it too ("5 missions here and inside").
 export function rollupText(r, open = false) {
   if (!r?.msum) return "";
   const own = r.msum;
-  if (open) {
-    if (!own.rbds) return hasInside(r) ? "No RBD yet · Build from what's inside…" : "No RBD yet";
-    return own.missions ? count(own.missions, "mission") : "No missions yet · Add a mission";
-  }
+  const none = canAddMission(r) ? "No missions yet · Add a mission" : "No missions yet";
+  if (open) return own.missions ? count(own.missions, "mission") : none;
   const all = r.mall || own;
   if (all.missions) return own.missions === all.missions ? count(all.missions, "mission") : `${count(all.missions, "mission")} here and inside`;
-  return own.rbds ? "No missions yet" : "No RBD yet";
+  return none;
 }
 
 // The phases cell: "3 phases: Take-off, Survey, Landing".
@@ -206,25 +218,28 @@ export function missionRowActions(r, { viewOnly = null } = {}) {
       ...(viewOnly ? off : (r?.ref?.mission?.phases || 0) >= MAX_PHASES ? { disabled: true, reason: full, title: full } : {}) },
     { separator: true },
     { id: "mission-open", label: "Open" },
-    { id: "mission-rbd", label: "Show the RBD" },
+    { id: "mission-rbd", label: r?.ref?.rbd?.mission_rbd ? "Open its RBD" : "Show the RBD" },
     { id: "mission-delete", label: "Delete…", ...off },
   ];
 }
+// A position's menu (one RBD per mission): Add a mission builds the mission an RBD of its own from
+// what's inside the position (or from a copy of the position's own non-repairable RBD where it has
+// nothing inside, else one block from its own model in use); then Open for each RBD linked to the position, and Build an RBD from what's
+// inside… while it has none of its own.
 export function positionMissionActions(r, { viewOnly = null } = {}) {
   const off = viewOnly ? { disabled: true, reason: viewOnly, title: viewOnly } : {};
-  const usable = (r?.rbds || []).filter((l) => l.rbd && !l.rbd.repairable && !l.rbd.network);
+  const linked = (r?.rbds || []).filter((l) => l.rbd && !l.rbd.mission_rbd);
   const out = [];
-  for (const l of usable) {
-    out.push({ id: `mission-add:${l.rbd.id}`, label: usable.length > 1 ? `Add a mission to ${l.rbd.name}` : "Add a mission", ...off });
+  if (canAddMission(r)) out.push({ id: "mission-new", label: "Add a mission", ...off });
+  else {
+    const why = linked.length ? "Missions are flown on a non-repairable block diagram: give it a life model, or add positions inside it"
+      : "Give it a life model on the Modelling tab, or add positions inside it: a mission's RBD is built from them";
+    out.push({ id: "mission-none", label: "Add a mission", disabled: true, reason: why, title: why });
   }
-  if ((r?.rbds || []).some((l) => l.rbd && (l.rbd.repairable || l.rbd.network)) && !usable.length) {
-    out.push({ id: "mission-none", label: "Add a mission", disabled: true,
-      reason: "Missions are flown on a non-repairable block diagram", title: "Missions are flown on a non-repairable block diagram" });
+  for (const l of linked) {
+    out.push({ id: `mission-open-rbd:${l.rbd.id}`, label: (linked.length > 1 ? `Open ${l.rbd.name}` : "Open the RBD") });
   }
-  for (const l of (r?.rbds || []).filter((x) => x.rbd)) {
-    out.push({ id: `mission-open-rbd:${l.rbd.id}`, label: (r.rbds.length > 1 ? `Open ${l.rbd.name}` : "Open the RBD") });
-  }
-  if (!(r?.rbds || []).some((l) => l.rbd)) out.push({ id: "mission-build-rbd", label: "Build an RBD from what's inside…", ...off });
+  if (!linked.length) out.push({ id: "mission-build-rbd", label: "Build an RBD from what's inside…", ...off });
   return out;
 }
 
@@ -246,6 +261,7 @@ export function editablePhase(p = {}) {
     name: p.name || "",
     duration: p.duration ?? "",
     not_needed: [...(p.not_needed || [])],
+    standby: [...(p.standby || [])],
     votes: { ...(p.votes || {}) },
     values: { ...(p.values || {}) },
     block_values: Object.fromEntries(Object.entries(p.block_values || {}).map(([k, v]) => [k, { ...v }])),
@@ -314,6 +330,8 @@ export function cleanPhases(rows, { blocks = [], votes = [] } = {}) {
     const out = { name, duration };
     const nn = (r.not_needed || []).filter((id) => ids.has(id));
     if (nn.length) out.not_needed = [...new Set(nn)];
+    const sb = (r.standby || []).filter((id) => ids.has(id) && !nn.includes(id));
+    if (sb.length) out.standby = [...new Set(sb)];
     const v = {};
     for (const [id, n] of Object.entries(r.votes || {})) {
       if (!voteIds.has(id) || String(n ?? "").trim() === "") continue;
@@ -355,6 +373,31 @@ export function changedPhases(detail, change) {
 export const withNewPhase = (rows) => [...rows, { ...newPhase(rows.length, rows), duration: 0 }];
 // Phase i taken out (movePhase moves one).
 export const withoutPhase = (rows, i) => rows.filter((_, j) => j !== i);
+
+// ---- each block's state in each phase (the pane's phase × block grid) --------------------------
+
+// A block in a phase is Working (the default), on Standby or Not needed (stored as the phase's
+// `standby` and `not_needed` lists; one or neither).
+export const BLOCK_STATES = [
+  { id: "working", label: "Working", title: "Running and needed: it ages and can fail in this phase" },
+  { id: "standby", label: "Standby", title: "There but not running: it neither ages nor fails in this phase, and counts as working if it was working when the phase began" },
+  { id: "off", label: "Not needed", title: "The phase works without it; its clock keeps running, so a failure now is found by a later phase that needs it" },
+];
+export function blockState(phase, id) {
+  if ((phase?.standby || []).includes(id)) return "standby";
+  if ((phase?.not_needed || []).includes(id)) return "off";
+  return "working";
+}
+// The phase's lists with block `id` set to `state`: {standby, not_needed} (a patch for the phase).
+export function withBlockState(phase, id, state) {
+  const standby = (phase?.standby || []).filter((x) => x !== id);
+  const notNeeded = (phase?.not_needed || []).filter((x) => x !== id);
+  if (state === "standby") standby.push(id);
+  else if (state === "off") notNeeded.push(id);
+  return { standby, not_needed: notNeeded };
+}
+// The blocks shown faded in a phase's drawing: those it doesn't need and those standing by.
+export const fadedIn = (phase) => new Set([...(phase?.not_needed || []), ...(phase?.standby || [])]);
 
 // ---- a phase's covariates: what each block uses and where it comes from ------------------------
 
@@ -411,7 +454,10 @@ export const phaseNeeds = (rows) => [...new Set(rows.flatMap((r) => r.missing ||
 export function phaseLine(phase, { blocks = [], votes = [] } = {}) {
   const labelOf = new Map(blocks.map((b) => [b.id, b.label]));
   const skipped = (phase.not_needed || []).filter((id) => labelOf.has(id));
-  const parts = [skipped.length ? `Doesn't need ${skipped.length === 1 ? labelOf.get(skipped[0]) : `${skipped.length} blocks`}` : "Needs every block"];
+  const standing = (phase.standby || []).filter((id) => labelOf.has(id));
+  const parts = [skipped.length ? `Doesn't need ${skipped.length === 1 ? labelOf.get(skipped[0]) : `${skipped.length} blocks`}`
+    : standing.length ? "Every block working or standing by" : "Needs every block"];
+  if (standing.length) parts.push(`${standing.length === 1 ? labelOf.get(standing[0]) : `${standing.length} blocks`} on standby`);
   for (const v of votes) {
     const n = phase.votes?.[v.id];
     if (String(n ?? "").trim() !== "") parts.push(`${v.label}: ${n} of ${v.inputs}`);

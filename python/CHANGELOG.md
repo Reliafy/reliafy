@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.4 (11 Nov 2026)
+
+No change to the client's own code: the tools, routes and flags below come
+from the server, and need a server on this release.
+
+- **Missions**: each mission can have an RBD of its own, built from what's
+  inside its position (`POST /api/maintenance/positions/{id}/missions`). A
+  phase can set blocks to `standby` (not running in that phase) beside
+  `not_needed`; `change rbd_mission` keeps the new field.
+- **Fit with a prior**: `POST /api/models/fit-with-prior` takes a saved
+  model, a library record, numbers, a range or a B10 as the prior, on a saved
+  dataset or on pasted data, and gives the result in the data's time unit.
+- **Failure reports** on a design position list the reports on the items
+  built from it.
+- **Item class fleets** take `within` (a position or place) to keep to one
+  asset.
+- **Maintenance orders**: `GET /api/maintenance/work-orders` takes
+  `status=done`, `q` and `limit`; `GET /api/maintenance/due` lists what falls
+  due over a horizon.
+
 ## 0.5.3 (10 Nov 2026)
 
 No change to the client's own code: the tools, routes and flags below come

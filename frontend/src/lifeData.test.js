@@ -227,3 +227,23 @@ test("flagsLookSwapped: most units still running from a 0/1 column says which co
   assert.equal(flagsLookSwapped(m, { failed: 6, running: 14, left: 2, interval: 0 }), null);
   assert.equal(flagsLookSwapped(m, null), null);
 });
+
+test("a mapping reads back in words: time with its unit, each flag's meaning", async () => {
+  const { mappingWords } = await import("./lifeData.js");
+  const facts = { censored: { values: { 0: 18, 1: 7 } } };
+  assert.deepEqual(mappingWords({ ...EMPTY_MAPPING, x: "months", c: "censored" }, facts, "month"), [
+    { label: "Time", value: "“months” (month)" },
+    { label: "Status", value: "“censored”: 0 = failed, 1 = still running" },
+  ]);
+  // A flipped column (1 = failed in the sheet) says so.
+  const flipped = mappingWords({ ...EMPTY_MAPPING, x: "t", c: "censored", c_invert: true }, facts, "");
+  assert.equal(flipped[0].value, "“t” (no unit yet)");
+  assert.equal(flipped[1].value, "“censored”: 0 = still running, 1 = failed");
+  // No status column, interval times, a count and truncation.
+  assert.deepEqual(mappingWords({ ...EMPTY_MAPPING, xl: "lo", xr: "hi", n: "n", tl: "from" }, {}, "hour"), [
+    { label: "Time", value: "between “lo” and “hi” (hour)" },
+    { label: "Status", value: "none: every row is a failure" },
+    { label: "Count", value: "“n”" },
+    { label: "Observed from", value: "“from”" },
+  ]);
+});

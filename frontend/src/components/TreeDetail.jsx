@@ -20,6 +20,7 @@ const PartsPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m) =
 // The LSA tab's body (what each task needs, and the work packages: tasks done together on one visit).
 const LsaPanel = lazy(() => import("./LsaPanel.jsx"));
 const ClassFleet = lazy(() => import("./ClassFleet.jsx"));
+const PositionRisk = lazy(() => import("./PositionRisk.jsx"));
 const ClassesPanel = lazy(() => import("../views/MaintenanceLists.jsx").then((m) => ({ default: m.ClassesPanel })));
 
 // The panel beside the asset tree: what the selected row is, in a glance. A
@@ -286,7 +287,7 @@ function GroupedHeaderMenu({ items }) {
 }
 
 // The panel's tabs (Summary, RCM), under its heading. A row with Summary alone has none; an item
-// class has its one tab, Condition monitoring.
+// class has its one tab, Condition monitoring (a position on an asset has that tab too).
 export function HeaderTabs({ row, tab, onTab }) {
   const tabs = tabsFor(row);
   if (!hasTabBar(row)) return null;
@@ -316,7 +317,7 @@ const TreeDetail = forwardRef(function TreeDetail({
       <div className="td-body" role={tabbed ? "tabpanel" : undefined} id={tabbed ? "td-panel" : undefined}
            aria-labelledby={tabbed ? `td-tab-${shown}` : undefined}>
         {shown === "reports" && reports
-          ? (reports?.rollup ? reports.rollup(row) : <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} onMenu={onMenu} />)
+          ? <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} onMenu={onMenu} />
           // The Measurements tab is the tree-table (AssetExplorer, MeasurementTable.jsx), not a panel.
           // So is the Modelling tab (AssetExplorer, ModelTable.jsx).
           : shown === "measurements" || shown === "models"
@@ -329,8 +330,12 @@ const TreeDetail = forwardRef(function TreeDetail({
           ? <PartsTab row={row} display={display} />
           : shown === "classes"
           ? <ClassesTab row={row} display={display} />
-          // By Classes, a class's row: its Condition monitoring tab, the fleet (every position under
-          // it, with risk now; `within`: only the positions of the one asset on show).
+          // The Condition monitoring tab. A position's (any arrangement): its own risk now, in words
+          // then its two charts, or why there is none and how to get one (the Modelling tab).
+          : shown === "condition" && row.type === "pos"
+          ? <Suspense fallback={loading}><PositionRisk positionId={row.key} version={version} detail onModelling={() => onTab("models")} /></Suspense>
+          // By Classes, a class's row: the fleet (every position under it, with risk now; `within`:
+          // the one asset on show, its top position's id: only the positions inside it).
           : shown === "condition"
           ? <Suspense fallback={loading}><ClassFleet row={row} version={version} onSelect={onSelect} within={within} /></Suspense>
           : <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} actions={actions} />}

@@ -1,0 +1,78 @@
+/* Placeholder rows: where a list will be while it loads (PlaceholderRows.jsx).
+   Sized like a "What changed" row, so the card barely moves when the list
+   arrives. */
+
+.wait-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 14px 16px;
+}
+
+.wait-row + .wait-row {
+  border-top: 1px solid var(--line2);
+}
+
+.wait-bar {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--line);
+  animation: wait-pulse 1.6s ease-in-out infinite;
+}
+
+.wait-kind {
+  flex: 0 0 72px;
+  margin-right: 96px;
+}
+
+.wait-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wait-name {
+  width: min(320px, 70%);
+}
+
+.wait-detail {
+  width: min(180px, 40%);
+  background: var(--line2);
+}
+
+/* Rows of differing length read as a list, not a block. */
+.wait-row:nth-child(even) .wait-name {
+  width: min(240px, 55%);
+}
+
+.wait-row:nth-child(3n) .wait-detail {
+  width: min(240px, 50%);
+}
+
+@keyframes wait-pulse {
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wait-bar { animation: none; }
+}
+
+@media (max-width: 720px) {
+  .wait-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .wait-kind {
+    flex: none;
+    width: 72px;
+    margin-right: 0;
+  }
+
+  .wait-body {
+    width: 100%;
+  }
+}

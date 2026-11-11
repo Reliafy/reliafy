@@ -13,17 +13,17 @@ export { MISSION_COLUMNS, MISSION_TREE_HEAD } from "../explorerMissions.js";
 // reads can be out at once (a mission saved, then its result worked out): the one asked for last
 // is the one shown, whichever answers first.
 export function useTreeMissions({ on }) {
-  const [state, setState] = useState({ links: null, error: null });
+  const [state, setState] = useState({ links: null, hasModel: [], error: null });
   const asked = useRef(null);
   if (!asked.current) asked.current = latestOnly();
   const load = useCallback(() => {
     const latest = asked.current();
     return listPositionMissions()
-      .then((d) => latest() && setState({ links: d.links || [], error: null }))
-      .catch((e) => latest() && setState((s) => ({ links: s.links, error: e.message })));
+      .then((d) => latest() && setState({ links: d.links || [], hasModel: d.has_model || [], error: null }))
+      .catch((e) => latest() && setState((s) => ({ ...s, error: e.message })));
   }, []);
   useEffect(() => { if (on) load(); }, [on, load]);
-  return { links: state.links, error: state.error, load };
+  return { links: state.links, hasModel: state.hasModel, error: state.error, load };
 }
 
 // One cell of a mission row (r.ref: {mission, rbd}); a phase row (r.ref.phase: {index, of,

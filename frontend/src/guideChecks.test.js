@@ -154,7 +154,7 @@ test("guides: the dead-link check knows routes, redirects, content and anchors",
   assert.match(deadReason("/strategy/no-such-page"), /no route/);
   assert.match(deadReason("/guides/no-such-guide"), /no guides page/);
   assert.match(deadReason("/guides/fit-your-first-model#where-next"), /no #where-next/);
-  assert.match(deadReason("/maintenance"), /operators-only/);
+  assert.match(deadReason("/maintenance/work-orders"), /operators-only/);
   assert.match(deadReason("/guides/img/no-such.png"), /no image/);
 });
 

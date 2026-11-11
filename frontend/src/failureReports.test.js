@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  CONSEQUENCES, DEFAULT_FILTERS, OPEN_STATUSES, STATUSES, STATUS_CHIPS, canMoveTo, closeBlock, consequenceLabel,
+  CONSEQUENCES, DEFAULT_FILTERS, DESIGN_FILTERS, OPEN_STATUSES, STATUSES, STATUS_CHIPS, canMoveTo, closeBlock, consequenceLabel,
   consequenceShort, countsSentence, defaultFoundBy, filtering, fmtWhen, historyRows, isOpen, itemText, levelText, nextStatus,
-  positionsInScope, queryParams, repeatSentence, scopeOf, signOffText, statusLabel,
+  builtItemChoices, builtItemPlace, positionsInScope, queryParams, repeatSentence, scopeOf, signOffText, statusLabel,
 } from "./failureReports.js";
 import { buildDisplay } from "./assetTree.js";
 
@@ -66,6 +66,10 @@ test("the counts sentence names the scope", () => {
   assert.equal(countsSentence(counts, { kind: "location", positions: 4 }, { kind: "loc" }), "3 open · 7 in all, at this location (4 positions)");
   assert.equal(countsSentence({ open: 1, reported: 1 }, { kind: "item" }, { kind: "item" }), "1 open · 1 in all, on this item");
   assert.equal(countsSentence(null, null), "0 open · 0 in all, at this position");
+  // A product's design position: the reports on the items built from it.
+  assert.equal(countsSentence(counts, { kind: "design", positions: 9, items: 3 }), "3 open · 7 in all, on the 3 items built from this product");
+  assert.equal(countsSentence({ open: 1, reported: 1 }, { kind: "design", items: 1 }), "1 open · 1 in all, on the 1 item built from this product");
+  assert.equal(countsSentence({}, { kind: "design", items: 0 }), "0 open · 0 in all, no items built from this product yet");
 });
 
 test("the level under the row picked, and the scope of a row", () => {
@@ -90,6 +94,30 @@ test("the filters as the server's query", () => {
   assert.ok(filtering({ status: "all" }));
   assert.ok(filtering({ q: "x" }));
   assert.ok(!filtering({ q: "  " }));
+  // A design's list: every report, open ones first (the loop's order), and that isn't narrowing it.
+  assert.deepEqual(queryParams(DESIGN_FILTERS, { position_id: "d1" }), { position_id: "d1", below: 1, sort: "status", limit: 50 });
+  assert.ok(!filtering(DESIGN_FILTERS, DESIGN_FILTERS));
+  assert.ok(filtering({ ...DESIGN_FILTERS, status: "open" }, DESIGN_FILTERS));
+  assert.ok(filtering({ ...DESIGN_FILTERS, consequence: "safety" }, DESIGN_FILTERS));
+});
+
+test("the built items a report can be filed on from a design, by serial", () => {
+  const items = [
+    { serial: "0010", position: { id: "p10", name: "Motor 1" } },
+    { serial: "0009", position: { id: "p9", name: "Motor 1" } },
+    { serial: "0008", position: { id: "p8", name: "Motor 1", retired: true } },
+    { serial: "", position: { id: "px", name: "Motor 1" } },
+    { serial: "0007" },
+  ];
+  const got = builtItemChoices(items);
+  assert.deepEqual(got.map((c) => c.id), ["px", "p9", "p10"]);
+  assert.deepEqual(got[1], { id: "p9", name: "Motor 1", serial: "0009", label: "Serial 0009" });
+  assert.equal(got[0].label, "(no serial)");
+  assert.deepEqual(builtItemChoices(null), []);
+  assert.equal(builtItemPlace(got[1]), "Motor 1 on serial 0009");
+  assert.equal(builtItemPlace(got[0]), "Motor 1 on an item with no serial");
+  assert.equal(builtItemPlace({ id: "t", name: "Survey quadcopter · 0007", serial: "0007" }), "Survey quadcopter · 0007");
+  assert.equal(builtItemPlace(null), "");
 });
 
 test("why a report can't be closed, in words", () => {

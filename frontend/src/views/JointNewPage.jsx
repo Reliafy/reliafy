@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Select from "../components/Select.jsx";
-import { datasetParts, usableDatasets } from "../datasetFit.js";
+import { datasetParts } from "../datasetFit.js";
+import DatasetPicker from "../components/DatasetPicker.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
 import { DatasetPartModal } from "../components/DatasetPartInput.jsx";
@@ -18,36 +19,14 @@ import ProTag from "../components/ProTag.jsx";
 const NONE = { value: "", label: "— none —" };
 const POLL_MS = 2000;
 
-// The one dataset: an existing one holding its units' life data with their
-// measurements (or one table holding both), or a new one uploaded or pasted
+// The one dataset: an existing one holding its units' life data with their measurements (or one
+// table holding both), picked from the shared list (DatasetPicker), or a new one uploaded or pasted
 // (the Data library's own dialog, with its measurements).
-function DatasetPicker({ datasets, value, onPick }) {
-  const choices = usableDatasets("joint", datasets);
+function UploadNew({ onPick }) {
   const [modal, setModal] = useState(false);
   return (
-    <div className="joint-table-pick">
-      <div className="joint-row">
-        <Select
-          value={value?.id || ""}
-          onChange={(id) => id && onPick(id)}
-          placeholder="— choose a dataset —"
-          ariaLabel="Dataset"
-          options={[
-            { value: "", label: "— choose a dataset —" },
-            ...choices.map((d) => ({
-              value: d.id, label: d.name,
-              hint: d.measurements ? `${d.n_rows} units · ${d.measurements.n_rows} readings` : d.summary || undefined,
-            })),
-          ]}
-        />
-        <button type="button" className="secondary" onClick={() => setModal(true)}>Upload or paste…</button>
-      </div>
-      {choices.length === 0 && (
-        <p className="hint">
-          None of your datasets holds life data with measurements yet. Upload both here, or open a dataset under{" "}
-          <Link to="/data">Data</Link> and add its measurements.
-        </p>
-      )}
+    <>
+      <button type="button" className="secondary" onClick={() => setModal(true)}>Upload or paste a new dataset…</button>
       {modal && (
         <NewDatasetModal
           measurementsOpen
@@ -55,7 +34,7 @@ function DatasetPicker({ datasets, value, onPick }) {
           onCreated={(ds) => { setModal(false); onPick(ds.id, true); }}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -86,7 +65,7 @@ function describe(part) {
 // path; Check data, then Fit (Pro, a job on the calculation service).
 export default function JointNewPage() {
   const navigate = useNavigate();
-  const [datasets, setDatasets] = useState([]);
+  const [datasets, setDatasets] = useState(null); // null while the list loads
   const [opts, setOpts] = useState(null);
   const [dataset, setDataset] = useState(null); // {id, name, life, reads, combined, missing}
   const [map, setMap] = useState({ id: "", x: "", xl: "", xr: "", c: "", tl: "" });
@@ -111,7 +90,7 @@ export default function JointNewPage() {
   useEffect(() => {
     alive.current = true;
     getJointOptions().then((o) => { setOpts(o); setPath(o.default_path || "linear"); }).catch(() => {});
-    listDatasets().then((d) => setDatasets(d.datasets || [])).catch(() => {});
+    listDatasets().then((d) => setDatasets(d.datasets || [])).catch(() => setDatasets([]));
     return () => { alive.current = false; };
   }, []);
 
@@ -262,7 +241,9 @@ export default function JointNewPage() {
           Only readings, no failures? Use <Link to="/models/degradation">Degradation</Link> instead: it projects each
           item's readings to a failure threshold.
         </p>
-        <DatasetPicker datasets={datasets} value={dataset} onPick={pick} />
+        <div className="joint-new-row"><UploadNew onPick={pick} /></div>
+        <DatasetPicker kind="joint" datasets={datasets} value={dataset?.id} onPick={(d) => pick(d.id)}
+                       empty="Pick a dataset to see its life data and its measurements.">
         {dataset && (
           <div className="joint-tables">
             <div className="joint-table-pick">
@@ -297,6 +278,7 @@ export default function JointNewPage() {
             </div>
           </div>
         )}
+        </DatasetPicker>
       </div>
 
       {ready && (

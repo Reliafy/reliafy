@@ -75,8 +75,10 @@ were already in service when your records began can take an **Entry age**.
 ## Fit the model
 
 Go to **Modelling → Models →** [Condition and life](/models/joint) and press **New
-model**. Under **1. Your dataset**, choose the dataset, or upload or paste a new
-one with its measurements. Reliafy guesses the columns of each part under **2.
+model**. Under **1. Your dataset**, pick the dataset from the list (those holding life data
+with its measurements come first; a dataset with life data alone says to add its measurements on
+its page). Its two parts show beside the list. Or press **Upload or paste a new dataset…** to
+add one with its measurements. Reliafy guesses the columns of each part under **2.
 Columns**; check them.
 
 ![A new condition and life model: the dataset's two parts and their columns, with load ticked as a covariate](/guides/img/cbr-01-new.png)

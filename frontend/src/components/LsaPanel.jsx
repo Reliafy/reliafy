@@ -72,7 +72,7 @@ function useOpenParam(name) {
 }
 
 // What a set of tasks needs together, as label: text lines.
-function Rollup({ rollup, title, empty = null }) {
+export function Rollup({ rollup, title, empty = null }) {
   const lines = rollupLines(rollup);
   if (!lines.length) return empty;
   return (
@@ -89,7 +89,7 @@ function Rollup({ rollup, title, empty = null }) {
 
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 
-function StatusChips({ pkg, today }) {
+export function StatusChips({ pkg, today }) {
   const late = daysLate(pkg, today);
   return (
     <>
@@ -280,7 +280,7 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
   );
 }
 
-function PauseDialog({ pkg, onClose, onDone }) {
+export function PauseDialog({ pkg, onClose, onDone }) {
   const [reason, setReason] = useState("");
   const [until, setUntil] = useState("");
   const [full, setFull] = useState(true);
@@ -295,7 +295,7 @@ function PauseDialog({ pkg, onClose, onDone }) {
   );
 }
 
-function RetireDialog({ pkg, onClose, onDone }) {
+export function RetireDialog({ pkg, onClose, onDone }) {
   const [reason, setReason] = useState("");
   return (
     <FormModal title={`Retire ${pkg.name}?`} submitLabel="Retire" danger onClose={onClose}

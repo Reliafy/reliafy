@@ -6,6 +6,7 @@ import { rcmDetail } from "./changes.js";
 import { formatDate } from "./dates.js";
 import { datasetPath } from "./navigation.js";
 import { partsPath } from "./redirects.js";
+import { ORDERS_PATH, ordersPath } from "./maintenanceOrders.js";
 
 // Most rows each list shows (the counts above them are complete).
 export const ATTENTION_ROWS = 6;
@@ -13,6 +14,18 @@ export const RECENT_ROWS = 8;
 // Below this many items of its own, a workspace is "near-empty": Home shows
 // the "Start here" cards first and large, not last and compact.
 export const NEAR_EMPTY = 3;
+// Below this many, it has only a little work: the Recent list isn't full yet,
+// so the compact ways to start go first, under the title, not last.
+export const LITTLE_WORK = RECENT_ROWS;
+
+// Where Home puts the ways to start, from how many items of its own the
+// workspace has: "large" (near-empty: the "Start here" cards, first), "first"
+// (a little work: the compact row, first) or "last" (plenty: the compact row
+// after the lists).
+export function startersPlace(ownCount) {
+  if (ownCount < NEAR_EMPTY) return "large";
+  return ownCount < LITTLE_WORK ? "first" : "last";
+}
 
 // "20 Oct 2026" for a workspace date ("2026-10-20"), read as a calendar day.
 export function dayText(iso) {
@@ -54,7 +67,7 @@ export function attentionRows({ changes = null, tracked = [], maintenance = null
       kind: t.overdue ? "Overdue" : "Due soon",
       tone: t.overdue ? "danger" : null,
       name: t.name,
-      url: t.open_work_order ? `/maintenance/work-orders/${t.open_work_order.id}` : "/maintenance",
+      url: t.open_work_order ? `/maintenance/work-orders/${t.open_work_order.id}` : ordersPath("due"),
       detail: `Due ${dayText(t.next_due)}${t.open_work_order ? ` · work order #${t.open_work_order.number}` : " · no work order yet"}`,
       at: null,
     });
@@ -64,6 +77,36 @@ export function attentionRows({ changes = null, tracked = [], maintenance = null
     .map((r, i) => ({ r, i }))
     .sort((a, b) => (rank[a.r.tone] ?? 2) - (rank[b.r.tone] ?? 2) || a.i - b.i)
     .map(({ r }) => r);
+}
+
+// Whether everything "Needs attention" reads has answered, so "nothing" is
+// the answer and not a guess. Each input is `undefined` while it loads:
+// `changes` (GET /api/changes; null once it failed), `tracked` (the tracked
+// fleets), `access` (whether this viewer has Reliafy Maintenance: true or
+// false) and, with access, `maintenance` (the overview; null once it failed).
+export function attentionReady({ changes, tracked, access, maintenance } = {}) {
+  if (changes === undefined || tracked === undefined || access === undefined) return false;
+  return access === false || maintenance !== undefined;
+}
+
+// The page that lists every row of a kind, by the row key's prefix.
+const ATTENTION_HOMES = [
+  ["due-", { to: ordersPath("due"), label: "Maintenance" }],
+  ["track-", { to: "/risk", label: "Condition monitoring" }],
+  ["alert-", { to: "/changes", label: "What changed" }],
+  ["rcm-", { to: "/changes", label: "What changed" }],
+];
+
+// Where the rows "Needs attention" has no room for are listed in full: the
+// pages ([{ to, label }], each once, in the rows' order) holding the rows
+// after the first `shown`. Empty when every row is shown.
+export function attentionRest(rows = [], shown = ATTENTION_ROWS) {
+  const pages = [];
+  for (const r of rows.slice(shown)) {
+    const home = ATTENTION_HOMES.find(([prefix]) => r.key.startsWith(prefix))?.[1];
+    if (home && !pages.some((p) => p.to === home.to)) pages.push(home);
+  }
+  return pages;
 }
 
 const when = (x) => x.updated_at || x.created_at || null;
@@ -181,9 +224,9 @@ export function waitingFigures(rollup = null, maintenance = null) {
   }
   if (maintenance) {
     figures.push(
-      { label: "changes to decide", n: (maintenance.proposals || []).length, to: "/maintenance", alert: true },
-      { label: "tasks overdue", n: (maintenance.due || []).filter((t) => t.overdue).length, to: "/maintenance", alert: true },
-      { label: "open work orders", n: (maintenance.open_work_orders || []).length, to: "/maintenance" },
+      { label: "changes to decide", n: (maintenance.proposals || []).length, to: ORDERS_PATH, alert: true },
+      { label: "tasks overdue", n: (maintenance.due || []).filter((t) => t.overdue).length, to: ordersPath("due"), alert: true },
+      { label: "open work orders", n: (maintenance.open_work_orders || []).length, to: ORDERS_PATH },
     );
   }
   return figures;

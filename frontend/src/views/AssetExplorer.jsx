@@ -28,7 +28,7 @@ import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, builtRbdLink, graftMod
 } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  addSampleProduct, createMission, deleteMission, getMission, updateMission, getFmeaExcelBlob, getItemClasses, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
+  addSampleProduct, createPositionMission, deleteMission, getMission, updateMission, getFmeaExcelBlob, getItemClasses, getMaintenanceTree, getProduct, getPositionRcm, getRcmOptions,
   hasFmeaExcel, linkPositionModel, makeSampleOwn, restoreRcm, restoreTree,
 } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
@@ -74,7 +74,7 @@ import { saveErrorText } from "../confirm.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
 import { hasOpenLayer, isFullScreenKey, isTyping } from "../fullScreen.js";
-import { addressTab, isDesignRow, rowKind, shownTab, tabForArrangement, tabsFor } from "../explorerTabs.js";
+import { addressTab, isDesignRow, rowKind, shownTab, tabCarried, tabForArrangement, tabsFor } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { openGuide } from "../components/HelpButton.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
@@ -82,7 +82,7 @@ import { NewLocationModal } from "./MaintenanceLists.jsx";
 import { ImportModal, NewPositionModal } from "./MaintenanceHome.jsx";
 import { DEFAULT_LEVEL, changedFromUsual, levelShown, showingOnly } from "../treeControls.js";
 import {
-  ARRANGEMENTS, CHIPS, PANE, ancestorsOf, arrangementFor, scopedArrangeQuery, scopedArrangements, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath, fitTreeWidth,
+  ARRANGEMENTS, CHIPS, PANE, ancestorsOf, arrangementFor, assetOf, scopedArrangeQuery, scopedArrangements, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath, fitTreeWidth, treeColumnWidth,
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
 import { keepLevel } from "../outlineTree.js";
@@ -102,7 +102,7 @@ import { OPEN_SAMPLE_PRODUCT_LABEL, sampleProductId, sampleProductView } from ".
 import {
   MAKE_OWN, PRODUCTS_PATH, designActions, isDesignScope, isSampleRow, madeOwnText, makeOwnConfirm, productViewPath, scopeHasClasses, scopeTree,
 } from "../products.js";
-import { BuildItemModal, DesignReports } from "../components/ProductPanels.jsx";
+import { BuildItemModal } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
 
@@ -233,7 +233,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // An asset's tree has Classes too (?arrange=classes): the classes of what's fitted
   // inside that asset, and nothing else's (a design has nothing fitted, so no Classes).
   const [data, setData] = useState(null);
-  const scopedClasses = !!root && scopeHasClasses(data, { ownPage: !!rootProp });
+  // The tree read is for the root it was read with: a new root (Classes on the picked row's asset)
+  // takes the address at its word until its own read is in.
+  const [dataRoot, setDataRoot] = useState(root);
+  const scopedClasses = !!root && scopeHasClasses(dataRoot === root ? data : null, { ownPage: !!rootProp });
   const mode = arrangementFor({ param: params.get("arrange"), remembered: saved.mode, rcm: tableOn, scoped: !!root, classes: scopedClasses });
   const notPlaced = mode === "positions" && params.get("place") === "none";
   const title = titleProp || EXPLORER_LABEL;
@@ -346,6 +349,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       .then((d) => {
         forgetPositions();
         setData(scopeTree(d, root));
+        setDataRoot(root);
         setVersion((v) => v + 1);
       })
       .catch((e) => setError({ text: e.message, notAllowed: e.status === 404 || e.status === 403 }));
@@ -458,8 +462,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const whole = useMemo(() => (rcmOn && rcm ? (fmeaOn ? graftFmea(base, rcm) : graftRcm(base, rcm))
     : measOn && meas.data ? graftMeasurements(base, meas.data, data?.today || new Date().toISOString().slice(0, 10), meas.fittedAt)
       : modelsOn && pmodels.links ? graftModels(base, pmodels.links)
-        : missionsOn && pmissions.links ? graftMissions(base, pmissions.links)
-          : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, missionsOn, pmissions.links]);
+        : missionsOn && pmissions.links ? graftMissions(base, pmissions.links, pmissions.hasModel)
+          : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, missionsOn, pmissions.links, pmissions.hasModel]);
   const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
   // The modes picked that are still in the tree after a read.
   useEffect(() => {
@@ -500,8 +504,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // review, Nov 2026: at 1600 px names were cut to a few letters). The same width on every tab,
   // so switching tabs moves nothing: worked out from the tree with its RCM in it (read with the
   // tree, whatever the tab) and the rows open in this arrangement, not from the tab's own rows.
-  const fitTree = useMemo(() => (!phone && !widthSet && data ? (rcm ? graftRcm(base, rcm) : base) : null),
-    [phone, widthSet, data, rcm, base]);
+  // (A product's page doesn't fit: it opens at the usual width, treeColumnWidth.)
+  const fitTree = useMemo(() => (!phone && !widthSet && !rootProp && data ? (rcm ? graftRcm(base, rcm) : base) : null),
+    [phone, widthSet, rootProp, data, rcm, base]);
   const fitWidth = useMemo(() => {
     if (!fitTree) return null;
     const shown = pinKey && fitTree.rows.has(pinKey) ? pinDisplay(fitTree, pinKey) : fitTree;
@@ -513,7 +518,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       return { depth: v.depth, text: ((isRcmRow(r) ? r?.ref?.text : r?.ref?.name) || "") + on };
     }), window.innerWidth);
   }, [fitTree, pinKey, openBy, mode]);
-  const shownWidth = fitWidth ?? width;
+  const shownWidth = treeColumnWidth({ width, widthSet, fit: fitWidth, product: !!rootProp });
   // A row asked for (?sel=, a link, a new row) that's in the tree is the one
   // shown, even before the effect below reveals it: else the first row is shown
   // for a render and its panels ask for the wrong row's data.
@@ -538,14 +543,29 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   }, [selParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // With a tab open beyond Summary, the address follows the row picked
-  // (?sel=), once the tree is in, so a link opens on it with that tab.
+  // (?sel=), once the tree is in, so a link opens on it with that tab. A class
+  // shows its one tab without the address naming it: walking on from the class
+  // to a position names it there, so Condition monitoring stays picked
+  // (explorerTabs.js tabCarried). The row walked to is the one whose details are
+  // on show: on a phone that's the row the address's state names, which arrives
+  // a render after the row is picked, so the walk is read from it (and the
+  // address is changed with that state, not the one before it). Back at the
+  // tree on a phone nothing is on show, so the next row opens as any row does
+  // there: on the tab its address names.
+  const walkedFrom = useRef(null);
   useEffect(() => {
-    if (!data || selPos == null || pending.current || tab === "summary") return;
-    if (params.get("sel") === selPos) return;
+    const at = phone ? location.state?.treeDetail : focus;
+    const shown = at != null ? display.rows.get(at) ?? null : null;
+    const from = walkedFrom.current;
+    if (data) walkedFrom.current = shown;
+    if (!data || selPos == null || pending.current) return;
+    const carried = shown && from !== shown && shown.key === selPos ? tabCarried(from, shown, { named: params.has(tabKey) }) : null;
+    if (!carried && (tab === "summary" || params.get("sel") === selPos)) return;
     // Another row: a report open in the Failure reports tab was the last row's.
     // A point or channel open in full in the Measurements tab was the last row's too, and so was
     // a fit or a prediction open in the Modelling tab's table area.
     setQuery_((q) => {
+      if (carried) q.set(tabKey, carried);
       q.set("sel", selPos);
       q.delete("report");
       // The packaging open in the LSA tab was the last row's as well.
@@ -1241,8 +1261,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
 
   const viewOnly = viewOnlyReason(activeTeam);
   const designScope = isDesignScope(data, root);
-  // One asset's tree on show: the positions inside it (a class's fleet covers only these).
-  const scopeIds = useMemo(() => (root && data?.positions ? new Set(data.positions.map((p) => p.id)) : null), [root, data]);
   const kids = useMemo(() => liveKids(data?.positions), [data]);
   // A measurement row's ⋯ (the Measurements tab).
   // A measurement row's details spread across the table, the tree kept (as an
@@ -1395,9 +1413,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     pending.current = phases.length ? phaseKey(r.ref.rbd.id, r.ref.mission.id, Math.min(index, phases.length - 1)) : missionKey(r.ref.rbd.id, r.ref.mission.id);
     reopenIfShown(r, null);
   };
-  const removeMission = async (positionId, rbdId, mission) => {
+  const removeMission = async (positionId, rbdId, mission, ownRbd = false) => {
     const ok = await confirm({
-      title: `Delete ${mission.name}?`, body: "The mission and its phases go; the RBD stays as it is.",
+      title: `Delete ${mission.name}?`,
+      body: ownRbd ? "The mission, its phases and its own RBD go. Other missions and the position's RBDs stay as they are."
+        : "The mission and its phases go; the RBD stays as it is.",
       confirmLabel: "Delete the mission", cancelLabel: "Keep it", destructive: true,
     });
     if (!ok) return false;
@@ -1411,13 +1431,18 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       return false;
     }
   };
-  const addMission = async (positionId, rbdId) => {
+  // Add a mission: one RBD per mission, built from what's inside the position (placeholders flagged).
+  const addMission = async (positionId, positionName) => {
+    if (!(await leavePane())) return;
     try {
-      const made = await createMission(rbdId);
-      say(`Added ${made.mission.name}: give it its phases.`);
+      const made = await createPositionMission(positionId);
+      const ph = made.placeholders?.length ? ` ${made.placeholders.length} block${made.placeholders.length === 1 ? " is a placeholder" : "s are placeholders"}: give ${made.placeholders.length === 1 ? "it a model" : "them models"} in its RBD.` : "";
+      const from = made.built_from === "model" ? `one block, ${positionName}'s own model in use`
+        : made.built_from === "copy" ? `a copy of ${positionName}'s RBD` : `what's inside ${positionName}`;
+      say(`Added ${made.mission.name} with an RBD of its own, built from ${from}.${ph} Now give it its phases.`);
       pmissions.load();
-      pending.current = missionKey(rbdId, made.mission.id);
-      openMission(positionId, rbdId, made.mission.id);
+      pending.current = missionKey(made.rbd.id, made.mission.id);
+      openMission(positionId, made.rbd.id, made.mission.id);
     } catch (e) {
       say(saveErrorText(e, { offline: navigator.onLine === false }), "error");
     }
@@ -1431,8 +1456,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (id === "mission-phase-earlier" || id === "mission-phase-later") return stepPhase(r, id === "mission-phase-earlier" ? -1 : 1);
     if (id === "mission-phase-delete") return removePhase(r);
     if (id === "mission-rbd") return openRbd(position, r.ref.rbd.id);
-    if (id === "mission-delete") return removeMission(pid, r.ref.rbd.id, r.ref.mission);
-    if (id.startsWith("mission-add:")) return addMission(pid, id.slice(12));
+    if (id === "mission-delete") return removeMission(pid, r.ref.rbd.id, r.ref.mission, !!r.ref.rbd.mission_rbd);
+    if (id === "mission-new") return addMission(pid, position.name);
     if (id.startsWith("mission-open-rbd:")) return openRbd(position, id.slice(17));
     if (id === "mission-build-rbd") return buildRbd(position);
     return undefined;
@@ -1734,7 +1759,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const nextSelected = keep ? { ...selected, [m]: keep } : selected;
     setSelected(nextSelected);
     pending.current = keep;
-    // A class's own tab (Condition monitoring) stays behind when the tree leaves Classes.
+    // A tab only a class has would stay behind off Classes; Condition monitoring is a position's
+    // too, so it comes along (explorerTabs.js tabForArrangement).
     const nextTab = tabForArrangement(tab, m);
     if (root) {
       // One tree on show: its own address, the arrangement in it (a product's page
@@ -1742,6 +1768,13 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       const q = scopedArrangeQuery(params, m, { ownPage: !!rootProp });
       if (nextTab !== tab) q.delete(tabKey);
       navigate(`${location.pathname}?${q}${location.hash}`, { replace: true, state: location.state });
+      return;
+    }
+    // Classes covers one asset, the one the picked row is in (Derryn, 11 Nov 2026: "an asset
+    // should be self contained"); with nothing picked, the whole register. "Show every asset" there.
+    const asset = m === "classes" ? assetOf(data, focus != null ? display.rows.get(focus) : null) : null;
+    if (asset) {
+      navigate(explorerPath(m, { root: asset, sel: keep, tab: nextTab === "summary" ? null : nextTab }));
       return;
     }
     latest.current = { ...latest.current, mode: m, selected: nextSelected };
@@ -2314,8 +2347,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     onNew: (id, name) => setReportFor({ id, name, select: row?.key ?? id }),
     onChanged: load,
     viewOnly,
-    // A product's design: no report is filed there; its tab rolls up the items' reports.
-    rollup: designScope ? (r) => <DesignReports positionId={r.type === "pos" ? r.key : root} /> : null,
   };
   // The Summary tab's page about the row picked: beside the tree in the pane
   // (a wide screen, its heading and tabs over it in the slim rows), or its own
@@ -2333,7 +2364,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <TreeDetail ref={headingRef} display={whole} row={data && !nothing ? row : null} today={data?.today || ""}
                     onSelect={selectFromPanel} onCrumb={(k) => crumbGo(k, selectFromPanel)} above={above}
                     back={back} version={version} empty={emptyDetail} headless={!phone} heading={heading}
-                    tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi} within={scopeIds}
+                    tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi} within={root}
                     menu={[...ownMenu(data && !nothing ? row : null), ...(tabMenu || [])]} onMenu={setTabMenu}
                     actions={summaryActionsOf(data && !nothing ? row : null)} />
       )}
@@ -2401,10 +2432,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                    headingRef={paneHeading} onClose={() => leavePane().then((ok) => ok && closePane())}
                    onDirty={(d) => { paneDirty.current = d; }}
                    onSaved={(text) => { if (text) say(text); pmissions.load(); }}
+                   onOpenRbd={() => openRbd(panePosition, parseMissionParam(paneAt.mission).rbdId)}
                    onDelete={() => {
                      const { rbdId, missionId } = parseMissionParam(paneAt.mission);
-                     const m = (whole.rows.get(missionKey(rbdId, missionId))?.ref.mission) || { id: missionId, name: "this mission" };
-                     removeMission(panePosition.id, rbdId, m).then((gone) => gone && closePane());
+                     const ref = whole.rows.get(missionKey(rbdId, missionId))?.ref;
+                     const m = ref?.mission || { id: missionId, name: "this mission" };
+                     removeMission(panePosition.id, rbdId, m, !!ref?.rbd?.mission_rbd).then((gone) => gone && closePane());
                    }} />
     </div>
   ) : paneKind === "bind" && bindingFromParam(paneAt.bind) ? (

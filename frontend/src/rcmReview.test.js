@@ -4,7 +4,7 @@
 // calculators' units of use.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PANE, TREE_FIT, buildDisplay, fitTreeWidth, loadTreeState, saveTreeState } from "./assetTree.js";
+import { PANE, TREE_FIT, buildDisplay, fitTreeWidth, loadTreeState, saveTreeState, treeColumnWidth } from "./assetTree.js";
 import { cellRow, failureSummary, graftRcm, modeReportsLink } from "./explorerRcm.js";
 import { COLUMN, decidedWords, insideWords, modeCounts, phoneLine } from "./rcmWorksheet.js";
 import { answerUnitWords, isUseUnit, pfUnits } from "./rcmIntervals.js";
@@ -78,6 +78,17 @@ test("the tree column fits the longest name on show, within its bounds", () => {
   assert.equal(fitTreeWidth([], 1600), PANE.initial);
   // A laptop's window keeps the usual width: the columns need the room there.
   assert.equal(fitTreeWidth([{ depth: 5, text: "Mechanical seal leaks at the pump" }], 1280), PANE.initial);
+});
+
+test("a product's tree column opens at the usual width, and a width the user dragged to wins", () => {
+  // The Explorer: fitted to its names until dragged.
+  assert.equal(treeColumnWidth({ width: 320, widthSet: false, fit: 555, product: false }), 555);
+  assert.equal(treeColumnWidth({ width: 320, widthSet: false, fit: null, product: false }), 320);
+  // A product: the usual width whatever the names would fit to (its worksheet columns need the room)…
+  assert.equal(treeColumnWidth({ width: 480, widthSet: false, fit: 555, product: true }), PANE.initial);
+  // …and the user's own width on both.
+  assert.equal(treeColumnWidth({ width: 480, widthSet: true, fit: 555, product: true }), 480);
+  assert.equal(treeColumnWidth({ width: 480, widthSet: true, fit: 555, product: false }), 480);
 });
 
 test("a dragged width is remembered as chosen; an untouched one isn't", () => {

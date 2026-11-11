@@ -100,6 +100,233 @@ def _model_from_params(distribution_id: str, params: list, extras: dict | None =
         raise StrategyError(str(exc)) from exc
 
 
+#: Below this share of the run-to-failure cost, a saving is too small to act on.
+_MIN_SAVING = 0.005
+
+#: The confidence level of the bounds a fitted model's parameters carry.
+_PARAM_BOUNDS_LEVEL = 0.95
+
+
+def _replacement_point(model, cp: float, cu: float, lfp: bool) -> dict:
+    """The best replacement age for one model and one pair of costs.
+
+    The model-time maths is the reliability library's: the best age, the cost
+    rate at an age and the mean life all come from it. ``candidate`` is the age
+    it found whether or not it pays; ``beneficial`` says whether it beats
+    running to failure by more than :data:`_MIN_SAVING`."""
+    nr = NonRepairable(model)
+    nr.set_costs_planned_and_unplanned(cp, cu)
+    try:
+        t_opt = _scalar(nr.find_optimal_replacement())
+    except Exception:
+        t_opt = None
+    if t_opt is not None and t_opt <= 0:
+        t_opt = None
+
+    mttf = None if lfp else _scalar(model.mean())
+    if lfp:
+        rtf_rate = 0.0
+    else:
+        rtf_rate = cu / mttf if mttf and mttf > 0 else None
+
+    opt_rate = None
+    if t_opt:
+        with np.errstate(all="ignore"):
+            opt_rate = _scalar(nr.cost_rate(t_opt))
+
+    savings = 0.0
+    if opt_rate is not None and rtf_rate:
+        savings = (rtf_rate - opt_rate) / rtf_rate
+    # Preventive replacement only helps with a wear-out (increasing-hazard)
+    # trend; otherwise the "optimum" is spurious (e.g. the memoryless
+    # exponential) and run-to-failure is correct.
+    beneficial = bool(t_opt and savings > _MIN_SAVING)
+    return {
+        "nr": nr,
+        "candidate": t_opt,
+        "candidate_savings": savings,
+        "optimal_time": t_opt if beneficial else None,
+        "optimal_cost_rate": opt_rate if beneficial else None,
+        "run_to_failure_cost_rate": rtf_rate,
+        "mttf": mttf,
+        "savings": savings if beneficial else 0.0,
+        "beneficial": beneficial,
+    }
+
+
+def _param_bounds(param) -> Optional[tuple[float, float]]:
+    """The confidence bounds a parameter carries (``ci: [lower, upper]``), or
+    None when it has none that can be used. Bounds are only ever read, never
+    made up: a parameter that was typed in has none."""
+    if not isinstance(param, dict):
+        return None
+    ci = param.get("ci")
+    if not isinstance(ci, (list, tuple)) or len(ci) != 2:
+        return None
+    try:
+        lower, upper, value = float(ci[0]), float(ci[1]), float(param["value"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not (np.isfinite(lower) and np.isfinite(upper) and lower < upper):
+        return None
+    if not lower <= value <= upper:
+        return None
+    return lower, upper
+
+
+def _no_optimum_reason(distribution_id: str, params: list, extras: Optional[dict], point: dict) -> str:
+    """Why no replacement age pays, as a short code:
+
+    * ``constant_failure_rate`` — an Exponential model (no ageing at all);
+    * ``no_wear_out`` — a Weibull with shape (beta) of 1 or less;
+    * ``small_saving`` — a best age exists but saves next to nothing;
+    * ``no_minimum`` — the cost rate never dips below run-to-failure.
+    """
+    plain = not surpyval_extras(extras)
+    if distribution_id == "exponential" and plain:
+        return "constant_failure_rate"
+    if distribution_id == "weibull" and plain:
+        try:
+            beta = param_values(distribution_id, params)[1]
+        except Exception:
+            beta = None
+        if beta is not None and beta <= 1:
+            return "no_wear_out"
+    if point["candidate"] and point["candidate_savings"] > 0:
+        return "small_saving"
+    return "no_minimum"
+
+
+def _no_optimum_text(reason: str, distribution_id: str, params: list, point: dict, unit_s: str) -> str:
+    lead = "Replacing on age doesn't pay for this model"
+    close = "Replace on failure (run to failure)."
+    if reason == "constant_failure_rate":
+        return (
+            f"{lead}. Its failure rate is constant: an old item is no more likely to fail "
+            "than a new one, so swapping it early only adds the cost of the replacement. "
+            f"{close}"
+        )
+    if reason == "no_wear_out":
+        beta = param_values(distribution_id, params)[1]
+        if beta < 1:
+            why = (
+                f"Its shape (beta = {fmt_num(beta)}) is below 1, so the failure rate falls with "
+                "age: an item that has survived is less likely to fail than a new one."
+            )
+        else:
+            why = (
+                "Its shape (beta) is 1, so the failure rate is constant: an old item is no "
+                "more likely to fail than a new one."
+            )
+        return f"{lead}. {why} Swapping it early only adds the cost of the replacement. {close}"
+    if reason == "small_saving":
+        return (
+            f"{lead} at these costs. The best age (about {fmt_num(point['candidate'])}{unit_s}) "
+            f"would save less than {_MIN_SAVING:.1%} against running to failure, too little to "
+            "act on: the item wears out slowly, or a planned replacement costs nearly as much "
+            f"as a failure. {close}"
+        )
+    return (
+        f"{lead} at these costs. The long-run cost keeps falling the longer the item is left in "
+        f"service and never drops below the cost of running to failure, so there is no best age. "
+        f"{close}"
+    )
+
+
+def _replacement_range(
+    distribution_id: str,
+    params: list,
+    extras: Optional[dict],
+    cp: float,
+    cu: float,
+    lfp: bool,
+    point: dict,
+    unit_s: str,
+) -> tuple[Optional[dict], str]:
+    """How far the best age moves across the parameters' confidence bounds.
+
+    Each parameter that carries bounds is moved to its lower and then its upper
+    bound, the others held at their estimates, and the best age is found again
+    (by the same library call as the answer itself). That is a sensitivity
+    range, not a confidence interval for the age: it is said so in the note.
+    Returns ``(range, note)``; the range is None when no parameter has bounds.
+    """
+    cases = []
+    for i, param in enumerate(params or []):
+        bounds = _param_bounds(param)
+        if bounds is None:
+            continue
+        for which, value in zip(("lower", "upper"), bounds):
+            moved = list(params)
+            moved[i] = {**param, "value": value}
+            try:
+                model, _name = _model_from_params(distribution_id, moved, extras)
+                at = _replacement_point(model, cp, cu, lfp)
+            except Exception:
+                continue
+            cases.append({
+                "param": param.get("name"),
+                "bound": which,
+                "value": float(value),
+                "beneficial": at["beneficial"],
+                "optimal_time": at["optimal_time"],
+                "savings": at["savings"],
+            })
+    if not cases:
+        return None, (
+            "No range for the best age: the parameters came without confidence bounds, so "
+            "there is nothing to show how far it could move."
+        )
+
+    ages = [c["optimal_time"] for c in cases if c["beneficial"]]
+    if point["beneficial"]:
+        ages.append(point["optimal_time"])
+    lower, upper = (min(ages), max(ages)) if ages else (None, None)
+    pct = f"{_PARAM_BOUNDS_LEVEL:.0%}"
+
+    def named(case: dict) -> str:
+        return f"{case['param']} at its {case['bound']} bound ({fmt_num(case['value'])})"
+
+    pays = [c for c in cases if c["beneficial"]]
+    fails = [c for c in cases if not c["beneficial"]]
+    if point["beneficial"]:
+        note = (
+            f"The best age runs from about {fmt_num(lower)} to {fmt_num(upper)}{unit_s} when each "
+            f"fitted parameter is moved to the ends of its {pct} confidence bounds, one at a time."
+        )
+        if fails:
+            note += (
+                f" With {' or '.join(named(c) for c in fails)}, replacing on age stops paying, "
+                "so the case for a planned replacement is not certain."
+            )
+    elif pays:
+        best = "; ".join(
+            f"with {named(c)}, replacing at about {fmt_num(c['optimal_time'])}{unit_s} would save "
+            f"{c['savings']:.0%}" for c in pays
+        )
+        note = (
+            f"This answer is not certain. Within the parameters' {pct} confidence bounds it can "
+            f"change: {best}."
+        )
+    else:
+        note = (
+            f"The answer is the same at both ends of each parameter's {pct} confidence bounds: "
+            "replacing on age doesn't pay at any of them."
+        )
+    note += (
+        " This shows how much the answer leans on the fit; it is not a confidence interval "
+        "for the age itself."
+    )
+    return {
+        "lower": lower,
+        "upper": upper,
+        "level": _PARAM_BOUNDS_LEVEL,
+        "method": "each parameter at its lower and upper confidence bound, one at a time",
+        "always_beneficial": bool(point["beneficial"] and not fails),
+        "cases": cases,
+    }, note
+
+
 def optimal_replacement(
     distribution_id: str,
     params: list,
@@ -111,15 +338,33 @@ def optimal_replacement(
     """Age-based preventive-replacement interval that minimises the cost rate.
 
     ``planned_cost`` (cp) is the cost of a planned replacement, ``unplanned_cost``
-    (cu) the cost of an unplanned (failure) replacement; cp must be < cu.
+    (cu) the cost of an unplanned (failure) replacement; 0 < cp < cu.
+
+    The answer assumes the costs are fixed, a replacement makes the item as
+    good as new, and replacing takes no time. Where the parameters carry
+    confidence bounds (``ci`` on each, as a fitted model's do),
+    ``optimal_time_range`` says how far the best age moves across them; where
+    they carry none it is None and ``optimal_time_range_note`` says so. When
+    no age pays, ``reason`` says why in a word and ``recommendation`` in a
+    sentence.
     """
     if planned_cost is None or unplanned_cost is None:
         raise StrategyError("Enter both the planned and unplanned costs.")
     cp, cu = float(planned_cost), float(unplanned_cost)
+    if not (np.isfinite(cp) and np.isfinite(cu)):
+        raise StrategyError("Enter both the planned and unplanned costs as numbers.")
     if cp < 0 or cu < 0:
-        raise StrategyError("Costs must be non-negative.")
+        raise StrategyError("A cost can't be negative. Enter each cost as an amount above 0.")
+    if cp == 0:
+        raise StrategyError(
+            "Enter a planned cost above 0. If a planned replacement cost nothing it would always "
+            "be worth doing straight away, so there is no best age to find."
+        )
     if cp >= cu:
-        raise StrategyError("The planned cost must be less than the unplanned cost.")
+        raise StrategyError(
+            "The unplanned (failure) cost must be higher than the planned cost. If a failure "
+            "costs no more than a planned replacement, replacing early can't save anything."
+        )
 
     model, name = _model_from_params(distribution_id, params, extras)
     # A limited failure population: a fraction 1 - p never fails. RePyability
@@ -129,19 +374,9 @@ def optimal_replacement(
     # Read as the model was built (``p`` or SurPyval 0.23's ``lfp_p``).
     p_fail = surpyval_extras(extras).get("lfp_p", 1.0)
     lfp = p_fail < 1.0
-    nr = NonRepairable(model)
-    nr.set_costs_planned_and_unplanned(cp, cu)
-
-    try:
-        t_opt = _scalar(nr.find_optimal_replacement())
-    except Exception:
-        t_opt = None
-
-    mttf = None if lfp else _scalar(model.mean())
-    if lfp:
-        rtf_rate = 0.0
-    else:
-        rtf_rate = cu / mttf if mttf and mttf > 0 else None
+    point = _replacement_point(model, cp, cu, lfp)
+    nr, t_opt, mttf = point["nr"], point["candidate"], point["mttf"]
+    beneficial, savings = point["beneficial"], point["savings"]
 
     # Time grid for the cost-rate curve: focus around the optimum / 95th pct
     # (of the units that fail, for a limited failure population).
@@ -158,20 +393,10 @@ def optimal_replacement(
     with np.errstate(all="ignore"):
         cost = np.asarray(nr.cost_rate(grid), dtype=float)
 
-    opt_rate = None
-    if t_opt and np.isfinite(t_opt):
-        with np.errstate(all="ignore"):
-            opt_rate = _scalar(nr.cost_rate(t_opt))
-
-    savings = 0.0
-    if opt_rate is not None and rtf_rate:
-        savings = (rtf_rate - opt_rate) / rtf_rate
-    # Preventive replacement only helps with a wear-out (increasing-hazard)
-    # trend; otherwise the "optimum" is spurious (e.g. the memoryless
-    # exponential) and run-to-failure is correct.
-    beneficial = bool(t_opt and np.isfinite(t_opt) and savings > 0.005)
-
+    unit_s = f" {unit_in_text(unit)}" if unit else ""
+    reason = None
     if lfp and not beneficial:
+        reason = "some_never_fail"
         recommendation = (
             f"No replacement age pays off: {1 - p_fail:.0%} of units never fail (a limited "
             "failure population), so the longer a unit runs, the likelier it's one of them. "
@@ -179,17 +404,18 @@ def optimal_replacement(
             "replace on failure (run-to-failure)."
         )
     elif beneficial:
-        unit_s = f" {unit_in_text(unit)}" if unit else ""
         recommendation = (
             f"Replace preventively at about {fmt_num(t_opt)}{unit_s}. "
             f"This lowers the long-run cost rate by {savings:.0%} versus "
             f"run-to-failure."
         )
     else:
-        recommendation = (
-            "Preventive replacement isn't worthwhile here — there's no wear-out "
-            "trend, so replace on failure (run-to-failure)."
-        )
+        reason = _no_optimum_reason(distribution_id, params, extras, point)
+        recommendation = _no_optimum_text(reason, distribution_id, params, point, unit_s)
+
+    time_range, range_note = _replacement_range(
+        distribution_id, params, extras, cp, cu, lfp, point, unit_s
+    )
 
     return {
         "distribution": name,
@@ -198,11 +424,14 @@ def optimal_replacement(
         "unplanned_cost": cu,
         "mttf": mttf,
         "beneficial": beneficial,
-        "optimal_time": t_opt if beneficial else None,
-        "optimal_cost_rate": opt_rate if beneficial else None,
-        "run_to_failure_cost_rate": rtf_rate,
-        "savings": savings if beneficial else 0.0,
+        "optimal_time": point["optimal_time"],
+        "optimal_cost_rate": point["optimal_cost_rate"],
+        "run_to_failure_cost_rate": point["run_to_failure_cost_rate"],
+        "savings": savings,
+        "reason": reason,
         "recommendation": recommendation,
+        "optimal_time_range": time_range,
+        "optimal_time_range_note": range_note,
         "curve": {"t": grid.tolist(), "cost_rate": _clean(cost)},
     }
 

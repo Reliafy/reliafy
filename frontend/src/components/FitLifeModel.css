@@ -55,3 +55,15 @@
 /* Nothing in the result column shrinks (the chart chips to nothing, the numbers table to its header
    row): the pane scrolls instead. */
 .fit2-out > * { flex: none; }
+
+/* New model's Model step (FitFlow.jsx): the Method choice, and the prior asked as the Explorer asks it. */
+.fit-method { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
+.fit-method-l { font-weight: 600; font-size: var(--fs-13); }
+.fit-method-note { color: var(--muted); font-size: var(--fs-13); flex: 1 1 260px; min-width: 0; }
+.fit-prior.fit2-grid.rw-sg { max-width: 760px; }
+.fit-prior-wanting { grid-column: 1 / -1; margin: 8px 0 0; }
+.fit-prior-out { overflow: visible; padding: 0; }
+.fit2-unit-fixed { align-self: center; color: var(--muted); font-size: var(--fs-13); }
+@media (max-width: 640px) {
+  .fit-prior.fit2-grid.rw-sg { grid-template-columns: minmax(0, 1fr); }
+}

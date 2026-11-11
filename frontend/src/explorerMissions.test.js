@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay } from "./assetTree.js";
 import {
-  MAX_PHASES, answerText, changedPhases, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow,
+  BLOCK_STATES, MAX_PHASES, answerText, blockState, fadedIn, withBlockState, changedPhases, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow,
   isPhaseRow, latestOnly, lengthText, missionKey, missionParam, missionRowActions, movePhase, newPhase, parseMissionParam, phaseCompletes,
   phaseCovariates, phaseKey, phaseLengthText, phaseLine, phaseNeeds, phaseOfText, phasesText, positionMissionActions, rollupText, typed,
   withBlockValue, withNewPhase, withoutPhase, withValue,
@@ -36,9 +36,14 @@ test("missions hang under their own position, never a parent's", () => {
   assert.equal(d.rows.get(missionKey("r1", "m1")).ref.position_id, "drone");
   assert.equal(rollupText(drone, true), "2 missions");
   assert.equal(rollupText(d.rows.get("gimbal"), true), "No missions yet · Add a mission");
-  assert.equal(rollupText(d.rows.get("battery"), true), "No RBD yet");
-  assert.equal(rollupText(d.rows.get("arm"), true), "No RBD yet · Build from what's inside…");
-  assert.equal(rollupText(d.rows.get("battery"), false), "No RBD yet");
+  assert.equal(rollupText(d.rows.get("battery"), true), "No missions yet");
+  assert.equal(rollupText(d.rows.get("arm"), true), "No missions yet · Add a mission");
+  assert.equal(rollupText(d.rows.get("battery"), false), "No missions yet");
+  // Closed, a parent with no RBD still says a mission can be added (it's built from what's inside).
+  assert.equal(rollupText(d.rows.get("arm"), false), "No missions yet · Add a mission");
+  // A leaf with a model in use can have one too (one block).
+  const withModel = graftMissions(buildDisplay(DATA, "positions"), LINKS, ["battery"]);
+  assert.equal(rollupText(withModel.rows.get("battery"), false), "No missions yet · Add a mission");
   assert.ok(!d.rows.get("gimbal").kids.some((k) => k.startsWith("MS:")));
 });
 
@@ -61,13 +66,60 @@ test("a mission row's cells in words", () => {
     "Waiting · 99.90% to Take-off");
 });
 
-test("a position's actions: add a mission to its RBD, or build one", () => {
+test("a position's actions: Add a mission (an RBD of its own), wherever one can be built", () => {
   const d = graftMissions(buildDisplay(DATA, "positions"), LINKS);
-  assert.deepEqual(positionMissionActions(d.rows.get("drone")).map((a) => a.id), ["mission-add:r1", "mission-open-rbd:r1"]);
-  assert.deepEqual(positionMissionActions(d.rows.get("battery")).map((a) => a.id), ["mission-build-rbd"]);
+  assert.deepEqual(positionMissionActions(d.rows.get("drone")).map((a) => a.id), ["mission-new", "mission-open-rbd:r1"]);
+  // No RBD yet, but positions inside: Add a mission builds its RBD from them.
+  const arm = positionMissionActions(d.rows.get("arm"));
+  assert.deepEqual(arm.map((a) => a.id), ["mission-new", "mission-build-rbd"]);
+  assert.equal(arm[0].disabled, undefined);
+  // A leaf with no RBD: nothing to build from, so it says what to do.
+  const [leaf] = positionMissionActions(d.rows.get("battery"));
+  assert.equal(leaf.disabled, true);
+  assert.match(leaf.reason, /Give it a life model/);
+  // With a model in use, a leaf gets Add a mission: one block, its own model.
+  const modelled = graftMissions(buildDisplay(DATA, "positions"), LINKS, ["battery"]);
+  assert.deepEqual(positionMissionActions(modelled.rows.get("battery")).map((a) => [a.id, !!a.disabled]),
+    [["mission-new", false], ["mission-build-rbd", false]]);
+  // A leaf with only a repairable RBD can't fly one.
   const rep = graftMissions(buildDisplay(DATA, "positions"), [{ ...LINKS[1], rbd: { ...RBD, repairable: true } }]);
   const [add] = positionMissionActions(rep.rows.get("gimbal"));
   assert.equal(add.disabled, true);
+  // A leaf with a non-repairable RBD starts from a copy of it.
+  assert.equal(positionMissionActions(d.rows.get("gimbal"))[0].id, "mission-new");
+  // View only: greyed with the reason.
+  assert.equal(positionMissionActions(d.rows.get("drone"), { viewOnly: "View only." })[0].disabled, true);
+});
+
+test("a mission's own RBD hangs its one mission under the position, and isn't offered to open as the position's", () => {
+  const own = { position_id: "arm", link_id: null, in_use: false,
+    rbd: { ...RBD, id: "r9", name: "Arm — Lift", mission_rbd: true },
+    missions: [{ id: "mission", name: "Lift", phases: 0, phase_names: [], duration: 0, unit: "Hours" }] };
+  const d = graftMissions(buildDisplay(DATA, "positions"), [...LINKS, own]);
+  const arm = d.rows.get("arm");
+  assert.equal(arm.kids[0], missionKey("r9", "mission"));
+  assert.equal(rollupText(arm, true), "1 mission");
+  assert.deepEqual(positionMissionActions(arm).map((a) => a.id), ["mission-new", "mission-build-rbd"]);
+  const acts = missionRowActions(d.rows.get(missionKey("r9", "mission")));
+  assert.equal(acts.find((a) => a.id === "mission-rbd").label, "Open its RBD");
+});
+
+test("each block's state in a phase: working by default, standby or not needed, one at a time", () => {
+  let phase = { name: "Cruise", not_needed: ["c"], standby: [] };
+  assert.equal(blockState(phase, "a"), "working");
+  assert.equal(blockState(phase, "c"), "off");
+  phase = { ...phase, ...withBlockState(phase, "c", "standby") };
+  assert.deepEqual([phase.standby, phase.not_needed], [["c"], []]);
+  assert.equal(blockState(phase, "c"), "standby");
+  phase = { ...phase, ...withBlockState(phase, "c", "working") };
+  assert.deepEqual([phase.standby, phase.not_needed], [[], []]);
+  assert.deepEqual(BLOCK_STATES.map((x) => x.label), ["Working", "Standby", "Not needed"]);
+  assert.deepEqual([...fadedIn({ not_needed: ["a"], standby: ["b"] })], ["a", "b"]);
+  // Saved: blocks no longer in the RBD dropped; a block in both lists is not needed.
+  const { phases } = cleanPhases([editablePhase({ name: "A", duration: 1, standby: ["b", "gone", "c"], not_needed: ["c"] })],
+    { blocks: [{ id: "b" }, { id: "c" }] });
+  assert.deepEqual(phases[0], { name: "A", duration: 1, not_needed: ["c"], standby: ["b"] });
+  assert.equal(phaseLine({ standby: ["b"] }, { blocks: [{ id: "b", label: "Pump B" }] }), "Every block working or standing by · Pump B on standby");
 });
 
 const ROWS = [

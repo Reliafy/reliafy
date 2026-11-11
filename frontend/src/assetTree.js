@@ -74,6 +74,38 @@ export function scopedArrangeQuery(params, mode, { ownPage = false } = {}) {
   return q;
 }
 
+// The asset a picked row is in, for Classes on one asset (an asset is self-contained: its
+// classes are what's fitted inside it, never another's): the top place it's at (the Assets
+// page's assets are the top-level places), else its top position. The tree read (`data`) and the
+// row as buildDisplay gives it; null when it's in none (a group, a class, an item at no place):
+// then Classes is the whole register's.
+export function assetOf(data, row) {
+  if (!row || !data) return null;
+  const locs = new Map((data.locations || []).map((l) => [l.id, l]));
+  const pos = new Map((data.positions || []).map((p) => [p.id, p]));
+  const topPlace = (id) => {
+    let l = locs.get(id);
+    const seen = new Set();
+    while (l && l.parent_id && locs.has(l.parent_id) && !seen.has(l.id)) {
+      seen.add(l.id);
+      l = locs.get(l.parent_id);
+    }
+    return l ? l.id : null;
+  };
+  if (row.type === "loc") return topPlace(row.key);
+  if (row.type === "item") return topPlace(row.ref?.location_id);
+  if (row.type !== "pos") return null;
+  let p = pos.get(row.key);
+  const at = topPlace(p?.location?.id);
+  if (at) return at;
+  const seen = new Set();
+  while (p?.parent_id && pos.has(p.parent_id) && !seen.has(p.id)) {
+    seen.add(p.id);
+    p = pos.get(p.parent_id);
+  }
+  return p ? p.id : null;
+}
+
 // The Explorer's address for an arrangement, with any other query
 // ({sel, place}; empty values left out).
 export function explorerPath(mode = "positions", extra = {}) {
@@ -549,6 +581,16 @@ export function fitTreeWidth(rows, windowWidth) {
   }
   const max = Math.max(PANE.initial, Math.min(TREE_FIT.cap, Math.round((windowWidth || 0) * TREE_FIT.share)));
   return Math.max(PANE.initial, Math.min(max, Math.ceil(need)));
+}
+
+// The tree column's width on a wide screen. A width the user dragged to always wins. Until then
+// the Explorer fits the column to its names (fitTreeWidth), and a product's page opens at the
+// usual width: a design's tree carries its long function and failure-mode texts, and fitted to
+// those the column took the room the Modelling, FME(C)A and LSA columns need at 1440 px.
+export function treeColumnWidth({ width, widthSet, fit, product }) {
+  if (widthSet) return width;
+  if (product) return PANE.initial;
+  return fit ?? width;
 }
 
 // The Summary tab's scroll area keeps room for the scrollbar (its width is the

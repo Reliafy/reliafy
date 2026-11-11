@@ -61,6 +61,7 @@ const SIGNED_IN = [
   ["POST", "/api/maintenance/parts/import-bom"], // #435
   ["GET", "/api/maintenance/classes/forecast"], // #407
   ["GET", "/api/maintenance/item-classes/smoke/fleet"], // the Explorer by Classes: a class's positions with risk now
+  ["GET", "/api/maintenance/positions/smoke/condition"], // a position's Condition monitoring tab: its risk now
   ["POST", "/api/maintenance/graph/query"], // #423
   ["GET", "/api/maintenance/graph/schema"], // #423
   ["GET", "/api/maintenance/graph/design"], // the Data model page
@@ -85,6 +86,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/tree"], // the asset tree pane
   ["GET", "/api/maintenance/places"], // Assets: the top-level places
   ["GET", "/api/maintenance/work-orders"],
+  ["GET", "/api/maintenance/due"], // Maintenance › Orders › Due soon, by window
   ["GET", "/api/maintenance/packages"], // work packages: tasks done on one visit
   ["GET", "/api/maintenance/packages/propose"],
   ["GET", "/api/maintenance/tasks/smoke/lsa"], // a task's LSA (what it needs to be done)
@@ -106,6 +108,7 @@ const SIGNED_IN = [
   ["POST", "/api/rbds/bound-blocks"],
   // Missions on an RBD and on positions (rbd_missions.py).
   ["GET", "/api/maintenance/position-missions"],
+  ["POST", "/api/maintenance/positions/x/missions"],
   ["GET", "/api/rbds/x/missions"],
   ["POST", "/api/rbds/x/missions"],
   ["GET", "/api/rbds/x/missions/m"],

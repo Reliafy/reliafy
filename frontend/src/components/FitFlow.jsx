@@ -21,22 +21,39 @@ import PreviewTable from "./PreviewTable.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import CompetingRisksStep, { CR_OPTIONS } from "./CompetingRisksStep.jsx";
 import { frailtyFitOptions, groupProblem, withGroup } from "../moreModels.js";
-import { usableDatasets } from "../datasetFit.js";
+import DatasetPicker, { DatasetGlance } from "./DatasetPicker.jsx";
 import ResultView from "./ResultView.jsx";
 import ModelFrame, { AnswerLine } from "./model/ModelFrame.jsx";
 import ModelNextSteps from "./ModelNextSteps.jsx";
 import { answerParts } from "../modelFrame.js";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { TvcToggle } from "./TvcColumns.jsx";
-import { guessTvc, tvcMapping, tvcProblems, tvcSummaryParts } from "../tvcData.js";
+import { guessTvc, tvcMapping, tvcProblems, tvcSummaryParts, tvcUnit } from "../tvcData.js";
 import { guessUnit, isNumeric } from "../datasetGuess.js";
 import {
   EMPTY_MAPPING, columnFacts, guessMapping, isSimplePaste, statusSummary, summaryParts,
-  dataStepProblems, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped,
+  dataStepProblems, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped, mappingWords,
 } from "../lifeData.js";
 import { RequiredUnit } from "./Units.jsx";
+import ChoiceChips from "./ui/ChoiceChips.jsx";
+import { Select } from "./ui/Controls.jsx";
+import LibraryRecordPicker from "./LibraryRecordPicker.jsx";
+import { useRecordCovariates } from "./LibraryParts.jsx";
+import { FitOutcome, PriorFields } from "./PriorFit.jsx";
+import { METHOD_CHOICES, METHOD_LINE, initialFit, refusalWords, showsTrust } from "../fitDialog.js";
+import {
+  DATASET_PRIOR_CHOICES, priorAsksDistribution, priorBlocked, priorProblem, priorRequest,
+} from "../priorFit.js";
+import { fitDatasetWithPrior, getLibraryRecord, getLibrarySources, listModels } from "../api.js";
+import { rowFromDetail } from "../libraryPicker.js";
 
 const STEPS = ["Source", "Data", "Model", "Result"];
+// Where the data comes from: a saved dataset first (most users have one), then typed or pasted values, then a file.
+const SOURCES = [
+  { value: "saved", label: "Saved data" },
+  { value: "paste", label: "Paste or type" },
+  { value: "upload", label: "Upload a file" },
+];
 const PASTED = "pasted-values.csv";
 
 // A saved dataset's detail in the shape /api/columns gives.
@@ -57,11 +74,14 @@ export { parsePastedValues };
 // (+ unit, covariates), (3) pick a model and fit, (4) review the fit, then
 // name it beside Save and save — with Back to change anything and re-fit before saving. Calls
 // ``onSaved`` with the saved model; ``onCancel`` backs out to the list.
-// ``initialSource`` opens the source step on "upload" (default) or "paste".
+// ``initialSource`` opens the source step on "saved" (default: the user's
+// datasets and the samples), "paste" or "upload".
 export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDatasetId, autoFit, initialSource }) {
   const [step, setStep] = useState(1);
-  // Source step: "upload" (dropzone) or "paste" (values typed / pasted in).
-  const [source, setSource] = useState(initialSource === "paste" ? "paste" : "upload");
+  // Source step: "saved" (a saved dataset), "paste" (values typed / pasted in) or "upload" (a file).
+  const [source, setSource] = useState(SOURCES.some((o) => o.value === initialSource) ? initialSource : "saved");
+  // The saved dataset picked on the source step, before Next: { summary, detail, error }.
+  const [picked, setPicked] = useState(null);
   const [pasted, setPasted] = useState("");
   // A paste mixing bare times with "time flag" lines: the lines to offer
   // "Add 0 (failed)" for, shown with the error and applied only on a click.
@@ -91,7 +111,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [coxOpts, setCoxOpts] = useState({}); // Cox PH: ties, strata, cluster (#61)
   // A shared-frailty model's Group by column (#179), sent with the mapping.
   const [group, setGroup] = useState("");
-  const [datasets, setDatasets] = useState([]);
+  const [datasets, setDatasets] = useState(null); // null while the list loads
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -106,6 +126,39 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [saving, setSaving] = useState(false);
   const [fitMethods, setFitMethods] = useState([]);
 
+  // "With a prior" (the Model step's Method): the prior asked for the way the Explorer's "Fit a life
+  // model…" asks (PriorFit.jsx, fitDialog.js), fitted through the same prior path on the server
+  // (/api/models/fit-with-prior). ``priorResult`` is its answer on the Result step.
+  const [method, setMethod] = useState("mle");
+  const [prior, setPrior] = useState(() => initialFit({ method: "bayes", priorKind: "model" }));
+  const setP = (k, v) => setPrior((s) => ({ ...s, [k]: v }));
+  const [priorModels, setPriorModels] = useState(null);
+  const [record, setRecord] = useState(null);
+  const [pickingRecord, setPickingRecord] = useState(false);
+  const pickArea = useRef(null);
+  const [priorResult, setPriorResult] = useState(null);
+  const [chart, setChart] = useState("sf");
+  const libCov = useRecordCovariates(method === "bayes" ? prior.recordId : null);
+  const libSig = JSON.stringify([libCov.toSave, libCov.missing.map((i) => i.label)]);
+  useEffect(() => {
+    setPrior((s) => ({ ...s, libCov: libCov.toSave, libMissing: libCov.missing.map((i) => i.label) }));
+  }, [libSig]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (method !== "bayes" || priorModels !== null) return undefined;
+    let live = true;
+    listModels().then((out) => live && setPriorModels((out.models || []).filter((m) => m.kind === "distribution"
+      && /weibull|exponential|lognormal/i.test(m.distribution || ""))), () => live && setPriorModels([]));
+    return () => { live = false; };
+  }, [method, priorModels]);
+  // A library record named by id (picked, or the picker's row): read for the words beside it.
+  useEffect(() => {
+    if (!prior.recordId || record?.id === prior.recordId) return undefined;
+    let live = true;
+    Promise.all([getLibraryRecord(prior.recordId), getLibrarySources().catch(() => ({ sources: [] }))])
+      .then(([d, src]) => live && setRecord(rowFromDetail(d, src.sources)), () => {});
+    return () => { live = false; };
+  }, [prior.recordId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     getDistributions()
       .then((d) => { setDistributions(d.distributions); setFitMethods(d.fit_methods || []); })
@@ -113,7 +166,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         setDistributions([{ id: "weibull", name: "Weibull", covariates: false }])
       );
     listDatasets()
-      .then((d) => setDatasets(d.datasets))
+      .then((d) => setDatasets(d.datasets || []))
       .catch(() => setDatasets([]));
   }, []);
 
@@ -162,11 +215,12 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setCsv(cols);
     setMapping(tvcMap || map);
     setTvc(timeVarying ? "intervals" : null);
-    setUnit(simplePaste ? "" : g.unit || (timeVarying ? guessUnit(timeVarying.xl) : ""));
+    const guessedUnit = simplePaste ? "" : (timeVarying && tvcUnit(timeVarying)) || g.unit || "";
+    setUnit(guessedUnit);
     setSimple(simplePaste);
     setCovariates(timeVarying ? cols.columns.filter((c) => !used.has(c) && isNumeric(facts[c]?.dtype)) : []);
     setGroup("");
-    return { mapping: tvcMap || map, unit: simplePaste ? "" : g.unit };
+    return { mapping: tvcMap || map, unit: guessedUnit };
   };
 
   // ``keepHeader``: read the first row as the column names even when it's
@@ -201,23 +255,41 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     }
   };
 
-  // Use an already-saved dataset as the source — no re-upload needed.
-  const pickDataset = async (d) => {
+  // A saved dataset picked in the list: read its detail for the pane beside
+  // the list (its first rows and how its columns will be read). Nothing in
+  // the flow changes until Next.
+  const pickSaved = (d) => {
+    setError(null);
+    setPicked({ summary: d, detail: null, error: null });
+    getDataset(d.id).then(
+      (full) => setPicked((p) => (p?.summary.id === d.id ? { ...p, detail: full } : p)),
+      (err) => setPicked((p) => (p?.summary.id === d.id ? { ...p, error: err.message } : p)),
+    );
+  };
+  // The picked dataset's guessed columns, for the pane (the Data step starts from the same guess).
+  const pickedGuess = useMemo(() => {
+    if (!picked?.detail) return null;
+    const cols = datasetColumns(picked.detail);
+    const facts = columnFacts(cols);
+    const g = guessMapping(cols.columns, facts);
+    const status = statusSummary(g.mapping, facts, cols.n_rows);
+    return {
+      words: mappingWords(g.mapping, facts, g.unit),
+      problems: dataStepProblems(g.mapping, facts, cols.n_rows),
+      summary: status ? summaryParts(status) : [],
+    };
+  }, [picked?.detail]);
+  // Next on a picked dataset: its columns into the Data step — no re-upload needed.
+  const useSaved = () => {
+    const full = picked?.detail;
+    if (!full) return;
     setFile(null);
     setHeaderNote(null);
-    setDatasetId(d.id);
-    setSourceName(d.name);
+    setDatasetId(full.id);
+    setSourceName(full.name);
     setError(null);
-    setLoading(true);
-    try {
-      const full = await getDataset(d.id);
-      loadColumns(datasetColumns(full));
-      setStep(2);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    loadColumns(datasetColumns(full));
+    setStep(2);
   };
 
   // Guided first-run: when handed a dataset id (e.g. the bearings sample), skip
@@ -333,8 +405,50 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const coxColumns = (csv?.columns || []).filter(
     (c) => !mappedColumns.has(c) && !(advanced ? false : covariates.includes(c)));
 
+  // Whether this data can take a prior, and what the prior still needs.
+  const priorBlock = csv ? priorBlocked(mapping, { hasCovariates, tvc }) : null;
+  const bayes = method === "bayes" && !priorBlock;
+  const priorWanting = bayes ? priorProblem(prior, unit) : null;
+  useEffect(() => {
+    if (priorBlock && method === "bayes") setMethod("mle");
+  }, [priorBlock, method]);
+  const priorSource = async () => (datasetId ? { datasetId } : { content: await file.text() });
+  const askPrior = async (extra = {}) =>
+    fitDatasetWithPrior(priorRequest(prior, mapping, unit, await priorSource(), extra));
+  const onFitPrior = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await askPrior();
+      if (res.refused) {
+        setError(refusalWords(res.refused));
+        return;
+      }
+      setPriorResult(res);
+      setResult(null);
+      const src = file?.name === PASTED ? "pasted values" : file?.name || sourceName || "dataset";
+      setName(`${res.distribution_label || res.distribution} with a prior — ${src.replace(/\.csv$/i, "")}`);
+      setStep(4);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  // The age asked about on the Result step: asked again a moment after it's typed.
+  const priorAge = prior.age;
+  useEffect(() => {
+    if (step !== 4 || !priorResult) return undefined;
+    let live = true;
+    const t = setTimeout(() => {
+      askPrior().then((res) => live && !res.refused && setPriorResult(res), () => {});
+    }, 400);
+    return () => { live = false; clearTimeout(t); };
+  }, [priorAge]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const onFit = async () => {
     if (!file && !datasetId) return;
+    if (bayes) return onFitPrior();
     setLoading(true);
     setError(null);
     try {
@@ -405,7 +519,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   };
 
   useEffect(() => {
-    if (step !== 4 || !result || !name.trim()) return;
+    if (step !== 4 || !result || priorResult || !name.trim()) return;
     const turn = ++remembered.current;
     const record = (csv) => unsavedFitRecord({
       name: name.trim(), distribution, mapping: fitMapping, opts: saveOpts,
@@ -423,6 +537,13 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setSaving(true);
     setError(null);
     try {
+      if (priorResult) {
+        // Saved as a Bayesian model: its prior (what it was, how far it was trusted) kept with it.
+        const saved = await askPrior({ save: true, name: name.trim() });
+        if (saved.refused) throw new Error(refusalWords(saved.refused));
+        onSaved?.(saved);
+        return;
+      }
       onSaved?.(await persist());
     } catch (err) {
       setError(err);
@@ -447,6 +568,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const goBack = () => {
     setError(null);
     if (step === 1) return onCancel?.();
+    if (step === 4) setPriorResult(null);
     setStep((s) => s - 1);
   };
 
@@ -472,11 +594,16 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
-        <span className="hint" style={{ margin: 0 }}>
-          {source === "paste"
-            ? "Paste your values, or pick a dataset, to continue"
-            : "Upload a CSV or Excel file, or pick a dataset, to continue"}
-        </span>
+        {source === "saved" ? (
+          <button data-wt="fit-source-next" onClick={useSaved} disabled={!picked?.detail || loading}
+                  title={picked ? undefined : "Pick a dataset first"}>
+            Next
+          </button>
+        ) : (
+          <span className="hint" style={{ margin: 0 }}>
+            {source === "paste" ? "Paste your values to continue" : "Upload a CSV or Excel file to continue"}
+          </span>
+        )}
       </>
     );
   } else if (step === 2) {
@@ -490,10 +617,16 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-        <button data-wt="fit-run" onClick={onFit} disabled={!distribution || loading || !!groupProblem(selectedOpt, group)}
-                title={groupProblem(selectedOpt, group) || undefined}>
-          {loading ? "Fitting…" : `Fit ${distName}`}
-        </button>
+        {bayes ? (
+          <button data-wt="fit-run" onClick={onFit} disabled={loading || !!priorWanting} title={priorWanting || undefined}>
+            {loading ? "Fitting…" : "Fit with the prior"}
+          </button>
+        ) : (
+          <button data-wt="fit-run" onClick={onFit} disabled={!distribution || loading || !!groupProblem(selectedOpt, group)}
+                  title={groupProblem(selectedOpt, group) || undefined}>
+            {loading ? "Fitting…" : `Fit ${distName}`}
+          </button>
+        )}
       </>
     );
   } else {
@@ -505,26 +638,54 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     <div className="card fit-flow">
       {step === 1 && (
         <>
-          <div className="source-toggle" role="tablist" aria-label="Data source">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={source === "upload"}
-              className={`source-tab${source === "upload" ? " active" : ""}`}
-              onClick={() => { setSource("upload"); setError(null); }}
-            >
-              Upload CSV / Excel
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={source === "paste"}
-              className={`source-tab${source === "paste" ? " active" : ""}`}
-              onClick={() => { setSource("paste"); setError(null); }}
-            >
-              Paste values
-            </button>
+          <div className="source-toggle" role="tablist" aria-label="Where the data comes from">
+            {SOURCES.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                role="tab"
+                aria-selected={source === o.value}
+                className={`source-tab${source === o.value ? " active" : ""}`}
+                onClick={() => { setSource(o.value); setError(null); }}
+              >
+                {o.label}
+              </button>
+            ))}
           </div>
+
+          {source === "saved" && (
+            <DatasetPicker kind="life" datasets={datasets} value={picked?.summary.id} onPick={pickSaved} disabled={loading}>
+              {picked && (
+                <DatasetGlance summary={picked.summary} detail={picked.detail} error={picked.error}>
+                  {pickedGuess && (
+                    <>
+                      <div className="dsp-quiet">How its columns will be read (change them on the next step):</div>
+                      <dl className="dsp-reads">
+                        {pickedGuess.words.map((w) => (
+                          <div key={w.label} style={{ display: "contents" }}>
+                            <dt>{w.label}</dt>
+                            <dd>{w.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                      {pickedGuess.problems.length > 0 ? (
+                        <ul className="ds-problems" role="status">
+                          {pickedGuess.problems.map((p) => <li key={p}>{p}</li>)}
+                        </ul>
+                      ) : pickedGuess.summary.length > 0 ? (
+                        <p className="ds-summary" role="status">
+                          {pickedGuess.summary.map((part, i) => {
+                            const [num, ...rest] = part.split(" ");
+                            return <span key={part}>{i > 0 && ", "}<b>{num}</b> {rest.join(" ")}</span>;
+                          })}
+                        </p>
+                      ) : null}
+                    </>
+                  )}
+                </DatasetGlance>
+              )}
+            </DatasetPicker>
+          )}
 
           {source === "paste" && (
             <div className="paste-source">
@@ -598,31 +759,6 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
           </div>
           )}
           {sheetModal}
-
-          {usableDatasets("life", datasets).length > 0 && (
-            <div className="recent">
-              <div className="recent-h">Or use a saved dataset</div>
-              {usableDatasets("life", datasets).slice(0, 5).map((d) => (
-                <button
-                  key={d.id}
-                  type="button"
-                  className="recent-row"
-                  disabled={loading}
-                  onClick={() => pickDataset(d)}
-                >
-                  <span className="recent-ic">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M14 3v5h5M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" />
-                    </svg>
-                  </span>
-                  <span className="recent-name">{d.name}</span>
-                  <span className="recent-meta">
-                    {d.n_rows.toLocaleString()} rows · {d.n_columns} cols
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
 
           {onPerDemand && (
             <div className="perdemand-cta">
@@ -756,6 +892,55 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
       {step === 3 && (
         <div className="fit-step">
+          <div className="fit-method" role="group" aria-label="Method">
+            <span className="fit-method-l">Method</span>
+            <ChoiceChips
+              label="Method"
+              className="sm"
+              value={bayes ? "bayes" : "mle"}
+              onChange={(v) => v && !(v === "bayes" && priorBlock) && setMethod(v)}
+              options={METHOD_CHOICES.map((o) => (o.value === "bayes" && priorBlock
+                ? { ...o, disabled: true, title: priorBlock } : o))}
+            />
+            <span className="fit-method-note">{priorBlock && method !== "bayes" ? priorBlock : METHOD_LINE[bayes ? "bayes" : "mle"]}</span>
+          </div>
+          {bayes ? (
+            <div className="fit-prior rw-sg rw-steps-first fit2-grid">
+              <div className="rw-sl">Prior</div>
+              <div className="rw-sc">
+                <PriorFields
+                  state={prior}
+                  set={setP}
+                  kind={prior.priorKind}
+                  kinds={DATASET_PRIOR_CHOICES}
+                  onKind={(k) => {
+                    setP("priorKind", k);
+                    if (k === "library" && !prior.recordId) setPickingRecord(true);
+                  }}
+                  trust={showsTrust(prior.priorKind)}
+                  models={priorModels}
+                  record={record}
+                  libCov={libCov}
+                  onPickRecord={() => setPickingRecord(true)}
+                  pickArea={pickArea}
+                  unit={unit ? unit.toLowerCase() : null}
+                />
+              </div>
+              {priorAsksDistribution(prior.priorKind) && (
+                <>
+                  <div className="rw-sl">Distribution</div>
+                  <div className="rw-sc">
+                    <Select aria-label="Distribution" value={prior.distribution === "best" ? "weibull" : prior.distribution}
+                            onChange={(e) => setP("distribution", e.target.value)}>
+                      <option value="weibull">Weibull</option><option value="exponential">Exponential</option><option value="lognormal">Lognormal</option>
+                    </Select>
+                  </div>
+                </>
+              )}
+              {priorWanting && <p className="hint fit-prior-wanting" role="status">{priorWanting}</p>}
+            </div>
+          ) : (
+          <>
           <p className="muted-line">
             {byMode
               ? hasCovariates
@@ -797,10 +982,17 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
           {hasCovariates && distribution === "cox_ph" && (
             <CoxOptions value={coxOpts} onChange={setCoxOpts} columns={coxColumns} />
           )}
+          </>
+          )}
+          {pickingRecord && (
+            <LibraryRecordPicker use="prior" selectedId={prior.recordId}
+                                 onClose={() => setPickingRecord(false)}
+                                 onPick={(r) => { setP("recordId", r.id); setRecord(r); setPickingRecord(false); }} />
+          )}
         </div>
       )}
 
-      {step === 4 && result && (
+      {step === 4 && (result || priorResult) && (
         <div className="fit-step" data-wt="fit-result">
           {/* Nothing is kept until it's saved: say so, with the one-click save (#434). */}
           <div className="fit-save-cta">
@@ -830,6 +1022,17 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               </button>
             </div>
           </div>
+          {priorResult ? (
+            // A fit with a prior: the prior's curve dashed under the fitted one with its credible
+            // band, as the Explorer shows it (PriorFit.jsx).
+            <div className="fit2-out fit-prior-out">
+              <FitOutcome d={priorResult} priorKind={prior.priorKind} unit={(priorResult.unit || "").toLowerCase()}
+                          chart={chart} onChart={setChart} download={name || "Life model"}
+                          age={prior.age} onAge={(v) => setP("age", v)}
+                          dataWords={file?.name === PASTED ? "the pasted values" : `“${(file?.name || sourceName || "the data").replace(/\.csv$/i, "")}”`} />
+            </div>
+          ) : (
+          <>
           {/* The model page's frame, inside the wizard: the answer line and
               "Use this model" (which saves the fit first) over the tabs. */}
           <ModelFrame
@@ -849,6 +1052,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               onUse={saveForUse}
             />
           </ModelFrame>
+          </>
+          )}
         </div>
       )}
 

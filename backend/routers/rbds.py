@@ -51,15 +51,56 @@ def _summary(rbd, ctx: AccessCtx) -> dict:
     }
 
 
+def _mission_of(graph: dict, positions) -> dict | None:
+    """A mission's own RBD (one RBD per mission, rbd_missions.py): {name (the mission's),
+    position_id, position (its name, None where it can't be read)}; None for any other diagram."""
+    from backend.services import rbd_missions
+
+    owner = rbd_missions.mission_of(graph)
+    if not owner:
+        return None
+    return {"name": graph.get("mission_name") or rbd_missions.LEGACY_NAME, "position_id": owner["position_id"],
+            "position": positions(owner["position_id"])}
+
+
+def _position_names(ctx: AccessCtx):
+    """position id -> its name in the caller's maintenance workspace (None where Maintenance is off
+    for them, or the position is gone)."""
+    try:
+        from backend.maintenance.access import allowed
+        from backend.routers.maintenance import get_store
+
+        if not allowed(ctx.user):
+            return lambda pid: None
+        store = get_store()
+    except Exception:  # noqa: BLE001 - the list never fails for want of a name
+        return lambda pid: None
+
+    def name(pid: str):
+        try:
+            node = store.node(ctx.write_owner, pid, "Position")
+        except Exception:  # noqa: BLE001
+            return None
+        return (node or {}).get("name") or None
+
+    return name
+
+
 @router.get("/rbds")
 def list_rbds(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
+    """The caller's diagrams (and shared samples). A mission's own RBD carries ``mission``: {name,
+    position_id, position} so the list can show it under its position."""
     shared_by = shares_service.shared_by_map(session, ctx.uid, "rbds") if ctx.is_personal else {}
-    return {
-        "rbds": [
-            {**_summary(r, ctx), **({"shared_by": shared_by[r.id]} if r.id in shared_by else {})}
-            for r in rbds_service.list_rbds(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
-        ]
-    }
+    rows = rbds_service.list_rbds(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
+    positions = _position_names(ctx) if any((r.graph or {}).get("mission_of") for r in rows) else (lambda pid: None)
+    out = []
+    for r in rows:
+        row = {**_summary(r, ctx), **({"shared_by": shared_by[r.id]} if r.id in shared_by else {})}
+        mission = _mission_of(r.graph or {}, positions)
+        if mission:
+            row["mission"] = mission
+        out.append(row)
+    return {"rbds": out}
 
 
 @router.post("/rbds")

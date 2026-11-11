@@ -109,6 +109,8 @@ export const DETAIL_IDS = {
   // The FME(C)A print view: the same positions.
   "/asset-register/positions/:id/fmea": ["/api/maintenance/overview", list("tree")],
   "/maintenance/work-orders/:id": ["/api/maintenance/work-orders", list("work_orders")],
+  // A work package: smoke/seed.js packages the smoke test position's weekly check.
+  "/maintenance/packages/:id": ["/api/maintenance/packages", list("packages")],
   "/asset-register/items/:id": ["/api/maintenance/items", list("items")],
   // A product: smoke/seed.js adds the Survey quadcopter.
   "/products/:id": ["/api/maintenance/products", list("products")],

@@ -671,7 +671,7 @@ class ProductOps:
                              "position.")
         path = [a["name"] for a in self._position_path(position_id) if a["kind"] == "Position"] + [node["name"]]
         implementing = [p for p in self.s.inn(self.org, position_id, "IMPLEMENTS") if p["label"] == "Position"]
-        items, life, scopes = [], [], {}
+        items, life = [], []
         for p in implementing:
             top = self._top_of(p["id"])
             top_item = self._top_item(top["id"])
@@ -689,9 +689,7 @@ class ProductOps:
             })
             life += [{**r, "position": p["name"], "position_id": p["id"], "serial": serial}
                      for r in self.life_data(p["id"])]
-            if not p.get("retired"):
-                for pid in self._report_scope(p["id"]):
-                    scopes.setdefault(pid, (p["id"], unit))
+        scopes = self._design_report_scope(position_id, implementing)
         reports, cache = [], {}
         for r in self.s.nodes(self.org, "FailureReport"):
             at = scopes.get(r.get("position_id"))
@@ -716,6 +714,28 @@ class ProductOps:
             "reports": reports[:sv.MAX_REPORT_LIST], "reports_total": len(reports),
             "open_reports": sum(1 for r in reports if r["status"] in sv.OPEN_REPORT_STATUSES),
         }
+
+    def _design_report_scope(self, position_id: str, implementing: list[dict] | None = None,
+                             below: bool = True) -> dict:
+        """Where a design position's failure reports are: on every item built from the
+        product, the position implementing it and everything inside it (_report_scope).
+        {position id: (the implementing position's id, the unit: item_id, serial,
+        top_position_id)}; below=False: the implementing positions alone. A report is filed on a built item, never on the design, so
+        this is how the design's reports roll up (design_rollup, and the reports list
+        given a design position)."""
+        if implementing is None:
+            implementing = [p for p in self.s.inn(self.org, position_id, "IMPLEMENTS") if p["label"] == "Position"]
+        scopes: dict = {}
+        for p in implementing:
+            if p.get("retired"):
+                continue
+            top = self._top_of(p["id"])
+            top_item = self._top_item(top["id"])
+            unit = {"item_id": top_item and top_item["id"], "serial": self._built_serial(top),
+                    "top_position_id": top["id"]}
+            for pid in self._report_scope(p["id"], below):
+                scopes.setdefault(pid, (p["id"], unit))
+        return scopes
 
     # -- the items landing
 

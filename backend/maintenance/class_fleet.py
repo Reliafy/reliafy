@@ -22,6 +22,10 @@ days whatever each model's own time unit (only models in calendar time are
 scored), so the rows read as one table. A member that can't be scored says
 why and what to do. The statistics are the model page's (``backend.joint``):
 nothing is fitted here.
+
+One position on its own (the Explorer's Condition monitoring tab on a
+position) is the same read for that position alone, whatever its item's class:
+``position``.
 """
 
 from __future__ import annotations
@@ -78,21 +82,35 @@ def item_class_ids(m) -> dict[str, str]:
     return out
 
 
-def _members(m, class_id: str) -> tuple[dict, list[tuple[dict, dict, dict, dict]]]:
+def _members(m, class_id: str, within: set[str] | None = None) -> tuple[dict, list[tuple[dict, dict, dict, dict]]]:
     """The class, and ``(position, fitment, item, item class)`` for every live
-    position whose fitted item is of the class or a class inside it, by name."""
+    position whose fitted item is of the class or a class inside it, by name.
+    ``within``: only those positions (one asset's tree)."""
     node = m._get(class_id, "ItemClass")
     inside = {c["id"]: c for c in m._class_subtree(class_id)}
     classes = item_class_ids(m)
     found = []
     for p in m.s.nodes(m.org, "Position"):
-        if p.get("retired"):
+        if p.get("retired") or (within is not None and p["id"] not in within):
             continue
         f = m.current_fitment(p["id"])
         item = f and next((x for x in m.s.inn(m.org, f["id"], "IN") if x["label"] == "Item"), None)
         if item is not None and classes.get(item["id"]) in inside:
             found.append((p, f, item, inside[classes[item["id"]]]))
     return node, sorted(found, key=lambda x: ((x[0].get("name") or "").lower(), x[0]["id"]))
+
+
+def _member(m, position_id: str) -> tuple[dict, tuple[dict, dict, dict, dict | None] | None]:
+    """One position, and its ``(position, fitment, item, item class)``: the item
+    fitted there now, whatever its class (None with no class); None with nothing
+    fitted."""
+    p = m._get(position_id, "Position")
+    f = m.current_fitment(position_id)
+    item = f and next((x for x in m.s.inn(m.org, f["id"], "IN") if x["label"] == "Item"), None)
+    if item is None:
+        return p, None
+    class_id = item_class_ids(m).get(item["id"])
+    return p, (p, f, item, m.s.node(m.org, class_id, "ItemClass") if class_id else None)
 
 
 def position_model(m, fetch, position_id: str):
@@ -190,25 +208,15 @@ def _model_view(doc) -> dict:
             "covariates": list(r.get("covariates") or [])}
 
 
-def fleet(m, db, owners, hidden, item_class_id: str, position_id: str | None = None) -> dict:
-    """The class's members (every position whose fitted item is of the class or
-    a class inside it) with duty, item, age and last reading, and each one's
-    risk now where its position has a condition and life model, highest first.
-    With ``position_id``: that one member alone, with its curves (``unit``: its
-    survival from now and its reading's path, as the model page draws them, in
-    its model's own time unit)."""
+def _scorer(m, db, owners, hidden):
+    """What scores a member, for one read: ``row_for(member, with_curves, score)``
+    gives its row, and ``models`` collects the models the rows used."""
     from backend import joint
     from backend.fitting import FitError
     from backend.maintenance import position_models as pm
     from backend.services import joint as joint_service
     from backend.units import normalize_unit
 
-    sv = _sv()
-    node, members = _members(m, item_class_id)
-    if position_id is not None:
-        members = [x for x in members if x[0]["id"] == position_id]
-        if not members:
-            raise sv.Invalid(f"That position has no item of the class {node['name']} fitted.")
     fetch = pm.fetcher(db, owners, hidden)
     today = m.today()
     horizons = joint.horizons(AGE_UNIT)
@@ -238,7 +246,7 @@ def fleet(m, db, owners, hidden, item_class_id: str, position_id: str | None = N
         row = {"position": {"id": p["id"], "name": p.get("name") or "", "tag": p.get("tag") or "",
                             "position_class": p.get("position_class") or ""},
                "item": {"id": item["id"], "name": item.get("name") or "", "serial": item.get("serial") or ""},
-               "item_class": {"id": cls["id"], "name": cls["name"]},
+               "item_class": cls and {"id": cls["id"], "name": cls["name"]},
                "in_service": since, "age": float(age_days), "model": None, "point": None, "last_reading": None,
                "n_readings": 0, "covariates": {}, "scored": False, "why": None}
         points = _condition_points(m, p["id"], item["id"])
@@ -303,6 +311,29 @@ def fleet(m, db, owners, hidden, item_class_id: str, position_id: str | None = N
         row.update(risk, median_remaining=None if left is None else _round(left * per), scored=True)
         return row
 
+    return row_for, models, fetch, today, horizons
+
+
+def fleet(m, db, owners, hidden, item_class_id: str, position_id: str | None = None,
+          within: str | None = None) -> dict:
+    """The class's members (every position whose fitted item is of the class or
+    a class inside it) with duty, item, age and last reading, and each one's
+    risk now where its position has a condition and life model, highest first.
+    With ``position_id``: that one member alone, with its curves (``unit``: its
+    survival from now and its reading's path, as the model page draws them, in
+    its model's own time unit). With ``within`` (one asset: its top position, or
+    the place it's at): only the members inside it (``positions_inside``), so
+    the counts, the models in use, the duties and the notes are that asset's
+    alone."""
+    sv = _sv()
+    inside = m.positions_inside(within) if within is not None else None
+    node, members = _members(m, item_class_id, inside)
+    if position_id is not None:
+        members = [x for x in members if x[0]["id"] == position_id]
+        if not members:
+            raise sv.Invalid(f"That position has no item of the class {node['name']} fitted"
+                             + (" inside that tree." if inside is not None else "."))
+    row_for, models, fetch, today, horizons = _scorer(m, db, owners, hidden)
     out = {"item_class": m._class_brief(node), "today": today, "age_unit": AGE_UNIT,
            "horizons": {"labels": horizons["labels"], "values": horizons["values"]}}
     if position_id is not None:
@@ -328,4 +359,25 @@ def fleet(m, db, owners, hidden, item_class_id: str, position_id: str | None = N
     if len(rows) > MAX_SCORED:
         notes.append(f"Risk is worked out for the first {MAX_SCORED} members by name; open any other for its own.")
     out["note"] = " ".join(notes) or None
+    return out
+
+
+def position(m, db, owners, hidden, position_id: str) -> dict:
+    """One position's risk now (the Explorer's Condition monitoring tab on a
+    position): ``member`` is its row as a class's fleet gives it, with its
+    curves when it is scored, whatever its item's class (``item_class`` None
+    with none); ``model`` the condition and life model that scores it (None
+    with none linked). With nothing fitted there is no member: ``why`` says so."""
+    p, member = _member(m, position_id)
+    row_for, _, fetch, today, horizons = _scorer(m, db, owners, hidden)
+    doc = position_model(m, fetch, position_id)
+    out = {"position": {"id": p["id"], "name": p.get("name") or "", "tag": p.get("tag") or "",
+                        "position_class": p.get("position_class") or ""},
+           "item_class": m._class_brief(member[3]) if member else None, "today": today, "age_unit": AGE_UNIT,
+           "horizons": {"labels": horizons["labels"], "values": horizons["values"]},
+           "member": row_for(member, with_curves=True) if member else None,
+           "model": doc and _model_view(doc), "why": None}
+    if member is None:
+        out["why"] = ("No item is fitted here, so there is no age or readings to work a risk out from. Fit an item "
+                      "to see its risk.")
     return out

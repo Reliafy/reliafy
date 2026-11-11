@@ -53,15 +53,24 @@ censoring covers most real cases.
 
 Reliafy opens on [Home](/home): what changed, what needs attention and your
 recent work, with **Start here** cards while your workspace is new. From there,
-go to **Modelling → Models → Non-repairable** and press **New model**, then choose **Upload a
-CSV or Excel file** (or **Paste values**). The fit runs in four steps, shown
-along the bottom: **Source**, **Data**, **Model** and **Result**. For the
-source, drop a CSV or Excel file straight onto the page, paste a column of
-values, or pick a dataset you've already uploaded — datasets are reusable, so
-once a file is in Reliafy you can fit as many models to it as you like without
-re-uploading.
+go to **Modelling → Models → Non-repairable** and press **New model**, then choose **Fit to
+data**. The fit runs in four steps, shown along the bottom: **Source**, **Data**, **Model** and
+**Result**. The source step asks where the data comes from:
 
-![The new-model flow: drop a CSV or pick a saved dataset](/guides/img/fit-01-new.png)
+- **Saved data** lists every dataset you've saved (yours first, then the samples), with its rows,
+  what it holds (Non-repairable, Covariates and so on) and when it was added. Search it by name or
+  tag. Pick one to see its first rows and how its columns will be read: which column is the time,
+  and what each status value means (0 = failed, 1 = still running). Anything that would stop the
+  fit shows there too. Press **Next** to change the columns. Datasets that hold other kinds of data
+  (repeated failures of the same units, or readings alone) are greyed out, with what to fit them
+  with instead.
+- **Paste or type** takes a column of times, with an optional 0/1 status column.
+- **Upload a file** takes a CSV or Excel file, dropped on the page or browsed for.
+
+Datasets are reusable: once a file is in Reliafy you can fit as many models to it as you like
+without uploading it again.
+
+![The new-model flow: pick a saved dataset, see its first rows and how its columns will be read](/guides/img/fit-01-new.png)
 
 If your file has no header row, upload it under [Data](/data) → **New dataset** and
 tick **No header row**: Reliafy names the columns `col 1`, `col 2`, … so the
@@ -120,6 +129,34 @@ assume. **Lognormal** suits repair times and fatigue. There's also a full set of
 discrete distributions for cycles-to-failure data, non-parametric estimators
 (Kaplan-Meier and friends) when you don't want to assume a shape at all, and
 regression models when failure depends on covariates like temperature or load.
+
+## A few failures: fit with a prior
+
+With only a few failures, the data alone says little. Often you already trust
+something else: a model you saved earlier, a record in the data library, the
+vendor's numbers, or a belief such as "the B10 is about 5,000 hours". In the
+**Model** step, set **Method** to **With a prior**. Your failures and running
+units then move that prior.
+
+1. Choose the **prior**: a saved model, a library record (picked from the
+   library search), numbers you know, a range ("around a value, between two
+   bounds") or a B10 you believe. Typed numbers are in your data's unit, shown
+   beside them.
+2. For a saved model or typed numbers, choose **how much to trust it**: *Trust
+   it closely* (each number within about 10%), *Use it as a guide* (about 30%)
+   or *Only a starting point* (about 60%).
+3. Press **Fit with the prior**.
+
+The result says what moved and how far. The chart shows the prior as a dashed
+line under the fitted curve, with its 90% credible band. The table puts the
+prior's numbers beside the fitted ones. A credible interval means there's a 90%
+chance the value lies in it, given the prior and the data. It isn't a
+confidence bound. Save it like any other model. It keeps its prior: what the
+prior was and how far it was trusted.
+
+A fit with a prior takes one time column and a status column. Counts,
+interval times, truncation, covariates and failure-mode columns are for a plain
+fit.
 
 ## Reading the fit
 

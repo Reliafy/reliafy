@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { DataSourceStep } from "./DatasetPicker.jsx";
 import { ErrorNotice } from "./StorageCap.jsx";
 import {
   getColumns,
@@ -9,7 +10,6 @@ import {
   SPREADSHEET_ACCEPT,
 } from "../api.js";
 import { TIME_UNITS, distinctCount, guessMeasurementUnit, guessTimeUnit, usableForDegradation } from "../degradation.js";
-import { usableDatasets } from "../datasetFit.js";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
@@ -22,6 +22,10 @@ import HeaderNote, { detectHeader } from "./HeaderNote.jsx";
 // fit and save in one go: ``onSaved(model)`` gets the saved model, so the
 // caller can open its page (the confidence inputs need a saved model).
 const STEPS = ["Source", "Data", "Model"];
+// The fit needs an item id, a time and a measurement column: in the readings (the measurements
+// part, when the dataset has one), the table the fit reads.
+const degradationRule = (d) => (usableForDegradation(d.measurements || d)
+  ? null : "Needs an item id, a time and a measurement column.");
 
 // "Brake pad wear (sample)" / "wear.csv" → "Brake pad wear" / "wear".
 const baseName = (s) => String(s || "").replace(/\s*\(sample\)\s*$/i, "").replace(/\.(csv|xlsx?|xlsm)$/i, "").trim();
@@ -47,7 +51,7 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
   const [path, setPath] = useState("best");
   const [distribution, setDistribution] = useState("weibull");
   const [populationMethod, setPopulationMethod] = useState("moments");
-  const [datasets, setDatasets] = useState([]);
+  const [datasets, setDatasets] = useState(null); // null while the list loads
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -55,7 +59,7 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
 
   useEffect(() => {
     getDegradationOptions().then(setOptions).catch(() => {});
-    listDatasets().then((d) => setDatasets(d.datasets)).catch(() => setDatasets([]));
+    listDatasets().then((d) => setDatasets(d.datasets || [])).catch(() => setDatasets([]));
   }, []);
 
   const unit = unitTyped ?? guessTimeUnit(mapping.x);
@@ -63,8 +67,6 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
   const pathName = (options.paths || []).find((p) => p.id === path)?.name;
   const name = nameTyped ?? `${baseName(sourceName) || "Degradation"} — ${
     path !== "best" && pathName ? `${pathName.toLowerCase()} degradation` : "degradation"}`;
-  // Only the saved datasets the fit can use: item id, time and measurement.
-  const usable = usableDatasets("degradation", datasets.filter(usableForDegradation));
 
   // Distinct ids in the mapped item column over every row (the fit needs at
   // least 2 items); null when unknown, and then the wizard says nothing.
@@ -189,7 +191,7 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
   // The stepper sits under the title; the footer holds only the next step.
   let footer;
   if (step === 1) {
-    footer = <span className="hint">Upload a CSV or Excel file, or pick a dataset, to continue</span>;
+    footer = <span className="hint">Pick a saved dataset, or upload a CSV or Excel file, to continue</span>;
   } else if (step === 2) {
     footer = (
       <div className="row" style={{ margin: "0 0 0 auto" }}>
@@ -235,6 +237,15 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
       <div style={{ marginBottom: 20 }}>{stepper}</div>
       {step === 1 && (
         <>
+          <DataSourceStep
+            kind="degradation"
+            datasets={datasets}
+            onUse={pickDataset}
+            busy={loading}
+            extra={degradationRule}
+            part="measurements"
+            upload={(
+              <>
           <div
             className={`dropzone${dragging ? " dragging" : ""}`}
             onClick={() => inputRef.current?.click()}
@@ -260,23 +271,9 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
                    onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
             {sheetModal}
           </div>
-
-          {usable.length > 0 && (
-            <div className="recent">
-              <div className="recent-h">Or use a saved dataset</div>
-              {usable.slice(0, 5).map((d) => (
-                <button key={d.id} type="button" className="recent-row" disabled={loading} onClick={() => pickDataset(d)}>
-                  <span className="recent-ic">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M14 3v5h5M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" />
-                    </svg>
-                  </span>
-                  <span className="recent-name">{d.name}</span>
-                  <span className="recent-meta">{d.n_rows.toLocaleString()} rows · {d.n_columns} cols</span>
-                </button>
-              ))}
-            </div>
-          )}
+              </>
+            )}
+          />
         </>
       )}
 

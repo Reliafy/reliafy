@@ -2,7 +2,7 @@
 // a dataset's two parts as its page shows them.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { datasetMeta, datasetParts, fitOptions, splitText, usableDatasets, usableFor } from "./datasetFit.js";
+import { datasetActions, datasetMeta, datasetParts, fitOptions, splitText, usableDatasets, usableFor } from "./datasetFit.js";
 
 test("each dataset offers the fits that take it alone", () => {
   assert.deepEqual(fitOptions({ id: "a", tags: ["Non-repairable", "Covariates"] }),
@@ -15,6 +15,40 @@ test("each dataset offers the fits that take it alone", () => {
     { label: "Non-repairable model", to: "/models/new?dataset=d" },
     { label: "Degradation model", to: "/models/degradation?dataset=d" },
   ]);
+});
+
+const column = (name, dtype = "float64") => ({ name, dtype });
+
+// Start and stop rows with a failure flag (the pump bearings sample): several
+// rows per unit, so the profile once read them as readings and offered only
+// a degradation fit.
+const startStop = {
+  id: "sample-ds-pump-load", tags: ["Non-repairable", "Time-varying covariates"],
+  columns: [column("pump", "object"), column("start_h", "int64"), column("stop_h", "int64"), column("censored", "int64"), column("load_pct", "int64")],
+  profile: { repeated_units: { column: "pump", kind: "time_varying", start: "start_h", stop: "stop_h" }, split: null },
+};
+
+test("data with covariates that change over time offers a non-repairable fit", () => {
+  const life = { label: "Fit a non-repairable model with covariates that change over time", to: "/models/new?dataset=sample-ds-pump-load" };
+  assert.deepEqual(datasetActions(startStop), { primary: life, secondary: null });
+  // From the tag alone (an older profile that called the rows readings).
+  const older = { ...startStop, profile: { repeated_units: { column: "pump", kind: "degradation" } } };
+  assert.deepEqual(datasetActions(older).primary, life);
+  // Or from the profile alone (covariates fixed within each unit).
+  assert.equal(datasetActions({ ...startStop, tags: ["Non-repairable", "Covariates"] }).primary.label, life.label);
+  // Readings in the same table as well: degradation second.
+  assert.deepEqual(datasetActions({ ...startStop, tags: [...startStop.tags, "Measurements"] }).secondary,
+    { label: "Fit a degradation model", to: "/models/degradation?dataset=sample-ds-pump-load" });
+  assert.deepEqual(fitOptions(startStop), [{ label: "Non-repairable model with covariates that change over time", to: "/models/new?dataset=sample-ds-pump-load" }]);
+  assert.equal(usableFor("life", startStop), true);
+});
+
+test("the dataset page's other actions are unchanged", () => {
+  const t = (tags, kind, extra = {}) => datasetActions({ id: "x", tags, profile: kind ? { repeated_units: { column: "u", kind } } : {}, ...extra });
+  assert.deepEqual(t(["Measurements"], "degradation"), { primary: { label: "Fit a degradation model", to: "/models/degradation?dataset=x" }, secondary: null });
+  assert.equal(t(["Repairable"], "recurrent").primary.to, "/models/recurrent/new?dataset=x");
+  assert.deepEqual(t(["Non-repairable"], null).primary, { label: "Fit a model", to: "/models/new?dataset=x" });
+  assert.equal(t(["Non-repairable", "Measurements"], null, { measurements: { columns: [] } }).primary.to, "/models/joint/new?dataset=x");
 });
 
 test("each new-model flow offers only the datasets it can use", () => {
@@ -32,8 +66,6 @@ test("each new-model flow offers only the datasets it can use", () => {
   assert.equal(usableFor("life", {}), true); // no tags from the server: not hidden
   assert.equal(usableDatasets("repairable", [life, rep]).length, 1);
 });
-
-const column = (name, dtype = "float64") => ({ name, dtype });
 
 test("a dataset's parts: life data with its measurements, readings alone, or one table", () => {
   const two = {

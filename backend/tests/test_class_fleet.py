@@ -122,6 +122,80 @@ def test_members_are_the_positions_whose_item_is_of_the_class_or_inside_it(m, db
     _same_after_rebuild(m)
 
 
+def test_one_assets_fleet_has_only_what_is_inside_that_asset(m, db):
+    """Two assets with items of one class: with ``within`` (an asset's top position) the
+    members, counts, duties, models and notes are that asset's alone; a position its fitted
+    item carries is inside it, as the tree nests it; with no ``within``, every asset."""
+    _, pump, cent = _classes(m)
+    valve = m.create_item_class("Valve")["id"]
+    site = m.create_location("North site")["id"]
+    yard = m.create_location("North yard", parent_id=site)["id"]
+    north = m.create_position("North station", location_id=yard)["id"]
+    south = m.create_position("South station")["id"]
+    n1, n1_item = _pump(m, "North pump 1", cent, parent=north)
+    n2, _ = _pump(m, "North pump 2", pump, duty="Transfer pump", parent=north)
+    # A position North pump 1's item carries (its booster), with an item of the class fitted.
+    nb = m.create_position("North booster", parent_id=n1_item, position_class="Booster")["id"]
+    booster = m.fit(nb, new_item={"name": "Booster unit"}, on=_day(m, 20))["fitted"]["item"]["id"]
+    m.assign_item_class(booster, cent)
+    s1, _ = _pump(m, "South pump 1", cent, duty="Ballast pump", parent=south)
+    _pump(m, "South valve", valve, parent=south)
+    _link(m, db, s1)
+
+    everything = _fleet(m, db, pump)
+    assert sorted(r["position"]["name"] for r in everything["members"]) == [
+        "North booster", "North pump 1", "North pump 2", "South pump 1"]
+    assert (everything["positions"], everything["no_model"]) == (4, 3)
+
+    mine = class_fleet.fleet(m, db, OWNERS, set(), pump, within=north)
+    assert [r["position"]["id"] for r in mine["members"]] == [nb, n1, n2]
+    assert mine["positions"] == 3 and (mine["scored"], mine["no_model"], mine["not_scored"]) == (0, 3, 0)
+    assert mine["models"] == [] and mine["position_classes"] == ["Booster", "Feed pump", "Transfer pump"]
+    assert mine["note"].startswith("None of these positions has a condition and life model")
+    assert not any("South" in r["position"]["name"] for r in mine["members"])
+    # South alone: its one pump, its model; the valve isn't of the class.
+    theirs = class_fleet.fleet(m, db, OWNERS, set(), pump, within=south)
+    assert [r["position"]["id"] for r in theirs["members"]] == [s1]
+    assert theirs["positions"] == 1 and theirs["no_model"] == 0 and [x["id"] for x in theirs["models"]] == [JOINT]
+    assert theirs["position_classes"] == ["Ballast pump"]
+    # A class used only in the other asset: nothing here.
+    assert class_fleet.fleet(m, db, OWNERS, set(), valve, within=north)["positions"] == 0
+    assert class_fleet.fleet(m, db, OWNERS, set(), valve, within=south)["positions"] == 1
+    # One member, inside the asset or not.
+    assert class_fleet.fleet(m, db, OWNERS, set(), pump, position_id=n1, within=north)["member"]["position"]["id"] == n1
+    with pytest.raises(Invalid, match="inside that tree"):
+        class_fleet.fleet(m, db, OWNERS, set(), pump, position_id=s1, within=north)
+    with pytest.raises(NotFound):
+        class_fleet.fleet(m, db, OWNERS, set(), pump, within="no-such-position")
+    # The same "inside" as the tree read: every position the tree nests under the asset.
+    rows = {r["id"]: r for r in m.tree_rows()["positions"]}
+
+    def under(top):
+        return {pid for pid in rows if pid == top or _up_to(rows, pid, top)}
+
+    assert m.positions_inside(north) == under(north) == {north, n1, n2, nb}
+    assert m.positions_inside(south) == under(south)
+    # A place: every position there or at a place inside it (set or inherited), the same members.
+    assert m.positions_inside(site) == m.positions_inside(yard) == {north, n1, n2, nb}
+    at_site = class_fleet.fleet(m, db, OWNERS, set(), pump, within=site)
+    assert sorted(r["position"]["id"] for r in at_site["members"]) == sorted([nb, n1, n2])
+    # The carrying item moves to South: its booster goes with it.
+    m.move_item(n1_item, south)
+    assert nb in m.positions_inside(south) and nb not in m.positions_inside(north)
+    assert nb not in m.positions_inside(site)
+    _same_after_rebuild(m)
+
+
+def _up_to(rows, pid, top):
+    seen = set()
+    while pid is not None and pid not in seen:
+        seen.add(pid)
+        pid = rows[pid].get("parent_id")
+        if pid == top:
+            return True
+    return False
+
+
 def test_tree_rows_say_each_position_item_class(m):
     _, pump, cent = _classes(m)
     a, _ = _pump(m, "Pump A", cent)
@@ -130,6 +204,59 @@ def test_tree_rows_say_each_position_item_class(m):
     rows = {r["id"]: r for r in m.tree_rows()["positions"]}
     assert rows[a]["item_class_id"] == cent
     assert "item_class_id" not in rows[b] and "item_class_id" not in rows[e]
+    _same_after_rebuild(m)
+
+
+# ---- one position on its own -----------------------------------------------------------------------------------------------
+
+def test_one_position_whatever_its_item_class(m, db):
+    """The Condition monitoring tab on a position: the member row a class's fleet gives, with its
+    curves, for an item with a class, an item with none, and no item at all."""
+    _, pump, cent = _classes(m)
+    load = m.create_condition("Load", kind="value")["id"]
+    a, _ = _pump(m, "Pump A", cent, age=100)
+    b, b_item = _pump(m, "Pump B", age=80)  # an item with no class
+    for pid, age in ((a, 100), (b, 80)):
+        _readings(m, pid, age)
+        m.apply_condition(pid, load, value=1)
+        _link(m, db, pid)
+    c, _ = _pump(m, "Pump C", cent, age=30)  # no model
+    d, _ = _pump(m, "Pump D", age=30)  # a model, no readings
+    _link(m, db, d)
+    empty = m.create_position("Spare bay", tag="SB-1", position_class="Feed pump")["id"]
+    before = m.s.snapshot()
+
+    def one(pid):
+        return class_fleet.position(m, db, OWNERS, set(), pid)
+
+    # With a class: the row and curves the class's own read gives for that member.
+    got, want = one(a), _fleet(m, db, pump, a)
+    assert got["member"] == want["member"] and got["model"] == want["model"]
+    assert got["item_class"]["name"] == "Centrifugal pump" and got["why"] is None
+    assert got["position"] == {"id": a, "name": "Pump A", "tag": "PUMP-A", "position_class": "Feed pump"}
+    assert (got["today"], got["age_unit"], got["horizons"]) == (want["today"], want["age_unit"], want["horizons"])
+    # An item with no class is scored the same way: the class was never part of the sums.
+    got = one(b)
+    row = got["member"]
+    assert got["item_class"] is None and row["item_class"] is None and row["item"]["id"] == b_item
+    assert row["scored"] and len(row["risk"]) == 3 and all(0.0 <= x <= 1.0 for x in row["risk"])
+    assert row["unit"]["unit_id"] == "Pump B" and row["unit"]["age"] == 80.0 and row["unit"]["prediction"]
+    assert got["model"]["id"] == JOINT
+    # No model: the row with its facts and no risk; the page says how to link one.
+    got = one(c)
+    assert got["model"] is None and got["member"]["model"] is None and not got["member"]["scored"]
+    assert got["member"]["why"] is None and got["member"]["age"] == 30.0 and "unit" not in got["member"]
+    # A model that can't score it yet: the reason, in words.
+    got = one(d)
+    assert got["model"]["id"] == JOINT and not got["member"]["scored"] and "unit" not in got["member"]
+    assert got["member"]["why"].startswith("No measurement point for")
+    # Nothing fitted: no member, and why.
+    got = one(empty)
+    assert got["member"] is None and got["model"] is None and got["item_class"] is None
+    assert got["why"].startswith("No item is fitted here") and got["position"]["tag"] == "SB-1"
+    with pytest.raises(NotFound):
+        one("no-such-position")
+    assert m.s.snapshot() == before  # a read
     _same_after_rebuild(m)
 
 
@@ -394,3 +521,14 @@ def test_the_fleet_over_rest(client):
     assert client.get("/api/maintenance/item-classes/nope/fleet").status_code == 404
     bad = client.get(f"/api/maintenance/item-classes/{pump}/fleet", params={"position_id": other["id"]})
     assert bad.status_code == 422 and "no item of the class Pump" in bad.json()["detail"]
+    # One asset's tree (?within=, its top position): only the members inside it.
+    assert client.get(f"/api/maintenance/item-classes/{pump}/fleet", params={"within": a}).json()["positions"] == 1
+    assert client.get(f"/api/maintenance/item-classes/{pump}/fleet", params={"within": b}).json()["positions"] == 0
+    assert client.get(f"/api/maintenance/item-classes/{pump}/fleet", params={"within": "nope"}).status_code == 404
+    # One position on its own (its Condition monitoring tab), with a class or without one.
+    mine = client.get(f"/api/maintenance/positions/{a}/condition")
+    assert mine.status_code == 200, mine.text
+    assert mine.json()["member"] == one["member"] and mine.json()["model"]["id"] == JOINT
+    plain = client.get(f"/api/maintenance/positions/{b}/condition").json()
+    assert plain["item_class"] is None and plain["model"] is None and plain["member"]["item"]["name"] == "Unclassed"
+    assert client.get("/api/maintenance/positions/nope/condition").status_code == 404

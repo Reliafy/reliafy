@@ -1,7 +1,7 @@
 // Run with: node --test src/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
+import { missionRbdLine,
   cleanPhases, missionFields, networkGap, phaseBlocks, reliabilityPercent, terminals, topBlocks,
   undirectedEdges, voteNodes,
 } from "./rbdMission.js";
@@ -29,6 +29,9 @@ test("the mission keys ride with the graph only when set", () => {
   assert.deepEqual(missionFields({ phases: [{ name: "A", duration: 1 }], missions, mission_name: "Delivery" }),
     { phases: [{ name: "A", duration: 1 }], missions, mission_name: "Delivery" });
   assert.deepEqual(missionFields({ missions: [], mission_name: "Orphan" }), {});
+  // A mission's own RBD keeps its link and its mission's name, phases or not.
+  assert.deepEqual(missionFields({ mission_of: { position_id: "p1" }, mission_name: "Lift" }),
+    { mission_of: { position_id: "p1" }, mission_name: "Lift" });
 });
 
 test("editing phases in the builder keeps the values the Missions tab set", () => {
@@ -81,6 +84,9 @@ test("phases are cleaned and checked in plain words", () => {
     { name: "Take-off", duration: 0.2, not_needed: ["c2"], votes: { k1: 2 } },
     { name: "Cruise", duration: 5 },
   ]);
+  // Standby blocks set on the Missions tab ride through the builder's editor.
+  const kept = cleanPhases([{ name: "Run", duration: 1, standby: ["c2", "gone"], not_needed: [] }], nodes).phases[0];
+  assert.deepEqual(kept.standby, ["c2"]);
   const bad = cleanPhases([{ name: "", duration: "" }, { name: "A", duration: -1 }, { name: "a", duration: 1, votes: { k1: "0" } }], nodes);
   assert.equal(bad.errors.length, 5);
 });
@@ -97,4 +103,10 @@ test("ties for the most important block are all named", () => {
   assert.deepEqual(topBlocks([{ label: "C", birnbaum: 0.3 }, { label: "D", birnbaum: 0.3 }, { label: "A", birnbaum: 0.1 }])
     .map((r) => r.label), ["C", "D"]);
   assert.deepEqual(topBlocks([{ label: "C", birnbaum: 0 }]), []);
+});
+
+test("a mission's own RBD says which mission and position it belongs to in the list", () => {
+  assert.equal(missionRbdLine({ mission: { name: "Lift", position: "Pump station" } }), "Mission “Lift” on Pump station");
+  assert.equal(missionRbdLine({ mission: { name: "Lift", position: null } }), "Mission “Lift”");
+  assert.equal(missionRbdLine({ name: "Plain" }), "");
 });
