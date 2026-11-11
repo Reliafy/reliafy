@@ -1,7 +1,7 @@
 // Run with: node --test src/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
+import { missionRbdLine,
   cleanPhases, missionFields, networkGap, phaseBlocks, reliabilityPercent, terminals, topBlocks,
   undirectedEdges, voteNodes,
 } from "./rbdMission.js";
@@ -103,4 +103,10 @@ test("ties for the most important block are all named", () => {
   assert.deepEqual(topBlocks([{ label: "C", birnbaum: 0.3 }, { label: "D", birnbaum: 0.3 }, { label: "A", birnbaum: 0.1 }])
     .map((r) => r.label), ["C", "D"]);
   assert.deepEqual(topBlocks([{ label: "C", birnbaum: 0 }]), []);
+});
+
+test("a mission's own RBD says which mission and position it belongs to in the list", () => {
+  assert.equal(missionRbdLine({ mission: { name: "Lift", position: "Pump station" } }), "Mission “Lift” on Pump station");
+  assert.equal(missionRbdLine({ mission: { name: "Lift", position: null } }), "Mission “Lift”");
+  assert.equal(missionRbdLine({ name: "Plain" }), "");
 });

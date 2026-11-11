@@ -462,8 +462,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const whole = useMemo(() => (rcmOn && rcm ? (fmeaOn ? graftFmea(base, rcm) : graftRcm(base, rcm))
     : measOn && meas.data ? graftMeasurements(base, meas.data, data?.today || new Date().toISOString().slice(0, 10), meas.fittedAt)
       : modelsOn && pmodels.links ? graftModels(base, pmodels.links)
-        : missionsOn && pmissions.links ? graftMissions(base, pmissions.links)
-          : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, missionsOn, pmissions.links]);
+        : missionsOn && pmissions.links ? graftMissions(base, pmissions.links, pmissions.hasModel)
+          : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, missionsOn, pmissions.links, pmissions.hasModel]);
   const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
   // The modes picked that are still in the tree after a read.
   useEffect(() => {
@@ -1437,7 +1437,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     try {
       const made = await createPositionMission(positionId);
       const ph = made.placeholders?.length ? ` ${made.placeholders.length} block${made.placeholders.length === 1 ? " is a placeholder" : "s are placeholders"}: give ${made.placeholders.length === 1 ? "it a model" : "them models"} in its RBD.` : "";
-      say(`Added ${made.mission.name} with an RBD of its own, built from what's inside ${positionName}.${ph} Now give it its phases.`);
+      const from = made.built_from === "model" ? `one block, ${positionName}'s own model in use`
+        : made.built_from === "copy" ? `a copy of ${positionName}'s RBD` : `what's inside ${positionName}`;
+      say(`Added ${made.mission.name} with an RBD of its own, built from ${from}.${ph} Now give it its phases.`);
       pmissions.load();
       pending.current = missionKey(made.rbd.id, made.mission.id);
       openMission(positionId, made.rbd.id, made.mission.id);

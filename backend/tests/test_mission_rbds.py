@@ -223,7 +223,7 @@ def test_a_mission_s_rbd_keeps_its_mission_with_no_phases_and_takes_no_second(m,
 
 def test_a_position_with_nothing_inside_starts_from_a_copy_of_its_rbd(m, db):
     pump = m.create_position("Lone pump")["id"]
-    with pytest.raises(Invalid, match="no positions inside"):
+    with pytest.raises(Invalid, match="nothing inside and no model in use"):
         pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG)
     from backend.services import rbds as rbds_service
 
@@ -234,6 +234,26 @@ def test_a_position_with_nothing_inside_starts_from_a_copy_of_its_rbd(m, db):
     graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
     assert "missions" not in graph and graph["mission_of"]["position_id"] == pump
     assert made["notes"][0].startswith("Started from a copy of Lone pump RBD")
+
+
+def test_a_leaf_with_a_model_in_use_flies_a_one_block_mission(m, db):
+    pump = m.create_position("Lone pump")["id"]
+    bare = m.create_position("Bare pump")["id"]
+    pm.link_saved(m, db, OWNERS, set(), pump, "model", SAMPLE)
+    assert pm.blockable_positions(m, db, OWNERS, set(), m.all_position_models()) == [pump]
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG, "Duty")
+    assert made["built_from"] == "model" and made["placeholders"] == []
+    graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    blocks = [n for n in graph["nodes"] if n["type"] == "component"]
+    assert [b["data"]["label"] for b in blocks] == ["Lone pump"]
+    assert blocks[0]["data"]["model"].get("modelId") == SAMPLE and not blocks[0]["data"]["model"].get("placeholder")
+    assert graph["mission_of"] == {"position_id": pump}
+    # It works out like the model on its own: one block in series.
+    g, _ = rm.save(graph, rm.LEGACY_ID, phases=[{"name": "Run", "duration": 100}])
+    got = rm.analyze(db, OWNERS, g, g["phases"])
+    assert 0 < got["reliability"] < 1
+    with pytest.raises(Invalid, match="no model in use"):
+        pm.build_mission_rbd(m, db, OWNERS, set(), bare, ORG)
 
 
 # ---- over REST --------------------------------------------------------------------------------
@@ -294,8 +314,14 @@ def test_rest_add_set_states_calculate_and_delete_a_mission_with_its_own_rbd(cli
     # the time ages each half as much: the mission is likelier to complete.
     assert got["reliability"] > working["reliability"]
 
-    links = _ok(client.get("/api/maintenance/position-missions"))["links"]
+    listed = _ok(client.get("/api/maintenance/position-missions"))
+    links = listed["links"]
+    assert plant not in listed["has_model"] and len(listed["has_model"]) == 2  # the two pumps' models
     mine = [x for x in links if x["position_id"] == plant]
+    # The RBD list labels a mission's own RBD with its mission and position.
+    rows = {r["id"]: r for r in _ok(client.get("/api/rbds"))["rbds"]}
+    assert rows[rid]["mission"] == {"name": "Duty and standby", "position_id": plant, "position": "Pump station"}
+    assert "mission" not in rows[old]
     assert sorted(m["name"] for x in mine for m in x["missions"]) == ["Duty and standby", "Old way"]
     own = next(x for x in mine if x["rbd"]["id"] == rid)
     assert own["link_id"] is None and own["rbd"]["mission_rbd"] is True

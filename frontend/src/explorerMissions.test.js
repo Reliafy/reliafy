@@ -36,9 +36,14 @@ test("missions hang under their own position, never a parent's", () => {
   assert.equal(d.rows.get(missionKey("r1", "m1")).ref.position_id, "drone");
   assert.equal(rollupText(drone, true), "2 missions");
   assert.equal(rollupText(d.rows.get("gimbal"), true), "No missions yet · Add a mission");
-  assert.equal(rollupText(d.rows.get("battery"), true), "No RBD yet");
+  assert.equal(rollupText(d.rows.get("battery"), true), "No missions yet");
   assert.equal(rollupText(d.rows.get("arm"), true), "No missions yet · Add a mission");
-  assert.equal(rollupText(d.rows.get("battery"), false), "No RBD yet");
+  assert.equal(rollupText(d.rows.get("battery"), false), "No missions yet");
+  // Closed, a parent with no RBD still says a mission can be added (it's built from what's inside).
+  assert.equal(rollupText(d.rows.get("arm"), false), "No missions yet · Add a mission");
+  // A leaf with a model in use can have one too (one block).
+  const withModel = graftMissions(buildDisplay(DATA, "positions"), LINKS, ["battery"]);
+  assert.equal(rollupText(withModel.rows.get("battery"), false), "No missions yet · Add a mission");
   assert.ok(!d.rows.get("gimbal").kids.some((k) => k.startsWith("MS:")));
 });
 
@@ -71,7 +76,11 @@ test("a position's actions: Add a mission (an RBD of its own), wherever one can 
   // A leaf with no RBD: nothing to build from, so it says what to do.
   const [leaf] = positionMissionActions(d.rows.get("battery"));
   assert.equal(leaf.disabled, true);
-  assert.match(leaf.reason, /positions inside it first/);
+  assert.match(leaf.reason, /Give it a life model/);
+  // With a model in use, a leaf gets Add a mission: one block, its own model.
+  const modelled = graftMissions(buildDisplay(DATA, "positions"), LINKS, ["battery"]);
+  assert.deepEqual(positionMissionActions(modelled.rows.get("battery")).map((a) => [a.id, !!a.disabled]),
+    [["mission-new", false], ["mission-build-rbd", false]]);
   // A leaf with only a repairable RBD can't fly one.
   const rep = graftMissions(buildDisplay(DATA, "positions"), [{ ...LINKS[1], rbd: { ...RBD, repairable: true } }]);
   const [add] = positionMissionActions(rep.rows.get("gimbal"));

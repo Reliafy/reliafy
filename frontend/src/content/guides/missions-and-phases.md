@@ -31,7 +31,8 @@ are its missions, with:
 - **Completes**: the chance the mission completes, once worked out.
 - **RBD**: the diagram it's flown on.
 
-Any position with positions inside it can have missions, the ones
+Any position with positions inside it, or with a model of its own, can have
+missions, the ones
 inside a product included. A position doesn't take the missions of the position
 above it: a gimbal's own missions are flown on the gimbal's own RBD.
 
@@ -43,7 +44,12 @@ mission an RBD of its own from what's inside the position, the same way
 at its position, and a position with none gets a placeholder block, flagged,
 never a made-up figure. It's saved once, named after the position and the
 mission ("Pump station — Mission 1"). A position with nothing inside starts
-from a copy of its own RBD.
+from a copy of its own RBD or, without one, is a single block: the position's
+own model in use. A position with nothing inside and no model can't have a
+mission yet: give it a model on the **Modelling** tab first.
+
+Under **Modelling → System models → RBDs**, a mission's RBD has a **Mission**
+label and says which mission and position it belongs to.
 
 Each mission's RBD is its own: change it (**Open its RBD** on the mission's
 menu, or **open it** in the mission) in the RBD builder beside the tree, and the

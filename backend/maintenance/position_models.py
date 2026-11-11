@@ -1428,9 +1428,10 @@ def _factor(model_unit: str, diagram_unit: str) -> float | None:
     return None
 
 
-def _tree_parts(m, db, owners, hidden, position_id: str):
+def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False):
     """What Build from what's inside works from: (position, fetch, the live positions inside, the
-    diagram's unit, block(child) -> (block data, note))."""
+    diagram's unit, block(child) -> (block data, note)). ``with_self``: block() also takes the
+    position itself (a leaf's one-block diagram)."""
     from collections import Counter
 
     from backend.units import canonical_unit
@@ -1438,7 +1439,7 @@ def _tree_parts(m, db, owners, hidden, position_id: str):
     p = m._get(position_id, "Position")
     fetch = fetcher(db, owners, hidden)
     children = [c for c in m.s.inn(m.org, position_id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
-    in_use = {c["id"]: m.in_use_link(c["id"]) for c in children}
+    in_use = {c["id"]: m.in_use_link(c["id"]) for c in [*children, *([p] if with_self else [])]}
     docs = {cid: fetch(x["model_type"], x["model_id"]) if x else None for cid, x in in_use.items()}
     units = Counter(canonical_unit((d.results or {}).get("unit") or "") for cid, d in docs.items()
                     if d is not None and in_use[cid]["model_type"] == "model" and (d.results or {}).get("unit"))
@@ -1555,7 +1556,8 @@ _NOT_COPIED = ("phases", "missions", "mission_name", "mission_of")
 def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, name: str | None = None) -> dict:
     """A new mission on a position, with an RBD of its own (one RBD per mission): built from what's
     inside the position as Build from what's inside builds (placeholders flagged, never a made-up
-    figure); a position with nothing inside starts from a copy of its own non-repairable RBD.
+    figure); a position with nothing inside starts from a copy of its own non-repairable RBD, else
+    is one block, its own model in use (``built_from``: tree, copy or model).
     Saved once as "<position> — <mission>", marked ``mission_of`` the position (not linked as one
     of its models). {rbd: {id, name}, mission: summary, notes, placeholders}."""
     from backend.services import rbd_missions
@@ -1580,7 +1582,7 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
             k += 1
         name = f"Mission {k}"
     kids = [c for c in m.s.inn(m.org, position_id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
-    notes, placeholders = [], []
+    notes, placeholders, source = [], [], "tree"
     if kids:
         graph, built, _, _, _ = _tree_graph(m, db, owners, hidden, position_id)
         notes, placeholders = built["notes"], built["placeholders"]
@@ -1589,12 +1591,15 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
         own = [fetch("rbd", x["model_id"]) for x in m.position_models(position_id) if x.get("model_type") == "rbd"]
         own = [d for d in own if d is not None and not (d.graph or {}).get("repairable")
                and not (d.graph or {}).get("network")]
-        if not own:
-            raise sv.Invalid(f"{p['name']} has no positions inside to build the mission's RBD from. Add the "
-                             "positions inside it first, or link a non-repairable RBD to it.")
-        src = own[0]
-        graph = {k: v for k, v in (src.graph or {}).items() if k not in _NOT_COPIED}
-        notes = [f"Started from a copy of {src.name}: {p['name']} has no positions inside."]
+        if own:
+            src = own[0]
+            graph = {k: v for k, v in (src.graph or {}).items() if k not in _NOT_COPIED}
+            notes = [f"Started from a copy of {src.name}: {p['name']} has no positions inside."]
+            source = "copy"
+        else:
+            source = "model"
+            graph, note = _one_block_graph(m, db, owners, hidden, p)
+            notes = [note] if note else []
     graph = {**graph, "mission_of": {"position_id": position_id}, "mission_name": name}
     try:
         graph = normalize_graph(graph, resolve_saved_model=lambda mid: fetcher(db, owners, hidden)("model", mid))
@@ -1604,7 +1609,59 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
     mission = rbd_missions.find(rbd.graph or graph, rbd_missions.LEGACY_ID)
     return {"rbd": {"id": rbd.id, "name": rbd.name, "updated_at": rbd.updated_at.isoformat() if rbd.updated_at else None},
             "mission": rbd_missions.summary(rbd.graph or graph, mission), "position_id": position_id,
-            "notes": notes[:20], "placeholders": placeholders}
+            "notes": notes[:20], "placeholders": placeholders, "built_from": source}
+
+
+def _one_block_graph(m, db, owners, hidden, p: dict) -> tuple[dict, str | None]:
+    """A leaf position's mission diagram: one block, the position's own model in use (as a block
+    built from it would take it), In → block → Out. Raises Invalid when it has no model an RBD block
+    can take (never a placeholder: there would be nothing to fly)."""
+    from backend.maintenance import rbd_derive
+    from backend.services.rbd_graph import wrap_layout
+
+    sv = _sv()
+    _, _, _, unit, block = _tree_parts(m, db, owners, hidden, p["id"], with_self=True)
+    fields, note = block(p)
+    if fields is not None and "subsystem_rbd_id" in fields:
+        raise sv.Invalid(f"{p['name']}'s RBD is repairable or a network, which a mission isn't flown on. Make it "
+                         "non-repairable, or give the position a life model.")
+    if fields is None:
+        raise sv.Invalid(note or f"{p['name']} has nothing inside and no model in use to build the mission's RBD "
+                                 "from. Give it a life model on the Modelling tab, or add the positions inside it.")
+    bid = rbd_derive._bid(p["id"])
+    graph = {"unit": unit, "nodes": [{"id": "in", "type": "input"}, {"id": "out", "type": "output"},
+                                     {"id": bid, "type": "component", "label": p["name"], **fields}],
+             "edges": [{"source": "in", "target": bid}, {"source": bid, "target": "out"}]}
+    try:
+        from backend.services.rbd_graph import normalize_graph
+
+        graph = normalize_graph(graph, resolve_saved_model=lambda mid: fetcher(db, owners, hidden)("model", mid))
+    except Exception as err:  # noqa: BLE001 - shown in words
+        raise sv.Invalid(f"The mission's RBD couldn't be made: {err}") from None
+    graph["nodes"] = wrap_layout(graph["nodes"])
+    return graph, (note or f"One block: {p['name']}'s own model in use (it has no positions inside).")
+
+
+def blockable_positions(m, db, owners, hidden, links: list) -> list[str]:
+    """Of the positions in ``links`` (model rows, as all_position_models gives them), those whose
+    model in use a mission's one-block RBD can take (a life distribution or a covariate model): the
+    Missions tab offers Add a mission on such a leaf."""
+    from backend.maintenance import covariate_positions
+
+    fetch = fetcher(db, owners, hidden)
+    out = []
+    for x in links:
+        if not x.get("in_use"):
+            continue
+        if covariate_positions.block_model(x) is not None:
+            out.append(x["position_id"])
+            continue
+        d = fetch(x["model_type"], x["model_id"])
+        if d is None:
+            continue
+        if x["model_type"] == "model" and d.kind in ("distribution", "regression"):
+            out.append(x["position_id"])
+    return sorted(set(out))
 
 
 def _add_new_blocks(old: dict, fresh: dict, resolve) -> dict:
