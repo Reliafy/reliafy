@@ -1,22 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getLibraryRecord, getLibrarySources, linkPositionModel, listModels, previewPositionFit } from "../api.js";
-import Plot from "./Plot.jsx";
-import ProbabilityPlot from "./ProbabilityPlot.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import { Select, TextInput } from "./ui/Controls.jsx";
-import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { useModes } from "./ModelTable.jsx";
-import { ACCENT, BAND_FILL, MUTED } from "../plotTheme.js";
 import { saveErrorText } from "../confirm.js";
-import { TRUST_CHOICES } from "../bayesUpdate.js";
 import {
-  AROUND_PARAMS, METHOD_CHOICES, METHOD_LINE, bodyOf, countsWords, dataOptions, effective, forWords, historyRow, previewKey,
-  fitChanged, fitTitle, initialFit, keepsOwnPrior, libraryPriorWords, priorChoices, problem, refusalSwitch, refusalWords, showsTrust,
+  METHOD_CHOICES, METHOD_LINE, bodyOf, countsWords, dataOptions, effective, forWords, historyRow, previewKey,
+  fitChanged, fitTitle, initialFit, keepsOwnPrior, priorChoices, problem, refusalSwitch, refusalWords, showsTrust,
 } from "../fitDialog.js";
-import { fmt } from "../explorerModels.js";
+import { FitOutcome, PriorFields } from "./PriorFit.jsx";
 import TablePane from "./TablePane.jsx";
-import LibraryRecordPicker, { PickedRecord } from "./LibraryRecordPicker.jsx";
-import { RecordCovariatesField, useRecordCovariates } from "./LibraryParts.jsx";
+import LibraryRecordPicker from "./LibraryRecordPicker.jsx";
+import { useRecordCovariates } from "./LibraryParts.jsx";
 import { rowFromDetail } from "../libraryPicker.js";
 import "./RcmWorksheet.css";
 import "./FitLifeModel.css";
@@ -36,16 +31,6 @@ import "./FitLifeModel.css";
 //   start     {data?, method?, priorKind?, modelId?, recordId?, update?}   link: a row it replaces (Refit…)
 //             update: "Update with new failures…" on a fit with a prior, that row's model the prior
 //             (fitDialog.priorFrom); its own prior is kept, so trust isn't asked.
-
-const PARAM_NAMES = { weibull: ["alpha", "beta"], exponential: ["failure_rate"], lognormal: ["mu", "sigma"] };
-const PARAM_WORDS = { alpha: "Characteristic life (alpha)", beta: "Shape (beta)", failure_rate: "Failure rate", mu: "mu", sigma: "sigma" };
-const UNITS = ["hours", "days", "weeks", "months", "years"];
-
-function Range({ p }) {
-  if (!p) return "—";
-  const b = p.lower != null && p.upper != null ? `${fmt(p.lower)}–${fmt(p.upper)}` : p.lower != null ? `≥ ${fmt(p.lower)}` : null;
-  return <>{fmt(p.median ?? p.point)}{b ? <span className="rw-sum"> ({b})</span> : null}</>;
-}
 
 function Step({ label, children }) {
   return (
@@ -197,9 +182,6 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
     return { ...s, exclude: next };
   });
   const way = preview.refused ? refusalSwitch(eff.method) : null;
-  const charts = [...(d?.plot && !bayes ? [{ value: "paper", label: "Probability plot" }] : []), { value: "sf", label: "Reliability" },
-    ...(d?.curves?.hf ? [{ value: "hf", label: "Hazard" }] : [])];
-  const shownChart = charts.some((c) => c.value === chart) ? chart : "sf";
   return (
     <>
       <div className="fit2">
@@ -242,81 +224,21 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
             )}
             {bayes && (
               <Step label="Prior">
-                {state.data !== "both" && (
-                  <Select aria-label="Prior" value={eff.priorKind} onChange={(e) => {
-                    set("priorKind", e.target.value);
-                    if (e.target.value === "library" && !state.recordId && !autoOpened.current) { autoOpened.current = true; setPicking(true); }
-                  }}>
-                    {priorChoices(state.data).filter((p) => p.value !== "class" || position.position_class)
-                      .map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                  </Select>
-                )}
-                {showsTrust(eff.priorKind) && !keepsOwnPrior(state, start, d) && (
-                  <ChoiceChips label="How much to trust the prior" className="sm" value={state.trust} onChange={(v) => v && set("trust", v)}
-                               options={TRUST_CHOICES.map((t) => ({ value: t.value, label: t.label }))} />
-                )}
-                {eff.priorKind === "library" && (
-                  <>
-                    <div ref={pickArea} className="fit2-pick">
-                      <PickedRecord record={state.recordId ? record || { id: state.recordId } : null} onPick={() => setPicking(true)} />
-                    </div>
-                    {state.recordId && <p className="fit2-sum">{libraryPriorWords(state.distribution, record)}</p>}
-                    {state.recordId && record?.kind !== "life" && <RecordCovariatesField recordId={state.recordId} cov={libCov} idPrefix="fitcov" />}
-                    {record?.kind !== "life" && (state.distribution === "weibull" || state.distribution === "lognormal") && (
-                      <div className="fit2-pair">
-                        <TextInput inputMode="decimal" aria-label="Shape between" placeholder="Shape between (0.5)" value={state.libShape.lo || ""}
-                                   onChange={(e) => set("libShape", { ...state.libShape, lo: e.target.value })} />
-                        <TextInput inputMode="decimal" aria-label="Shape and" placeholder="and (5)" value={state.libShape.hi || ""}
-                                   onChange={(e) => set("libShape", { ...state.libShape, hi: e.target.value })} />
-                      </div>
-                    )}
-                  </>
-                )}
-                {eff.priorKind === "around" && (
-                  <div className="fit2-around" role="group" aria-label="Around a value, between two bounds">
-                    <div className="fit2-around-head" aria-hidden="true"><span /><span>about</span><span>between</span><span>and</span></div>
-                    {AROUND_PARAMS[state.distribution === "best" ? "weibull" : state.distribution].map(([k, label]) => (
-                      <div key={k} className="fit2-around-row">
-                        <span className="fit2-around-name">{label}</span>
-                        {[["about", "about"], ["lo", "between"], ["hi", "and"]].map(([f, word]) => (
-                          <TextInput key={f} inputMode="decimal" aria-label={`${label} ${word}`} value={state.around[k]?.[f] || ""}
-                                     onChange={(e) => set("around", { ...state.around, [k]: { ...(state.around[k] || {}), [f]: e.target.value } })} />
-                        ))}
-                      </div>
-                    ))}
-                    <Select aria-label="Unit" value={state.unit} onChange={(e) => set("unit", e.target.value)}>{UNITS.map((x) => <option key={x} value={x}>{x}</option>)}</Select>
-                  </div>
-                )}
-                {eff.priorKind === "model" && (
-                  <Select aria-label="Prior model" value={state.modelId || ""} onChange={(e) => set("modelId", e.target.value || null)}>
-                    <option value="">{models === null ? "Loading models…" : "Pick a Weibull, exponential or lognormal model"}</option>
-                    {(models || []).map((m) => <option key={m.id} value={m.id}>{m.name}{m.is_sample ? " (sample)" : ""}</option>)}
-                    {/* The row it was opened from, while the list is read or if the list leaves it out. */}
-                    {state.modelId && state.modelId === link?.model_id && !(models || []).some((m) => m.id === state.modelId) && (
-                      <option value={state.modelId}>{link.model?.name || link.name}</option>
-                    )}
-                  </Select>
-                )}
-                {eff.priorKind === "params" && (
-                  <div className="fit2-pair">
-                    <Select aria-label="Prior distribution" value={state.distribution === "best" ? "weibull" : state.distribution} onChange={(e) => set("distribution", e.target.value)}>
-                      <option value="weibull">Weibull</option><option value="exponential">Exponential</option><option value="lognormal">Lognormal</option>
-                    </Select>
-                    <Select aria-label="Unit" value={state.unit} onChange={(e) => set("unit", e.target.value)}>{UNITS.map((x) => <option key={x} value={x}>{x}</option>)}</Select>
-                    {PARAM_NAMES[state.distribution === "best" ? "weibull" : state.distribution].map((k) => (
-                      <TextInput key={k} inputMode="decimal" aria-label={PARAM_WORDS[k]} placeholder={PARAM_WORDS[k]} value={state.params[k] || ""}
-                                 onChange={(e) => set("params", { ...state.params, [k]: e.target.value })} />
-                    ))}
-                  </div>
-                )}
-                {eff.priorKind === "b10" && (
-                  <div className="fit2-pair">
-                    <TextInput inputMode="decimal" aria-label="B10 about" placeholder="B10 about" value={state.b10.value || ""} onChange={(e) => set("b10", { ...state.b10, value: e.target.value })} />
-                    <Select aria-label="Unit" value={state.unit} onChange={(e) => set("unit", e.target.value)}>{UNITS.map((x) => <option key={x} value={x}>{x}</option>)}</Select>
-                    <TextInput inputMode="decimal" aria-label="Surprised under" placeholder="Surprised under" value={state.b10.low || ""} onChange={(e) => set("b10", { ...state.b10, low: e.target.value })} />
-                    <TextInput inputMode="decimal" aria-label="Surprised over" placeholder="Surprised over" value={state.b10.high || ""} onChange={(e) => set("b10", { ...state.b10, high: e.target.value })} />
-                  </div>
-                )}
+                <PriorFields
+                  state={state} set={set} kind={eff.priorKind}
+                  kinds={state.data !== "both" ? priorChoices(state.data).filter((p) => p.value !== "class" || position.position_class) : null}
+                  onKind={(k) => {
+                    set("priorKind", k);
+                    if (k === "library" && !state.recordId && !autoOpened.current) { autoOpened.current = true; setPicking(true); }
+                  }}
+                  trust={showsTrust(eff.priorKind) && !keepsOwnPrior(state, start, d)}
+                  models={models}
+                  modelFallback={state.modelId && state.modelId === link?.model_id && !(models || []).some((m) => m.id === state.modelId) ? (
+                    // The row it was opened from, while the list is read or if the list leaves it out.
+                    <option value={state.modelId}>{link.model?.name || link.name}</option>
+                  ) : null}
+                  record={record} libCov={libCov} onPickRecord={() => setPicking(true)} pickArea={pickArea}
+                />
               </Step>
             )}
             {showDist && (
@@ -341,65 +263,9 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
             </p>
           )}
           {d && (
-            <>
-              <p className="ml-lead" role="status">{d.words}</p>
-              {(d.warnings || []).map((w) => <p key={w} className="ml-stale" role="note">{w}</p>)}
-              {charts.length > 1 && <SegmentedControl size="sm" label="What to plot" value={shownChart} onChange={setChart} options={charts} />}
-              {shownChart === "paper" && d.plot ? (
-                <ProbabilityPlot plot={d.plot} unit={u} download={`${position.name} — probability plot`} />
-              ) : d.curves?.x && (
-                <Plot data={shownChart === "hf" ? [
-                  ...(d.curves.baseline_hf ? [{ x: d.curves.x, y: d.curves.baseline_hf, mode: "lines", line: { color: MUTED, width: 1.5, dash: "dash" },
-                    name: eff.priorKind === "class" ? "The class's own fit" : "The prior" }] : []),
-                  { x: d.curves.x, y: d.curves.hf, mode: "lines", line: { color: ACCENT, width: 2 }, name: d.method === "bayes" ? "Fitted with the prior" : "Hazard rate" },
-                ] : [
-                  ...(d.curves.sf_lower && d.curves.sf_upper ? [
-                    { x: d.curves.x, y: d.curves.sf_upper, mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
-                    { x: d.curves.x, y: d.curves.sf_lower, mode: "lines", line: { width: 0 }, fill: "tonexty", fillcolor: BAND_FILL,
-                      name: d.method === "bayes" ? "90% credible band" : "95% confidence band", hoverinfo: "skip" },
-                  ] : []),
-                  ...(d.curves.baseline_sf ? [{ x: d.curves.x, y: d.curves.baseline_sf, mode: "lines", line: { color: MUTED, width: 1.5, dash: "dash" },
-                    name: eff.priorKind === "class" ? "The class's own fit" : "The prior" }] : []),
-                  { x: d.curves.x, y: d.curves.sf, mode: "lines", line: { color: ACCENT, width: 2 }, name: d.method === "bayes" ? "Fitted with the prior" : "Fitted" },
-                ]} layout={{ height: 320, xaxis: { title: { text: `Age${u ? ` (${u})` : ""}` } },
-                  // A hazard per hour can be 1e-7: ticks to 3 significant figures (not "5.0049999999e-8").
-                  yaxis: shownChart === "hf" ? { title: { text: "Hazard rate" }, rangemode: "tozero", tickformat: ".3~g" } : { title: { text: "Reliability" }, range: [0, 1.02] } }}
-                      download={`${position.name} — life model`} />
-              )}
-              <div className="maint-scroll">
-                <table className="ml-params fit2-numbers">
-                  <thead><tr><th />{d.method === "bayes" && <th className="num">Prior</th>}<th className="num">{d.method === "bayes" ? "Fitted" : "Value"} ({d.interval_label})</th></tr></thead>
-                  <tbody>
-                    {d.posterior.map((p) => (
-                      <tr key={p.name}>
-                        <td>{PARAM_WORDS[p.name] || p.label}</td>
-                        {d.method === "bayes" && <td className="num">{(() => { const b = (d.prior || []).find((x) => x.name === p.name); return b ? <Range p={b} /> : "—"; })()}</td>}
-                        <td className="num"><Range p={p} /></td>
-                      </tr>
-                    ))}
-                    {d.b10 && <tr><td>B10 life{u ? ` (${u})` : ""}</td>{d.method === "bayes" && <td className="num">{(() => { const b = (d.prior || []).find((x) => x.name === "B10"); return b ? <Range p={b} /> : "—"; })()}</td>}<td className="num"><Range p={d.b10} /></td></tr>}
-                    {d.mean && <tr><td>Mean life{u ? ` (${u})` : ""}</td>{d.method === "bayes" && <td className="num">{(() => { const b = (d.prior || []).find((x) => x.name === "mean"); return b ? <Range p={b} /> : "—"; })()}</td>}<td className="num"><Range p={d.mean} /></td></tr>}
-                  </tbody>
-                </table>
-              </div>
-              <div className="fit2-age">
-                <label htmlFor="fit2-age">Reliability at</label>
-                <TextInput id="fit2-age" inputMode="decimal" value={state.age} onChange={(e) => set("age", e.target.value)} placeholder="an age" aria-label="Reliability at an age" />
-                <span>{u}</span>
-                {d.at_age && (
-                  <span className="fit2-age-r">
-                    {Math.round(d.at_age.reliability * 1000) / 10}%
-                    {d.at_age.lower != null && d.at_age.upper != null
-                      ? ` (${d.method === "bayes" ? "90% credible" : "95% confidence"} ${Math.round(d.at_age.lower * 1000) / 10}–${Math.round(d.at_age.upper * 1000) / 10}%)` : ""}
-                  </span>
-                )}
-              </div>
-              <p className="rim-tquiet fit2-how">
-                How it was computed: {d.method === "bayes" ? `Bayesian (SurPyval fit_bayes), prior: ${d.baseline?.name || "—"}` : "maximum likelihood (SurPyval)"};
-                {" "}{countsWords(d.counts)} in {state.data === "class" ? "the class's history" : "this position's history"}.
-                {d.prior_note ? ` ${d.prior_note}` : ""}
-              </p>
-            </>
+            <FitOutcome d={d} priorKind={eff.priorKind} unit={u} chart={chart} onChart={setChart} download={position.name}
+                        age={state.age} onAge={(v) => set("age", v)}
+                        dataWords={state.data === "class" ? "the class's history" : "this position's history"} />
           )}
         </section>
         {/* Cancel and Save are the pane's own foot, not the result's: always in view, whichever part is being read. */}

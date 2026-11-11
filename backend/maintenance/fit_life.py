@@ -158,21 +158,8 @@ def fit(m, db, owners, hidden, position_id: str, data: str = "position", method:
 
     base = None
     unit = "days"
-    if method == "bayes" and prior.get("kind") == "library":
-        from backend.maintenance import library_models
-
-        base = library_models.prior_base(prior, distribution, db, owners)
-        unit, distribution = base["unit"], base["distribution"]
-    elif method == "bayes" and prior.get("kind") == "around":
-        base = around_prior(prior, distribution)
-        unit = base.get("unit") or "days"
-        distribution = base["distribution"]
-    elif method == "bayes" and prior.get("kind") != "class":
-        spec = {k: v for k, v in prior.items() if k != "kind"}
-        try:
-            base = bl.baseline_from(db, owners, hidden, spec)
-        except bl.BayesError as err:
-            raise sv.Invalid(str(err)) from None
+    if method == "bayes" and prior.get("kind") != "class":
+        base = prior_base(prior, distribution, db, owners, hidden)
         unit = base.get("unit") or "days"
         distribution = base["distribution"]
     try:
@@ -222,13 +209,8 @@ def _fit_on(m, db, p, position_id, data, method, prior, distribution, modes, tex
                 if "finite mass" not in str(err):
                     raise sv.Invalid(f"The fit with that prior didn't work: {err}") from None
                 base, priors, extra = _class_prior(sp, distribution, class_rows, trust, cls, unit, force_wide=True)
-        elif base.get("source") == "around":
-            priors, extra = base["priors"], ""
-        elif base.get("source") == "library":
-            priors, extra = base["priors"], base["note"]
         else:
-            # An earlier update as the prior carries its own (bayes_life.update reads its recipe).
-            priors, extra = (None if base["source"] == "update" else bl.priors_for(base, trust)), ""
+            priors, extra = prior_priors(base, trust)
         try:
             model, result, priors = bl.update(base, trust if base["source"] != "update" else "guide", rows, age, priors)
         except Exception as err:  # noqa: BLE001 - SurPyval refuses some posteriors in words: pass them on
@@ -246,6 +228,51 @@ def _fit_on(m, db, p, position_id, data, method, prior, distribution, modes, tex
         return result
     return _save(m, db, p, result, model, rows, modes, data, method, distribution, unit, name, note, replace_link_id,
                  owner_id or m.org, cls)
+
+
+# ---- a prior other than the class's history: one path for every fit with a prior -------------------
+# The Explorer's "Fit a life model…" (a position's history) and New model's "With a prior" (a dataset,
+# pasted values or a file: library_models.fit_dataset) both read the prior here.
+PRIOR_KINDS = ("model", "library", "params", "around", "b10")
+
+
+def prior_base(prior: dict, distribution: str, db, owners, hidden=()) -> dict:
+    """The base the update reads for a prior that isn't the class's history: {kind: library, record_id,
+    ...} (library_models.prior_base), {kind: around, ...} (around_prior) or {kind: model | params | b10,
+    ...} (bayes_life.baseline_from). Raises Invalid with the reason in words."""
+    from backend.services import bayes_life as bl
+
+    sv = _sv()
+    kind = (prior or {}).get("kind")
+    if kind == "library":
+        from backend.maintenance import library_models
+
+        return library_models.prior_base(prior, distribution, db, owners)
+    if kind == "around":
+        return around_prior(prior, distribution)
+    spec = {k: v for k, v in (prior or {}).items() if k != "kind"}
+    try:
+        return bl.baseline_from(db, owners, hidden, spec)
+    except bl.BayesError as err:
+        raise sv.Invalid(str(err)) from None
+
+
+def prior_priors(base: dict, trust: str):
+    """(SurPyval's priors, words to add to the result) for a base from prior_base: around and library
+    bases state their own; an earlier update carries its own (bayes_life.update reads its recipe, so
+    None); a model, numbers or a B10 are weighed by the trust."""
+    from backend.services import bayes_life as bl
+
+    if base.get("source") == "around":
+        return base["priors"], ""
+    if base.get("source") == "library":
+        return base["priors"], base["note"]
+    if base.get("source") == "update":
+        return None, ""
+    try:
+        return bl.priors_for(base, trust), ""
+    except bl.BayesError as err:
+        raise _sv().Invalid(str(err)) from None
 
 
 def _class_prior(sp, distribution: str, class_rows: list[dict], trust: str, cls: dict, unit: str,

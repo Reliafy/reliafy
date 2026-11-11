@@ -130,6 +130,34 @@ discrete distributions for cycles-to-failure data, non-parametric estimators
 (Kaplan-Meier and friends) when you don't want to assume a shape at all, and
 regression models when failure depends on covariates like temperature or load.
 
+## A few failures: fit with a prior
+
+With only a few failures, the data alone says little. Often you already trust
+something else: a model you saved earlier, a record in the data library, the
+vendor's numbers, or a belief such as "the B10 is about 5,000 hours". In the
+**Model** step, set **Method** to **With a prior**. Your failures and running
+units then move that prior.
+
+1. Choose the **prior**: a saved model, a library record (picked from the
+   library search), numbers you know, a range ("around a value, between two
+   bounds") or a B10 you believe. Typed numbers are in your data's unit, shown
+   beside them.
+2. For a saved model or typed numbers, choose **how much to trust it**: *Trust
+   it closely* (each number within about 10%), *Use it as a guide* (about 30%)
+   or *Only a starting point* (about 60%).
+3. Press **Fit with the prior**.
+
+The result says what moved and how far. The chart shows the prior as a dashed
+line under the fitted curve, with its 90% credible band. The table puts the
+prior's numbers beside the fitted ones. A credible interval means there's a 90%
+chance the value lies in it, given the prior and the data. It isn't a
+confidence bound. Save it like any other model. It keeps its prior: what the
+prior was and how far it was trusted.
+
+A fit with a prior takes one time column and a status column. Counts,
+interval times, truncation, covariates and failure-mode columns are for a plain
+fit.
+
 ## Reading the fit
 
 The answer comes first, in one line under the model's name: the failure
