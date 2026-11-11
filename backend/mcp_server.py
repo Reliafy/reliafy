@@ -3643,6 +3643,8 @@ class MissionPhase(BaseModel):
     duration: float = Field(ge=0, description="How long it lasts (diagram unit).")
     not_needed: Optional[list[str]] = Field(None, description=(
         "Block ids this phase doesn't need (they still age and can fail, and stay failed for later phases)."))
+    standby: Optional[list[str]] = Field(None, description=(
+        "Block ids standing by in this phase: not running, so they don't age or fail in it."))
     votes: Optional[dict[str, int]] = Field(None, description=(
         "knode id -> working inputs it needs in this phase (instead of its n), e.g. both engines at take-off."))
     values: Optional[dict[str, Union[float, str]]] = Field(None, description=(

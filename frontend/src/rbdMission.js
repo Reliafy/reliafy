@@ -11,14 +11,17 @@
 //   missions: [{ id, name, phases }]  more named missions over the same blocks, and
 //   mission_name: the name of the diagram's own (phases), both set on the Explorer's Missions tab
 //   (explorerMissions.js) and carried through the builder untouched.
-export const MISSION_KEYS = ["phases", "network", "missions", "mission_name"];
+//   mission_of: { position_id } on a mission's own RBD (one RBD per mission): its own mission is
+//   that mission, named by mission_name even before it has phases.
+export const MISSION_KEYS = ["phases", "network", "missions", "mission_name", "mission_of"];
 
 // The mission keys a graph has set.
 export function missionFields(graph) {
   const out = {};
   if (Array.isArray(graph?.phases) && graph.phases.length) out.phases = graph.phases;
   if (Array.isArray(graph?.missions) && graph.missions.length) out.missions = graph.missions;
-  if (graph?.mission_name && out.phases) out.mission_name = graph.mission_name;
+  if (graph?.mission_of && typeof graph.mission_of === "object") out.mission_of = graph.mission_of;
+  if (graph?.mission_name && (out.phases || out.mission_of)) out.mission_name = graph.mission_name;
   if (graph?.network && typeof graph.network === "object") out.network = graph.network;
   return out;
 }
@@ -129,6 +132,9 @@ export function cleanPhases(rows, nodes) {
     const out = { name, duration };
     const notNeeded = (r.not_needed || []).filter((id) => blocks.has(id));
     if (notNeeded.length) out.not_needed = [...new Set(notNeeded)];
+    // Blocks on standby (set on the Missions tab) ride along too; not needed wins.
+    const standby = (r.standby || []).filter((id) => blocks.has(id) && !notNeeded.includes(id));
+    if (standby.length) out.standby = [...new Set(standby)];
     const v = {};
     for (const [id, n] of Object.entries(r.votes || {})) {
       const num = Number(n);

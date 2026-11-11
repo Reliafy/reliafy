@@ -143,3 +143,72 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   await shot(page, "mission-open-1440");
   await expectHealthy(page, problems, { label: "missions on the Explorer" });
 });
+
+// One RBD per mission: Add a mission on a position with no RBD builds the mission an RBD of its own
+// from what's inside; the phase × block grid sets a pump on standby by day and the other by night;
+// the result says what standby means; the mission's RBD opens in the shared builder beside the tree.
+test("missions: each mission builds its own RBD; blocks set working, standby or not needed per phase", async ({ page, request, problems }) => {
+  const tag = `mr${Date.now()}`;
+  const station = await postOk(request, `${M}/positions`, { name: `Pump station ${tag}` });
+  for (const name of ["Pump A", "Pump B"]) {
+    const kid = await postOk(request, `${M}/positions`, { name: `${name} ${tag}`, parent_id: station.id });
+    await postOk(request, `${M}/positions/${kid.id}/models`, { model_id: "sample-model-bearings-weibull" });
+  }
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${station.id}&tab=missions`);
+  const stationRow = nameRow(page, `Pump station ${tag}`).first();
+  await expect(stationRow).toContainText("Add a mission");
+  await stationRow.locator(".tp-nm").click({ button: "right" });
+  const made = page.waitForResponse((r) => r.url().includes(`${M}/positions/${station.id}/missions`) && r.request().method() === "POST");
+  await page.getByRole("menuitem", { name: "Add a mission", exact: true }).click();
+  expect((await made).status()).toBe(200);
+  const pane = page.getByRole("region", { name: "Mission" });
+  await expect(pane).toBeVisible();
+  await expect(pane).toContainText(`Flown on Pump station ${tag} — Mission 1`);
+  await expect(nameRow(page, "Mission 1")).toBeVisible();
+  await shot(page, "mission-rbd-added-1440");
+
+  // Two phases, then the grid: Pump B stands by by day, Pump A by night.
+  await pane.getByRole("button", { name: "Add a phase" }).click();
+  await pane.getByRole("button", { name: "Add a phase" }).click();
+  const phases = pane.getByRole("list", { name: /phases/ }).locator(":scope > li");
+  await phases.nth(0).getByLabel("Name of phase 1").fill("Day");
+  await phases.nth(0).getByLabel(/Duration of phase 1/).fill("500");
+  await phases.nth(1).getByLabel("Name of phase 2").fill("Night");
+  await phases.nth(1).getByLabel(/Duration of phase 2/).fill("500");
+  const grid = pane.getByRole("region", { name: "Blocks in each phase" });
+  await expect(grid.getByRole("columnheader")).toContainText(["Block", "1 Day", "2 Night"]);
+  await grid.getByRole("combobox", { name: `Pump B ${tag} in Day` }).selectOption("standby");
+  await grid.getByRole("combobox", { name: `Pump A ${tag} in Night` }).selectOption("standby");
+  await expect(grid.getByRole("combobox", { name: `Pump A ${tag} in Day` })).toHaveValue("working");
+  await shot(page, "mission-grid-1440");
+  await pane.getByRole("button", { name: "Calculate" }).click();
+  const answer = pane.locator(".mission-answer");
+  await expect(answer).toContainText("The mission completes with probability", { timeout: 30_000 });
+  await expect(answer).toContainText("Standby: the block is there but not running");
+  await pane.getByRole("button", { name: "Save" }).click();
+  await expect(pane.getByRole("button", { name: "Save" })).toBeDisabled();
+  await shot(page, "mission-result-1440", true);
+
+  await page.setViewportSize({ width: 400, height: 860 });
+  await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
+  await grid.scrollIntoViewIfNeeded();
+  await shot(page, "mission-grid-400");
+  await answer.scrollIntoViewIfNeeded();
+  await shot(page, "mission-result-400");
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  // The mission's own RBD, in the builder beside the tree.
+  await pane.getByRole("button", { name: "open it" }).click();
+  const rbdPane = page.getByRole("region", { name: "RBD", exact: true });
+  await expect(rbdPane).toBeVisible();
+  await expect(page).toHaveURL(/[?&]rbd=[\w-]+&on=/);
+  await expect(rbdPane.locator(".react-flow__node", { hasText: `Pump A ${tag}` })).toBeVisible({ timeout: 20_000 });
+  await shot(page, "mission-own-rbd-1440");
+  await page.setViewportSize({ width: 400, height: 860 });
+  await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
+  await shot(page, "mission-own-rbd-400");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expectHealthy(page, problems, { label: "a mission's own RBD" });
+});

@@ -1232,6 +1232,26 @@ def position_missions(position_ids: str | None = None, session=Depends(get_sessi
     return _run(lambda: {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids)})
 
 
+@router.post("/positions/{position_id}/missions")
+def add_position_mission(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                         ctx: AccessCtx = Depends(get_access),
+                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A new mission on a position with an RBD of its own (one RBD per mission): built from the
+    positions inside (placeholders flagged), or a copy of the position's non-repairable RBD where
+    it has nothing inside; saved as "<position> — <mission>". name: the mission's (default
+    "Mission N"). Its phases are then set through /api/rbds/{rbd id}/missions/mission."""
+    from backend.maintenance import position_models as pm
+    from backend.services import billing as billing_service
+
+    # A new RBD counts toward the Free plan's cap, as one saved in the builder does.
+    if ctx.is_personal and not billing_service.is_admin_user(ctx.user) \
+            and billing_service.would_exceed_cap(session, ctx.uid, "rbds"):
+        return JSONResponse(status_code=402, content={
+            "detail": billing_service.cap_message(session, ctx.uid, "rbds"), "code": "cap", "upgrade": True})
+    name = body.get("name") if isinstance(body, dict) else None
+    return _run(pm.build_mission_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner, name)
+
+
 @router.get("/position-models/{link_id}")
 def position_model(link_id: str, age: float | None = None, session=Depends(get_session),
                    ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:

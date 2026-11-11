@@ -3571,6 +3571,10 @@ export function getMission(rbdId, missionId) {
 export function createMission(rbdId, { name = null, phases = null } = {}) {
   return request(missionPath(rbdId), asJson("POST", { ...(name ? { name } : {}), ...(phases ? { phases } : {}) }));
 }
+// A new mission on a position with an RBD of its own, built from what's inside it: {rbd, mission, notes, placeholders}.
+export function createPositionMission(positionId, { name = null } = {}) {
+  return request(`/api/maintenance/positions/${encodeURIComponent(positionId)}/missions`, asJson("POST", name ? { name } : {}));
+}
 // {name?, phases?, expected_updated_at?}
 export function updateMission(rbdId, missionId, body) {
   return request(missionPath(rbdId, missionId), asJson("PUT", body));

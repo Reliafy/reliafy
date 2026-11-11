@@ -108,6 +108,7 @@ const SIGNED_IN = [
   ["POST", "/api/rbds/bound-blocks"],
   // Missions on an RBD and on positions (rbd_missions.py).
   ["GET", "/api/maintenance/position-missions"],
+  ["POST", "/api/maintenance/positions/x/missions"],
   ["GET", "/api/rbds/x/missions"],
   ["POST", "/api/rbds/x/missions"],
   ["GET", "/api/rbds/x/missions/m"],
