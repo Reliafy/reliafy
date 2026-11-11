@@ -31,6 +31,10 @@ const fmtP = (p) => (p == null ? "—" : p < 0.001 ? "< 0.001" : p < 0.01 ? p.to
 const HISTORY_FIT = {
   recurrent: { to: "/models/recurrent/new", label: "fit a recurrent model", what: "repair history" },
   degradation: { to: "/models/degradation", label: "fit a degradation model", what: "measurements" },
+  time_varying: {
+    to: "/models/new", label: "fit a non-repairable model with covariates that change over time",
+    what: "stretches of life at different covariate values",
+  },
 };
 
 export default function CompareGroups({ dataset, splitBy, onClose }) {
@@ -125,7 +129,7 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
         <p className="calc-warn cg-warn">
           Each <b>{repeated.column}</b> has several rows here (its {fit.what}), but Compare treats every
           row as a separate unit, so its answer would mislead. To model this data,{" "}
-          <Link to={`${fit.to}${repeated.kind === "recurrent" ? `?dataset=${encodeURIComponent(dataset.id)}` : ""}`}>
+          <Link to={`${fit.to}${repeated.kind !== "degradation" ? `?dataset=${encodeURIComponent(dataset.id)}` : ""}`}>
             {fit.label}
           </Link>.
         </p>

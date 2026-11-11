@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  guessTvc, initialSchedule, scheduleBody, scheduleXMax, tvcMapping, tvcPath, tvcProblems, tvcSummaryParts,
+  guessTvc, initialSchedule, scheduleBody, scheduleXMax, tvcMapping, tvcPath, tvcProblems, tvcSummaryParts, tvcUnit,
 } from "./tvcData.js";
 
 const COLS = ["pump", "start_h", "stop_h", "censored", "load_pct"];
@@ -96,4 +96,12 @@ test("schedule rows go to the route as numbers, or say what's wrong", () => {
 test("the axis reaches past the last change", () => {
   assert.equal(scheduleXMax([{ t: 0 }, { t: 4000 }], 9600), null);
   assert.equal(scheduleXMax([{ t: 0 }, { t: 12000 }], 9600), 15000);
+});
+
+test("the time unit of start and stop columns comes from their names, not the word start", () => {
+  assert.equal(tvcUnit({ xl: "start_h", xr: "stop_h" }), "Hours");
+  assert.equal(tvcUnit({ xl: "start_yr", xr: "stop_yr" }), "Years");
+  assert.equal(tvcUnit({ xl: "start", xr: "stop" }), "");
+  assert.equal(tvcUnit({ xl: "entry_days", xr: "exit_days" }), "Days");
+  assert.equal(tvcUnit(null), "");
 });

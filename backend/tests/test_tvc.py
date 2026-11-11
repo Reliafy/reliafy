@@ -398,3 +398,30 @@ def test_the_model_list_flags_covariates_over_time():
     listed = {d["id"]: d for d in TestClient(app).get("/api/distributions").json()["distributions"]}
     assert listed["weibull_ph"]["tvc"] and listed["cox_ph"]["tvc"]
     assert not listed["weibull_frailty"]["tvc"] and not listed["buckley_james"]["tvc"]
+
+
+def test_a_saved_start_stop_dataset_is_tagged_and_fits_with_changing_covariates(client):
+    # Start and stop rows have several rows per unit, so the dataset page's
+    # profile once called them readings and offered only a degradation fit.
+    up = client.post("/api/datasets", data={"name": "Pumps over time"},
+                     files={"file": ("pumps.csv", io.BytesIO(_csv(_pumps())), "text/csv")})
+    assert up.status_code == 200, up.text
+    ds = up.json()
+    assert "Time-varying covariates" in ds["tags"] and "Non-repairable" in ds["tags"]
+    assert "Measurements" not in ds["tags"]
+    detail = client.get(f"/api/datasets/{ds['id']}").json()
+    assert detail["profile"]["repeated_units"] == {
+        "column": "pump", "kind": "time_varying", "start": "start_h", "stop": "stop_h"}
+    # The fit the page offers runs from the saved dataset, and the saved
+    # model's calculator follows a covariate schedule.
+    fit = client.post("/api/fit/weibull_ph", data={**INTERVALS, "z": ["load_pct"], "unit": "hours", "dataset_id": ds["id"]})
+    assert fit.status_code == 200, fit.text
+    assert fit.json()["tvc"]["layout"] == "intervals"
+    saved = client.post("/api/models", data={"name": "Pumps", "distribution": "weibull_ph", **INTERVALS,
+                                             "z": ["load_pct"], "unit": "hours", "dataset_id": ds["id"]})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["dataset_id"] == ds["id"]
+    out = client.post(f"/api/models/{saved.json()['id']}/tvc", json={"schedule": SCHEDULE})
+    assert out.status_code == 200, out.text
+    ref = sp.WeibullPH.fit_tvc_from_df(_pumps(), "pump", "start_h", "stop_h", "censored", Z_cols=["load_pct"])
+    assert out.json()["curves"]["sf"] == pytest.approx(ref.sf_tvc(np.asarray(out.json()["curves"]["x"]), _sched()))

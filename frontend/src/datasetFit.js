@@ -6,14 +6,48 @@ export function fitOptions(d) {
   const id = encodeURIComponent(d.id);
   const t = d.tags || [];
   if (t.includes("Repairable")) return [{ label: "Repairable model", to: `/models/recurrent/new?dataset=${id}` }];
-  const covs = t.includes("Covariates") || t.includes("Time-varying covariates");
-  const life = { label: covs ? "Non-repairable model with covariates" : "Non-repairable model", to: `/models/new?dataset=${id}` };
+  const label = timeVarying(d) ? `Non-repairable model ${CHANGING}`
+    : t.includes("Covariates") ? "Non-repairable model with covariates" : "Non-repairable model";
+  const life = { label, to: `/models/new?dataset=${id}` };
   const degradation = { label: "Degradation model", to: `/models/degradation?dataset=${id}` };
   if (t.includes("Measurements") && t.includes("Non-repairable")) {
     return [{ label: "Condition and life model", to: `/models/joint/new?dataset=${id}` }, life, degradation];
   }
   if (t.includes("Measurements")) return [degradation];
   return [life];
+}
+
+const CHANGING = "with covariates that change over time";
+
+// Start and stop rows (or a timeline) whose covariates change over a unit's
+// life: its tag, or the page's profile finding start and stop columns.
+const timeVarying = (d) => (d.tags || []).includes("Time-varying covariates")
+  || d.profile?.repeated_units?.kind === "time_varying";
+
+// The dataset page's main action and, when the data suits two fits, a
+// second one: { primary: { label, to }, secondary: { label, to } | null }.
+// Condition and life when the dataset holds its units' lives with their
+// readings; a non-repairable fit with covariates that change over time for
+// start and stop rows (several rows per unit, so they look like readings,
+// but each row is a stretch of life with a failure flag); the repairable or
+// degradation fit when the rows are unit histories; otherwise a model.
+export function datasetActions(ds, parts = datasetParts(ds)) {
+  const id = encodeURIComponent(ds.id);
+  const t = ds.tags || [];
+  const life = (label) => ({ label, to: `/models/new?dataset=${id}` });
+  const degradation = { label: "Fit a degradation model", to: `/models/degradation?dataset=${id}` };
+  if (parts.life && (parts.measurements || parts.combined)) {
+    return { primary: { label: "Fit a condition and life model", to: `/models/joint/new?dataset=${id}` }, secondary: null };
+  }
+  const kind = ds.profile?.repeated_units?.kind;
+  if (timeVarying(ds) && !parts.readingsOnly) {
+    // Readings in the same table (a Measurements tag) can also be modelled
+    // as degradation: offered second.
+    return { primary: life(`Fit a non-repairable model ${CHANGING}`), secondary: t.includes("Measurements") ? degradation : null };
+  }
+  if (kind === "recurrent") return { primary: { label: "Fit a recurrent model", to: `/models/recurrent/new?dataset=${id}` }, secondary: null };
+  if (kind === "degradation" || parts.readingsOnly) return { primary: degradation, secondary: null };
+  return { primary: life("Fit a model"), secondary: null };
 }
 
 // The saved datasets a "new model" flow can use, from their tags: each flow

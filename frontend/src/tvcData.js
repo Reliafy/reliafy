@@ -1,7 +1,7 @@
 // Covariates that change over time (#60): the Data step's item / start / stop
 // (or timeline) columns, what stops them fitting, and the calculator's
 // covariate schedule. Pure, so `node --test src/` covers it.
-import { isNumeric } from "./datasetGuess.js";
+import { guessUnit, isNumeric } from "./datasetGuess.js";
 import { statusMeaning, statusValues } from "./lifeData.js";
 
 export const LAYOUTS = [
@@ -34,6 +34,15 @@ export function guessTvc(columns, facts, nRows) {
   const i = idColumn(columns || [], facts, nRows);
   if (!start || !stop || !i) return null;
   return { layout: "intervals", i, xl: start, xr: stop };
+}
+
+// The time unit start and stop columns are in ("start_yr", "stop_yr":
+// Years), read from their names without the start / stop words, so a
+// "start" column isn't taken for a count of starts.
+export function tvcUnit(guess) {
+  if (!guess) return "";
+  const bare = (c) => words(c).replace(START_RE, " ").replace(STOP_RE, " ");
+  return guessUnit(bare(guess.xr)) || guessUnit(bare(guess.xl)) || "";
 }
 
 // The mapping for a layout (null: covariates fixed): the fields the other
