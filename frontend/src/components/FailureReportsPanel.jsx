@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { listFailureReports } from "../api.js";
+import { getDesignRollup, listFailureReports } from "../api.js";
 import {
-  CONSEQUENCES, DEFAULT_FILTERS, SORTS, STATUS_CHIPS, consequenceShort, countsSentence, filtering, levelText,
-  positionsInScope, queryParams, scopeOf, statusLabel,
+  CONSEQUENCES, DEFAULT_FILTERS, DESIGN_FILTERS, SORTS, STATUS_CHIPS, builtItemChoices, builtItemPlace, consequenceShort,
+  countsSentence, filtering, levelText, positionsInScope, queryParams, scopeOf, statusLabel,
 } from "../failureReports.js";
+import { isDesignRow } from "../explorerTabs.js";
+import { PRODUCTS_GUIDE } from "../products.js";
 import FailureReportDetail from "./FailureReportDetail.jsx";
 import { Field, FormModal, PositionPicker, fmtDate } from "./MaintenanceParts.jsx";
 import { ShowMe } from "./SectionPage.jsx";
@@ -22,8 +24,16 @@ import "./FailureReports.css";
 //
 // `reports` is the page's: {id (the report open), open(id | null), onNew
 // (positionId, name), onChanged (the tree read again), viewOnly}.
+//
+// On a product's page (a design's position, the product's own row included) the
+// list is the reports raised on the items built from the product, at the position
+// implementing the row on each item and below it (the server rolls them up given
+// the design position), every one, open first; each row says which item (serial).
+// No report is filed on a design: "Report a failure" asks which built item it was
+// on, then files it at that item's position (with one item built, straight there).
 
 const HELP = { guide: "failure-reports-on-your-asset-tree" };
+const BUILD_HELP = { guide: PRODUCTS_GUIDE };
 // A touch screen has no right-click: there, each row's ⋯ button opens its menu.
 const touch = () => typeof window !== "undefined" && !!window.matchMedia?.("(hover: none)").matches;
 const PAGE = 50;
@@ -41,10 +51,27 @@ function PickPositionModal({ positions, onClose, onPick }) {
   );
 }
 
+// A report filed from a product's design: which item built from it (by serial).
+function PickItemModal({ items, onClose, onPick }) {
+  const [id, setId] = useState(items[0]?.id || "");
+  return (
+    <FormModal title="Which item?" submitLabel="Next" canSubmit={!!id} onClose={onClose}
+               onSubmit={async () => onPick(items.find((it) => it.id === id))}>
+      <p className="lib-date">A failure report is about one item built from this product. Pick the one it happened on.</p>
+      <Field label="Item (serial)">
+        <select value={id} autoFocus onChange={(e) => setId(e.target.value)}>
+          {items.map((it) => <option key={it.id} value={it.id}>{it.label}</option>)}
+        </select>
+      </Field>
+    </FormModal>
+  );
+}
+
 function Row({ r, scopeKind, onOpen }) {
   const level = levelText(r.level);
   const where = level || (scopeKind === "pos" ? "" : r.position?.name || "");
-  const sub = [where, r.item?.name, r.failure_mode?.text].filter(Boolean).join(" · ");
+  const unit = r.unit && (r.unit.serial ? `Serial ${r.unit.serial}` : "(no serial)");
+  const sub = [unit, where, r.item?.name, r.failure_mode?.text].filter(Boolean).join(" · ");
   return (
     <li>
       <button type="button" className="fr-row" onClick={() => onOpen(r.id)}>
@@ -65,13 +92,18 @@ function Row({ r, scopeKind, onOpen }) {
 export default function FailureReportsPanel({ row, display, today, version, reports, onMenu = null }) {
   const scope = scopeOf(row);
   const scopeKey = scope ? `${row.type}:${row.key}` : "";
-  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const design = isDesignRow(row);
+  const defaults = design ? DESIGN_FILTERS : DEFAULT_FILTERS;
+  const [filters, setFilters] = useState(defaults);
   const [q, setQ] = useState("");
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [more, setMore] = useState(false);
   const [picking, setPicking] = useState(false);
+  // A design: the items built from the product (where a report can be filed), null while read.
+  const [built, setBuilt] = useState(null);
+  const [builtError, setBuiltError] = useState(null);
   // The failure modes seen in this scope's reports, for the filter.
   const [modes, setModes] = useState(new Map());
   const seq = useRef(0);
@@ -84,11 +116,21 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   // Another row: back to the usual filters, its list read afresh (the last
   // row's isn't shown meanwhile).
   useEffect(() => {
-    setFilters((f) => (f === DEFAULT_FILTERS ? f : DEFAULT_FILTERS));
+    setFilters((f) => (f === defaults ? f : defaults));
     setQ("");
     setModes(new Map());
     setData(null);
-  }, [scopeKey]);
+  }, [scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setBuilt(null);
+    setBuiltError(null);
+    if (!design || row?.type !== "pos") return undefined;
+    let live = true;
+    getDesignRollup(row.key)
+      .then((d) => live && setBuilt(builtItemChoices(d.items)))
+      .catch((e) => live && setBuiltError(e.message));
+    return () => { live = false; };
+  }, [scopeKey, design, version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchList = useCallback((offset = 0) => {
     if (!scope) return;
@@ -117,15 +159,21 @@ export default function FailureReportsPanel({ row, display, today, version, repo
 
   const set = (k, v) => setFilters((f) => ({ ...f, [k]: v }));
   const positions = useMemo(() => positionsInScope(display, row), [display, row]);
+  const fileOn = (choice) => reports.onNew(choice.id, builtItemPlace(choice));
   const addHere = () => {
     if (reports.viewOnly) return;
-    if (row.type === "pos") reports.onNew(row.key, row.ref.name);
+    if (design) {
+      if (built?.length === 1) fileOn(built[0]);
+      else if (built?.length) setPicking(true);
+    } else if (row.type === "pos") reports.onNew(row.key, row.ref.name);
     else setPicking(true);
   };
-  const canAdd = !reports.viewOnly && (row.type === "pos" || positions.length > 0);
-  const addTitle = reports.viewOnly || (row.type !== "pos" && !positions.length
-    ? (row.type === "item" ? "This item isn't fitted to a position; a report sits at a position." : "No positions here to report a failure at.") : undefined);
-  usePanelMenu(onMenu, [{ id: "report-new", label: "Add failure report…", onSelect: addHere, disabled: !canAdd, title: addTitle }]);
+  const canAdd = !reports.viewOnly && (design ? !!built?.length : row.type === "pos" || positions.length > 0);
+  const addTitle = reports.viewOnly || (design
+    ? (built && !built.length ? "No items have been built from this product yet." : undefined)
+    : row.type !== "pos" && !positions.length
+      ? (row.type === "item" ? "This item isn't fitted to a position; a report sits at a position." : "No positions here to report a failure at.") : undefined);
+  usePanelMenu(onMenu, [{ id: "report-new", label: design ? "Report a failure…" : "Add failure report…", onSelect: addHere, disabled: !canAdd, title: addTitle }]);
 
   if (reports.id) {
     return (
@@ -137,7 +185,7 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   const counts = data?.counts || {};
   const total = ["reported", "investigating", "corrective_action", "verifying", "closed", "rejected"].reduce((t, k) => t + (counts[k] || 0), 0);
   const chipCount = (id) => (id === "all" ? total : id === "open" ? counts.open || 0 : counts[id] || 0);
-  const narrowed = filtering(filters);
+  const narrowed = filtering(filters, defaults);
   const list = data?.reports || [];
   // Nothing here at all (and nothing narrowing it): the stage chips, search
   // and filters would only be a row of zeros, so they wait for a first report.
@@ -148,6 +196,12 @@ export default function FailureReportsPanel({ row, display, today, version, repo
     body = <p className="lib-date">Couldn't load the failure reports: {error} <button type="button" className="link" onClick={() => fetchList(0)}>Try again</button></p>;
   } else if (!data && loading) {
     body = <p className="lib-date">Loading…</p>;
+  } else if (!list.length && !narrowed && design) {
+    body = (
+      <div className="fr-empty">
+        <p>No failure reports on the items built from this product here yet.</p>
+      </div>
+    );
   } else if (!list.length && !narrowed) {
     body = (
       <div className="fr-empty">
@@ -158,7 +212,7 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   } else if (!list.length) {
     body = (
       <p className="lib-date">Nothing matches these filters.{" "}
-        <button type="button" className="link" onClick={() => { setFilters(DEFAULT_FILTERS); setQ(""); }}>Show open reports</button>
+        <button type="button" className="link" onClick={() => { setFilters(defaults); setQ(""); }}>{design ? "Show every report" : "Show open reports"}</button>
       </p>
     );
   } else {
@@ -178,10 +232,30 @@ export default function FailureReportsPanel({ row, display, today, version, repo
     );
   }
 
+  // A design with nothing built from it: one line, and how to build an item.
+  if (design && built && !built.length && !error && (!data || total === 0)) {
+    return (
+      <div className="fr-panel">
+        <div className="fr-empty">
+          <p>No items have been built from this product yet, so there are no failure reports to show or file.{" "}
+            <ShowMe help={BUILD_HELP}>How to build an item</ShowMe></p>
+        </div>
+      </div>
+    );
+  }
+  // A design: "Report a failure" (once the items built are read).
+  let designAdd = null;
+  if (design && !reports.viewOnly) {
+    designAdd = builtError
+      ? <p className="lib-date">Couldn't read the items built from this product: {builtError}</p>
+      : <button type="button" className="secondary sm" onClick={addHere} disabled={!built?.length}>Report a failure</button>;
+  }
+
   return (
     <div className="fr-panel">
       <div className="fr-head">
         <p className="fr-counts">{data ? countsSentence(counts, data.scope, { kind: row.type }) : " "}</p>
+        {designAdd}
       </div>
       {!none && (
       <div className="fr-filters">
@@ -215,7 +289,11 @@ export default function FailureReportsPanel({ row, display, today, version, repo
       </div>
       )}
       {body}
-      {picking && (
+      {picking && design && (
+        <PickItemModal items={built || []} onClose={() => setPicking(false)}
+                       onPick={(it) => { setPicking(false); fileOn(it); }} />
+      )}
+      {picking && !design && (
         <PickPositionModal positions={positions} onClose={() => setPicking(false)}
                            onPick={(p) => { setPicking(false); reports.onNew(p.id, p.name); }} />
       )}

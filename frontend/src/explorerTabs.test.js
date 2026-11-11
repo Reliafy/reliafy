@@ -47,7 +47,7 @@ test("Parts and stock and Classes are hidden for now, on assets and designs alik
   assert.equal(TABS.find((t) => t.id === "parts").label, "Parts and stock");
   assert.equal(TABS.find((t) => t.id === "classes").label, "Classes");
   assert.deepEqual(tabsFor(pos).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "models", "missions", "condition", "measurements", "lsa", "signals"]));
-  assert.deepEqual(tabsFor(product).map((t) => t.id), ["summary", "rcm", "fmea", "models", "missions", "lsa"]);
+  assert.deepEqual(tabsFor(product).map((t) => t.id), ["summary", "rcm", "fmea", "reports", "models", "missions", "lsa"]);
 });
 
 test("a position has Summary, RCM, FME(C)A, Failure reports, Parts and stock, Classes and Signals; an item Summary, Failure reports and Signals; a location all but Signals; headings only Summary", () => {
@@ -112,13 +112,13 @@ test("the address names the tab", () => {
   assert.equal(tabParam(null), "summary");
 });
 
-test("a product's design has no maintenance: no Failure reports, Measurements, Signals or stock; it keeps RCM, FME(C)A, Parts (the parts list), Classes and the LSA (its programme's logistics)", () => {
+test("a product's design has no maintenance: no Measurements, Signals or stock; it keeps RCM, FME(C)A, Parts (the parts list), Classes and the LSA (its programme's logistics), and its built items' Failure reports", () => {
   const top = { type: "pos", ref: { design: { rev: "C" } } };
   const inside = { type: "pos", ref: { in_design: true } };
   const asset = { type: "pos", ref: { name: "Pump" } };
   for (const r of [top, inside]) {
     assert.ok(isDesignRow(r));
-    assert.deepEqual(tabsFor(r).map((t) => t.id), shown(["summary", "rcm", "fmea", "parts", "classes", "models", "missions", "lsa"]));
+    assert.deepEqual(tabsFor(r).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "parts", "classes", "models", "missions", "lsa"]));
     if (EXPLORER_PARTS_CLASSES_TABS) assert.equal(tabsFor(r).find((t) => t.id === "parts").label, "Parts");
     // The LSA keeps its name; its title says it's the design's tasks (no packaging there).
     const lsa = tabsFor(r).find((t) => t.id === "lsa");
@@ -126,7 +126,11 @@ test("a product's design has no maintenance: no Failure reports, Measurements, S
     assert.match(lsa.title, /each task in the design needs/);
     assert.equal(shownTab("lsa", r), "lsa");
     assert.equal(shownTab("measurements", r), "summary");
-    assert.equal(shownTab("reports", r), "summary");
+    // Failure reports: the reports raised on the items built from the product, here and below.
+    const reports = tabsFor(r).find((t) => t.id === "reports");
+    assert.equal(reports.label, "Failure reports");
+    assert.match(reports.title, /items built from this product/);
+    assert.equal(shownTab("reports", r), "reports");
     assert.equal(shownTab("signals", r), "summary");
     assert.equal(shownTab("parts", r), EXPLORER_PARTS_CLASSES_TABS ? "parts" : "summary");
   }
@@ -144,6 +148,7 @@ test("a product's design has no maintenance: no Failure reports, Measurements, S
   assert.ok(!isDesignRow({ type: "pos", ref: { design_position_id: "d1" } }));
   assert.deepEqual(tabsFor(asset).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "parts", "classes", "models", "missions", "condition", "measurements", "lsa", "signals"]));
   if (EXPLORER_PARTS_CLASSES_TABS) assert.equal(tabsFor(asset).find((t) => t.id === "parts").label, "Parts and stock");
+  assert.equal(tabsFor(asset).find((t) => t.id === "reports").title, "What has failed here and below, and what was done about it");
   // The tab list itself is unchanged by a design row.
   assert.equal(TABS.find((t) => t.id === "parts").label, "Parts and stock");
 });
@@ -185,9 +190,9 @@ test("a product's design locations have the design's tabs: no Failure reports, S
   assert.ok(!isDesignRow(carried));
   assert.deepEqual(tabsFor(carried).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "parts", "classes", "measurements", "lsa"]));
   assert.equal(rowKind(carried), "Location");
-  // A design's positions keep their Parts (the parts list).
+  // A design's positions keep their Parts (the parts list), and have their built items' Failure reports.
   const designPos = { type: "pos", ref: { name: "Motor 1", in_design: true } };
-  assert.deepEqual(tabsFor(designPos).map((t) => t.id), shown(["summary", "rcm", "fmea", "parts", "classes", "models", "missions", "lsa"]));
+  assert.deepEqual(tabsFor(designPos).map((t) => t.id), shown(["summary", "rcm", "fmea", "reports", "parts", "classes", "models", "missions", "lsa"]));
 });
 
 test("an item class has one tab, Condition monitoring, and opens on it", () => {

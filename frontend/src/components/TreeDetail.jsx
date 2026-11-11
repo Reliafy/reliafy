@@ -317,7 +317,7 @@ const TreeDetail = forwardRef(function TreeDetail({
       <div className="td-body" role={tabbed ? "tabpanel" : undefined} id={tabbed ? "td-panel" : undefined}
            aria-labelledby={tabbed ? `td-tab-${shown}` : undefined}>
         {shown === "reports" && reports
-          ? (reports?.rollup ? reports.rollup(row) : <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} onMenu={onMenu} />)
+          ? <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} onMenu={onMenu} />
           // The Measurements tab is the tree-table (AssetExplorer, MeasurementTable.jsx), not a panel.
           // So is the Modelling tab (AssetExplorer, ModelTable.jsx).
           : shown === "measurements" || shown === "models"

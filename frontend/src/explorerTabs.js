@@ -20,8 +20,12 @@
 // class shows for the member chosen). A tab a kind doesn't have isn't shown (never greyed out).
 //
 // A product is a design, not an operated thing: its rows (a design's
-// positions) have no maintenance done to them, so no Failure reports,
-// Measurements, Signals or stock. They keep RCM and FME(C)A (the design's maintenance programme is a
+// positions) have no maintenance done to them, so no Measurements, Signals or
+// stock. They do have Failure reports (`designKinds`): not filed there, but the
+// reports raised on the items built from the product, at the position that
+// implements the row on each item and below it, rolled up to the design (the
+// list takes a design position as its scope; a report is filed on a built item,
+// picked by its serial). They keep RCM and FME(C)A (the design's maintenance programme is a
 // design output; the assets built from it carry it out), the LSA (what each of
 // the programme's tasks needs, also a design output; packaging tasks into
 // visits happens on the built assets, so a design's LSA has no packaging:
@@ -36,7 +40,8 @@
 // (EXPLORER_SIGNALS_TAB).
 //
 // Adding a tab is one entry here (id, label, the kinds of row that have it,
-// `asset: true` when a design's rows don't, `titleBy` for a kind of row whose
+// `asset: true` when a design's rows don't, `designKinds` for the kinds of a
+// design's rows that have it all the same, `titleBy` for a kind of row whose
 // hover text differs) and its body in TreeDetail. The
 // address names the tab (?tab=rcm, left out for Summary); the tab picked stays
 // as you walk the tree, shown on every row of a kind that has it, Summary on
@@ -65,7 +70,13 @@ export const TABS = [
   // RCM is by position, so the tree arranges by positions).
   { id: "rcm", label: "RCM", title: "What this position (or the positions at this place) does, how it can fail, and the decision for each failure mode", kinds: ["pos", "loc"] },
   { id: "fmea", label: "FME(C)A", title: "The failure modes here as an FMEA worksheet: cause, effects, scores, action priority and criticality", kinds: ["pos", "loc"] },
-  { id: "reports", label: "Failure reports", title: "What has failed here and below, and what was done about it", kinds: ["pos", "loc", "item"], asset: true },
+  // A design's positions have it too (designKinds): the reports on the items built from the
+  // product, here and below; its design locations don't.
+  {
+    id: "reports", label: "Failure reports", title: "What has failed here and below, and what was done about it",
+    designTitle: "What has failed here and below on the items built from this product, and what was done about it",
+    kinds: ["pos", "loc", "item"], asset: true, designKinds: ["pos"],
+  },
   {
     id: "parts", label: "Parts and stock", title: "The parts used here and inside it, and what's in stock where",
     designLabel: "Parts", designTitle: "The parts list: the parts used here and inside it", kinds: ["pos", "loc"],
@@ -133,7 +144,8 @@ export function rowKind(row) {
 export function tabsFor(row) {
   if (!row) return [];
   const design = isDesignRow(row);
-  return TABS.filter((t) => offered(t) && t.kinds.includes(row.type) && !(design && t.asset) && !(design && row.type === "loc" && t.notDesignLoc))
+  return TABS.filter((t) => offered(t) && t.kinds.includes(row.type) && !(design && t.asset && !t.designKinds?.includes(row.type))
+    && !(design && row.type === "loc" && t.notDesignLoc))
     .map((t) => (design && (t.designLabel || t.designTitle) ? { ...t, label: t.designLabel || t.label, title: t.designTitle || t.title } : t))
     .map((t) => (t.titleBy?.[row.type] ? { ...t, title: t.titleBy[row.type] } : t));
 }
