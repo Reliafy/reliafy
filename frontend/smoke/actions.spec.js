@@ -18,6 +18,34 @@ test("fit and save a Weibull model from a sample dataset", async ({ page, proble
   await expectHealthy(page, problems, { label: "saved model", chart: true });
 });
 
+// New model › Fit to data opens on the saved-data list: every saved dataset (yours, then the
+// samples), a picked one previewed with how its columns read, then fitted like any other.
+test("fit a new model from a saved dataset picked in the list", async ({ page, problems }) => {
+  const made = await postOk(page.request, "/api/datasets/paste",
+    { name: "Smoke saved lives", content: "hours,censored\n120,0\n340,0\n500,1\n610,0\n800,1\n" });
+  try {
+    await open(page, "/models/new");
+    await page.getByRole("button", { name: /Fit to data/ }).click();
+    await expect(page.getByRole("tab", { name: "Saved data" })).toHaveAttribute("aria-selected", "true");
+    await page.getByRole("searchbox", { name: "Search datasets" }).fill("smoke saved");
+    await page.getByRole("radio", { name: /Smoke saved lives/ }).click();
+    await expect(page.locator(".dsp-reads")).toContainText("0 = failed, 1 = still running");
+    await expect(page.getByText(/3\s+failures, 2 still running/)).toBeVisible();
+    // A repairable sample is listed, greyed, with what to fit it with instead.
+    await page.getByRole("searchbox", { name: "Search datasets" }).fill("compressor fleet");
+    await expect(page.getByRole("radio", { name: /Compressor fleet/ })).toBeDisabled();
+    await expect(page.getByText("Repeated failures of the same units: fit a repairable model instead.")).toBeVisible();
+    await page.getByRole("button", { name: "Next" }).click();
+    await expect(page.getByText(/Smoke saved lives · 5 rows/)).toBeVisible();
+    await page.getByRole("button", { name: "Next" }).click();
+    await page.getByRole("button", { name: "Fit Weibull" }).click();
+    await expect(page.getByText("Shape β").first()).toBeVisible({ timeout: 30_000 });
+    await expectHealthy(page, problems, { label: "fit from a saved dataset", chart: true });
+  } finally {
+    await page.request.delete(`/api/datasets/${made.id}`);
+  }
+});
+
 // #31: a class with a fitted model and a spare with a lead time shows how many to
 // hold, and the chance a typed stock runs out (smoke/seed.js makes the class).
 // The Classes tab is hidden for now (explorerTabs.js): a class's old address lands on the Explorer, and the

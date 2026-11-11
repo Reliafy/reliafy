@@ -1,0 +1,82 @@
+/* The saved-data picker (DatasetPicker.jsx): the list and the picked
+   dataset's pane side by side; stacked when narrow. */
+.dsp {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: var(--sp-4, 16px);
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .dsp { grid-template-columns: minmax(0, 1fr); }
+  /* Nothing picked yet: no empty pane under the list. */
+  .dsp:not(.dsp-has-pick) .dsp-pane { display: none; }
+  .dsp-pane { scroll-margin-top: 72px; }
+}
+.dsp-list { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.dsp-search { width: 100%; }
+.dsp-scroll {
+  max-height: 440px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+}
+.dsp-group-h {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 12px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surf-2, var(--bg));
+  border-bottom: 1px solid var(--line);
+}
+.dsp-count { font-weight: 400; margin-left: 4px; }
+.dsp-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name rows" "tags date" "why why";
+  column-gap: 12px;
+  row-gap: 4px;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-weight: 400;
+  white-space: normal;
+  box-shadow: none;
+  cursor: pointer;
+}
+.dsp-row:last-child { border-bottom: 0; }
+.dsp-row:hover:not(:disabled) { background: var(--bg); }
+.dsp-row:focus-visible { outline: 2px solid var(--focus, var(--acc)); outline-offset: -2px; }
+.dsp-row.on { background: var(--acc-t); box-shadow: inset 3px 0 0 var(--acc); }
+.dsp-row.off { cursor: not-allowed; opacity: 1; }
+.dsp-row.off .dsp-name, .dsp-row.off .dsp-rows, .dsp-row.off .dsp-date, .dsp-row.off .dsp-tags { opacity: 0.55; }
+.dsp-name { grid-area: name; font-size: var(--fs-14); font-weight: 600; overflow-wrap: anywhere; }
+.dsp-rows { grid-area: rows; font-size: var(--fs-13); color: var(--muted); text-align: right; white-space: nowrap; }
+.dsp-tags { grid-area: tags; display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.dsp-date { grid-area: date; font-size: var(--fs-12); color: var(--muted); text-align: right; white-space: nowrap; align-self: center; }
+.dsp-why { grid-area: why; font-size: var(--fs-12); color: var(--muted); }
+.dsp-quiet { color: var(--muted); font-size: var(--fs-13); margin: 0; }
+.dsp-quiet-inline { color: var(--muted); font-size: var(--fs-13); }
+.dsp-pane {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+  background: var(--surf);
+}
+.dsp-pane-empty { padding: 24px 0; text-align: center; }
+.dsp-glance { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.dsp-glance-h { display: flex; flex-direction: column; gap: 2px; }
+.dsp-glance-h b { font-size: var(--fs-16); overflow-wrap: anywhere; }
+.dsp-preview { max-width: 100%; overflow-x: auto; }
+.dsp-reads { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; font-size: var(--fs-13); }
+.dsp-reads dt { color: var(--muted); }
+.dsp-reads dd { margin: 0; overflow-wrap: anywhere; }
