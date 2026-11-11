@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js-basic-dist-min";
 import {
-  DATE_LOCALE, DOWNLOAD_ROW, INK, SURFACE, chartFileName, downloadCorner, ownHeight, reachesCorner, shorterBy,
+  DATE_LOCALE, DOWNLOAD_ROW, INK, SURFACE, chartFileName, downloadCorner, minPlotSize, ownHeight, reachesCorner, shorterBy,
   themedConfig, themedLayout,
 } from "../plotTheme.js";
 
@@ -130,6 +130,9 @@ export default function Plot({
     return themedLayout(own, { narrow });
   }, [layout, narrow, fill, ownRow]);
   const cfg = useMemo(() => themedConfig(config), [config]);
+  // Never drawn in a box narrower (or, filling, shorter) than its margins plus a
+  // plot area: a squeezed box gave Plotly a 2 px plot and axis titles at -Infinity.
+  const least = useMemo(() => minPlotSize(merged), [merged]);
 
   // A filling chart redraws at its box's size when the box changes (a panel
   // beside it loading, the header wrapping, the buttons' row coming or
@@ -155,8 +158,8 @@ export default function Plot({
       // A chart with a height of its own holds it on its box too: Plotly drops
       // the layout's height when the window resizes and reads the box's.
       style={fill
-        ? { width: "100%", height: "100%", ...style }
-        : { width: "100%", height: ownHeight(layout, ownRow ? DOWNLOAD_ROW : 0), ...style }}
+        ? { width: "100%", height: "100%", minWidth: least.width, minHeight: least.height, ...style }
+        : { width: "100%", height: ownHeight(layout, ownRow ? DOWNLOAD_ROW : 0), minWidth: least.width, ...style }}
       useResizeHandler={useResizeHandler}
       onInitialized={(fig, div) => { gd.current = div; measure(); onInitialized?.(fig, div); }}
       onUpdate={(fig, div) => { gd.current = div; measure(); onUpdate?.(fig, div); }}
