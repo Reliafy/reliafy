@@ -1,7 +1,9 @@
 // The fit wizard's Data step (#291): what each column holds, what each status
 // value means, the failures-and-running count before a fit, and what is wrong
 // with a mapping, in plain words. Pure, so `node --test src/` covers it.
-import { guessLifeColumns, guessStatusMeaning, isNumeric } from "./datasetGuess.js";
+import {
+  guessIntervalPair, guessLifeColumns, guessStatusMeaning, guessUnit, isNumeric, likelyStatusColumns,
+} from "./datasetGuess.js";
 
 // ``e`` names each failure's mode and ``g`` the groups to compare (#177):
 // competing risks only.
@@ -183,11 +185,60 @@ export function guessStatus(column, facts) {
 }
 
 // A first mapping from the column facts, and its unit.
+// Two inspection times ("last ok", "found failed") are read as the interval
+// the failure lies in, in place of a single time.
 export function guessMapping(columns, facts) {
-  const g = guessLifeColumns(columns.map((name) => ({ name, ...facts[name] })));
+  const cols = columns.map((name) => ({ name, ...facts[name] }));
+  const g = guessLifeColumns(cols);
+  const pair = guessIntervalPair(cols, [g.c, g.n].filter(Boolean));
+  const times = pair ? { x: "", ...pair } : { x: g.x };
   return {
-    mapping: { ...EMPTY_MAPPING, x: g.x, c: g.c, n: g.n, ...guessStatus(g.c, facts) },
-    unit: g.unit,
+    mapping: { ...EMPTY_MAPPING, ...times, c: g.c, n: g.n, ...guessStatus(g.c, facts) },
+    unit: pair ? guessUnit(pair.xl) || guessUnit(pair.xr) : g.unit,
+  };
+}
+
+// ---- Where the first reading is a guess ---------------------------------------
+// With no status column every row is read as a failure. When a column left
+// unused could say otherwise, the Data step asks instead of stating a count:
+//   mode:<col>    a failure mode (or cause) that is blank on some rows — were
+//                 those units still running?
+//   status:<col>  a column named like a status whose values aren't known.
+// ``answered``: the ids already answered "no". Each question:
+// { id, text, yes, no, field, column } — "yes" maps ``column`` to ``field``.
+export function dataQuestions(mapping, facts, columns, nRows, answered = []) {
+  if (mapping.c || mapping.e) return [];
+  const cols = (columns || []).map((name) => ({ name, ...facts[name] }));
+  const used = new Set(Object.values(mapping).filter((v) => typeof v === "string" && v));
+  const likely = likelyStatusColumns(cols.filter((c) => !used.has(c.name)));
+  const out = [];
+  const mode = likely.mode.find((c) => c.blanks > 0 && c.blanks < nRows);
+  if (mode && !mapping.xl && !mapping.xr) {
+    const n = mode.blanks;
+    out.push({
+      id: `mode:${mode.name}`, field: "e", column: mode.name,
+      text: `${plural(n, "row has", "rows have")} no “${mode.name}”. ${n === 1 ? "Was that unit" : "Were those units"} still running?`,
+      yes: "Yes: still running (fit by failure mode)",
+      no: "No: every row is a failure",
+    });
+  }
+  const status = likely.status.find((c) => !mode || c.name !== mode.name);
+  if (status) {
+    out.push({
+      id: `status:${status.name}`, field: "c", column: status.name,
+      text: `“${status.name}” looks like it says which units failed, but it isn't being used. Does it?`,
+      yes: `Yes: use “${status.name}”`,
+      no: "No: every row is a failure",
+    });
+  }
+  return out.filter((q) => !answered.includes(q.id));
+}
+
+// The mapping after a question is answered, and the ids answered so far.
+export function answerQuestion(mapping, question, yes, facts = {}, answered = []) {
+  return {
+    mapping: yes ? setMappingField(mapping, question.field, question.column, facts) : mapping,
+    answered: [...answered, question.id],
   };
 }
 
@@ -236,8 +287,18 @@ export function flagsLookSwapped(mapping, summary) {
 const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 
 // "15 failures, 6 still running" — numbers to show bold, as parts.
-export function summaryParts(s) {
+// ``inspection``: the rows are inspection times (an earliest and a latest),
+// worded as an inspector would.
+export function summaryParts(s, { inspection = false } = {}) {
   if (!s) return [];
+  if (inspection) {
+    return [
+      s.failed ? `${s.failed.toLocaleString()} failed at a known time` : null,
+      s.interval ? `${s.interval.toLocaleString()} failed between inspections` : null,
+      s.left ? `${s.left.toLocaleString()} found failed at the first inspection` : null,
+      s.running ? `${s.running.toLocaleString()} still running` : null,
+    ].filter(Boolean);
+  }
   return [
     plural(s.failed, "failure", "failures"),
     s.running ? `${s.running.toLocaleString()} still running` : null,
@@ -474,6 +535,8 @@ export function mappingWords(mapping, facts = {}, unit = "") {
         return `${v.label} = ${m == null ? "not said yet" : MEANING_WORDS[m]}`;
       });
     out.push({ label: "Status", value: `“${mapping.c}”${flags.length ? `: ${flags.join(", ")}` : ""}` });
+  } else if (mapping.xr && facts[mapping.xr]?.blanks) {
+    out.push({ label: "Status", value: `none: a blank “${mapping.xr}” is a unit still running` });
   } else {
     out.push({ label: "Status", value: "none: every row is a failure" });
   }

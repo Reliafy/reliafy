@@ -8,8 +8,8 @@ import Chip from "./ui/Chip.jsx";
 import { saveErrorText } from "../confirm.js";
 import { ShowMe } from "./SectionPage.jsx";
 import {
-  SOURCE_WORDS, answerText, cleanPhases, editablePhase, fadedIn, feedsText, fmt, lengthText, movePhase, newPhase, pct, phaseCompletes,
-  phaseCovariates, phaseLine, phaseNeeds, unitWord, withBlockValue, withValue,
+  SOURCE_WORDS, answerText, cleanPhases, editablePhase, fadedIn, feedsText, fmt, leaveOut, lengthText, movePhase, newPhase, pct, phaseCompletes,
+  phaseCovariates, phaseLine, phaseNeeds, placeholderWarning, unitWord, withBlockValue, withValue,
 } from "../explorerMissions.js";
 import "./CovariateCalculator.css";
 import "./RbdMission.css";
@@ -184,6 +184,10 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
 
             <MissionAnswer result={calc.stale ? null : result} busy={calc.busy} error={calc.error} stale={calc.stale}
                            total={total} unit={unit} />
+            {!calc.stale && !calc.error && (
+              <MissionPlaceholders result={result} readOnly={readOnly} onOpenRbd={onOpenRbd}
+                                   onLeaveOut={(ids) => change((rs) => leaveOut(rs, ids))} />
+            )}
 
             <MissionBlockGrid blocks={blocks} phases={rows} readOnly={readOnly} onChange={patch} />
 
@@ -238,7 +242,7 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
                       )}
                     </div>
                     <p className="mission-phase-line">{phaseLine(row, { blocks, votes })}
-                      {res?.weakest ? <> · Weakest: <b>{res.weakest.label}</b> ({fmt(res.weakest.share * 100)}% of this phase's failures)</> : null}
+                      {res?.weakest ? <> · {result?.placeholders?.length ? "Weakest with a model" : "Weakest"}: <b>{res.weakest.label}</b> ({fmt(res.weakest.share * 100)}% of this phase's failures)</> : null}
                     </p>
                     {isOpen && (
                       <div className="mission-phase-body" id={bodyId}>
@@ -328,17 +332,61 @@ function MissionAnswer({ result, busy, error, stale, total, unit }) {
   }
   const waiting = result.reliability == null;
   const risky = result.riskiest;
+  const ph = placeholderWarning(result);
   return (
-    <ResultSummary tone={waiting ? "caveat" : "neutral"} className="mission-answer" sentence={answerText(result)}
+    <ResultSummary tone={waiting || ph ? "caveat" : "neutral"} className="mission-answer" sentence={answerText(result)}
                    stats={waiting ? [] : [
-                     { label: "Completes", value: pct(result.reliability) },
-                     { label: "Fails", value: pct(result.unreliability) },
+                     { label: ph ? "With placeholders" : "Completes", value: pct(result.reliability), hint: ph ? "not a real figure" : undefined },
+                     ph ? (ph.without != null ? { label: `Without ${ph.n === 1 ? "it" : "them"}`, value: pct(ph.without), hint: "the blocks with models" } : null)
+                       : { label: "Fails", value: pct(result.unreliability) },
                      { label: "Mission length", value: lengthText(total, unit) },
                      risky && (result.phases || []).length > 1 ? { label: "Riskiest phase", value: risky.name } : null,
                    ]}>
       {waiting && result.needs?.length ? result.needs.map((n) => `${n.phase}: ${n.lines.join("; ")}`).join(" · ") : null}
       {!waiting ? `${result.method === "exact" ? "Worked out exactly." : "Simulated: the mission is too large to work out exactly."} ${(result.notes || []).join(" ")}` : null}
     </ResultSummary>
+  );
+}
+
+// The blocks with no model, said plainly under the answer: which they are, what the answer is
+// without them, and what can be done (give them models in the RBD, or leave them out of the
+// mission: Not needed in every phase, which is also each block's own choice in the grid below).
+function MissionPlaceholders({ result, readOnly, onOpenRbd, onLeaveOut }) {
+  const ph = placeholderWarning(result);
+  const out = (result?.placeholders_left_out || []).map((p) => p.label);
+  if (!ph) {
+    if (!out.length) return null;
+    return (
+      <p className="rim-tquiet mission-ph-out" role="note">
+        {out.join(", ")} {out.length === 1 ? "has" : "have"} no model and {out.length === 1 ? "is" : "are"} left out of this mission (Not needed in every phase), so the result doesn't rest on {out.length === 1 ? "it" : "them"}.
+      </p>
+    );
+  }
+  const them = ph.n === 1 ? "it" : "them";
+  return (
+    <section className="mission-ph" role="note" aria-label="Blocks with no model">
+      <p className="mission-ph-what">
+        <b>{ph.count.charAt(0).toUpperCase() + ph.count.slice(1)}:</b> {ph.list}. A placeholder life stands in for {ph.n === 1 ? "it" : "each"}, and the answer depends on {them}
+        {ph.without != null ? <>: <b>{pct(result.reliability)}</b> with {them}, <b>{pct(ph.without)}</b> from the blocks with models alone.</> : "."}
+        {result.phases?.some((p) => p.weakest) ? " The weakest block in each phase is picked from the blocks with models." : ""}
+      </p>
+      <ul className="mission-ph-do">
+        <li>
+          <b>Give {them} a model:</b> set each block's model in the mission's RBD.{" "}
+          {onOpenRbd && <button type="button" className="secondary sm" onClick={onOpenRbd}>Open the RBD</button>}
+        </li>
+        <li>
+          <b>Leave {them} out:</b> mark {them} Not needed in every phase, so the mission is worked out from the blocks with models.{" "}
+          {!readOnly && (
+            <button type="button" className="secondary sm" onClick={() => onLeaveOut(result.placeholders.map((p) => p.id))}>
+              Leave {ph.n === 1 ? "it" : `all ${ph.n}`} out
+            </button>
+          )}
+        </li>
+        <li><b>Or one at a time:</b> set a block Not needed in the phases that don't use it, in the grid below.</li>
+      </ul>
+      {out.length > 0 && <p className="mission-ph-also">Already left out: {out.join(", ")}.</p>}
+    </section>
   );
 }
 

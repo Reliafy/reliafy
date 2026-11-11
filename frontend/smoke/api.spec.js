@@ -23,6 +23,8 @@ const SIGNED_IN = [
   ["POST", "/api/models/from-library"],
   ["GET", "/api/library/used"],
   ["POST", "/api/models/fit-with-prior"],
+  // How the Data step reads inspection rows before a fit.
+  ["POST", "/api/data-reading"],
   // Reliability prediction: the parts count, the saved predictions, a product's parts list.
   ["POST", "/api/predictions/compute"],
   ["POST", "/api/predictions"],
@@ -30,6 +32,10 @@ const SIGNED_IN = [
   ["GET", "/api/predictions/smoke"],
   ["GET", "/api/predictions/from-product/smoke"],
   ["POST", "/api/v1/analyse/prediction"],
+  // A device that works offline: its queued changes pushed in a batch, and a queued photo.
+  ["POST", "/api/v1/maintenance/sync/push"],
+  ["POST", "/api/v1/maintenance/sync/photo"],
+  ["POST", "/api/v1/maintenance/sync/pack"],
   // Maintainability prediction: the calculator, the saved predictions, a product's lines.
   ["POST", "/api/maintainability/analyse"],
   ["GET", "/api/maintainability/predictions"],

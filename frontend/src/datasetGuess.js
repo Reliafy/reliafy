@@ -64,6 +64,7 @@ const STATUS_WORDS = /\b(status|state|fail|failed|failure|failures|censor|censor
 const NOT_STATUS = /\b(mode|modes|cause|causes|type|code|description|desc|reason|date|time|hours?|comment|comments|notes?)\b/i;
 // An identifier: never the time, however numeric.
 const ID_WORDS = /\b(id|ids|no|number|serial|sn|s n|tag|asset|unit|item|equipment|code|row|index)\b/i;
+const CENSOR_WORDS = /\b(censor|censored|censoring|cens)\b/i;
 const COUNT_NAMES = /^(n|count|counts|qty|quantity|units|number of units)$/i;
 
 // A status value's meaning: 0 = failed, 1 = still running, null = can't tell.
@@ -121,7 +122,9 @@ export function guessLifeColumns(columns) {
   };
   const status =
     columns.find((c) => STATUS_WORDS.test(words(c.name)) && !NOT_STATUS.test(words(c.name)) && looksLikeStatus(c)) ||
-    columns.find((c) => CENSOR_RE.test(String(c.name).trim()) && looksLikeStatus(c));
+    columns.find((c) => CENSOR_RE.test(String(c.name).trim()) && looksLikeStatus(c)) ||
+    // "censor_code": censor flags as numbers, whatever else the name says.
+    columns.find((c) => CENSOR_WORDS.test(words(c.name)) && isNumeric(c.dtype) && looksLikeStatus(c));
   const c = status?.name || "";
   // A count holds whole numbers (``whole`` false: it has decimals, #434).
   const count = columns.find((col) => col.name !== c && isNumeric(col.dtype) && col.whole !== false
@@ -133,6 +136,33 @@ export function guessLifeColumns(columns) {
     numeric.find((col) => !ID_WORDS.test(words(col.name))) ||
     numeric[0];
   return { x: x?.name || "", c, n, unit: guessUnit(x?.name) };
+}
+
+// Inspection data: the two times a failure lies between, by their names —
+// "last ok" and "found failed", earliest / latest, lower / upper, shortest /
+// longest, xl / xr. Null when no two numeric columns pair up (two usage
+// measures, or the start and stop of an item's rows, aren't an interval).
+const EARLIEST = /\b(xl|last ok|last good|passed|earliest|shortest|lower|left)\b/i;
+const LATEST = /\b(xr|found failed|found|failed|latest|longest|upper|right)\b/i;
+export function guessIntervalPair(columns, exclude = []) {
+  const numeric = columns.filter((c) => isNumeric(c.dtype) && !exclude.includes(c.name));
+  for (const a of numeric) {
+    if (!EARLIEST.test(words(a.name))) continue;
+    const b = numeric.find((col) => col !== a && LATEST.test(words(col.name)) && !EARLIEST.test(words(col.name)));
+    if (b) return { xl: a.name, xr: b.name };
+  }
+  return null;
+}
+
+// Columns that may say which units failed though nothing maps them: a
+// failure mode or cause (``mode``), and a column named like a status whose
+// values aren't ones the guess knows (``status``). Each is [{ name }].
+export function likelyStatusColumns(columns) {
+  const named = (re) => columns.filter((c) => re.test(words(c.name)));
+  return {
+    mode: named(/\b(mode|modes|cause|causes)\b/i).filter((c) => !isNumeric(c.dtype)),
+    status: columns.filter((c) => STATUS_WORDS.test(words(c.name)) && !NOT_STATUS.test(words(c.name))),
+  };
 }
 
 // A pandas dtype in plain words, for a preview's column heads.

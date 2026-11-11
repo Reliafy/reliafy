@@ -645,6 +645,50 @@ def test_create_packages_makes_tops_and_layers_in_one_go_or_nothing(m):
     _same_after_rebuild(m)
 
 
+def _genset(m):
+    """A generator set where each trade's shortest task sits on one sub-position and its
+    longer ones on others: the top package must reach them all."""
+    top = m.create_position("Generator set")["id"]
+    engine = m.create_position("Engine", parent_id=top)["id"]
+    pos = {name: m.create_position(name, parent_id=parent)["id"] for name, parent in (
+        ("Cooling", engine), ("Lubrication", engine), ("Battery", top), ("Alternator", top))}
+    tasks = {
+        "coolant": m.create_task(pos["Cooling"], "Check coolant level", 1, "months", trade="Mechanic")["id"],
+        "oil": m.create_task(pos["Lubrication"], "Change oil", 3, "months", trade="Mechanic")["id"],
+        "battery": m.create_task(pos["Battery"], "Test battery", 3, "months", trade="Electrician")["id"],
+        "load": m.create_task(pos["Alternator"], "Load bank test", 6, "months", trade="Electrician")["id"]}
+    return {"top": top, "engine": engine, "pos": pos, "tasks": tasks}
+
+
+def test_a_drafted_top_package_sits_where_its_layers_tasks_are_too(m):
+    g = _genset(m)
+    drafts = m.propose_packages(position_id=g["top"], weekday="monday")["drafts"]
+    by = {d["create"]["tasks"][0]: d for d in drafts}
+    battery, load = by[g["tasks"]["battery"]], by[g["tasks"]["load"]]
+    coolant, oil = by[g["tasks"]["coolant"]], by[g["tasks"]["oil"]]
+    assert load["layer_of"] == battery["ref"] and oil["layer_of"] == coolant["ref"]
+    # Not Battery (its own task's position): the lowest position holding the layer's task as well.
+    assert battery["create"]["position_id"] == g["top"]
+    assert coolant["create"]["position_id"] == g["engine"]
+    # As the Package the tasks… table sends them: every draft, tops with the tolerance.
+    batch = [{"ref": d["ref"], **d["create"], **({} if d["layer_of"] else {"tolerance": 1, "tolerance_unit": "days"})}
+             for d in drafts]
+    out = m.create_packages(batch)
+    assert [c["name"] for c in out["created"]] == [d["name"] for d in drafts]
+    listed = {p["name"]: p for p in m.packages()["packages"]}
+    assert len(listed) == 4
+    held = {t["task_id"] for p in listed.values() for t in m.package(p["id"])["tasks"]}
+    assert held == set(g["tasks"].values())
+    assert m.propose_packages(position_id=g["top"], weekday="monday")["drafts"] == []
+    _same_after_rebuild(m)
+
+
+def test_a_top_with_no_layers_stays_on_its_own_tasks_position(m):
+    g = _genset(m)
+    drafts = m.propose_packages(position_id=g["pos"]["Battery"], weekday="monday")["drafts"]
+    assert [d["create"]["position_id"] for d in drafts] == [g["pos"]["Battery"]]
+
+
 def test_packages_for_a_branch_and_the_rcm_task_cards_name_theirs(m):
     plant = _plant(m)
     weekly, monthly, _ = _packages(m, plant)

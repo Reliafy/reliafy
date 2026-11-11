@@ -546,12 +546,16 @@ row each, with its failure modes, kind, interval, trade, next due and package.
 
 ### Things only the API can do
 
-MCP tool calls carry JSON, not files. These have no MCP twin, on purpose:
+MCP tool calls carry JSON, not files, and an agent calls an action when it wants it done, not later. These
+have no MCP twin, on purpose:
 
 | Call | Does |
 |---|---|
 | `POST /api/v1/maintenance/photos?target_id=…&caption=…` | Adds a photo to a maintenance position, item, location or work order. The body is the image (JPEG, PNG, WebP or HEIC; at most 20 MB), or multipart with a `file` field. Cleaned and stripped of camera and location metadata, like a photo added in the app. Reliafy Maintenance only; `write` scope. |
 | `PUT /api/uploads/{upload_id}?t=…` | Sends a file's bytes to the single-use link from `change upload_create` (no other credentials; at most 30 MB). Then import it: `change dataset_upload`, `change import_rbd`, `change import_excel` or `change rbd_upload_outage_log` with that `upload_id`; a PDF (purpose `document`, at most 20 MB) goes on a maintenance item, position or class with `maintenance attachments.add_document`. |
+| `POST /api/v1/maintenance/sync/push` | Sends up to 50 changes a device queued while it had no connection, in the order it made them: the maintenance tool's own work-order and reading actions, each with an id the device made, so one sent twice is recorded once. See [maintenance-sync.md](maintenance-sync.md). Reliafy Maintenance only; `write` scope. |
+| `POST /api/v1/maintenance/sync/photo?op=…` | Sends one queued photo (the image as the body), recorded once however often it is sent. Reliafy Maintenance only; `write` scope. |
+| `POST /api/v1/maintenance/sync/pack` | Everything a device needs to work with no connection, in one answer: the open work orders in full, their list rows and the parts catalogue. Reliafy Maintenance only; `read` scope. |
 
 #### Field reports
 

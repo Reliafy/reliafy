@@ -4,6 +4,7 @@ import { Field, today } from "./MaintenanceParts.jsx";
 import Chip from "./ui/Chip.jsx";
 import RowMenu from "./RowMenu.jsx";
 import { readingClock } from "../maintenanceReadings.js";
+import { workspaceMoment, workspaceZoneName } from "../workspaceDate.js";
 import { canEditReadings, readingMenu, readingRows, valueHeading } from "../measuringPoint.js";
 import "./ReadingsTable.css";
 
@@ -46,7 +47,7 @@ export default function ReadingsTable({ point, onChanged, idPrefix = "rd" }) {
       const next = edit.mode === "void"
         ? await voidMeasurementReading(edit.id, edit.reason)
         : await correctMeasurementReading(edit.id, {
-          value: Number(edit.value), on: edit.on, at: edit.time ? `${edit.on}T${edit.time}` : undefined, reason: edit.reason,
+          value: Number(edit.value), on: edit.on, at: edit.time ? workspaceMoment(edit.on, edit.time) : undefined, reason: edit.reason,
         });
       setEdit(null);
       onChanged?.(next);
@@ -115,7 +116,7 @@ export default function ReadingsTable({ point, onChanged, idPrefix = "rd" }) {
                             <input type="number" inputMode="decimal" step="any" value={edit.value} onChange={set("value")} />
                           </Field>
                           <Field label="Really read on"><input type="date" value={edit.on} max={today()} onChange={set("on")} /></Field>
-                          <Field label="At (optional)"><input type="time" value={edit.time} onChange={set("time")} /></Field>
+                          <Field label={`At, ${workspaceZoneName()} time (optional)`}><input type="time" value={edit.time} onChange={set("time")} /></Field>
                         </>}
                         <Field label={edit.mode === "void" ? "Why it's voided" : "Why it's corrected"}>
                           <input autoFocus value={edit.reason} placeholder={edit.mode === "void" ? "e.g. entered twice" : "e.g. an old reading entered as today"}

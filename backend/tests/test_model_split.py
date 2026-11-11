@@ -51,17 +51,20 @@ def test_counts_weight_by_the_count_column_and_follow_the_inversion():
     assert (r["split"]["failed"], r["split"]["running"]) == _surpyval_counts(direct)
 
 
-def test_best_fit_and_kaplan_meier_record_it_interval_data_does_not():
+def test_best_fit_and_kaplan_meier_record_it_and_interval_data_counts_units_found_failed():
     assert fitting.fit("best", _df(), _MAPPING)["split"] == {"failed": 5, "running": 7, "other": 0}
     assert fitting.fit("kaplan_meier", _df(), _MAPPING)["split"]["running"] == 7
     df = pd.DataFrame({"lo": [10.0, 20.0, 30.0, 40.0], "hi": [15.0, 28.0, 35.0, 60.0]})
-    assert "split" not in fitting.fit("weibull", df, {"xl": "lo", "xr": "hi"})
+    # Inspection data: every unit found failed between two times failed.
+    assert fitting.fit("weibull", df, {"xl": "lo", "xr": "hi"})["split"] == {"failed": 4, "running": 0, "other": 0}
 
 
 def test_split_of_inputs_counts_other_censoring_apart():
     out = model_split.split_of_inputs({"x": np.array([1.0, 2.0, 3.0, 4.0]), "c": np.array([0, 1, -1, 0])})
     assert out == {"failed": 2, "running": 1, "other": 1}
-    assert model_split.split_of_inputs({"xl": np.array([1.0]), "xr": np.array([2.0])}) is None
+    out = model_split.split_of_inputs({"xl": np.array([1.0, 5.0]), "xr": np.array([2.0, 5.0]), "c": np.array([2, 1])})
+    assert out == {"failed": 1, "running": 1, "other": 0}
+    assert model_split.split_of_inputs({"xl": np.array([1.0])}) is None
 
 
 # ---- a saved model's page --------------------------------------------------------------------

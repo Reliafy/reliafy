@@ -25,6 +25,7 @@ _FORM_OVERHEAD = 256 * 1024
 # Routes whose body is one CSV upload (plus a few form fields).
 _CSV_ROUTES = frozenset({
     "/api/columns",
+    "/api/data-reading",
     "/api/models",
     "/api/alt/fit",
     "/api/alt/models",

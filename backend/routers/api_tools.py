@@ -69,13 +69,14 @@ REST_ONLY = {
 
 
 def rest_only(tools: list) -> dict:
-    """REST_ONLY, with Reliafy Maintenance's field-report routes for the
-    callers who have it (backend/routers/field_reports.py)."""
+    """REST_ONLY, with Reliafy Maintenance's field-report routes
+    (backend/routers/field_reports.py) and its offline-device routes
+    (backend/routers/maintenance_sync.py) for the callers who have it."""
     if not any(t.name == "maintenance" for t in tools):
         return dict(REST_ONLY)
-    from backend.routers import field_reports
+    from backend.routers import field_reports, maintenance_sync
 
-    return {**REST_ONLY, **field_reports.REST_ONLY}
+    return {**REST_ONLY, **field_reports.REST_ONLY, **maintenance_sync.REST_ONLY}
 
 
 # ---- the registry --------------------------------------------------------------
@@ -528,10 +529,11 @@ def build_spec(tools: list) -> dict:
         "x-reliafy-rest-only": True,
     }}
     if any(t.name == "maintenance" for t in tools):
-        # Field reports (REST only): for the callers who have Reliafy Maintenance.
-        from backend.routers import field_reports
+        # Field reports and the offline-device routes (REST only): for the callers who have Reliafy Maintenance.
+        from backend.routers import field_reports, maintenance_sync
 
         paths.update(field_reports.spec_paths(_ERROR))
+        paths.update(maintenance_sync.spec_paths(_ERROR))
     return {
         "openapi": "3.1.0",
         "info": {

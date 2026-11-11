@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from backend.db import get_session, init_db
+from backend import fitting as fitting_module
 from backend import life_bounds, more_models, regression_bands, regression_diagnostics
 from backend.fitting import (
     DISCRETE,
@@ -88,6 +89,7 @@ from backend.routers import ingest as ingest_router
 from backend.routers import public_api as public_api_router
 from backend.routers import api_tools as api_tools_router
 from backend.routers import field_reports as field_reports_router
+from backend.routers import maintenance_sync as maintenance_sync_router
 from backend.routers import support as support_router
 from backend.routers import email_prefs as email_prefs_router
 from backend.routers import walkthroughs as walkthroughs_router
@@ -280,6 +282,8 @@ app.include_router(field_reports_router.router)
 # Every MCP tool action over REST (POST /api/v1/{tool}/{action}), its OpenAPI
 # spec and the REST-only photo upload. After public_api: its fixed /api/v1
 # routes win over the generic {tool}/{action} ones.
+# A device that works offline: its queued changes, once each (fixed routes, before the generic ones).
+app.include_router(maintenance_sync_router.router)
 app.include_router(api_tools_router.router)
 app.include_router(email_prefs_router.router)
 app.include_router(walkthroughs_router.router)
@@ -453,6 +457,47 @@ def distributions_endpoint() -> dict:
     ]
     return {"distributions": plain + discrete + nonparametric + more_models.flexible_listing() + regression,
             "fit_methods": FIT_METHODS}
+
+
+@app.post("/api/data-reading")
+def data_reading_endpoint(
+    file: UploadFile | None = File(default=None),
+    dataset_id: str | None = Form(default=None),
+    x: str | None = Form(default=None),
+    c: str | None = Form(default=None),
+    n: str | None = Form(default=None),
+    xl: str | None = Form(default=None),
+    xr: str | None = Form(default=None),
+    c_invert: str | None = Form(default=None),
+    c_map: str | None = Form(default=None),
+    session=Depends(get_session),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """How a column mapping reads a file's rows, before any fit: units that
+    failed at a known time, between two times (inspection data), at their
+    first look, and units still running, counted the way the fit will count
+    them. ``notes`` says where the reading rests on a guess."""
+    mapping = {k: v for k, v in {"x": x, "c": c, "n": n, "xl": xl, "xr": xr}.items() if v}
+    try:
+        if dataset_id:
+            dataset = datasets_service.get_dataset(session, dataset_id, owner_id=user["uid"])
+            if dataset is None:
+                return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+            df = datasets_service.load_dataframe(dataset)
+        elif file is not None:
+            df = read_dataframe(read_upload(file))
+        else:
+            return JSONResponse(status_code=422, content={"detail": "Provide a CSV file or a dataset_id."})
+        options = options_from_form(c_invert=c_invert, c_map=c_map) or {}
+        if mapping.get("c") and options.get(fitting_module.CENSOR_MAP_KEY):
+            df = fitting_module.map_censor_column(df, mapping["c"], options[fitting_module.CENSOR_MAP_KEY])
+        elif mapping.get("c") and options.get(fitting_module.CENSOR_INVERT_KEY):
+            df = fitting_module.invert_censor_column(df, mapping["c"])
+        reading = fitting_module.data_reading(df, mapping)
+        reading["notes"] = fitting_module.reading_notes(df, mapping)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    return JSONResponse(content=reading)
 
 
 @app.post("/api/fit/{distribution}")

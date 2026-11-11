@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay } from "./assetTree.js";
 import {
-  BLOCK_STATES, MAX_PHASES, answerText, blockState, fadedIn, withBlockState, changedPhases, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow,
+  BLOCK_STATES, MAX_PHASES, answerText, leaveOut, placeholderTitle, placeholderWarning, blockState, fadedIn, withBlockState, changedPhases, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow,
   isPhaseRow, latestOnly, lengthText, missionKey, missionParam, missionRowActions, movePhase, newPhase, parseMissionParam, phaseCompletes,
   phaseCovariates, phaseKey, phaseLengthText, phaseLine, phaseNeeds, phaseOfText, phasesText, positionMissionActions, rollupText, typed,
   withBlockValue, withNewPhase, withoutPhase, withValue,
@@ -179,6 +179,37 @@ test("a phase's line and the answer in words", () => {
   "Worked out to the end of Take-off (99.90% still going); Cruise needs values first.");
   assert.equal(phaseCompletes({ conditional_failure: 0.25 }), 0.75);
   assert.equal(phaseCompletes({ waiting: true }), null);
+});
+
+test("a result resting on placeholders says so first, with the figure without them", () => {
+  const result = { reliability: 0.7366, blocks: 5, riskiest: { name: "Run" }, phases: [{}, {}],
+    placeholders: [{ id: "b", label: "Battery" }, { id: "c", label: "Control panel" }, { id: "f", label: "Fuel system" }],
+    without_placeholders: { reliability: 0.99431 } };
+  const ph = placeholderWarning(result);
+  assert.equal(ph.count, "3 of 5 blocks have no model");
+  assert.equal(ph.list, "Battery, Control panel and Fuel system");
+  assert.equal(ph.without, 0.99431);
+  assert.equal(answerText(result),
+    "Not a real figure yet: 3 of 5 blocks have no model. With a placeholder standing in for each, the mission completes with probability 73.7%.");
+  // A list row's kept result: labels and the number.
+  const kept = { reliability: 0.7366, placeholders: ["Battery"], without_placeholders: 0.99431 };
+  assert.equal(placeholderWarning(kept).count, "1 block has no model");
+  assert.equal(placeholderTitle(kept), "Not a real figure: Battery has no model, so a placeholder stands in. Without it: 99.43%.");
+  // Nothing to say with a model on every block, or once they're all left out.
+  assert.equal(placeholderWarning({ reliability: 0.95, placeholders: [], blocks: 2 }), null);
+  assert.equal(placeholderTitle({ reliability: 0.95 }), "");
+  // No block with a model: no figure without them.
+  const none = placeholderWarning({ reliability: 0.8, blocks: 2, placeholders: [{ id: "a", label: "A" }, { id: "b", label: "B" }], without_placeholders: null });
+  assert.equal(none.count, "none of the 2 blocks has a model");
+  assert.equal(none.without, null);
+});
+
+test("leaving placeholders out marks them Not needed in every phase, whatever they were", () => {
+  const rows = [{ key: "1", name: "Start", standby: ["b"], not_needed: [] }, { key: "2", name: "Run", standby: [], not_needed: ["c"] }];
+  const out = leaveOut(rows, ["b", "c"]);
+  assert.deepEqual(out.map((r) => [r.standby, r.not_needed]), [[[], ["b", "c"]], [[], ["b", "c"]]]);
+  assert.equal(out[0].name, "Start");
+  assert.deepEqual(rows[0].standby, ["b"]); // the rows given are left as they were
 });
 
 test("a mission's phases hang under it in the tree, in order", () => {

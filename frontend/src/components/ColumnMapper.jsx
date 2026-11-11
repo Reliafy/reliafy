@@ -23,7 +23,7 @@ const COMMON_UNITS = [
 
 const ADVANCED = [
   { field: "xl", label: "Earliest possible failure time", hint: "Inspection data: the unit failed between this time and the latest. Used instead of a single time." },
-  { field: "xr", label: "Latest possible failure time" },
+  { field: "xr", label: "Latest possible failure time", hint: "Leave it blank for a unit that was still running at the earliest time." },
   { field: "tl", label: "Observed from (left truncation)", hint: "Units already in service when records began." },
   { field: "tr", label: "Observed until (right truncation)" },
 ];
@@ -32,7 +32,7 @@ const MEANINGS = [
   { value: 0, label: "Failed" },
   { value: 1, label: "Still running" },
 ];
-const FIXED = { "-1": "Found failed (left-censored)", 2: "Interval" };
+const FIXED = { "-1": "Found failed (left-censored)", 2: "Failed between the two times (interval)" };
 
 // ``failureMode`` offers the failure-mode column (#177: the fit wizard only);
 // ``timeVarying`` (#60) is the layout of an item's rows when covariates change over time.
@@ -107,7 +107,8 @@ export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitC
       <div className="ds-row">
         {/* The status column, with what each of its values means beneath it. */}
         <div className="ds-field">
-          {field("c", TVC_STATUS[timeVarying] || "Failed or still running?", "— none: every row failed —")}
+          {field("c", TVC_STATUS[timeVarying] || "Failed or still running?",
+                 usingInterval ? "— none: read from the two times —" : "— none: every row failed —")}
           {values.length > 0 && (
             <div className="ds-status" role="group" aria-label={`What each value in ${mapping.c} means`}>
               {values.map((v) => {
