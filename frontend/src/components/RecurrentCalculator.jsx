@@ -138,7 +138,7 @@ export default function RecurrentCalculator({ r, name = null }) {
               )}
             </span>
           </div>
-          <Plot fill data={traces} layout={layout} download={`${name || "Recurrent model"} — ${yTitle}`} />
+          <Plot fill data={traces} layout={layout} download={`${name || "Repairable model"} — ${yTitle}`} />
         </div>
 
         <div className="calc-side-rail">

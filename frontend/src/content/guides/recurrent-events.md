@@ -18,7 +18,7 @@ The questions change too. Not "how long will it last?" but: **is it getting
 better or worse?** How often will it fail next year? Are the repairs actually
 helping?
 
-That's the recurrent-events section, and it's the honest home for MTBF on
+That's what repairable models are for, and it's the honest home for MTBF on
 repairable equipment.
 
 ## What your data looks like
@@ -185,7 +185,7 @@ If the same equipment also has a wear-out story at the component level, fit thos
 as ordinary [non-repairable models](/guides/fit-your-first-model) — the two views answer
 different questions and are complementary, not competing.
 
-A saved recurrent model can also drive a
+A saved repairable model can also drive a
 [fleet failure forecast](/guides/forecast-fleet-failures-and-spares) for
 repairable equipment, counting every repeat failure across the fleet.
 

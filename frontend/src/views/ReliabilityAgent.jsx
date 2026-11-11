@@ -27,7 +27,7 @@ const TOOL_LABEL = {
   get_model: "Read a saved model",
   create_dataset: "Create dataset",
   create_life_model: "Create non-repairable model",
-  create_recurrent_model: "Create recurrent model",
+  create_recurrent_model: "Create repairable model",
   create_alt_model: "Create accelerated-life model",
   create_degradation_model: "Create degradation model",
   create_rbd: "Create RBD",

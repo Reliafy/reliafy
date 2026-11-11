@@ -45,7 +45,7 @@ export function datasetActions(ds, parts = datasetParts(ds)) {
     // as degradation: offered second.
     return { primary: life(`Fit a non-repairable model ${CHANGING}`), secondary: t.includes("Measurements") ? degradation : null };
   }
-  if (kind === "recurrent") return { primary: { label: "Fit a recurrent model", to: `/models/recurrent/new?dataset=${id}` }, secondary: null };
+  if (kind === "recurrent") return { primary: { label: "Fit a repairable model", to: `/models/recurrent/new?dataset=${id}` }, secondary: null };
   if (kind === "degradation" || parts.readingsOnly) return { primary: degradation, secondary: null };
   return { primary: life("Fit a model"), secondary: null };
 }

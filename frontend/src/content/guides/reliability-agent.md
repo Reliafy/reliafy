@@ -72,7 +72,7 @@ against.
 
 It creates **datasets**, **non-repairable models** (the full range — censoring, truncation,
 covariates, the offset/zero-inflation/limited-failure-population modifiers),
-**recurrent-event models** for repairable systems, **accelerated life models**,
+**repairable models** (recurrent events), **accelerated life models**,
 **degradation models**, and **RBDs** — including repairable diagrams that report
 availability, and common-cause groups on redundant stages.
 

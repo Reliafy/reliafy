@@ -101,7 +101,7 @@ its range, and each month's expectation and range.
 
 1. On **Forecasts**, press **New forecast**. Give it a name,
    choose the **Equipment** — **Replaceable** (a life, regression or ALT model)
-   or **Repairable** (a recurrent model) — and the **Model**. With a regression
+   or **Repairable** (a repairable model) — and the **Model**. With a regression
    or ALT model each item is forecast at its own conditions or stress.
 2. **Add item** for each unit in service, with its **Current use** (its age in
    the model's time unit). An item can have its **Own rate** if it runs harder

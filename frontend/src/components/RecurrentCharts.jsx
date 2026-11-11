@@ -59,7 +59,7 @@ export function McfPlot({ r, name }) {
     xaxis: { title: { text: xTitle(r.unit) }, rangemode: "tozero" },
     yaxis: { title: { text: "Cumulative failures per system (MCF)" }, rangemode: "tozero" },
   };
-  return <Plot fill data={traces} layout={layout} download={`${name || r.model?.name || "Recurrent model"} — MCF`} />;
+  return <Plot fill data={traces} layout={layout} download={`${name || r.model?.name || "Repairable model"} — MCF`} />;
 }
 
 // "#2f6df6" → "rgba(47,109,246,a)".
@@ -91,7 +91,7 @@ export function CausesPlot({ r, name, chosen }) {
     xaxis: { title: { text: xTitle(r.unit) }, rangemode: "tozero" },
     yaxis: { title: { text: "Cumulative failures per system" }, rangemode: "tozero" },
   };
-  return <Plot fill data={traces} layout={layout} download={`${name || "Recurrent model"} — MCF by cause`} />;
+  return <Plot fill data={traces} layout={layout} download={`${name || "Repairable model"} — MCF by cause`} />;
 }
 
 // The Effects tab (covariate models): each covariate's rate ratio with its 95%
@@ -108,7 +108,7 @@ export function RecurrentEffects({ r, name }) {
       sideClassName="rec-side"
       plot={
         <PlotCard title="How many times as often failures come, for each covariate, with its 95% interval">
-          <ForestChart rows={rows} ratioLabel="failure rate ratio" name={name} download={`${name || "Recurrent model"} — covariate effects`} />
+          <ForestChart rows={rows} ratioLabel="failure rate ratio" name={name} download={`${name || "Repairable model"} — covariate effects`} />
         </PlotCard>
       }
       below={
@@ -174,7 +174,7 @@ export function NextFailureView({ r, name }) {
       className="rec-next"
       main={
         <PlotCard title="Each system's chance of running on without a failure">
-          <Plot fill data={traces} layout={layout} download={`${name || "Recurrent model"} — next failure`} />
+          <Plot fill data={traces} layout={layout} download={`${name || "Repairable model"} — next failure`} />
         </PlotCard>
       }
       side={

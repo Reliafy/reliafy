@@ -412,7 +412,7 @@ export default function FleetForecastPage() {
             {repairable && (
               <p className="rs-note">
                 Repairable items: each failure is repaired and the item runs on, so every repeat failure is counted
-                from the item’s age (time since new) under the recurrent model. Ranges are Poisson.
+                from the item’s age (time since new) under the repairable model. Ranges are Poisson.
               </p>
             )}
             {single && !repairable && (

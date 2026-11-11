@@ -52,7 +52,7 @@ export default function RecurrentOverhaul({ modelId, unit: rawUnit, name = null 
       yaxis: { title: { text: `Long-run cost (${workspaceCurrency()}) per unit time` }, rangemode: "tozero", range: [0, opt.cost_rate * 2.5] },
       shapes: [referenceShape({ x: opt.interval, line: { dash: "dot" } })],
     };
-    plot = <Plot fill data={traces} layout={layout} download={`${name || "Recurrent model"} — overhaul cost rate`} />;
+    plot = <Plot fill data={traces} layout={layout} download={`${name || "Repairable model"} — overhaul cost rate`} />;
   }
 
   return (
