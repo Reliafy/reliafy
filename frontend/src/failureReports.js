@@ -94,7 +94,7 @@ export const MAX_WHYS = 7;
 export const stageOf = (report) => report?.status || "reported";
 
 // "3 open · 7 in all, at this position and 12 inside it". `scope` is the
-// server's ({kind, positions: n}); `counts` its totals ({open, ...} over the
+// server's ({kind, positions: n}; a design's: {kind: "design", items: n}); `counts` its totals ({open, ...} over the
 // scope with the filters but status applied). `total` is what the status
 // filter left. A location or item: "at this location" / "on this item".
 export function countsSentence(counts, scope, { kind = "pos" } = {}) {
@@ -105,6 +105,11 @@ export function countsSentence(counts, scope, { kind = "pos" } = {}) {
   const head = `${(c.open || 0).toLocaleString("en-AU")} open · ${all.toLocaleString("en-AU")} in all`;
   const positions = Math.max(0, (scope?.positions ?? 1) - (kind === "pos" ? 1 : 0));
   let where;
+  // A product's design position: the reports on the items built from the product.
+  if (scope?.kind === "design") {
+    const items = scope.items || 0;
+    return `${head}, ${items ? `on the ${n(items, "item")} built from this product` : "no items built from this product yet"}`;
+  }
   if (kind === "loc") where = positions ? `at this location (${n(positions, "position")})` : "at this location";
   else if (kind === "item") where = "on this item";
   else where = positions ? `at this position and the ${n(positions, "position")} inside it` : "at this position";
@@ -191,10 +196,37 @@ export function queryParams(filters, scope, { limit = 50, offset = 0 } = {}) {
   return out;
 }
 
-// Whether anything beyond the usual (open, newest) is filtering the list.
-export function filtering(filters) {
-  const f = { ...DEFAULT_FILTERS, ...(filters || {}) };
-  return f.status !== "open" || !!f.consequence || !!f.failure_mode_id || !!f.since || !!f.until || !!(f.q && f.q.trim());
+// A product's design (its Failure reports tab rolls up the items built from it):
+// every report, open ones first (in the loop's order), then closed and rejected.
+export const DESIGN_FILTERS = { ...DEFAULT_FILTERS, status: "all", sort: "status" };
+
+// Whether anything beyond the usual (open, newest; or a design's `defaults`) is
+// filtering the list.
+export function filtering(filters, defaults = DEFAULT_FILTERS) {
+  const f = { ...defaults, ...(filters || {}) };
+  return f.status !== defaults.status || !!f.consequence || !!f.failure_mode_id || !!f.since || !!f.until || !!(f.q && f.q.trim());
+}
+
+// The built items a failure report can be filed on from a product's design
+// position: the server's design roll-up items (getDesignRollup), each the position
+// implementing it on one item. Retired ones left out; by serial.
+// [{id (the item's position), name, serial, label}].
+export function builtItemChoices(items) {
+  return (items || [])
+    .filter((it) => it.position?.id && !it.position.retired)
+    .map((it) => ({
+      id: it.position.id, name: it.position.name || "(no name)", serial: it.serial || "",
+      label: it.serial ? `Serial ${it.serial}` : "(no serial)",
+    }))
+    .sort((a, b) => a.serial.localeCompare(b.serial, "en", { numeric: true, sensitivity: "base" }));
+}
+
+// Where a report filed from a design is, for the form's "At …": "Motor 1 on serial 0007";
+// an item's own top already says its serial ("Survey quadcopter · 0007"), so that alone.
+export function builtItemPlace(choice) {
+  if (!choice) return "";
+  if (choice.serial && choice.name.includes(choice.serial)) return choice.name;
+  return `${choice.name} on ${choice.serial ? `serial ${choice.serial}` : "an item with no serial"}`;
 }
 
 // The scope for a row of the tree: a position (and everything inside it), a

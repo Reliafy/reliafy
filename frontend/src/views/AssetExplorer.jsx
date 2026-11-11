@@ -102,7 +102,7 @@ import { OPEN_SAMPLE_PRODUCT_LABEL, sampleProductId, sampleProductView } from ".
 import {
   MAKE_OWN, PRODUCTS_PATH, designActions, isDesignScope, isSampleRow, madeOwnText, makeOwnConfirm, productViewPath, scopeHasClasses, scopeTree,
 } from "../products.js";
-import { BuildItemModal, DesignReports } from "../components/ProductPanels.jsx";
+import { BuildItemModal } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
 
@@ -2331,8 +2331,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     onNew: (id, name) => setReportFor({ id, name, select: row?.key ?? id }),
     onChanged: load,
     viewOnly,
-    // A product's design: no report is filed there; its tab rolls up the items' reports.
-    rollup: designScope ? (r) => <DesignReports positionId={r.type === "pos" ? r.key : root} /> : null,
   };
   // The Summary tab's page about the row picked: beside the tree in the pane
   // (a wide screen, its heading and tabs over it in the slim rows), or its own

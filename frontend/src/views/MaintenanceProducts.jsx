@@ -6,7 +6,9 @@
 // beside it. The product's own row's Summary holds its facts, Build an item,
 // the items built, their failure reports and its analyses (ProductSummary);
 // the parts list is the tree's Parts tab. A design has no maintenance done to
-// it: no failure reports, signals or stock on its rows (explorerTabs.js).
+// it: no signals or stock on its rows (explorerTabs.js). Its Failure reports
+// tab lists the reports on the items built from it, and files one on a built
+// item picked by serial (FailureReportsPanel).
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { addSampleProduct, getProduct, listProducts } from "../api.js";

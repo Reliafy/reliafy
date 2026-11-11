@@ -14199,7 +14199,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         description, who found it, the failure mode and the position's name. sort:
         newest (default), oldest, status (in flow order), consequence (safety first) or
         position. counts are by status over the scope and the other filters, so the
-        chips say how many each status has."""
+        chips say how many each status has. A product's design position (scope kind
+        design) lists the reports on the items built from it, each with its unit."""
         given = [k for k, v in (("position_id", position_id), ("location_id", location_id), ("item_id", item_id)) if v]
         if len(given) > 1:
             raise Invalid("One scope at a time: position_id (with below), location_id or item_id; none for the "
@@ -14223,9 +14224,21 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
         reports = self.s.nodes(self.org, "FailureReport")
         root_id = None
-        if position_id:
-            position = self._get(position_id, "Position")
-            ids = self._report_scope(position_id, _flag_value(below, "below") if isinstance(below, str) else bool(below))
+        # A design position (a product's, or one inside it): no report is filed there,
+        # so its list is the reports on the items built from the product, each at the
+        # position implementing it and below (products.py _design_report_scope). Each
+        # row's level is under its own item's position, and it says which item (unit).
+        units: dict = {}
+        position = self._get(position_id, "Position") if position_id else None
+        below_on = (_flag_value(below, "below") if isinstance(below, str) else bool(below)) if position else True
+        if position and self._design_root_of(position_id):
+            at = self._design_report_scope(position_id, below=below_on)
+            reports = [r for r in reports if r.get("position_id") in at]
+            units = {r["id"]: at[r["position_id"]] for r in reports}
+            scope = {"kind": "design", "id": position_id, "name": position["name"], "positions": len(at),
+                     "items": len({unit["top_position_id"] for _, unit in at.values()})}
+        elif position:
+            ids = self._report_scope(position_id, below_on)
             wanted = set(ids)
             reports = [r for r in reports if r.get("position_id") in wanted]
             root_id = position_id
@@ -14245,6 +14258,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                      "positions": sum(1 for p in self.s.nodes(self.org, "Position") if not p.get("retired"))}
 
         cache: dict = {}
+
+        def brief(r: dict) -> dict:
+            if r["id"] in units:
+                root, unit = units[r["id"]]
+                return self._report_brief(r, root, cache) | {"unit": unit}
+            return self._report_brief(r, root_id, cache)
+
         if failure_mode_id:
             reports = [r for r in reports if r.get("failure_mode_id") == failure_mode_id]
         if part_id:
@@ -14258,9 +14278,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         words = " ".join(str(q or "").lower().split())
         if words:
             def matches(r):
-                brief = self._report_brief(r, root_id, cache)
-                haystack = [r.get("title"), r.get("description"), r.get("found_by"), brief["position"]["name"],
-                            brief["failure_mode"] and brief["failure_mode"]["text"]]
+                b = brief(r)
+                haystack = [r.get("title"), r.get("description"), r.get("found_by"), b["position"]["name"],
+                            b["failure_mode"] and b["failure_mode"]["text"]]
                 return any(words in str(h).lower() for h in haystack if h)
             reports = [r for r in reports if matches(r)]
         counts = {s: 0 for s in REPORT_STATUSES} | {"open": 0}
@@ -14283,9 +14303,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             reports.sort(key=lambda r: REPORT_CONSEQUENCES.index(r["consequence"])
                          if r.get("consequence") in REPORT_CONSEQUENCES else len(REPORT_CONSEQUENCES))
         elif sort == "position":
-            reports.sort(key=lambda r: " › ".join(n for n in self._report_brief(r, root_id, cache)["level"] if n).lower())
+            reports.sort(key=lambda r: " › ".join(n for n in brief(r)["level"] if n).lower())
         page = reports[offset:offset + limit]
-        return {"reports": [self._report_brief(r, root_id, cache) for r in page], "total": len(reports),
+        return {"reports": [brief(r) for r in page], "total": len(reports),
                 "counts": counts, "scope": scope}
 
     def _position_reports(self, position_id: str) -> dict:
