@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
-  DOWNLOAD_OVER, DOWNLOAD_ROW, PLOTLY_HEIGHT, downloadCorner, ownHeight, reachesCorner, shorterBy, themedLayout,
+  DOWNLOAD_OVER, DOWNLOAD_ROW, MIN_PLOT_AREA, PLOTLY_HEIGHT, downloadCorner, minPlotSize, ownHeight, reachesCorner, shorterBy, themedLayout,
 } from "./plotTheme.js";
 
 const box = (left, top, width, height = 14) => ({ left, top, right: left + width, bottom: top + height });
@@ -94,4 +94,24 @@ test("the row's height in the stylesheet matches the chart component's", () => {
   }
   // The buttons over the chart are DOWNLOAD_OVER tall.
   assert.match(css, new RegExp(`\\.plot-dl-btn \\{\\s*height: ${DOWNLOAD_OVER}px;`));
+});
+
+// A pane squeezed to 20 px for a moment (desktop -> phone width with the RBD
+// Calculator open) gave Plotly a 2 px plot area and axis titles at y = -Infinity.
+// The chart's least size keeps its margins plus a real plot area.
+test("minPlotSize: a squeezed box still leaves the chart a plot area", () => {
+  const layout = themedLayout({ height: 440 }, { narrow: true });
+  const least = minPlotSize(layout);
+  const squeezed = 20;
+  const drawn = Math.max(squeezed, least.width);
+  const { l, r, t, b } = layout.margin;
+  assert.equal(least.width, l + r + MIN_PLOT_AREA);
+  assert.equal(least.height, t + b + MIN_PLOT_AREA);
+  assert.ok(squeezed - l - r <= 0, "the bad input: no room at all inside the margins");
+  assert.ok(drawn - l - r >= MIN_PLOT_AREA);
+  // Every number is finite, even for a layout with no or odd margins.
+  for (const lay of [undefined, {}, { margin: { l: -5, r: NaN, t: Infinity } }, { margin: { l: 8 } }]) {
+    const m = minPlotSize(lay);
+    assert.ok(Number.isFinite(m.width) && Number.isFinite(m.height) && m.width >= MIN_PLOT_AREA && m.height >= MIN_PLOT_AREA);
+  }
 });

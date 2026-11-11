@@ -255,6 +255,24 @@ export function ownHeight(layout, less = 0) {
   return Math.max(height - less, 0);
 }
 
+// The smallest box a chart is drawn in. Squeezed narrower than its margins (a
+// pane for a moment while the window goes from desktop to phone width), Plotly
+// is left a plot area of a pixel or two and places the axis titles at
+// -Infinity ("<text> attribute y: Expected length"). The chart keeps at least
+// this much room for its plot area beside its margins, whatever its box is,
+// and is redrawn at its box's size once the box is wide enough again.
+export const MIN_PLOT_AREA = 64;
+const marginOf = (layout, side) => {
+  const v = layout?.margin?.[side];
+  return Number.isFinite(v) && v > 0 ? v : 0;
+};
+export function minPlotSize(layout) {
+  return {
+    width: marginOf(layout, "l") + marginOf(layout, "r") + MIN_PLOT_AREA,
+    height: marginOf(layout, "t") + marginOf(layout, "b") + MIN_PLOT_AREA,
+  };
+}
+
 // That chart's layout, `px` shorter: room for the buttons' row above it.
 export function shorterBy(layout = {}, px = DOWNLOAD_ROW) {
   return { ...layout, height: ownHeight(layout, px) };
