@@ -3382,6 +3382,33 @@ const qs = (params = {}) => {
   const s = q.toString();
   return s ? `?${s}` : "";
 };
+// ---- field reports: notes, photos and sound sent from the field -------------------------
+export function listFieldReports(scope = {}) {
+  return request(`/api/maintenance/captures${qs(scope)}`);
+}
+export function getFieldReport(id) {
+  return request(`/api/maintenance/captures/${encodeURIComponent(id)}`);
+}
+// An attachment's bytes (a photo: size "thumb" or "full"), for an object URL.
+export async function getFieldReportMediaBlob(id, mediaId, size = "full") {
+  const res = await authedFetch(`/api/maintenance/captures/${encodeURIComponent(id)}/media/${encodeURIComponent(mediaId)}?size=${size}`);
+  if (!res.ok) throw new Error(`The attachment failed to load (${res.status})`);
+  return res.blob();
+}
+export function setFieldReportStatus(id, status, note = "") {
+  return request(`/api/maintenance/captures/${encodeURIComponent(id)}/status`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status, note }),
+  });
+}
+export function keepFieldReport(id, keep) {
+  return request(`/api/maintenance/captures/${encodeURIComponent(id)}/keep`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keep }),
+  });
+}
+export function deleteFieldReport(id) {
+  return request(`/api/maintenance/captures/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 export function listPackages(scope = {}) {
   return request(`/api/maintenance/packages${qs(scope)}`);
 }

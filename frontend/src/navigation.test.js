@@ -39,6 +39,7 @@ const REACHED_FROM = {
   "/requirements": "a preview-only placeholder, by address",
   "/failures": "a preview-only placeholder, by address",
   "/asset-register/fleets": "a preview-only placeholder, by address",
+  "/maintenance/field-reports": "by address for now: reports arrive from the field app, and its place in the menu isn't decided",
   "/settings": "the menu's Account group",
   "/billing": "the menu's Account group",
   "/api-docs": "the menu's Account group",
