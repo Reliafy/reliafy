@@ -6,6 +6,7 @@ import RbdExcelImportModal from "../components/RbdExcelImportModal.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
+import { missionRbdLine } from "../rbdMission.js";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
 import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
@@ -221,7 +222,9 @@ export default function RbdHome() {
               <div className="lib-name">
                 <RowLink to={pathOf(r.id)}>{itemName(r)}</RowLink>
                 {r.shared_by && <Chip title={`Shared by ${r.shared_by}`}>Shared</Chip>}
+                {r.mission && <Chip tone="accent" title="A mission's own RBD, built on its position (Assets › Explorer › Missions)">Mission</Chip>}
               </div>
+              {r.mission && <div className="rim-tquiet lib-mission">{missionRbdLine(r)}</div>}
             </td>
             <td className="lib-n lib-opt">{(r.n_nodes ?? 0).toLocaleString()}</td>
             <td className="lib-n lib-opt">{(r.n_edges ?? 0).toLocaleString()}</td>

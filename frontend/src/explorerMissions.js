@@ -93,12 +93,15 @@ export function completesText(m) {
 
 // The tree with each position's missions in it. The display given is left as it is; position rows
 // gain `msum` (their own: rbds, missions), `mall` (theirs and inside) and `rbds` (their RBD links).
-export function graftMissions(display, links = []) {
+// `hasModel`: the positions whose model in use can be a mission's one block (GET
+// /position-missions: has_model), so a leaf can have a mission too.
+export function graftMissions(display, links = [], hasModel = []) {
+  const withModel = new Set(hasModel || []);
   const rows = new Map();
   for (const [k, r] of display.rows) rows.set(k, { ...r, kids: [...r.kids] });
   const out = { ...display, rows, missions: true };
   for (const r of rows.values()) {
-    if (r.type === "pos") Object.assign(r, { msum: { rbds: 0, missions: 0 }, mall: { rbds: 0, missions: 0 }, rbds: [] });
+    if (r.type === "pos") Object.assign(r, { msum: { rbds: 0, missions: 0 }, mall: { rbds: 0, missions: 0 }, rbds: [], hasModel: withModel.has(r.key) });
   }
   const byPos = new Map();
   for (const link of links) {
@@ -163,18 +166,22 @@ export function graftMissions(display, links = []) {
 const hasInside = (r) => (r?.kids || []).some((k) => !String(k).startsWith("MS:"));
 const count = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 
-// A position row's roll-up: open, its own ("No RBD yet · Build from what's inside…", "No missions
-// yet", "2 missions"); closed, everything inside it too ("5 missions inside").
+// The position's own linked RBDs (not a mission's own) a mission can start from a copy of.
+const usableRbds = (r) => (r?.rbds || []).filter((l) => l.rbd && !l.rbd.mission_rbd && !l.rbd.repairable && !l.rbd.network);
+// A position can have a mission when its RBD can be built: from the positions inside, a copy of its
+// own non-repairable RBD, or (a leaf) one block from its own model in use.
+export const canAddMission = (r) => hasInside(r) || !!r?.hasModel || usableRbds(r).length > 0;
+
+// A position row's roll-up: its own ("2 missions", or "No missions yet · Add a mission" wherever
+// one can be added); closed, everything inside it too ("5 missions here and inside").
 export function rollupText(r, open = false) {
   if (!r?.msum) return "";
   const own = r.msum;
-  if (open) {
-    if (!own.rbds) return hasInside(r) ? "No missions yet · Add a mission" : "No RBD yet";
-    return own.missions ? count(own.missions, "mission") : "No missions yet · Add a mission";
-  }
+  const none = canAddMission(r) ? "No missions yet · Add a mission" : "No missions yet";
+  if (open) return own.missions ? count(own.missions, "mission") : none;
   const all = r.mall || own;
   if (all.missions) return own.missions === all.missions ? count(all.missions, "mission") : `${count(all.missions, "mission")} here and inside`;
-  return own.rbds ? "No missions yet" : "No RBD yet";
+  return none;
 }
 
 // The phases cell: "3 phases: Take-off, Survey, Landing".
@@ -217,17 +224,16 @@ export function missionRowActions(r, { viewOnly = null } = {}) {
 }
 // A position's menu (one RBD per mission): Add a mission builds the mission an RBD of its own from
 // what's inside the position (or from a copy of the position's own non-repairable RBD where it has
-// nothing inside); then Open for each RBD linked to the position, and Build an RBD from what's
+// nothing inside, else one block from its own model in use); then Open for each RBD linked to the position, and Build an RBD from what's
 // inside… while it has none of its own.
 export function positionMissionActions(r, { viewOnly = null } = {}) {
   const off = viewOnly ? { disabled: true, reason: viewOnly, title: viewOnly } : {};
   const linked = (r?.rbds || []).filter((l) => l.rbd && !l.rbd.mission_rbd);
-  const usable = linked.filter((l) => !l.rbd.repairable && !l.rbd.network);
   const out = [];
-  if (hasInside(r) || usable.length) out.push({ id: "mission-new", label: "Add a mission", ...off });
+  if (canAddMission(r)) out.push({ id: "mission-new", label: "Add a mission", ...off });
   else {
-    const why = linked.length ? "Missions are flown on a non-repairable block diagram: add positions inside it to build one"
-      : "Add positions inside it first: a mission's RBD is built from what's inside";
+    const why = linked.length ? "Missions are flown on a non-repairable block diagram: give it a life model, or add positions inside it"
+      : "Give it a life model on the Modelling tab, or add positions inside it: a mission's RBD is built from them";
     out.push({ id: "mission-none", label: "Add a mission", disabled: true, reason: why, title: why });
   }
   for (const l of linked) {

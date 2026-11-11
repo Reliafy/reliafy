@@ -58,7 +58,8 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   // The gimbal's own mission is under the gimbal; the drone's isn't repeated there.
   await nameRow(page, `Gimbal ${tag}`).first().locator(".tp-chev").click();
   await expect(nameRow(page, `Stabilise ${tag}`)).toBeVisible();
-  await expect(nameRow(page, `Front motor bearing ${tag}`)).toContainText("No RBD yet");
+  // A leaf with a model in use can have a mission too (one block).
+  await expect(nameRow(page, `Front motor bearing ${tag}`)).toContainText("No missions yet · Add a mission");
   await expect(nameRow(page, `Corridor inspection ${tag}`)).toHaveCount(1);
 
   // Open the mission: the table area, phases as rows.
@@ -211,4 +212,53 @@ test("missions: each mission builds its own RBD; blocks set working, standby or 
   await shot(page, "mission-own-rbd-400");
   await page.setViewportSize({ width: 1440, height: 900 });
   await expectHealthy(page, problems, { label: "a mission's own RBD" });
+});
+
+// Every position that can have a mission says so, open or closed; a leaf with a model in use flies
+// a one-block mission; a mission's RBD is labelled with its mission and position in the RBD list.
+test("missions: a leaf with a model gets a one-block mission; the RBD list labels mission RBDs", async ({ page, request, problems }) => {
+  const tag = `ml${Date.now()}`;
+  const frame = await postOk(request, `${M}/positions`, { name: `Airframe ${tag}` });
+  const arm = await postOk(request, `${M}/positions`, { name: `Arm ${tag}`, parent_id: frame.id });
+  await postOk(request, `${M}/positions`, { name: `Bare leaf ${tag}`, parent_id: frame.id });
+  await postOk(request, `${M}/positions/${arm.id}/models`, { model_id: "sample-model-bearings-weibull" });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${frame.id}&tab=missions`);
+  await expect(nameRow(page, `Airframe ${tag}`).first()).toContainText("No missions yet · Add a mission");
+  await expect(nameRow(page, `Arm ${tag}`)).toContainText("No missions yet · Add a mission");
+  await expect(nameRow(page, `Bare leaf ${tag}`)).toContainText("No missions yet");
+  await expect(nameRow(page, `Bare leaf ${tag}`)).not.toContainText("Add a mission");
+  await shot(page, "missions-rollups-1440");
+  // The bare leaf's Add a mission is greyed, with what to do.
+  await nameRow(page, `Bare leaf ${tag}`).locator(".tp-nm").click({ button: "right" });
+  await expect(page.getByRole("menuitem", { name: /Add a mission/ })).toBeDisabled();
+  await page.keyboard.press("Escape");
+
+  // The leaf with a model: a mission of one block.
+  await nameRow(page, `Arm ${tag}`).locator(".tp-nm").click({ button: "right" });
+  const made = page.waitForResponse((r) => r.url().includes(`${M}/positions/${arm.id}/missions`) && r.request().method() === "POST");
+  await page.getByRole("menuitem", { name: "Add a mission", exact: true }).click();
+  const body = await (await made).json();
+  expect(body.built_from).toBe("model");
+  const pane = page.getByRole("region", { name: "Mission" });
+  await expect(pane).toContainText(`Flown on Arm ${tag} — Mission 1`);
+  await expect(pane.getByRole("region", { name: "Blocks in each phase" })).toBeVisible();
+  await shot(page, "mission-leaf-one-block-1440");
+  await page.setViewportSize({ width: 400, height: 860 });
+  await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
+  await shot(page, "mission-leaf-one-block-400");
+
+  // The RBD list: the mission's RBD labelled with its mission and position.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, "/systems/rbds");
+  const row = page.locator("tr", { hasText: `Arm ${tag} — Mission 1` });
+  await expect(row).toContainText("Mission");
+  await expect(row).toContainText(`Mission “Mission 1” on Arm ${tag}`);
+  await shot(page, "rbd-list-mission-label-1440");
+  await page.setViewportSize({ width: 400, height: 860 });
+  await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
+  await row.scrollIntoViewIfNeeded();
+  await shot(page, "rbd-list-mission-label-400");
+  await expectHealthy(page, problems, { label: "a leaf's one-block mission and the RBD list" });
 });

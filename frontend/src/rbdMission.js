@@ -15,6 +15,14 @@
 //   that mission, named by mission_name even before it has phases.
 export const MISSION_KEYS = ["phases", "network", "missions", "mission_name", "mission_of"];
 
+// A mission's own RBD in the RBD list (GET /api/rbds: `mission` {name, position_id, position}): the
+// line under its name, "Mission “Lift” on Pump station"; "" for any other diagram.
+export function missionRbdLine(row) {
+  const m = row?.mission;
+  if (!m) return "";
+  return `Mission “${m.name || "Mission"}”${m.position ? ` on ${m.position}` : ""}`;
+}
+
 // The mission keys a graph has set.
 export function missionFields(graph) {
   const out = {};

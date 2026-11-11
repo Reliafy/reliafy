@@ -1224,12 +1224,18 @@ def position_models(position_ids: str | None = None, session=Depends(get_session
 def position_missions(position_ids: str | None = None, session=Depends(get_session),
                       ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The missions on each position: for every RBD linked to a position (position_ids: only these,
-    comma-separated), its missions with their phases, length and last result (rbd_missions.py).
+    comma-separated), its missions with their phases, length and last result (rbd_missions.py);
+    has_model: the positions whose model in use can be a mission's one block.
     A position has its own RBDs' missions; nothing comes from the position above it."""
     from backend.services import rbd_missions
 
+    from backend.maintenance import position_models as pm
+
     ids = [x for x in (position_ids or "").split(",") if x] or None
-    return _run(lambda: {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids)})
+    # has_model: positions whose model in use a mission's one-block RBD can take (a leaf's Add a mission).
+    return _run(lambda: {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids),
+                         "has_model": pm.blockable_positions(m, session, ctx.read_owners, ctx.hidden,
+                                                             m.all_position_models(ids))})
 
 
 @router.post("/positions/{position_id}/missions")

@@ -348,18 +348,21 @@ can't also stand by). A calculation's phase rows add `not_needed` and
 
 One RBD per mission: `POST /api/maintenance/positions/{id}/missions {name?}`
 adds a mission to a position with an RBD of its own, built from the positions
-inside (as Build from what's inside builds it: placeholders flagged), or
-copied from the position's non-repairable RBD where it has nothing inside.
+inside (as Build from what's inside builds it: placeholders flagged), or,
+where it has nothing inside, copied from the position's non-repairable RBD, or
+else one block, the position's own model in use (refused when it has none).
 It is saved as "<position> — <mission>" with `graph.mission_of:
 {position_id}` and answers `{rbd: {id, name, updated_at}, mission, position_id,
-notes, placeholders}`. The mission is that RBD's own (id `mission`, named by
+notes, placeholders, built_from` (`tree`, `copy` or `model`)`}`. In `GET
+/api/rbds` such a diagram carries `mission: {name, position_id, position}`. The mission is that RBD's own (id `mission`, named by
 `mission_name`, kept with no phases); it isn't linked as one of the position's
 models. Deleting it (`DELETE /api/rbds/{id}/missions/mission`) deletes its
 RBD. Missions stored on a position's RBD keep working as before.
 `GET /api/maintenance/position-missions?position_ids=` lists each
 position's RBDs and their missions (a position has its own RBDs' missions,
 never a parent's); a mission's own RBD is a row with `link_id` null and
-`rbd.mission_rbd` true. A mission in a list is `{id, name, phases` (how many)`,
+`rbd.mission_rbd` true. `has_model` lists the positions whose model in use can
+be a mission's one block. A mission in a list is `{id, name, phases` (how many)`,
 phase_names, phase_durations` (each phase's own length, in the same
 order)`, duration` (the whole mission)`, unit, result?}`. On an RBD: `GET /api/rbds/{id}/missions`, `POST
 /api/rbds/{id}/missions {name?, phases?}`, `GET|PUT|DELETE
