@@ -60,7 +60,7 @@ const MaintainabilityNewPage = lazy(() => import("./views/MaintainabilityNewPage
 const MaintainabilityPage = lazy(() => import("./views/MaintainabilityPage.jsx"));
 const MaintenanceOrders = lazy(() => import("./views/MaintenanceOrders.jsx"));
 const MaintenancePackages = lazy(() => import("./views/MaintenancePackages.jsx"));
-const MaintenancePackage = lazy(() => import("./views/MaintenancePackages.jsx").then((m) => ({ default: m.MaintenancePackage })));
+const MaintenancePackage = lazy(() => import("./views/MaintenancePackage.jsx"));
 const RcmHome = lazy(() => import("./views/RcmHome.jsx"));
 const RcmStudyPage = lazy(() => import("./views/RcmStudyPage.jsx"));
 const MaintenanceAssets = lazy(() => import("./views/MaintenanceAssets.jsx"));

@@ -3404,6 +3404,16 @@ export function addPackageTask(id, body) {
 export function removePackageTask(id, taskId) {
   return request(`/api/maintenance/packages/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
 }
+// Change a package: name, timing (timing, every, unit, weekday, nth, day, clear_pattern),
+// tolerance (tolerance, tolerance_unit; 0 removes it), trade, notes, or its tasks' visit
+// rules (tasks: [{task_id, visit_rule, every_nth?, suppresses}]). Answers the package.
+export function updatePackage(id, body) {
+  return request(`/api/maintenance/packages/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+}
 // change: pause ({reason, until?, full_visit?}), resume, retire ({reason?}) or restore.
 export function changePackage(id, change, body = {}) {
   return postJson(`/api/maintenance/packages/${encodeURIComponent(id)}/${change}`, body);
