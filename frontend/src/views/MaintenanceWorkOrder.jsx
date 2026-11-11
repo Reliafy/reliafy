@@ -19,6 +19,7 @@ import { actionKinds, closeActionKind, defaultCloseKind, itemAtText, subjectPath
 import "./Maintenance.css";
 import { tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
+import { ORDERS_LABEL, ORDERS_PATH } from "../navigation.js";
 
 const STATUS_LABELS = {
   open: "open", planned: "planned", in_progress: "in progress", waiting: "waiting", closed: "closed", cancelled: "cancelled",
@@ -52,14 +53,14 @@ export default function MaintenanceWorkOrder() {
   // what was typed (a functional update, so it can't race a keystroke after a Record or a checklist tick).
   useEffect(() => { if (wo) setValues((prev) => mergeValues(readingRows(wo), prev)); }, [wo]);
 
-  if (error && !wo) return <div className="app"><LoadFailed header error={error} notFound="Work order not found." to="/maintenance" label="Back to Maintenance" /></div>;
+  if (error && !wo) return <div className="app"><LoadFailed header error={error} notFound="Work order not found." to={ORDERS_PATH} label="Back to Orders" /></div>;
   if (!wo) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   return (
     <div className="app">
       <PageTitle name={wo && `#${wo.number} ${wo.title}`} />
       <PageHeader
-        crumbs={[{ label: "Maintenance", to: "/maintenance" },
+        crumbs={[{ label: ORDERS_LABEL, to: ORDERS_PATH },
           ...(wo.subject ? [{ label: wo.subject.name, to: subjectPath(wo.subject) }] : [])]}
         title={`#${wo.number} ${wo.title}`}
         meta={[wo.type, STATUS_LABELS[wo.status] || wo.status, `opened ${fmtDate(wo.opened)}`, wo.due && `due ${fmtDate(wo.due)}`,

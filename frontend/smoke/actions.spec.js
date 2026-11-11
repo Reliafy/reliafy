@@ -561,7 +561,7 @@ test("the empty tree offers only the Survey quadcopter; it opens on the RCM tab,
 });
 
 // Maintenance on a phone: a task named with one unbreakable code (as imported
-// ones often are) widens the "Due in the next 30 days" table, which then
+// ones often are) widens Orders' Due soon table, which then
 // scrolls inside its card; the page itself never scrolls sideways.
 test("Maintenance at 400 px: a wide due table scrolls in its card, not the page", async ({ page, request, problems }) => {
   const tag = `${Date.now() % 1000000}`;
@@ -569,7 +569,7 @@ test("Maintenance at 400 px: a wide due table scrolls in its card, not the page"
   await postOk(request, `/api/maintenance/positions/${p.id}/tasks`,
                { name: `PM_WEEKLY_LUBRICATION_CHECK_GEARBOX_BEARINGS_${tag}`, interval: 1, unit: "days", outcome: "on_condition" });
   await page.setViewportSize({ width: 400, height: 860 });
-  await open(page, "/maintenance");
+  await open(page, "/maintenance/work-orders?tab=due");
   const row = page.getByRole("row", { name: new RegExp(`PM_WEEKLY_LUBRICATION_CHECK_GEARBOX_BEARINGS_${tag}`) });
   await expect(row).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);

@@ -27,6 +27,7 @@ import WhatChangedPanel, { ChangeList } from "../components/WhatChanged.jsx";
 import UnsavedFitReminder from "../components/UnsavedFitReminder.jsx";
 import PlaceholderRows from "../components/PlaceholderRows.jsx";
 import { partsPath } from "../redirects.js";
+import { ORDERS_PATH, ordersPath } from "../maintenanceOrders.js";
 
 // A list that can't be read counts as empty: Home is a summary, and each
 // section's own page reports its errors.
@@ -36,7 +37,7 @@ const CARD_ROWS = 5;
 
 // What a Maintenance card says when its work couldn't be read: not "nothing
 // due", which would be a guess.
-const NO_OVERVIEW = <>Couldn't load the maintenance work. <Link to="/maintenance">Open Maintenance</Link> to see it.</>;
+const NO_OVERVIEW = <>Couldn't load the maintenance work. <Link to={ORDERS_PATH}>Open Maintenance</Link> to see it.</>;
 
 // One of Home's lists: a heading (with a link to the whole list, or a note),
 // then rows in the "What changed" style, or `empty` when there are none.
@@ -142,15 +143,15 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has }) {
       if (!has.maintenance) return null;
       const due = dueRows(maintenance);
       return (
-        <HomeList id={id} title="Due and at risk" all={{ to: "/maintenance", label: "Maintenance" }}
+        <HomeList id={id} title="Due and at risk" all={{ to: ordersPath("due"), label: "Maintenance" }}
                   rows={first(due)} loading={maintenance === undefined}
                   empty={maintenance ? "Nothing due in the next 30 days." : NO_OVERVIEW}>
           {maintenance && (
             <Figures items={[
-              { label: "overdue", n: (maintenance.due || []).filter((t) => t.overdue).length, to: "/maintenance", alert: true },
-              { label: "due in 30 days", n: (maintenance.due || []).length, to: "/maintenance" },
+              { label: "overdue", n: (maintenance.due || []).filter((t) => t.overdue).length, to: ordersPath("due"), alert: true },
+              { label: "due in 30 days", n: (maintenance.due || []).length, to: ordersPath("due") },
               { label: "critical spares short", n: (maintenance.critical_spares || []).length, to: partsPath(), alert: true },
-              { label: "changes proposed", n: (maintenance.proposals || []).length, to: "/maintenance" },
+              { label: "changes proposed", n: (maintenance.proposals || []).length, to: ORDERS_PATH },
             ]} />
           )}
         </HomeList>
@@ -161,7 +162,7 @@ function RoleCard({ card, recent, attention, maintenance, rcm, has }) {
       const open = maintenance?.open_work_orders || [];
       return (
         <HomeList id={id} title="Today's work orders"
-                  all={{ to: "/maintenance", label: maintenance ? `All ${open.length} open` : "Maintenance" }}
+                  all={{ to: ORDERS_PATH, label: maintenance ? `All ${open.length} open` : "Maintenance" }}
                   rows={first(workTodayRows(maintenance))} loading={maintenance === undefined}
                   empty={!maintenance ? NO_OVERVIEW : open.length ? "Nothing due today." : "No open work orders."} />
       );

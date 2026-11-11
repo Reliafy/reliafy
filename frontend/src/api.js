@@ -2288,12 +2288,16 @@ export function getMaintenanceTree() {
   return request("/api/maintenance/tree");
 }
 
-// Work orders, newest first: status "open" for every one not yet done; locationId for
-// those on positions at that location or a location inside it.
-export function listMaintenanceWorkOrders({ status, locationId } = {}) {
+// Work orders, newest first: status "open" for every one not yet done (most overdue
+// first), "done" for the closed and cancelled ones; locationId for those on positions
+// at that location or a location inside it; query to search them; limit for the first
+// so many ({work_orders, total}).
+export function listMaintenanceWorkOrders({ status, locationId, query, limit } = {}) {
   const q = new URLSearchParams();
   if (status) q.set("status", status);
   if (locationId) q.set("location_id", locationId);
+  if (query && query.trim()) q.set("q", query.trim());
+  if (limit) q.set("limit", String(limit));
   const qs = q.toString();
   return request(`/api/maintenance/work-orders${qs ? `?${qs}` : ""}`);
 }
@@ -2403,6 +2407,11 @@ export function placeMaintenanceItem(itemId, locationId) {
 
 export function openWorkOrder(body) {
   return postJson("/api/maintenance/work-orders", body);
+}
+
+// The tasks falling due within the window (overdue ones too), soonest first.
+export function listDueTasks(horizonDays = 30) {
+  return request(`/api/maintenance/due?horizon_days=${encodeURIComponent(horizonDays)}`);
 }
 
 export function generateWorkOrders(horizonDays = 30) {

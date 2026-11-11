@@ -551,3 +551,45 @@ button.maint-toggle {
 .pkg-ask { margin-top: 0; flex-wrap: wrap; }
 .pkg-ask input { flex: 1 1 12rem; min-width: 0; }
 .pkg-said { margin: 0; overflow-wrap: anywhere; }
+
+/* Maintenance › Orders and Packages. */
+/* The answer first, above the tabs: "3 open, 1 late by 4 days. …" */
+.maint-answer {
+  margin: 0.25rem 0 0.75rem;
+  font-size: var(--fs-15, 1rem);
+}
+.maint-filters { margin-top: 0; margin-bottom: 0.5rem; }
+/* The area picker shrinks to the bar (a long location name mustn't widen the page). */
+.maint-filters label { min-width: 0; max-width: 100%; }
+.maint-filters select { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+@media (max-width: 720px) {
+  .maint-filters label { flex: 1 1 100%; }
+  .maint-filters label select { flex: 1 1 auto; width: 0; }
+}
+.maint-subhead {
+  margin: 1rem 0 0.4rem;
+  font-size: var(--fs-14, 0.95rem);
+}
+.maint-nowrap { white-space: nowrap; }
+.maint-head.maint-wrap { flex-wrap: wrap; }
+.maint-create {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+/* A table row that doesn't open anything: spaced like a list's rows (.lib-row). */
+.lib-table tr.maint-plain-row td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line2);
+  font-size: var(--fs-14);
+  vertical-align: middle;
+}
+.maint-dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0;
+}
+.maint-dl dt { color: var(--muted); }
+.maint-dl dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }

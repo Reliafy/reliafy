@@ -176,16 +176,17 @@ test("switching roles in Settings: technician, then every role, then none", asyn
   const more = page.locator("#side-more");
   await expect(more.getByRole("button", { name: "Modelling", exact: true })).toBeVisible();
   await expect(more.getByRole("button", { name: "Decisions", exact: true })).toBeVisible();
-  // Maintenance has pages under it, so it opens its list in place: its own
-  // page is the first of them, then RCM studies.
+  // Maintenance has pages under it, so it opens its list in place: Orders
+  // (where it opens) first, then Packages and RCM studies.
   const maintenance = mainMenu(page).getByRole("button", { name: "Maintenance", exact: true });
   await maintenance.click();
   await expect(maintenance).toHaveAttribute("aria-expanded", "true");
   await expect(mainMenu(page).getByRole("link", { name: "RCM studies", exact: true })).toBeVisible();
-  await mainMenu(page).getByRole("link", { name: "Overview", exact: true }).click();
-  await expect(page).toHaveURL(/\/maintenance$/);
-  await expect(page.getByRole("heading", { name: "Open work orders" })).toBeVisible();
-  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Overview");
+  await expect(mainMenu(page).getByRole("link", { name: "Packages", exact: true })).toBeVisible();
+  await mainMenu(page).getByRole("link", { name: "Orders", exact: true }).click();
+  await expect(page).toHaveURL(/\/maintenance\/work-orders$/);
+  await expect(page.getByRole("tab", { name: "Open" })).toHaveAttribute("aria-selected", "true");
+  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Orders");
   // A page under More keeps More open, with that page lit.
   await open(page, "/models");
   await expect(page.locator("#side-more").getByRole("button", { name: "Models", exact: true }))
@@ -290,7 +291,7 @@ test("the collapsed menu and the keyboard", async ({ page, request, problems }) 
   await page.keyboard.press("Tab");
   await expect(mainMenu(page).getByRole("link", { name: "Maintenance" })).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/maintenance$/);
+  await expect(page).toHaveURL(/\/maintenance\/work-orders$/);
   // More opens and closes from the keyboard.
   await moreButton(page).focus();
   await page.keyboard.press("Enter");
@@ -359,7 +360,8 @@ for (const [width, phone] of [[400, true], [1440, false]]) {
 const PHONE_PAGES = [
   "/home", "/systems/rbds", "/asset-register", "/asset-register/explorer?arrange=positions", "/asset-register/explorer?arrange=locations",
   "/items", "/asset-register/explorer?tab=rcm", "/asset-register/parts",
-  "/asset-register/classes", "/products", "/maintenance", "/maintenance/rcm", "/data",
+  "/asset-register/classes", "/products", "/maintenance/work-orders", "/maintenance/work-orders?tab=due",
+  "/maintenance/work-orders?tab=closed", "/maintenance/packages", "/maintenance/rcm", "/data",
   "/models", "/models/recurrent", "/strategy", "/risk", "/forecasts", "/reports", "/settings",
 ];
 

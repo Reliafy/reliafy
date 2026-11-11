@@ -32,7 +32,7 @@ test("needs attention: worst first, samples left out, only contradicted evidence
   assert.equal(rows.find((r) => r.name === "Line 2").url, "/asset-register/explorer?arrange=positions&tab=rcm&sel=p1");
   assert.equal(rows.find((r) => r.name === "Pads").detail, "2 items to replace now");
   assert.equal(rows.find((r) => r.name === "Inspect").url, "/maintenance/work-orders/w9");
-  assert.equal(rows.find((r) => r.name === "Grease").url, "/maintenance");
+  assert.equal(rows.find((r) => r.name === "Grease").url, "/maintenance/work-orders?tab=due");
   assert.match(rows.find((r) => r.name === "Grease").detail, /^Due 20 Oct 2026 · no work order yet$/);
 });
 
@@ -65,14 +65,14 @@ test("needs attention: the rows not shown are linked to the pages that list them
   assert.deepEqual(attentionRest([]), []);
   assert.deepEqual(attentionRest(), []);
   // 35 due tasks, 6 shown: the rest are on Maintenance, named once.
-  assert.deepEqual(attentionRest(due(35)), [{ to: "/maintenance", label: "Maintenance" }]);
+  assert.deepEqual(attentionRest(due(35)), [{ to: "/maintenance/work-orders?tab=due", label: "Maintenance" }]);
   // Only the rows left out count: a shown alert doesn't add its page.
   assert.deepEqual(attentionRest([{ key: "alert-f1-x" }, ...due(ATTENTION_ROWS)]),
-    [{ to: "/maintenance", label: "Maintenance" }]);
+    [{ to: "/maintenance/work-orders?tab=due", label: "Maintenance" }]);
   // Mixed kinds left out: each page once, in the rows' order; alerts and RCM evidence share one.
   const mixed = [...due(ATTENTION_ROWS), { key: "track-f2" }, { key: "alert-f1-x" }, { key: "rcm-p1-m-u" }, { key: "due-z" }];
   assert.deepEqual(attentionRest(mixed).map((p) => [p.to, p.label]),
-    [["/risk", "Condition monitoring"], ["/changes", "What changed"], ["/maintenance", "Maintenance"]]);
+    [["/risk", "Condition monitoring"], ["/changes", "What changed"], ["/maintenance/work-orders?tab=due", "Maintenance"]]);
   // A smaller window, and a row of a kind with no page of its own.
   assert.deepEqual(attentionRest([{ key: "due-a" }, { key: "track-b" }], 1).map((p) => p.to), ["/risk"]);
   assert.deepEqual(attentionRest([{ key: "due-a" }, { key: "other-b" }], 1), []);

@@ -5,23 +5,38 @@ category: "Maintenance strategy"
 prerequisites: "A position in your asset tree with some tasks on it (from its RCM decisions, or added by hand)."
 order: 28
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
-# Maintenance page itself and stays out of the index until Maintenance opens.
+# Maintenance pages themselves and stays out of the index until Maintenance opens.
 hidden: true
 ---
 
-The **Maintenance** page is where the work is run. The RCM on your asset tree
-says what should be done and how often; this page shows what that means for the
-next month, and the work orders that carry it out.
+**Maintenance** opens on **Orders**, where the work is run. The RCM on your
+asset tree says what should be done and how often; Orders shows what that means
+in practice, and the work orders that carry it out. **Packages**, beside it,
+lists the work packages: tasks done together on one visit.
+
+The line above the tabs gives the answer first: how many work orders are open,
+how many are late, and how much is due soon.
+
+## Open work orders
+
+The **Open** tab lists what's still to do. Anything overdue comes first, the
+latest at the top, with how many days late it is. The rest follow by due date.
+A work order from a package shows how many of its lines are answered so far.
+
+Pick a location to see only the work there and in the places inside it, or a
+kind to see only the work raised by tasks, by packages or added by hand. Type
+in the search box to find one by its number, title or what it's on.
 
 ## What's due
 
-**Due in the next 30 days** lists every scheduled task coming due: the task,
-what it's on (a position, an item or a location), when it's due, and its work
-order if it has one. Type in the search box to find a task by its name or by
-what it's on.
+**Due soon** lists every scheduled task coming due in the next 7, 30 or 90
+days: the task, what it's on (a position, an item or a location), when it's
+due, and its work order if it has one. Tasks in a package are grouped under it;
+the rest come last, under "Not in a package".
 
-Tasks with no work order yet are counted in the button at the top of the card,
-**Create N work orders**. One click raises them all.
+**Create N work orders** raises what's missing in one click, and says what it
+will make: one work order for each package visit, and one for each task that
+isn't in a package.
 
 ## Open a work order
 
@@ -34,9 +49,6 @@ position's own page.
 A spreadsheet of past work (one row per item per position, with when it was
 fitted, removed or failed) goes in with **Import from a spreadsheet**. Every
 row is checked first; if any row is wrong, nothing is imported.
-
-**Open work orders** lists what's still to do. Pick a location to see only the
-work there and in the places inside it.
 
 ## Close it: say what was done
 
@@ -55,6 +67,20 @@ Change it to what really happened: **Replaced it**, **Repaired it**,
 one failed, and it ends the old item's time at the position. Add another
 action when you did more than one thing. Values filled in under **Readings and
 settings** are recorded when you close it.
+
+## Look back: closed work orders
+
+The **Closed** tab holds every closed and cancelled work order, newest first,
+with what was done on each. Search it by number, title, notes or what it was
+on.
+
+## Packages
+
+**Packages** lists each work package with what it's on, its timing in words
+("every Saturday"), its next visit (or its open visit, marked when late), how
+many tasks it holds and whether it's active or paused. Open one to see its
+tasks, its next visits and its recent work orders. Packages are made from the
+tasks on the Explorer's LSA tab: tick the tasks, then package them.
 
 ## Dates follow your time zone
 

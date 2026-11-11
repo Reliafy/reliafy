@@ -1908,12 +1908,27 @@ def create_location(body: dict = Body(...), m: Maintenance = Depends(maintenance
 # ---- work orders -------------------------------------------------------------------------
 
 @router.get("/work-orders")
-def list_work_orders(status: str | None = None, location_id: str | None = None,
-                     m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    """Work orders, newest first; status 'open' for every one not yet done; location_id for
-    the work in that area: on positions there, items there now, and the location itself (or
-    locations inside it)."""
-    return _run(lambda: {"work_orders": m.work_orders(status, location_id)})
+def list_work_orders(status: str | None = None, location_id: str | None = None, q: str | None = None,
+                     limit: int | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Work orders, newest first; status 'open' for every one not yet done (by due date,
+    the most overdue first), 'done' for the closed and cancelled ones with what was done;
+    location_id for the work in that area: on positions there, items there now, and the
+    location itself (or locations inside it); q to search them; limit for the first so many
+    (total: how many matched)."""
+    def read():
+        found = m.work_orders(status, location_id, q)
+        cap = None if limit is None else max(1, min(limit, 1000))
+        return {"work_orders": found if cap is None else found[:cap], "total": len(found)}
+    return _run(read)
+
+
+@router.get("/due")
+def due_tasks(horizon_days: int = 30, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The tasks falling due within the horizon (overdue ones too), soonest first: each with
+    its due date (an open work order's own when it has one), its package and open work order."""
+    days = max(0, min(horizon_days, 366))
+    return _run(lambda: {"due": m.due_tasks(days), "horizon_days": days, "today": m.today(),
+                         "time_zone": m.time_zone})
 
 
 @router.post("/work-orders")

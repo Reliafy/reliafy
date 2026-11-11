@@ -84,6 +84,8 @@ ACTION_KINDS = ("replace", "repair", "inspect", "other")
 FINDINGS = ("ok", "degraded", "found_failed")
 WORK_ORDER_TYPES = ("preventive", "corrective", "inspection", "other")
 OPEN_STATUSES = ("open", "planned", "in_progress", "waiting")
+# A work order that is finished with: the history.
+DONE_STATUSES = ("closed", "cancelled")
 END_REASONS = ("failure", "planned", "other")
 # Where a task added by hand comes from: the maker's manual, a law or standard,
 # the organisation's own practice, or something else. (A task from an RCM
@@ -13651,6 +13653,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # A work package's: its visit, and how late it is while open.
             out["package"] = {"id": raised[0]["id"], "name": raised[0]["name"]}
             out["visit_on"] = w.get("visit_on")
+            # How far through its lines it is ("13 of 29"): each task line answered, done or not.
+            task_lines = [c for c in w.get("checklist") or [] if c.get("task_id") and not c.get("step")]
+            out["lines_answered"] = sum(1 for c in task_lines if self._line_state(c) != "todo")
+            out["lines_total"] = len(w.get("lines") or [])
             if w["status"] in OPEN_STATUSES:
                 out |= self._lateness(raised[0], w["visit_on"], self._tolerance_days(raised[0]), self.today())
         # Open with its due date passed (the same rule as its task's row, and every count).
@@ -13686,18 +13692,35 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return {"lines": lines, "line_positions": positions, "released": released,
                 "visit_number": w.get("visit_number"), "covers_to": w.get("covers_to")}
 
-    def work_orders(self, status: str | None = None, location_id: str | None = None) -> list[dict]:
+    def work_orders(self, status: str | None = None, location_id: str | None = None,
+                    q: str | None = None) -> list[dict]:
         """Work orders, newest first. status 'open' means every not-yet-done status, and
         lists them by due date instead, the most overdue first (those with no due date
-        last; the lower number first on a tie): each carries overdue.
+        last; the lower number first on a tie): each carries overdue. status 'done':
+        closed and cancelled together (the history), each with what was done (done:
+        its actions' kind and finding).
         location_id: only the work in that area (at that location or a location inside
         it): on positions there, on items there now (fitted or placed), and on the
-        location itself or one inside it."""
+        location itself or one inside it.
+        q: only those whose number, title, notes or what they're on contain it (any case)."""
         def keep(w):
             if not status:
                 return True
-            return w["status"] in OPEN_STATUSES if status == "open" else w["status"] == status
+            if status == "open":
+                return w["status"] in OPEN_STATUSES
+            if status == "done":
+                return w["status"] in DONE_STATUSES
+            return w["status"] == status
         wos = [w for w in self.s.nodes(self.org, "WorkOrder") if keep(w)]
+        needle = (q or "").strip().lower()
+        if needle:
+            def found(w):
+                subject = self.s.out(self.org, w["id"], "ON")
+                text = " ".join(str(x) for x in (
+                    w["number"], w.get("title"), w.get("notes"), w.get("close_notes"), w.get("cancel_reason"),
+                    subject and subject[0].get("name"), subject and subject[0].get("tag")) if x)
+                return needle in text.lower() or needle.lstrip("#") == str(w["number"])
+            wos = [w for w in wos if found(w)]
         if location_id:
             self._get(location_id, "Location")
             inside = set(self._location_ids_in(location_id))
@@ -13711,7 +13734,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             wos = sorted(wos, key=lambda w: (w.get("due") or "9999-12-31", w["number"]))
         else:
             wos = sorted(wos, key=lambda w: w["number"], reverse=True)
-        return [self._wo_brief(w) for w in wos]
+        out = [self._wo_brief(w) for w in wos]
+        if status == "done":
+            for row in out:
+                # What was done, for the history's list ("Checked, nothing done", "Replaced").
+                row["done"] = [{"kind": a["kind"], "finding": a.get("finding")}
+                               for a in sorted(self.s.out(self.org, row["id"], "INCLUDES"), key=lambda a: a["on"])]
+        return out
 
     def work_order(self, id: str) -> dict:
         """A work order in full. On a position: the item fitted there and its failure
