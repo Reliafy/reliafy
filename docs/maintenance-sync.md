@@ -104,3 +104,22 @@ the body (or multipart field `file`). The photo's id is worked out from the
 op's id, so the image is stored once however often it is sent. Once it has
 been recorded, a resend may leave the body out. The answer is
 `{op, photo, work_orders, points, server_time, …}`.
+
+## The pack: what to take offline
+
+```
+POST /api/v1/maintenance/sync/pack     {"work_order_ids": [...]?, "if_mark": N?}
+```
+
+One answer with what a device needs to do its work with no connection (`read`
+scope): every open work order in full, the most overdue first (at most 200;
+`more` says some were left out), or just the ones named. A work order in full
+is the view the app's own page reads: its position and location, tasks,
+checklist and instructions, the points to read with their last readings,
+failure modes and suggested parts. `briefs` are the list rows, `parts` the
+catalogue (number, name, unit) for "part used", `gone` the named ids that no
+longer exist.
+
+`mark` counts the workspace's changes. Send it back as `if_mark`: when nothing
+has changed the answer is `{"unchanged": true, …}` and the device keeps what
+it has.

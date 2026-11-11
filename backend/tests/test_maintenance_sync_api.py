@@ -104,7 +104,49 @@ def test_the_routes_are_in_the_spec_and_listing_for_maintenance_users_only(maint
     assert spec_a["paths"][PUSH]["post"]["x-reliafy-rest-only"] is True and PHOTO in spec_a["paths"]
     assert PUSH not in spec_b["paths"] and PHOTO not in spec_b["paths"]
     names = lambda token: {r["name"] for r in maint.client.get("/api/v1/tools", headers=_auth(token)).json()["rest_only"]}
-    assert {"maintenance_sync.push", "maintenance_sync.photo"} <= names(maint.token[A])
+    assert {"maintenance_sync.push", "maintenance_sync.photo", "maintenance_sync.pack"} <= names(maint.token[A])
     assert not any(n.startswith("maintenance_sync") for n in names(maint.token[B]))
     assert all("maintenance" not in r for r in
                maint.client.get("/api/v1/tools", headers=_auth(maint.token[A])).json()["rest_only"])
+
+
+def test_a_pack_is_the_open_work_orders_in_full_in_one_answer(maint):
+    PACK = "/api/v1/maintenance/sync/pack"
+    pos, wo = _job(maint)
+    point = maint.post("/api/v1/maintenance/measurements.add_point",
+                       {"position_id": pos["id"], "name": "Run hours", "kind": "counter", "unit": "hours"})
+    assert point.status_code == 200, point.text
+    maint.post("/api/v1/maintenance/measurements.record", {"point_id": point.json()["id"], "value": 120})
+    done = maint.post("/api/v1/maintenance/work_orders.open", {"position_id": pos["id"], "title": "Old job"}).json()
+    maint.post("/api/v1/maintenance/work_orders.close", {"work_order_id": done["id"], "actions": [{"kind": "repair"}]})
+    maint.post("/api/v1/maintenance/parts.create", {"part_number": "GP-12", "name": "Gland packing"})
+
+    r = maint.post(PACK, {})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["unchanged"] is False and out["more"] is False and out["gone"] == []
+    assert [b["id"] for b in out["briefs"]] == [wo["id"]] == [w["id"] for w in out["work_orders"]]
+    full = out["work_orders"][0]
+    assert full["position"]["id"] == pos["id"] and "checklist" in full and "failure_modes" in full
+    assert [(p["name"], p["reading"]) for p in full["measurements"]] == [("Run hours", 120)]
+    assert [p["part_number"] for p in out["parts"]] == ["GP-12"]
+    assert out["today"] and out["server_time"].endswith("Z") and isinstance(out["mark"], int)
+
+    # Nothing has changed: a cheap answer. Anything changes: the pack again.
+    assert maint.post(PACK, {"if_mark": out["mark"]}).json() == {
+        "unchanged": True, **{k: maint.post(PACK, {"if_mark": out["mark"]}).json()[k]
+                              for k in ("mark", "server_time", "today", "time_zone")}}
+    maint.post("/api/v1/maintenance/work_orders.update", {"work_order_id": wo["id"], "append_note": "Hello"})
+    again = maint.post(PACK, {"if_mark": out["mark"]}).json()
+    assert again["unchanged"] is False and again["mark"] > out["mark"]
+    assert again["work_orders"][0]["notes"].endswith("Hello")
+
+    # Named jobs: a closed one comes too (the phone shows that it was closed); an unknown one is "gone".
+    named = maint.post(PACK, {"work_order_ids": [done["id"], "nope", wo["id"]]}).json()
+    assert [w["status"] for w in named["work_orders"]] == ["closed", "open"] and named["gone"] == ["nope"]
+    assert [b["id"] for b in named["briefs"]] == [wo["id"]]
+
+    assert maint.post(PACK, {"work_order_ids": "all"}).status_code == 422
+    assert maint.client.post(PACK, json={}).status_code == 401
+    assert maint.post(PACK, {}, uid=B).status_code == 404
+    assert maint.post(PACK, {}, token=maint.read_only).status_code == 200     # a read
