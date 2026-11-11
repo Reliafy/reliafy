@@ -274,14 +274,21 @@ def summary(graph: dict, mission: dict, results: Optional[dict] = None) -> dict:
     got = (results or {}).get(mission["id"])
     if isinstance(got, dict) and got.get("signature") == signature(graph, phases):
         out["result"] = {k: got.get(k) for k in ("reliability", "method", "complete", "at", "through")}
+        if got.get("placeholders"):  # the blocks it rests on a placeholder for, and the figure without them
+            out["result"]["placeholders"] = list(got["placeholders"])
+            out["result"]["without_placeholders"] = got.get("without_placeholders")
     return out
 
 
 def result_record(graph: dict, phases: list, result: dict) -> dict:
     """What's kept of a calculation on the RBD (``mission_results.<id>``) for the lists."""
-    return {"signature": signature(graph, phases), "reliability": result.get("reliability"),
-            "method": result.get("method"), "complete": not result.get("needs"),
-            "through": result.get("through"), "at": datetime.now(timezone.utc).isoformat()}
+    out = {"signature": signature(graph, phases), "reliability": result.get("reliability"),
+           "method": result.get("method"), "complete": not result.get("needs"),
+           "through": result.get("through"), "at": datetime.now(timezone.utc).isoformat()}
+    if result.get("placeholders"):
+        out["placeholders"] = [p["label"] for p in result["placeholders"]]
+        out["without_placeholders"] = (result.get("without_placeholders") or {}).get("reliability")
+    return out
 
 
 # ---- the covariates a mission's phases can set ------------------------------------------------
@@ -538,6 +545,7 @@ def analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None
         last = out["phases"][-1]
         out["through"] = {"phase": last["name"], "reliability": last["reliability_at_end"]}
         out["reliability"] = out["unreliability"] = out["riskiest"] = None
+        out["without_placeholders"] = None
         out.pop("interval", None)
         out["phases"] += [_waiting(p, s) for p, s in zip(clean[gap:], starts[gap:])]
         out["needs"] = needs
@@ -555,7 +563,7 @@ def _waiting(phase: dict, start: float) -> dict:
 
 def detail(db, owner_id, graph: dict, mission: dict, inputs_for: Optional[Callable] = None) -> dict:
     """A mission with what its phases can set: {mission, unit, blocks (those a phase can do
-    without), votes (vote nodes, the inputs feeding each and the count drawn), covariates (the rows
+    without; ``placeholder`` true for one with no model, a placeholder standing in), votes (vote nodes, the inputs feeding each and the count drawn), covariates (the rows
     of :func:`gather`), problems, phases: [{name, covariates: phase_rows, needs (block labels)}]}."""
     inputs_for = _inputs_cache(inputs_for or (lambda b: cb.inputs_of(b, db, owner_id)))
     got = gather(graph, inputs_for)
@@ -563,7 +571,9 @@ def detail(db, owner_id, graph: dict, mission: dict, inputs_for: Optional[Callab
     feeding: dict = {}
     for e in (graph or {}).get("edges") or []:
         feeding[e.get("target")] = feeding.get(e.get("target"), 0) + 1
-    blocks = [{"id": n.get("id"), "label": (n.get("data") or {}).get("label") or n.get("id")}
+    guessed = set(rbd_phases.placeholder_ids(graph or {}))
+    blocks = [{"id": n.get("id"), "label": (n.get("data") or {}).get("label") or n.get("id"),
+               "placeholder": n.get("id") in guessed}
               for n in nodes if n.get("type") not in ("input", "output", "knode")
               and not (n.get("data") or {}).get("repeat_of")]
     votes = [{"id": n.get("id"), "label": (n.get("data") or {}).get("label") or "Vote node",

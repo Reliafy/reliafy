@@ -58,7 +58,7 @@ export function parseMissionParam(value) {
 export const MISSION_COLUMNS = [
   { id: "phases", label: "Phases", width: 230, title: "How many phases, and their names" },
   { id: "duration", label: "Length", width: 130, num: true, title: "A phase's own length; a mission's is every phase added up. In the RBD's unit" },
-  { id: "reliability", label: "Completes", width: 150, num: true, title: "The chance the mission completes, once worked out" },
+  { id: "reliability", label: "Completes", width: 190, num: true, title: "The chance the mission completes, once worked out" },
   { id: "rbd", label: "RBD", width: 200, title: "The diagram the mission is flown on" },
 ];
 export const MISSION_TREE_HEAD = "Position, and its missions";
@@ -469,6 +469,38 @@ export function phaseLine(phase, { blocks = [], votes = [] } = {}) {
   return parts.join(" · ");
 }
 
+// ---- blocks with no model (a placeholder stands in) --------------------------------------------
+
+const listed = (names) => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
+
+// What a result that rests on placeholders has to say, or null when every block it needs has a
+// model: {n, of, names, count ("3 of 5 blocks have no model"), list ("Battery, … and Fuel
+// system"), without (the chance with those blocks left out; null when there is none to give)}.
+// `result`: a calculation (placeholders: [{id, label}], blocks) or a list row's kept result
+// (placeholders: [labels], without_placeholders: the number).
+export function placeholderWarning(result) {
+  const names = (result?.placeholders || []).map((p) => (typeof p === "string" ? p : p.label));
+  if (!names.length) return null;
+  const n = names.length;
+  const of = Number(result.blocks) || null;
+  const w = result.without_placeholders;
+  const without = w == null ? null : typeof w === "number" ? w : w.reliability ?? null;
+  const count = of && of > n ? `${n} of ${of} blocks have no model` : of === n && n > 1 ? `none of the ${n} blocks has a model`
+    : n === 1 ? (of === 1 ? "the block has no model" : "1 block has no model") : `${n} blocks have no model`;
+  return { n, of, names, count, list: listed(names), without: result.reliability == null ? null : without };
+}
+// The Completes cell's hover for a mission worked out on placeholders.
+export function placeholderTitle(result) {
+  const ph = placeholderWarning(result);
+  if (!ph) return "";
+  return `Not a real figure: ${ph.list} ${ph.n === 1 ? "has" : "have"} no model, so a placeholder stands in.`
+    + (ph.without != null ? ` Without ${ph.n === 1 ? "it" : "them"}: ${pct(ph.without)}.` : "");
+}
+// Every phase with the placeholder blocks Not needed (left out of the mission): the rows to keep.
+export function leaveOut(rows, ids) {
+  return rows.map((r) => ids.reduce((p, id) => ({ ...p, ...withBlockState(p, id, "off") }), r));
+}
+
 // The answer in words, first: "The mission completes with probability 98.2%. Survey is the
 // riskiest phase." Or, waiting on values: "Worked out to the end of Take-off (99.9%); Cruise needs
 // values first."
@@ -476,6 +508,8 @@ export function answerText(result) {
   if (!result) return "";
   if (result.reliability != null) {
     const risky = result.riskiest && (result.phases || []).length > 1 ? ` ${result.riskiest.name} is the riskiest phase.` : "";
+    const ph = placeholderWarning(result);
+    if (ph) return `Not a real figure yet: ${ph.count}. With a placeholder standing in for ${ph.n === 1 ? "it" : "each"}, the mission completes with probability ${pct(result.reliability)}.`;
     return `The mission completes with probability ${pct(result.reliability)}.${risky}`;
   }
   const waiting = (result.phases || []).filter((p) => p.waiting).map((p) => p.name);

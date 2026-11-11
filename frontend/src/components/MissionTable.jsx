@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listPositionMissions } from "../api.js";
 import Chip from "./ui/Chip.jsx";
-import { completesText, isPhaseRow, latestOnly, lengthText, phaseLengthText, phaseOfText, phasesText } from "../explorerMissions.js";
+import { completesText, isPhaseRow, latestOnly, lengthText, phaseLengthText, phaseOfText, phasesText, placeholderTitle } from "../explorerMissions.js";
 
 // The Explorer's Missions tab is the tree with each position's missions in it
 // (explorerMissions.js), like the Modelling tab: the read of every position's RBD missions, each
@@ -45,9 +45,12 @@ export function MissionCell({ r, col }) {
     case "reliability": {
       const text = completesText(m);
       if (!m.result) return <span className="rw-blank" title="Open it and Calculate">—</span>;
-      return m.result.reliability != null
-        ? <span className="ml-num" title="The chance the mission completes">{text}</span>
-        : <Chip tone="warning" title={text}>Needs values</Chip>;
+      if (m.result.reliability == null) return <Chip tone="warning" title={text}>Needs values</Chip>;
+      // Worked out on placeholders: the figure is shown as what it is, never alone.
+      if (m.result.placeholders?.length) {
+        return <Chip tone="warning" title={placeholderTitle(m.result)}>{text} · placeholders</Chip>;
+      }
+      return <span className="ml-num" title="The chance the mission completes">{text}</span>;
     }
     case "rbd":
       return <span className="ml-src" title={r.ref.rbd.name}>{r.ref.rbd.name}</span>;
@@ -64,7 +67,8 @@ export function missionPhoneRow(r, rollup) {
   const done = m.result?.reliability != null;
   return {
     line: [phasesText(m), m.phases ? lengthText(m.duration, m.unit) : null].filter(Boolean).join(" · "),
-    status: done ? <Chip tone="neutral" title="The chance the mission completes">{completesText(m)}</Chip>
+    status: done && m.result.placeholders?.length ? <Chip tone="warning" title={placeholderTitle(m.result)}>{completesText(m)} · placeholders</Chip>
+      : done ? <Chip tone="neutral" title="The chance the mission completes">{completesText(m)}</Chip>
       : m.result ? <Chip tone="warning">Needs values</Chip> : null,
   };
 }

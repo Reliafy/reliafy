@@ -635,8 +635,10 @@ def analyze_phases(
         out["interval"] = interval
     if reason:
         out["method_reason"] = reason
+    guessed = _add_placeholders(out, graph, resolve_subsystem, resolve_model, covariates, phases, built, labels)
     if weakest:
-        _add_weakest(out, graph, resolve_subsystem, resolve_model, covariates, phases, built, labels)
+        _add_weakest(out, graph, resolve_subsystem, resolve_model, covariates, phases, built, labels,
+                     skip=frozenset(guessed))
     return out
 
 
@@ -655,18 +657,79 @@ def _candidates(graph: dict, built: tuple) -> list[str]:
     return out
 
 
+PLACEHOLDER_NOTE = ("{names} {have} no model: a placeholder life stands in, so the result is not a real figure "
+                    "until {they} {have} one.")
+WEAKEST_PLACEHOLDER_NOTE = ("The weakest block in each phase is the weakest of the blocks with a model: a block "
+                            "with a placeholder isn't ranked.")
+
+
+def placeholder_ids(graph: dict) -> list[str]:
+    """The blocks whose model is a placeholder (a guessed life standing in for none)."""
+    return [n.get("id") for n in graph.get("nodes") or []
+            if isinstance((n.get("data") or {}).get("model"), dict) and n["data"]["model"].get("placeholder")]
+
+
+def _add_placeholders(out: dict, graph: dict, resolve_subsystem, resolve_model, covariates, phases, built,
+                      labels) -> list[str]:
+    """Say which blocks the result rests on a placeholder for, and what it is without them.
+
+    ``placeholders``: the blocks with a placeholder model that some phase needs ({id, label});
+    ``placeholders_left_out``: those no phase needs (Not needed throughout: they don't touch the
+    result); ``blocks``: how many blocks can fail; ``without_placeholders``: the mission with
+    every placeholder block never failing ({reliability, unreliability}; None where that can't be
+    worked out exactly). Returns the placeholder ids that count."""
+    blocks = _candidates(graph, built)
+    out["blocks"] = len(blocks)
+    guessed = [nid for nid in placeholder_ids(graph) if nid in set(blocks)]
+    never = set.intersection(*(set(p.get("not_needed", [])) for p in phases)) if phases else set()
+    counted = [nid for nid in guessed if nid not in never]
+    out["placeholders"] = [{"id": nid, "label": labels.get(nid, nid)} for nid in counted]
+    out["placeholders_left_out"] = [{"id": nid, "label": labels.get(nid, nid)} for nid in guessed if nid in never]
+    out["without_placeholders"] = None
+    if not counted:
+        return counted
+    # With no block left that has a model, "without them" would be a certain 100%: not a figure.
+    if len(guessed) < len(blocks) and out["method"] == "exact":
+        try:
+            mission, _, _, _ = build_mission(graph, resolve_subsystem, resolve_model, covariates, phases=phases,
+                                             perfect=frozenset(counted), built=built)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                r = float(mission.reliability())
+            out["without_placeholders"] = {"reliability": r, "unreliability": 1.0 - r}
+        except (AnalysisError, NotImplementedError, ValueError):
+            pass
+    return counted
+
+
+def placeholder_note(result: dict) -> Optional[str]:
+    """The sentence that goes with a result resting on placeholders, or None."""
+    names = [p["label"] for p in result.get("placeholders") or []]
+    if not names:
+        return None
+    one = len(names) == 1
+    text = PLACEHOLDER_NOTE.format(names=", ".join(names), have="has" if one else "have", they="it" if one else "they")
+    without = (result.get("without_placeholders") or {}).get("reliability")
+    if without is not None and result.get("reliability") is not None:
+        text += f" With {'that block' if one else 'those blocks'} left out, the mission's reliability is {without:.4g}."
+    return text
+
+
 def _add_weakest(out: dict, graph: dict, resolve_subsystem, resolve_model, covariates, phases, built,
-                 labels) -> None:
+                 labels, skip: frozenset = frozenset()) -> None:
     """Each phase's weakest block: the one whose failures end the most missions in that phase. For
     each block, the mission is worked out again with that block never failing; the fall in the
     chance of failing in each phase is the block's part in it (those parts add up, over the phases,
-    to how much the mission's reliability would rise). Exact missions only."""
+    to how much the mission's reliability would rise). Exact missions only. ``skip``: blocks not
+    ranked (those with a placeholder model: a guessed life is never named the weakest)."""
     rows = out["phases"]
     if out["method"] != "exact" or out["unreliability"] <= 0:
         if out["method"] != "exact":
             out["weakest_note"] = "The weakest block per phase is worked out for missions solved exactly."
         return
-    blocks = _candidates(graph, built)
+    blocks = [nid for nid in _candidates(graph, built) if nid not in skip]
+    if skip:
+        out["weakest_note"] = WEAKEST_PLACEHOLDER_NOTE
     if len(blocks) > MAX_WEAKEST_BLOCKS:
         out["weakest_note"] = (f"The weakest block per phase is worked out for up to {MAX_WEAKEST_BLOCKS} blocks; "
                                f"this diagram has {len(blocks)}.")
@@ -724,6 +787,13 @@ def agent_summary(result: dict) -> dict:
         out["interval"] = result["interval"]
     if result.get("method_reason"):
         out["notes"].insert(0, result["method_reason"])
+    note = placeholder_note(result)
+    if note:
+        out["placeholders"] = [p["label"] for p in result["placeholders"]]
+        without = (result.get("without_placeholders") or {}).get("reliability")
+        if without is not None and result.get("reliability") is not None:
+            out["mission_reliability_without_placeholders"] = without
+        out["notes"].insert(0, note)
     return out
 
 

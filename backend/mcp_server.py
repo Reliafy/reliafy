@@ -4958,7 +4958,9 @@ def analyse_rbd_mission(
             try:
                 got = rbd_missions.analyze(db, owners, graph, m["phases"], weakest=False)
                 rows.append({**rbd_missions.summary(graph, m), "mission_reliability": got["reliability"],
-                             **({"needs": got["needs"]} if got.get("needs") else {})})
+                             **({"needs": got["needs"]} if got.get("needs") else {}),
+                             **({"placeholders": [p["label"] for p in got["placeholders"]],
+                                 "note": rbd_phases.placeholder_note(got)} if got.get("placeholders") else {})})
             except AnalysisError as exc:
                 rows.append({**rbd_missions.summary(graph, m), "message": str(exc)})
         return {"rbd_id": rbd.id, "name": rbd.name, "unit": graph.get("unit") or "", "missions": rows,
