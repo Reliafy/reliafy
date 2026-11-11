@@ -593,6 +593,15 @@ button.maint-toggle {
 }
 .maint-dl dt { color: var(--muted); }
 .maint-dl dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+/* A heading row across the list ("Each visit needs"), then its rows as the rest. */
+.maint-dl .maint-dl-head {
+  grid-column: 1 / -1;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line2);
+  color: var(--text, inherit);
+  font-weight: 600;
+}
 
 /* A work package's own page: the content, and Edit in a pane beside it. */
 .pkg-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
