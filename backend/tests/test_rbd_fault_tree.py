@@ -131,12 +131,27 @@ def test_default_time_is_the_calculators_importance_time():
     res = fault_tree(graph)
     t_rep = analysis["importance"]["time"]
     assert res["t"] == pytest.approx(t_rep) and res["t_default"] == pytest.approx(t_rep)
-    sf = analysis["system"]["sf"][analysis["time"].index(t_rep)]
-    assert res["top_event_probability"] == pytest.approx(1.0 - sf, abs=1e-12)
+    # The one default: the time the system reliability falls to 90%, exactly.
+    assert analysis["importance"]["time_basis"] == "reliability_90"
+    assert res["t_default_basis"] == res["t_basis"] == "reliability_90"
+    assert analysis["importance"]["reliability"] == pytest.approx(0.9, abs=1e-9)
+    assert res["top_event_probability"] == pytest.approx(0.1, abs=1e-9)
     # A chosen time moves the evaluation but not the default.
     later = fault_tree(graph, t=2 * t_rep)
     assert later["t_default"] == pytest.approx(t_rep)
+    assert later["t_basis"] == "given" and later["t_default_basis"] == "reliability_90"
     assert later["top_event_probability"] > res["top_event_probability"]
+
+
+def test_a_time_given_to_the_calculator_is_the_fault_trees_time_too():
+    """The calculator's importance measures and the fault tree, asked for the
+    same time, describe the same system state."""
+    graph = samples._pump_station_graph()
+    t = 1234.5
+    analysis = ra.analyze(graph, evaluate_at=t)
+    res = fault_tree(graph, t=t)
+    assert analysis["importance"]["time"] == res["t"] == t
+    assert res["top_event_probability"] == pytest.approx(1.0 - analysis["importance"]["reliability"], abs=1e-12)
 
 
 def test_common_cause_is_a_shared_event_and_stays_exact():

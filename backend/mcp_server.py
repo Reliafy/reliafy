@@ -5274,9 +5274,8 @@ def rbd_fault_tree(
     ctx: Context,
     rbd_id: Annotated[str, Field(description="An RBD id from list kind rbds.")],
     t: Annotated[Optional[float], Field(gt=0, description=(
-        "Non-repairable diagrams: the time (diagram unit) the tree is evaluated at; default the calculator's "
-        "design point, where the system reliability is about 90%. Ignored for a repairable diagram (steady "
-        "state)."))] = None,
+        "Non-repairable diagrams: the time (diagram unit) the tree is evaluated at; default the time the "
+        "system reliability falls to 90%. Ignored for a repairable diagram (steady state)."))] = None,
     max_cut_sets: Annotated[int, Field(ge=1, le=100, description="Cut sets returned, most likely first.")] = 20,
     max_events: Annotated[int, Field(ge=1, le=100, description=(
         "Basic events returned with their importance, most critical first."))] = 15,

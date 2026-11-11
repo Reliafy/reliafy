@@ -194,6 +194,7 @@ def analyze_graph(
     time_budget_s: float | None = None,
     seed: int | None = None,
     max_replications: int | None = None,
+    evaluate_at: float | None = None,
 ) -> dict:
     """Run the RePyability reliability analysis for a graph.
 
@@ -212,6 +213,9 @@ def analyze_graph(
     now — failed and aged blocks — and ``target_reliability`` adds its design
     life (#173). ``time_budget_s`` / ``seed`` / ``max_replications``
     (repairable) make a quick, time-capped availability run (#147).
+    ``evaluate_at`` (non-repairable) is the time the importance measures and
+    the common-cause comparison are worked out at; left out, the default
+    (the time the system reliability falls to 90%).
     """
 
     resolve_subsystem, resolve_model = resolvers(db, owner_id)
@@ -237,6 +241,7 @@ def analyze_graph(
         band=band,
         current_state=current_state,
         target_reliability=target_reliability,
+        evaluate_at=evaluate_at,
     )
 
 
