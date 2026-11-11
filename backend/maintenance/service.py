@@ -1635,13 +1635,40 @@ _TIME_RE = re.compile(
     r"(Z|[+-]\d{2}:?\d{2})?)?)?)?$")
 
 
-def _reading_time(at, precision, tz, now: datetime) -> tuple[str, str | None, str]:
+# How far ahead of the server's clock a reading's time may be. Phones, tablets and
+# loggers run a few minutes fast or slow; a time this close to now was read now.
+CLOCK_TOLERANCE = timedelta(minutes=10)
+
+
+def _future_reading(now: datetime, tz, given: datetime | None = None, what: str = "reading") -> Invalid:
+    """The refusal for a reading dated after now, saying what the workspace's clock
+    reads and what to do. ``given``: the time of day asked for (None: a day only)."""
+    local = now.astimezone(tz or timezone.utc)
+    zone = getattr(tz, "key", None) or "UTC"
+    today = date_text(local.date().isoformat(), None)
+    article = "An" if what[:1] in "aeiou" else "A"
+    if given is None:
+        return Invalid(f"{article} {what} can't be in the future: it's {today} in this workspace ({zone}). Use that "
+                       "date or an earlier one.")
+    asked = given.astimezone(tz or timezone.utc)
+    when = f"{asked:%H:%M}"
+    if asked.date() != local.date():
+        when += f" on {date_text(asked.date().isoformat(), None)}"
+    return Invalid(f"{article} {what} can't be in the future: {when} is later than the time in this workspace, "
+                   f"{local:%H:%M} on {today} ({zone}). Give the time on the workspace's clock, or leave the time "
+                   "out to record the day only. If the workspace's clock is the wrong one for you, change its time "
+                   "zone in Settings.")
+
+
+def _reading_time(at, precision, tz, now: datetime, what: str = "reading") -> tuple[str, str | None, str]:
     """``(on, at, precision)`` for a reading's time. ``at`` is "2026", "2026-10",
     "2026-10-19", or a time of day ("2026-10-19T10:14", seconds and up to nine
     decimals allowed; with Z or an offset, else the workspace's zone). ``on`` is
     the workspace day it falls on (a year or month: its first day); ``at`` the
     moment in UTC, "YYYY-MM-DDTHH:MM:SS[.fff…]Z", for a time of day, else None.
-    ``precision`` defaults to what was given and may only be coarser."""
+    ``precision`` defaults to what was given and may only be coarser. A time of
+    day up to CLOCK_TOLERANCE ahead of ``now`` (a device's clock running fast) is
+    taken as now; further ahead is refused, with what the workspace's clock reads."""
     m = _TIME_RE.match(str(at).strip())
     if not m:
         raise Invalid(f"“{at}” isn't a time: write 2026-10-19T10:14 (or 2026-10-19, 2026-10 or 2026).")
@@ -1664,7 +1691,7 @@ def _reading_time(at, precision, tz, now: datetime) -> tuple[str, str | None, st
         elif precision == "month":
             day = day.replace(day=1)
         if day > now.astimezone(tz or timezone.utc).date():
-            raise Invalid("A reading can't be in the future.")
+            raise _future_reading(now, tz, what=what)
         return day.isoformat(), None, precision
     zone_ = tz or timezone.utc
     if off == "Z":
@@ -1678,8 +1705,11 @@ def _reading_time(at, precision, tz, now: datetime) -> tuple[str, str | None, st
     except ValueError:
         raise Invalid(f"“{at}” isn't a real time.") from None
     moment = local.astimezone(timezone.utc)
-    if moment > now + timedelta(minutes=2):
-        raise Invalid("A reading can't be in the future.")
+    if moment > now:
+        if moment - now > CLOCK_TOLERANCE:
+            raise _future_reading(now, tz, moment, what)
+        # The device's clock is a little fast: it was read now (and so on today's day).
+        moment, frac = now.astimezone(timezone.utc), None
     digits = {"us": 6, "ns": 9}.get(precision, 0)
     frac = ((frac or "") + "0" * 9)[:digits]
     keep = {"hour": 13, "minute": 16}.get(precision)
@@ -7432,7 +7462,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 raise Invalid("Give the time in at (e.g. 2026-10-19T10:14) to say how precisely it's known.")
             day = _day(on, today=self.today())
         if day > self.today():
-            raise Invalid("A reading can't be in the future.")
+            raise _future_reading(time_zones.now(), self.tz)
         lo, hi = point.get("range_min"), point.get("range_max")
         if (lo is not None and value < lo) or (hi is not None and value > hi):
             u = f" {point['unit']}" if point.get("unit") else ""
@@ -10087,6 +10117,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 out.append({**top, "ref": ref, "layer_of": None, "create": create,
                             "cadence_text": self._cadence_text(top_pkg or {**create, "timing": "fixed"})})
                 left = []
+                visit = [t["subject"]["id"] for t in top["tasks"]]
                 for d, d_on, d_fields in rest:
                     if top_pkg is None or d_fields is None:
                         left.append((d, d_on, d_fields))
@@ -10102,6 +10133,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     out.append({**d, "ref": f"p{n}", "layer_of": ref,
                                 "create": {**c, **d_on, "anchor": layer["anchor"], "parent_id": f"@{ref}"},
                                 "cadence_text": self._cadence_text({**layer, "name": d["name"]})})
+                    visit += [t["subject"]["id"] for t in d["tasks"]]
+                # A layer's tasks must be on its top's position or inside it: the top goes
+                # on the lowest position that holds the whole visit, not only its own tasks.
+                if "position_id" in create and len(visit) > len(top["tasks"]):
+                    create["position_id"] = self._common_position(visit)
                 remaining = left
         return out
 
@@ -12126,12 +12162,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             cost = round(amount * part["unit_cost"], 2)
         timed = {}
         if at not in (None, ""):
-            day, stamp, _prec = _reading_time(at, None, self.tz, time_zones.now())
+            day, stamp, _prec = _reading_time(at, None, self.tz, time_zones.now(), "use")
             timed = {"at": stamp} if stamp else {}
         else:
             day = _day(on, today=self.today())
         if day > self.today():
-            raise Invalid("A use can't be in the future.")
+            raise _future_reading(time_zones.now(), self.tz, what="use")
         if work_order_id:
             self._open_or_closed(work_order_id)
         store = self._consumable_store(part["id"], position_id, amount, from_location_id) if part else None

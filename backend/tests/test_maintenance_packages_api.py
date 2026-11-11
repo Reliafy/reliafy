@@ -161,6 +161,32 @@ def test_package_the_tasks_routes(api):
     assert api.get(f"{M}/packages", params={"position_id": elsewhere["id"]}).json()["packages"] == []
 
 
+def test_make_packages_from_drafts_whose_tasks_are_on_different_positions(api):
+    """Package the tasks…, then Make: a visit's first task on one position and its layer's on
+    another are both made, by the batch the page sends."""
+    top = api.post(f"{M}/positions", json={"name": "Generator set"}).json()
+    battery = api.post(f"{M}/positions", json={"name": "Battery", "parent_id": top["id"]}).json()
+    alternator = api.post(f"{M}/positions", json={"name": "Alternator", "parent_id": top["id"]}).json()
+    for pos, name, interval in ((battery, "Test battery", 3), (alternator, "Load bank test", 6)):
+        made = api.post(f"{M}/positions/{pos['id']}/tasks",
+                        json={"name": name, "interval": interval, "unit": "months", "trade": "Electrician"})
+        assert made.status_code == 200, made.text
+    drafts = api.get(f"{M}/packages/propose", params={"position_id": top["id"], "weekday": "monday"}).json()["drafts"]
+    assert [d["layer_of"] is None for d in drafts] == [True, False]
+    batch = [{"ref": d["ref"], **d["create"], **({} if d["layer_of"] else {"tolerance": 1, "tolerance_unit": "days"})}
+             for d in drafts]
+    made = api.post(f"{M}/packages/batch", json={"packages": batch})
+    assert made.status_code == 200, made.text
+    assert [c["name"] for c in made.json()["created"]] == [d["name"] for d in drafts]
+    listed = api.get(f"{M}/packages", params={"position_id": top["id"]}).json()["packages"]
+    assert {p["name"] for p in listed} == {d["name"] for d in drafts}
+    for pos in (battery, alternator):
+        here = api.get(f"{M}/packages", params={"position_id": pos["id"]}).json()["packages"]
+        assert len(here) >= 1
+    again = api.get(f"{M}/packages/propose", params={"position_id": top["id"], "weekday": "monday"}).json()
+    assert again["drafts"] == [] and again["already_in_packages"] == 2
+
+
 def test_task_table_route(api):
     site = api.post(f"{M}/positions", json={"name": "Pool"}).json()
     pump = api.post(f"{M}/positions", json={"name": "Pump", "parent_id": site["id"]}).json()
