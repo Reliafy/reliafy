@@ -74,7 +74,7 @@ import { saveErrorText } from "../confirm.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
 import { hasOpenLayer, isFullScreenKey, isTyping } from "../fullScreen.js";
-import { addressTab, isDesignRow, rowKind, shownTab, tabForArrangement, tabsFor } from "../explorerTabs.js";
+import { addressTab, isDesignRow, rowKind, shownTab, tabCarried, tabForArrangement, tabsFor } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { openGuide } from "../components/HelpButton.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
@@ -538,14 +538,29 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   }, [selParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // With a tab open beyond Summary, the address follows the row picked
-  // (?sel=), once the tree is in, so a link opens on it with that tab.
+  // (?sel=), once the tree is in, so a link opens on it with that tab. A class
+  // shows its one tab without the address naming it: walking on from the class
+  // to a position names it there, so Condition monitoring stays picked
+  // (explorerTabs.js tabCarried). The row walked to is the one whose details are
+  // on show: on a phone that's the row the address's state names, which arrives
+  // a render after the row is picked, so the walk is read from it (and the
+  // address is changed with that state, not the one before it). Back at the
+  // tree on a phone nothing is on show, so the next row opens as any row does
+  // there: on the tab its address names.
+  const walkedFrom = useRef(null);
   useEffect(() => {
-    if (!data || selPos == null || pending.current || tab === "summary") return;
-    if (params.get("sel") === selPos) return;
+    const at = phone ? location.state?.treeDetail : focus;
+    const shown = at != null ? display.rows.get(at) ?? null : null;
+    const from = walkedFrom.current;
+    if (data) walkedFrom.current = shown;
+    if (!data || selPos == null || pending.current) return;
+    const carried = shown && from !== shown && shown.key === selPos ? tabCarried(from, shown, { named: params.has(tabKey) }) : null;
+    if (!carried && (tab === "summary" || params.get("sel") === selPos)) return;
     // Another row: a report open in the Failure reports tab was the last row's.
     // A point or channel open in full in the Measurements tab was the last row's too, and so was
     // a fit or a prediction open in the Modelling tab's table area.
     setQuery_((q) => {
+      if (carried) q.set(tabKey, carried);
       q.set("sel", selPos);
       q.delete("report");
       // The packaging open in the LSA tab was the last row's as well.
@@ -1734,7 +1749,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const nextSelected = keep ? { ...selected, [m]: keep } : selected;
     setSelected(nextSelected);
     pending.current = keep;
-    // A class's own tab (Condition monitoring) stays behind when the tree leaves Classes.
+    // A tab only a class has would stay behind off Classes; Condition monitoring is a position's
+    // too, so it comes along (explorerTabs.js tabForArrangement).
     const nextTab = tabForArrangement(tab, m);
     if (root) {
       // One tree on show: its own address, the arrangement in it (a product's page

@@ -133,6 +133,59 @@ def test_tree_rows_say_each_position_item_class(m):
     _same_after_rebuild(m)
 
 
+# ---- one position on its own -----------------------------------------------------------------------------------------------
+
+def test_one_position_whatever_its_item_class(m, db):
+    """The Condition monitoring tab on a position: the member row a class's fleet gives, with its
+    curves, for an item with a class, an item with none, and no item at all."""
+    _, pump, cent = _classes(m)
+    load = m.create_condition("Load", kind="value")["id"]
+    a, _ = _pump(m, "Pump A", cent, age=100)
+    b, b_item = _pump(m, "Pump B", age=80)  # an item with no class
+    for pid, age in ((a, 100), (b, 80)):
+        _readings(m, pid, age)
+        m.apply_condition(pid, load, value=1)
+        _link(m, db, pid)
+    c, _ = _pump(m, "Pump C", cent, age=30)  # no model
+    d, _ = _pump(m, "Pump D", age=30)  # a model, no readings
+    _link(m, db, d)
+    empty = m.create_position("Spare bay", tag="SB-1", position_class="Feed pump")["id"]
+    before = m.s.snapshot()
+
+    def one(pid):
+        return class_fleet.position(m, db, OWNERS, set(), pid)
+
+    # With a class: the row and curves the class's own read gives for that member.
+    got, want = one(a), _fleet(m, db, pump, a)
+    assert got["member"] == want["member"] and got["model"] == want["model"]
+    assert got["item_class"]["name"] == "Centrifugal pump" and got["why"] is None
+    assert got["position"] == {"id": a, "name": "Pump A", "tag": "PUMP-A", "position_class": "Feed pump"}
+    assert (got["today"], got["age_unit"], got["horizons"]) == (want["today"], want["age_unit"], want["horizons"])
+    # An item with no class is scored the same way: the class was never part of the sums.
+    got = one(b)
+    row = got["member"]
+    assert got["item_class"] is None and row["item_class"] is None and row["item"]["id"] == b_item
+    assert row["scored"] and len(row["risk"]) == 3 and all(0.0 <= x <= 1.0 for x in row["risk"])
+    assert row["unit"]["unit_id"] == "Pump B" and row["unit"]["age"] == 80.0 and row["unit"]["prediction"]
+    assert got["model"]["id"] == JOINT
+    # No model: the row with its facts and no risk; the page says how to link one.
+    got = one(c)
+    assert got["model"] is None and got["member"]["model"] is None and not got["member"]["scored"]
+    assert got["member"]["why"] is None and got["member"]["age"] == 30.0 and "unit" not in got["member"]
+    # A model that can't score it yet: the reason, in words.
+    got = one(d)
+    assert got["model"]["id"] == JOINT and not got["member"]["scored"] and "unit" not in got["member"]
+    assert got["member"]["why"].startswith("No measurement point for")
+    # Nothing fitted: no member, and why.
+    got = one(empty)
+    assert got["member"] is None and got["model"] is None and got["item_class"] is None
+    assert got["why"].startswith("No item is fitted here") and got["position"]["tag"] == "SB-1"
+    with pytest.raises(NotFound):
+        one("no-such-position")
+    assert m.s.snapshot() == before  # a read
+    _same_after_rebuild(m)
+
+
 # ---- risk now, member by member ----------------------------------------------------------------------------------------
 
 def test_each_member_is_scored_with_its_own_position_model(m, db):
@@ -394,3 +447,10 @@ def test_the_fleet_over_rest(client):
     assert client.get("/api/maintenance/item-classes/nope/fleet").status_code == 404
     bad = client.get(f"/api/maintenance/item-classes/{pump}/fleet", params={"position_id": other["id"]})
     assert bad.status_code == 422 and "no item of the class Pump" in bad.json()["detail"]
+    # One position on its own (its Condition monitoring tab), with a class or without one.
+    mine = client.get(f"/api/maintenance/positions/{a}/condition")
+    assert mine.status_code == 200, mine.text
+    assert mine.json()["member"] == one["member"] and mine.json()["model"]["id"] == JOINT
+    plain = client.get(f"/api/maintenance/positions/{b}/condition").json()
+    assert plain["item_class"] is None and plain["model"] is None and plain["member"]["item"]["name"] == "Unclassed"
+    assert client.get("/api/maintenance/positions/nope/condition").status_code == 404

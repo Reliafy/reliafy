@@ -2128,6 +2128,16 @@ def get_class_fleet(class_id: str, position_id: str | None = None, session=Depen
     return _run(class_fleet.fleet, m, session, ctx.read_owners, ctx.hidden, class_id, position_id)
 
 
+@router.get("/positions/{position_id}/condition")
+def get_position_condition(position_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                           m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """One position's risk now, from the item fitted there and the condition and life model linked to
+    the position: its row as a class's fleet gives it, with its curves; whatever its item's class."""
+    from backend.maintenance import class_fleet
+
+    return _run(class_fleet.position, m, session, ctx.read_owners, ctx.hidden, position_id)
+
+
 @router.post("/item-classes")
 def create_item_class(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.create_item_class, body.get("name"), body.get("parent_id"), body.get("code", ""),

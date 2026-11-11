@@ -61,6 +61,7 @@ const SIGNED_IN = [
   ["POST", "/api/maintenance/parts/import-bom"], // #435
   ["GET", "/api/maintenance/classes/forecast"], // #407
   ["GET", "/api/maintenance/item-classes/smoke/fleet"], // the Explorer by Classes: a class's positions with risk now
+  ["GET", "/api/maintenance/positions/smoke/condition"], // a position's Condition monitoring tab: its risk now
   ["POST", "/api/maintenance/graph/query"], // #423
   ["GET", "/api/maintenance/graph/schema"], // #423
   ["GET", "/api/maintenance/graph/design"], // the Data model page

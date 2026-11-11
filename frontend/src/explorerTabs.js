@@ -15,8 +15,9 @@
 // position or an item (sensor snapshots and their spectra); Modelling for a position (the
 // life models attached to it and to the positions inside it, a design's too); Condition
 // monitoring for an item class (the tree by Classes: the class's positions with their risk now,
-// ClassFleet; a class's only tab, so the one it opens on). A tab a kind doesn't have isn't shown
-// (never greyed out).
+// ClassFleet; a class's only tab, so the one it opens on) and for a position on an asset, in
+// every arrangement (that position's own risk now, PositionRisk: the same summary and charts a
+// class shows for the member chosen). A tab a kind doesn't have isn't shown (never greyed out).
 //
 // A product is a design, not an operated thing: its rows (a design's
 // positions) have no maintenance done to them, so no Failure reports,
@@ -35,10 +36,12 @@
 // (EXPLORER_SIGNALS_TAB).
 //
 // Adding a tab is one entry here (id, label, the kinds of row that have it,
-// `asset: true` when a design's rows don't) and its body in TreeDetail. The
+// `asset: true` when a design's rows don't, `titleBy` for a kind of row whose
+// hover text differs) and its body in TreeDetail. The
 // address names the tab (?tab=rcm, left out for Summary); the tab picked stays
 // as you walk the tree, shown on every row of a kind that has it, Summary on
-// the others.
+// the others. A class shows its one tab without the address naming it; walking
+// on from it to a position keeps that tab (tabCarried).
 
 // Derryn, 8 Nov 2026: hidden for now, may come back. Off, `tabsFor` leaves out
 // Parts and stock and Classes on every row (an asset's, a product's design),
@@ -76,8 +79,15 @@ export const TABS = [
   // called Missions"; "Missions are RBDs, so they belong to positions"): a design's positions too,
   // so no `asset`. Drawn as a tree-table (explorerMissions.js); a mission opens in the table area.
   { id: "missions", label: "Missions", title: "The missions flown on this position's RBD and the positions inside it: each mission's phases and its chance of completing", kinds: ["pos"] },
-  // An item class (a row of the tree by Classes) has this one tab and no Summary: its fleet.
-  { id: "condition", label: "Condition monitoring", title: "Each position of this class with its risk now, highest first", kinds: ["cls"] },
+  // An item class (a row of the tree by Classes) has this one tab and no Summary: its fleet. A
+  // position on an asset has it too, in every arrangement: its own risk now (one id and one label,
+  // so the tab stays picked from a class to a position and on to the next). Not a design's
+  // positions: nothing is fitted or read there.
+  {
+    id: "condition", label: "Condition monitoring", title: "Each position of this class with its risk now, highest first",
+    titleBy: { pos: "This position's risk now: its chance of failing soon and its life left, from its item's age and readings" },
+    kinds: ["cls", "pos"], asset: true,
+  },
   { id: "measurements", label: "Measurements", title: "Every measuring point here and inside it: the latest reading, its limits and whether it's past them", kinds: ["pos", "loc", "item"], asset: true },
   {
     id: "lsa", label: "LSA", title: "Logistic support analysis: what each task needs to be done, and how the tasks are packaged into visits",
@@ -124,7 +134,8 @@ export function tabsFor(row) {
   if (!row) return [];
   const design = isDesignRow(row);
   return TABS.filter((t) => offered(t) && t.kinds.includes(row.type) && !(design && t.asset) && !(design && row.type === "loc" && t.notDesignLoc))
-    .map((t) => (design && (t.designLabel || t.designTitle) ? { ...t, label: t.designLabel || t.label, title: t.designTitle || t.title } : t));
+    .map((t) => (design && (t.designLabel || t.designTitle) ? { ...t, label: t.designLabel || t.label, title: t.designTitle || t.title } : t))
+    .map((t) => (t.titleBy?.[row.type] ? { ...t, title: t.titleBy[row.type] } : t));
 }
 
 // The tab to show for a row: the one picked if the row has it, else Summary; a row with no
@@ -152,12 +163,25 @@ export function addressTab(value, { arrange = null, sel = null } = {}) {
   return tab;
 }
 
-// The tab to keep in the address when the tree's arrangement changes to `mode`: a tab only the
-// rows of another arrangement have (an item class's, off Classes) is left behind.
+// The tab to keep in the address when the tree's arrangement changes to `mode`: a tab only an
+// item class has is left behind off Classes (the other arrangements have no class rows). None is
+// today: Condition monitoring is a position's tab too, so it comes along, shown on the position
+// picked there and Summary on any other row (shownTab).
 export function tabForArrangement(tab, mode) {
   const only = BY_ID.get(tab)?.kinds;
   if (only && only.every((k) => k === "cls") && mode !== "classes") return DEFAULT_TAB;
   return tab;
+}
+
+// The tab to name in the address when the selection walks from the row `from` to the row `to`
+// and the address names none (`named`: it does). A class shows its one tab without being asked
+// for, so walking on from it to a row that has that tab keeps it: from a class's Condition
+// monitoring to a position's, and on to the next position's. Null: nothing to add (the address
+// names a tab already, which is the one picked; or the row walked to hasn't the class's tab).
+export function tabCarried(from, to, { named = false } = {}) {
+  if (named || !from || !to || from.type !== "cls" || to.type === "cls") return null;
+  const shown = shownTab(DEFAULT_TAB, from);
+  return shown !== DEFAULT_TAB && tabsFor(to).some((t) => t.id === shown) ? shown : null;
 }
 
 // Every row in a branch: the row's own key and everything inside it in the

@@ -15,11 +15,6 @@
 /* A cell's second line: the tag under the name, the serial under the item, the date under the reading. */
 .cf-under { display: block; font-size: 12px; color: var(--mute); background: none; padding: 0; }
 .cf-note { margin: 8px 0 0; }
-.cf-unit { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-/* The pane scrolls, so the pair has its own height (on the model page it fills the tab). */
-.cf-unit > .chart-pair { flex: none; }
-.cf-unit > .chart-pair-side > .chart-pair-cells { grid-auto-rows: 380px; }
-.cf-unit > .chart-pair-stack > .chart-pair-cells { grid-auto-rows: 340px; overflow: visible; }
 .cf-pos { white-space: nowrap; text-align: left; }
 .cf .joint-risk th, .cf .joint-risk td { padding-left: 8px; padding-right: 8px; }
 /* On a phone the risk comes first: the duty and the item are on the position, one tap away. */

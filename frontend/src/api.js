@@ -3166,11 +3166,15 @@ export function getItemClass(id) {
   return request(`/api/maintenance/item-classes/${id}`);
 }
 // An item class's fleet: every position whose fitted item is of the class (or a class inside it),
-// each with its risk now from the condition and life model linked to its position. With
-// positionId: that one member, with its curves.
-export function getClassFleet(id, positionId = null) {
-  const q = positionId ? `?position_id=${encodeURIComponent(positionId)}` : "";
-  return request(`/api/maintenance/item-classes/${encodeURIComponent(id)}/fleet${q}`);
+// each with its risk now from the condition and life model linked to its position.
+export function getClassFleet(id) {
+  return request(`/api/maintenance/item-classes/${encodeURIComponent(id)}/fleet`);
+}
+// One position's risk now: its row as a class's fleet gives it, with its curves when it is scored
+// (`member`, null with nothing fitted: `why`), and the condition and life model that scores it
+// (`model`, null with none linked). Whatever its item's class.
+export function getPositionCondition(id) {
+  return request(`/api/maintenance/positions/${encodeURIComponent(id)}/condition`);
 }
 export function createItemClass(body) {
   return postJson("/api/maintenance/item-classes", body);

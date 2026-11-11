@@ -155,6 +155,37 @@ export function fleetWithin(fleet, within) {
   return { ...fleet, members, positions: members.length, scored, no_model: noModel, not_scored: members.length - scored - noModel, models, note };
 }
 
+// One position's risk now (the Explorer's Condition monitoring tab on a position, and the member
+// a class's fleet has chosen), from its read (api.js getPositionCondition): what to show.
+// "scored": its summary and charts. Else why there is no risk, in words, never a blank panel:
+// "no-model" (no condition and life model linked: the tab says how to link one) or "not-scored"
+// (a model, and the reason the read gives). `why`: the reason; `facts`: what is known all the
+// same (the item fitted, its age, its last reading), one line, null with nothing fitted.
+export function positionRisk(read) {
+  if (!read) return null;
+  const m = read.member || null;
+  if (read.model && m?.scored && m.unit) return { state: "scored", why: null, facts: null };
+  const facts = positionFacts(m, read.age_unit);
+  if (!read.model) return { state: "no-model", why: m ? null : read.why || null, facts };
+  const why = (m ? m.why : read.why) || "The model gave no risk for this position: check its readings and its item's in-service date.";
+  return { state: "not-scored", why, facts };
+}
+
+// A member's facts in a line: "Fitted here: Unit 7 (S-7), age 120 days. Last reading of
+// Vibration: 4.2 mm/s on 2026-11-01."
+export function positionFacts(member, ageUnit = "Days") {
+  if (!member) return null;
+  const item = `${member.item?.name || "(no name)"}${member.item?.serial ? ` (${member.item.serial})` : ""}`;
+  const unit = String(ageUnit || "").toLowerCase();
+  const age = Number(member.age) === 1 ? unit.replace(/s$/, "") : unit;
+  const parts = [`Fitted here: ${item}, age ${formatNumber(member.age)}${age ? ` ${age}` : ""}.`];
+  const point = member.point?.name || "";
+  const last = member.last_reading;
+  if (last) parts.push(`Last reading${point ? ` of ${point}` : ""}: ${formatNumber(last.value)}${last.unit ? ` ${last.unit}` : ""} on ${last.on}.`);
+  else if (point) parts.push(`No readings of ${point} since this item went in.`);
+  return parts.join(" ");
+}
+
 // The number riskText shows, for sorting: rows that show the same figure tie.
 function shownRisk(p) {
   const t = riskText(p);

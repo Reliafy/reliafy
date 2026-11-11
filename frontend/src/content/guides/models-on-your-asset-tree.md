@@ -248,6 +248,15 @@ With one asset's tree open (the **One tree** note shows above the tree),
 list the positions inside it and nothing else. **Show every asset** goes back
 to the whole register.
 
+A position has the **Condition monitoring** tab too, however the tree is
+arranged (**Positions**, **Locations** or **Classes**). It shows that one
+position's risk now: a line in words (its age, its readings, the three
+chances and the median life left), then the same two charts. The tab stays
+picked as you go from a class to one of its positions, and from one position
+to the next. A position with no condition and life model says so, with a link
+to its **Modelling** tab; one whose model can't score it yet says what is
+missing. A product's design has no such tab: nothing is fitted or read there.
+
 Each position is scored with its own model: the condition and life model
 attached to it, or else its position class's. So one class can hold positions
 on different models, and positions with none. For a number, a position needs:

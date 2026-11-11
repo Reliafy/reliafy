@@ -320,6 +320,14 @@ unit) and the `model`. The same read is `maintenance get.item_class` with
 `fleet: true` (`POST /api/v1/maintenance/get.item_class`; `reliafy
 maintenance get.item_class --id … --fleet true`).
 
+One position on its own (the Explorer's Condition monitoring tab on a
+position): `GET /api/maintenance/positions/{id}/condition` answers `{position,
+item_class, today, age_unit, horizons, member, model, why}`. `member` is the
+position's row as above, with `unit` when it is scored, whatever its item's
+class (`item_class` null with none); with nothing fitted `member` is null and
+`why` says so. `model` is the condition and life model that scores it, null
+with none linked. It is a read for the page, with no tool or CLI twin.
+
 Missions (the Explorer's Missions tab): a non-repairable RBD can carry several
 named phased missions over the same blocks, in `graph.missions` (`[{id, name,
 phases}]`; the diagram's own `phases` reads as one more mission, id `mission`,
