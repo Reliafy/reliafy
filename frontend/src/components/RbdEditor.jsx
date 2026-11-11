@@ -68,7 +68,7 @@ import Tabs from "./ui/Tabs.jsx";
 import useFullScreen from "./useFullScreen.js";
 import FullScreenButton from "./FullScreenButton.jsx";
 import { hasOpenLayer, isFullScreenKey, isTyping } from "../fullScreen.js";
-import { rbdSaveSnapshot, rbdSaveStatus } from "../rbdSaveState.js";
+import { rbdDirty, rbdSaveSnapshot, rbdSaveStatus } from "../rbdSaveState.js";
 import { builderWidthClass } from "../rbdEditorLayout.js";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
@@ -585,9 +585,11 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   // Changed since it was opened or saved: shown in full screen and in the Explorer's pane (where
   // the page's title isn't), and told to the pane, which asks before leaving unsaved changes.
   const tracked = full || embedded || !!onDirty;
+  // Not changed while a diagram just loaded waits for its snapshot (the effect above).
+  const rebasing = rebaseRef.current;
   const dirty = useMemo(
-    () => tracked && savedSnap != null && rbdSaveSnapshot(saveGraph) !== savedSnap,
-    [tracked, saveGraph, savedSnap]
+    () => rbdDirty({ tracked, rebasing, graph: saveGraph, savedSnap }),
+    [tracked, rebasing, saveGraph, savedSnap]
   );
   useEffect(() => { onDirty?.(dirty); }, [onDirty, dirty]);
   const saveStatus = useMemo(() => {
