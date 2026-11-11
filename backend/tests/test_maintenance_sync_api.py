@@ -133,9 +133,9 @@ def test_a_pack_is_the_open_work_orders_in_full_in_one_answer(maint):
     assert out["today"] and out["server_time"].endswith("Z") and isinstance(out["mark"], int)
 
     # Nothing has changed: a cheap answer. Anything changes: the pack again.
-    assert maint.post(PACK, {"if_mark": out["mark"]}).json() == {
-        "unchanged": True, **{k: maint.post(PACK, {"if_mark": out["mark"]}).json()[k]
-                              for k in ("mark", "server_time", "today", "time_zone")}}
+    same = maint.post(PACK, {"if_mark": out["mark"]}).json()     # one request: its server_time is its own
+    assert set(same) == {"unchanged", "mark", "server_time", "today", "time_zone"}
+    assert same["unchanged"] is True and same["mark"] == out["mark"] and same["today"] == out["today"]
     maint.post("/api/v1/maintenance/work_orders.update", {"work_order_id": wo["id"], "append_note": "Hello"})
     again = maint.post(PACK, {"if_mark": out["mark"]}).json()
     assert again["unchanged"] is False and again["mark"] > out["mark"]
