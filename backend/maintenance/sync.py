@@ -500,11 +500,64 @@ def push_photo(m: Maintenance, raw_op: dict, cleaned: dict, device_id=None, devi
     return {"op": answer, "photo": photo, **run.views(), **run.stamp()}
 
 
+#: Work orders in one pack: more than a phone's day, short of a slow answer.
+MAX_PACK = 200
+
+
+def pack(m: Maintenance, body: dict | None = None) -> dict:
+    """What a device needs to do its work with no signal, in one answer: every open
+    work order in full (its position and location, tasks, checklist, instructions,
+    the points to read with their last readings, failure modes, suggested parts),
+    the list rows they are shown from, and the parts catalogue for "part used".
+    The views are the ones the app's pages read: the device keeps them as they
+    come and never works anything out itself.
+
+    ``body``: ``{work_order_ids?: [...]}`` for just those (open or not: a job closed
+    since is still wanted, to show that it was), else every open one, the most
+    overdue first, up to :data:`MAX_PACK` (``more`` says some were left out).
+    ``if_mark``: the ``mark`` of the pack the device has; when nothing in the
+    workspace has changed since, the answer is ``{unchanged: true}``."""
+    body = body or {}
+    if not isinstance(body, dict):
+        raise Invalid("Send {work_order_ids?: [...], if_mark?: N}.")
+    m.s.sync()
+    mark = m.s.event_count(m.org)
+    stamp = {"mark": mark, "server_time": time_zones.now().strftime("%Y-%m-%dT%H:%M:%SZ"), "today": m.today(),
+             "time_zone": m.time_zone}
+    if body.get("if_mark") is not None and body.get("if_mark") == mark:
+        return {"unchanged": True, **stamp}
+    wanted = body.get("work_order_ids")
+    briefs = m.work_orders("open")
+    more = False
+    if wanted is not None:
+        if not isinstance(wanted, list) or len(wanted) > MAX_PACK or any(not isinstance(w, str) for w in wanted):
+            raise Invalid(f"work_order_ids is a list of at most {MAX_PACK} ids.")
+        ids = list(dict.fromkeys(wanted))
+    else:
+        more = len(briefs) > MAX_PACK
+        briefs = briefs[:MAX_PACK]
+        ids = [b["id"] for b in briefs]
+    full, gone = [], []
+    for wo_id in ids:
+        try:
+            full.append(m.work_order(wo_id))
+        except NotFound:
+            gone.append(wo_id)
+    if wanted is not None:
+        open_rows = {b["id"]: b for b in briefs}
+        briefs = [open_rows[i] for i in ids if i in open_rows]
+    parts = [{k: p.get(k) for k in ("id", "part_number", "name", "unit", "manufacturer")}
+             for p in m.s.nodes(m.org, "Part") if not p.get("retired")]
+    parts.sort(key=lambda p: str(p.get("part_number") or "").lower())
+    return {"unchanged": False, "briefs": briefs, "work_orders": full, "gone": gone, "more": more, "parts": parts,
+            **stamp}
+
+
 def applied(m: Maintenance, op_id: str) -> dict | None:
     """The record of an op that has been applied, or None."""
     m.s.sync()
     return m.s.node(m.org, op_node_id(str(op_id).lower()), "SyncOp")
 
 
-__all__ = ["COMMANDS", "MAX_OPS", "OPEN_STATUSES", "Malformed", "Push", "applied", "photo_id_for", "push",
+__all__ = ["COMMANDS", "MAX_OPS", "OPEN_STATUSES", "Malformed", "Push", "applied", "pack", "photo_id_for", "push",
            "push_photo", "read_op"]

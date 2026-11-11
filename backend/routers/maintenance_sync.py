@@ -35,6 +35,11 @@ REST_ONLY = {
         "summary": "Send one photo a device queued while offline (the image as the body, its op as JSON in the "
                    "op query parameter). Sent twice, it is stored and recorded once.",
     },
+    "maintenance_sync.pack": {
+        "method": "POST", "path": "/api/v1/maintenance/sync/pack",
+        "summary": "Everything a device needs to work with no connection, in one answer: the open work orders in "
+                   "full (or the ones named), their list rows and the parts catalogue. Read scope.",
+    },
 }
 
 
@@ -83,11 +88,21 @@ def spec_paths(_ERROR: dict) -> dict:
                     "file": {"type": "string", "format": "binary"}}, "required": ["file"]}}}},
             "responses": {"200": {"description": "The op's answer and the photo."}, "413": _ERROR, **errors},
             "x-reliafy-rest-only": True, "x-reliafy-scope": "write"}},
+        "/api/v1/maintenance/sync/pack": {"post": {
+            "operationId": "maintenance_sync.pack", "tags": ["rest_only"],
+            "summary": REST_ONLY["maintenance_sync.pack"]["summary"],
+            "requestBody": {"required": False, "content": {"application/json": {"schema": {
+                "type": "object", "properties": {
+                    "work_order_ids": {"type": "array", "maxItems": 200, "items": {"type": "string"}},
+                    "if_mark": {"type": "integer", "description": "The mark of the pack the device has."}}}}}},
+            "responses": {"200": {"description": "{unchanged, briefs, work_orders, gone, more, parts, mark, "
+                                                 "server_time, today, time_zone}."}, **errors},
+            "x-reliafy-rest-only": True, "x-reliafy-scope": "read"}},
     }
 
 
-async def _maintenance(request: Request):
-    """The caller's Maintenance, for writing; 401/402/403/404/429 as on /api/v1."""
+async def _maintenance(request: Request, scope: str = "write"):
+    """The caller's Maintenance; 401/402/403/404/429 as on /api/v1."""
     from backend.maintenance.access import allowed
     from backend.maintenance.service import Maintenance
     from backend.routers import api_tools
@@ -99,8 +114,8 @@ async def _maintenance(request: Request):
     user = await api_tools._caller(request)
     if not allowed(user):
         raise HTTPException(status_code=404, detail="Not found.")
-    if not tokens_service.has_scope(user, "write"):
-        raise HTTPException(status_code=403, detail=tokens_service.scope_message("write"))
+    if not tokens_service.has_scope(user, scope):
+        raise HTTPException(status_code=403, detail=tokens_service.scope_message(scope))
     usage_service.note_user(user, channel="api")
 
     def make():
@@ -127,6 +142,27 @@ async def push(request: Request) -> JSONResponse:
     def run():
         try:
             return JSONResponse(content=sync.push(m, body))
+        except Invalid as err:
+            return JSONResponse(status_code=422, content={"detail": client_message(err)})
+
+    return await run_in_threadpool(run)
+
+
+@router.post("/pack")
+async def pack(request: Request) -> JSONResponse:
+    """What a device needs to work with no signal: every open work order in full (or
+    the ones named), their list rows and the parts catalogue, in one answer. With
+    if_mark (the mark of the pack it has), {unchanged: true} when nothing has changed."""
+    from backend.maintenance import sync
+    from backend.maintenance.service import Invalid
+    from backend.routers import api_tools
+
+    m = await _maintenance(request, "read")
+    body = await api_tools._body(request)
+
+    def run():
+        try:
+            return JSONResponse(content=sync.pack(m, body))
         except Invalid as err:
             return JSONResponse(status_code=422, content={"detail": client_message(err)})
 

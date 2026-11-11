@@ -33,6 +33,7 @@ const SIGNED_IN = [
   // A device that works offline: its queued changes pushed in a batch, and a queued photo.
   ["POST", "/api/v1/maintenance/sync/push"],
   ["POST", "/api/v1/maintenance/sync/photo"],
+  ["POST", "/api/v1/maintenance/sync/pack"],
   // Maintainability prediction: the calculator, the saved predictions, a product's lines.
   ["POST", "/api/maintainability/analyse"],
   ["GET", "/api/maintainability/predictions"],
