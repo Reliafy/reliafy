@@ -466,7 +466,7 @@ def test_the_api_end_to_end(http):
     cid, photo, sound = new_id(), new_id(), new_id()
     body = {"notes": "Bearing is loud", "taken_at": "2026-11-12T09:30:00+10:00", "about_id": pos["id"],
             "media_expected": 2}
-    made = c.put(f"{BASE}/{cid}", json=body, headers={**head, "X-Reliafy-Client": "field-app/0.1"})
+    made = c.put(f"{BASE}/{cid}", json={**body, "via": "app"}, headers=head)
     assert made.status_code == 200, made.text
     assert made.json()["created"] is True and made.json()["via"] == "app" and made.json()["by_name"] == "A"
     assert c.put(f"{BASE}/{cid}", json=body, headers=head).json()["created"] is False
@@ -489,6 +489,7 @@ def test_the_api_end_to_end(http):
 
     got = c.get(f"{BASE}/{cid}", headers=head).json()
     assert got["complete"] and got["counts"] == {"photo": 1, "audio": 1, "file": 0} and "data_notice" in got
+    assert got["via"] == "app"
     assert got["about"] == [{"id": pos["id"], "kind": "Position", "name": "Pump A"}]
     img = c.get(f"{BASE}/{cid}/media/{photo}?size=thumb", headers=head)
     assert img.headers["content-type"] == "image/jpeg" and img.headers["x-content-type-options"] == "nosniff"
@@ -499,6 +500,14 @@ def test_the_api_end_to_end(http):
     assert c.get(f"{BASE}/{cid}/media/{sound}", headers={**head, "Range": "bytes=-50"}).content == clip[-50:]
     assert c.get(f"{BASE}/{cid}/media/{sound}", headers={**head, "Range": "bytes=9999-"}).status_code == 416
     assert c.get(f"{BASE}/{cid}/media/{new_id()}", headers=head).status_code == 404
+
+    # POST works where PUT does (a browser on another origin may only GET and POST).
+    pid, page = new_id(), pdf()
+    assert c.post(f"{BASE}/{cid}", json=body, headers=head).json()["created"] is False
+    c.post(f"{BASE}/{cid}/media/{pid}", json={"kind": "file", "size": len(page), "name": "p.pdf"}, headers=head)
+    sent = c.post(f"{BASE}/{cid}/media/{pid}/bytes?offset=0", content=page, headers=head)
+    assert sent.status_code == 200 and sent.json()["media"]["name"] == "p.pdf"
+    assert c.delete(f"/api/maintenance/captures/{cid}").status_code == 401
 
     listed = c.get(f"{BASE}?mine=true", headers=head).json()
     assert [r["id"] for r in listed["reports"]] == [cid] and listed["keep_days"] == 90

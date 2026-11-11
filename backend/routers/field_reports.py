@@ -205,8 +205,9 @@ async def _caller(request: Request, scope: str) -> tuple[dict, Maintenance]:
     return user, await run_in_threadpool(make)
 
 
-def _via(request: Request) -> str:
-    return "app" if (request.headers.get("x-reliafy-client") or "").lower().startswith("field-app") else "api"
+def _via(body: dict) -> str:
+    """Where a report came from, as the sender says: the field app, or the API."""
+    return "app" if body.get("via") == "app" else "api"
 
 
 @v1_router.get("")
@@ -217,12 +218,14 @@ async def v1_list(request: Request, status: str | None = None, mine: bool = Fals
         status, mine, about_id, include_expired, limit))
 
 
-@v1_router.put("/{capture_id}")
+# POST does the same as PUT here and on the bytes route below: a browser on another
+# origin (the app's web preview) may only send GET and POST (the CORS policy in main.py).
+@v1_router.api_route("/{capture_id}", methods=["PUT", "POST"])
 async def v1_create(capture_id: str, request: Request) -> JSONResponse:
     user, m = await _caller(request, "write")
     body = await _json(request)
     return await run_in_threadpool(_run, _create, captures_for(m), capture_id, body,
-                                   user.get("name") or "", _via(request))
+                                   user.get("name") or "", _via(body))
 
 
 @v1_router.get("/{capture_id}")
@@ -259,6 +262,7 @@ async def v1_media_declare(capture_id: str, media_id: str, request: Request) -> 
     return await run_in_threadpool(_run, _declare, captures_for(m), capture_id, media_id, body)
 
 
+@v1_router.post("/{capture_id}/media/{media_id}/bytes", include_in_schema=False)
 @v1_router.put("/{capture_id}/media/{media_id}")
 async def v1_media_send(capture_id: str, media_id: str, request: Request, offset: int = 0) -> JSONResponse:
     _, m = await _caller(request, "write")

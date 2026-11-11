@@ -575,6 +575,9 @@ in an MCP tool call.
 | `POST …/captures/{capture_id}/keep` | `{keep: true | false}`: pin it so its content isn't deleted (at most 50). |
 | `DELETE …/captures/{capture_id}` | Deletes its content now. |
 
+`POST` does the same as `PUT` for making a report, and `POST …/media/{media_id}/bytes?offset=N`
+the same as the `PUT` that sends a piece, for a browser on another origin.
+
 A report's content (notes, location, photos, sound, files) is deleted 90 days
 after it was made, or 30 days after it was marked done if that is sooner,
 unless it is kept. A photo that was linked to a position, item, location or
