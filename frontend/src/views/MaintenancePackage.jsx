@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { changePackage, getPackage, updatePackage } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
@@ -8,10 +8,10 @@ import Chip from "../components/ui/Chip.jsx";
 import { PageTitle } from "../components/usePageTitle.js";
 import { RowLink, rowOpen } from "../components/LibRows.jsx";
 import { DueChip, Field, fmtDate, today as workspaceToday } from "../components/MaintenanceParts.jsx";
-import { PauseDialog, RetireDialog, Rollup, StatusChips } from "../components/LsaPanel.jsx";
+import { PauseDialog, RetireDialog, StatusChips } from "../components/LsaPanel.jsx";
 import { SubjectCell } from "./MaintenanceHome.jsx";
 import usePhone from "../usePhone.js";
-import { WEEKDAYS, dayName, visitRuleText } from "../lsaTab.js";
+import { WEEKDAYS, dayName, rollupLines, visitRuleText } from "../lsaTab.js";
 import { PACKAGES_PATH, linesText, packagePath, workOrderPath } from "../maintenanceOrders.js";
 import {
   NTHS, PACKAGE_UNITS, editBody, formProblem, initialForm, outcomeText, packageSentence, patternsFor, taskLabel, visitDay,
@@ -118,6 +118,8 @@ export default function MaintenancePackage() {
 
 function Details({ pkg }) {
   const wo = pkg.open_work_order;
+  // What a visit needs (its tasks' LSA added up), in the same rows as the details.
+  const needs = rollupLines(pkg.rollup);
   return (
     <section className="card">
       <dl className="maint-dl">
@@ -134,6 +136,12 @@ function Details({ pkg }) {
         )}
         {pkg.pause?.text && <><dt>Paused</dt><dd>{pkg.pause.text}{pkg.pause.reason ? `: ${pkg.pause.reason}` : ""}</dd></>}
         {pkg.notes && <><dt>Notes</dt><dd className="pkg-notes">{pkg.notes}</dd></>}
+        {needs.length > 0 && (
+          <>
+            <dt className="maint-dl-head">Each visit needs</dt>
+            {needs.map((l) => <Fragment key={l.label}><dt>{l.label}</dt><dd>{l.text}</dd></Fragment>)}
+          </>
+        )}
       </dl>
       {pkg.parent && (
         <p className="lib-date">
@@ -145,7 +153,6 @@ function Details({ pkg }) {
           Layers on its visits: {pkg.layers.map((l, i) => <span key={l.id}>{i > 0 && ", "}<Link to={packagePath(l.id)}>{l.name}</Link></span>)}.
         </p>
       )}
-      <Rollup rollup={pkg.rollup} title="Each visit needs" />
     </section>
   );
 }
@@ -154,7 +161,7 @@ function NextVisits({ pkg, today }) {
   const visits = pkg.next_visits || [];
   return (
     <section className="card">
-      <div className="maint-head"><h2>Next visits</h2></div>
+      <div className="maint-head"><h2>{visits[0]?.open_work_order ? "Open and next visits" : "Next visits"}</h2></div>
       {visits.length === 0 ? (
         <p className="lib-date">
           {pkg.status === "paused" ? "None while it's paused."
@@ -168,7 +175,15 @@ function NextVisits({ pkg, today }) {
           <tbody>
             {visits.map((v) => (
               <tr key={v.on} className="maint-plain-row">
-                <td className="maint-nowrap">{visitDay(v.on, today)}</td>
+                <td className="maint-nowrap">
+                  {visitDay(v.on, today)}
+                  {v.open_work_order && (
+                    <div>
+                      <Link to={workOrderPath(v.open_work_order.id)}>#{v.open_work_order.number} open</Link>
+                      {v.open_work_order.late && <> <Chip tone="danger">late</Chip></>}
+                    </div>
+                  )}
+                </td>
                 <td>{v.tasks}</td>
                 <td className="lib-date">{visitTasksText(v.task_ids, pkg.tasks) || "—"}</td>
               </tr>

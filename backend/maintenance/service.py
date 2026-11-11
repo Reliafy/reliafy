@@ -8895,10 +8895,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return raised + 1
 
     def _visit_tasks(self, root: dict, tree: list[dict], visit_on: str, number: int, skip=frozenset(),
-                     covered_by=()) -> list[tuple[dict, dict, dict]]:
+                     covered_by=(), owed: bool = True) -> list[tuple[dict, dict, dict]]:
         """The tasks due on one visit of a top package, in order, as (task, package,
         member): the top package's by their visit rule, each layer's on its own visits,
-        and any owed task. skip: tasks left off (on the work order already, or with a
+        and (owed) any owed task. skip: tasks left off (on the work order already, or with a
         work order of their own). A task covered by another on the visit (or by
         ``covered_by``: members already on its work order) is left off."""
         due = []
@@ -8918,7 +8918,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     continue
                 by_rule = on_visit and (member.get("visit_rule", "every") != "nth"
                                         or (n - 1) % int(member.get("every_nth") or 1) == 0)
-                if by_rule or self._owed(task):
+                if by_rule or (owed and self._owed(task)):
                     due.append((task, pkg, member))
         covering = {sid for member in [*(m for _, _, m in due), *covered_by] for sid in member.get("suppresses") or []}
         return [x for x in due if x[0]["id"] not in covering]
@@ -9029,23 +9029,31 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         memo[key] = out
         return out
 
-    def _package_next_visits(self, root: dict, count: int) -> list[tuple[str, set]]:
-        """The top package's next ``count`` visits (after its open work order's, else from
-        the next), each with the tasks due on it: the visits themselves, whether or not
-        every member has its date yet (unlike _package_upcoming)."""
+    def _package_next_visits(self, root: dict, count: int) -> list[dict]:
+        """The top package's visits to come, for its page: the open visit first (its work
+        order's tasks, its number and whether it's late), then the next ``count`` visits,
+        each with the tasks its visit rules put on it (every task on every visit, an every-Nth
+        task on its visits). A task on the open work order still falls on the later visits by
+        its rule; one owed from the last visit goes on the first visit to come only."""
         state = self._package_state(root)
         tree = self._package_tree(root, active_only=True)
-        if state["open"]:
-            day = self._next_root_visit(root, state["open"].get("covers_to") or state["open"]["visit_on"])
+        out: list[dict] = []
+        wo = state["open"]
+        if wo:
+            out.append({"on": wo["visit_on"], "task_ids": sorted(state["on_open"]),
+                        "open_work_order": {"id": wo["id"], "number": wo["number"], "late": bool(state.get("late"))}})
+            day = self._next_root_visit(root, wo.get("covers_to") or wo["visit_on"])
         else:
             day = state["next_visit"]
         until = (date.fromisoformat(self.today()) + timedelta(days=self._LOOKAHEAD_DAYS)).isoformat()
-        out: list[tuple[str, set]] = []
-        while day and day <= until and len(out) < count:
-            number = self._visit_number(root, day, state["raised"] + len(out))
-            out.append((day, {t["id"] for t, _, _ in self._visit_tasks(root, tree, day, number, skip=state["on_open"])}))
+        coming = 0
+        while day and day <= until and coming < count:
+            number = self._visit_number(root, day, state["raised"] + coming)
+            ids = {t["id"] for t, _, _ in self._visit_tasks(root, tree, day, number, owed=not wo and coming == 0)}
+            out.append({"on": day, "task_ids": sorted(ids)})
+            coming += 1
             day = self._next_root_visit(root, day)
-        return out
+        return [{**v, "tasks": len(v["task_ids"])} for v in out]
 
     def _later_visit(self, root: dict, pkg: dict, member: dict, after: str) -> str | None:
         """A member's next visit past the look-ahead: its own package's next date by its
@@ -9843,8 +9851,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
     def package(self, package_id: str) -> dict:
         """A package in full: its cadence, tolerance, layers, its tasks (each with its visit
-        rule, what it covers, last done and next due), its next six visits (a top
-        package's, with how many tasks each) and its recent work orders (a finished one with
+        rule, what it covers, last done and next due), its open visit and next six
+        visits (a top package's, with the tasks on each) and its recent work orders (a finished one with
         what was done: done)."""
         pkg = self._get(str(package_id or ""), "WorkPackage")
         out = {**self._package_brief(pkg), "notes": pkg.get("notes", ""), "created": pkg.get("created"),
@@ -9881,8 +9889,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 row["done"] = self._wo_done(row["id"])
         out["next_visits"] = []
         if out["status"] == "active" and root["id"] == pkg["id"]:
-            out["next_visits"] = [{"on": d, "tasks": len(ids), "task_ids": sorted(ids)}
-                                  for d, ids in self._package_next_visits(root, 6)]
+            out["next_visits"] = self._package_next_visits(root, 6)
         return out
 
     # -- proposing packages from the decided tasks --

@@ -3,6 +3,7 @@
 // (only what changed). Pure: no React, so the tests can hold it.
 import { cadenceWords, daysLate } from "./lsaTab.js";
 import { doneText } from "./maintenanceOrders.js";
+import { formatDate } from "./dates.js";
 
 const UNITS = ["days", "weeks", "months", "years"];
 export const PACKAGE_UNITS = UNITS;
@@ -13,12 +14,8 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 // "Sat 14 Nov" (with the year when it isn't `today`'s).
 export function visitDay(iso, today = null) {
   if (!iso) return "";
-  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  const sameYear = today && String(today).slice(0, 4) === String(iso).slice(0, 4);
-  return d.toLocaleDateString("en-GB", {
-    weekday: "short", day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }), timeZone: "UTC",
-  }).replace(",", "");
+  const sameYear = !!today && String(today).slice(0, 4) === String(iso).slice(0, 4);
+  return formatDate(String(iso).slice(0, 10), { weekday: true, year: !sameYear }) || String(iso);
 }
 
 // The page's first line, the answer first: "Every Saturday, next visit Sat 14 Nov; 1 visit late".
