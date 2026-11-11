@@ -92,7 +92,7 @@ export function guessStatusMeaning(value, columnName = "") {
 // "Kilometres". The spellings match the Data step's unit suggestions.
 const UNIT_NAMES = [
   [/\b(hours?|hrs?|hr|h)\b/i, "Hours"], [/\b(days?)\b/i, "Days"], [/\b(weeks?)\b/i, "Weeks"],
-  [/\b(months?)\b/i, "Months"], [/\b(years?)\b/i, "Years"], [/\b(cycles?)\b/i, "Cycles"],
+  [/\b(months?)\b/i, "Months"], [/\b(years?|yrs?)\b/i, "Years"], [/\b(cycles?)\b/i, "Cycles"],
   [/\b(km|kms|kilomet(?:re|er)s?)\b/i, "Kilometres"], [/\b(miles?|mileage)\b/i, "Miles"],
   [/\b(minutes?|mins?)\b/i, "Minutes"], [/\b(operations?)\b/i, "Operations"], [/\b(starts?)\b/i, "Starts"],
   [/\b(landings?)\b/i, "Landings"],

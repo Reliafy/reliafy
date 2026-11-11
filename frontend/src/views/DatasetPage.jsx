@@ -12,7 +12,7 @@ import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
 import { dtypeLabel, nameSaysDistribution } from "../datasetGuess.js";
-import { datasetMeta, datasetParts, splitText } from "../datasetFit.js";
+import { datasetActions, datasetMeta, datasetParts, splitText } from "../datasetFit.js";
 import "../components/Datasets.css";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
@@ -25,20 +25,6 @@ const MODEL_PATH = {
   degradation_models: "/models/degradation/",
 };
 const KIND_LABEL = { "ALT model": "ALT", "recurrent model": "Repairable", "degradation model": "Degradation" };
-
-// The next step for this data: condition and life when the dataset holds
-// its units' lives with their readings, a non-repairable model, or — when
-// the rows are unit histories — the recurrent or degradation fit.
-function fitAction(ds, parts) {
-  const id = encodeURIComponent(ds.id);
-  if (parts.life && (parts.measurements || parts.combined)) {
-    return { label: "Fit a condition and life model", to: `/models/joint/new?dataset=${id}` };
-  }
-  const kind = ds.profile?.repeated_units?.kind;
-  if (kind === "recurrent") return { label: "Fit a recurrent model", to: `/models/recurrent/new?dataset=${id}` };
-  if (kind === "degradation" || parts.readingsOnly) return { label: "Fit a degradation model", to: `/models/degradation?dataset=${id}` };
-  return { label: "Fit a model", to: `/models/new?dataset=${id}` };
-}
 
 const PART_TABS = [
   { id: "life", label: "Life data", title: "One row per unit: its age at failure or now, and whether it failed" },
@@ -129,7 +115,7 @@ export default function DatasetPage() {
   };
 
   const parts = datasetParts(ds);
-  const fit = ds && fitAction(ds, parts);
+  const { primary: fit, secondary: alsoFit } = ds ? datasetActions(ds, parts) : {};
   // Compare treats each row as a unit, so it's not offered for unit histories
   // (a ?compare= link still opens it, with a warning).
   const canCompare = ds && parts.life && ds.n_columns >= 2 && !ds.profile?.repeated_units;
@@ -165,12 +151,17 @@ export default function DatasetPage() {
         )}
         primary={fit && (
           // While comparing, Compare is the view's next step.
-          <button className={comparing ? "secondary" : undefined} onClick={() => navigate(fit.to)}>
+          <button className={"ds-fit-action" + (comparing ? " secondary" : "")} onClick={() => navigate(fit.to)}>
             {fit.label}
           </button>
         )}
-        actions={canCompare && !comparing && (
-          <button className="secondary" onClick={() => setComparing(true)}>Compare groups</button>
+        actions={((canCompare && !comparing) || alsoFit) && (
+          <>
+            {alsoFit && <button className="secondary ds-fit-action" onClick={() => navigate(alsoFit.to)}>{alsoFit.label}</button>}
+            {canCompare && !comparing && (
+              <button className="secondary" onClick={() => setComparing(true)}>Compare groups</button>
+            )}
+          </>
         )}
         id={ds?.id}
         menu={ds && (

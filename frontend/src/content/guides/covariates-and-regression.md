@@ -191,7 +191,9 @@ time** and choose how the rows are laid out:
 
 Then choose the **Item** column that says which unit each row belongs to.
 Reliafy recognises start and stop columns and turns this on for you when it
-can. The Model step then offers the regressions that can follow a changing
+can. A saved dataset laid out like this is tagged **Time-varying covariates**,
+and its page offers **Fit a non-repairable model with covariates that change
+over time**, which opens the fit with these columns already mapped. The Model step then offers the regressions that can follow a changing
 covariate (the PH, AFT, PO and AH families and Cox PH).
 
 The result's **Calculator** takes a **Covariate schedule**: the value from time

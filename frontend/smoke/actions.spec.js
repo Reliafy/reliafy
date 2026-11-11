@@ -18,6 +18,32 @@ test("fit and save a Weibull model from a sample dataset", async ({ page, proble
   await expectHealthy(page, problems, { label: "saved model", chart: true });
 });
 
+// Start and stop rows with a failure flag (covariates that change over time):
+// the dataset page offers the non-repairable fit, not a degradation one, and
+// it opens with the columns mapped and fits to a covariate schedule.
+test("data with covariates that change over time fits a non-repairable model", async ({ page, problems }) => {
+  await open(page, "/data/sample-ds-pump-load");
+  await expect(page.getByRole("button", { name: "Fit a degradation model" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Fit a non-repairable model with covariates that change over time" }).click();
+  await expect(page).toHaveURL(/\/models\/new\?dataset=sample-ds-pump-load/);
+  // The Data step opens with start and stop rows mapped.
+  await expect(page.getByText("Start of the row", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/start_h \(start of the row\), stop_h \(end of the row\)/)).toBeVisible();
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByText(/Covariates change over time/)).toBeVisible();
+  await page.getByRole("button", { name: "Fit Weibull PH" }).click();
+  await expect(page.getByText(/Weibull PH, covariates changing over time/)).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("tab", { name: "Calculator" }).click();
+  await expect(page.getByText("Covariate schedule").first()).toBeVisible();
+  await expectHealthy(page, problems, { label: "time-varying fit", chart: true });
+
+  // The shared picker offers it for a non-repairable fit (not greyed).
+  await open(page, "/models/new");
+  await page.getByRole("button", { name: /Fit to data/ }).click();
+  await page.getByRole("searchbox", { name: "Search datasets" }).fill("changing load");
+  await expect(page.getByRole("radio", { name: /Pump bearings under changing load/ })).toBeEnabled();
+});
+
 // New model › Fit to data opens on the saved-data list: every saved dataset (yours, then the
 // samples), a picked one previewed with how its columns read, then fitted like any other.
 test("fit a new model from a saved dataset picked in the list", async ({ page, problems }) => {

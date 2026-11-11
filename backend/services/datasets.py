@@ -567,12 +567,18 @@ _UNIT_NAME_RE = re.compile(
 def repeated_units(df: pd.DataFrame) -> dict | None:
     """Rows that are histories of units rather than one row per unit, or None.
 
-    ``{"column": <unit column>, "kind": "recurrent" | "degradation"}`` when a
-    unit-like text column (an id-ish name, or values that carry digits, e.g.
-    "CMP-1") repeats, and some numeric column rises within every unit in file
-    order — the events of a repairable system ("recurrent"), or measurements
-    on a shared time grid ("degradation"). Comparing groups or fitting a life
-    distribution to such rows would treat each event as a separate unit.
+    ``{"column": <unit column>, "kind": "recurrent" | "degradation" |
+    "time_varying"}`` when a unit-like text column (an id-ish name, or values
+    that carry digits, e.g. "CMP-1") repeats, and some numeric column rises
+    within every unit in file order — the events of a repairable system
+    ("recurrent"), or measurements on a shared time grid ("degradation").
+    Start and stop rows (each a stretch of a unit's life at one set of
+    covariate values, the next starting where the last stopped) are
+    "time_varying", with ``start`` and ``stop`` naming the columns: a
+    non-repairable fit with covariates that change over time reads them, not
+    a degradation fit, though their start times rise like readings do.
+    Comparing groups or fitting a life distribution to such rows would treat
+    each event as a separate unit.
     """
     n = len(df)
     if n < 4:
@@ -590,6 +596,9 @@ def repeated_units(df: pd.DataFrame) -> dict | None:
         digits = sizes.index.to_series().str.contains(r"\d").mean()
         if not (_UNIT_NAME_RE.search(str(g)) or digits >= 0.8):
             continue
+        periods = _start_stop_columns(df.loc[col.index], col, numeric)
+        if periods:
+            return {"column": str(g), "kind": "time_varying", "start": periods[0], "stop": periods[1]}
         for t in numeric:
             sub = df.loc[col.index, [t]].assign(_g=col)
             steps = sub.groupby("_g")[t].diff().dropna()
@@ -599,6 +608,29 @@ def repeated_units(df: pd.DataFrame) -> dict | None:
             seen_in = sub.groupby(t)["_g"].nunique()
             shared = sub[t].map(seen_in).gt(1).mean()
             return {"column": str(g), "kind": "degradation" if shared >= 0.5 else "recurrent"}
+    return None
+
+
+def _start_stop_columns(df: pd.DataFrame, unit: pd.Series, numeric: list) -> tuple[str, str] | None:
+    """The (start, stop) columns of start-and-stop rows, or None.
+
+    Two numeric columns where every row's start is at or before its stop, and
+    either they're named like a start and a stop ("start_h", "stop_h";
+    "entry", "exit") or, within each unit, most rows start where the unit's
+    previous row stopped (the periods follow on from each other)."""
+    for a in numeric:
+        for b in numeric:
+            if a == b:
+                continue
+            lo, hi = df[a], df[b]
+            if lo.isna().any() or hi.isna().any() or not (lo <= hi).all() or not (lo < hi).any():
+                continue
+            if _START_RE.search(str(a)) and _STOP_RE.search(str(b)):
+                return str(a), str(b)
+            previous_stop = hi.groupby(unit).shift(1)
+            follows = previous_stop.notna()
+            if follows.sum() >= 2 and (lo[follows] == previous_stop[follows]).mean() >= 0.8:
+                return str(a), str(b)
     return None
 
 
@@ -662,13 +694,15 @@ def detect_tags(df: pd.DataFrame) -> dict:
     if not times:  # the first numeric column is the time
         times = [str(c) for c in df.columns if str(c) not in (unit, censor)
                  and pd.api.types.is_numeric_dtype(df[c])][:1]
-    start_stop = any(_START_RE.search(t) for t in times) and any(_STOP_RE.search(t) for t in times)
+    # Events of a repairable unit: its time rises row by row and the rows are
+    # events, not start/stop periods (repeated_units tells them from readings,
+    # and finds start and stop rows whatever their columns are called).
+    ru = repeated_units(df) if unit else None
+    start_stop = (any(_START_RE.search(t) for t in times) and any(_STOP_RE.search(t) for t in times)) or bool(
+        ru and ru["kind"] == "time_varying")
     # A text column unique on every row names the rows (a serial, a tag): not a covariate.
     extra = [str(c) for c in df.columns if str(c) not in (unit, censor, *times)
              and not (not pd.api.types.is_numeric_dtype(df[c]) and df[c].nunique(dropna=True) == len(df))]
-    # Events of a repairable unit: its time rises row by row and the rows are
-    # events, not start/stop periods (repeated_units tells them from readings).
-    ru = repeated_units(df) if unit else None
     repeat = bool(ru and ru["kind"] == "recurrent" and not start_stop
                   and (censor or not any(pd.api.types.is_numeric_dtype(df[c]) for c in extra
                                          if (df.groupby(unit)[c].nunique(dropna=True) > 1).any())))

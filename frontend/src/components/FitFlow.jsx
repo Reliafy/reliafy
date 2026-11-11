@@ -28,7 +28,7 @@ import ModelNextSteps from "./ModelNextSteps.jsx";
 import { answerParts } from "../modelFrame.js";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { TvcToggle } from "./TvcColumns.jsx";
-import { guessTvc, tvcMapping, tvcProblems, tvcSummaryParts } from "../tvcData.js";
+import { guessTvc, tvcMapping, tvcProblems, tvcSummaryParts, tvcUnit } from "../tvcData.js";
 import { guessUnit, isNumeric } from "../datasetGuess.js";
 import {
   EMPTY_MAPPING, columnFacts, guessMapping, isSimplePaste, statusSummary, summaryParts,
@@ -215,11 +215,12 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setCsv(cols);
     setMapping(tvcMap || map);
     setTvc(timeVarying ? "intervals" : null);
-    setUnit(simplePaste ? "" : g.unit || (timeVarying ? guessUnit(timeVarying.xl) : ""));
+    const guessedUnit = simplePaste ? "" : (timeVarying && tvcUnit(timeVarying)) || g.unit || "";
+    setUnit(guessedUnit);
     setSimple(simplePaste);
     setCovariates(timeVarying ? cols.columns.filter((c) => !used.has(c) && isNumeric(facts[c]?.dtype)) : []);
     setGroup("");
-    return { mapping: tvcMap || map, unit: simplePaste ? "" : g.unit };
+    return { mapping: tvcMap || map, unit: guessedUnit };
   };
 
   // ``keepHeader``: read the first row as the column names even when it's

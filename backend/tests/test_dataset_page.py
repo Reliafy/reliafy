@@ -112,3 +112,20 @@ def test_used_by_counts_every_model_kind(client):
     assert detail["n_models"] == listed["sample-ds-compressor-events"]["n_models"]
     assert any(o["collection"] == "recurrent_models" for o in detail["other_models"])
     assert detail["profile"]["repeated_units"]["kind"] == "recurrent"
+
+
+def test_start_and_stop_rows_are_periods_not_readings():
+    # The pump bearings sample: each row a stretch of a pump's life at one
+    # load, the failure flag on its last row. Its start times rise on a
+    # shared grid like readings, but it's for a fit with changing covariates.
+    assert ds_service.repeated_units(_csv(samples._PUMP_LOAD_CSV)) == {
+        "column": "pump", "kind": "time_varying", "start": "start_h", "stop": "stop_h"}
+    # Columns not named start and stop: each row starts where its unit's last stopped.
+    unnamed = ("transformer,a,b,failed,load\nTX-1,0,5,0,0.8\nTX-1,5,9,1,1.2\nTX-2,0,4,0,1.0\n"
+               "TX-2,4,10,0,0.6\nTX-3,0,7,1,1.2\nTX-3,7,8,0,0.8\n")
+    assert ds_service.repeated_units(_csv(unnamed.encode()))["kind"] == "time_varying"
+    tags = ds_service.detect_tags(_csv(unnamed.encode()))
+    assert tags["tags"] == ["Non-repairable", "Time-varying covariates"]
+    assert tags["use_for"] == ["Non-repairable model with time-varying covariates"]
+    # Readings on a grid stay readings.
+    assert ds_service.repeated_units(_csv(samples._BRAKE_WEAR_CSV))["kind"] == "degradation"
