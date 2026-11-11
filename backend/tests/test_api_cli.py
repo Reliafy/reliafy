@@ -501,3 +501,46 @@ def test_fault_trees_over_rest_and_the_cli(server, capsys):
     assert code == 0 and abs(json.loads(out)["top_event_probability"] - 0.28) < 1e-12
     code, out, _ = run(capsys, "list", "fault_trees", "--json")
     assert code == 0 and saved["id"] in out
+
+
+def test_cli_capture(server, capsys, monkeypatch):
+    """A field report from the command line: notes, a photo and a sound recording
+    sent in pieces; run again with the same id, nothing arrives twice."""
+    from backend.maintenance import captures
+    from backend.routers import field_reports
+    from backend.tests.test_maintenance_captures import m4a
+
+    tmp = server["tmp"]
+    monkeypatch.setattr(field_reports, "_capture_store", captures.FileCaptureStore(str(tmp / "captures")))
+    monkeypatch.setattr(captures, "CHUNK_BYTES", 700)  # several pieces each
+    rf = Client()
+    pid = rf.call("maintenance", "positions.create", name="Pump A")["id"]
+    (tmp / "notes.txt").write_text("Bearing is loud on the drive end.")
+    (tmp / "a.jpg").write_bytes(_jpeg())
+    (tmp / "noise.m4a").write_bytes(m4a(seconds=9, size=2500))
+    rid = "0123456789abcdef0123456789abcdef"
+    argv = ("capture", "new", str(tmp / "notes.txt"), str(tmp / "a.jpg"), str(tmp / "noise.m4a"), "--about", pid,
+            "--id", rid)
+    code, out, _ = run(capsys, *argv)
+    assert code == 0 and "Field report 1" in out and "1 photos, 1 sound" in out, out
+    code, out, _ = run(capsys, *argv, "--json")  # interrupted and run again: the same report, nothing doubled
+    report = json.loads(out)
+    assert report["id"] == rid and report["counts"] == {"photo": 1, "audio": 1, "file": 0} and report["complete"]
+    assert report["notes"] == "Bearing is loud on the drive end." and report["about"][0]["id"] == pid
+    code, out, _ = run(capsys, "capture", "list", "--status", "new", "--mine")
+    assert code == 0 and rid in out and "Pump A" in out
+    sound = next(m for m in report["media"] if m["kind"] == "audio")
+    assert sound["duration_s"] == 9 and sound["name"] == "noise.m4a"
+    code, out, _ = run(capsys, "capture", "download", rid, sound["id"], "-o", str(tmp / "back.m4a"))
+    assert code == 0 and (tmp / "back.m4a").read_bytes() == (tmp / "noise.m4a").read_bytes()
+    code, out, _ = run(capsys, "capture", "status", rid, "--status", "done", "--note", "Job opened", "--json")
+    assert json.loads(out)["status"] == "done"
+    code, out, _ = run(capsys, "capture", "keep", rid, "--json")
+    assert json.loads(out)["keep"] is True
+    code, out, _ = run(capsys, "capture", "delete", rid, "--json")
+    assert json.loads(out)["expired"] == rid
+    code, _, err = run(capsys, "capture", "get")
+    assert code != 0 and "one report id" in err
+    (tmp / "clip.xyz").write_bytes(b"?")
+    with pytest.raises(Exception, match="Can't tell"):
+        rf.add_capture_media(rid, str(tmp / "clip.xyz"))

@@ -453,8 +453,13 @@ def test_parity_every_mcp_action_has_rest_openapi_and_cli(maint, monkeypatch):
     # REST/CLI-only capabilities are an explicit allow-list, in the spec and the listing.
     rest_only = {op["operationId"] for item in spec["paths"].values() for op in item.values()
                  if op.get("x-reliafy-rest-only")}
-    assert rest_only == set(api_tools.REST_ONLY)
-    assert {r["name"] for r in listing["rest_only"]} == set(api_tools.REST_ONLY)
+    from backend.routers import field_reports
+
+    expected = set(api_tools.REST_ONLY) | set(field_reports.REST_ONLY)  # this caller has Reliafy Maintenance
+    assert rest_only == expected
+    assert {r["name"] for r in listing["rest_only"]} == expected
+    for name, entry in field_reports.REST_ONLY.items():
+        assert spec["paths"][entry["path"]][entry["method"].lower()]["operationId"] == name
 
 
 def test_spec_is_valid_and_public_safe(env):

@@ -140,6 +140,16 @@ def run(db, store, *, today: date | None = None, dry_run: bool = False) -> dict:
             logger.exception("maintenance daily run failed for %s", org)
             result["failed"] = result.get("failed", 0) + 1
     if not dry_run:
+        # Field reports past their keep-until day: their content is deleted (captures.py).
+        try:
+            from backend.routers import field_reports
+
+            if store.orgs_with("Capture"):
+                result["field_reports"] = field_reports.retention_run(db, store)
+        except Exception:  # noqa: BLE001 - retention mustn't stop the run being recorded
+            logger.exception("field report retention failed")
+            result["field_reports"] = {"failed": True}
+    if not dry_run:
         db.maintenance_runs.insert_one({"_id": day, "result": result})
     logger.info("maintenance daily run: %s", result)
     return result

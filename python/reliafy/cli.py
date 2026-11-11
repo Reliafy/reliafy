@@ -11,6 +11,7 @@
     reliafy photo add IMG_01.jpg IMG_02.HEIC --to POSITION_ID
     reliafy photo link PHOTO_ID --to LOCATION_ID      # show it there too
     reliafy photo move PHOTO_ID --to POSITION_ID      # only there
+    reliafy capture new notes.txt IMG_*.heic noise.m4a --about POSITION_ID   # a field report
     reliafy document add manual.pdf --to ITEM_ID --kind manual
     reliafy document get DOCUMENT_ID -o manual.pdf
     reliafy ingest usage fleet.csv --fleet FLEET_ID
@@ -42,7 +43,7 @@ from reliafy.client import Client, ReliafyError, ServerTooOld, _version
 
 SPEC_TTL_S = 24 * 3600
 BUILTINS = ("login", "logout", "whoami", "tools", "spec", "call", "push", "fit", "upload", "import", "photo",
-            "document", "ingest", "apply", "help")
+            "document", "capture", "ingest", "apply", "help")
 
 
 # ---- output --------------------------------------------------------------------
@@ -515,6 +516,60 @@ def cmd_document(client: Client, ns) -> int:
     return 1 if failed else 0
 
 
+def cmd_capture(client: Client, ns) -> int:
+    """capture new / list / get / status / keep / unkeep / delete / download:
+    field reports (notes, photos, sound recordings and PDFs from the field)."""
+    verb, args = ns.verb, ns.args
+    if verb == "new":
+        notes = ns.notes or ""
+        files = []
+        for path in _expand(args):
+            if path.lower().endswith((".txt", ".md")):  # a text file is the notes
+                with open(path, encoding="utf-8") as fh:
+                    notes = (notes + "\n\n" + fh.read()).strip()
+            else:
+                files.append(path)
+        out = client.new_capture(notes, files, about=ns.about or [], capture_id=ns.id)
+        if ns.json:
+            render(out, True)
+        else:
+            counts = out.get("counts") or {}
+            print(f"{out['title']} ({out['id']}): {counts.get('photo', 0)} photos, {counts.get('audio', 0)} sound "
+                  f"recordings, {counts.get('file', 0)} files. Its content is kept until {out.get('expires_on')}.")
+        return 0
+    if verb == "list":
+        if args:
+            raise ReliafyError("capture list takes no ids (use --status, --mine, --about).")
+        out = client.captures(ns.status, ns.mine, (ns.about or [None])[0], ns.limit)
+        if ns.json:
+            render(out, True)
+        else:
+            table([{"number": r["number"], "id": r["id"], "status": r["status"], "taken_at": r["taken_at"],
+                    "by": r["by_name"], "about": ", ".join(a["name"] or a["id"] for a in r["about"]),
+                    "photos": r["counts"]["photo"], "sound": r["counts"]["audio"],
+                    "notes": r["notes_preview"][:60]} for r in out["reports"]], max_cols=9)
+        return 0
+    if verb == "download":
+        if len(args) != 2 or not ns.output:
+            raise ReliafyError("capture download takes REPORT_ID ATTACHMENT_ID -o FILE.")
+        render({"saved_to": client.download_capture_media(args[0], args[1], ns.output)}, ns.json)
+        return 0
+    if len(args) != 1:
+        raise ReliafyError(f"capture {verb} takes one report id.")
+    if verb == "get":
+        out = client.capture(args[0])
+    elif verb == "status":
+        if not ns.status:
+            raise ReliafyError("capture status needs --status new, parsed or done.")
+        out = client.set_capture_status(args[0], ns.status, ns.note)
+    elif verb in ("keep", "unkeep"):
+        out = client.keep_capture(args[0], verb == "keep")
+    else:
+        out = client.delete_capture(args[0])
+    render(out, ns.json)
+    return 0
+
+
 def cmd_ingest(client: Client, ns) -> int:
     if ns.what == "usage":
         if not ns.fleet:
@@ -639,6 +694,21 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--title", help="add: the title (one file; default: the file name).")
     sp.add_argument("--kind", choices=["manual", "datasheet", "invoice", "drawing", "certificate", "other"])
     sp.add_argument("-o", "--output", help="get: where to save it (default: its own file name).")
+    sp = add("capture", cmd_capture, "Field reports (Reliafy Maintenance): send notes, photos, sound recordings "
+                                     "and PDFs as one report; list, read, mark and delete them.")
+    sp.add_argument("verb", choices=["new", "list", "get", "status", "keep", "unkeep", "delete", "download"])
+    sp.add_argument("args", nargs="*", help="new: files (globs work; a .txt or .md file is the notes; photos, "
+                                            "sound recordings, PDFs). get, status, keep, unkeep, delete: a report "
+                                            "id. download: a report id and an attachment id.")
+    sp.add_argument("--about", action="append", help="new: a position, location, item or work order id it is "
+                                                     "about (repeat for more). list: only reports about this id.")
+    sp.add_argument("--notes", help="new: the notes, as text.")
+    sp.add_argument("--id", help="new: the report's id (a UUID), to carry on a report that was interrupted.")
+    sp.add_argument("--status", choices=["new", "parsed", "done"], help="status: the new status. list: a filter.")
+    sp.add_argument("--note", help="status: a note on what was done with it.")
+    sp.add_argument("--mine", action="store_true", help="list: only reports you made.")
+    sp.add_argument("--limit", type=int)
+    sp.add_argument("-o", "--output", help="download: where to save it.")
     sp = add("ingest", cmd_ingest, "Push usage, readings, measurements or life data from a CSV file, or a signal snapshot from a JSON file.")
     sp.add_argument("what", choices=["usage", "readings", "snapshot", "measurements", "lives"])
     sp.add_argument("file")

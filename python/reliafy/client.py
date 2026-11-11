@@ -334,6 +334,118 @@ class Client:
             raise ReliafyError(f"Couldn't reach Reliafy at {url.split('?')[0]}: {exc.reason}") from None
         return target
 
+    # ---- field reports (Reliafy Maintenance) --------------------------------
+
+    _CAPTURES = "/api/v1/maintenance/captures"
+    _MEDIA_KINDS = {".jpg": "photo", ".jpeg": "photo", ".png": "photo", ".webp": "photo", ".heic": "photo",
+                    ".heif": "photo", ".m4a": "audio", ".mp4": "audio", ".aac": "audio", ".mp3": "audio",
+                    ".wav": "audio", ".ogg": "audio", ".oga": "audio", ".opus": "audio", ".webm": "audio",
+                    ".3gp": "audio", ".pdf": "file"}
+
+    def _capture_call(self, method: str, path: str = "", payload: Any = None, **kw) -> Any:
+        try:
+            return self.request(method, self._CAPTURES + path, payload, **kw)
+        except ReliafyError as exc:
+            if exc.status == 409:
+                raise
+            raise self._tools_api(exc) from None
+
+    def captures(self, status: str | None = None, mine: bool = False, about_id: str | None = None,
+                 limit: int | None = None) -> dict:
+        """Field reports, newest first. ``status``: new, parsed or done."""
+        query = {k: v for k, v in (("status", status), ("mine", "true" if mine else None),
+                                   ("about_id", about_id), ("limit", limit)) if v}
+        return self._capture_call("GET", "?" + urllib.parse.urlencode(query) if query else "")
+
+    def capture(self, capture_id: str) -> dict:
+        """One field report: its notes, what it is about and its attachments."""
+        return self._capture_call("GET", f"/{capture_id}")
+
+    def new_capture(self, notes: str = "", files: Iterable[str] = (), *, about: Iterable[str] = (),
+                    taken_at: str | None = None, location: dict | None = None,
+                    capture_id: str | None = None) -> dict:
+        """Make a field report: notes, and photos, sound recordings or PDFs
+        from disk (the kind is read from each file's extension). ``about``:
+        ids of the positions, locations, items or work orders it is about.
+        Pass the same ``capture_id`` (a UUID) to carry on a report that was
+        interrupted: nothing is sent twice."""
+        import uuid
+        from datetime import datetime
+
+        files = list(files)
+        capture_id = capture_id or uuid.uuid4().hex
+        body = {"notes": notes, "about": list(about), "location": location, "media_expected": len(files),
+                "taken_at": taken_at or datetime.now().astimezone().isoformat(timespec="seconds")}
+        self._capture_call("PUT", f"/{capture_id}", body)
+        for path in files:
+            self.add_capture_media(capture_id, path)
+        return self.capture(capture_id)
+
+    def add_capture_media(self, capture_id: str, path: str, kind: str | None = None, *,
+                          media_id: str | None = None, caption: str | None = None,
+                          duration_s: float | None = None) -> dict:
+        """Send one photo, sound recording or PDF to a field report, in pieces,
+        carrying on from wherever the server got to. The attachment's id is
+        made from the report and the file's contents, so sending the same file
+        to the same report again adds nothing."""
+        import hashlib
+
+        kind = kind or self._MEDIA_KINDS.get(os.path.splitext(path)[1].lower())
+        if kind is None:
+            raise ReliafyError(f"Can't tell what {os.path.basename(path)} is: pass kind='photo', 'audio' or 'file'.")
+        digest, size = hashlib.sha256(), os.path.getsize(path)
+        with open(path, "rb") as fh:
+            for block in iter(lambda: fh.read(1024 * 1024), b""):
+                digest.update(block)
+        sha = digest.hexdigest()
+        media_id = media_id or hashlib.sha256(f"{capture_id}:{sha}".encode()).hexdigest()[:32]
+        declared = {"kind": kind, "size": size, "sha256": sha, "name": os.path.basename(path),
+                    "mime": mimetypes.guess_type(path)[0] or "", "caption": caption, "duration_s": duration_s}
+        where = f"/{capture_id}/media/{media_id}"
+        state = self._capture_call("POST", where, declared)
+        with open(path, "rb") as fh:
+            restarts = 0
+            while not state.get("complete"):
+                step = int(state.get("chunk_bytes") or 4 * 1024 * 1024)
+                at = int(state.get("received") or 0)
+                fh.seek(at)
+                try:
+                    state = {**state, **self._capture_call(
+                        "PUT", f"{where}?offset={at}", data=fh.read(step),
+                        headers={"Content-Type": "application/octet-stream"})}
+                except ReliafyError as exc:
+                    if exc.status != 409 or restarts >= 3:
+                        raise
+                    restarts += 1  # the server is somewhere else: ask where, and carry on from there
+                    state = {**state, **self._capture_call("POST", where, declared)}
+        return state.get("media") or state
+
+    def set_capture_status(self, capture_id: str, status: str, note: str | None = None) -> dict:
+        """Mark a field report new, parsed or done."""
+        return self._capture_call("POST", f"/{capture_id}/status", {"status": status, "note": note or ""})
+
+    def keep_capture(self, capture_id: str, keep: bool = True) -> dict:
+        """Pin a field report so its content isn't deleted (or unpin it)."""
+        return self._capture_call("POST", f"/{capture_id}/keep", {"keep": keep})
+
+    def delete_capture(self, capture_id: str) -> dict:
+        """Delete a field report's content now."""
+        return self._capture_call("DELETE", f"/{capture_id}")
+
+    def download_capture_media(self, capture_id: str, media_id: str, path: str) -> str:
+        """Save one of a field report's attachments to ``path``."""
+        req = urllib.request.Request(f"{self.base_url}{self._CAPTURES}/{capture_id}/media/{media_id}",
+                                     headers=self._headers({"Accept": "*/*"}))
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp, open(path, "wb") as out:
+                for block in iter(lambda: resp.read(1024 * 1024), b""):
+                    out.write(block)
+        except urllib.error.HTTPError as exc:
+            raise ReliafyError(f"Reliafy returned {exc.code} for the attachment.", exc.code) from None
+        except urllib.error.URLError as exc:
+            raise ReliafyError(f"Couldn't reach Reliafy: {exc.reason}") from None
+        return path
+
     # ---- ingest (the ingest scope) -----------------------------------------
 
     def _ingest(self, path: str, rows=None, csv: str | None = None, file: str | None = None, key: str = "rows"):
