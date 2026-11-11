@@ -104,6 +104,55 @@ def test_summary_counts_failures_when_the_flag_means_1_failed():
             tags(rows, ["unit", "flight_hours", name])["summary"]
             == "20 units · 6 failed"
         ), name
-    # Left- and interval-censored flags are kept as they are, not counted as failed.
+    # Left- and interval-censored flags are kept as they are: those units were
+    # found failed, with the time known only as a range.
     rows = [["M-0", 10, 1], ["M-1", 20, 0], ["M-2", 30, -1], ["M-3", 40, 2]]
-    assert tags(rows, ["unit", "hours", "failed"])["summary"] == "4 units · 1 failed"
+    assert tags(rows, ["unit", "hours", "failed"])["summary"] == "4 units · 1 failed · 2 failed between inspections"
+
+
+def test_summary_reads_a_status_column_of_words():
+    """"F" / "S" (or Failed / Running) says which units failed: it is counted,
+    and it isn't a covariate."""
+    rows = [[f"P{i:02d}", 1000 + 100 * i, "F" if i < 8 else "S"] for i in range(20)]
+    out = tags(rows, ["unit", "hours", "status"])
+    assert out["summary"] == "20 units · 8 failed"
+    assert out["tags"] == ["Non-repairable"]
+    rows = [[f"P{i:02d}", 1000 + 100 * i, "Running" if i % 4 else "Failed"] for i in range(20)]
+    assert tags(rows, ["pump", "hours", "Status"])["summary"] == "20 pumps · 5 failed"
+    # "running: yes" is a unit still running; "failed: yes" is a failure.
+    rows = [[100 + i, "yes" if i < 3 else "no"] for i in range(10)]
+    assert tags(rows, ["hours", "running"])["summary"] == "10 units · 7 failed"
+    assert tags(rows, ["hours", "failed"])["summary"] == "10 units · 3 failed"
+
+
+def test_summary_counts_inspection_data_with_survivors():
+    windows = [(0, 200)] * 2 + [(200, 400)] * 8 + [(400, 600)] * 15
+    cols = ["valve", "last_ok_hours", "found_failed_hours"]
+    blank = [[f"V{i}", lo, hi] for i, (lo, hi) in enumerate(windows)] + [[f"S{i}", 1000, None] for i in range(15)]
+    assert tags(blank, cols)["summary"] == "40 valves · 25 failed between inspections"
+    coded = ([[f"V{i}", lo, hi, 2] for i, (lo, hi) in enumerate(windows)]
+             + [[f"S{i}", 1000, 1000, 1] for i in range(15)])
+    assert tags(coded, cols + ["censor_code"])["summary"] == "40 valves · 25 failed between inspections"
+    words = ([[f"V{i}", lo, hi, "F"] for i, (lo, hi) in enumerate(windows)]
+             + [[f"S{i}", 1000, 1000, "S"] for i in range(15)])
+    assert tags(words, cols + ["status"])["summary"] == "40 valves · 25 failed between inspections"
+
+
+def test_summary_weighs_rows_by_a_count_column():
+    rows = [[m, "F", 5 + m] for m in range(1, 7)] + [[m, "S", 400 + m] for m in range(1, 7)]
+    assert tags(rows, ["age_months", "status", "count"])["summary"] == "2,472 units · 51 failed"
+
+
+def test_summary_reads_a_blank_failure_mode_as_still_running():
+    rows = [[f"P-{i}", 100 + 10 * i, ["seal leak", "bearing wear", None][i % 3], "A" if i % 2 else "B"]
+            for i in range(30)]
+    assert tags(rows, ["pump", "hours", "failure_mode", "site"])["summary"] == "30 pumps · 20 failed"
+
+
+def test_summary_does_not_say_all_failed_when_it_cannot_tell():
+    # A status column it can't read: the units alone, not a guess.
+    rows = [[100 + i, ["amber", "green", "review"][i % 3]] for i in range(12)]
+    assert tags(rows, ["hours", "status"])["summary"] == "12 units"
+    # Times with a group column and nothing that could be a status: every row failed.
+    rows = [["A" if i % 2 else "B", 400 + 10 * i] for i in range(12)]
+    assert tags(rows, ["design", "cycles"])["summary"] == "12 units · all failed"

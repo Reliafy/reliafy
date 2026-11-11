@@ -1848,7 +1848,8 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         raise ToolError("groups / group_column apply to a shared-frailty model (e.g. weibull_frailty, with "
                         "covariates) or to competing risks (with causes / cause_column) — choose one of "
                         "those, or drop the group column.")
-    options: dict[str, Any] = {}
+    # Flags sent as codes are read as they are: an interval row is flagged 2.
+    options: dict[str, Any] = {fitting.STRICT_INTERVALS_KEY: True}
     if c_invert:
         if "c" not in mapping:
             raise ToolError("c_invert flips censoring flags — pass `censored` (or censor_column) too.")

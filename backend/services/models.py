@@ -9,6 +9,7 @@ persistent model id.
 
 from __future__ import annotations
 
+import threading
 import uuid
 from collections import OrderedDict
 from datetime import datetime, timezone
@@ -97,6 +98,9 @@ def save_model(
         status="ready",
     )
     db.models.insert_one(to_doc(model))
+    # The fit just made is the saved model's live one: the calculator answers
+    # from it at once, rather than each of its first requests fitting again.
+    keep_live(model.id, fcache)
     return model
 
 
@@ -315,8 +319,9 @@ def update_fit(
             "updated_at": model.updated_at,
         }},
     )
-    # The cached live model (refit-on-demand) is stale now.
+    # The cached live model is stale now: this refit's takes its place.
     _LIVE.pop(model_id, None)
+    keep_live(model_id, fcache)
     # Its answer before and after, for "what changed" (#41).
     from backend.services import workspace_changes
 
@@ -423,6 +428,18 @@ def rate_uncertainty_of(model: Model) -> dict | None:
     return library_models.reattach_rate_uncertainty(results, model.spec)
 
 
+_RESTORE_LOCKS: dict[str, threading.Lock] = {}
+_RESTORE_GUARD = threading.Lock()
+
+
+def _restore_lock(model_id: str) -> threading.Lock:
+    with _RESTORE_GUARD:
+        if len(_RESTORE_LOCKS) > 4 * _LIVE_MAX:
+            for key in [k for k, lock in _RESTORE_LOCKS.items() if not lock.locked()]:
+                del _RESTORE_LOCKS[key]
+        return _RESTORE_LOCKS.setdefault(model_id, threading.Lock())
+
+
 def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
     """Resolve a saved model to its live fitting-cache id, re-fitting on demand.
 
@@ -432,21 +449,30 @@ def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
     if model is None:
         raise ModelNotFound(model_id)
 
-    cache_id = _LIVE.get(model_id)
-    if cache_id is None or cache_id not in fitting._MODEL_STORE:
-        # Prefer rehydrating the persisted fit; only re-fit from the dataset if
-        # there's no serialised model (older docs / per-demand) or it won't load.
-        cache_id = None
-        if model.serialized:
-            try:
-                cache_id = fitting.restore_live(model.serialized)
-            except Exception:  # noqa: BLE001 - fall back to a fresh fit
-                cache_id = None
+    def cached():
+        cache_id = _LIVE.get(model_id)
+        return cache_id if cache_id is not None and cache_id in fitting._MODEL_STORE else None
+
+    cache_id = cached()
+    if cache_id is not None:
+        return cache_id
+    # One request at a time brings a model back: the calculator's first
+    # requests arrive together, and each would otherwise fit it again.
+    with _restore_lock(model_id):
+        cache_id = cached()
         if cache_id is None:
-            cache_id = _refit(model)
-        _LIVE[model_id] = cache_id
-        while len(_LIVE) > _LIVE_MAX:
-            _LIVE.popitem(last=False)
+            # Prefer rehydrating the persisted fit; only re-fit from the dataset if
+            # there's no serialised model (older docs / per-demand) or it won't load.
+            if model.serialized:
+                try:
+                    cache_id = fitting.restore_live(model.serialized)
+                except Exception:  # noqa: BLE001 - fall back to a fresh fit
+                    cache_id = None
+            if cache_id is None:
+                cache_id = _refit(model)
+            _LIVE[model_id] = cache_id
+            while len(_LIVE) > _LIVE_MAX:
+                _LIVE.popitem(last=False)
     return cache_id
 
 

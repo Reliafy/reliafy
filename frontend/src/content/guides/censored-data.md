@@ -78,6 +78,31 @@ xl,xr
 The unit failed somewhere in that window, and the model accounts for the
 uncertainty rather than pretending the failure happened at the moment you looked.
 
+Two columns named like `last_ok_hours` and `found_failed_hours` (or `xl` and
+`xr`, earliest and latest, lower and upper) are read this way for you.
+
+### Units that passed their last inspection
+
+Most inspection records also hold units that never failed. Write them any of
+these ways, and they count as still running at the earliest time:
+
+- leave the latest time blank;
+- repeat the same time in both columns, beside a status column that says the
+  unit is still running (`S`, `Running`, or the code `1`).
+
+```
+last_ok_hours,found_failed_hours
+400,600
+600,800
+1000,
+```
+
+A blank earliest time means the unit was found failed at its first inspection.
+Under the columns, the Data step counts what it read, for example "23 failed
+between inspections, 2 found failed at the first inspection, 15 still running":
+check that line before you fit. With no status column, a row with the same time
+twice is read as a failure at exactly that time, and the step says so.
+
 ## Left censoring: already failed when first observed
 
 If a unit had already failed by the time you first checked, you know only that
