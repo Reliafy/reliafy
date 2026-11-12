@@ -35,9 +35,8 @@ import { isNumeric, timeUnitOf } from "../datasetGuess.js";
 import {
   EMPTY_MAPPING, columnFacts, isSimplePaste, startingMapping, statusSummary, summaryParts,
   dataStepProblems, dataStepIssues, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped, mappingWords,
-  dataQuestions, answerQuestion, unitCounts, keptChoices, dataStepNotes, issueRow, statusMeaning,
+  dataQuestions, answerQuestion, unitCounts, keptChoices, dataStepNotes, issueRow,
 } from "../lifeData.js";
-import { useDatasetSplit } from "./DatasetSplit.jsx";
 import { RequiredUnit } from "./Units.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import { Select } from "./ui/Controls.jsx";
@@ -252,8 +251,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       // A pasted flag column is 0 = failed, 1 = still running, as the paste box says.
       ? { ...EMPTY_MAPPING, x: "time", c: cols.columns.includes("censored") ? "censored" : "" }
       : g.mapping;
-    setKeptFrom(!kept ? null : kept.split != null ? `the sheet${kept.split ? ` “${kept.split}”` : ""} it was split from`
-      : `“${kept.from || "the last model"}”, the last model fitted to this dataset`);
+    setKeptFrom(kept ? `“${kept.from || "the last model"}”, the last model fitted to this dataset` : null);
     // Start and stop rows of items (#60): fit their covariates over time.
     const timeVarying = simplePaste ? null
       : kept ? (kept.mapping.i ? "intervals" : null) : guessTvc(cols.columns, facts, cols.n_rows);
@@ -532,19 +530,6 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     : reading?.error ? "First settle the note beside x."
     : "Waiting for the rows to be read…";
 
-  // "dataset": one sheet split into several datasets by a column, saved
-  // with this one reading (DatasetSplit.jsx). Only for a file or a paste.
-  const splitSpec = useMemo(() => ({
-    needs: [{ row: "x", col: mapping.x, range: [mapping.xl, mapping.xr].filter(Boolean) }],
-    c: mapping.c, n: mapping.n, status: mapping.c ? (v) => statusMeaning(v, mapping) : null,
-  }), [mapping]);
-  const sheetSplit = useDatasetSplit({
-    file: datasetId ? null : file, columns: csv?.columns || [], mapping, spec: splitSpec,
-    enabled: !tvc && !simple,
-    reading: { kind: "life", mapping, unit, options: { c_map: mapping.c_map || null, c_invert: !!mapping.c_invert } },
-    fitTo: (id) => `/models/new?dataset=${encodeURIComponent(id)}`,
-  });
-
   // Cox PH's own options travel with a Cox fit only.
   const familyOpts = frailtyFitOptions(options.find((d) => d.id === distribution), fitOpts);
   const coxFit = distribution === "cox_ph" ? { fitOptions: { cox: coxOpts } }
@@ -771,18 +756,6 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         )}
       </>
     );
-  } else if (step === 2 && sheetSplit.saved) {
-    nav = <button className="secondary" onClick={() => onCancel?.()}>Done</button>;
-  } else if (step === 2 && sheetSplit.active) {
-    // Split by a column: the flow ends here, at Save N datasets.
-    const why = !mappingValid ? waitingFor : sheetSplit.waitingFor;
-    nav = (
-      <>
-        <button className="secondary" onClick={goBack} disabled={sheetSplit.saving}>Back</button>
-        {why && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{why}</span>}
-        <button data-wt="fit-save-split" onClick={sheetSplit.save} disabled={!mappingValid || !sheetSplit.canSave}>{sheetSplit.saveLabel}</button>
-      </>
-    );
   } else if (step === 2) {
     // Next is never greyed without the reason beside it.
     nav = (
@@ -958,9 +931,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       )}
 
       {/* data-wt: the guided walkthrough's anchors (walkthroughs.js). */}
-      {step === 2 && sheetSplit.saved && <div className="fit-step">{sheetSplit.savedList}</div>}
-
-      {step === 2 && csv && !sheetSplit.saved && (
+      {step === 2 && csv && (
         <div className="fit-step" data-wt="fit-data">
           <p className="muted-line">
             {sourceName === PASTED ? "Pasted values" : sourceName} · {csv.n_rows.toLocaleString()} rows
@@ -1004,13 +975,11 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                 facts={facts}
                 timeVarying={tvc}
                 failureMode
-                issues={[...issues, ...sheetSplit.issues]}
-                notes={tvc ? [] : [...dataStepNotes(mapping, facts), ...sheetSplit.notes]}
+                issues={issues}
+                notes={tvc ? [] : dataStepNotes(mapping, facts)}
                 asides={asides}
                 warning={<XRangeWarning reading={reading} />}
-                top={sheetSplit.picker}
               />
-              {sheetSplit.summary}
               <ResultDetails
                 summary="Advanced (regression): covariates"
                 open={covariates.length > 0 || advanced || !!tvc}

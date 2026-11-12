@@ -1,6 +1,7 @@
-// The Data step's "dataset" selector: one sheet of three equipment classes
-// saved as three datasets, each named by its class, with the rows left out
-// said beside the selector. Nothing is fitted; each dataset links to its fit.
+// The Data section's upload (New dataset): "Split into datasets by" saves one
+// sheet of three equipment classes as three datasets, each named by its
+// class, with the rows left out said in the list. No columns are mapped here;
+// each dataset links to its own page, where it is fitted.
 import { test, expect, open, expectHealthy } from "./health.js";
 
 const SHEET = [
@@ -11,31 +12,33 @@ const SHEET = [
   "X-1,,900,Yes",
 ].join("\n") + "\n";
 
-test("split one sheet into a dataset per equipment class", async ({ page, problems }) => {
-  await open(page, "/models/new?mode=data");
-  await page.locator('input[type="file"]').setInputFiles({
+test("split one sheet into a dataset per equipment class from the Data page", async ({ page, problems }) => {
+  await open(page, "/data");
+  await page.getByRole("button", { name: "New dataset" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator('input[type="file"]').setInputFiles({
     name: "plant.csv", mimeType: "text/csv", buffer: Buffer.from(SHEET),
   });
-  await expect(page.getByText(/plant\.csv · 10 rows/)).toBeVisible();
-  // Off by default: Next, as before.
-  await expect(page.getByRole("combobox", { name: "dataset", exact: true })).toContainText("none");
-  await expect(page.getByRole("button", { name: "Next" })).toBeVisible();
+  await expect(dialog.getByText("plant.csv")).toBeVisible();
+  // Off by default: one dataset, as before.
+  const pick = dialog.getByRole("combobox", { name: "Split into datasets by" });
+  await expect(pick).toContainText("no split");
+  await expect(dialog.getByRole("button", { name: "Create dataset" })).toBeVisible();
 
-  await page.getByRole("combobox", { name: "dataset", exact: true }).click();
+  await pick.click();
   await page.getByRole("option", { name: "Equipment class" }).click();
-  await expect(page.getByText("1 row has no dataset name and is left out")).toBeVisible();
-  const list = page.getByRole("region", { name: "Datasets this sheet makes" });
-  await expect(list.getByText("This sheet makes 3 datasets:")).toBeVisible();
-  await expect(list.getByRole("row", { name: /Transformer\s+3 rows · 2 failed/ })).toBeVisible();
-  await expect(list.getByRole("row", { name: /Coal mill\s+4 rows · 3 failed/ })).toBeVisible();
-  await expect(list.getByRole("row", { name: /Boiler feed pump\s+2 rows · 1 failed/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Next" })).toHaveCount(0);
+  const list = dialog.getByRole("region", { name: "Datasets this file makes" });
+  await expect(list.getByText("This file makes 3 datasets:")).toBeVisible();
+  await expect(list.getByRole("row", { name: /Transformer\s+3 rows/ })).toBeVisible();
+  await expect(list.getByRole("row", { name: /Coal mill\s+4 rows/ })).toBeVisible();
+  await expect(list.getByRole("row", { name: /Boiler feed pump\s+2 rows/ })).toBeVisible();
+  await expect(list.getByText("Rows with no Equipment class are left out: 1")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Create dataset" })).toHaveCount(0);
   await expectHealthy(page, problems, { label: "split chosen" });
 
-  await page.getByRole("button", { name: "Save 3 datasets" }).click();
-  const saved = page.getByRole("region", { name: "Saved datasets" });
+  await dialog.getByRole("button", { name: "Save 3 datasets" }).click();
+  const saved = dialog.getByRole("region", { name: "Saved datasets" });
   await expect(saved.getByText("Saved 3 datasets:")).toBeVisible({ timeout: 30_000 });
-  await expect(saved.getByText("Fit each from its dataset page.")).toBeVisible();
   await saved.getByRole("link", { name: "Coal mill" }).click();
   await expect(page).toHaveURL(/\/data\/[0-9a-f]{32}$/);
   await expect(page.getByText(/4 rows/).first()).toBeVisible();

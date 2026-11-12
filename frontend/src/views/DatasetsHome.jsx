@@ -176,7 +176,7 @@ export default function DatasetsHome() {
       />
 
       {newOpen && (
-        <NewDatasetModal onClose={() => setNewOpen(false)} onCreated={onCreated} />
+        <NewDatasetModal onClose={() => setNewOpen(false)} onCreated={onCreated} onSplit={refresh} />
       )}
     </div>
   );

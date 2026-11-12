@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useDatasetSplit } from "../components/DatasetSplit.jsx";
+import { useEffect, useRef, useState } from "react";
 import { DataSourceStep } from "../components/DatasetPicker.jsx";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Select from "../components/Select.jsx";
@@ -170,7 +169,7 @@ export default function RecurrentNewPage() {
       const g = kept?.mapping || guessRecurrentMapping(columns, { dtypes: full.dtypes, preview: full.preview });
       setMap(g);
       setUnit(kept?.unit || guessUnit(g.x) || guessUnit(g.tr));
-      setKeptFrom(kept ? { from: kept.from || "the last model", split: kept.split } : null);
+      setKeptFrom(kept ? kept.from || "the last model" : null);
       setWindows("");
       setStep(2);
     } catch (err) {
@@ -203,18 +202,6 @@ export default function RecurrentNewPage() {
   // each problem, and the missing end of record, sits beside its selector.
   const mapIssues = recurrentIssues(map, windows);
   const mappingValid = mapIssues.every((i) => i.note);
-
-  // "dataset": one sheet split into several datasets by a column (DatasetSplit.jsx).
-  const splitSpec = useMemo(() => ({
-    needs: [{ row: "i", col: map.i, number: false }, { row: "x", col: map.x }],
-    c: map.c, n: map.n,
-    status: map.c ? (v) => ({ 0: 0, 1: 1 })[String(v).trim()] ?? null : null,
-  }), [map]);
-  const split = useDatasetSplit({
-    file: datasetId ? null : file, columns: csv?.columns || [], mapping: map, spec: splitSpec,
-    reading: { kind: "recurrent", mapping: map, unit },
-    fitTo: (id) => `/models/recurrent/new?dataset=${encodeURIComponent(id)}`,
-  });
 
   const onFit = async () => {
     if (!file && !datasetId) return;
@@ -279,17 +266,6 @@ export default function RecurrentNewPage() {
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
         <span className="hint" style={{ margin: 0 }}>Pick a saved dataset, or upload a CSV or Excel file, to continue</span>
-      </>
-    );
-  } else if (step === 2 && split.saved) {
-    nav = <button className="secondary" onClick={() => navigate("/models/recurrent")}>Done</button>;
-  } else if (step === 2 && split.active) {
-    const why = !mappingValid ? "First settle the notes beside the selectors." : split.waitingFor;
-    nav = (
-      <>
-        <button className="secondary" onClick={goBack} disabled={split.saving}>Back</button>
-        {why && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{why}</span>}
-        <button onClick={split.save} disabled={!mappingValid || !split.canSave}>{split.saveLabel}</button>
       </>
     );
   } else if (step === 2) {
@@ -419,18 +395,14 @@ export default function RecurrentNewPage() {
           </>
         )}
 
-        {step === 2 && split.saved && <div className="fit-step">{split.savedList}</div>}
-
-        {step === 2 && csv && !split.saved && (
+        {step === 2 && csv && (
           <div className="fit-step">
             <p className="muted-line">{sourceName} · {csv.n_rows} rows · {csv.columns.length} columns</p>
             <HeaderNote note={headerNote} onPick={pickFile} disabled={loading} />
             <PreviewTable columns={csv.columns} rows={csv.preview} />
             {keptFrom && (
               <p className="muted-line" role="status" style={{ margin: 0 }}>
-                {keptFrom.split != null
-                  ? `Columns read as for the sheet${keptFrom.split ? ` “${keptFrom.split}”` : ""} it was split from.`
-                  : `Columns read as for “${keptFrom.from}”, the last repairable model fitted to this dataset.`}
+                Columns read as for “{keptFrom}”, the last repairable model fitted to this dataset.
               </p>
             )}
             <ColumnMapper
@@ -446,11 +418,9 @@ export default function RecurrentNewPage() {
               none={RECURRENT_NONE}
               meanings={false}
               codeWords="0 = a failure, 1 = the end of the record"
-              issues={[...mapIssues.filter((i) => !i.note), ...split.issues]}
-              notes={[...mapIssues.filter((i) => i.note), ...split.notes]}
-              top={split.picker}
+              issues={mapIssues.filter((i) => !i.note)}
+              notes={mapIssues.filter((i) => i.note)}
             />
-            {split.summary}
             <ResultDetails summary="Covariates and gaps (optional)" open={!!(map.z || []).length || !!(map.ws || map.we) || !!windows.trim()}>
               <RecurrentMore columns={csv.columns} mapping={map} onChange={setMap} windows={windows} onWindowsChange={setWindows} />
             </ResultDetails>

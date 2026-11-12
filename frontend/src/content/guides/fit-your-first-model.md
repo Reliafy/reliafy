@@ -81,6 +81,28 @@ over time (vibration, wear), one row per reading. They sit beside the life data
 on the dataset's page, on its **Measurements** tab, and feed a
 [condition and life model](/guides/condition-based-risk).
 
+### One sheet, several datasets
+
+A sheet often holds more than one kind of thing: transformers, coal mills and
+boiler feed pumps, each row naming its class in a column. Upload it under
+[Data](/data) → **New dataset**, and once the file is chosen, pick that column
+in **Split into datasets by**. Each value becomes its own dataset, named by the
+value (*Transformer*, *Coal mill*). If you already have a dataset with that
+name, the file's name is added (*Transformer – plant*).
+
+- Before anything is saved, the box lists what it will make, with each
+  dataset's rows: *Transformer · 24 rows*.
+- Rows with no value in that column are left out, and the box says how many.
+- The column itself isn't kept: every row of a dataset holds the same value.
+- On the Free plan every saved dataset counts towards the limit; if they won't
+  all fit, the box says how many more you can save, and nothing is saved.
+- **Save 3 datasets** saves them all at once, then lists them with a link to
+  each. You choose how the columns are read when you fit each one, as for any
+  dataset.
+
+Leave **Split into datasets by** on *no split* and the upload works as before:
+one dataset. Over the API and MCP, `change dataset_upload` takes `dataset_col`.
+
 ## Mapping the columns
 
 The **Data** step shows your file's first rows, then one selector for each
@@ -143,32 +165,6 @@ A few things the step does for you:
 - Load a **corrected copy** of the same file (go **Back** and upload it again)
   and the columns are read as you set them on the first, as long as every
   column you used is still there.
-
-### One sheet, several datasets
-
-A sheet often holds more than one kind of thing: transformers, coal mills and
-boiler feed pumps, each row naming its class in a column. The first selector on
-the **Data** step, **dataset**, splits such a sheet: pick that column and each
-value becomes its own dataset, named by the value (*Transformer*, *Coal mill*).
-If you already have a dataset with that name, the file's name is added
-(*Transformer – plant*).
-
-- The selectors below read every dataset the same way: one **x**, one **c**
-  and one set of status meanings for all of them.
-- Rows with no value in the dataset column are left out, and the step says how
-  many beside the selector.
-- A problem in one dataset is said beside the selector it concerns, for example
-  *Boiler feed pump: 1 row has no x*.
-- The step lists what it will make, with each dataset's rows and failures, and
-  **Next** becomes **Save 3 datasets**. Nothing is fitted: once they're saved,
-  the list links to each dataset, and you fit each from its own page.
-- On the Free plan every saved dataset counts towards the limit; if they won't
-  all fit, the step says how many will before anything is saved.
-
-Leave **dataset** on *none* and the step works as before: one dataset, and on
-to the model. The same selector is on the Data step of
-[repairable](/guides/recurrent-events), accelerated life and degradation
-models; over the API and MCP, `change dataset_upload` takes `dataset_col`.
 
 ## Choosing a distribution
 
