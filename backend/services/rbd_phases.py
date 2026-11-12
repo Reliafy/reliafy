@@ -90,6 +90,11 @@ SCHEDULE_NOTE = ("Blocks with a covariate schedule follow it through the mission
 #: What "not needed" and "standby" mean, for the result.
 NOT_NEEDED_NOTE = ("Not needed: the phase works without the block. Its clock keeps running, so if it fails then, a "
                    "later phase that needs it finds it failed.")
+#: Why a mission's chance has no bound, or what its range is (stated on every result).
+NO_BOUND_NOTE = ("No bound: the mission is worked out exactly from each block's model at its point values, so "
+                 "the uncertainty in a fitted model isn't carried into it (and figures typed in have none to carry).")
+SIM_RANGE_NOTE = ("The range is the simulation's own precision ({n:,} missions), not the uncertainty in the blocks' "
+                  "models, which isn't carried into a mission.")
 STANDBY_NOTE = ("Standby: the block is there but not running, so it neither ages nor fails in that phase; it counts "
                 "as working if it was still working when the phase began, and its age carries on when it next runs. "
                 "Switching over is taken as perfect, and a standby block's running time after it takes over within "
@@ -633,6 +638,9 @@ def analyze_phases(
         out["notes"].append(STANDBY_NOTE)
     if interval is not None:
         out["interval"] = interval
+        out["bound_note"] = SIM_RANGE_NOTE.format(n=interval["n_samples"])
+    else:
+        out["bound_note"] = NO_BOUND_NOTE
     if reason:
         out["method_reason"] = reason
     guessed = _add_placeholders(out, graph, resolve_subsystem, resolve_model, covariates, phases, built, labels)
@@ -785,6 +793,8 @@ def agent_summary(result: dict) -> dict:
         out["through"] = result.get("through")
     if result.get("interval"):
         out["interval"] = result["interval"]
+    if result.get("bound_note") and result.get("reliability") is not None:
+        out["bound_note"] = result["bound_note"]
     if result.get("method_reason"):
         out["notes"].insert(0, result["method_reason"])
     note = placeholder_note(result)

@@ -1447,8 +1447,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       const made = await createPositionMission(positionId);
       const ph = made.placeholders?.length ? ` ${made.placeholders.length} block${made.placeholders.length === 1 ? " is a placeholder" : "s are placeholders"}: give ${made.placeholders.length === 1 ? "it a model" : "them models"} in its RBD.` : "";
       const from = made.built_from === "model" ? `one block, ${positionName}'s own model in use`
-        : made.built_from === "copy" ? `a copy of ${positionName}'s RBD` : `what's inside ${positionName}`;
-      say(`Added ${made.mission.name} with an RBD of its own, built from ${from}.${ph} Now give it its phases.`);
+        : made.built_from === "copy" ? `a copy of ${positionName}'s RBD, wired as it is there` : `what's inside ${positionName}`;
+      const series = made.series_warning ? " Its blocks are in series: check the wiring in its RBD." : "";
+      say(`Added ${made.mission.name} with an RBD of its own, built from ${from}.${ph}${series} Now give it its phases.`);
       pmissions.load();
       pending.current = missionKey(made.rbd.id, made.mission.id);
       openMission(positionId, made.rbd.id, made.mission.id);
