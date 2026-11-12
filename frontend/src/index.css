@@ -10051,3 +10051,11 @@ main.content:focus { outline: none; }
 .xl-picker .xl-inline { max-width: 100%; min-width: 0; flex-wrap: wrap; }
 .xl-picker .xl-inline .select-wrap, .xl-picker .xl-inline > div { min-width: 0; max-width: 100%; flex: 1 1 12rem; }
 .xl-picker .xl-inline button { max-width: 100%; }
+
+/* The Data step's split: "This sheet makes 3 datasets", then what was saved. */
+.split-summary { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); min-width: 0; }
+.split-summary h3 { margin: 0; font-size: var(--fs-14); }
+.split-table { border-collapse: collapse; font-size: var(--fs-13); }
+.split-table th, .split-table td { padding: 4px var(--sp-4) 4px 0; text-align: left; vertical-align: baseline; }
+.split-table th { font-weight: 600; overflow-wrap: anywhere; }
+.split-table td { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }

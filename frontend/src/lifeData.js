@@ -162,6 +162,8 @@ export function savedMapping(saved, columns) {
     mapping: { ...EMPTY_MAPPING, ...Object.fromEntries(fields), c_invert: !!opts.c_invert, c_map: opts.c_map || null },
     unit: saved.unit || "",
     from: saved.model_name || "",
+    // A dataset split from a sheet with others: the sheet's name (no model yet).
+    ...(saved.split_from != null && !saved.model_name ? { split: saved.split_from } : {}),
   };
 }
 
