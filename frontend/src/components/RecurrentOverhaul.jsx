@@ -50,7 +50,7 @@ export default function RecurrentOverhaul({ modelId, unit: rawUnit, name = null 
     ];
     const layout = {
       xaxis: { title: { text: `Overhaul interval${u}` } },
-      yaxis: { title: { text: `Long-run cost (${workspaceCurrency()}) per unit time` }, rangemode: "tozero", range: [0, opt.cost_rate * 2.5] },
+      yaxis: { title: { text: `Long-run cost (${workspaceCurrency()}) per ${ut ? ut.replace(/s$/, "") : "unit of time"}` }, rangemode: "tozero", range: [0, opt.cost_rate * 2.5] },
       shapes: [referenceShape({ x: opt.interval, line: { dash: "dot" } })],
     };
     plot = <Plot fill data={traces} layout={layout} download={`${name || "Repairable model"} — overhaul cost rate`} />;
@@ -128,7 +128,7 @@ export default function RecurrentOverhaul({ modelId, unit: rawUnit, name = null 
                   },
                 ]}
               >
-                <p className="rs-note">Cost rates are long-run costs per {ut ? ut.replace(/s$/, "") : "unit time"}.</p>
+                <p className="rs-note">Cost rates are long-run costs per {ut ? ut.replace(/s$/, "") : "unit of time"}.</p>
               </ResultDetails>
             </>
           )}

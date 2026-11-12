@@ -18,6 +18,7 @@ from backend.services import billing as billing_service
 from backend.services import excel as excel_service
 from backend.services import datasets as datasets_service
 from backend.services import models as models_service
+from backend.services import recurrent as recurrent_service
 from backend.services import model_split
 from backend.services import samples as samples_service
 from backend.services import shares as shares_service
@@ -190,6 +191,9 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
         "models": [_model_summary(m, ctx) for m in models],
         # How the newest model read the columns: a new fit from here starts there.
         "last_mapping": _last_mapping(models, dataset.columns),
+        # The same for a repairable fit: the newest repairable model's columns.
+        "last_recurrent_mapping": None if public else recurrent_service.last_mapping(
+            session, dataset.id, ctx.read_owners, ctx.hidden, dataset.columns),
         "other_models": others,
         "profile": profile,
         # The measurements part (readings at ages), with its own preview and

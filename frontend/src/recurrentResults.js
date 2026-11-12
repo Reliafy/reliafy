@@ -49,6 +49,28 @@ export function paramLabel(r, name) {
   return spec[0];
 }
 
+// A rate parameter shown per 1,000 (or 10,000…) units of time when it is
+// small, so it never reads in scientific notation: an HPP rate of 9.81e-4 per
+// hour is "0.981 per 1,000 hours". { label, value, ci, scale }.
+export function scaledParam(r, p) {
+  const spec = namesFor(r)[p?.name];
+  const v = Number(p?.value);
+  let k = 1;
+  if (spec?.[1] === "rate" && Number.isFinite(v) && v !== 0) {
+    while (Math.abs(v) * k < 0.1 && k < 1e9) k *= 10;
+    if (k > 1 && k < 1000) k = 1000;
+  }
+  if (k === 1) return { label: paramLabel(r, p.name), value: p.value, ci: p.ci, scale: 1 };
+  const unit = String(r?.unit || "").trim().toLowerCase();
+  const per = `per ${k.toLocaleString("en-US")} ${unit || "time units"}`;
+  return {
+    label: `${spec[0]} (${per})`,
+    value: v * k,
+    ci: Array.isArray(p.ci) ? p.ci.map((c) => (c == null ? c : c * k)) : p.ci,
+    scale: k,
+  };
+}
+
 // Shape first: the reading turns on it. The restoration parameter leads an
 // imperfect-repair model.
 const ORDER = ["q", "rho", "beta", "alpha", "b", "lambda"];
@@ -234,7 +256,10 @@ export function mtbfWords(r) {
 function shapeWords(r) {
   const b = r?.growth_basis;
   if (!b || b.estimate == null) return null;
-  return `${growthSymbol(r)} ${formatNumber(b.estimate, { sig: 3 })}${ciText(b.ci) ? ` (${ciPct(r)} ${ciText(b.ci)})` : ""}`;
+  // A small log-linear slope reads per 1,000 (or more) units of time.
+  const d = scaledParam(r, { name: b.parameter, value: b.estimate, ci: b.ci });
+  const per = d.scale > 1 ? ` per ${d.scale.toLocaleString("en-US")} ${unitWord(r) || "time units"}` : "";
+  return `${growthSymbol(r)} ${formatNumber(d.value, { sig: 3 })}${per}${ciText(d.ci) ? ` (${ciPct(r)} ${ciText(d.ci)})` : ""}`;
 }
 
 // The covariate with the largest effect: "site Inland: failures ×2.2 (1.37–3.40)".
@@ -379,8 +404,24 @@ export function cvmCheck(r) {
     : { tone: "bad", words: `No: the failure times don't follow the model (${pText(c.p_value)}). Try another model.` };
 }
 
+// The chance of ``k`` or more events from a Poisson count with mean ``mu``.
+export function poissonUpperTail(k, mu) {
+  if (!(mu > 0) || !(k > 0)) return 1;
+  // 1 − P(X ≤ k − 1), the terms summed in logs so a large mean doesn't overflow.
+  let term = Math.exp(-mu);
+  let below = 0;
+  for (let j = 0; j < Math.ceil(k); j++) {
+    below += term;
+    term *= mu / (j + 1);
+  }
+  return Math.min(1, Math.max(0, 1 - below));
+}
+
 // "Does any system fail more than the model expects?" from each system's
-// failures against the model's expectation over its own window.
+// failures against the model's expectation over its own window. A system is
+// called a bad actor only when that many failures would be unlikely by
+// chance with this many systems to pick from (a Poisson tail under 5% / the
+// number of systems); a small excess is said to be within chance.
 export function systemsCheck(r) {
   const rows = r?.system_residuals || [];
   if (rows.length < 2) return null;
@@ -388,9 +429,15 @@ export function systemsCheck(r) {
   if (!(top.excess >= 1)) {
     return { rows, words: "No system stands out: each has about the failures the model expects." };
   }
-  return {
-    rows,
-    words: `${top.system} fails most beyond the model: ${formatNumber(top.failures)} failures where it expects `
-      + `${formatNumber(top.expected, { sig: 2 })}. Worth a look as a bad actor.`,
-  };
+  const n = Math.max(rows.length, Number(r?.n_systems) || 0);
+  const p = poissonUpperTail(top.failures, top.expected);
+  const what = `${formatNumber(top.failures)} failures where it expects ${formatNumber(top.expected, { sig: 2 })}`;
+  if (p >= 0.05 / n) {
+    return {
+      rows,
+      words: `${top.system} has the most failures beyond the model (${what}), but no more than chance gives `
+        + `across ${n} systems: no system stands out.`,
+    };
+  }
+  return { rows, words: `${top.system} fails most beyond the model: ${what}. Worth a look as a bad actor.` };
 }

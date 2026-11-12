@@ -1128,8 +1128,32 @@ def life_lines(model, Zuse: np.ndarray, tested) -> list:
         G[:, j] = grid
         life = _characteristic_life(model, G)
         keep = np.isfinite(life) & (life > 0)
-        out.append({"stress": grid[keep].tolist(), "life": life[keep].tolist()})
+        line = {"stress": grid[keep].tolist(), "life": life[keep].tolist()}
+        band = _life_band(model, G[keep], life[keep])
+        if band:
+            line.update(band)
+        out.append(line)
     return out
+
+
+def _life_band(model, G: np.ndarray, life: np.ndarray, confidence: float = rule.LEVEL) -> dict | None:
+    """A two-sided Wald band on the life along a life-stress line (the delta
+    method on the log life at each point, as :func:`life_at_use_interval`),
+    so the chart shows how soft the extrapolated end is: ``{lower, upper,
+    level}``, or None where the fit has no usable covariance."""
+    from scipy.stats import norm
+
+    z = float(norm.ppf(0.5 + confidence / 2.0))
+    lower, upper = [], []
+    for row, value in zip(G, life):
+        se = _log_life_se(model, np.atleast_2d(row), float(value))
+        if se is None:
+            return None
+        with np.errstate(all="ignore"):
+            lo, hi = float(value * np.exp(-z * se)), float(value * np.exp(z * se))
+        lower.append(lo if np.isfinite(lo) else None)
+        upper.append(hi if np.isfinite(hi) else None)
+    return {"lower": lower, "upper": upper, "level": confidence}
 
 
 def _use_row(use_stress, life_model_id: str) -> np.ndarray:

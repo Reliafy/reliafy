@@ -47,4 +47,23 @@ export function guessRecurrentMapping(columns, { dtypes = null, preview = [] } =
 // The warning the Data step shows while no end of record is mapped.
 export const NO_RECORD_END = "No end of record is mapped, so each system's record will be taken to end at its "
   + "last failure, which makes failures look closer together at the end than they were. Map the column that "
-  + "says how far each system's records go (tr), or add each system's end-of-record row (c = 1).";
+  + "says how far each system's records go (End of record), or add a row for each system's end of record, flagged 1 in a “Failure or end of record?” column.";
+
+// A dataset's ``last_recurrent_mapping`` (how its newest repairable model read
+// the columns) as { mapping, unit, from }, or null when it doesn't fit these
+// columns: a refit from a saved dataset starts there, not from a fresh guess.
+export function savedRecurrentMapping(saved, columns) {
+  const m = saved?.mapping;
+  if (!m || !m.i || !m.x) return null;
+  const have = new Set(columns || []);
+  const keys = ["i", "x", "c", "n", "tl", "tr", "mode", "ws", "we"];
+  const fields = keys.filter((k) => typeof m[k] === "string" && m[k]);
+  const z = Array.isArray(m.z) ? m.z.filter(Boolean) : [];
+  if ([...fields.map((k) => m[k]), ...z].some((c) => !have.has(c))) return null;
+  return {
+    mapping: { i: "", x: "", c: "", n: "", tl: "", tr: "", mode: "", ...Object.fromEntries(fields.map((k) => [k, m[k]])),
+               ...(z.length ? { z } : {}) },
+    unit: saved.unit || "",
+    from: saved.model_name || "",
+  };
+}

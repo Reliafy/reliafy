@@ -102,3 +102,18 @@ export function guessMeasurementUnit(column) {
   if (!MEASURE_UNITS[last]) return "";
   return MEASURE_SPELLING[last] || last;
 }
+
+// First guesses for the item, time and measurement columns by their names:
+// the item is named like an id (unit, pad, serial…), the time like a time or
+// with a time unit (hours, odometer_km), the measurement is the next column.
+// Falls back to the first three columns in order.
+const ID_NAME = /^(id|item|unit|units|asset|serial|sn|tag|vehicle|truck|pad|pads|part|specimen|sample|component|system|name|no)$/;
+const TIME_NAME = /^(time|times|age|hours?|hrs?|days?|cycles?|km|kms|miles?|odometer|mileage|distance|runtime|duration|t)$/;
+export function guessDegradationColumns(columns) {
+  const cols = columns || [];
+  const has = (re) => (c) => words(c).some((w) => re.test(w));
+  const i = cols.find(has(ID_NAME)) || cols[0] || "";
+  const x = cols.find((c) => c !== i && (has(TIME_NAME)(c) || guessTimeUnit(c))) || cols.find((c) => c !== i) || "";
+  const y = cols.find((c) => c !== i && c !== x) || "";
+  return { i, x, y };
+}

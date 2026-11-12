@@ -12,7 +12,8 @@ import RecurrentParamsPanel from "../components/RecurrentParamsPanel.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import ModelFrame, { AnswerLine } from "../components/model/ModelFrame.jsx";
 import { recurrentAnswer } from "../recurrentResults.js";
-import { NO_RECORD_END, guessRecurrentMapping } from "../recurrentMapping.js";
+import { NO_RECORD_END, guessRecurrentMapping, savedRecurrentMapping } from "../recurrentMapping.js";
+import { guessUnit } from "../datasetGuess.js";
 import {
   getRecurrentOptions,
   getColumns,
@@ -78,6 +79,8 @@ export default function RecurrentNewPage() {
   const [options, setOptions] = useState({});
   const [windows, setWindows] = useState("");
   const [unit, setUnit] = useState("");
+  // The repairable model whose column reading a dataset's fit started from.
+  const [keptFrom, setKeptFrom] = useState(null);
 
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -131,7 +134,10 @@ export default function RecurrentNewPage() {
     try {
       const cols = await getColumns(f);
       setCsv(cols);
-      setMap(guessRecurrentMapping(cols.columns, { dtypes: cols.dtypes, preview: cols.preview }));
+      const g = guessRecurrentMapping(cols.columns, { dtypes: cols.dtypes, preview: cols.preview });
+      setMap(g);
+      setUnit(guessUnit(g.x) || guessUnit(g.tr));
+      setKeptFrom(null);
       setWindows("");
       setStep(2);
     } catch (err) {
@@ -154,7 +160,12 @@ export default function RecurrentNewPage() {
       const columns = full.preview_columns || [];
       if (!d.name) setSourceName(full.name || "dataset");
       setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows });
-      setMap(guessRecurrentMapping(columns, { dtypes: full.dtypes, preview: full.preview }));
+      // The newest repairable model's reading of these columns, else a guess.
+      const kept = savedRecurrentMapping(full.last_recurrent_mapping, columns);
+      const g = kept?.mapping || guessRecurrentMapping(columns, { dtypes: full.dtypes, preview: full.preview });
+      setMap(g);
+      setUnit(kept?.unit || guessUnit(g.x) || guessUnit(g.tr));
+      setKeptFrom(kept ? kept.from || "the last model" : null);
       setWindows("");
       setStep(2);
     } catch (err) {
@@ -263,6 +274,11 @@ export default function RecurrentNewPage() {
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
         <button onClick={onFit} disabled={loading || !!modelBlock}>{loading ? "Fitting…" : `Fit ${modelEntry?.short || modelName}`}</button>
+        {loading && model !== "crow_amsaa" && (
+          <span className="hint" role="status" style={{ margin: 0 }}>
+            The fit check refits this model up to 200 times: allow 10–30 seconds.
+          </span>
+        )}
       </>
     );
   } else {
@@ -355,7 +371,7 @@ export default function RecurrentNewPage() {
               ) : (
                 <span className="dz-big">Drop a CSV or Excel file here or <strong>click to browse</strong></span>
               )}
-              <span className="dz-hint">long format — one row per event: system id · event time · window</span>
+              <span className="dz-hint">one row per failure: system · its age at the failure · optional end of record</span>
               <input ref={inputRef} type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} hidden
                      onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
               {sheetModal}
@@ -371,6 +387,11 @@ export default function RecurrentNewPage() {
             <p className="muted-line">{sourceName} · {csv.n_rows} rows · {csv.columns.length} columns</p>
             <HeaderNote note={headerNote} onPick={pickFile} disabled={loading} />
             <PreviewTable columns={csv.columns} rows={csv.preview} />
+            {keptFrom && (
+              <p className="muted-line" role="status" style={{ margin: 0 }}>
+                Columns read as for “{keptFrom}”, the last repairable model fitted to this dataset.
+              </p>
+            )}
             <RecurrentColumnMapper
               columns={csv.columns}
               mapping={map}
@@ -381,11 +402,11 @@ export default function RecurrentNewPage() {
               onWindowsChange={setWindows}
             />
             <p className="muted-line" style={{ margin: 0 }}>
-              Long format — one row per failure/repair: a system id and event time, plus optional
-              counts, censoring, and each system's observation window (<code>tr</code>).
+              One row per failure: which system and its age at the failure. Add a row (or a column) for
+              where each system's record ends, so the time since its last failure counts.
             </p>
             {!mappingValid && (
-              <p className="hint">Map different columns to <code>i</code> and <code>x</code>.</p>
+              <p className="hint">Pick different columns for the system and the time of each failure.</p>
             )}
             {mappingValid && !map.tr && !map.c && !(map.ws && map.we) && !windows.trim() && (
               <p className="hint fleet-alert-warn" role="note">{NO_RECORD_END}</p>
@@ -409,6 +430,13 @@ export default function RecurrentNewPage() {
               <p className="muted-line" style={{ margin: 0 }}>
                 {MODEL_DESC[model] || modelEntry.desc}
                 {MODEL_DESC[model] && <RefLink entryId={model} label="What is this growth model?" />}
+              </p>
+            )}
+            {(model === "ara" || model === "ari") && (
+              <p className="muted-line" style={{ margin: 0 }}>
+                Each repair acts on{" "}
+                <b>{(MEMORY.find((m) => m.value === String(options.m ?? (model === "ara" ? "2" : "1")))?.label || "").toLowerCase()}</b>
+                {options.m == null ? " (the default)" : ""}: change it under Advanced.
               </p>
             )}
             {(model === "pi_nhpp" || model === "ari" || model === "ara") && (

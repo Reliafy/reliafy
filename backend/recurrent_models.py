@@ -104,12 +104,17 @@ def model_name(model_id: str, options: dict | None = None) -> str:
     if model_id == "pi_nhpp" and opts.get("baseline", "crow_amsaa") != "crow_amsaa":
         return f"{entry['name']}, {BASELINE_NAMES[opts['baseline']]} baseline"
     if model_id in ("ara", "ari"):
-        return f"{entry['name'].split(' (')[0]} ({entry['short']}{_memory_label(opts.get('m'))})"
+        return f"{entry['name'].split(' (')[0]} ({entry['short']}, {_memory_label(opts.get('m'))})"
     return entry["name"]
 
 
 def _memory_label(m) -> str:
-    return "∞" if m in (None, "all") or (isinstance(m, float) and not np.isfinite(m)) else str(int(m))
+    """What each repair acts on, in words: "last repair", "last 2 repairs",
+    "every repair" (the model's memory)."""
+    if m in (None, "all") or (isinstance(m, float) and not np.isfinite(m)):
+        return "every repair"
+    m = int(m)
+    return "last repair" if m == 1 else f"last {m} repairs"
 
 
 # ---------------------------------------------------------------------------
@@ -848,7 +853,10 @@ def restoration(model_id: str, opts: dict, value: float, ci, method: str = "wald
         what = ("the rise in failure rate since the last repair" if opts.get("m") == 1
                 else "the failure rate built up so far" if opts.get("m") == "all"
                 else f"the rise in failure rate over the last {opts.get('m')} repairs")
-    if eff < -0.005:
+    # Worse than a minimal repair only when the interval says so: an estimate a
+    # little below 0% with 0% inside its interval reads as a minimal repair,
+    # so the words never contradict the verdict that follows the interval.
+    if eff < -0.005 and (eci is None or eci[1] < 0):
         text = (f"Each repair leaves the system older than before it failed: {_pct(-eff)} more than {what} "
                 "is added (worse than a minimal repair)")
     else:
@@ -1040,7 +1048,40 @@ def renewal_payload(np_model, live, inputs: dict, model_id: str, opts: dict, uni
         "mcf": {**out["mcf"], "fitted": {"x": grid.tolist(), "mcf": fitted.tolist(), "simulated": True}},
         **_diagnostics(live, out["n_events"], out["n_systems"], gof_test, slow=True),
     })
+    mismatch = mcf_mismatch(out["mcf"].get("observed"), grid, fitted, unit)
+    if mismatch:
+        out.setdefault("warnings", []).append({"id": "mcf_mismatch", "text": mismatch})
     return _json_safe(out)
+
+
+_MCF_MISMATCH = 1.5  # fitted against observed failures per system, either way
+
+
+def mcf_mismatch(observed: dict | None, grid, fitted, unit: str = "") -> str | None:
+    """A plain warning when the fitted mean cumulative failures miss the
+    observed ones by more than half again (either way) at the last observed
+    time, outside the observed curve's 90% band: the model doesn't follow
+    the data, whatever the goodness-of-fit test says. None otherwise."""
+    if not observed or not observed.get("x"):
+        return None
+    x = np.asarray(observed["x"], dtype=float)
+    mcf = np.asarray(observed["mcf"], dtype=float)
+    if x.size == 0 or not np.isfinite(mcf[-1]) or mcf[-1] <= 0:
+        return None
+    t, obs = float(x[-1]), float(mcf[-1])
+    fit = float(np.interp(t, np.asarray(grid, dtype=float), np.asarray(fitted, dtype=float)))
+    if not np.isfinite(fit) or fit <= 0:
+        return None
+    lower, upper = observed.get("lower"), observed.get("upper")
+    inside = (lower is not None and upper is not None and lower[-1] is not None and upper[-1] is not None
+              and float(lower[-1]) <= fit <= float(upper[-1]))
+    ratio = fit / obs
+    if inside or 1 / _MCF_MISMATCH <= ratio <= _MCF_MISMATCH:
+        return None
+    u = f" {str(unit).strip().lower()}" if str(unit or "").strip() else ""
+    return (f"The fitted curve doesn't follow the data: by {t:,.4g}{u} it expects about {fit:,.3g} failures per "
+            f"system, where the data have {obs:,.3g}. Don't use this model's numbers; compare the models' AIC "
+            "on Diagnostics and pick one that follows the data.")
 
 
 # ---- A renewal model's next failure at a given age (MCP) ----------------------

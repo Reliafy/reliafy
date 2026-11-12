@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Modal from "../components/Modal.jsx";
 import Select from "../components/Select.jsx";
 import { listTrackedFleets, createTrackedFleet, deleteTrackedFleet, listDegradationModels } from "../api.js";
@@ -64,9 +64,9 @@ export default function FleetTrackingHome() {
   }, [noteUse]);
   useEffect(() => refresh(), [refresh]);
 
-  const openCreate = async () => {
-    setName("");
-    setPickedId("");
+  const openCreate = async (presetModel = null) => {
+    setName(presetModel?.name ? `${presetModel.name} — fleet` : "");
+    setPickedId(presetModel?.id || "");
     setCreateError(null);
     setModalOpen(true);
     try {
@@ -103,8 +103,25 @@ export default function FleetTrackingHome() {
     }
   };
 
+  // ?model=<degradation model id> (a model page's "Track items"): open that
+  // model's fleet when it has exactly one, else a new fleet on that model.
+  const [params, setParams] = useSearchParams();
+  const wantedModel = params.get("model");
+  useEffect(() => {
+    if (!wantedModel || fleets === null) return;
+    setParams({}, { replace: true });
+    const on = fleets.filter((f) => f.model_id === wantedModel && !f.is_sample);
+    if (on.length === 1) { navigate(`/risk/${on[0].id}`); return; }
+    if (on.length === 0) {
+      listDegradationModels()
+        .then(({ models: all }) => openCreate((all || []).find((m) => m.id === wantedModel) || { id: wantedModel }))
+        .catch(() => openCreate({ id: wantedModel }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantedModel, fleets]);
+
   const pathOf = (id) => `/risk/${id}`;
-  const newTracked = <button onClick={openCreate}><PlusIcon /> New tracked fleet</button>;
+  const newTracked = <button onClick={() => openCreate()}><PlusIcon /> New tracked fleet</button>;
 
   return (
     <div className="app">

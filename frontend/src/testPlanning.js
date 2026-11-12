@@ -86,3 +86,21 @@ export function altPrefill(results) {
 
 // Whether a number typed in a form is usable (finite).
 export const given = (s) => s !== "" && s != null && Number.isFinite(Number(s));
+
+// Whole-number ticks on a log axis (1, 2, 5, 10, 20, 50 …) within the data,
+// so no label loses a digit as Plotly's minor log labels do ("2" for 20).
+export function logTicks(xs) {
+  const v = (xs || []).filter((x) => Number.isFinite(x) && x > 0);
+  if (!v.length) return {};
+  const lo = Math.min(...v);
+  const hi = Math.max(...v);
+  const ticks = [];
+  for (let d = 10 ** Math.floor(Math.log10(lo)); d <= hi * 10; d *= 10) {
+    for (const m of [1, 2, 5]) {
+      const t = m * d;
+      if (t >= lo / 1.0001 && t <= hi * 1.0001) ticks.push(t);
+    }
+  }
+  return ticks.length >= 2 ? { tickvals: ticks, ticktext: ticks.map((t) => t.toLocaleString("en-US")) } : {};
+}
+

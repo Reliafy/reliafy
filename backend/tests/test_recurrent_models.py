@@ -174,7 +174,7 @@ def test_ara_ari_and_g1_options_and_words():
 
     ara, _ = rec.fit(df, CMP_MAP, "ara", "hours", gof_test=False, options={"m": "3"})
     direct = _quiet(ARA.fit, x, i=i, c=c, m=3)
-    assert ara["options"] == {"m": 3} and "ARA3" in ara["model"]["name"]
+    assert ara["options"] == {"m": 3} and "(ARA, last 3 repairs)" in ara["model"]["name"]
     assert ara["restoration"]["value"] == pytest.approx(float(direct.params[0]), rel=1e-6)
     assert "last 3 repairs" in ara["restoration"]["sentence"]
 
