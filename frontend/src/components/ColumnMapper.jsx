@@ -50,6 +50,7 @@ const WORDS = {
   tl: "late entry: observed only from this value",
   tr: "observed only up to this value",
   e: "optional, competing risks",
+  s: "optional: the state the unit was in during this row",
 };
 const LABELS = { e: "failure mode" };
 
@@ -296,5 +297,13 @@ export default function ColumnMapper({
     ),
   };
 
+  // s: the state a row starts from (multi-state data); shown where a flow asks for it.
+  ROW.s = () => (
+    <div className="xcn-row" key="s">
+      {key("s", say("s"))}
+      <div className="xcn-fields">{pick("s", none.s || "— none: every row starts working —", "State during the row")}</div>
+      {below("s")}
+    </div>
+  );
   return <div className="xcn">{shown.map((r) => ROW[r]())}</div>;
 }

@@ -6,7 +6,8 @@
 // by both test suites). Pure, so `node --test src/` covers it.
 //
 //   reading = {
-//     x, xl, xr, c, n, tl, tr, i, m, e, u,   // column names, "" for none
+//     x, xl, xr, c, n, tl, tr, i, m, e, s, u, // column names, "" for none
+//                                           // (s: the state during the row, multi-state; kept, not yet fitted)
 //     c_invert, c_map,                      // what the status values mean
 //     all_failed,                           // no status column, on purpose: every row failed
 //     unit, m_unit,                         // x's unit (any unit), m's
@@ -19,9 +20,9 @@ import {
 import { isNumeric } from "./datasetGuess.js";
 import { guessTvc, tvcUnit } from "./tvcData.js";
 
-export const ROLES = ["x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "u"];
+export const ROLES = ["x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "s", "u"];
 // The selectors the upload shows, in order (x carries its range xl to xr).
-export const READING_ROWS = ["x", "c", "n", "tl", "tr", "i", "m", "e"];
+export const READING_ROWS = ["x", "c", "n", "tl", "tr", "i", "m", "e", "s"];
 const LABEL = { e: "failure mode" };
 
 export const emptyReading = () => ({
@@ -218,7 +219,7 @@ export function readingParts(r) {
   if (r.xl) out.push({ key: "range", label: "range", value: `${r.xl} to ${r.xr}` });
   if (r.c) out.push({ key: "c", label: "c", value: r.c });
   else if (r.all_failed) out.push({ key: "c", label: "c", value: "every row failed" });
-  for (const k of ["n", "tl", "tr", "i", "m", "e"]) {
+  for (const k of ["n", "tl", "tr", "i", "m", "e", "s"]) {
     if (r[k]) out.push({ key: k, label: LABEL[k] || k, value: r[k] + (k === "m" && r.m_unit ? ` (${r.m_unit})` : "") });
   }
   if (r.z?.length) out.push({ key: "z", label: "Z", value: r.z.join(", "), list: true });
@@ -276,6 +277,11 @@ export function toggleZ(r, col) {
 export function readingPayload(r) {
   const out = emptyReading();
   for (const k of Object.keys(out)) if (r?.[k] !== undefined) out[k] = r[k];
+  // The measurements part's own reading ({ i, x, m, unit, m_unit }), when it has one.
+  if (r?.measurements) {
+    const { i = "", x = "", m = "", unit = "", m_unit = "" } = r.measurements;
+    out.measurements = { i, x, m, unit, m_unit };
+  }
   return out;
 }
 
@@ -297,3 +303,37 @@ export function readingFits(r, columns) {
 }
 
 export { savedMapping };
+
+// A saved dataset's detail in the shape /api/columns gives (the fit flows'
+// Data step reads it so), with its column facts.
+export function detailColumns(full) {
+  return {
+    columns: full.preview_columns || [],
+    preview: full.preview || [],
+    // Wholly blank rows are skipped by every fit, so they aren't counted.
+    n_rows: full.n_rows - (full.blank_rows || 0),
+    blank_rows: full.blank_rows || 0,
+    n_unique: full.n_unique,
+    dtypes: full.dtypes,
+    blanks: full.blanks,
+    values: full.values,
+    whole: full.whole,
+    nonpositive: full.nonpositive,
+  };
+}
+
+// The reading without ``column`` (a split's dataset column, left out of every
+// part): its role cleared, out of Z and not used; ``back``, a column the
+// split gave back, returns to Z or not used by the guard.
+export function withoutColumn(r, column, facts = {}, nRows = 0, back = "") {
+  if (!r) return r;
+  const out = { ...r };
+  for (const k of ROLES) if (out[k] === column) out[k] = "";
+  out.z = (out.z || []).filter((c) => c !== column);
+  out.not_used = (out.not_used || []).filter((c) => c !== column);
+  out.z_units = Object.fromEntries(Object.entries(out.z_units || {}).filter(([c]) => c !== column));
+  if (back && back !== column && !usedColumns(out).has(back) && !out.z.includes(back) && !out.not_used.includes(back)) {
+    (notUsedReason(back, facts[back], nRows) ? out.not_used : out.z).push(back);
+  }
+  return out;
+}

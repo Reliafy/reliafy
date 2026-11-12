@@ -11,7 +11,10 @@ covariates:
     tl/tr observed only from / up to this value (truncation)
     i     which item each row belongs to
     m     a measured value (readings)
-    e     the failure mode
+    e     the failure mode (the state entered, for multi-state data)
+    s     the state the unit was in during the row (the from-state of
+          multi-state data; unmapped, rows start from the one working state).
+          Kept and shown only: no model in the app reads it yet.
     u     a column giving each row's time unit (converted to ``unit``)
 
 plus ``c_invert`` / ``c_map`` (what the status values mean), ``all_failed``
@@ -43,9 +46,9 @@ from typing import Any
 
 from backend.services import datasets as datasets_service
 
-ROLES = ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "u")
+ROLES = ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "s", "u")
 #: The roles in the order the summary line and the upload screen give them.
-SHOWN = ("x", "c", "n", "tl", "tr", "i", "m", "e")
+SHOWN = ("x", "c", "n", "tl", "tr", "i", "m", "e", "s")
 SOURCES = ("saved", "last_model", "guessed")
 _NAMES = {"e": "failure mode"}
 
@@ -63,7 +66,27 @@ def _names(columns) -> list[str]:
     return [c.get("name") if isinstance(c, dict) else str(c) for c in columns or []]
 
 
-def normalize(raw: dict | None, columns, *, require_x: bool = True) -> dict:
+def normalize_measurements(raw: dict | None, columns) -> dict | None:
+    """The measurements part's reading (readings on the units: i, x the age,
+    m the value, with x's and m's units), checked against its columns."""
+    if not raw:
+        return None
+    names = _names(columns)
+    out = {}
+    for role in ("i", "x", "m"):
+        col = str(raw.get(role) or "").strip()
+        if col and col not in names:
+            raise ReadingError(f"The measurements' {role} names “{col}”, which isn't one of their columns. "
+                               f"Their columns: {', '.join(names)}.")
+        out[role] = col
+    if len({c for c in out.values() if c}) < len([c for c in out.values() if c]):
+        raise ReadingError("A column of the measurements can have one role only.")
+    out["unit"] = str(raw.get("unit") or "").strip()[:40]
+    out["m_unit"] = str(raw.get("m_unit") or "").strip()[:40]
+    return out
+
+
+def normalize(raw: dict | None, columns, *, require_x: bool = True, measurement_columns=None) -> dict:
     """A reading checked against the dataset's ``columns``: every role names
     one of them (or nothing), no column takes two roles, and x (or its range)
     is there. Unknown keys are dropped. Raises ReadingError in plain words."""
@@ -118,6 +141,8 @@ def normalize(raw: dict | None, columns, *, require_x: bool = True) -> dict:
         raise ReadingError("z_units must be an object of covariate → unit, such as {\"Load\": \"kN\"}.")
     out["z_units"] = {c: str(u).strip()[:40] for c, u in units.items() if c in z and str(u or "").strip()}
     out["not_used"] = [c for c in _column_list(raw.get("not_used"), have, "not_used") if c not in taken and c not in z]
+    if measurement_columns is not None and raw.get("measurements"):
+        out["measurements"] = normalize_measurements(raw["measurements"], measurement_columns)
     return out
 
 
@@ -592,6 +617,29 @@ def for_dataset(dataset, last_mapping: dict | None = None, preview: dict | None 
     """``(reading, source)``: the dataset's saved reading ("saved"), else one
     from its newest model ("last_model"), else the guess ("guessed"). The
     stored document is never changed here."""
+    reading, source = _main_reading(dataset, last_mapping, preview)
+    part = getattr(dataset, "measurements", None)
+    if part is not None:
+        kept = (getattr(dataset, "reading", None) or {}).get("measurements")
+        sub = None
+        if kept:
+            try:
+                sub = {**normalize_measurements(kept, part.columns), "source": "saved"}
+            except ReadingError:
+                sub = None
+        if sub is None:
+            try:
+                g = guess(datasets_service.preview_measurements(dataset, distinct=True) or {})
+                sub = {"i": g["i"], "x": g["x"] or g["xl"], "m": g["m"], "unit": g["unit"], "m_unit": "",
+                       "source": "guessed"}
+            except Exception:  # noqa: BLE001 - a part that can't be read has no reading
+                sub = None
+        if sub:
+            reading = {**reading, "measurements": sub}
+    return reading, source
+
+
+def _main_reading(dataset, last_mapping, preview) -> tuple[dict, str]:
     names = _names(dataset.columns)
     stored = getattr(dataset, "reading", None)
     if stored:
@@ -641,7 +689,7 @@ def summary(reading: dict) -> str:
         parts.append(f"c = {reading['c']}")
     elif reading.get("all_failed"):
         parts.append("c: every row failed")
-    for role in ("n", "tl", "tr", "i", "m", "e"):
+    for role in ("n", "tl", "tr", "i", "m", "e", "s"):
         if reading.get(role):
             unit = f" ({reading['m_unit']})" if role == "m" and reading.get("m_unit") else ""
             parts.append(f"{_NAMES.get(role, role)} = {reading[role]}{unit}")

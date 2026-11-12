@@ -332,6 +332,49 @@ def upload_dataset(
     return JSONResponse(content=_created(dataset, reused, session, ctx, guess, hint))
 
 
+def _table_preview(read) -> JSONResponse:
+    """The columns a new dataset would have, with the facts the reading needs
+    (fitting.preview, distinct) and the server's guess of its reading."""
+    if isinstance(read, JSONResponse):
+        return read
+    from backend import fitting
+
+    contents, guess, hint = read
+    try:
+        out = fitting.preview(contents, distinct=True)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    out["reading"] = dataset_reading.guess(out)
+    out["header_guess"] = guess
+    if hint:
+        out["hint"] = hint
+    return JSONResponse(content=out)
+
+
+@router.post("/datasets/preview")
+def preview_upload(
+    file: UploadFile = File(...),
+    no_header: bool | None = Form(default=None),
+    sheet: str | None = Form(default=None),
+    header_row: str | None = Form(default=None),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """New dataset's reading screen: the columns of a file exactly as an
+    upload with the same fields would store them, their facts and the guessed
+    reading. Saves nothing."""
+    return _table_preview(_table_from_upload(ctx, file, no_header, sheet, header_row))
+
+
+@router.post("/datasets/preview-paste")
+def preview_paste(
+    content: str = Body(default="", embed=True),
+    no_header: bool | None = Body(default=None, embed=True),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """The same for pasted text."""
+    return _table_preview(_table_from_paste(content, no_header))
+
+
 @router.post("/datasets/paste")
 def paste_dataset(
     name: str = Body(default=""),

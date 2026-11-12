@@ -3300,7 +3300,8 @@ _RTL = _col("late entry: each row observed only from this value")
 _RTR = _col("each row observed only up to this value")
 _RI = _col("which item (unit, pump, tag) each row belongs to")
 _RM = _col("a measured value (readings)")
-_RE = _col("each failure's mode")
+_RE = _col("each failure's mode (the state entered, for multi-state data)")
+_RS = _col("the state the unit was in during the row (multi-state data; kept, not yet used by a model)")
 _RZ = Annotated[Optional[list[str]], Field(description=(
     "The covariates (Z). Omit for the default: every column not given a role, less ids, dates, free text and "
     "one-value columns."))]
@@ -3318,7 +3319,7 @@ _RZUnits = Annotated[Optional[dict[str, str]], Field(description="Units of covar
 def _reading_given(**kw) -> dict:
     """The reading fields a call named (None left out), in the reading's keys."""
     keys = {"x_col": "x", "xl_col": "xl", "xr_col": "xr", "c_col": "c", "n_col": "n", "tl_col": "tl",
-            "tr_col": "tr", "i_col": "i", "m_col": "m", "e_col": "e", "z_cols": "z", "not_used": "not_used",
+            "tr_col": "tr", "i_col": "i", "m_col": "m", "e_col": "e", "s_col": "s", "z_cols": "z", "not_used": "not_used",
             "c_meanings": "c_map", "c_invert": "c_invert", "all_failed": "all_failed", "unit": "unit",
             "m_unit": "m_unit", "z_units": "z_units"}
     return {keys[k]: v for k, v in kw.items() if v is not None}
@@ -3348,6 +3349,7 @@ def upload_dataset(
         "taken), the column itself left out; rows with no value are left out. Returns datasets, a list."))] = None,
     x_col: _RX = None, xl_col: _RXL = None, xr_col: _RXR = None, c_col: _RC = None, n_col: _RN = None,
     tl_col: _RTL = None, tr_col: _RTR = None, i_col: _RI = None, m_col: _RM = None, e_col: _RE = None,
+    s_col: _RS = None,
     z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
     all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
 ) -> dict[str, Any]:
@@ -3379,7 +3381,7 @@ def upload_dataset(
             hint = fitting.HEADER_HINT
     data = datasets_service.normalize_pasted(text, apply)
     given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
-                           tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, z_cols=z_cols,
+                           tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, s_col=s_col, z_cols=z_cols,
                            not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed,
                            unit=unit, m_unit=m_unit, z_units=z_units)
     reading = _upload_reading(data, given, split)
@@ -8784,6 +8786,7 @@ def update_dataset(
     notes: _NewNotes = None,
     x_col: _RX = None, xl_col: _RXL = None, xr_col: _RXR = None, c_col: _RC = None, n_col: _RN = None,
     tl_col: _RTL = None, tr_col: _RTR = None, i_col: _RI = None, m_col: _RM = None, e_col: _RE = None,
+    s_col: _RS = None,
     z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
     all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
 ) -> dict[str, Any]:
@@ -8792,7 +8795,7 @@ def update_dataset(
     user, db = _caller(ctx), _db()
     uid = user["uid"]
     given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
-                           tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, z_cols=z_cols,
+                           tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, s_col=s_col, z_cols=z_cols,
                            not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed,
                            unit=unit, m_unit=m_unit, z_units=z_units)
     if name is None and notes is None and not given:

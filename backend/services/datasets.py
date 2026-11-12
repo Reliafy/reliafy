@@ -181,11 +181,12 @@ def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
     return dataset, False
 
 
-def _checked_reading(reading: dict, columns) -> dict:
-    """A reading as kept: checked against the columns; a guess keeps its mark."""
+def _checked_reading(reading: dict, columns, measurement_columns=None) -> dict:
+    """A reading as kept: checked against the columns (and the measurements'
+    sub-reading against theirs); a guess keeps its mark."""
     from backend.services import dataset_reading
 
-    out = dataset_reading.normalize(reading, columns)
+    out = dataset_reading.normalize(reading, columns, measurement_columns=measurement_columns)
     if reading.get("guessed"):
         out["guessed"] = True
     return out
@@ -195,7 +196,8 @@ def set_reading(db, dataset: Dataset, reading: dict, owner_id: str) -> Dataset:
     """Keep a new reading for the dataset (the upload's, or Change on a fit):
     later fits use it; models already made keep the one they were fitted with.
     Raises dataset_reading.ReadingError when it doesn't fit the columns."""
-    kept = _checked_reading(reading, dataset.columns)
+    part = dataset.measurements
+    kept = _checked_reading(reading, dataset.columns, part.columns if part is not None else None)
     db.datasets.update_one({"_id": dataset.id, "owner_id": owner_id}, {"$set": {"reading": kept}})
     return dataset.model_copy(update={"reading": kept})
 

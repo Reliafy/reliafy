@@ -9,8 +9,8 @@ import { blankWarning, readSheet, splitPlan, splitRoom } from "../datasetSplit.j
 // The Data section's upload (New dataset): "Split into datasets by [column]",
 // one sheet saved as several datasets, each value its own dataset named by the
 // value. Off by default; with it off, the upload is exactly as before.
-// Datasets are stored as their rows (the columns are read when fitting), so
-// the split only counts rows: there is nothing to map here.
+// Every part keeps the one reading set on the upload screen (less the split
+// column), so the split itself only counts rows.
 //
 //   const split = useDatasetSplit({ text, noHeader, source, enabled });
 //   {split.picker}{split.summary}           // the selector, then "This file makes 3 datasets"
@@ -101,7 +101,7 @@ export function useDatasetSplit({ text, noHeader = false, source = "", enabled =
       </div>
       {warn && <p className="ds-header-note" role="status"><span>{warn}</span></p>}
       <p className="muted-line" style={{ margin: 0 }}>
-        Each is saved on its own, without the “{column}” column. You choose how its columns are read when you fit it.
+        Each is saved on its own, without the “{column}” column, and every one is read as set below.
       </p>
       {room && (
         <div className="card upgrade-nudge" role="status">
