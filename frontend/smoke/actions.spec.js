@@ -423,7 +423,7 @@ test("a model's failure pattern, Use this model and B-lives", async ({ page, pro
   const pattern = page.getByRole("button", { name: /^Failure pattern: Wear-out/ });
   await pattern.click();
   const reading = page.getByRole("dialog", { name: "Wear-out" });
-  await expect(reading).toContainText("β is above 1 at 95% confidence");
+  await expect(reading).toContainText("β is above 1 at 90% confidence"); // one level everywhere (#818)
   await expect(reading.getByRole("button", { name: /Find the best replacement interval/ })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(reading).toBeHidden();
