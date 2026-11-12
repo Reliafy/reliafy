@@ -7,6 +7,7 @@
 // replacement's early-renewal age, a proof test's first test, coverage and full test), plus its
 // duty, crew priority and (for a task in no package) its maintenance group.
 import { explorerPath } from "./assetTree.js";
+import { taskSummary } from "./rbdMaintenancePlan.js";
 
 // What the diagram may set for a tree-linked block, by what its task does (as the backend's SETTINGS).
 export const TREE_SETTINGS = {
@@ -102,3 +103,18 @@ export function treeGraph(nodes = [], unit = "") {
   };
 }
 export const treeKey = (nodes = [], unit = "") => JSON.stringify(treeGraph(nodes, unit));
+
+// A tree-linked block's planned work in words, for the block dialog: the same plan the Maintenance
+// plan and the Calculator use (mergeTreeData), where it comes from, and where it's edited. Without
+// it the dialog read the diagram's own (unused) plan and said "Run to failure" for a block whose
+// position has a task.
+export function treeBlockPlan(data = {}, row, unit = "") {
+  const used = (row?.tasks || []).find((t) => t.used) || null;
+  const pos = row.position;
+  return {
+    summary: taskSummary(mergeTreeData(data, row), unit),
+    source: used ? `From the tree: “${used.name}” on ${pos.name}` : `From the tree: no maintenance tasks on ${pos.name}`,
+    editPath: treeTaskPath(pos.id, used ? { taskId: used.id } : { add: true }),
+    editLabel: used ? "Edit in the tree" : "Add a task in the tree",
+  };
+}

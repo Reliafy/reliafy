@@ -266,10 +266,17 @@ def _build_payload(model, distribution_id: str, unit: str, measurement_unit: str
     return _json_safe(payload)
 
 
-def predict_item(model, t, y, alpha_ci: float = 0.05) -> dict:
+# A tracked item's stored prediction: a two-sided 80% interval, whose lower end is the 90%
+# one-sided lower bound on its crossing time and life left (the rule for life bounds: 90%,
+# one-sided, a lower bound on life).
+LIFE_ALPHA_CI = 0.20
+
+
+def predict_item(model, t, y, alpha_ci: float = LIFE_ALPHA_CI) -> dict:
     """Predict threshold crossing for one tracked item's measurements.
 
-    ``alpha_ci`` sets the credible-interval width (0.05 → 95%). Returns a
+    ``alpha_ci`` sets the two-sided credible-interval width (0.20 → 80%, so
+    its lower end is a one-sided 90% lower bound). Returns a
     JSON-safe blob for caching on the item document. Never raises for
     prediction problems — degraded results carry ``method: "point"`` (no
     measurement noise → no Bayesian posterior) or ``"error"`` (e.g. too few
@@ -329,7 +336,7 @@ def predict_item(model, t, y, alpha_ci: float = 0.05) -> dict:
 
 def _projection(model, theta, t, pred) -> dict | None:
     """Projected degradation path for the item chart: the path model at the
-    posterior-mean parameters, out past the credible interval, with a 95%
+    posterior-mean parameters, out past the credible interval, with a 90%
     credible band from the posterior parameter covariance (delta method via
     the path jacobian)."""
     try:
@@ -346,7 +353,7 @@ def _projection(model, theta, t, pred) -> dict | None:
             J = np.asarray(model.path_model.jacobian(grid, *theta), dtype=float)
             cov = np.asarray(pred.posterior_cov, dtype=float)
             se = np.sqrt(np.maximum(np.einsum("ij,jk,ik->i", J, cov, J), 0.0))
-            z = 1.959963984540054  # 95%
+            z = 1.6448536269514722  # 90% two-sided (the rule for bounds other than life's)
             out["lo"] = (vals - z * se).tolist()
             out["hi"] = (vals + z * se).tolist()
         except Exception:  # pragma: no cover - band is optional

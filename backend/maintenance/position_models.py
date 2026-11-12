@@ -650,7 +650,7 @@ def _placeholders(graph: dict) -> list[str]:
 
 
 def rbd_summary(db, owners, doc, age: float | None = None) -> dict:
-    """An RBD in a row: the system's MTBF, B10 and (with ``age``) reliability there, from the exact
+    """An RBD in a row: the system's mean life, B10 and (with ``age``) reliability there, from the exact
     analysis (no simulation: a repairable diagram's availability is simulated on its own page),
     and its placeholders."""
     from backend.services import rbds as rbds_service
@@ -674,9 +674,17 @@ def rbd_summary(db, owners, doc, age: float | None = None) -> dict:
     except Exception as err:  # noqa: BLE001 - a row says why rather than failing the read
         out["analysis_error"] = str(err)[:300]
         return out
-    out["numbers"].append(_number("mtbf", "MTBF", res.get("mttf"), None, None, unit))
-    out["numbers"].append(_number("mean", "Mean life", res.get("mttf"), None, None, unit))
-    out["numbers"].append(_number("b10", "B10 life", (res.get("blife") or {}).get("b10"), None, None, unit))
+    # A non-repairable diagram has no repair, so its mean is the mean life (time to the
+    # system's first failure), never an MTBF; one that can be infinite (a cure fraction, a
+    # block that never fails) isn't shown as a number. The system curve is exact from the
+    # blocks' point models, so neither has bounds: the note says so.
+    exact = "no bounds: the system curve is exact from the blocks' point models"
+    mean = _number("mean", "Mean life", res.get("mttf"), None, None, unit) | {"note": exact}
+    if mean["value"] is None:
+        mean = {**mean, "text": "not finite (the system may never fail)", "note": ""}
+    out["numbers"].append(mean)
+    b10 = _number("b10", "B10 life", (res.get("blife") or {}).get("b10"), None, None, unit)
+    out["numbers"].append(b10 | {"note": exact if b10["value"] is not None else ""})
     at = res.get("at") or {}
     if age and at.get("sf"):
         r = _num(at["sf"][0])

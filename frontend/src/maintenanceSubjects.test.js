@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  actionKinds, closeActionKind, defaultCloseKind, itemAtText, subjectApiPath, subjectBadge, subjectPath, taskUnits, whileStoredText,
+  actionKinds, closeActionKind, defaultCloseKind, defaultFailed, itemAtText, replaceReason, replaceRecordText, subjectApiPath, subjectBadge, subjectPath, taskUnits, whileStoredText,
 } from "./maintenanceSubjects.js";
 
 test("each subject has its own page and API path", () => {
@@ -76,4 +76,21 @@ test("a close form starts from what the work order's task is", () => {
 test("checked, nothing done is sent as an inspection that found it OK", () => {
   assert.deepEqual(closeActionKind("checked"), { kind: "inspect", finding: "ok" });
   assert.deepEqual(closeActionKind("replace"), { kind: "replace" });
+});
+
+test("a breakdown's replacement starts as a failure; planned work as a planned replacement", () => {
+  const fitted = { fitted: { item: { name: "Pump P1" } }, subject: { kind: "position", name: "Pump 3" } };
+  // A corrective work order closed with the defaults records a failure (c = 0 in the life data).
+  const breakdown = { ...fitted, type: "corrective" };
+  assert.equal(defaultFailed(breakdown), true);
+  assert.equal(replaceReason({ kind: "replace", failed: defaultFailed(breakdown) }), "failure");
+  assert.match(replaceRecordText({ failed: true }, breakdown), /^Records a failure: Pump P1's time at Pump 3 ends as a failure \(mode not known\)/);
+  assert.match(replaceRecordText({ failed: true }, breakdown, "Seal leaking"), /\(Seal leaking\)/);
+  // Preventive work keeps the planned replacement, and says it's a suspension.
+  for (const type of ["preventive", "inspection", "other", undefined]) {
+    assert.equal(defaultFailed({ ...fitted, type }), false);
+  }
+  assert.equal(replaceReason({ failed: false }), "planned");
+  assert.match(replaceRecordText({ failed: false }, { ...fitted, type: "preventive" }), /still running \(a suspension\)/);
+  assert.match(replaceRecordText({ failed: true }, { type: "corrective" }), /Nothing is fitted here/);
 });

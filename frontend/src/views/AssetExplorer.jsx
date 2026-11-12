@@ -453,6 +453,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   }, [byClasses, version]);
   const base = useMemo(() => buildDisplay(byClasses ? (data && classTree ? { ...data, classes: classTree } : null) : data, mode),
     [data, mode, byClasses, classTree]);
+  // By Classes, a position's Summary reads its row in the Positions tree (what's inside it,
+  // what's overdue there or inside), the same facts whichever way the tree is arranged.
+  const structure = useMemo(() => (byClasses && data ? buildDisplay(data, "positions") : null), [byClasses, data]);
   // The Measurements tab: every position's points, settings, channels and consumables.
   const meas = useTreeMeasurements({ on: measOn && !!data, display: data ? base : null });
   // The Modelling tab: every model attached to a position.
@@ -2384,7 +2387,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         <TreeDetail ref={headingRef} display={whole} row={data && !nothing ? row : null} today={data?.today || ""}
                     onSelect={selectFromPanel} onCrumb={(k) => crumbGo(k, selectFromPanel)} above={above}
                     back={back} version={version} empty={emptyDetail} headless={!phone} heading={heading}
-                    tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi} within={root}
+                    tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi} within={root} structure={structure}
                     menu={[...ownMenu(data && !nothing ? row : null), ...(tabMenu || [])]} onMenu={setTabMenu}
                     actions={summaryActionsOf(data && !nothing ? row : null)} />
       )}

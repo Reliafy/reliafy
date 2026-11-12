@@ -324,6 +324,36 @@ def test_one_member_with_its_curves(m, db):
         _fleet(m, db, pump, other)
 
 
+def test_life_left_has_its_90_percent_lower_bound_and_bands_are_90_percent(m, db):
+    """The workspace rule: life bounds 90% one-sided (a lower bound on life left), other
+    bounds 90% two-sided. The median life left comes with its lower bound, below the median;
+    the curves' bands are 90%."""
+    _, pump, cent = _classes(m)
+    load = m.create_condition("Load", kind="value")["id"]
+    a, _ = _pump(m, "Pump A", cent, age=100)
+    _readings(m, a, 100)
+    m.apply_condition(a, load, value=1)
+    _link(m, db, a)
+    row = _fleet(m, db, pump)["members"][0]
+    assert row["life_level"] == pytest.approx(0.9)
+    assert 0 < row["median_lower"] < row["median_remaining"]
+    # The bound is where the lower 90% bound on survival falls to a half.
+    live = joint_service.live(pm.fetcher(db, OWNERS, set())("model", JOINT))
+    markers = [[float(d), round(2 + 0.02 * d, 2)] for d in range(0, 101, 10)]
+    pred = joint.predict(live, {"load": 1.0}, markers, 100.0)
+    low = joint.median_left_lower(pred)
+    sf_low = float(pred.cb([100.0 + low], on="sf", alpha_ci=0.1, bound="lower").ravel()[0])
+    assert sf_low == pytest.approx(0.5, abs=0.01)
+    assert row["median_lower"] == pytest.approx(low, rel=1e-5)
+    one = _fleet(m, db, pump, a)["member"]
+    assert one["median_lower"] == pytest.approx(low, rel=1e-5)
+    assert one["unit"]["prediction"]["alpha_ci"] == pytest.approx(0.1)
+    assert one["unit"]["median_lower"] == pytest.approx(low, rel=1e-5) and one["unit"]["life_level"] == pytest.approx(0.9)
+    # The model's own page keeps its bands as they were (another view, unchanged here).
+    assert joint.unit_view(live, {"load": 1.0}, markers, 100.0, "Days")["prediction"]["alpha_ci"] == pytest.approx(0.05)
+    assert "median_lower" not in joint.unit_view(live, {"load": 1.0}, markers, 100.0, "Days")
+
+
 def test_a_model_in_weeks_is_read_in_days(m, db):
     """The table is in days whatever the model's own unit: ages and horizons go to the
     model in its unit, and the life left comes back in days."""

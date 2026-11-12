@@ -502,8 +502,8 @@ WORK_ORDERS: Table = {
         and settings taken at it now, linked to it (get.work_order reading_points lists what it asks for)."""),
     "status": ("work_order_id status", "note", "Move an open one along: planned, in_progress, waiting, or open."),
     "close": ("work_order_id", "actions on notes readings not_done", """Close it with what was done (actions, in order).
-        A replace ends the fitted item's time at the position (a failure if a failure mode is named, else
-        planned) and fits the new one: that builds the life data. Get the failure-mode ids from maintenance get.work_order
+        A replace ends the fitted item's time at the position (reason failure, planned or other; not given: a
+        failure if a failure mode is named, else planned) and fits the new one: that builds the life data. Get the failure-mode ids from maintenance get.work_order
          first; if none fits, use failure_mode_text, never a failure as planned. An item's work
         order acts at the position it's fitted to now; a location's (a round) takes repair, inspect and other
         only. A work package's: not_done for lines not ticked; an action's position_id picks a line's position.

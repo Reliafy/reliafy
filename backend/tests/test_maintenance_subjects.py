@@ -309,6 +309,31 @@ def test_an_items_work_order_can_replace_it_where_it_is_fitted(m):
     assert m.position(pump)["life_data"][0]["status"] == "failed"
 
 
+def test_a_breakdown_closed_with_no_mode_known_is_a_failure_in_the_life_data(m):
+    """The close form's default on a corrective work order: replaced, it failed, mode not
+    known. The old item's time ends as a failure (c = 0), not a planned removal."""
+    pump = m.create_position("Pump")["id"]
+    m.fit(pump, new_item={"name": "Pump P1"}, on=_ago(m, 100))
+    wo = m.open_work_order(pump, "Pump stopped", type="corrective")
+    m.close_work_order(wo["id"], [{"kind": "replace", "reason": "failure", "new_item": {"name": "Pump P2"}}])
+    first = m.life_data(pump)[0]
+    assert (first["item"], first["x"], first["c"], first["status"]) == ("Pump P1", 100, 0, "failed")
+    assert first["failure_mode"] is None
+    # A planned replacement is still a suspension; a planned one can't name a mode.
+    wo2 = m.open_work_order(pump, "Change-out", type="preventive")
+    m.close_work_order(wo2["id"], [{"kind": "replace", "reason": "planned", "new_item": {"name": "Pump P3"}}])
+    assert m.life_data(pump)[1]["c"] == 1
+    wo3 = m.open_work_order(pump, "Another")
+    with pytest.raises(Invalid):
+        m.close_work_order(wo3["id"], [{"kind": "replace", "reason": "planned", "failure_mode_text": "Seal",
+                                        "new_item": {"name": "Pump P4"}}])
+    with pytest.raises(Invalid):
+        m.close_work_order(wo3["id"], [{"kind": "repair", "reason": "failure"}])
+    live = m.s.snapshot()
+    m.s.rebuild()
+    assert m.s.snapshot() == live
+
+
 # ---- the log ---------------------------------------------------------------------------
 
 def _props(snapshot):

@@ -73,7 +73,7 @@ export function ModelCell({ r, col }) {
       return text ? <span className="ml-num" title={text}>{text}</span> : <span className="rw-blank">—</span>;
     }
     case "mean": return <span className="ml-num">{meanText(model)}</span>;
-    case "b10": return <span className="ml-num">{b10Text(model)}</span>;
+    case "b10": return <span className="ml-num" title={(model.numbers || []).find((n) => n.id === "b10")?.note || undefined}>{b10Text(model)}</span>;
     case "quality":
       return (
         <span className="ml-q">
@@ -242,7 +242,8 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
                 <dt>Unit</dt><dd>{unit || "—"}</dd>
                 <dt>Time starts</dt><dd>{d?.origin || "…"}</dd>
                 {(model.numbers || []).filter((n) => n.id === "mean" || n.id === "b10").map((n) => (
-                  <span key={n.id} className="ml-dlrow"><dt>{n.label}</dt><dd>{withBounds(n, model.credible_level)}</dd></span>
+                  <span key={n.id} className="ml-dlrow"><dt>{n.label}</dt><dd>{withBounds(n, model.credible_level)}
+                    {n.note && <span className="rw-sum"> · {n.note}</span>}</dd></span>
                 ))}
               </dl>
             </section>

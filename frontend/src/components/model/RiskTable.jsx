@@ -2,7 +2,7 @@ import Plot from "../Plot.jsx";
 import Chip from "../ui/Chip.jsx";
 import { formatNumber } from "../../format.js";
 import { bandPair, dataPoints, fitLine, referenceShape } from "../../plotTheme.js";
-import { medianText, riskText, riskTone, sortColumn, sortRiskRows } from "../../joint.js";
+import { bandLevel, medianText, riskText, riskTone, sortColumn, sortRiskRows } from "../../joint.js";
 import { PlotCard } from "./ModelLayouts.jsx";
 import ChartPair from "./ChartPair.jsx";
 import "./ModelFrame.css";
@@ -19,7 +19,7 @@ const n3 = (v) => formatNumber(v);
 export function SurvivalChart({ curve, unit, name, title, age = null, fill = false }) {
   if (!curve?.x) return null;
   const traces = [];
-  if (curve.sf_lower && curve.sf_upper) traces.push(...bandPair(curve.x, curve.sf_lower, curve.sf_upper, { name: "95% band" }));
+  if (curve.sf_lower && curve.sf_upper) traces.push(...bandPair(curve.x, curve.sf_lower, curve.sf_upper, { name: `${bandLevel(curve.alpha_ci)} band` }));
   traces.push(fitLine({ x: curve.x, y: curve.sf, name: "Survival" }));
   const layout = {
     height: 320,
@@ -37,7 +37,7 @@ export function MarkerChart({ pred, results, name, fill = false }) {
   const marker = results.marker || "reading";
   const pts = pred.markers || [];
   const traces = [
-    ...bandPair(m.x, m.lower, m.upper, { name: "95% interval of its path" }),
+    ...bandPair(m.x, m.lower, m.upper, { name: `${bandLevel(pred.alpha_ci)} interval of its path` }),
     fitLine({ x: m.x, y: m.mean, name: "Its path (smoothed, then projected)" }),
     dataPoints({ x: pts.map((p) => p[0]), y: pts.map((p) => p[1]), name: "Its readings" }),
   ];

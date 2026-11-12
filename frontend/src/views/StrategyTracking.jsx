@@ -20,13 +20,16 @@ import { itemName } from "../components/LibRows";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
+import { atLevel, crossingBound, twoSidedFor } from "../lifeBound.js";
 
+// One-sided levels for the lower bound on the crossing time (a life bound: 90% by default).
 const CONFIDENCE_LEVELS = [
   { value: "0.8", label: "80%" },
   { value: "0.9", label: "90%" },
   { value: "0.95", label: "95%" },
   { value: "0.99", label: "99%" },
 ];
+const LIFE_LEVEL = "0.9";
 
 const fmt = (v, digits = 0) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: digits });
@@ -43,9 +46,9 @@ export default function StrategyTracking() {
   const [my, setMy] = useState("");
   const [adding, setAdding] = useState(false);
   const [measureError, setMeasureError] = useState(null);
-  // Per-item crossing confidence: the level, the recomputed prediction, and
-  // which item it belongs to (so a stale preview never bleeds across items).
-  const [confidence, setConfidence] = useState("0.95");
+  // Per-item crossing confidence (one-sided, for the lower bound): the level, the recomputed
+  // prediction, and which item it belongs to (so a stale preview never bleeds across items).
+  const [confidence, setConfidence] = useState(LIFE_LEVEL);
   const [preview, setPreview] = useState(null); // { itemId, prediction }
   const [previewBusy, setPreviewBusy] = useState(false);
 
@@ -67,19 +70,20 @@ export default function StrategyTracking() {
   const confirm = useConfirm();
   const askText = useAskText();
 
-  // Recompute the selected item's crossing prediction at the chosen confidence.
-  // At 95% the stored prediction already applies, so no round-trip is needed.
+  // Recompute the selected item's crossing prediction at the chosen confidence (a one-sided
+  // lower bound: the two-sided interval asked for is 2c - 1). Where the stored prediction is
+  // already at that level (90%, as stored), no round-trip is needed.
   useEffect(() => {
     const sel = (fleet?.items || []).find((it) => it.id === selectedId) || null;
     setPreview(null);
     if (!sel || sel.prediction?.method !== "bayesian") return;
-    if (confidence === "0.95") {
+    if (atLevel(sel.prediction, Number(confidence))) {
       setPreview({ itemId: sel.id, prediction: sel.prediction });
       return;
     }
     let cancelled = false;
     setPreviewBusy(true);
-    getItemPrediction(sel.model_id, sel.id, Number(confidence))
+    getItemPrediction(sel.model_id, sel.id, twoSidedFor(confidence))
       .then((p) => { if (!cancelled) setPreview({ itemId: sel.id, prediction: p }); })
       .catch(() => { if (!cancelled) setPreview(null); })
       .finally(() => { if (!cancelled) setPreviewBusy(false); });
@@ -135,12 +139,11 @@ export default function StrategyTracking() {
   };
 
   // The prediction shown for the selected item: the confidence-adjusted preview
-  // when it matches the selection, else the stored (95%) one.
+  // when it matches the selection, else the stored (90% lower bound) one.
   const activePred =
     preview && preview.itemId === selectedId ? preview.prediction : selected?.prediction || null;
   const badge = selected ? healthBadge(activePred) : null;
-  const confPct = Math.round(Number(confidence) * 100);
-  const [ftLo, ftHi] = activePred?.failure_time_interval || [null, null];
+  const bound = crossingBound(activePred);
   const ut = unit ? ` ${unitInText(unit)}` : "";
   // The item's health colours its answer: green healthy, amber to plan or act.
   const tone = { success: "good", warning: "caveat", danger: "caveat" }[badge?.tone] || "neutral";
@@ -220,10 +223,10 @@ export default function StrategyTracking() {
               sentence={
                 <>
                   Expected to cross the limit at <b>{fmt(activePred.failure_time)}{ut}</b>.
-                  {ftLo != null && ftHi != null && (
+                  {bound && (
                     <>
-                      {" "}With {confPct}% confidence it crosses between {fmt(ftLo)} and {fmt(ftHi)}{ut} — plan
-                      for the earliest, <b>{fmt(ftLo)}{ut}</b>.
+                      {" "}With {bound.level} confidence it won't cross before <b>{fmt(bound.lower)}{ut}</b>: plan
+                      for that.
                     </>
                   )}
                 </>

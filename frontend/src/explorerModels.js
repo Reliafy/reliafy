@@ -81,7 +81,8 @@ const byId = (model, id) => (model?.numbers || []).find((n) => n.id === id) || n
 
 // The Headline cell: characteristic life and shape for a Weibull, MTBF for an
 // exponential, the failure rate and trend for a repairable model, where a degradation
-// model fails; a model with none of these, its mean life.
+// model fails; a non-repairable RBD, its mean life first (time to the system's first
+// failure: never an MTBF); a model with none of these, its mean life.
 export function headline(model) {
   if (!model) return "";
   const parts = [];
@@ -97,9 +98,11 @@ export function headline(model) {
   if (model.trend) parts.push(model.trend);
   for (const id of ["threshold", "marker", "reference"]) {
     const n = byId(model, id);
-    if (n) parts.push(`${n.label} ${n.text}`);
+    if (n) parts.push([n.label, n.text].filter(Boolean).join(" "));
   }
-  if (!parts.length && byId(model, "mean")) parts.push(`Mean life ${withBounds(byId(model, "mean"), lv)}`);
+  const mean = byId(model, "mean");
+  if (mean && model.family === "rbd") parts.unshift(`Mean life ${withBounds(mean, lv)}`);
+  else if (!parts.length && mean) parts.push(`Mean life ${withBounds(mean, lv)}`);
   return parts.join(" · ");
 }
 

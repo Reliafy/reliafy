@@ -71,7 +71,7 @@ import FullScreenButton from "./FullScreenButton.jsx";
 import { hasOpenLayer, isFullScreenKey, isTyping } from "../fullScreen.js";
 import { rbdDirty, rbdSaveSnapshot, rbdSaveStatus } from "../rbdSaveState.js";
 import { builderWidthClass } from "../rbdEditorLayout.js";
-import { applyTreePlan, treeGraph, treeKey, treePositionPath } from "../rbdTreePlan.js";
+import { applyTreePlan, treeGraph, treeKey, treePositionPath, treeRow } from "../rbdTreePlan.js";
 import { getRbdTreePlan } from "../api.js";
 import { useRoles } from "../RolesProvider.jsx";
 
@@ -2153,6 +2153,8 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
             setModalNodeId(null);
           }}
           onSubmit={setNodeModel}
+          tree={repairable ? treeRow(treePlan, modalNodeId) : null}
+          onTreeLink={pane?.onOpenFull || null}
           onEditPlan={repairable && nodes.find((n) => n.id === modalNodeId)?.type === "component"
             ? (payload) => { const id = modalNodeId; setNodeModel(payload); openPlanFor(id); }
             : null}

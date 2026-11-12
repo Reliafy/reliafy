@@ -102,7 +102,10 @@ Under **Decisions → Risk →** [Condition monitoring](/risk) (or **Track items
 register the individual assets you care about — Truck 07's front-left pad, specifically — and record measurements against
 them as you take them. Each new reading updates that asset's own projection: its
 current trajectory, when it's forecast to cross the threshold, and how much
-confidence to place in that.
+confidence to place in that. Each asset's remaining life comes with a 90% lower
+bound (the sample Truck 12 pad: *4,585 hours, at least 4,290 at 90%*), and its page says when, with 90%
+confidence, it won't cross before: the date to plan with. Change the
+**Confidence** there for a stricter or looser bound.
 
 That's the loop that makes condition monitoring worth the effort. A reading taken
 on Tuesday can change a replacement date by Wednesday, for one named asset,

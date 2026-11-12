@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  applyTreePlan, mergeTreeData, setTreeSetting, treeGraph, treeKey, treeRowProblems, treeTaskPath,
+  applyTreePlan, mergeTreeData, setTreeSetting, treeBlockPlan, treeGraph, treeKey, treeRowProblems, treeTaskPath,
 } from "./rbdTreePlan.js";
 
 const row = (plan, extra = {}) => ({ position: { id: "p1", name: "Pump A" }, used: plan ? "t1" : null, plan, ...extra });
@@ -65,4 +65,22 @@ test("links to the tree and the request's blocks", () => {
   const edited = [nodes[0], { ...nodes[1], data: { ...nodes[1].data, duty: 0.5 } }];
   assert.equal(treeKey(edited, "Hours"), treeKey(nodes, "Hours"));
   assert.notEqual(treeKey([nodes[0], { ...nodes[1], data: { label: "B" } }], "Hours"), treeKey(nodes, "Hours"));
+});
+
+test("the block dialog shows the tree's task, as the plan and the Calculator use it", () => {
+  // The diagram's own (stale) plan says nothing is planned; the position has an age replacement.
+  const data = { label: "Pump A", preventive: undefined };
+  const tree = row(AGE, { tasks: [{ id: "t1", name: "Replace the seal", used: true }] });
+  const words = treeBlockPlan(data, tree, "hours");
+  assert.doesNotMatch(words.summary, /Run to failure/);
+  assert.match(words.summary, /^Replace on age every 4,383/);
+  assert.equal(words.source, "From the tree: “Replace the seal” on Pump A");
+  assert.equal(words.editLabel, "Edit in the tree");
+  assert.match(words.editPath, /tab=maintenance/);
+  assert.match(words.editPath, /mtask=t1/);
+  // No tasks at the position: it runs to failure, whatever the diagram had drawn.
+  const none = treeBlockPlan({ preventive: { policy: "age", interval: 9 } }, row(null, { tasks: [] }), "hours");
+  assert.equal(none.summary, "Run to failure");
+  assert.equal(none.source, "From the tree: no maintenance tasks on Pump A");
+  assert.equal(none.editLabel, "Add a task in the tree");
 });

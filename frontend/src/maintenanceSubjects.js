@@ -77,3 +77,29 @@ export function defaultCloseKind(wo) {
 export function closeActionKind(kind) {
   return kind === "checked" ? { kind: "inspect", finding: "ok" } : { kind };
 }
+
+// Whether a replacement on this work order starts as a failure. A corrective work
+// order is a breakdown: its replacement starts as "Yes, it failed", so closing it with
+// the defaults records a failure, not a planned removal (which life fits count as
+// still running). Preventive and other work starts as a planned replacement.
+export function defaultFailed(wo) {
+  return wo?.type === "corrective";
+}
+
+// A close form's replacement as the API takes it: why the old item came out, and its
+// failure mode only when it failed.
+export function replaceReason(action) {
+  return action?.failed ? "failure" : "planned";
+}
+
+// What closing records for a replacement, in words, so the user sees it before closing.
+export function replaceRecordText(action, wo, modeName = "") {
+  const old = wo?.fitted?.item?.name;
+  const where = wo?.position?.name || (wo?.subject?.kind === "position" ? wo.subject.name : "");
+  const what = old ? `${old}'s time${where ? ` at ${where}` : ""}` : "The fitted item's time";
+  if (!wo?.fitted) return "Nothing is fitted here, so no life ends; the new item starts its life today.";
+  if (action?.failed) {
+    return `Records a failure: ${what} ends as a failure${modeName ? ` (${modeName})` : " (mode not known)"}. Life fits count it as failed.`;
+  }
+  return `Records a planned replacement: ${what} ends without a failure. Life fits count it as still running (a suspension).`;
+}

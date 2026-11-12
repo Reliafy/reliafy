@@ -1,17 +1,18 @@
 import Plot from "./Plot.jsx";
-import { ACCENT, BAND_FILL, DANGER, DATA_INK, band, dataPoints, fitLine, referenceShape } from "../plotTheme.js";
+import { ACCENT, DANGER, DATA_INK, band, dataPoints, fitLine, referenceShape } from "../plotTheme.js";
+import { levelText, oneSidedLevel } from "../lifeBound.js";
 
 // One tracked item's outlook: its measurements, the projected degradation
-// path, the failure threshold, and the predicted crossing time with its 95%
-// credible interval band.
+// path, the failure threshold, and the predicted crossing time with its one-sided
+// lower bound (a life bound: 90% as stored; the level from the prediction itself).
 export default function RulChart({ item, threshold, unit, measurementUnit }) {
   const pred = item.prediction || {};
   const meas = item.measurements || [];
   const xTitle = unit ? `Time (${unit})` : "Time";
   const yTitle = measurementUnit ? `Measurement (${measurementUnit})` : "Measurement";
 
-  // Confidence of the crossing-time interval, from the prediction itself.
-  const ciPct = pred.alpha_ci != null ? Math.round((1 - pred.alpha_ci) * 100) : 95;
+  // The one-sided level of the crossing time's lower bound, from the prediction itself.
+  const level = levelText(oneSidedLevel(pred.alpha_ci));
 
   const traces = [];
   if (pred.projection?.lo && pred.projection?.hi) {
@@ -19,7 +20,7 @@ export default function RulChart({ item, threshold, unit, measurementUnit }) {
     traces.push(band({
       x: [...pred.projection.x, ...[...pred.projection.x].reverse()],
       y: [...pred.projection.hi, ...[...pred.projection.lo].reverse()],
-      name: "Path credible band",
+      name: "Path 90% credible band",
     }));
   }
   if (pred.projection) {
@@ -41,15 +42,12 @@ export default function RulChart({ item, threshold, unit, measurementUnit }) {
     });
   }
 
-  const [lo, hi] = pred.failure_time_interval || [null, null];
-  if (lo !== null && hi !== null) {
-    shapes.push({
-      type: "rect", yref: "paper", x0: lo, x1: hi, y0: 0, y1: 1,
-      fillcolor: BAND_FILL, line: { width: 0 },
-    });
+  const [lo] = pred.failure_time_interval || [null];
+  if (lo !== null && lo !== undefined) {
+    shapes.push(referenceShape({ x: lo, line: { dash: "dash" } }));
     annotations.push({
-      x: lo, yref: "paper", y: 0, yanchor: "top",
-      text: `${ciPct}% interval`, showarrow: false, xanchor: "left",
+      x: lo, yref: "paper", y: 1, yanchor: "top", xanchor: "right", xshift: -4,
+      text: `Not before (${level})`, showarrow: false,
     });
   }
   if (pred.failure_time !== null && pred.failure_time !== undefined) {

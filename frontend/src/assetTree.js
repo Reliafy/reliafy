@@ -327,6 +327,19 @@ export function buildDisplay(data, mode) {
   return { rows, roots, positions: positions.length, items };
 }
 
+// The row a position's Summary describes. By Classes, positions are listed flat
+// under their item class, so the class tree's row has nothing inside it: its
+// "Directly inside", "Inside" and status chips would say nothing is inside and
+// nothing is overdue there. The Summary reads the same position's row in the
+// Positions arrangement (`structure`: buildDisplay(data, "positions")), with its
+// display, so the counts are the same whichever way the tree is arranged. Any
+// other row, or no structure: as it is.
+export function structuralRow(structure, row, display) {
+  if (!structure || row?.type !== "pos") return { row, display };
+  const same = structure.rows.get(row.key);
+  return same ? { row: same, display: structure } : { row, display };
+}
+
 // Depth, and each row's totals: its own status plus everything inside it.
 function rollUp(rows, roots) {
   const order = [];
