@@ -87,7 +87,7 @@ export function useDatasetSplit({ text, noHeader = false, source = "", enabled =
   const summary = active && plan ? (
     <section className="split-summary" aria-label="Datasets this file makes">
       <h3>This file makes {n} dataset{n === 1 ? "" : "s"}:</h3>
-      <div className="maint-scroll">
+      <div className="maint-scroll split-scroll">
         <table className="split-table">
           <tbody>
             {plan.parts.map((p) => (
@@ -116,7 +116,7 @@ export function useDatasetSplit({ text, noHeader = false, source = "", enabled =
   const savedList = saved ? (
     <section className="split-summary" aria-label="Saved datasets">
       <h3>Saved {saved.datasets.length} dataset{saved.datasets.length === 1 ? "" : "s"}:</h3>
-      <div className="maint-scroll">
+      <div className="maint-scroll split-scroll">
         <table className="split-table">
           <tbody>
             {saved.datasets.map((d) => (

@@ -10059,6 +10059,8 @@ main.content:focus { outline: none; }
 .split-summary { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); min-width: 0; }
 .split-summary h3 { margin: 0; font-size: var(--fs-14); }
 .split-table { border-collapse: collapse; font-size: var(--fs-13); }
+/* A long split (dozens of datasets) scrolls inside its card instead of stretching the dialog. */
+.split-scroll { max-height: 18rem; overflow-y: auto; }
 .split-table th, .split-table td { padding: 4px var(--sp-4) 4px 0; text-align: left; vertical-align: baseline; }
 .split-table th { font-weight: 600; overflow-wrap: anywhere; }
 .split-table td { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
