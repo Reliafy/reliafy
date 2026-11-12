@@ -24,8 +24,11 @@ Go to **Decisions → Strategy → Optimal replacement**, or, on a saved model's
 **Use this model** and choose **Find the best replacement interval** (a
 wear-out model also offers it when you click its **Failure pattern**). It opens on **Saved
 model** with that model (or the one you used last) chosen and its time unit
-filled in; pick another, or choose **Parameters** to type a distribution's
-parameters. Then supply two numbers:
+filled in; pick another (a class's model fitted from maintenance records is
+listed too, in days), or choose **Parameters** to type a distribution's
+parameters together with the **Unit of the model's times** (days, hours, …).
+That unit has no default: the answer is in it, so a model fitted in days must
+say days. Then supply two numbers:
 
 - **Planned replacement cost** — what it costs to change the component out on
   your terms, during a planned window.

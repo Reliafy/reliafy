@@ -208,16 +208,22 @@ def level_text(level: float) -> str:
 
 
 def sentence(ans: dict, level: float, window: str, unit: str = "", repairable: bool = False,
-             review: bool = False) -> str:
+             review: bool = False, rising: tuple | None = None) -> str:
     """The recommendation in words. ``window``: what the hold covers ('the lead
-    time (60 days)'); ``review``: stock is checked periodically, not continuously."""
+    time (60 days)'); ``review``: stock is checked periodically, not continuously.
+    ``rising`` (peak, 'from quarter 2'): a later window needs more, so the headline
+    says so ('Hold 2 now, rising to 3 from quarter 2') rather than reading as
+    the answer for every period."""
     each = f" {unit}" if unit and unit != "each" else ""
     sl = level_text(level)
+    held = f"{_n(ans['hold'])}{each}"
+    if rising is not None:
+        held = f"{_n(ans['hold'])}{each} now, rising to {_n(rising[0])} {rising[1]}"
     if repairable:
-        words = (f"Keep a pool of {_n(ans['hold'])}{each}: a {sl} chance of no shortage over {window}, "
+        words = (f"Keep a pool of {held}: a {sl} chance of no shortage over {window}, "
                  "while failed ones are repaired (one site, every unit sent comes back).")
     else:
-        words = f"Hold {_n(ans['hold'])}{each}: a {sl} chance of no stock-out over {window}."
+        words = f"Hold {held}: a {sl} chance of no stock-out over {window}."
         if ans.get("reorder_at") is not None and ans["hold"] > 0:
             if review:
                 words += f" At each review, order back up to {_n(ans['hold'])}"

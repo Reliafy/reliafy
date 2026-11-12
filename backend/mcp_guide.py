@@ -35,8 +35,8 @@ B10 the user believes): analyse bayes_update (Pro) updates the baseline with the
 {distribution, params, unit} or {b10: {value, low, high}, shape: {low, high}, unit}; trust close / guide / start \
 (each number within about 10 / 30 / 60%; a fitted baseline counts as all, half or a fifth of its evidence); x and c \
 in the baseline's unit. E.g. baseline {model_id: <the class's Weibull>}, trust guide, x [1400, 1900, 2500], c \
-[0, 0, 1]. It returns posterior medians with 90% credible intervals ("a 90% chance the B10 lies between ..."), \
-never confidence bounds, and says what moved the baseline. It's a Bayesian update of a baseline: use it for \
+[0, 0, 1]. It returns posterior medians with 90% credible intervals (the B10 and mean life with a 90% one-sided \
+lower bound: "90% sure the B10 is at least ..."), never confidence bounds, and says what moved the baseline. It's a Bayesian update of a baseline: use it for \
 sparse data with a baseline the user trusts, say the baseline and the trust when quoting it; with plenty of \
 failures fit instead. No data: the baseline stands as given. With Reliafy Maintenance, baseline \
 {class_power_prior: true, position_id} uses that position's class's other positions' history as a power prior \

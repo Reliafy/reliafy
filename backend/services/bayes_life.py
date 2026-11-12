@@ -19,8 +19,9 @@ machine. The baseline becomes a prior with SurPyval's helpers:
   ``prior.from_params(dist, params, within=...)`` (each within 10%, 30% or 60%);
 * a belief about a B-life: ``prior.on_quantities(Weibull, B10=around(...), beta=between(...))``.
 
-The results are credible intervals ("a 90% chance the B10 lies between ..."), never
-confidence bounds. A saved update keeps its recipe (the data and the prior) and is
+The results are credible intervals, never confidence bounds: the parameters' are 90%
+two-sided; the B10 and mean life carry a 90% one-sided lower bound ("we're 90% sure the
+B10 is at least ..."), as every life bound in the app does. A saved update keeps its recipe (the data and the prior) and is
 rebuilt by refitting (``rebuild``), about a third of a second, rather than storing the
 posterior grid (megabytes).
 """
@@ -495,13 +496,17 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None,
         lo, hi = model.param_cri(name, alpha_ci=ALPHA)
         post.append({"name": name, "label": WORDS.get(name, name), "median": _f(median),
                      "lower": _f(lo), "upper": _f(hi), "baseline": base["params"].get(name)})
-    b10 = model.quantile_cri(0.1, alpha_ci=ALPHA)
-    mean = model.mean_cri(alpha_ci=ALPHA)
+    # B-lives and the mean life: a 90% one-sided lower credible bound (a lower
+    # bound on life), the rule everywhere and what the saved model's page shows
+    # (life_bounds). Parameters keep their 90% two-sided credible intervals.
+    b10_lower = np.ravel(model.quantile_cri(0.1, alpha_ci=ALPHA, bound="lower"))[0]
+    mean_lower = np.ravel(model.mean_cri(alpha_ci=ALPHA, bound="lower"))[0]
     result.update(
         posterior=post,
-        b10={"point": _f(model.quantile_cri(0.1, alpha_ci=ALPHA, point=True)), "lower": _f(b10[0]), "upper": _f(b10[1]),
-             "next_unit": _f(model.qf(0.1))},
-        mean={"point": _f(np.ravel(model.mean())[0]), "lower": _f(mean[0]), "upper": _f(mean[1])},
+        b10={"point": _f(model.quantile_cri(0.1, alpha_ci=ALPHA, point=True)), "lower": _f(b10_lower), "upper": None,
+             "bound": "lower", "level": LEVEL, "next_unit": _f(model.qf(0.1))},
+        mean={"point": _f(np.ravel(model.mean())[0]), "lower": _f(mean_lower), "upper": None, "bound": "lower",
+              "level": LEVEL},
         at_age=None, curves=curves(model, base, dist_id, float(np.max(x)) if len(x) else None), can_save=True,
     )
     if age is not None and _f(age) and float(age) > 0:
@@ -514,8 +519,9 @@ def update(base: dict, trust: str, rows: list[dict], age: float | None = None,
     how = ("its earlier prior" if base["source"] == "update" else "as stated" if base["source"] in ("around", "belief", "library")
            else t["label"].lower())
     result["words"] = (f"{result['moved']} Starting from {base['name']} ({how}), "
-                       f"{subject} is about {num(b['point'])}{(' ' + u) if u else ''}: there's a "
-                       f"{LEVEL:.0%} chance it lies between {num(b['lower'])} and {num(b['upper'])}.")
+                       f"{subject} is about {num(b['point'])}{(' ' + u) if u else ''}: we're {LEVEL:.0%} sure "
+                       f"it's at least {num(b['lower'])}{(' ' + u) if u else ''} ({LEVEL:.0%} one-sided credible "
+                       "bound).")
     return model, result, priors
 
 

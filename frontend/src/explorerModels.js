@@ -42,6 +42,16 @@ export function fmt(v) {
   return Number(x.toPrecision(sig)).toLocaleString("en-AU", { maximumFractionDigits: 6 });
 }
 
+// The bound beside a fitted number: "1,410–2,530" (two-sided), or "≥ 467" (one-sided
+// lower). A B-life or mean life fitted with a prior carries its level (bayes_life.py):
+// "≥ 3,814 at 90% credible", as the saved model's page says it. null with no bound.
+export function rangeBound(p) {
+  if (!p || p.lower == null) return null;
+  if (p.upper != null) return `${fmt(p.lower)}–${fmt(p.upper)}`;
+  const level = p.bound === "lower" && p.level ? ` at ${Math.round(p.level * 100)}% credible` : "";
+  return `≥ ${fmt(p.lower)}${level}`;
+}
+
 // A model's time unit as people write it ("Hours" → "hours").
 export const unitWord = (unit) => String(unit || "").trim().toLowerCase();
 

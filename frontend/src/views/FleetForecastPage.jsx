@@ -9,7 +9,7 @@ import { ShareButton } from "../components/ShareDialog.jsx";
 import { useAskText } from "../components/ConfirmProvider.jsx";
 import { changedText, renamePrompt } from "../confirm.js";
 import { getFleet, putFleetItems, renameFleet } from "../api.js";
-import { toCsv } from "../csv.js";
+import { fleetForecastCsv } from "../fleetCsv.js";
 import Chip from "../components/ui/Chip.jsx";
 import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
@@ -197,27 +197,9 @@ export default function FleetForecastPage() {
   };
 
   const exportCsv = () => {
-    const header = ["item", "current_use", "rate_per_period", ...fields.map((f) => f.name),
-                    "prob_any_failure", "expected_failures"];
-    if (repairable) header.push("next_service_at", "prob_failure_before_service");
-    const rows = [header, ...items.map((it) => {
-      const r = perItem[it.id] || {};
-      const row = [it.name, it.current_use, it.rate ?? settings.default_rate,
-                   ...fields.map((f) => r.covariates?.[f.name] ?? it.covariates?.[f.name] ?? fleetDefault(f) ?? ""),
-                   r.prob_any ?? "", r.expected ?? ""];
-      if (repairable) row.push(it.next_service_at ?? "", r.prob_before_service ?? "");
-      return row;
-    })];
-    rows.push([]);
-    rows.push(["fleet_expected", forecast.expected ?? ""]);
-    rows.push(["interval_p10", forecast.interval?.[0] ?? "", "interval_p90", forecast.interval?.[1] ?? ""]);
-    if (forecast.per_period_interval) {
-      rows.push([]);
-      rows.push(["period", "expected", "p10", "p90"]);
-      (forecast.per_period || []).forEach((v, i) =>
-        rows.push([i + 1, v, forecast.per_period_interval[i]?.[0] ?? "", forecast.per_period_interval[i]?.[1] ?? ""]));
-    }
-    const blob = new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" });
+    const text = fleetForecastCsv({ items, perItem, fields, defaultRate: settings.default_rate,
+                                    covariateDefault: fleetDefault, forecast, repairable });
+    const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
