@@ -2064,9 +2064,10 @@ def open_work_order(body: dict = Body(...), m: Maintenance = Depends(maintenance
 
 
 @router.post("/work-orders/generate")
-def generate_work_orders(horizon_days: int = Body(30, embed=True),
+def generate_work_orders(horizon_days: int = Body(30, embed=True), location_id: str | None = Body(None, embed=True),
                          m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.generate, max(0, min(horizon_days, 366)))
+    """Work orders for what's due in the window; location_id: only the work in that area."""
+    return _run(m.generate, max(0, min(horizon_days, 366)), location_id)
 
 
 @router.patch("/work-orders/{work_order_id}")

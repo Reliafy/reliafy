@@ -525,10 +525,10 @@ WORK_ORDERS: Table = {
         if any action or reading is invalid."""),
     "cancel": ("work_order_id", "reason", """Cancel one that won't be done (a duplicate, raised by mistake);
         reason kept as cancel_reason. Work that was done: close."""),
-    "generate": ("", "horizon_days package_id", """Open a preventive work order for every task due within horizon_days
+    "generate": ("", "horizon_days package_id location_id", """Open a preventive work order for every task due within horizon_days
         (default 30, at most 366) that has none open, on the task's subject; one per work package visit (lines
         added to its open one instead); skipped: any it couldn't, and why. package_id: only that package's next
-        visit, raised now whenever it is (nothing else)."""),
+        visit, raised now whenever it is (nothing else). location_id: only the work in that area."""),
     "labour": ("work_order_id hours", "who rate on note", "Hours worked, by whom, at an hourly rate if known."),
     "part_used": ("work_order_id", "part quantity unit_cost part_number note part_id from_location_id", """A part
         or consumable used: free text (part) or a catalogue part (part_id, from the work order's
@@ -1955,7 +1955,7 @@ def register() -> None:
         if action == "generate":
             if package_id:
                 return run(m.raise_package_visit, package_id)
-            return run(m.generate, max(0, min(_d(horizon_days, 30), 366)))
+            return run(m.generate, max(0, min(_d(horizon_days, 30), 366)), location_id)
         if action == "labour":
             return run(m.log_labour, work_order_id, hours, who or "", rate, on, note or "")
         if action == "part_used":

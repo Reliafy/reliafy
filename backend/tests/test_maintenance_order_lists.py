@@ -133,3 +133,42 @@ def test_a_package_work_order_says_how_far_through_its_lines_it_is(m, today):
     m.mark_line(wo["id"], tasks[0], "done")
     [wo] = m.work_orders("open")
     assert (wo["lines_answered"], wo["lines_total"]) == (1, 2)
+
+
+def _two_sites(m):
+    river = m.create_location("Riverside")["id"]
+    hill = m.create_location("Hilltop")["id"]
+    hall = m.create_location("Pump hall", parent_id=river)["id"]
+    p3 = m.create_position("Pump 3", location_id=hall)["id"]
+    p4 = m.create_position("Pump 4", location_id=hill)["id"]
+    motors = {}
+    for name, parent in (("p3", p3), ("p4", p4)):
+        motor = m.create_position("Drive motor 75 kW", parent_id=parent)["id"]
+        motors[name] = m.create_task(motor, "Check the motor", 1, "months", last_done="2026-10-12")["id"]
+    return {"river": river, "hill": hill, "hall": hall, "p3": p3, "p4": p4, "tasks": motors}
+
+
+def test_due_rows_say_what_a_position_sits_in_and_where_the_work_is(m):
+    s = _two_sites(m)
+    due = {t["id"]: t for t in m.due_tasks(30)}
+    a, b = due[s["tasks"]["p3"]], due[s["tasks"]["p4"]]
+    # Six "Drive motor" rows can be told apart.
+    assert a["subject"]["name"] == b["subject"]["name"] == "Drive motor 75 kW"
+    assert a["subject"]["within"] == "Pump 3" and b["subject"]["within"] == "Pump 4"
+    # Where: the place inherited from the pump, with the way down to it.
+    assert a["location"]["id"] == s["hall"] and [x["id"] for x in a["location"]["path"]] == [s["river"]]
+    assert b["location"]["id"] == s["hill"]
+    # The LSA table (the package dialog) says the same.
+    rows = {r["id"]: r for r in m.task_table(position_id=s["p3"])["tasks"]}
+    assert rows[s["tasks"]["p3"]]["subject"]["within"] == "Pump 3"
+
+
+def test_generate_can_raise_only_one_sites_work(m):
+    s = _two_sites(m)
+    made = m.generate(30, location_id=s["river"])["work_orders"]
+    assert len(made) == 1
+    raised = {t["id"] for t in m.due_tasks(30) if t["open_work_order"]}
+    assert raised == {s["tasks"]["p3"]}
+    # The rest still raise without a site.
+    m.generate(30)
+    assert {t["id"] for t in m.due_tasks(30) if t["open_work_order"]} == set(s["tasks"].values())

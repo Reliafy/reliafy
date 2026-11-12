@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { listPackages } from "../api.js";
+import { getMaintenanceOverview, listPackages } from "../api.js";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import ListSearch from "../components/ListSearch.jsx";
 import Select from "../components/Select.jsx";
@@ -15,8 +15,10 @@ import { PACKAGES_LABEL } from "../navigation.js";
 import "./Maintenance.css";
 
 const HELP = { guide: "maintenance-work-orders" };
-// Packages are made where the tasks are: the Explorer's LSA tab (tick tasks, then package them).
+// Packages are made where the tasks are: the Explorer's LSA tab (tick tasks, then package them),
+// opened on the tree picked (not whichever tree comes first: another team's asset).
 const LSA_PATH = explorerPath("positions", { tab: "lsa" });
+const lsaOn = (id) => explorerPath("positions", { tab: "lsa", sel: id });
 
 const STATUSES = [
   { value: "", label: "Active and paused" },
@@ -34,6 +36,11 @@ export default function MaintenancePackages() {
   const [query, setQuery] = useState("");
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [roots, setRoots] = useState(null);
+  useEffect(() => {
+    getMaintenanceOverview().then((d) => setRoots((d.tree || []).map((n) => ({ id: n.id, name: n.name }))))
+      .catch(() => setRoots([]));
+  }, []);
   useEffect(() => {
     let live = true;
     setData(null);
@@ -49,7 +56,12 @@ export default function MaintenancePackages() {
         title={PACKAGES_LABEL}
         purpose="Tasks done together on one visit, with one work order for each visit."
         help={HELP}
-        primary={<button onClick={() => navigate(LSA_PATH)}>Package tasks</button>}
+        primary={roots && roots.length > 1 ? (
+          <Select ariaLabel="Package tasks on" value="" onChange={(id) => id && navigate(lsaOn(id))}
+                  options={[{ value: "", label: "Package tasks on…" }, ...roots.map((r) => ({ value: r.id, label: r.name }))]} />
+        ) : (
+          <button onClick={() => navigate(roots?.length === 1 ? lsaOn(roots[0].id) : LSA_PATH)}>Package tasks</button>
+        )}
       />
       {error && <div className="card error">{error}</div>}
       {data && (

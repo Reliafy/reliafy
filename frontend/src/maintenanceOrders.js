@@ -127,6 +127,23 @@ export function createPlan(rows = []) {
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
+// Whether a due task's work is in an area (a site and the places inside it): its
+// location ({id, path: [{id}]}: the position's place, set or inherited, or where its item
+// is) is the area or inside it. No area: everything is.
+export function inArea(row, locationId) {
+  if (!locationId) return true;
+  const loc = row?.location || row?.at?.location;
+  if (!loc) return false;
+  return loc.id === locationId || (loc.path || []).some((a) => a.id === locationId);
+}
+
+// The words a due task is found by: its name, what it's on and what that sits in, its
+// package and where it is ("Riverside" finds every task at the Riverside site).
+export function dueSearchText(t) {
+  const loc = t?.location || t?.at?.location;
+  return [t?.name, t?.subject?.name, t?.subject?.within, t?.package?.name, loc?.display, loc?.name].filter(Boolean);
+}
+
 // "Create 2 work orders", and what they are: "1 package visit, 1 task".
 export function createLabel(plan) {
   return `Create ${plural(plan.total, "work order", "work orders")}`;

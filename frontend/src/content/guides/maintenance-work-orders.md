@@ -32,11 +32,14 @@ in the search box to find one by its number, title or what it's on.
 **Due soon** lists every scheduled task coming due in the next 7, 30 or 90
 days: the task, what it's on (a position, an item or a location), when it's
 due, and its work order if it has one. Tasks in a package are grouped under it;
-the rest come last, under "Not in a package".
+the rest come last, under "Not in a package". A task on a position inside
+another says what it sits in ("Pump 3 › Drive motor"), so like tasks can be
+told apart. Choose a site in **In** (the same choice as the Open tab) to see
+only the work there; the search finds tasks by their site's name too.
 
 **Create N work orders** raises what's missing in one click, and says what it
 will make: one work order for each package visit, and one for each task that
-isn't in a package. To raise one package's visit and nothing else, use
+isn't in a package. With a site chosen, it raises only that site's work. To raise one package's visit and nothing else, use
 **Raise this visit** on that package's row (or on the package's own page).
 
 A task that was already overdue when it went into a package stays overdue,
@@ -80,10 +83,14 @@ When what failed is inside the work order's position (the seal inside the pump
 whose check this is), pick it under **On** for each action: the finding, the
 failure mode and the replacement are then recorded on it, not on the pump.
 **Inspected it** with **Found failed** records the item as failed some time
-between its last good check and today, and life fits count it that way. A
+between its last good check and today, and life fits count it that way. If
+nothing was replaced or repaired there on the same order, the closed work order
+offers **Raise a corrective work order** on that position. A
 serial typed for the new item is kept even with no name: the item is named
 after the part or what it replaces. Values filled in under **Readings and
-settings** are recorded when you close it.
+settings** are recorded when you close it. A point the task names (the
+"Vibration" point for a vibration check) is listed first, and a counter value
+lower than its last reading is flagged as you type it.
 
 ## Look back: closed work orders
 

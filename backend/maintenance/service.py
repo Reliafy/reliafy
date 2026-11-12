@@ -7952,10 +7952,20 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             if view["next_due"] and view["next_due"] <= until:
                 if subject["label"] == "Position":
                     view["position"] = {"id": subject["id"], "name": subject["name"]}
+                    view["subject"]["within"] = self._within(subject["id"])
                 elif subject["label"] == "Item":
                     view["at"] = self._item_at(subject["id"])
+                # Where the work is (the position's place, set or inherited; where the item is
+                # now; or the place itself), so Due soon can be narrowed to one site.
+                view["location"] = self._wo_area(subject)
                 out.append(view)
         return sorted(out, key=lambda t: t["next_due"])
+
+    def _within(self, position_id: str, depth: int = 2) -> str:
+        """What a position sits in, briefly: its nearest ``depth`` parents, top first
+        ("Station 2 › Pump 3"), so six "Drive motor" rows can be told apart. "" at the top."""
+        path = self._position_path(position_id)
+        return " › ".join(a["name"] for a in path[-depth:])
 
     def _item_at(self, item_id: str) -> dict:
         """Where an item is now, briefly: the position it's fitted to (or None) and its
@@ -8050,7 +8060,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
           | ({"round": self._round(node["id"])} if include_positions else {}))
         return self.work_order(wid)
 
-    def generate(self, horizon_days: int = 30) -> dict:
+    def generate(self, horizon_days: int = 30, location_id: str | None = None) -> dict:
         """A work order for every task due within the horizon that has none open, on the
         task's subject: its position, its item (wherever it is) or its location.
 
@@ -8064,18 +8074,32 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         task due on that visit; one still open gets the tasks due on the visits since as
         lines instead. Their work orders are in work_orders too; the result adds packages
         (the visits raised), lines_added and packages_skipped. Every task in an active
-        package is then left to it."""
+        package is then left to it.
+
+        location_id: only the work in that area (a site and the places inside it): tasks
+        whose work is there, and packages on a position or place there."""
         made, skipped = [], []
+        inside = None
+        if location_id not in (None, ""):
+            self._get(str(location_id), "Location")
+            inside = set(self._location_ids_in(str(location_id)))
+
+        def there(subject) -> bool:
+            where = subject and self._wo_area(subject)
+            return bool(where) and where["id"] in inside
         packaged = bool(self.s.nodes(self.org, "WorkPackage"))
         members: set = set()
         if packaged:
             until = (date.fromisoformat(self.today()) + timedelta(days=horizon_days)).isoformat()
-            raised = self._generate_packages(until)
+            raised = self._generate_packages(
+                until, None if inside is None else (lambda p: there(self._package_subject(p))))
             made += raised["work_orders"]
             # Every task in an active package goes on its work orders; a paused one's are held.
             members = {tid for tid, entry in self._package_index().items() if entry["active"] or entry["held"]}
         for task in self.due_tasks(horizon_days):
             if task["id"] in members or task["open_work_order"] or not task.get("subject"):
+                continue
+            if inside is not None and not (task.get("location") and task["location"]["id"] in inside):
                 continue
             try:
                 made.append(self.open_work_order(None, None, type="preventive", task_id=task["id"],
@@ -8094,9 +8118,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                     "packages_skipped": raised["skipped"]}
         return out
 
-    def generate_work_orders(self, horizon_days: int = 30) -> list[dict]:
+    def generate_work_orders(self, horizon_days: int = 30, location_id: str | None = None) -> list[dict]:
         """The work orders generate() opened (its skipped tasks aside)."""
-        return self.generate(horizon_days)["work_orders"]
+        return self.generate(horizon_days, location_id)["work_orders"]
 
     def _work_position(self, subject: dict) -> str | None:
         """The position a work order's work is done at: its own, or for an item's, the
@@ -9988,13 +10012,14 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                    if not p.get("retired") and not self._pause_now(p) and not self._package_parent(p["id"])
                    and (self._package_state(p)["next_visit"] or "9999") <= until)
 
-    def _generate_packages(self, until: str) -> dict:
-        """Every active top package's turn in generate. Each stands alone: one that can't
-        is listed in skipped, and the others go ahead."""
+    def _generate_packages(self, until: str, keep=None) -> dict:
+        """Every active top package's turn in generate (``keep``: only those it accepts).
+        Each stands alone: one that can't is listed in skipped, and the others go ahead."""
         out: dict = {"work_orders": [], "visits": [], "lines_added": [], "skipped": []}
         today = self.today()
         roots = sorted((p for p in self.s.nodes(self.org, "WorkPackage")
-                        if not p.get("retired") and not self._pause_now(p) and not self._package_parent(p["id"])),
+                        if not p.get("retired") and not self._pause_now(p) and not self._package_parent(p["id"])
+                        and (keep is None or keep(p))),
                        key=lambda p: (p["name"].lower(), p["id"]))
         for root in roots:
             try:
@@ -10166,7 +10191,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 on = self._package_subject(entry["package"])
                 pkg = {"id": entry["package"]["id"], "name": entry["package"]["name"],
                        "subject": self._subject_brief(on)}
-            rows.append({"id": task["id"], "name": task["name"], "subject": self._subject_brief(subject),
+            brief = self._subject_brief(subject)
+            if subject["label"] == "Position":
+                brief["within"] = self._within(subject["id"])
+            rows.append({"id": task["id"], "name": task["name"], "subject": brief,
                          "modes": modes, "kind": kind, "interval": task.get("interval"), "unit": task.get("unit"),
                          "trigger": self._trigger_view(task.get("trigger")) if task.get("trigger") else None,
                          "on_event": _on_event_only(task), "trade": task.get("trade", ""),
@@ -10231,6 +10259,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 continue
             names[task["id"]] = task["name"]
             view = self._task_view(task)
+            if view["subject"] and view["subject"]["kind"] == "position":
+                view["subject"]["within"] = self._within(view["subject"]["id"])
             rows.append({"task_id": task["id"], "name": task["name"], "subject": view["subject"],
                          "interval": task["interval"], "unit": task["unit"], "trade": task.get("trade", ""),
                          "visit_rule": member.get("visit_rule", "every"), "every_nth": member.get("every_nth"),

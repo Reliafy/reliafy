@@ -2517,8 +2517,10 @@ export function listDueTasks(horizonDays = 30) {
   return request(`/api/maintenance/due?horizon_days=${encodeURIComponent(horizonDays)}`);
 }
 
-export function generateWorkOrders(horizonDays = 30) {
-  return postJson("/api/maintenance/work-orders/generate", { horizon_days: horizonDays });
+export function generateWorkOrders(horizonDays = 30, locationId = null) {
+  return postJson("/api/maintenance/work-orders/generate", {
+    horizon_days: horizonDays, ...(locationId ? { location_id: locationId } : {}),
+  });
 }
 
 export function getWorkOrder(id) {

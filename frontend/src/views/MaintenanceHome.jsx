@@ -59,6 +59,7 @@ export function SubjectCell({ subject, at, link = true }) {
   const badge = subjectBadge(subject);
   return (
     <>
+      {subject.within && <span className="lib-date" title={`Inside ${subject.within}`}>{subject.within} › </span>}
       {name}{badge && <> <span className="maint-badge">{badge}</span></>}
       {at && <div className="lib-date">{itemAtText(at)}</div>}
     </>
