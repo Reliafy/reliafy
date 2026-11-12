@@ -79,3 +79,12 @@ test("a product's design location: the positions placed there stay, with no plac
   assert.deepEqual(deleteLines(arm), ["1 location inside it", "3 positions placed there kept, with no place in the layout"]);
   assert.equal(deleteButton(arm), "Delete 2 locations");
 });
+
+test("rbdsNote: the RBDs that keep blocks for what's deleted, by name", async () => {
+  const { rbdsNote } = await import("./treeDelete.js");
+  assert.equal(rbdsNote([]), "");
+  assert.equal(rbdsNote(undefined), "");
+  assert.equal(rbdsNote([{ name: "Station", blocks: 2 }]),
+    "Used in 1 RBD: “Station”. It keeps the blocks for it: rebuild or edit the diagram to take them out.");
+  assert.match(rbdsNote([{ name: "A" }, { name: "B" }, { name: "C" }, { name: "D" }]), /^Used in 4 RBDs: “A”, “B”, “C” and 1 more\. They keep/);
+});

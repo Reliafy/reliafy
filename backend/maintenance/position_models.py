@@ -204,6 +204,27 @@ class PositionModelOps:
         model = node.get("model")
         return {"position_class": node.get("name") or name, **model} if model and model.get("model_id") else None
 
+    def class_models(self) -> dict:
+        """Each position class with a fitted model: {class name: {model_id, fitted_on,
+        failures (pooled when it was fitted), failures_now (pooled today), unit}}. A
+        position of the class can take it (From the class…), and failures_now above
+        failures says the class has had new failures since the fit."""
+        out: dict[str, dict] = {}
+        for node in self.s.nodes(self.org, "PositionClass"):
+            model = node.get("model") or {}
+            name = node.get("name")
+            if not name or not model.get("model_id"):
+                continue
+            try:
+                # Counted as the class fit counts them (a life above 0), so a fit made today reads 0 new.
+                rows = self.class_life_data(name)["rows"]
+                now = sum(1 for r in rows if r["c"] != 1 and (r["xr"] if r["c"] == 2 else r["x"]) > 0)
+            except _sv().NotFound:  # a class with no positions left: nothing pooled now
+                now = None
+            out[name] = {"model_id": model["model_id"], "fitted_on": model.get("fitted_on"),
+                         "failures": model.get("failures"), "failures_now": now, "unit": model.get("unit")}
+        return out
+
     def _mode_ids_on(self, position_id: str, failure_mode_ids) -> list[str]:
         sv = _sv()
         ids = []

@@ -10,6 +10,7 @@ import { browserTimeZone, shouldSuggestTimeZone } from "../workspaceDate.js";
 import { itemAtText, subjectBadge, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
+import { locationChoices } from "../maintenanceAssets.js";
 
 // One quiet line when the workspace has no time zone and this device isn't on
 // UTC: the dates here follow UTC until it's set. One button sets this device's
@@ -66,11 +67,17 @@ export function SubjectCell({ subject, at, link = true }) {
   );
 }
 
-export function NewPositionModal({ positions, parentId = null, onClose, onCreated }) {
+// A new position. `locations` ([{id, name, parent_id}]): the places it can be at,
+// shown as a Location box (left out when none are given); `locationId` fills it
+// with the place you came from, so a position made at a place is at that place.
+// Left empty, a position inside another is wherever that one is.
+export function NewPositionModal({ positions, parentId = null, locations = null, locationId = null, onClose, onCreated }) {
   const [name, setName] = useState("");
   const [tag, setTag] = useState("");
   const [positionClass, setPositionClass] = useState("");
   const [parent, setParent] = useState(parentId);
+  const [location, setLocation] = useState(locationId || "");
+  const places = locations ? locationChoices(locations) : [];
   return (
     <FormModal
       title="New position"
@@ -79,7 +86,7 @@ export function NewPositionModal({ positions, parentId = null, onClose, onCreate
       canSubmit={!!name.trim() && !tooLong(name)}
       onClose={onClose}
       onSubmit={async () => onCreated(await createMaintenancePosition({
-        name, tag, position_class: positionClass, parent_id: parent,
+        name, tag, position_class: positionClass, parent_id: parent, ...(location ? { location_id: location } : {}),
       }))}
     >
       <Field label="Name" text={name} hint={DESCRIPTION_HINT}>
@@ -88,6 +95,14 @@ export function NewPositionModal({ positions, parentId = null, onClose, onCreate
       <Field label="Inside">
         <PositionPicker positions={positions} value={parent} onChange={setParent} />
       </Field>
+      {places.length > 0 && (
+        <Field label="Location (where it physically is; what's inside follows)">
+          <select value={location} onChange={(e) => setLocation(e.target.value)}>
+            <option value="">{parent ? "Where the position it's inside is" : "Not at a place yet"}</option>
+            {places.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+          </select>
+        </Field>
+      )}
       <Field label="Tag (optional)">
         <input value={tag} placeholder="e.g. =HOUSE.HWS" onChange={(e) => setTag(e.target.value)} />
       </Field>

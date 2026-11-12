@@ -181,7 +181,7 @@ test("Locations: a location's menu has new inside, rename, move and delete; at 4
   await page.setViewportSize({ width: 1280, height: 720 });
   await open(page, `/asset-register/explorer?arrange=locations&sel=${p.shed.id}`);
   let menu = await menuOf(page, `Menu shed ${tag}`);
-  await expect(menu.getByRole("menuitem")).toHaveText(["New location inside", "Rename…", "Move to…", "Focus", "Pin this branch", "Delete…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["New position here", "New location inside", "Rename…", "Move to…", "Focus", "Pin this branch", "Delete…"]);
   await menu.getByRole("menuitem", { name: "Move to…" }).click();
   const dialog = page.getByRole("dialog", { name: `Move “Menu shed ${tag}”` });
   await dialog.getByRole("combobox").selectOption(p.store.id);

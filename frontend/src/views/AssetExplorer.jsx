@@ -25,7 +25,7 @@ import RedundancyPane from "../components/RedundancyPane.jsx";
 import { bindingForRecord, bindingFromParam, bindingParam } from "../covariate.js";
 import { PANE_PARAMS, TABLE_PANES, keepPaneFor, paneFromQuery, setPaneQuery } from "../tablePane.js";
 import { fitPreset, priorFrom } from "../fitDialog.js";
-import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, builtRbdLink, graftModels, inUseWords, isModelRow, modelKey, openForModels, rollupText as modelRollup, lifeModelOf,
+import { MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, builtRbdLink, graftModels, inUseWords, isModelRow, modelKey, openForModels, rollupText as modelRollup, classModelHint, lifeModelOf,
   opensInPane, bindingOf,
 } from "../explorerModels.js";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
@@ -292,6 +292,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The Summary tab's row menu: the row a new position or location goes
   // inside, and the row being renamed, moved or retired ({kind, row}).
   const [newParent, setNewParent] = useState(null);
+  const [newAt, setNewAt] = useState(null); // New position here: the place it's made at
   const [rowModal, setRowModal] = useState(null);
   // A failure report being filed ({id, name}: the position; select: the row
   // to show it under on the Failure reports tab once filed).
@@ -1565,7 +1566,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (id.startsWith("mission-")) return missionAction(r, id);
       if (id === "lsa-package") return packageAt(r);
       if (id === "maint-add-task") return addTaskAt(r);
-      if (id === "tree-new") {
+      if (id === "pos-here") {
+        setNewParent(TOP);
+        setNewAt(r.key);
+        setModal("position");
+      } else if (id === "tree-new") {
         setNewParent(r.key);
         setModal(r.type === "loc" ? "location" : "position");
       } else if (id === "tree-rename" || id === "tree-move" || id === "tree-delete") setRowModal({ kind: id.slice(5), row: r });
@@ -1888,12 +1893,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const created = (id) => {
     setModal(null);
     setNewParent(null);
+    setNewAt(null);
     pending.current = id;
     load();
   };
   const closeModal = () => {
     setModal(null);
     setNewParent(null);
+    setNewAt(null);
   };
   // "Open the Survey quadcopter", the one worked example for the RCM and FME(C)A tabs:
   // the quadcopter is a design, so it lives on Products; it opens there on its
@@ -2122,7 +2129,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     canEditName: () => false, onEdit: () => {}, onCommit: () => {}, onCancel: () => {}, onGoto: (key) => reveal(key),
     renderCell: (r, c) => (isModelRow(r) ? <ModelCell r={r} col={c} /> : null),
     onOpen: (key) => (isModelRow(display.rows.get(key)) ? openModel(key) : undefined),
-    rollupOf: (r, isOpen) => (r.type === "pos" ? modelRollup(r, isOpen) : null),
+    rollupOf: (r, isOpen) => (r.type === "pos" ? modelRollup(r, isOpen) || (r.lall?.n ? "" : classModelHint(r, pmodels.classModels, { short: true })) : null),
     phoneRow: (r, isOpen) => modelPhoneRow(r, r.type === "pos" ? modelRollup(r, isOpen) : ""),
     hint: null, drag: null,
   };
@@ -2264,7 +2271,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   ) : modelsOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
-                meta={pmodels.links ? <span className="tt-rollup mt-rollup">{modelRollup(posRow, false) || "No models here yet"}</span> : null}
+                meta={pmodels.links ? <span className="tt-rollup mt-rollup">{modelRollup(posRow, false) || classModelHint(display.rows.get(posRow.key) || posRow, pmodels.classModels) || "No models here yet"}</span> : null}
                 menu={modelMenu} popover={modelColumns} />
   ) : measOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
@@ -2704,6 +2711,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       {modal === "position" && (
         <NewPositionModal positions={pickerList(data)}
                           parentId={newParent === TOP ? null : newParent ?? (selPos && display.rows.get(selPos)?.type === "pos" ? selPos : null)}
+                          locations={data?.scope?.kind === "design" ? null : data?.locations || null}
+                          locationId={newAt ?? (newParent == null && mode === "locations" && display.rows.get(selPos)?.type === "loc" ? selPos : null)}
                           onClose={closeModal} onCreated={(p) => created(p.id)} />
       )}
       {modal === "location" && (
