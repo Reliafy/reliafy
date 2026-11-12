@@ -18,7 +18,8 @@ import {
   ALT_ROWS, altDataIssues, altMapping, altStressIssues, guessAltColumns, isThermal, stressLevelsWarning, suggestLifeModel,
 } from "../altGuess.js";
 import ColumnMapper from "../components/ColumnMapper.jsx";
-import { columnFacts as lifeFacts } from "../lifeData.js";
+import { columnFacts as lifeFacts, statusMeaning } from "../lifeData.js";
+import { useDatasetSplit } from "../components/DatasetSplit.jsx";
 
 // A thermal model's temperature must be absolute: the unit is asked, and °C or
 // °F are converted to kelvin before the fit.
@@ -152,6 +153,16 @@ export default function AltNewPage() {
   const mappingValid = dataValid && stressIssues.length === 0;
   const useFor = (j) => (useStress[j] === "" || useStress[j] == null ? null : useStress[j]);
 
+  // "dataset": one sheet split into several datasets by a column (DatasetSplit.jsx).
+  const splitSpec = useMemo(() => ({
+    needs: [{ row: "x", col: map.x, range: [map.xl, map.xr].filter(Boolean) }],
+    c: map.c, n: map.n, status: map.c ? (v) => statusMeaning(v, {}) : null,
+  }), [map]);
+  const split = useDatasetSplit({
+    file: datasetId ? null : file, columns: csv?.columns || [], mapping: map, spec: splitSpec,
+    reading: { kind: "alt", mapping: map, unit },
+  });
+
   const setStressAt = (j, patch) =>
     setStress((cur) => cur.map((s, k) => (k === j ? { ...s, ...patch } : s)));
 
@@ -204,6 +215,13 @@ export default function AltNewPage() {
   if (step === 1) {
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
       <span className="hint" style={{ margin: 0 }}>Pick a saved dataset, or upload a CSV or Excel file, to continue</span></>);
+  } else if (step === 2 && split.saved) {
+    nav = <button className="secondary" onClick={() => navigate("/models/alt")}>Done</button>;
+  } else if (step === 2 && split.active) {
+    const why = !dataValid ? "First settle the note beside x." : split.waitingFor;
+    nav = (<><button className="secondary" onClick={goBack} disabled={split.saving}>Back</button>
+      {why && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{why}</span>}
+      <button onClick={split.save} disabled={!dataValid || !split.canSave}>{split.saveLabel}</button></>);
   } else if (step === 2) {
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Back</button>
       {!dataValid && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>First settle the note beside x.</span>}
@@ -274,7 +292,9 @@ export default function AltNewPage() {
           </>
         )}
 
-        {step === 2 && csv && (
+        {step === 2 && split.saved && <div className="fit-step">{split.savedList}</div>}
+
+        {step === 2 && csv && !split.saved && (
           <div className="fit-step">
             <p className="muted-line">{sourceName} · {csv.n_rows} rows</p>
             <HeaderNote note={headerNote} onPick={pickFile} disabled={loading} />
@@ -290,8 +310,11 @@ export default function AltNewPage() {
               lifeRules={false}
               meanings={false}
               invertible={false}
-              issues={dataIssues}
+              issues={[...dataIssues, ...split.issues]}
+              notes={split.notes}
+              top={split.picker}
             />
+            {split.summary}
           </div>
         )}
 

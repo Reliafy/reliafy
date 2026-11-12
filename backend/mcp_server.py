@@ -3274,13 +3274,18 @@ def upload_dataset(
         "lists them)."))] = None,
     no_header: Annotated[Optional[bool], Field(description=(
         "True if the first row is data, not column names; omit to guess."))] = None,
+    dataset_col: Annotated[Optional[str], Field(description=(
+        "Split the sheet by this column: one dataset per value, named by the value (\"<value> – <name>\" if "
+        "taken), the column itself left out; rows with no value are left out. Returns datasets, a list."))] = None,
 ) -> dict[str, Any]:
     """Save a dataset from CSV text (csv) or a file sent with change upload_create (upload_id; an .xlsx
     needs sheet); returns its id, columns and a preview. Censoring columns: 0 = failed, 1 = still running."""
     user, db = _caller(ctx), _db()
     if (csv is None) == (upload_id is None):
         raise ToolError("Give either csv (text) or upload_id (a file sent through change upload_create) — exactly one.")
-    _cap(db, user, "datasets", "datasets")
+    split = (dataset_col or "").strip()
+    if not split:
+        _cap(db, user, "datasets", "datasets")
     upload, sheet_header = None, None
     if upload_id is not None:
         upload, text, sheet_header = _upload_table(db, user["uid"], upload_id, sheet, 0 if no_header else None)
@@ -3298,6 +3303,9 @@ def upload_dataset(
         apply = guess == 0 if no_header is None else bool(no_header)
         if apply and no_header is None:
             hint = fitting.HEADER_HINT
+    if split:
+        return _split_upload(db, user, name.strip(), datasets_service.normalize_pasted(text, apply), split,
+                             upload, guess, hint)
     ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(text, apply),
                                          user["uid"])
     if upload is not None:
@@ -3305,6 +3313,27 @@ def upload_dataset(
     out = {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
            "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/data/{ds.id}"),
            "header_guess": guess}
+    if hint:
+        out["hint"] = hint
+    return out
+
+
+def _split_upload(db, user, name: str, data: bytes, column: str, upload, guess, hint) -> dict[str, Any]:
+    """upload_dataset with dataset_col: one dataset per value of the column, all or nothing against the cap."""
+    try:
+        wanted = datasets_service.count_new_parts(db, data, column, user["uid"])
+        if wanted:
+            _cap(db, user, "datasets", "datasets", n=wanted)
+        made, blank = datasets_service.create_split(db, data, column, user["uid"], name)
+    except FitError as exc:
+        raise ToolError(str(exc)) from None
+    if upload is not None:
+        uploads_service.delete(db, upload["_id"])
+    out = {"datasets": [{"id": d.id, "name": d.name, "n_rows": d.n_rows, "url": _url(f"/data/{d.id}"),
+                         **({"reused": True} if reused else {})} for d, reused in made],
+           "columns": [c["name"] for c in made[0][0].columns], "header_guess": guess}
+    if blank:
+        out["left_out"] = f"{blank} row{'' if blank == 1 else 's'} with no {column} left out."
     if hint:
         out["hint"] = hint
     return out

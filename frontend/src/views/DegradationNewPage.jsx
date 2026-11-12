@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useDatasetSplit } from "../components/DatasetSplit.jsx";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { DataSourceStep } from "../components/DatasetPicker.jsx";
 import { ErrorNotice } from "../components/StorageCap.jsx";
@@ -149,6 +150,16 @@ export default function DegradationNewPage() {
   };
 
   const mappingValid = dataIssues.length === 0;
+  // "dataset": one sheet split into several datasets by a column (DatasetSplit.jsx).
+  const splitSpec = useMemo(() => ({
+    needs: [{ row: "i", col: mapping.i, number: false }, { row: "x", col: mapping.x }, { row: "m", col: mapping.y }],
+    failed: false, items: mapping.i,
+  }), [mapping]);
+  const split = useDatasetSplit({
+    file: datasetId ? null : file, columns: csv?.columns || [], mapping, spec: splitSpec,
+    reading: { kind: "degradation", mapping, unit },
+    fitTo: (id) => `/models/degradation/new?dataset=${encodeURIComponent(id)}`,
+  });
   const thresholdWhy = csv ? thresholdProblem(csv, mapping, threshold, way, measurementUnit) : null;
   // A number is required; the first-reading check is said, not blocking (one item may start past it).
   const thresholdBlocks = threshold === "" || !Number.isFinite(Number(threshold));
@@ -203,6 +214,13 @@ export default function DegradationNewPage() {
   if (step === 1) {
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
       <span className="hint" style={{ margin: 0 }}>Pick a dataset and press <b>Use this dataset</b>, or upload a CSV or Excel file</span></>);
+  } else if (step === 2 && split.saved) {
+    nav = <button className="secondary" onClick={() => navigate("/models/degradation")}>Done</button>;
+  } else if (step === 2 && split.active) {
+    const why = !mappingValid ? "First settle the notes beside the selectors." : split.waitingFor;
+    nav = (<><button className="secondary" onClick={goBack} disabled={split.saving}>Back</button>
+      {why && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{why}</span>}
+      <button onClick={split.save} disabled={!mappingValid || !split.canSave}>{split.saveLabel}</button></>);
   } else if (step === 2) {
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Back</button>
       {!mappingValid && (
@@ -298,7 +316,9 @@ export default function DegradationNewPage() {
           </>
         )}
 
-        {step === 2 && csv && (
+        {step === 2 && split.saved && split.savedList}
+
+        {step === 2 && csv && !split.saved && (
           <>
             <p className="muted-line" style={{ marginTop: 0 }}>
               {sourceName} · {csv.n_rows} rows
@@ -317,8 +337,10 @@ export default function DegradationNewPage() {
               range={false}
               keys={DEGRADATION_KEYS}
               words={DEGRADATION_WORDS}
-              issues={dataIssues}
+              issues={[...dataIssues, ...split.issues]}
+              top={split.picker}
             />
+            {split.summary}
           </>
         )}
 
