@@ -13,10 +13,10 @@ import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import { FitPane } from "../components/FitLifeModel.jsx";
 import PredictionPane from "../components/PredictionPane.jsx";
 import RbdPane from "../components/RbdPane.jsx";
-import MissionPane from "../components/MissionPane.jsx";
-import { MISSION_COLUMNS, MISSION_TREE_HEAD, MissionCell, missionPhoneRow, useTreeMissions } from "../components/MissionTable.jsx";
+import MissionPane, { NewMissionPane } from "../components/MissionPane.jsx";
+import { MISSION_COLUMNS, MISSION_TREE_HEAD, MissionCell, MissionRollup, missionPhoneRow, useTreeMissions } from "../components/MissionTable.jsx";
 import {
-  changedPhases, graftMissions, isMissionRow, isPhaseRow, missionKey, missionParam, missionRowActions, movePhase, openForMissions,
+  NEW_MISSION, changedPhases, graftMissions, isMissionRow, isPhaseRow, missionKey, missionParam, missionRowActions, movePhase, openForMissions,
   parseMissionParam, phaseKey, positionMissionActions, rollupText as missionRollup, withNewPhase, withoutPhase,
 } from "../explorerMissions.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
@@ -466,8 +466,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const whole = useMemo(() => (rcmOn && rcm ? (fmeaOn ? graftFmea(base, rcm) : graftRcm(base, rcm))
     : measOn && meas.data ? graftMeasurements(base, meas.data, data?.today || new Date().toISOString().slice(0, 10), meas.fittedAt)
       : modelsOn && pmodels.links ? graftModels(base, pmodels.links)
-        : missionsOn && pmissions.links ? graftMissions(base, pmissions.links, pmissions.hasModel)
-          : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, missionsOn, pmissions.links, pmissions.hasModel]);
+        : missionsOn && pmissions.links ? graftMissions(base, pmissions.links, pmissions.hasModel, pmissions.otherModel)
+          : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, missionsOn, pmissions.links, pmissions.hasModel, pmissions.otherModel]);
   const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
   // The modes picked that are still in the tree after a read.
   useEffect(() => {
@@ -943,6 +943,15 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   };
   // Picking another row with the pane open closes it, asking first only if something was changed.
   const pickRow = async (key, opts = {}) => {
+    const r = display.rows.get(key);
+    // The Missions tab: a click on a mission or phase row opens it, as a model row opens on the
+    // Modelling tab (the same mission open already: left as it is, unsaved edits and all).
+    if (missionsOn && opts.go && !phone && isMissionRow(r)) {
+      pick(key, opts);
+      const open = paneKind === "mission" && paneAt?.mission === missionParam(r.ref.rbd.id, r.ref.mission.id);
+      if (!open) openMissionRow(r);
+      return;
+    }
     if (panePosition && key !== panePosition.id) {
       if (paneDirty.current && !(await confirm(TABLE_PANES[paneKind].discard))) return;
       closePane({ focusRow: false });
@@ -1448,11 +1457,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       return false;
     }
   };
-  // Add a mission: one RBD per mission, built from what's inside the position (placeholders flagged).
-  const addMission = async (positionId, positionName) => {
+  // Add a mission: its name asked first, in the table pane (?mission=new); then one RBD per mission,
+  // built from what's inside the position (placeholders flagged) and named after the mission.
+  const addMission = async (positionId) => {
     if (!(await leavePane())) return;
+    const pr = whole.rows.get(positionId);
+    openPane("mission", { id: positionId, name: pr?.ref.name || "(no name)" }, { rbd: NEW_MISSION });
+  };
+  const createMission = async (positionId, positionName, name) => {
     try {
-      const made = await createPositionMission(positionId);
+      const made = await createPositionMission(positionId, { name });
       const ph = made.placeholders?.length ? ` ${made.placeholders.length} block${made.placeholders.length === 1 ? " is a placeholder" : "s are placeholders"}: give ${made.placeholders.length === 1 ? "it a model" : "them models"} in its RBD.` : "";
       const from = made.built_from === "model" ? `one block, ${positionName}'s own model in use`
         : made.built_from === "copy" ? `a copy of ${positionName}'s RBD, wired as it is there` : `what's inside ${positionName}`;
@@ -1462,7 +1476,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       pending.current = missionKey(made.rbd.id, made.mission.id);
       openMission(positionId, made.rbd.id, made.mission.id);
     } catch (e) {
-      say(saveErrorText(e, { offline: navigator.onLine === false }), "error");
+      // Shown in the pane, beside the name typed (nothing was made).
+      throw new Error(saveErrorText(e, { offline: navigator.onLine === false }));
     }
   };
   const missionAction = (r, id) => {
@@ -1475,7 +1490,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (id === "mission-phase-delete") return removePhase(r);
     if (id === "mission-rbd") return openRbd(position, r.ref.rbd.id);
     if (id === "mission-delete") return removeMission(pid, r.ref.rbd.id, r.ref.mission, !!r.ref.rbd.mission_rbd);
-    if (id === "mission-new") return addMission(pid, position.name);
+    if (id === "mission-new") return addMission(pid);
     if (id.startsWith("mission-open-rbd:")) return openRbd(position, id.slice(17));
     if (id === "mission-build-rbd") return buildRbd(position);
     if (id === "mission-redundancy") return openRedundancy(position);
@@ -2131,7 +2146,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       const r = display.rows.get(key);
       return isMissionRow(r) ? openMissionRow(r) : undefined;
     },
-    rollupOf: (r, isOpen) => (r.type === "pos" ? missionRollup(r, isOpen) : null),
+    rollupOf: (r, isOpen) => (r.type === "pos"
+      ? <MissionRollup text={missionRollup(r, isOpen)} onAdd={viewOnly ? null : () => addMission(r.key, r.ref.name || "(no name)")} /> : null),
     phoneRow: (r, isOpen) => missionPhoneRow(r, r.type === "pos" ? missionRollup(r, isOpen) : ""),
     hint: null, drag: null,
   };
@@ -2252,7 +2268,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const head = phone ? null : missionsOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
-                meta={pmissions.links ? <span className="tt-rollup mt-rollup">{missionRollup(display.rows.get(posRow.key) || posRow, true)}</span> : null}
+                meta={pmissions.links ? (
+                  <span className="tt-rollup mt-rollup">
+                    <MissionRollup text={missionRollup(display.rows.get(posRow.key) || posRow, true)}
+                                   onAdd={viewOnly ? null : () => addMission(posRow.key, posRow.ref.name || "(no name)")} />
+                  </span>
+                ) : null}
                 menu={missionMenu} />
   ) : modelsOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
@@ -2456,6 +2477,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                  e.preventDefault();
                  leavePane().then((ok) => ok && navigate(path));
                }} />
+    </div>
+  ) : paneKind === "mission" && paneAt.mission === NEW_MISSION ? (
+    <div className="rw tt-side">
+      <NewMissionPane position={panePosition} phone={phone} headingRef={paneHeading}
+                      taken={(display.rows.get(panePosition.id)?.kids || []).map((k) => display.rows.get(k))
+                        .filter((x) => x?.type === "mission").map((x) => x.ref.mission?.name || "")}
+                      onClose={() => closePane()}
+                      onCreate={(name) => createMission(panePosition.id, panePosition.name, name)} />
     </div>
   ) : paneKind === "mission" && parseMissionParam(paneAt.mission) ? (
     <div className="rw tt-side">

@@ -21,7 +21,17 @@
 .rbd-plan-filter button.link { font-size: inherit; }
 .rbd-plan-empty, .rbd-plan-note { font-size: var(--fs-13); margin: 6px 0 8px; }
 
-.rbd-plan-scroll { margin: 6px 0 0; }
+/* The box the table scrolls in is a size container, so a note under a block wraps at the width
+   that's in view (not the table's), and soft shadows at its edges say there's more to the side. */
+.rbd-plan-scroll {
+  margin: 6px 0 0;
+  container-type: inline-size;
+  background:
+    linear-gradient(to right, var(--surf) 30%, transparent) left center / 32px 100% no-repeat local,
+    linear-gradient(to left, var(--surf) 30%, transparent) right center / 32px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgb(0 0 0 / 0.16), transparent) left center / 12px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / 0.16), transparent) right center / 12px 100% no-repeat scroll;
+}
 .rbd-plan-table { margin-bottom: 4px; min-width: 860px; }
 .rbd-plan-table th, .rbd-plan-table td { text-align: left; vertical-align: top; padding: 0.4rem 0.45rem; white-space: nowrap; }
 .rbd-plan-table thead th { font-size: var(--fs-13); }
@@ -63,7 +73,11 @@
 .rbd-builder.has-plan .rbd-canvas { overflow: hidden; }
 .rbd-plan { position: relative; z-index: 1; }
 /* A note or settings row under a block stays in view when the table scrolls sideways on a phone. */
-.rbd-plan-pin { position: sticky; left: 0; display: inline-block; max-width: min(100%, calc(100vw - 72px)); white-space: normal; }
+.rbd-plan-pin { position: sticky; left: 0; display: inline-block; max-width: min(100%, calc(100vw - 72px)); white-space: normal;
+  overflow-wrap: anywhere; }
+@supports (width: 1cqw) {
+  .rbd-plan-pin { max-width: calc(100cqw - 20px); }
+}
 
 /* A block standing for a position: its task is read from the tree, shown here, edited there. */
 .rbd-plan-tree { margin: 8px 0 4px; font-size: var(--fs-13); line-height: 1.45; max-width: 80ch; }
@@ -91,3 +105,5 @@
 .rbd-plan-shuts ul { margin: 0; padding-left: 1.1rem; }
 .rbd-plan-shuts li { overflow-wrap: anywhere; }
 .rbd-plan-table td.rbd-plan-restores { white-space: normal; min-width: 11rem; max-width: 16rem; }
+.rbd-plan-gone { padding: 6px 10px; border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: var(--r-sm, 8px); }
+.rbd-plan-gone b { font-weight: 500; }

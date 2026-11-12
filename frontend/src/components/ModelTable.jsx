@@ -299,16 +299,24 @@ function RbdDetails({ d, model, age, onAge }) {
       <h3 className="ml-h">Blocks</h3>
       <div className="maint-scroll">
         <table className="ml-params ml-blocks">
-          <thead><tr><th>Block</th><th>Model</th><th>Where its model came from</th><th>From</th></tr></thead>
+          {/* Two columns (block, model) so the narrow panel doesn't wrap each cell onto five lines;
+              where the model came from and the position are on hover and for screen readers. */}
+          <thead><tr><th>Block</th><th>Model</th></tr></thead>
           <tbody>
-            {blocks.map((b) => (
-              <tr key={b.id}>
-                <td>{b.label}</td>
-                <td>{b.placeholder ? <Chip tone="warning" title="A placeholder: no model in use for this position yet">Placeholder</Chip> : b.model}</td>
-                <td>{b.placeholder ? "No model in use, from its class or inside it" : b.source || <span className="rw-blank">—</span>}</td>
-                <td>{b.position ? b.position.name : <span className="rw-blank">—</span>}</td>
-              </tr>
-            ))}
+            {blocks.map((b) => {
+              const where = b.placeholder ? "No model in use, from its class or inside it" : b.source || "";
+              const from = b.position && b.position.name !== b.label ? `position ${b.position.name}` : "";
+              const hover = [where, from].filter(Boolean).join(" · ");
+              return (
+                <tr key={b.id} title={hover || undefined}>
+                  <td>{b.label}</td>
+                  <td>
+                    {b.placeholder ? <Chip tone="warning" title="A placeholder: no model in use for this position yet">Placeholder</Chip> : b.model}
+                    {hover && <span className="sr-only">. {hover}</span>}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

@@ -1273,10 +1273,18 @@ def position_missions(position_ids: str | None = None, session=Depends(get_sessi
     from backend.maintenance import position_models as pm
 
     ids = [x for x in (position_ids or "").split(",") if x] or None
+
+    def read():
+        rows = m.all_position_models(ids)
+        has = pm.blockable_positions(m, session, ctx.read_owners, ctx.hidden, rows)
+        # other_model: positions with a model in use that can't be a block (a condition-and-life
+        # model, say), so the tab can say why there's no Add a mission there.
+        other = sorted({x["position_id"] for x in rows if x.get("in_use") and x.get("model_type") != "rbd"} - set(has))
+        return {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids),
+                "has_model": has, "other_model": other}
+
     # has_model: positions whose model in use a mission's one-block RBD can take (a leaf's Add a mission).
-    return _run(lambda: {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids),
-                         "has_model": pm.blockable_positions(m, session, ctx.read_owners, ctx.hidden,
-                                                             m.all_position_models(ids))})
+    return _run(read)
 
 
 @router.post("/positions/{position_id}/missions")

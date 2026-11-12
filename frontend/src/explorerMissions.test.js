@@ -36,9 +36,9 @@ test("missions hang under their own position, never a parent's", () => {
   assert.equal(d.rows.get(missionKey("r1", "m1")).ref.position_id, "drone");
   assert.equal(rollupText(drone, true), "2 missions");
   assert.equal(rollupText(d.rows.get("gimbal"), true), "No missions yet · Add a mission");
-  assert.equal(rollupText(d.rows.get("battery"), true), "No missions yet");
+  assert.equal(rollupText(d.rows.get("battery"), true), "No missions yet · needs a life model or positions inside");
   assert.equal(rollupText(d.rows.get("arm"), true), "No missions yet · Add a mission");
-  assert.equal(rollupText(d.rows.get("battery"), false), "No missions yet");
+  assert.equal(rollupText(d.rows.get("battery"), false), "No missions yet · needs a life model or positions inside");
   // Closed, a parent with no RBD still says a mission can be added (it's built from what's inside).
   assert.equal(rollupText(d.rows.get("arm"), false), "No missions yet · Add a mission");
   // A leaf with a model in use can have one too (one block).
@@ -289,4 +289,17 @@ test("of two reads out at once, only the one asked for last is used", () => {
   // Each table has its own count.
   assert.equal(latestOnly()()(), true);
   assert.equal(second(), true);
+});
+
+test("a leaf whose model can't be a block says so; a chance past 99.99% isn't a string of nines", async () => {
+  const { graftMissions: graft, rollupText: roll, pct: p, phaseLine: line, positionMissionActions: acts } = await import("./explorerMissions.js");
+  const display = { rows: new Map([["a", { key: "a", type: "pos", parent: null, kids: [], depth: 0, ref: { name: "Pump 1" } }]]) };
+  const d = graft(display, [], [], ["a"]);
+  assert.equal(roll(d.rows.get("a"), true), "No missions yet · its model can't be a block");
+  assert.match(acts(d.rows.get("a"))[0].reason, /can't be a block/);
+  assert.equal(p(0.99999985), "> 99.99%");
+  assert.equal(p(1.5e-7), "< 0.01%");
+  assert.equal(p(1), "100%");
+  assert.equal(p(0.9), "90.0%");
+  assert.equal(line({}, { blocks: [] }), "Every block in use, wired as in the RBD");
 });

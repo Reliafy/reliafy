@@ -1621,6 +1621,7 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
         if old_link is None or old_link["model_type"] != "rbd":
             raise sv.Invalid("Rebuild names this position's RBD row (replace_link_id).")
     built = rbd_derive.build(m, position_id, block_model=block, unit=unit)
+    kept_gone: list = []
     resolve = lambda mid: fetch("model", mid)  # noqa: E731
     try:
         graph = normalize_graph(built["graph"], resolve_saved_model=resolve)
@@ -1636,11 +1637,23 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
                                       + ", ".join(g["name"] for g in built["redundancy"]) + ").")
             elif existing is not None:
                 graph = _add_new_blocks(existing.graph or {}, built["graph"], resolve)
+            if existing is not None:
+                # Blocks for positions deleted or moved out since: kept (every edit is), but said.
+                from backend.maintenance import rbd_tree_plan
+
+                had_ids = (old_link.get("source") or {}).get("position_ids") or []
+                gone = rbd_tree_plan.gone_blocks(m, position_id, graph, had_ids)
+                kept_gone = [g["position"]["id"] for g in gone]
+                said = rbd_tree_plan.gone_note(gone, p["name"])
+                if said:
+                    built["notes"].append(said)
         name = existing.name if existing is not None else f"{p['name']} (from the tree)"
         rbd = rbds_service.save_rbd(db, name, graph, owner_id or m.org, rbd_id=existing.id if existing else None)
     except GraphError as err:
         raise sv.Invalid(f"The diagram couldn't be made: {err}") from None
-    source = {"built_from": len(children), "position_ids": [c["id"] for c in children], "notes": built["notes"][:20]}
+    # Positions gone since but whose blocks the diagram still has stay listed, so the plan keeps naming them.
+    source = {"built_from": len(children), "position_ids": [c["id"] for c in children] + kept_gone,
+              "notes": built["notes"][:20]}
     # A rebuilt row stays the one in use if it was set to be.
     was_in_use = bool(replace_link_id and (m.s.node(m.org, replace_link_id) or {}).get("in_use"))
     link = m.link_position_model(position_id, "rbd", rbd.id, "rbd", None, rbd.name, note, source, replace_link_id)
