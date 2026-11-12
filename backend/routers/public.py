@@ -22,6 +22,7 @@ from backend.services import rbds as rbds_service
 from backend.services.method_labels import generic_engine_fields
 from backend.services.rbd_analysis import AnalysisError
 from backend.errors import client_message
+from backend.fitting import FitError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -254,6 +255,8 @@ def export_public_rbd(token: str, request: Request, session=Depends(get_session)
     link, refusal = _open_link(session, token, request)
     if refusal is not None:
         return refusal
+    if link["collection"] in _MODEL_EXPORTS:
+        return _export_public_model(session, link)
     if link["collection"] != "rbds":
         return JSONResponse(status_code=404, content={"detail": _GONE})
     doc = session.rbds.find_one({"_id": link["artifact_id"]})
@@ -277,6 +280,51 @@ def export_public_rbd(token: str, request: Request, session=Depends(get_session)
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to export public RBD as Python")
         return JSONResponse(status_code=500, content={"detail": "This diagram couldn't be exported."})
+    return python_download(filename, source)
+
+
+#: Shared models that also download as Python (as their pages do).
+_MODEL_EXPORTS = ("models", "recurrent_models", "degradation_models")
+
+
+def _export_public_model(session, link: dict):
+    """Download as Python for a publicly linked model: the same checks as the
+    page (the model still exists and the grantor can still read it), then the
+    script the model page gives."""
+    from backend.routers.rbds import python_download
+    from backend.services import degradation as degradation_service
+    from backend.services import degradation_export, model_export, recurrent_export
+    from backend.services import joint as joint_service
+    from backend.services import models as models_service
+    from backend.services import recurrent as recurrent_service
+
+    collection, artifact_id = link["collection"], link["artifact_id"]
+    raw = session[collection].find_one({"_id": artifact_id})
+    if raw is None or raw.get("owner_id") != link.get("grantor_uid"):
+        return JSONResponse(status_code=404, content={"detail": "The shared analysis no longer exists."})
+    ctx = links_service.guest_ctx(raw["owner_id"], link["grantor_uid"])
+    response = _detail_handler(collection)(artifact_id, session, ctx)
+    if getattr(response, "status_code", 200) != 200:
+        return JSONResponse(status_code=404, content={"detail": "The shared analysis is unavailable."})
+    owners = [*ctx.read_owners, raw["owner_id"]]
+    try:
+        if collection == "models":
+            model = models_service.get_model(session, artifact_id)
+            if model.kind == joint_service.KIND:
+                filename, source = joint_service.export_python(session, model, owners)
+            else:
+                filename, source = model_export.export_python(session, model)
+        elif collection == "recurrent_models":
+            filename, source = recurrent_export.export_python(
+                session, recurrent_service.get_model(session, artifact_id), owners)
+        else:
+            filename, source = degradation_export.export_python(
+                session, degradation_service.get_model(session, artifact_id), owners)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to export a public model as Python")
+        return JSONResponse(status_code=500, content={"detail": "This model couldn't be exported."})
     return python_download(filename, source)
 
 

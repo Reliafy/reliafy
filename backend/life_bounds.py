@@ -168,8 +168,7 @@ def _interval_points(model, probs: np.ndarray, alpha: float, bound: str) -> list
     known before it (the band has no width there), no bound can be given."""
     xs = np.asarray(model.x, dtype=float)
     F = 1.0 - np.asarray(model.R, dtype=float)
-    with np.errstate(all="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
+    with np.errstate(all="ignore"), ignore_warnings(RuntimeWarning):
         # One-sided 1 − α bounds are the ends of the two-sided 1 − 2α band.
         a2 = alpha if bound == "two-sided" else 2 * alpha
         sf_cb = np.asarray(model.cb(xs, on="sf", alpha_ci=a2), dtype=float).reshape(-1, 2)

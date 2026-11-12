@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Download as Python for every model**: `reliafy analyse model_export_python
+  --model-id ID` (or `POST /api/v1/analyse/model_export_python`) gives any
+  saved model (non-repairable, regression, time-varying covariates,
+  repairable, accelerated life, degradation, condition and life) as a
+  SurPyval script that refits it and prints the page's numbers. The
+  test-planning actions take `python: true` for the plan's script. Needs a
+  server on this release.
 - **Field reports** (Reliafy Maintenance): `reliafy capture new notes.txt
   IMG_*.heic noise.m4a --about POSITION_ID` sends notes, photos, sound
   recordings and PDFs as one report, in pieces that carry on after a dropped

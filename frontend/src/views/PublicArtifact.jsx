@@ -21,7 +21,8 @@ import IntervalAnalysisResult from "../components/IntervalAnalysisResult.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import PublicRbd from "../components/PublicRbd.jsx";
 import ReportView from "./PublicReport.jsx";
-import { getPublicArtifact, unlockPublicLink } from "../api.js";
+import { downloadPublicModelPython, getPublicArtifact, unlockPublicLink } from "../api.js";
+import DownloadPythonItem from "../components/model/DownloadPythonItem.jsx";
 import { installPrintFit } from "../printFit.js";
 import { rangeLevelText } from "../levels.js";
 import "./PublicPage.css";
@@ -351,6 +352,7 @@ export default function PublicArtifact() {
             title={data.artifact.name}
             answer={answerParts(art(data).kind === "joint" ? { ...art(data).results, kind: "joint" } : art(data).results,
                                 { split: art(data).results?.split || null })}
+            menu={<DownloadPythonItem download={() => downloadPublicModelPython(token, unlock)} />}
           >
             <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} framed />
           </ModelFrame>
@@ -362,6 +364,7 @@ export default function PublicArtifact() {
             crumbs={[{ label: `${KIND_LABEL.degradation_models} · shared by ${data.shared_by}` }]}
             title={data.artifact.name}
             answer={degradationAnswer(data.artifact.results)}
+            menu={<DownloadPythonItem download={() => downloadPublicModelPython(token, unlock)} />}
           >
             <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} framed />
           </ModelFrame>
@@ -373,6 +376,7 @@ export default function PublicArtifact() {
             crumbs={[{ label: `${KIND_LABEL.recurrent_models} · shared by ${data.shared_by}` }]}
             title={data.artifact.name}
             answer={recurrentAnswer(art(data).results || {})}
+            menu={<DownloadPythonItem download={() => downloadPublicModelPython(token, unlock)} />}
           >
             <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} framed />
           </ModelFrame>

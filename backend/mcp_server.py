@@ -5083,6 +5083,37 @@ def export_rbd_python(
     return {"filename": filename, "script": source, "run": rbd_export.run_command(filename)}
 
 
+def export_model_python(
+    ctx: Context,
+    model_id: Annotated[str, Field(description="A model id from list kind models: any kind.")],
+) -> dict[str, Any]:
+    """A standalone SurPyval script that refits the model from its data (embedded) and prints the numbers its
+    page shows, with the command to run it. Free."""
+    from backend.services import alt_export, degradation_export, model_export, recurrent_export
+    from backend.services import degradation as degradation_service
+
+    user, db = _caller(ctx), _db()
+    owners = _owners(user["uid"])
+    try:
+        m = models_service.get_model(db, model_id, owners)
+        if m is not None and m.kind == joint_service.KIND:
+            filename, source = joint_service.export_python(db, m, [*owners, m.owner_id])
+        elif m is not None:
+            filename, source = model_export.export_python(db, m)
+        elif (doc := recurrent_service.get_model(db, model_id, owners)) is not None:
+            filename, source = recurrent_export.export_python(db, doc, owners)
+        elif (doc := alt_service.get_model(db, model_id, owners)) is not None:
+            filename, source = alt_export.export_python(db, doc, owners)
+        elif (doc := degradation_service.get_model(db, model_id, owners)) is not None:
+            filename, source = degradation_export.export_python(db, doc, owners)
+        else:
+            raise ToolError("Model not found.")
+    except FitError as exc:
+        raise ToolError(client_message(exc)) from None
+    return {"filename": filename, "script": source,
+            "run": f'pip install "surpyval=={rbd_export.detect_versions()["surpyval"]}" && python {filename}'}
+
+
 def export_rbd_json(
     ctx: Context,
     rbd_id: Annotated[str, Field(description="An RBD id from list kind rbds.")],
@@ -6539,6 +6570,26 @@ _DEMO_ARG = {name: p.annotation for name, p in inspect.signature(plan_demonstrat
 _PCT = Annotated[Optional[float], Field(gt=0, lt=1, description="A chance, e.g. 0.8.")]
 
 
+#: The plan actions' optional Download as Python.
+_PYTHON = Annotated[bool, Field(description=(
+    "Also return the plan as a standalone SurPyval script (script: filename, script, run), as the app's "
+    "Download as Python."))]
+
+
+def _run_plan(plan: str, python: bool, /, **kw) -> dict:
+    """A test-planning calculator's answer, with its script when ``python``
+    (positional-only: the comparison plan has an argument called ``kind``)."""
+    from backend.services import test_plan_export
+
+    out = test_plan_export.CALCULATORS[plan](**kw)
+    if python:
+        filename, source = test_plan_export.export_python(plan, kw)
+        out = {**out, "script": {"filename": filename, "script": source,
+                                 "run": f'pip install "surpyval=={rbd_export.detect_versions()["surpyval"]}" '
+                                        f"&& python {filename}"}}
+    return out
+
+
 def _lean_plan(out: dict, drop: tuple = ()) -> dict:
     """A test plan without the page's chart arrays."""
     return {k: v for k, v in out.items() if k not in ("oc_curve", "curve", *drop) and v is not None}
@@ -6560,12 +6611,13 @@ def plan_sequential_test(
                                                                     "now.")] = None,
     time_seen: Annotated[Optional[float], Field(ge=0, description="Total test time so far (method mtbf).")] = None,
     units_seen: Annotated[Optional[int], Field(ge=0, description="Units tested so far (method attribute).")] = None,
+    python: _PYTHON = False,
 ) -> dict[str, Any]:
     """A truncated sequential test of an MTBF or a reliability against a good design: accept/reject lines,
     both risks as run, average length against the fixed-length test; with failures_seen, accept, reject or
     continue."""
     _caller(ctx)
-    out = test_planning_service.sequential_test(
+    out = _run_plan("sequential", python,
         method=method, mtbf=mtbf, good_mtbf=design_mtbf, reliability=reliability,
         good_reliability=design_reliability, confidence=confidence, producer_risk=producer_risk, unit=unit,
         failures_seen=failures_seen, time_seen=time_seen, units_seen=units_seen)
@@ -6604,11 +6656,12 @@ def plan_life_test(
     b_life: Annotated[Optional[float], Field(gt=0, lt=100)] = 10,
     confidence: _DEMO_ARG["confidence"] = 0.9,
     unit: _UNIT = None,
+    python: _PYTHON = False,
 ) -> dict[str, Any]:
     """How precisely a life test estimates a B-life or the mean from planning values, or the units or test
     length for a precision."""
     _caller(ctx)
-    out = test_planning_service.life_test(
+    out = _run_plan("life", python,
         solve_for=solve_for, distribution=distribution, params=[p.model_dump() for p in params], units=units,
         precision=within_pct, test_end=test_end, censor_time=censor_time, failure_fraction=failure_fraction,
         quantity=quantity, b_life=b_life, confidence=confidence, unit=unit)
@@ -6637,12 +6690,13 @@ def plan_accelerated_test(
     b_life: Annotated[Optional[float], Field(gt=0, lt=100)] = 10,
     confidence: _DEMO_ARG["confidence"] = 0.9,
     unit: _UNIT = None,
+    python: _PYTHON = False,
 ) -> dict[str, Any]:
     """An accelerated life test plan from planning values: stresses, units at each, expected failures and the
     B-life's precision at the use stress (or the precision of your own test)."""
     _caller(ctx)
     check = stresses is not None or units_at is not None
-    out = test_planning_service.accelerated_test(
+    out = _run_plan("accelerated", python,
         mode="check" if check else "plan", distribution=distribution, life_model=life_model,
         life_params=[p.model_dump() for p in life_params], shape=shape, use_stress=use_stress[0],
         high_stress=high_stress, units=units, censor_time=censor_time, levels=levels, stresses=stresses,
@@ -6671,11 +6725,12 @@ def plan_comparison(
     confidence: _DEMO_ARG["confidence"] = 0.90,
     one_sided: Optional[bool] = False,
     unit: _UNIT = None,
+    python: _PYTHON = False,
 ) -> dict[str, Any]:
     """Did the change work? A log-rank test's failures, units and power, or a before/after failure-rate
     test's exposure, smallest detectable change and power."""
     _caller(ctx)
-    out = test_planning_service.comparison(
+    out = _run_plan("comparison", python,
         kind=kind, solve_for=solve_for, hazard_ratio=hazard_ratio, event_probability=event_probability,
         units_per_group=units_per_group, power=power, confidence=confidence, one_sided=bool(one_sided),
         failures_before=failures_before, exposure_before=exposure_before, exposure_after=exposure_after,
@@ -9442,6 +9497,7 @@ _A = {  # new tool -> {action: the function it runs}
         "fault_tree": _act(analyse_fault_tree),
         "rbd_allocate_targets": _act(allocate_targets),
         "rbd_system_history": _act(system_history),
+        "model_export_python": _act(export_model_python),
         "rbd_export_python": _act(export_rbd_python),
         "rbd_export_json": _act(export_rbd_json),
         "rbd_mission": _act(analyse_rbd_mission),
@@ -9506,11 +9562,11 @@ _action_tool("list", _READ, "List items", "kind",
              "The user's items of one kind (with samples), what changed, the data library.",
              _A["list"])
 _action_tool("analyse", _READ, "Analyse", "action",
-             "Every calculation, saving nothing: life data, test plans, repairable systems, intervals, fleets, "
-             "RBDs, fault trees.", _A["analyse"], docs={
+             "Every calculation (life, repairable, plans, RBDs); saves nothing.", _A["analyse"], docs={
     "model_id": ("A saved model id (list kind models): non-repairable for reliability_at, check_life_requirement, "
                  "optimal_replacement and failure_finding_interval; ALT for alt_use_level; joint for "
-                 "predict_joint; recurrent for next_failure, growth_projection and optimal_overhaul."),
+                 "predict_joint; recurrent for next_failure, growth_projection and optimal_overhaul; any for "
+                 "model_export_python."),
     "dataset_id": "A saved dataset (list kind datasets) instead of inline data (fit_per_demand: a row per batch).",
     "censored": ("Per time in data: 0 = failed, 1 = still running, -1 = left-censored, 2 = interval-censored (the "
                  "upper bound in data_right); omit when every time is a failure. compare_groups: 0 and 1 only."),

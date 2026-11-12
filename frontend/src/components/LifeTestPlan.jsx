@@ -172,7 +172,7 @@ export default function LifeTestPlan() {
       {error && <div className="error">{error}</div>}
       {result && (
         <>
-          <PlanAnswer result={result} stats={stats} />
+          <PlanAnswer kind="life" inputs={inputs} result={result} stats={stats} />
           <PrecisionCurve result={result} />
           <SimulationCheck kind="life" inputs={inputs} />
           <Assumptions

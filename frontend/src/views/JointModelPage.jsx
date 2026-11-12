@@ -9,6 +9,7 @@ import { usedOnPositions } from "../joint.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import ModelFrame from "../components/model/ModelFrame.jsx";
+import DownloadPythonItem from "../components/model/DownloadPythonItem.jsx";
 import useTabParam from "../components/model/useTabParam.js";
 import { answerParts } from "../modelFrame.js";
 import { itemName } from "../components/LibRows.jsx";
@@ -61,10 +62,6 @@ export default function JointModelPage() {
     try { setModel(await updateJointModel(id, { name })); } catch (e) { setError(e.message); }
   };
 
-  const onPython = async () => {
-    try { await downloadJointPython(id); } catch (e) { setError(e.message); }
-  };
-
   const r = model?.results || {};
   return (
     <ModelFrame
@@ -79,10 +76,7 @@ export default function JointModelPage() {
       )}
       menu={model && (
         <>
-          <button type="button" className="ovm-item" onClick={onPython}
-                  title="A script that refits this model with SurPyval from the data it was fitted to">
-            Download as Python
-          </button>
+          <DownloadPythonItem download={() => downloadJointPython(id)} onError={setError} />
           {!model.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
           <button className="ovm-item danger" onClick={onDelete}>
             {model.read_only ? "Remove from my view" : "Delete"}

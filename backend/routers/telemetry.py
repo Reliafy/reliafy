@@ -46,6 +46,9 @@ CLIENT_EVENTS = frozenset({
     "rbd_design_cheapest",
     "rbd_export_python",
     "rbd_export_json",
+    # Download as Python on the model pages and the test-planning calculators.
+    "model_export_python",
+    "test_plan_export_python",
     "alt_save",
     "degradation_save",
     "rcm_create",

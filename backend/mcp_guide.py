@@ -431,7 +431,9 @@ whether simulation is included. It, guide, get kind upgrade_link, change upload_
 - When a tool says a limit or the plan stops it, tell the user plainly what it says — the limit, when it \
 resets, how to upgrade — and don't retry. Calls refused that way aren't counted.
 - Without Pro, fit locally with SurPyval (pip install surpyval; 0 = failed, 1 = still running) and save the \
-parameters with change model_save; run a diagram's simulation locally with analyse rbd_export_python.
+parameters with change model_save; run a diagram's simulation locally with analyse rbd_export_python. \
+analyse model_export_python gives any saved model as a script that refits it locally (free); the plan_* \
+actions take python=true for the plan's script.
 - get kind upgrade_link gives the user a Stripe payment link to open themselves; nothing is charged until they complete \
 it. Never say an upgrade has happened."""),
 
