@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { saveErrorText } from "../confirm.js";
 import { DEFAULT_OUTCOMES, INTERVAL_UNITS, TASK_ORDER, allowedChoices, modeAnswers, startUnit, worthLine } from "../decisionCheck.js";
@@ -14,6 +14,9 @@ import { asksInterval, pointLabel, triggerBody, triggerState, triggerWhy } from 
 import { dueText, madeTask, startBody, startWhy, takesStart } from "../taskStart.js";
 import { modeTaskRows, secondTaskHint, taskKey } from "../explorerRcm.js";
 import { explorerPath } from "../assetTree.js";
+import { explorerHere } from "../products.js";
+import { costChangedText, taskCostLine } from "../taskCosts.js";
+import { money } from "../lsaTab.js";
 import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 import TaskChoice from "./TaskChoice.jsx";
 import Chip from "./ui/Chip.jsx";
@@ -477,10 +480,35 @@ export default function RcmModeTasks({
                 <PlusIcon />Add a task
               </button>
             ))}
+            <TaskCosts tasks={tasks} decision={d} positionId={r.ref.position_id} />
             {calcDialog}
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// What each of the mode's tasks costs each time, read from the task on its position (the
+// Maintenance tab, where it's set: typed, or from its LSA), never asked for again here; and a
+// line where a saved calculation behind the decision used another figure (the decision keeps
+// its saved numbers until it's calculated again).
+function TaskCosts({ tasks, decision, positionId }) {
+  const location = useLocation();
+  const shown = (tasks || []).filter((t) => t.id && t.cost);
+  const changed = decision?.cost_changed || [];
+  if (!shown.length && !changed.length) return null;
+  const open = (t) => explorerHere(location.pathname, location.search, { sel: t.position_id || positionId, tab: "maintenance", mtask: t.id });
+  return (
+    <div className="rim-costs" role="group" aria-label="What the tasks cost">
+      {shown.map((t) => (
+        <p key={t.id} className="lib-date rim-cost">
+          {taskCostLine(t, money)} <Link to={open(t)}>{t.cost.amount == null ? "Set it" : "Change"}</Link>
+        </p>
+      ))}
+      {changed.map((c) => (
+        <p key={`${c.task_id}:${c.analysis_id}`} className="rim-cost rim-cost-changed" role="note">{costChangedText(c, money)}</p>
+      ))}
     </div>
   );
 }

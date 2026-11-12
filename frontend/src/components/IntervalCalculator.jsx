@@ -10,8 +10,9 @@ import {
 } from "../api.js";
 import { savedModelRef } from "../modelNext.js";
 import { modeAnswers } from "../decisionCheck.js";
+import { formatCost } from "../money.js";
 import {
-  ANALYSIS_KIND, TIME_UNITS, analysisName, answerUnitWords, calculatorFor, isUseUnit, money, num, pct, pfUnits, rationale, roundDown, taskUnit, withUnit,
+  ANALYSIS_KIND, TASK_COST_FIELD, TIME_UNITS, analysisName, taskCostWords, answerUnitWords, calculatorFor, isUseUnit, money, num, pct, pfUnits, rationale, roundDown, taskUnit, withUnit,
 } from "../rcmIntervals.js";
 
 // "Calculate…" on an RCM task card (RcmModeTasks): how often to do the task, worked out
@@ -52,7 +53,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
 
   useEffect(() => {
     let on = true;
-    getFailureModeIntervalInputs(r.ref.id).then((got) => { if (on) prefill(got); }, () => {});
+    getFailureModeIntervalInputs(r.ref.id, task?.id).then((got) => { if (on) prefill(got); }, () => {});
     if (calc.key !== "pf") {
       listModels().then((out) => {
         if (on) setModels((out.models || []).filter((m) => m.kind === "distribution"));
@@ -65,6 +66,12 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
     const said = {};
     setForm((f) => {
       const next = { ...f };
+      // The task's own cost each time comes first (its Maintenance tab's figure): never asked again.
+      const costField = TASK_COST_FIELD[calc.key];
+      if (task?.id && costField) {
+        if (got.task_cost?.amount != null && blank(f[costField])) next[costField] = String(got.task_cost.amount);
+        said[costField] = taskCostWords(got.task_cost, (v) => formatCost(v, undefined, { sig: 4 }));
+      }
       const rate = got.onset_rate;
       if (rate?.rate && blank(f.onset_rate)) {
         next.onset_rate = String(Number(rate.rate.toPrecision(3)));
@@ -244,7 +251,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
                   <TextInput type="number" inputMode="decimal" min="0" step="any" value={form.onset_rate} onChange={set("onset_rate")} placeholder="e.g. 0.5" />
                 </Field>
                 <div className="ivc-row">
-                  <Field label="Cost of a check ($)" optional><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.inspection_cost} onChange={set("inspection_cost")} placeholder="e.g. 20" /></Field>
+                  <Field label="Cost of a check ($)" optional help={from.inspection_cost || null}><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.inspection_cost} onChange={set("inspection_cost")} placeholder="e.g. 20" /></Field>
                   <Field label="Cost when found ($)" optional help="The planned fix."><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.found_cost} onChange={set("found_cost")} placeholder="e.g. 200" /></Field>
                   <Field label="Cost of a failure ($)" optional help="Unplanned, all in."><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.failure_cost} onChange={set("failure_cost")} placeholder="e.g. 2000" /></Field>
                 </div>
@@ -291,7 +298,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
             {showCosts && (
               <>
                 <div className="ivc-row">
-                  <Field label="Cost of a test ($)" optional><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.test_cost} onChange={set("test_cost")} /></Field>
+                  <Field label="Cost of a test ($)" optional help={from.test_cost || null}><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.test_cost} onChange={set("test_cost")} /></Field>
                   <Field label="Cost of a repair ($)" optional><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.repair_cost} onChange={set("repair_cost")} /></Field>
                 </div>
                 <div className="ivc-row">
@@ -315,7 +322,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
               )}
             </Field>
             <div className="ivc-row">
-              <Field label="Planned replacement ($)"><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.planned_cost} onChange={set("planned_cost")} placeholder="e.g. 150" /></Field>
+              <Field label="Planned replacement ($)" help={from.planned_cost || null}><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.planned_cost} onChange={set("planned_cost")} placeholder="e.g. 150" /></Field>
               <Field label="Replacement after a failure ($)"><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.unplanned_cost} onChange={set("unplanned_cost")} placeholder="e.g. 400" /></Field>
             </div>
           </>

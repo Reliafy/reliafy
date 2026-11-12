@@ -88,7 +88,7 @@ import {
 import { keepLevel } from "../outlineTree.js";
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL, EXPLORER_PATH } from "../navigation.js";
-import { addsFirst, isolateItems, liveKids, lsaLead, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withPin } from "../treeRowMenu.js";
+import { addsFirst, isolateItems, liveKids, lsaLead, maintenanceLead, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withPin } from "../treeRowMenu.js";
 import { canIsolate, depthWords, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen, levelsBelow } from "../treeIsolate.js";
 import { removeTaskFromMode } from "../components/RcmModeTasks.jsx";
 import { MoveModal, RenameModal } from "../components/TreeRowModals.jsx";
@@ -712,6 +712,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (t !== "reports") q.delete("report");
       // And the packaging open in the LSA tab.
       if (t !== "lsa") q.delete("packaging");
+      // And a task, its Add task or the trade rates open in the Maintenance tab.
+      if (t !== "maintenance") for (const k of ["mtask", "addtask", "rates", "below"]) q.delete(k);
       // So does a point or channel open in full in the Measurements tab.
       if (t !== "measurements") for (const k of VIEW_PARAMS) q.delete(k);
     });
@@ -1475,6 +1477,18 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     q.delete("package");
     navigate(`${location.pathname}?${q}${location.hash}`, phone ? { state: { treeDetail: r.key } } : { replace: true, state: location.state });
   };
+  // The Maintenance tab's Add task…: the row picked, and the form opens in the panel beside the tree
+  // (?addtask=<the row>, read by LsaPanel's maintenance variant). On a phone the panel is its own screen.
+  const addTaskAt = (r) => {
+    setRcmFocus(null);
+    setSelected((s) => ({ ...s, [mode]: r.key }));
+    const q = new URLSearchParams(params);
+    q.set("sel", r.key);
+    q.set("addtask", r.key);
+    q.delete("mtask");
+    q.delete("rates");
+    navigate(`${location.pathname}?${q}${location.hash}`, phone ? { state: { treeDetail: r.key } } : { replace: true, state: location.state });
+  };
   const rowMenu = {
     // The moves a drag does: on a phone, or from the keyboard (no dragging there).
     actions: (r, { keyboard = false } = {}) => {
@@ -1485,7 +1499,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (!tableOn) {
         const at = shownTab(tab, r);
         return menuOnTab(at, designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope, { row: r, viewOnly }), {
-          lead: at === "lsa" ? lsaLead(r, { design: isDesignRow(r), viewOnly }) : [],
+          lead: at === "lsa" ? lsaLead(r, { design: isDesignRow(r), viewOnly })
+            : at === "maintenance" ? maintenanceLead(r, { viewOnly }) : [],
           pin: [...isolateItem(r), ...pinItem(r)],
         });
       }
@@ -1531,6 +1546,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (id.startsWith("model-")) return modelAction(r, id);
       if (id.startsWith("mission-")) return missionAction(r, id);
       if (id === "lsa-package") return packageAt(r);
+      if (id === "maint-add-task") return addTaskAt(r);
       if (id === "tree-new") {
         setNewParent(r.key);
         setModal(r.type === "loc" ? "location" : "position");

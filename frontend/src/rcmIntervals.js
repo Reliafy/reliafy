@@ -14,6 +14,20 @@ export const CALCULATOR = {
 };
 export const calculatorFor = (outcome) => CALCULATOR[outcome] || null;
 
+// The calculator's input that is the task's own cost each time (Nov 2026: one figure, kept with
+// the task on its position, never asked for again): a check's, a test's, a planned replacement's.
+export const TASK_COST_FIELD = { pf: "inspection_cost", ff: "test_cost", fixed: "planned_cost" };
+
+// What the calculator says under that input: where the task's cost came from, or that it has
+// none yet and where it's set (the Explorer's Maintenance tab). `cost`: {amount, source} or null.
+export function taskCostWords(cost, money = (v) => `$${v}`) {
+  if (!cost || cost.amount == null) {
+    return "This task has no cost yet. Set it once on its Maintenance tab (typed, or from its LSA) and every calculation uses it.";
+  }
+  const where = cost.source === "typed" ? "typed on the task" : "from its LSA";
+  return `The task's cost each time, ${money(cost.amount)} (${where}, on its Maintenance tab). Change it there to change it everywhere.`;
+}
+
 const ALIASES = {
   h: "hours", hr: "hours", hrs: "hours", hour: "hours", d: "days", day: "days", wk: "weeks", wks: "weeks", week: "weeks",
   mo: "months", month: "months", mth: "months", mths: "months", y: "years", yr: "years", yrs: "years", year: "years",

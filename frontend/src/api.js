@@ -2767,8 +2767,16 @@ export function rcmFailureFindingInterval(body) {
   return postJson("/api/maintenance/rcm/interval/failure-finding", body);
 }
 // What those calculators start from for a failure mode (its evidence, its position's failures).
-export function getFailureModeIntervalInputs(id) {
-  return request(`/api/maintenance/failure-modes/${id}/interval-inputs`);
+// With taskId, task_cost too: what that task costs each time (typed, or from its LSA).
+export function getFailureModeIntervalInputs(id, taskId = null) {
+  return request(`/api/maintenance/failure-modes/${id}/interval-inputs${taskId ? `?task_id=${encodeURIComponent(taskId)}` : ""}`);
+}
+// The workspace's hourly rates by trade ({rates: [{trade, rate, tasks}]}): they price each task's labour.
+export function listTradeRates() {
+  return request("/api/maintenance/trade-rates");
+}
+export function setTradeRate(trade, rate) {
+  return sendJson("PUT")("/api/maintenance/trade-rates", { trade, rate });
 }
 export function getFailureModeTasks(id) {
   return request(`/api/maintenance/failure-modes/${id}/tasks`);

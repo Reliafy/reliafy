@@ -1012,7 +1012,8 @@ def _attached_models(m: Maintenance, session, ctx: AccessCtx, position: dict | N
 
 
 @router.get("/failure-modes/{mode_id}/interval-inputs")
-def failure_mode_interval_inputs(mode_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+def failure_mode_interval_inputs(mode_id: str, task_id: str | None = None, session=Depends(get_session),
+                                 ctx: AccessCtx = Depends(get_access),
                                  m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """What the task card's interval calculators start from for this failure mode: its linked evidence
     (a non-repairable model, a saved analysis, a degradation model) and its position's failure history,
@@ -1025,7 +1026,11 @@ def failure_mode_interval_inputs(mode_id: str, session=Depends(get_session), ctx
         _, position = m._live_mode(mode_id)
         rows = m.life_data(position["id"]) if position else []
         fetch = rcm_decisions.evidence_fetcher(session, ctx.read_owners, ctx.hidden)
-        return rcm_intervals.starting_inputs(mode, rows, fetch, _attached_models(m, session, ctx, position, mode_id))
+        out = rcm_intervals.starting_inputs(mode, rows, fetch, _attached_models(m, session, ctx, position, mode_id))
+        # The task's own cost per occurrence (its position's figure, typed or from its LSA): what a
+        # check, a test or a planned replacement costs, so the calculator doesn't ask for it again.
+        out["task_cost"] = m.task_cost(task_id) if task_id else None
+        return out
     return _run(go)
 
 
@@ -1075,10 +1080,27 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
         if "resources" in body:
             # What doing it needs (its LSA record): each section given replaces that one.
             view = m.set_task_resources(task_id, body["resources"])
+        if "cost" in body:
+            # What it costs each time, typed (null: its LSA's figure again).
+            view = m.set_task_cost(task_id, body["cost"])
         if view is None:
             raise Invalid("Nothing to change.")
         return view
     return _run(go)
+
+
+@router.get("/trade-rates")
+def trade_rates(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Every trade's hourly rate, and the trades the tasks' labour uses with none yet
+    ({rates: [{trade, rate, tasks}]}): what prices each task's labour (its cost)."""
+    return _run(lambda: {"rates": m.trade_rates()})
+
+
+@router.put("/trade-rates")
+def set_trade_rate(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A trade's hourly rate ({trade, rate}; rate null clears it), for every task whose labour uses it.
+    Also over MCP and the CLI: maintenance tasks.set_resources trade_rates."""
+    return _run(m.set_trade_rate, body.get("trade"), body.get("rate"))
 
 
 @router.get("/tasks/{task_id}/lsa")

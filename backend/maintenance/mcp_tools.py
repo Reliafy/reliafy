@@ -461,12 +461,14 @@ TASKS: Table = {
         or a reading past a limit). maintenance guide topic plan has examples."""),
     "update": ("task_id", "name interval unit also_interval also_unit point_id last_done_reading instructions "
                "checklist failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade "
-               "while_stored include_positions trigger clear_trigger start", """Rename it or change its interval, second limit (also_interval 0
+               "while_stored include_positions trigger clear_trigger start cost clear_cost", """Rename it or change its interval, second limit (also_interval 0
         removes it), measurement (point_id, last_done_reading), instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
         true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
         or include_positions, or its trigger (clear_trigger true: the interval alone again), or when it next
-        falls due (start, a date; then every interval; '' goes back to one interval from last done). Its subject can't
-        change: move it, or retire it and create another."""),
+        falls due (start, a date; then every interval; '' goes back to one interval from last done). cost: what it costs
+        each time, typed (in place of its LSA's labour at trade rates, spares and consumables; clear_cost true
+        goes back to that); the RCM's calculators read it. Its subject can't change: move it, or retire it and
+        create another."""),
     "link": ("task_id failure_mode_id", "", "The task also prevents that mode (on its position or one inside it); "
              "its other links stay."),
     "unlink": ("task_id failure_mode_id", "", "Take that one mode off it."),
@@ -476,9 +478,10 @@ TASKS: Table = {
     "restore": ("task_id", "", "Put a retired task back on the schedule as it was."),
     "set_last_done": ("task_id on", "", """When it was last done before it was tracked here, so its next due
         date counts from then."""),
-    "set_resources": ("task_id resources", "", """What doing it needs (its LSA record): labour, tools, spares,
+    "set_resources": ("task_id resources", "trade_rates", """What doing it needs (its LSA record): labour, tools, spares,
         consumables, access, method, duration_hours. Each section given replaces that one (null clears it);
-        guide topic plan has an example."""),
+        guide topic plan has an example. trade_rates: hourly rates by trade for the whole workspace
+        ({'Fitter': 95}; null clears one), which price every task's labour (its cost)."""),
 }
 
 PROPOSALS: Table = {
@@ -815,7 +818,8 @@ RCM: Table = {
         task's numbers now. pf_unit may be a unit of use (cycles, flight hours): the answer is then in it, without
         costs. save_evidence true, with failure_mode_id (task_id: which task, else its first on-condition one): also
         sets the task's interval to recommended, adds a line to the mode's notes and saves the calculation as its
-        evidence (saved)."""),
+        evidence (saved). With task_id, found_cost and failure_cost but no inspection_cost, the task's own cost
+        is used (task_cost_used)."""),
     "ff_interval": ("", "failure_rate model_id distribution_id params model_unit target_unavailability "
                                  "test_cost repair_cost demand_rate consequence_cost unit current_interval current_unit "
                                  "failure_mode_id task_id save_evidence",
@@ -826,7 +830,8 @@ RCM: Table = {
         met by a failed device) add cost_optimal, the cheapest interval (alone, without a target, they give it). Returns the interval, recommended (rounded down), the mean unavailability and
         cost a year there and, with current_interval + current_unit, the task's numbers now and whether they meet
         the target. A model in a unit of use (cycles, flight hours) answers in it, with a target and no costs.
-        save_evidence true, with failure_mode_id (task_id optional): as pf_interval's."""),
+        save_evidence true, with failure_mode_id (task_id optional): as pf_interval's. With task_id and demand_rate
+        but no test_cost, the task's own cost is used (task_cost_used)."""),
 }
 
 
@@ -1786,6 +1791,12 @@ def register() -> None:
                           reason: str | None = None, measurement: Measurement = None,
                           last_done_reading: float | None = None, trigger: Trigger = None,
                           clear_trigger: bool | None = None, resources: Resources = None,
+                          cost: Annotated[float | None, Field(description=(
+                              "update: what the task costs each time it's done (typed), e.g. 180."))] = None,
+                          clear_cost: bool | None = None,
+                          trade_rates: Annotated[dict[str, float | None] | None, Field(description=(
+                              "set_resources: hourly rates by trade, e.g. {'Fitter': 95}; null clears "
+                              "one."))] = None,
                           start: Annotated[str | None, Field(description=(
                               "create/update: the date it (next) falls due, e.g. 2027-10-01; then every "
                               "interval. Default one interval from today; '' clears."))] = None) -> dict[str, Any]:
@@ -1804,11 +1815,17 @@ def register() -> None:
                        failure_mode_ids=failure_mode_ids, trigger=trigger, start=start)
         if action == "update":
             mode = "" if unlink_failure_mode else failure_mode_id
-            return run(m.update_task, task_id, name, interval, unit, also_interval, also_unit, point_id,
-                       instructions, checklist, mode, source, reference,
-                       None if clear_outcome else outcome if outcome is not None else ..., trade, while_stored,
-                       include_positions, last_done_reading,
-                       None if clear_trigger else trigger if trigger is not None else ..., start=start)
+
+            def update():
+                view = m.update_task(task_id, name, interval, unit, also_interval, also_unit, point_id,
+                                     instructions, checklist, mode, source, reference,
+                                     None if clear_outcome else outcome if outcome is not None else ..., trade,
+                                     while_stored, include_positions, last_done_reading,
+                                     None if clear_trigger else trigger if trigger is not None else ..., start=start)
+                if clear_cost or cost is not None:
+                    view = m.set_task_cost(task_id, None if clear_cost else cost)
+                return view
+            return run(update)
         if action == "link":
             return run(m.link_task, task_id, failure_mode_id)
         if action == "unlink":
@@ -1820,7 +1837,11 @@ def register() -> None:
         if action == "restore":
             return run(m.restore_task, task_id)
         if action == "set_resources":
-            return run(m.set_task_resources, task_id, resources)
+            def set_resources():
+                for trade_name, rate in (trade_rates or {}).items():
+                    m.set_trade_rate(trade_name, rate)
+                return m.set_task_resources(task_id, resources)
+            return run(set_resources)
         return run(m.set_last_done, task_id, on)
 
     @tool("maintenance_proposals", _WRITE, "Accept or reject a proposed plan change", PROPOSALS)
@@ -2743,6 +2764,23 @@ def register() -> None:
         m = m_for(ctx)  # Maintenance users only, like the rest of the tool
         if save_evidence and not failure_mode_id:
             raise ToolError("save_evidence needs failure_mode_id: the failure mode whose task takes the interval.")
+        # The task's own cost (its position's figure, task_costs.py) where a priced call leaves it out:
+        # what a check costs (P-F) or a test (failure finding). Said in the answer (task_cost_used).
+        task_cost = None
+        if task_id and (inspection_cost if action == "pf_interval" else test_cost) is None and (
+                (found_cost is not None and failure_cost is not None) if action == "pf_interval"
+                else demand_rate is not None):
+            try:
+                task_cost = m.task_cost(task_id)
+            except Exception:  # noqa: BLE001 - an unknown task is refused where it's used, as before
+                task_cost = None
+            if task_cost and task_cost["amount"] is not None:
+                if action == "pf_interval":
+                    inspection_cost = task_cost["amount"]
+                else:
+                    test_cost = task_cost["amount"]
+            else:
+                task_cost = None
         try:
             if action == "pf_interval":
                 inputs = {k: v for k, v in {
@@ -2773,6 +2811,8 @@ def register() -> None:
                 out = rcm_intervals.failure_finding_interval(**inputs)
         except StrategyError as exc:
             raise ToolError(str(exc)) from None
+        if task_cost:
+            out = {**out, "task_cost_used": {"amount": task_cost["amount"], "source": task_cost["source"]}}
         if not save_evidence:
             return out
         from backend.mcp_server import _require_scope

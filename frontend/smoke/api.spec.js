@@ -17,6 +17,8 @@ const SIGNED_IN = [
   ["POST", "/api/maintenance/rcm/interval/failure-finding"],
   // Life models on positions (the Explorer's Modelling tab).
   ["GET", "/api/maintenance/position-models"],
+  // Trade rates: they price each task's labour (its cost each time; Nov 2026).
+  ["GET", "/api/maintenance/trade-rates"],
   // Field reports (notes, photos and sound from the field).
   ["GET", "/api/maintenance/captures"],
   // The data library as models and priors (Models › Library).

@@ -7,7 +7,8 @@
 // and stock (the parts used and kept there and inside it); Classes (the
 // classes used there and inside it, and the whole taxonomy); Measurements for
 // a position, a location or an item (every measuring point there and inside
-// it: the latest reading, its limits and state, read by hand or fed); LSA for
+// it: the latest reading, its limits and state, read by hand or fed); Maintenance for a position
+// or a location (every task there, from the RCM or added directly, with its cost each time); LSA for
 // a position or a location (the logistic support analysis: every task there and
 // inside it with what it needs to be done, and how the tasks are packaged into
 // visits, LsaPanel; it was "Packages" until 9 Nov 2026, and ?tab=packages
@@ -70,6 +71,15 @@ export const TABS = [
   // RCM is by position, so the tree arranges by positions).
   { id: "rcm", label: "RCM", title: "What this position (or the positions at this place) does, how it can fail, and the decision for each failure mode", kinds: ["pos", "loc"] },
   { id: "fmea", label: "FME(C)A", title: "The failure modes here as an FMEA worksheet: cause, effects, scores, action priority and criticality", kinds: ["pos", "loc"] },
+  // Every maintenance task on the row (Derryn, 12 Nov 2026): from its RCM or added directly here,
+  // with how often, its package, when it's next due and what it costs each time (the figure the
+  // RCM reads). "Include what's inside" adds the tasks below. A design's rows have it too: their
+  // programme (no due dates or packages: those belong to the built items). The LSA tab's table
+  // (LsaPanel, variant "maintenance"); a task opens in the panel beside the tree.
+  {
+    id: "maintenance", label: "Maintenance", title: "Every maintenance task here: from the RCM or added directly, how often, when it's next due and what it costs each time",
+    kinds: ["pos", "loc"],
+  },
   // A design's positions have it too (designKinds): the reports on the items built from the
   // product, here and below; its design locations don't.
   {
