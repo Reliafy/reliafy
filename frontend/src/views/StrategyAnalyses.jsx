@@ -18,6 +18,7 @@ const KIND_LABEL = {
   demonstration_test: "Demonstration test",
   on_condition_interval: "Check interval (P-F)",
   failure_finding_interval: "Test interval",
+  calendar_replacement: "Shutdown calendar",
 };
 
 const HELP = { walkthrough: "replacement", guide: "optimal-replacement-interval" };

@@ -7,20 +7,22 @@ import {
 
 test("nextStepsFor: which tools take which kind of model", () => {
   assert.deepEqual(nextStepsFor({ kind: "distribution", distribution_id: "weibull" }),
-                   { replacement: true, fleet: true, test: true, rbd: true });
+                   { replacement: true, failureFinding: true, fleet: true, test: true, rbd: true });
   // A mixture has no single distribution for the replacement tool.
   assert.equal(nextStepsFor({ kind: "distribution", distribution_id: "mixture" }).replacement, false);
   assert.deepEqual(nextStepsFor({ kind: "regression", distribution_id: "weibull_ph" }),
-                   { replacement: false, fleet: true, test: false, rbd: true });
-  assert.deepEqual(nextStepsFor({ kind: "nonparametric" }), { replacement: false, fleet: false, test: true, rbd: false });
+                   { replacement: false, failureFinding: false, fleet: true, test: false, rbd: true });
+  assert.deepEqual(nextStepsFor({ kind: "nonparametric" }),
+                   { replacement: false, failureFinding: false, fleet: false, test: true, rbd: false });
   // Covariates over time: no fleet or block takes the item paths.
   assert.equal(nextStepsFor({ kind: "regression", tvc: {} }).fleet, false);
 });
 
 test("stepsFor: the Use this model dialog's steps, in order, each named and described", () => {
-  assert.deepEqual(stepsFor({ kind: "distribution", distribution_id: "weibull" }), ["replacement", "fleet", "test", "rbd"]);
+  assert.deepEqual(stepsFor({ kind: "distribution", distribution_id: "weibull" }),
+                   ["replacement", "failureFinding", "fleet", "test", "rbd"]);
   assert.deepEqual(stepsFor({ kind: "distribution", distribution_id: "exponential" }, ["replacement"]),
-                   ["fleet", "test", "rbd"]);
+                   ["failureFinding", "fleet", "test", "rbd"]);
   assert.deepEqual(stepsFor({ kind: "nonparametric" }), ["test"]);
   assert.deepEqual(stepsFor({ kind: "regression", distribution_id: "weibull_ph" }), ["fleet", "rbd"]);
   assert.deepEqual(stepsFor({ kind: "regression", tvc: {} }), []);
@@ -32,6 +34,7 @@ test("stepsFor: the Use this model dialog's steps, in order, each named and desc
 
 test("nextStepLink opens each tool with the model chosen", () => {
   assert.equal(nextStepLink("replacement", "m1"), "/strategy/replacement?model=m1");
+  assert.equal(nextStepLink("failureFinding", "m1"), "/strategy/failure-finding?model=m1");
   assert.equal(nextStepLink("fleet", "m1"), "/forecasts?new=1&model=m1");
   assert.equal(nextStepLink("test", "m1", { unit: "Hours" }), "/strategy/test-planning?unit=Hours&model=m1");
   assert.equal(modelFromSearch("?model=m1&new=1"), "m1");

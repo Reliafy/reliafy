@@ -133,6 +133,28 @@ imperfect-repair model starts it from where its repairs left it. The likely rang
 allows for chance and for the model's own uncertainty. Covariate repairable
 models can't drive a forecast yet.
 
+## Run to failure, or replace at an age?
+
+Under **Change settings › Maintenance strategy**, choose how the fleet is run:
+
+- **Run to failure** — each item is replaced when it fails (the forecast above).
+- **Replace at an age** — each item is also replaced when it reaches the age you
+  give, in the model's unit, failed or not. Items already past that age are
+  replaced in the first period: the catch-up.
+
+Add the **Cost of a failure** (and, for planned replacement, the **Cost of a
+planned replacement**) and press **Save & forecast**. A card under the answer
+shows the failures, the planned replacements, the parts they need and what they
+cost, for the whole horizon and **year by year**, each with its likely range. The
+spares answer then counts planned replacements too, so it says how many parts the
+strategy needs over the lead time, catch-up included.
+
+To compare the two strategies for a budget, run the forecast once each way (or
+make a copy of the forecast) and set the yearly costs side by side. **Export
+CSV** includes every period and every year with their ranges. The replacement
+age itself comes from
+[find the optimal replacement interval](/guides/optimal-replacement-interval).
+
 ## Get told when it changes
 
 Once a forecast is saved, the **Alerts** card can email you when it crosses a

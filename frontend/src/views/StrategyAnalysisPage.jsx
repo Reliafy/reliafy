@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import LoadFailed from "../components/LoadFailed.jsx";
 import ReplacementResult from "../components/ReplacementResult.jsx";
 import CompareResult from "../components/CompareResult.jsx";
@@ -12,6 +12,10 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import IntervalAnalysisResult from "../components/IntervalAnalysisResult.jsx";
 import { itemName } from "../components/LibRows";
 import { PageTitle } from "../components/usePageTitle.js";
+import CalendarReplacementResult from "../components/CalendarReplacementResult.jsx";
+import { ResultDetails } from "../components/ui/ResultSummary.jsx";
+import { inputRows, reopenLink } from "../analysisInputs.js";
+import { useCurrency } from "../WorkspaceProvider.jsx";
 
 const KIND_LABEL = {
   optimal_replacement: "Optimal replacement",
@@ -20,6 +24,7 @@ const KIND_LABEL = {
   demonstration_test: "Demonstration test",
   on_condition_interval: "Check interval (P-F)",
   failure_finding_interval: "Test interval",
+  calendar_replacement: "Shutdown calendar",
 };
 
 // A saved strategy analysis, rendered read-only from its stored results.
@@ -27,6 +32,7 @@ export default function StrategyAnalysisPage() {
   const { id } = useParams();
   const [doc, setDoc] = useState(null);
   const [error, setError] = useState(null);
+  const currency = useCurrency();
 
   useEffect(() => {
     getStrategyAnalysis(id).then(setDoc).catch((e) => setError(e.message));
@@ -67,7 +73,10 @@ export default function StrategyAnalysisPage() {
         }
       />
 
+      <AnalysisInputs doc={doc} currency={currency} />
+
       <div className="card">
+        {doc.kind === "calendar_replacement" && <CalendarReplacementResult result={doc.results} name={doc.name} />}
         {doc.kind === "optimal_replacement" && <ReplacementResult result={doc.results} name={doc.name} />}
         {doc.kind === "compare_two" && <CompareResult result={doc.results} name={doc.name} />}
         {doc.kind === "failure_finding" && <FfiResult result={doc.results} />}
@@ -77,5 +86,24 @@ export default function StrategyAnalysisPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// What gave the answer: the model and figures it was worked out from, and the
+// tool again on the same model to rerun with a new price.
+function AnalysisInputs({ doc, currency }) {
+  const rows = inputRows(doc.kind, doc.inputs, currency);
+  if (!rows.length) return null;
+  const reopen = reopenLink(doc.kind, doc.inputs);
+  return (
+    <section className="card analysis-inputs" aria-labelledby="analysis-inputs-h">
+      <h2 id="analysis-inputs-h">Inputs</h2>
+      <ResultDetails summary="What this was worked out from" rows={rows} open />
+      {reopen && (
+        <div className="analysis-inputs-actions">
+          <Link className="evidence-link" to={reopen.to}>{reopen.label} →</Link>
+        </div>
+      )}
+    </section>
   );
 }

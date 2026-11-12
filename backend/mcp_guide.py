@@ -317,9 +317,13 @@ export_openpsa=true adds the tree as Open-PSA XML.
     "strategy": ("Replacement (also over a shut calendar), proof-test and overhaul intervals; shape uncertainty.", """\
 Maintenance strategy (analyse actions).
 - analyse optimal_replacement: the cost-optimal age-replacement interval from a non-repairable model (model_id, or \
-distribution_id + params) and the planned and unplanned costs. beneficial=false: run to failure is cheaper.
+distribution_id + params) and the planned and unplanned costs. beneficial=false: run to failure is cheaper. \
+optimal_time_range: how far the best age moves across the fit's 90% bounds. block: block (group) replacement at fixed \
+times, the usual alternative. use_per_year (+ units) adds yearly: the saving a year per unit and for the fleet.
 - analyse failure_finding_interval: the proof-test interval keeping a hidden protective function (relief valve, trip, \
-standby unit) at a target availability.
+standby unit) at a target availability, from the model's curve (not 2(1-A)MTTF, which holds only for a constant \
+rate). renewed_at_test (default true: each test overhauls or replaces it); test_duration and test_cost optional. \
+interval_bound: the cautious end from the fit's 90% one-sided bounds; quote it with the interval.
 - analyse optimal_overhaul: the overhaul interval of a repairable system from a minimal-repair recurrent model.
 - analyse calendar_replacement: when replacing costs less at shuts (annual, quarterly, weekly stops) than between \
 them, the long-run best rule: at each shut, replace the part if it is older than a threshold age (the threshold \
@@ -331,7 +335,7 @@ comparisons (run to failure, age replacement ignoring the shuts, every shut of a
 shuts with each one's threshold and chance of a replacement. method dp (default) and integration (no anytime_cost) \
 are exact and free; sampling (Pro) is for calendars whose cycle is very long, with cost_rate_se. Quote the unit.
 - analyse next_replacement: the same calendar plus the age of the unit in service today: replace it now, at the \
-next shut of each kind, between shuts, or run it to failure, each choice's cost, the best, and replace_from_age \
+coming shuts (the next, the one after, and on), between shuts, or run it to failure, each choice's cost, the best, and replace_from_age \
 (from that age replacing now beats waiting).
 - With a saved Weibull (or Crow-AMSAA) model fitted to data, shape_uncertainty gives the answer at each end of \
 the shape's 90% interval: relay uncertainty_note when present — the recommendation is less firm than it reads \
@@ -347,6 +351,10 @@ the ingest API. list kind fleets lists them (model_kind life, regression, alt or
 top 20 unless include_items; item_probabilities adds each item's chance by period). Recurrent fleets count every \
 repeat failure: an item named as a system in the model's data uses its own history (rate_factor; imperfect repair \
 simulated from its state), and the range carries the fit's uncertainty; covariate recurrent models aren't taken.
+- Strategy (renewals fleets): strategy = {strategy: run_to_failure or age, replace_at (model units), failure_cost, \
+planned_cost} (or the fleet's saved one) adds forecast.strategy: total, per_period and yearly, each with failures, \
+planned replacements, parts and (priced) cost, with 90% ranges. Items already past replace_at are replaced in period \
+1 (catch_up). Spares then count planned replacements too. Compare run to failure and age with two calls.
 - Spares: fleet_forecast with spares = {lead_time (in the fleet's periods), service_level (default 0.95), review, \
 per_failure, stock, unit_cost} (or the fleet's saved spares settings) adds spares: hold (the stock for that chance \
 of no stock-out over the lead time plus review), reorder_at, risk_at_stock, hold_cost, the same per period, and \

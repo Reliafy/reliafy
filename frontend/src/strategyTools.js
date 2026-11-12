@@ -9,8 +9,8 @@ export const STRATEGY_TOOLS = {
     help: { walkthrough: "replacement", guide: "optimal-replacement-interval" },
   },
   calendar: {
-    kind: "optimal_replacement",
-    noun: "replacement analyses",
+    kind: "calendar_replacement",
+    noun: "shutdown-calendar analyses",
     help: { guide: "optimal-replacement-interval" },
   },
   compare: { kind: "compare_two", noun: "comparisons", help: { guide: "compare-groups" } },

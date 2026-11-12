@@ -961,6 +961,22 @@ h6 {
   .strategy-costs .compute-why { flex-basis: auto; }
 }
 
+/* A yes/no beside a tool's fields: the box and its words on one line, wrapping on a phone. */
+.strategy-costs .calc-check {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.3rem;
+  font-size: var(--fs-14);
+  max-width: 100%;
+}
+.strategy-costs .calc-check input { width: 1.1rem; height: 1.1rem; margin: 0; flex: none; }
+
+/* A saved analysis' inputs: what gave the answer (a reviewer's first question). */
+.analysis-inputs { margin: 0 0 var(--sp-4); }
+.analysis-inputs h2 { font-size: var(--fs-16); margin: 0 0 var(--sp-2); }
+.analysis-inputs-actions { margin-top: var(--sp-3); }
+
 /* Under a Strategy tool: its saved analyses (a filtered view of the list). */
 .strategy-saved { margin-top: var(--sp-5); }
 .strategy-saved-head {

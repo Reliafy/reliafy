@@ -631,11 +631,18 @@ def test_failure_finding_interval_gets_the_shape_treatment(env):
     assert su["beta_ci"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
     alpha = next(p["value"] for p in _ok(_call(env.token[A], "get", {"kind": "model", "id": early}))["params"]
                  if p["name"] == "alpha")
+    from backend.services import strategy
+
     for end, beta in (("at_beta_lower", b["ci"][0]), ("at_beta_upper", b["ci"][1])):
-        expected = 2 * 0.01 * alpha * math.gamma(1 + 1 / beta)  # FFI = 2(1 - A) MTTF, α held
+        # The interval from the model's curve, α held at its estimate, β at the end.
+        expected = strategy.failure_finding("weibull", [{"name": "alpha", "value": alpha},
+                                                        {"name": "beta", "value": beta}], 0.99)["interval"]
         assert su[end]["interval"] == pytest.approx(expected, rel=1e-3)
-    assert su["at_beta_upper"]["interval"] < 0.8 * out["interval"]
+    # Early failures (β < 1): the low end of β, more of them, asks for the shorter interval.
+    assert su["at_beta_lower"]["interval"] < 0.8 * out["interval"]
     assert "as short as" in out["uncertainty_note"] and "shorter one" in out["uncertainty_note"]
+    # The fit's bounds ride along from the saved model: the cautious end is in the answer too.
+    assert out["interval_bound"]["interval"] < out["interval"]
 
     clear, _ = _fitted_weibull(env, "Clear", seed=7, beta=4.0, n=60, cutoff=1e9)
     out = _ok(_call(env.token[A], "analyse", {"action": "failure_finding_interval", "model_id": clear, **target}))

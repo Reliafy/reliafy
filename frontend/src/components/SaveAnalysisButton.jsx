@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import Modal from "./Modal.jsx";
 import { saveStrategyAnalysis } from "../api.js";
 
+export const SAVED_EVENT = "reliafy:strategy-analysis-saved";
+
 // "Save analysis" affordance shared by the strategy tools: prompts for a name,
 // then persists {kind, inputs} — the server recomputes the results (saved
 // analyses are evidence for RCM decisions, so the client never supplies them).
@@ -20,6 +22,8 @@ export default function SaveAnalysisButton({ kind, inputs, defaultName }) {
       const doc = await saveStrategyAnalysis(name.trim(), kind, inputs);
       setSavedId(doc.id);
       setOpen(false);
+      // The tool's own "Saved …" list below refreshes (SavedOfKind listens).
+      window.dispatchEvent(new CustomEvent(SAVED_EVENT, { detail: { kind } }));
     } catch (err) {
       setError(err.message);
     } finally {

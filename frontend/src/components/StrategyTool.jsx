@@ -5,6 +5,7 @@ import { relativeTime } from "../instrument.js";
 import { strategyListFor } from "../strategyTools.js";
 import { itemName } from "./LibRows.jsx";
 import Chip from "./ui/Chip.jsx";
+import { SAVED_EVENT } from "./SaveAnalysisButton.jsx";
 
 const SHOWN = 5;
 
@@ -13,6 +14,13 @@ const SHOWN = 5;
 // a link to the whole filtered list.
 export function SavedOfKind({ kind, noun }) {
   const [rows, setRows] = useState(null);
+  const [version, setVersion] = useState(0);
+  // A Save on this page lists the new analysis at once.
+  useEffect(() => {
+    const onSaved = (e) => { if (!e.detail?.kind || e.detail.kind === kind) setVersion((v) => v + 1); };
+    window.addEventListener(SAVED_EVENT, onSaved);
+    return () => window.removeEventListener(SAVED_EVENT, onSaved);
+  }, [kind]);
   useEffect(() => {
     let live = true;
     listStrategyAnalyses()
@@ -21,7 +29,7 @@ export function SavedOfKind({ kind, noun }) {
     return () => {
       live = false;
     };
-  }, [kind]);
+  }, [kind, version]);
   if (rows === null) return null;
   const newest = [...rows].sort((a, b) =>
     String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || "")));

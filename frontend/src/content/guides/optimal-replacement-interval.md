@@ -58,6 +58,24 @@ line to beat.
 
 ![The answer for the bearing model: replace at about 563 hours, saving 52%](/guides/img/replacement-01-result.png)
 
+Three more things sit with the answer:
+
+- **How sure the age is.** For a model fitted to data, the **Replace at** tile
+  shows how far the best age moves when each fitted parameter is set to the ends
+  of its 90% bounds. A wide span means the data only loosely pin the age down;
+  a cost curve with a flat bottom means it matters little.
+- **The saving a year.** Fill in **Use a year, per unit** (the hours, cycles or
+  days one unit runs in a year, in the model's unit) and, if you like, **Units
+  in the fleet**: the answer adds what the planned changes save a year, per unit
+  and for the fleet.
+- **Block replacement.** The dotted curve is the other policy engineers compare:
+  every unit replaced at fixed times, failed or not, with failures replaced as
+  they come. It is simpler to schedule and usually a little dearer; the line
+  under the answer says by how much.
+
+A saved analysis lists its inputs (the model and the costs) above the answer,
+with **Open in Optimal replacement** to rerun it with a new price.
+
 Sometimes the honest answer is **don't replace preventively at all**, and the
 tool will tell you so. That happens whenever the component isn't wearing out. If
 your Weibull β is around 1, the failure rate is constant: a new unit is exactly
@@ -118,7 +136,13 @@ failures, and the schedule below it lists the coming shuts by date with the
 chance that each one will need a change.
 
 **One unit now** answers the question for the part in service today. Enter its
-age and Reliafy compares replacing it now, at the next shut, or later.
+age and Reliafy compares replacing it now, at each coming shut (the next, the
+one after, and on), between shuts, or running it to failure, with the chance it
+fails before each shut, and recommends the cheapest.
+
+**Save analysis** keeps the answer, with today's date, as evidence for an RCM
+decision (and to share); **Export CSV** downloads the rule, the simpler rules'
+costs and every shut in the plan by date.
 
 The exact methods are free. For calendars whose pattern takes a very long time
 to repeat, **Method and limits** offers a sampled method (Pro).

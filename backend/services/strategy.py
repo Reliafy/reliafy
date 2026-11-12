@@ -11,6 +11,7 @@ Built on SurPyval + RePyability:
 
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 import numpy as np
@@ -334,6 +335,8 @@ def optimal_replacement(
     unplanned_cost: Optional[float],
     unit: Optional[str] = None,
     extras: Optional[dict] = None,
+    use_per_year: Optional[float] = None,
+    units: Optional[float] = None,
 ) -> dict:
     """Age-based preventive-replacement interval that minimises the cost rate.
 
@@ -347,6 +350,13 @@ def optimal_replacement(
     they carry none it is None and ``optimal_time_range_note`` says so. When
     no age pays, ``reason`` says why in a word and ``recommendation`` in a
     sentence.
+
+    ``block`` is the other policy engineers compare: every unit replaced at
+    fixed times (block or group replacement), failures replaced as they
+    come; its best interval and cost rate use the reliability library's
+    renewal count (``NonRepairable.failures``). With ``use_per_year`` (model
+    time units a unit runs in a year) the saving comes back a year, per unit
+    and, with ``units``, for the fleet.
     """
     if planned_cost is None or unplanned_cost is None:
         raise StrategyError("Enter both the planned and unplanned costs.")
@@ -416,6 +426,23 @@ def optimal_replacement(
     time_range, range_note = _replacement_range(
         distribution_id, params, extras, cp, cu, lfp, point, unit_s
     )
+    block = None if lfp else _block_replacement(nr, cp, cu, grid, point["run_to_failure_cost_rate"])
+    a_year = _positive_or_none(use_per_year, "The use a year")
+    fleet = _positive_or_none(units, "The number of units")
+    yearly = None
+    if a_year is not None:
+        rtf = point["run_to_failure_cost_rate"]
+        best = point["optimal_cost_rate"] if beneficial else rtf
+        yearly = {
+            "use_per_year": a_year,
+            "units": fleet,
+            "cost_per_year": None if best is None else best * a_year,
+            "run_to_failure_per_year": None if rtf is None else rtf * a_year,
+            "saving_per_year": None if best is None or rtf is None else (rtf - best) * a_year,
+        }
+        if fleet is not None:
+            for key in ("cost_per_year", "run_to_failure_per_year", "saving_per_year"):
+                yearly[f"fleet_{key}"] = None if yearly[key] is None else yearly[key] * fleet
 
     return {
         "distribution": name,
@@ -432,7 +459,58 @@ def optimal_replacement(
         "recommendation": recommendation,
         "optimal_time_range": time_range,
         "optimal_time_range_note": range_note,
-        "curve": {"t": grid.tolist(), "cost_rate": _clean(cost)},
+        "block": block,
+        "yearly": yearly,
+        "curve": {"t": grid.tolist(), "cost_rate": _clean(cost),
+                  **({"block_cost_rate": block.pop("curve")} if block else {})},
+    }
+
+
+def _positive_or_none(value, label: str) -> Optional[float]:
+    if value in (None, ""):
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise StrategyError(f"{label} must be a number.") from None
+    if not (math.isfinite(v) and v > 0):
+        raise StrategyError(f"{label} must be more than 0.")
+    return v
+
+
+def _block_replacement(nr, cp: float, cu: float, grid: np.ndarray, rtf_rate: Optional[float]) -> Optional[dict]:
+    """Block (group) replacement: every unit replaced at fixed times ``T``
+    apart, failures replaced as they come. Its long-run cost rate is
+    ``(cp + cu M(T)) / T``, ``M`` the expected failures of a position in
+    ``T`` from new, renewals included: the reliability library's renewal
+    count (``NonRepairable.failures``, exact). The best ``T`` is found on the
+    curve's grid, then refined. None when the library can't count renewals
+    for this model."""
+    from scipy.optimize import minimize_scalar
+
+    def rate(t):
+        t = np.atleast_1d(np.asarray(t, dtype=float))
+        m = np.atleast_1d(np.asarray(nr.failures(t).expected_failures, dtype=float))
+        return (cp + cu * m) / t
+
+    try:
+        with np.errstate(all="ignore"):
+            curve = rate(grid)
+            i = int(np.nanargmin(curve))
+            lo, hi = grid[max(i - 1, 0)], grid[min(i + 1, len(grid) - 1)]
+            found = minimize_scalar(lambda t: float(rate(t)[0]), bounds=(lo, hi), method="bounded",
+                                    options={"xatol": 1e-6 * hi})
+    except Exception:  # noqa: BLE001 - no renewal count for this model
+        return None
+    t_best, r_best = (float(found.x), float(found.fun)) if found.fun <= curve[i] else (float(grid[i]), float(curve[i]))
+    saving = (rtf_rate - r_best) / rtf_rate if rtf_rate else 0.0
+    pays = bool(saving > _MIN_SAVING) and i < len(grid) - 1
+    return {
+        "beneficial": pays,
+        "optimal_time": t_best if pays else None,
+        "optimal_cost_rate": r_best if pays else None,
+        "savings": saving if pays else 0.0,
+        "curve": _clean(curve),
     }
 
 
@@ -717,46 +795,220 @@ def _reliability_verdict(grid: np.ndarray, a: dict, b: dict, unit) -> dict:
     return {"more_reliable": more, "crossover_time": cross, "text": text}
 
 
+# ---------------------------------------------------------------------------
+# Failure finding: how often to test a hidden function
+# ---------------------------------------------------------------------------
+
+#: The one-sided 90% normal quantile (backend.levels: a life bound is 90% one-sided).
+_Z_ONE_SIDED = 1.2815515655446004
+
+
+def _hidden_unavailability(model, interval: float, renewed: bool) -> float:
+    """The mean unavailability of a hidden function tested every ``interval``
+    (the model's unit): the share of the time it sits failed, undetected.
+
+    ``renewed``: each test renews the device (bench-tested and overhauled, or
+    replaced), so every interval starts with a new one and the share is
+    ``1 − (1/T)∫₀ᵀ R(t) dt``, worked out from the model's own curve. Otherwise
+    a test leaves a working device as it was, and only a failed one is
+    renewed (RCM's failure-finding calculator, ``rcm_intervals``)."""
+    if not renewed:
+        from backend.services import rcm_intervals
+
+        return float(rcm_intervals._ff_numbers(model, interval, 0.0, 0.0, None, 0.0)["mean_unavailability"])
+    from scipy.integrate import quad
+
+    def ff(t: float) -> float:
+        return float(np.ravel(model.ff(t))[0])
+
+    # (1/T)∫F rather than 1 − (1/T)∫R: no cancellation for a target near 100%.
+    with np.errstate(all="ignore"):
+        down, _err = quad(ff, 0.0, interval, limit=200, epsabs=0.0, epsrel=1e-10)
+    return float(min(max(down / interval, 0.0), 1.0))
+
+
+def _solve_interval(model, target_u: float, renewed: bool, duration: float, scale: float) -> float:
+    """The longest interval whose mean unavailability, with each test taking
+    ``duration`` off-line, stays within ``target_u``."""
+    from scipy.optimize import brentq, minimize_scalar
+
+    if not renewed and not duration:
+        # RCM's failure-finding search, which knows that unavailability's own limits.
+        from backend.services import rcm_intervals
+
+        return float(rcm_intervals._optimal_ff(model, target_u, 0.0, 0.0, None, 0.0))
+
+    def u(t: float) -> float:
+        return _hidden_unavailability(model, t, renewed) + (duration / t if duration else 0.0)
+
+    low = max(scale * (1e-12 if renewed else 1e-3), duration * 1.0001 if duration else 0.0, 1e-300)
+    if duration:
+        # Testing too often keeps the device off-line: the best is in between.
+        best = minimize_scalar(lambda lt: u(math.exp(lt)), bounds=(math.log(low), math.log(scale * 50)),
+                               method="bounded", options={"xatol": 1e-9})
+        low = math.exp(best.x)
+        if u(low) > target_u:
+            raise StrategyError(
+                "No test interval meets this target: each test keeps the device off-line long enough that, "
+                "however often it is tested, it is unavailable more than the target allows. Shorten the test "
+                "or relax the target.")
+    elif u(low) > target_u:
+        raise StrategyError("The target is tighter than any practical test interval can meet. Check the target "
+                            "and the model.")
+    high = scale
+    for _ in range(80):
+        if u(high) > target_u:
+            break
+        high *= 2.0
+    else:
+        raise StrategyError("The device stays within the target however long between tests: it needs no testing "
+                            "for this target.")
+    return float(brentq(lambda t: u(t) - target_u, low, high, xtol=1e-12 * max(high, 1.0), rtol=1e-12))
+
+
+def _ffi_bound(distribution_id, params, extras, target_u, renewed, duration, scale) -> tuple[Optional[dict], str]:
+    """The cautious end of the test interval: each fitted parameter moved, one
+    at a time, to the end of its 90% one-sided bound that shortens the
+    interval (the two-sided 90% interval the fit stores, rescaled), the others
+    held. With one parameter (an exponential's rate) that is the interval at
+    the rate's 90% one-sided upper bound exactly."""
+    from backend.levels import Z, rescale
+
+    cases = []
+    for i, param in enumerate(params or []):
+        bounds = _param_bounds(param)
+        if bounds is None:
+            continue
+        one_sided = rescale(param["value"], bounds[0], bounds[1], log=None, z_from=Z, z_to=_Z_ONE_SIDED)
+        if one_sided is None:
+            continue
+        for which, value in zip(("lower", "upper"), one_sided):
+            moved = list(params)
+            moved[i] = {**param, "value": value}
+            try:
+                model, _name = _model_from_params(distribution_id, moved, extras)
+                t = _solve_interval(model, target_u, renewed, duration, scale)
+            except Exception:  # noqa: BLE001 - an end the model refuses gives no case
+                continue
+            cases.append({"param": param.get("name"), "bound": which, "value": float(value), "interval": t})
+    if not cases:
+        return None, ("No bound on the interval: the parameters came without confidence bounds (typed in, not "
+                      "fitted to data).")
+    worst = min(cases, key=lambda c: c["interval"])
+    one = len({c["param"] for c in cases}) == 1
+    said = str(worst["param"] or "the parameter").replace("_", " ")
+    note = (f"At the 90% one-sided bound of the {said} ({fmt_num(worst['value'])}): the cautious end."
+            if one else
+            f"The shortest interval with any one fitted parameter at its 90% one-sided bound (here {said} at "
+            f"{fmt_num(worst['value'])}), the others at their estimates: a check of how far the answer leans on "
+            "the fit, not a confidence interval for the interval itself.")
+    return {"interval": worst["interval"], "level": 0.90, "side": "one-sided", "param": worst["param"],
+            "value": worst["value"], "cases": cases,
+            "method": ("the rate at its 90% one-sided bound" if one else
+                       "each parameter at its 90% one-sided bound, one at a time; the shortest")}, note
+
+
+def _per_year(unit: Optional[str]) -> Optional[float]:
+    """Model time units in a year, for a time unit; None otherwise."""
+    from backend.services.strategy_calendar import UNITS_PER_DAY
+    from backend.units import normalize_unit
+
+    key = normalize_unit(unit)
+    return UNITS_PER_DAY[key] * 365.25 if key in UNITS_PER_DAY else None
+
+
 def failure_finding(
     distribution_id: str,
     params: list,
     target_availability: float,
     unit: Optional[str] = None,
     extras: Optional[dict] = None,
+    test_duration: Optional[float] = None,
+    test_cost: Optional[float] = None,
+    renewed_at_test: Optional[bool] = True,
 ) -> dict:
-    """Failure-finding interval for a hidden failure (protective device).
+    """The failure-finding (proof-test) interval for a hidden failure: the
+    longest interval that keeps the protective function's mean availability at
+    ``target_availability``.
 
-    Uses the standard first-order approximation FFI = 2 x (1 - A) x MTTF,
-    where A is the target availability of the protective function. It follows
-    from the average unavailability of an inspected hidden function being
-    ~T / (2 x MTTF); accurate for A >= ~0.9, conservative below that.
-    """
+    Worked out from the model's own curve, not from its mean: the share of
+    each interval the device sits failed is ``1 − (1/T)∫₀ᵀ R(t) dt`` when each
+    test renews it (``renewed_at_test``, the default: bench-tested and
+    overhauled, or replaced); otherwise a test leaves a working device as it
+    was. The textbook ``2 × (1 − A) × MTTF`` only holds for a constant failure
+    rate, and only near 100%; it comes back as ``shortcut_interval`` for
+    reference. ``test_duration`` (the model's unit) is time off-line per test;
+    ``test_cost`` prices the tests. ``interval_bound`` is the cautious end
+    from the fit's 90% one-sided bounds."""
     try:
         availability = float(target_availability)
     except (TypeError, ValueError):
         raise StrategyError("Target availability must be a number between 0 and 1.")
     if not (0.0 < availability < 1.0):
         raise StrategyError("Target availability must be strictly between 0 and 1 (e.g. 0.99).")
+    duration = 0.0 if test_duration in (None, "") else float(test_duration)
+    if not (math.isfinite(duration) and duration >= 0):
+        raise StrategyError("The test duration must be a number, at least 0.")
+    cost = None if test_cost in (None, "") else float(test_cost)
+    if cost is not None and not (math.isfinite(cost) and cost >= 0):
+        raise StrategyError("The cost per test must be a number, at least 0.")
+    renewed = renewed_at_test is not False
 
     model, name = _model_from_params(distribution_id, params, extras)
     mttf = _scalar(model.mean())
     if mttf is None or not np.isfinite(mttf) or mttf <= 0:
         raise StrategyError("Couldn't compute a finite MTTF for this model.")
+    target_u = 1.0 - availability
+    exponential = distribution_id == "exponential" and not surpyval_extras(extras)
+    interval = _solve_interval(model, target_u, renewed, duration, mttf)
+    # For a constant failure rate a test renews nothing, so both answers agree.
+    try:
+        other = interval if exponential else _solve_interval(model, target_u, not renewed, duration, mttf)
+    except (StrategyError, ValueError):
+        other = None  # the other reading has no interval for this target: nothing to say beside it
+    shortcut = 2.0 * target_u * mttf
+    bound, bound_note = _ffi_bound(distribution_id, params, extras, target_u, renewed, duration, mttf)
 
-    interval = 2.0 * (1.0 - availability) * mttf
     unit_s = f" {unit_in_text(unit)}" if unit and unit.strip() else ""
+    a_year = _per_year(unit)
+    tests_rate = None if cost is None else cost / (interval + duration)
+    target_text = f"{availability * 100:.10g}%"
+    renewal_text = ("each test renews the device (bench-tested and overhauled, or replaced)" if renewed else
+                    "a test leaves a working device as it was; only a failed one is renewed")
+    note = (f"Check the hidden function about every {fmt_num(interval)}{unit_s} to keep its average availability "
+            f"near {target_text}. Worked out from the model's curve: the share of each interval the device sits "
+            f"failed and unnoticed, assuming {renewal_text}.")
+    if duration:
+        note += f" Each test takes it off-line for {fmt_num(duration)}{unit_s}, counted as unavailable."
+    warnings_out = []
+    if not exponential and abs(shortcut - interval) > 0.05 * interval:
+        warnings_out.append(
+            f"The shortcut 2 × (1 − A) × MTTF gives {fmt_num(shortcut)}{unit_s}: it assumes a constant failure "
+            f"rate, which this {name} model doesn't have.")
+    if not exponential and other is not None and abs(other - interval) > 0.05 * interval:
+        warnings_out.append(
+            (f"If a test leaves a working device as it was (no overhaul), test every {fmt_num(other)}{unit_s} "
+             "instead." if renewed else
+             f"If each test renews the device (overhauled or replaced), every {fmt_num(other)}{unit_s} is enough."))
     return {
         "distribution": name,
         "unit": (unit or "").strip(),
         "mttf": float(mttf),
         "target_availability": availability,
         "interval": float(interval),
-        "method": "approx_2(1-A)MTTF",
-        "note": (
-            f"Check the hidden function about every {fmt_num(interval)}{unit_s} to keep its "
-            f"availability near {availability * 100:.10g}%. Uses the standard approximation "
-            "FFI = 2 x (1 - A) x MTTF, accurate for availability targets above ~90%."
-        ),
+        "interval_bound": bound,
+        "bound_note": bound_note,
+        "renewed_at_test": renewed,
+        "other_interval": None if other is None else float(other),
+        "shortcut_interval": float(shortcut),
+        "test_duration": duration,
+        "test_cost": cost,
+        "tests_cost_rate": tests_rate,
+        "tests_cost_per_year": None if tests_rate is None or a_year is None else tests_rate * a_year,
+        "tests_per_year": None if a_year is None else a_year / (interval + duration),
+        "method": "mean_unavailability",
+        "warnings": warnings_out,
+        "note": note,
     }
 
 

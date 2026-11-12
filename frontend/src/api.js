@@ -277,7 +277,8 @@ export function compareTwoModels(a, b, unit) {
 }
 
 // Compute the cost-optimal preventive-replacement interval for a distribution.
-export function optimalReplacement(distributionId, params, plannedCost, unplannedCost, unit, extras) {
+// ``more``: { use_per_year, units } for the saving a year (optional).
+export function optimalReplacement(distributionId, params, plannedCost, unplannedCost, unit, extras, more = {}) {
   return request("/api/strategy/optimal-replacement", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -288,6 +289,8 @@ export function optimalReplacement(distributionId, params, plannedCost, unplanne
       unplanned_cost: unplannedCost,
       unit: unit || null,
       extras: extras || null,
+      use_per_year: more.use_per_year ?? null,
+      units: more.units ?? null,
     }),
   });
 }
@@ -1623,7 +1626,8 @@ export function getItemPrediction(modelId, itemId, confidence) {
 // ---- Strategy: failure finding + saved analyses ------------------------------
 
 // Failure-finding interval for a hidden function (protective device).
-export function failureFinding(distributionId, params, targetAvailability, unit, extras) {
+// ``more``: { test_duration, test_cost, renewed_at_test } (optional).
+export function failureFinding(distributionId, params, targetAvailability, unit, extras, more = {}) {
   return request("/api/strategy/failure-finding", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1633,6 +1637,9 @@ export function failureFinding(distributionId, params, targetAvailability, unit,
       target_availability: targetAvailability,
       unit: unit || null,
       extras: extras || null,
+      test_duration: more.test_duration ?? null,
+      test_cost: more.test_cost ?? null,
+      renewed_at_test: more.renewed_at_test ?? true,
     }),
   });
 }

@@ -5,7 +5,8 @@ import ScrollCue from "./ui/ScrollCue.jsx";
 import { formatNumber, formatPercent } from "../format.js";
 import { ACCENT, REFERENCE } from "../plotTheme.js";
 import { unitInText } from "./unitText.js";
-import { dearer, formatDate, visibleSchedule } from "../calendarReplacement.js";
+import { calendarCsv, dearer, formatDate, visibleSchedule } from "../calendarReplacement.js";
+import { saveText } from "../sparesPlan.js";
 import { useCurrency } from "../WorkspaceProvider.jsx";
 import { formatCost, formatCostRate, labelCostsInText } from "../money.js";
 import "./CalendarReplacement.css";
@@ -13,7 +14,9 @@ import "./CalendarReplacement.css";
 // The answer of replacement over a shutdown calendar: the rule in plain words
 // and its cost a year first, then what simpler rules cost (a chart and a
 // table), where the cost goes, and the next months' shuts by date.
-export default function CalendarReplacementResult({ result, wt }) {
+// ``actions`` (the live tool's Save) sits with the answer; Export CSV is
+// always there.
+export default function CalendarReplacementResult({ result, wt, actions = null, name = "" }) {
   const [showAll, setShowAll] = useState(false);
   const unit = unitInText(result.unit);
   const currency = useCurrency();
@@ -63,6 +66,14 @@ export default function CalendarReplacementResult({ result, wt }) {
       >
         Today ({formatDate(result.today)}) is time 0. {result.method_label}.
       </ResultSummary>
+      <div className="rs-actions">
+        {actions}
+        <button type="button" className="secondary"
+                onClick={() => saveText(calendarCsv(result),
+                  `${String(name || "Shutdown calendar").replace(/[^\w\- ]+/g, "").trim() || "shutdown-calendar"}.csv`)}>
+          Export CSV
+        </button>
+      </div>
 
       <section className="cal-block" data-testid="calendar-rule">
         <h3>The rule</h3>

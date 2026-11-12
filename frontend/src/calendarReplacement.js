@@ -3,6 +3,7 @@
 // dates into model time with "today = 0"; the form sends dates as given.
 
 import * as dates from "./dates.js";
+import { csvNumber, toCsv } from "./csv.js";
 
 export const TIME_UNITS = ["Hours", "Days", "Weeks", "Months", "Years"];
 export const EVERY_UNITS = ["days", "weeks", "months", "years"];
@@ -112,4 +113,25 @@ export function dearer(fraction) {
   if (Math.abs(fraction) < 0.0005) return "the same";
   const p = fraction * 100;
   return `${p > 0 ? "+" : ""}${Math.abs(p) >= 10 ? Math.round(p) : p.toFixed(1)}%`;
+}
+
+// The calendar answer as CSV: the rule and its cost a year, what simpler
+// rules cost, then every shut in the plan by date (threshold age and chance).
+export function calendarCsv(result) {
+  const r = result || {};
+  const n = csvNumber;
+  const unit = String(r.unit || "").toLowerCase();
+  const rows = [
+    ["today", r.today ?? ""], ["model_time_unit", r.unit ?? ""], ["method", r.method ?? ""],
+    ["cost_per_year", n(r.cost_per_year) ?? ""], ["cost_per_year_se", n(r.cost_per_year_se) ?? ""],
+    ["recommendation", r.recommendation ?? ""],
+    [],
+    ["rule", "cost_per_year", "vs_best"],
+    ...(r.comparisons || []).map((c) => [c.label, n(c.cost_per_year) ?? "", n(c.vs_optimal) ?? ""]),
+    [],
+    ["date", "shut", "price", `replace_if_older_than_${unit || "model_units"}`, "chance"],
+    ...(r.schedule || []).map((s) => [s.date, s.kind, n(s.price) ?? "", s.threshold == null ? "never" : n(s.threshold),
+                                       n(s.chance) ?? ""]),
+  ];
+  return toCsv(rows);
 }

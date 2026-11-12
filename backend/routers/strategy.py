@@ -35,14 +35,17 @@ def optimal_replacement_endpoint(
     unplanned_cost: float | None = Body(default=None),
     unit: str | None = Body(default=None),
     extras: dict | None = Body(default=None),
+    use_per_year: float | None = Body(default=None),
+    units: float | None = Body(default=None),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
-    """Compute the cost-optimal preventive-replacement interval."""
+    """Compute the cost-optimal preventive-replacement interval (and the
+    block-replacement alternative; the saving a year with ``use_per_year``)."""
     try:
         return JSONResponse(
             content=strategy_service.optimal_replacement(
                 distribution_id, params, planned_cost, unplanned_cost, unit=unit,
-                extras=extras,
+                extras=extras, use_per_year=use_per_year, units=units,
             )
         )
     except StrategyError as exc:
@@ -180,14 +183,19 @@ def failure_finding_endpoint(
     target_availability: float = Body(...),
     unit: str | None = Body(default=None),
     extras: dict | None = Body(default=None),
+    test_duration: float | None = Body(default=None),
+    test_cost: float | None = Body(default=None),
+    renewed_at_test: bool = Body(default=True),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
-    """Failure-finding interval for a hidden failure (protective device)."""
+    """Failure-finding interval for a hidden failure (protective device),
+    from the model's curve, with its 90% one-sided bound."""
     try:
         return JSONResponse(
             content=strategy_service.failure_finding(
                 distribution_id, params, target_availability, unit=unit,
-                extras=extras,
+                extras=extras, test_duration=test_duration, test_cost=test_cost,
+                renewed_at_test=renewed_at_test,
             )
         )
     except StrategyError as exc:

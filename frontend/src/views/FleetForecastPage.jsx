@@ -21,6 +21,7 @@ import { unitInText } from "../components/unitText.js";
 import { itemsWithoutUsage, usageInputValue } from "../fleetUsage.js";
 import ScrollCue from "../components/ui/ScrollCue.jsx";
 import FleetSparesCard from "../components/FleetSparesCard.jsx";
+import FleetStrategyCard, { FleetStrategyFields } from "../components/FleetStrategy.jsx";
 import { PageTitle } from "../components/usePageTitle.js";
 
 const METHOD_OPTIONS = [
@@ -225,6 +226,7 @@ export default function FleetForecastPage() {
   const range = lo != null && hi != null ? `${formatNumber(lo, { sig: 3 })}–${formatNumber(hi, { sig: 3 })}` : null;
   const counted = repairable
     ? ", including repeat failures after repair"
+    : forecast.strategy?.kind === "age" ? ", with planned replacement as well"
     : forecast.method === "renewals" ? ", including replacements failing again" : "";
   const rangeHint = forecast.interval_method === "exact"
     ? "Exact, given the model"
@@ -239,7 +241,10 @@ export default function FleetForecastPage() {
   const formOpen = !readOnly && (editing || noUsage > 0);
   const methodText = repairable
     ? "every failure counted (repairable)"
-    : single ? "first failures only" : "failed items replaced";
+    : single ? "first failures only"
+    : settings.strategy === "age" && !blank(settings.replace_at)
+      ? `replaced at ${formatNumber(settings.replace_at, { sig: 6 })}${unit ? ` ${unitInText(unit)}` : ""} or on failure`
+      : "failed items replaced";
   const assumptions = [
     Number(settings.default_rate) > 0
       ? `${formatNumber(settings.default_rate, { sig: 6 })}${unit ? ` ${unitInText(unit)}` : ""} of use a ${settingsWord} per item`
@@ -352,6 +357,10 @@ export default function FleetForecastPage() {
               Set the usage per {settingsWord}: {noUsage === items.length ? "the items have" : `${noUsage} item${noUsage === 1 ? " has" : "s have"}`} no
               own rate, so without it they don’t age and the forecast can’t count any failures.
             </p>
+          )}
+
+          {!repairable && !byConditions && !single && (
+            <FleetStrategyFields settings={settings} unit={unit} readOnly={readOnly} onSetting={setSetting} />
           )}
 
           {fields.length > 0 && (
@@ -502,6 +511,9 @@ export default function FleetForecastPage() {
           )}
         </div>
       )}
+
+      {/* The strategy's failures, planned replacements, parts and cost, by year. */}
+      {showAnswer && !dirty && <FleetStrategyCard forecast={forecast} />}
 
       {/* #297: the spares answer, from the same forecast (lead time + service level → hold N). */}
       {showAnswer && (

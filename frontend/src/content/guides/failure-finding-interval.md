@@ -38,40 +38,57 @@ device must be able to work when demanded. 99 is a common starting point; your
 safety study may set a stricter one. Type 99, not 0.99: a value of 1 or less
 asks "Did you mean 99%?" before anything is computed. A saved model brings its
 time unit; with parameters typed in, add the **Unit** (hours here) so the
-answer reads in it. Press **Compute**.
+answer reads in it.
 
-![The failure-finding interval: test every 175 hours for 99% availability](/guides/img/ff-01-result.png)
+Three optional inputs follow:
+
+- **Each test takes** — time the device is off-line for the test, in the
+  model's unit. It counts as unavailable, so a long test pushes the interval
+  out (testing too often then costs availability).
+- **Cost per test** — adds what the tests cost a year.
+- **Each test renews the device** — on (the default) when a test overhauls or
+  replaces the device, as a bench-tested relief valve is; off when a test only
+  checks it and leaves a working one as it was.
+
+Press **Compute**.
+
+![The failure-finding interval: test every 176 hours for 99% availability](/guides/img/ff-01-result.png)
 
 ## Read the answer
 
-The answer is one sentence: *Test every ≈ 175 hours to keep availability at
-99%.* Beside it is the device's mean life, the **MTTF**, here 8,760 hours.
+The answer is one sentence: *Test every ≈ 176 hours to keep average
+availability at 99%.* Beside it is the device's mean life, the **MTTF**, here
+8,760 hours. For a model fitted to data, a second figure is the **cautious
+end**: the interval at the fit's 90% one-sided bound, the shorter one. Use it
+when the decision is close, for example between six-monthly and yearly tests.
 
 In plain words: if the device fails at a random moment between tests, it sits
-failed and unnoticed for, on average, half the test interval. To keep that
-hidden downtime to 1% of the time, the interval must be a small fraction of the
-mean life.
+failed and unnoticed until the next test finds it. Reliafy works out, from the
+device's own life curve, the share of each interval it sits failed, and finds
+the longest interval that keeps that share within 1%.
 
-**Details** shows the formula, the standard first-order approximation:
+You may know the shortcut *interval = 2 × (1 − availability) × MTTF*
+(2 × 0.01 × 8,760 ≈ 175 hours). It holds only for a constant failure rate,
+and only near 100%. For a device that wears out, or whose failures come early,
+it can be badly wrong: on a Weibull life it can ask for nearly three times as
+many tests as needed, or too few. Reliafy shows it under **Details** for
+reference and warns when it is far from the real answer.
 
-> Interval = 2 × (1 − availability) × MTTF = 2 × 0.01 × 8,760 ≈ 175 hours
+Two things follow:
 
-It's accurate for targets above about 90%. Below that the answer is
-conservative: the true interval can be longer, and the result says so.
-
-Two things follow from the formula:
-
-- **Halving the unavailability halves the interval.** Going from 99% to 99.5%
-  means testing twice as often.
+- **Halving the unavailability about halves the interval.** Going from 99% to
+  99.5% means testing about twice as often.
 - **A more reliable device can be tested less often.** Double the MTTF and the
-  interval doubles.
+  interval about doubles.
 
-The approximation assumes the test is perfect and takes no time, and that a
-failure it finds is repaired at once. If the test itself takes the device out
-of service, or doesn't find every failure, or the device sits in a redundant
-arrangement, model it as a block in a
+The answer assumes the test finds every failure and that a failure it finds is
+repaired at once. If the test doesn't find every failure, or the device sits in
+a redundant arrangement, model it as a block in a
 [reliability block diagram](/guides/verify-a-safety-function) instead. There a
 proof-tested block's interval, test coverage and test duration all count.
+
+You can also open this tool from a saved model: **Use this model › Set a test
+interval (hidden failure)**.
 
 ## Save it as evidence
 
@@ -83,7 +100,7 @@ A saved failure-finding analysis is the evidence an RCM study expects for a
 *Failure-finding task*. In the study's decision dialog, choose the failure mode's
 consequence (**Hidden**), the decision **Failure-finding task**, the task and its
 interval, and link this analysis. The decision then reads **Supported**: *Check
-every ~175 hours for 99% availability.* See
+every ~176 hours for 99% availability.* See
 [running an RCM study](/guides/rcm-study).
 
 Keep the units the same in both places. If the task interval is in days and the
