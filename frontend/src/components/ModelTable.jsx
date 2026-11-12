@@ -296,12 +296,13 @@ function RbdDetails({ d, model, age, onAge }) {
       <h3 className="ml-h">Blocks</h3>
       <div className="maint-scroll">
         <table className="ml-params ml-blocks">
-          <thead><tr><th>Block</th><th>Model</th><th>From</th></tr></thead>
+          <thead><tr><th>Block</th><th>Model</th><th>Where its model came from</th><th>From</th></tr></thead>
           <tbody>
             {blocks.map((b) => (
               <tr key={b.id}>
                 <td>{b.label}</td>
                 <td>{b.placeholder ? <Chip tone="warning" title="A placeholder: no model in use for this position yet">Placeholder</Chip> : b.model}</td>
+                <td>{b.placeholder ? "No model in use, from its class or inside it" : b.source || <span className="rw-blank">—</span>}</td>
                 <td>{b.position ? b.position.name : <span className="rw-blank">—</span>}</td>
               </tr>
             ))}
@@ -354,6 +355,58 @@ export function RbdLinkModal({ position, onClose, onDone }) {
           ))}
         </div>
       )}
+      {failed && <p className="field-error" role="alert">{failed}</p>}
+    </Modal>
+  );
+}
+
+// "New blank RBD…" (RBD ›): a diagram of the position's own, any position (a leaf included),
+// linked here as its RBD (as a built one is) and opened in the table area. Which kind (default
+// non-repairable), and what it starts with: empty, or one block for the position itself with its
+// life model in use (the obvious start for a leaf; a placeholder, flagged, where it has none).
+export function NewRbdModal({ position, hasInside = false, hasModel = false, onClose, onDone }) {
+  const [repairable, setRepairable] = useState(false);
+  const [start, setStart] = useState(!hasInside ? "self" : "blank");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(null);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const made = await linkPositionModel(position.id, { new_rbd: { repairable, start } });
+      onDone(made, `Started ${made.name}.${made.placeholders?.length ? " Its block is a placeholder until the position has a life model." : ""}`);
+    } catch (e) {
+      setBusy(false);
+      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
+    }
+  };
+  return (
+    <Modal title="New blank RBD" onClose={onClose} locked={busy} trapFocus className="ml-dialog"
+           footer={(
+             <>
+               <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+               <button type="button" onClick={save} disabled={busy} aria-busy={busy || undefined}>{busy ? "Starting…" : "Start the RBD"}</button>
+             </>
+           )}>
+      <p className="rw-fhelp">A new diagram for {position.name}, saved in your RBDs and linked here as its RBD. It opens beside the tree.</p>
+      <Field label="Kind">
+        <SegmentedControl label="Kind of RBD" value={repairable ? "repairable" : "non"} onChange={(v) => setRepairable(v === "repairable")}
+                          options={[{ value: "non", label: "Non-repairable" }, { value: "repairable", label: "Repairable" }]} />
+      </Field>
+      <p className="rw-fhelp">{repairable
+        ? "Repairable: blocks are repaired when they fail, and the answer is availability (with maintenance read from the tree)."
+        : "Non-repairable: the answer is the system's reliability and life."}</p>
+      <div className="evidence-picker" role="radiogroup" aria-label="Start with">
+        <label className={"evidence-option" + (start === "self" ? " selected" : "")}>
+          <input type="radio" name="nr-start" checked={start === "self"} onChange={() => setStart("self")} />
+          <span className="evidence-name">One block for {position.name}</span>
+          <span className="rim-tquiet"> {hasModel ? "its life model in use" : "a placeholder until it has a life model"}</span>
+        </label>
+        <label className={"evidence-option" + (start === "blank" ? " selected" : "")}>
+          <input type="radio" name="nr-start" checked={start === "blank"} onChange={() => setStart("blank")} />
+          <span className="evidence-name">Empty</span>
+          <span className="rim-tquiet"> just In and Out: draw the blocks yourself</span>
+        </label>
+      </div>
       {failed && <p className="field-error" role="alert">{failed}</p>}
     </Modal>
   );

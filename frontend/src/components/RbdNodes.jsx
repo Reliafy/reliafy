@@ -171,6 +171,7 @@ function ComponentCard({ id, nodeId = id, data, repeat = false, missing = false 
   const rep = !repairable ? "" : data.instant_repair ? "instant repair" : repairLine(data.repair, rbdUnit);
   const detail = [
     data.model ? `Life: ${modelSummary(data.model)}` : null,
+    data.model_source ? `From: ${data.model_source}` : null,
     repairable && data.repair && !data.instant_repair ? `Repair: ${modelSummary(data.repair)}` : null,
     repairable && data.instant_repair ? "Repaired instantly" : null,
   ].filter(Boolean).join("\n");
@@ -337,6 +338,7 @@ export function StructureNode({ id, data: nodeData, type }) {
   const title = [
     data.label,
     data.model ? `Life: ${modelSummary(data.model)}` : null,
+    data.model_source ? `From: ${data.model_source}` : null,
     repairable && data.repair ? `Repair: ${modelSummary(data.repair)}` : null,
   ].filter(Boolean).join("\n");
 

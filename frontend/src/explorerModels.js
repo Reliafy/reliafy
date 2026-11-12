@@ -348,7 +348,10 @@ export function predictionWords(source = {}) {
 // `builtRbd`: it already has an RBD built from what's inside (builtRbdLink), so the RBD group
 // opens that one and offers Rebuild instead of Build: a position has one built diagram, however
 // often the menu is used.
-export function attachGroups({ positionClass = "", hasPrediction = false, hasLifeModel = false, builtRbd = false, viewOnly = null } = {}) {
+// `hasInside`: positions inside it to build from (a leaf has none: Build is greyed and New blank
+// RBD… is the way in). New blank RBD… is offered on every position (Derryn, 12 Nov 2026).
+export function attachGroups({ positionClass = "", hasPrediction = false, hasLifeModel = false, builtRbd = false, viewOnly = null,
+  hasInside = true } = {}) {
   const off = viewOnly ? { disabled: true, reason: viewOnly } : {};
   return [
     { id: "model-group-life", label: "Life model", items: [
@@ -367,7 +370,9 @@ export function attachGroups({ positionClass = "", hasPrediction = false, hasLif
       ...(builtRbd
         ? [{ id: "model-attach-rbd-open", label: "Open the RBD" },
            { id: "model-attach-rbd-rebuild", label: "Rebuild from what's inside…", ...off }]
-        : [{ id: "model-attach-rbd-build", label: "Build from what's inside…", ...off }]),
+        : [{ id: "model-attach-rbd-build", label: "Build from what's inside…", ...off,
+             ...(hasInside || viewOnly ? {} : { disabled: true, reason: "Nothing inside to build from: start a new blank RBD" }) }]),
+      { id: "model-attach-rbd-new", label: "New blank RBD…", ...off },
       { id: "model-attach-rbd-link", label: "Link an existing RBD…", ...off },
     ] },
     { id: "model-group-prediction", label: "Prediction", items: [
@@ -377,10 +382,12 @@ export function attachGroups({ positionClass = "", hasPrediction = false, hasLif
   ];
 }
 
-// Of a position's model rows, its RBD built from what's inside (the one in use first), or null.
+// Of a position's model rows, its own RBD: built from what's inside or started blank there (New
+// blank RBD…), the one in use first; or null.
 // The same pick as the backend's (position_models.built_rbd_link), which never builds a second.
 export function builtRbdLink(links, positionId) {
-  const built = (links || []).filter((l) => l.position_id === positionId && l.model_type === "rbd" && l.source?.built_from != null);
+  const built = (links || []).filter((l) => l.position_id === positionId && l.model_type === "rbd"
+    && (l.source?.built_from != null || l.source?.new));
   return built.find((l) => l.in_use) || built[0] || null;
 }
 

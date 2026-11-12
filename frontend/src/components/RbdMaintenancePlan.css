@@ -64,3 +64,12 @@
 .rbd-plan { position: relative; z-index: 1; }
 /* A note or settings row under a block stays in view when the table scrolls sideways on a phone. */
 .rbd-plan-pin { position: sticky; left: 0; display: inline-block; max-width: min(100%, calc(100vw - 72px)); white-space: normal; }
+
+/* A block standing for a position: its task is read from the tree, shown here, edited there. */
+.rbd-plan-tree { margin: 8px 0 4px; font-size: var(--fs-13); line-height: 1.45; max-width: 80ch; }
+.rbd-plan-block.is-tree > tr:first-child > th { box-shadow: inset 3px 0 0 var(--acc); }
+.rbd-plan-from a { font-weight: 400; font-size: var(--fs-12, 0.75rem); }
+.rbd-plan-tree-task span { display: block; }
+.rbd-plan-treenote td { padding-top: 0; font-size: var(--fs-13); white-space: normal; }
+.rbd-plan-flag { color: var(--muted); }
+.rbd-plan-edit-tree { font-weight: 600; }

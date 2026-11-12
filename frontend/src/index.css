@@ -1629,6 +1629,17 @@ h6 {
   cursor: pointer;
 }
 
+.rbd-menu a.rbd-menu-link {
+  display: block;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  color: var(--ink);
+  text-decoration: none;
+}
+.rbd-menu a.rbd-menu-link:hover { background: var(--acc-t); color: var(--acc); }
+
 .rbd-menu button:hover:not(:disabled) {
   background: var(--acc-t);
   color: var(--acc);

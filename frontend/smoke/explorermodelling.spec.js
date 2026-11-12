@@ -249,7 +249,7 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
   await headMenu(page);
   await page.getByRole("menuitem", { name: "RBD", exact: true }).click();
   await expect(page.getByRole("menu", { name: "RBD" }).getByRole("menuitem"))
-    .toHaveText(["Open the RBD", "Rebuild from what's inside…", "Link an existing RBD…"]);
+    .toHaveText(["Open the RBD", "Rebuild from what's inside…", "New blank RBD…", "Link an existing RBD…"]);
   await page.getByRole("menu", { name: "RBD" }).getByRole("menuitem", { name: "Open the RBD" }).click();
   await expect(pane).toBeVisible();
   expect(rbdOf(page)).toBe(first);
@@ -471,7 +471,7 @@ test("a position's row menu on the Modelling tab is two levels, and Enter parame
   // The keyboard: → opens a group.
   await menu.getByRole("menuitem", { name: "RBD", exact: true }).focus();
   await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("menu", { name: "RBD" }).getByRole("menuitem")).toHaveText(["Build from what's inside…", "Link an existing RBD…"]);
+  await expect(page.getByRole("menu", { name: "RBD" }).getByRole("menuitem")).toHaveText(["Build from what's inside…", "New blank RBD…", "Link an existing RBD…"]);
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   // Enter parameters…: a Weibull typed in, saved and attached.

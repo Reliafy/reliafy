@@ -6,7 +6,7 @@ import {
 import { graftMeasurements, isMeasRow, measAddActions, measKey, openForMeasurements, rollupText as measRollup } from "../explorerMeasurements.js";
 import { measurementsCsv } from "../measurementsTable.js";
 import {
-  LibraryAttachModal, MODEL_COLUMNS, MODEL_TREE_HEAD, ModelCell, ModelDialogs, ModelSide, ParamsModal, RbdLinkModal, modelPhoneRow, modelRowActions,
+  LibraryAttachModal, MODEL_COLUMNS, MODEL_TREE_HEAD, ModelCell, ModelDialogs, ModelSide, NewRbdModal, ParamsModal, RbdLinkModal, modelPhoneRow, modelRowActions,
   unlinkModel, useTreeModels,
 } from "../components/ModelTable.jsx";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
@@ -1294,7 +1294,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The Modelling tab's attach groups for a position (explorerModels.attachGroups), and what each item opens.
   const predictionOf = (pid) => (pmodels.links || []).find((l) => l.position_id === pid && l.role === "prediction") || null;
   const modelGroups = (pid, positionClass) => attachGroups({ positionClass: positionClass || "", hasPrediction: !!predictionOf(pid),
-    hasLifeModel: !!lifeModelOf(pmodels.links, pid), builtRbd: !!builtRbdLink(pmodels.links, pid), viewOnly });
+    hasLifeModel: !!lifeModelOf(pmodels.links, pid), builtRbd: !!builtRbdLink(pmodels.links, pid), viewOnly,
+    hasInside: insideOf(pid).length > 0 });
   const attachAt = (pid, id) => {
     const rr = whole.rows.get(pid);
     const position = { id: pid, name: rr?.ref.name || "(no name)", position_class: rr?.ref.position_class || "" };
@@ -1302,6 +1303,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (id === "model-attach-predict") return openPredict(position);
     if (id === "model-refresh-predict") return openPredict(position, predictionOf(pid));
     if (id === "model-attach-rbd-build") return buildRbd(position);
+    if (id === "model-attach-rbd-new") {
+      return setModelModal({ kind: "rbd-new", position, hasInside: insideOf(pid).length > 0, hasModel: !!lifeModelOf(pmodels.links, pid) });
+    }
     if (id === "model-attach-rbd-open") return openRbd(position, builtRbdLink(pmodels.links, pid)?.model_id);
     if (id === "model-attach-rbd-rebuild") return askRebuild(position, builtRbdLink(pmodels.links, pid));
     // Add to a library…: the position's life model in use (else its first) snapshotted into a data library.
@@ -2647,7 +2651,18 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                         openRbd(position, made.model_id);
                       }} />
       )}
-      <ModelDialogs modal={["rbd-link", "params", "library", "to-library"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
+      {modelModal?.kind === "rbd-new" && (
+        <NewRbdModal position={modelModal.position} hasInside={modelModal.hasInside} hasModel={modelModal.hasModel}
+                     onClose={() => setModelModal(null)}
+                     onDone={(made, text) => {
+                       const position = modelModal.position;
+                       setModelModal(null);
+                       say(text);
+                       pmodels.load();
+                       openRbd(position, made.model_id);
+                     }} />
+      )}
+      <ModelDialogs modal={["rbd-link", "rbd-new", "params", "library", "to-library"].includes(modelModal?.kind) ? null : modelModal} onClose={() => setModelModal(null)}
                     onDone={(made, text) => { setModelModal(null); say(text); pmodels.load(); }} />
       <MeasDialogs modal={measModal} onClose={() => setMeasModal(null)} onSaid={(text) => say(text)}
                    onDone={() => { setMeasModal(null); meas.load(); }} />

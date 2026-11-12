@@ -1280,6 +1280,39 @@ def add_position_mission(position_id: str, body: dict = Body(default={}), sessio
     return _run(pm.build_mission_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner, name)
 
 
+@router.post("/rbd-tree-plan")
+def rbd_tree_plan(body: dict = Body(...), session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                  m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """A saved RBD's maintenance plan as its position's tasks give it (rbd_tree_plan.py): rbd_id, and
+    graph (the diagram as it stands in the builder; default the saved one). For each block standing
+    for a position inside the one the RBD is linked to: the position's tasks, the one modelled (its
+    kind, interval in the diagram's unit, time off-line, cost, package), what's blank and why, and a
+    missing repair time. Reads only: the tasks are edited on the Explorer's Maintenance tab."""
+    from backend.maintenance import rbd_tree_plan as tp
+    from backend.maintenance.position_models import fetcher
+
+    def run():
+        doc = fetcher(session, ctx.read_owners, ctx.hidden)("rbd", str(body.get("rbd_id") or ""))
+        if doc is None:
+            raise NotFound("RBD")
+        graph = body.get("graph") if isinstance(body.get("graph"), dict) else doc.graph or {}
+        return {"rbd_id": doc.id, **tp.plans_for_graph(m, doc.id, graph)}
+
+    return _run(run)
+
+
+@router.get("/rbd-plan-uses")
+def rbd_plan_uses(task_ids: str = "", session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                  m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The repairable RBDs whose plans read these tasks (task_ids, comma-separated): each RBD, the
+    block, whether the task is the one modelled there, and the RBD's last saved availability
+    calculation (and whether it used an older version of the task)."""
+    from backend.maintenance import rbd_tree_plan as tp
+
+    ids = [x for x in task_ids.split(",") if x]
+    return _run(lambda: {"uses": tp.rbds_using_tasks(m, session, ctx.read_owners, ctx.hidden, ids)})
+
+
 @router.get("/position-models/{link_id}")
 def position_model(link_id: str, age: float | None = None, session=Depends(get_session),
                    ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
@@ -1298,7 +1331,8 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
     degradation_model, alt_model), the position class's (from_class true) or a new fit from its failure
     history (fit true; distribution, scope auto | position | class). failure_mode_ids: the failure modes it's
     for; replace_link_id: the model on the position it takes the place of; note. An RBD: rbd_id (an existing diagram, linked as
-    it is) or build_rbd true (a new one from the positions inside; with replace_link_id, rebuilt into the
+    it is), new_rbd {repairable, start: blank | self (one block, the position's own model in use)}, or
+    build_rbd true (a new one from the positions inside; with replace_link_id, rebuilt into the
     same diagram). use_link_id: make that row the position's model in use.
     """
     from backend import fitting
@@ -1321,6 +1355,17 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
     if body.get("use_link_id"):
         # Which of the position's rows is the model in use.
         return _run(m.use_position_model, position_id, str(body["use_link_id"]))
+    if isinstance(body.get("new_rbd"), dict):
+        # New blank RBD: any position, a leaf included ({repairable, start: blank | self}).
+        from backend.services import billing as billing_service
+
+        if ctx.is_personal and not billing_service.is_admin_user(ctx.user) \
+                and billing_service.would_exceed_cap(session, ctx.uid, "rbds"):
+            return JSONResponse(status_code=402, content={
+                "detail": billing_service.cap_message(session, ctx.uid, "rbds"), "code": "cap", "upgrade": True})
+        spec = body["new_rbd"]
+        return _run(pm.new_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner,
+                    bool(spec.get("repairable")), str(spec.get("start") or "blank"), note)
     if body.get("build_rbd"):
         return _run(pm.build_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner, replace, note)
     if body.get("rbd_id"):

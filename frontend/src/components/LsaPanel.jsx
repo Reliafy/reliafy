@@ -19,6 +19,7 @@ import {
 import { saveText } from "../sparesPlan.js";
 import { exportFilename } from "../rcmImport.js";
 import LsaTask from "./LsaTask.jsx";
+import RbdTaskUses from "./RbdTaskUses.jsx";
 import MaintenanceTask, { TradeRates } from "./MaintenanceTask.jsx";
 import { PlusIcon } from "./LibRows.jsx";
 import { isDesignRow } from "../explorerTabs.js";
@@ -834,6 +835,7 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
                   empty={<span className="lib-date">No labour, tools or spares set yet: open a task to add them.</span>} />
         </div>
       )}
+      {maint && all?.length > 0 && <RbdTaskUses taskIds={all.map((t) => t.id)} version={version} />}
       {maint && shown?.length > 0 && (
         <div className="pk-actions pk-design-foot" role="region" aria-label="What the tasks cost">
           <span className="pk-actions-n">{shown.length === all.length ? plural(all.length, "task") : `${shown.length} of ${plural(all.length, "task")}`}</span>

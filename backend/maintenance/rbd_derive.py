@@ -49,7 +49,9 @@ def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days") -
             if fields is None:
                 fields = {"model": dict(PLACEHOLDER)}
                 placeholders.append(c["name"])
-            nodes.append({"id": _bid(c["id"]), "type": "component", "label": c["name"], **fields})
+            # A position whose block is an RBD of its own is a sub-system block (analysed as one).
+            sub = fields.get("subsystem_rbd_id") or ((fields.get("data") or {}).get("rbd") or {}).get("id")
+            nodes.append({"id": _bid(c["id"]), "type": "subsystem" if sub else "component", "label": c["name"], **fields})
             continue
         cls = (c.get("position_class") or "").strip()
         model_node = m.s.node(m.org, class_id(m.org, cls)) if cls else None

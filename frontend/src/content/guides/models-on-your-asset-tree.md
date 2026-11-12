@@ -150,10 +150,16 @@ there are failures.
 Every position can have a life model, an RBD or a prediction. For a system
 made of the positions inside it, **RBD › Build from what's inside…** makes a
 reliability block diagram (under Design › Systems) whose blocks are the
-positions one level down, each taking its model in use (a position with its
-own RBD comes in as a sub-system). They're wired by their connections and
-redundancy groups, in series where there are none. A position with no model
-gets a placeholder, flagged: the row warns until each has a model. The diagram
+positions one level down. Each block takes the position's life model in use;
+with none, its class's fitted model; with neither but positions inside it (a
+sub-assembly such as Propulsion, whose lives are its motors' and propellers'),
+its own RBD, built from what's inside it the same way and brought in as a
+sub-system (a position with its own RBD in use comes in as a sub-system too).
+Only a position with none of these gets a placeholder, flagged: the row warns
+until each has a model, and a placeholder inside a sub-system is named with
+its path (Propulsion › ESC 1). Each block's tooltip, and the RBD row's panel,
+say where its model came from. They're wired by their connections and
+redundancy groups, in series where there are none. The diagram
 opens in the RBD builder, filling the table area beside the tree, with the
 whole diagram in view (a long chain is folded into rows); edit its blocks and
 connections there and **Save**, just as on the diagram's own page. **×** or Esc
@@ -164,6 +170,31 @@ the same way.
 A position has one diagram built this way. Once it has one, the menu reads
 **RBD › Open the RBD**, which opens it, so using the menu again never makes a
 second diagram.
+
+**RBD › New blank RBD…** starts a diagram of the position's own, on any
+position, a leaf included. Choose **Non-repairable** (the default) or
+**Repairable**, and start either with **one block for the position itself**
+(its life model in use, or a placeholder until it has one) or **empty**. It's
+saved in your RBDs, linked to the position as its RBD, and opens beside the
+tree.
+
+### Maintenance in a repairable RBD comes from the tree
+
+In a repairable RBD linked to a position, each block that stands for a
+position takes its planned work from that position's tasks on the
+**Maintenance** tab: what the task does (from its RCM decision: replace,
+inspect on condition or proof test), how often, how long it takes the block
+off-line (its LSA), what it costs each time and its work package. The tasks
+are read each time the diagram is shown or calculated; nothing is copied into
+the diagram. In the builder's **Maintenance plan** those rows are read only,
+with **Edit in the tree**; a position with no tasks runs to failure, with
+**Add a task in the tree**. The diagram keeps only its own settings: duty, crew
+priority, and under **More** what a task can't say (an on-condition
+replacement's threshold, cost and time off-line). What nothing says (a cost, a
+repair time) is left blank and flagged. A saved simulation run before a task
+changed says it's out of date, and isn't rerun until you ask. The position's
+Maintenance tab lists the RBDs that use its tasks. Blocks drawn by hand keep
+their own plan.
 
 Blocks built from the tree are in series unless the tree says otherwise, so
 the Calculator may note that like blocks ("Motor 1" to "Motor 4") are in
@@ -177,7 +208,8 @@ system's reliability there. Double-click the row (or **Open in the pane**) to
 edit the diagram beside the tree; **Open full page** opens it on its own page.
 **Rebuild from what's inside…** (on the row, or under **RBD ›**) opens the
 diagram and asks first; **Rebuild** then adds the positions inside that have
-no block yet, keeping your edits.
+no block yet, and gives a block still on a placeholder the model its position
+has now, keeping your other edits.
 
 ## The model in use
 

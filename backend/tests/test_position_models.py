@@ -600,8 +600,9 @@ def test_a_parent_rbd_takes_a_childs_rbd_as_a_sub_system(m, db):
     m.use_position_model(line, sub["id"])
     parent = pm.build_rbd(m, db, OWNERS, set(), top)
     rbd = db.rbds.find_one({"_id": parent["model_id"]})
-    [block] = [n for n in rbd["graph"]["nodes"] if n["type"] == "component"]
-    assert (block["data"].get("rbd") or {}).get("id") == sub["model_id"]
+    # A sub-system block (it was drawn as a component with no model, so it couldn't be analysed).
+    [block] = [n for n in rbd["graph"]["nodes"] if n["type"] not in ("input", "output")]
+    assert block["type"] == "subsystem" and (block["data"].get("rbd") or {}).get("id") == sub["model_id"]
     linked = pm.link_rbd(m, db, OWNERS, set(), top, "sample-rbd-pump-station")
     [row] = [r for r in pm.describe(m, db, OWNERS, set(), m.position_models(top)) if r["id"] == linked["id"]]
     assert row["source_text"].startswith("Linked: ")
