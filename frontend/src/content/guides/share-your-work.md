@@ -66,6 +66,10 @@ Reports belong to the workspace they're made in: in a team workspace you see
 that team's reports, which every member can read. Public links are for items
 in your Personal workspace for now.
 
+A public link to a model or a diagram also offers **Download as Python** (in the **⋯** menu on a
+model), so the person you share it with can rerun it without an account.
+
+
 ## Sharing with a named person — for a specific colleague
 
 In the same dialog, **Share with (email)** shares that one artifact with someone

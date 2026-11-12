@@ -29,24 +29,26 @@ view, with a row for every block. This is the one place a block's planned work
 is set. Select blocks on the canvas to show just their rows; **Show all** brings
 the rest back. Changes apply as you type; save the diagram to keep them.
 
-![The maintenance plan: each block's duty, task, interval, time off-line, cost and group](/guides/img/costs-00-plan.png)
+![The maintenance plan: how much of the time each block runs, its task, interval, time off-line, cost and group](/guides/img/costs-00-plan.png)
 
 Each row has:
 
-- **Duty**: the share of the time the block runs, as a percentage. Blank means
+- **Runs**: the share of the time the block runs ("Runs 25% of the time"), as a
+  percentage. Blank means
   it runs all the time. Set it when the block's life was measured in running
   hours: a pump that runs 25% of the time lasts four times as long in calendar
   time, and the diagram takes that into account. Leave it blank when the life
   came from calendar dates.
-- **Task**: **Run to failure**, **Replace on age** (the clock restarts at a
-  failure), **Replace at fixed times** (at every multiple of the interval,
-  whatever its age), **Inspect on condition** (inspected, and replaced when the
+- **Task**: **Run to failure**, **Replace at age** (replaced when it reaches
+  this age since it was last replaced; a failure restarts the clock, as the
+  work orders count it), **Replace at fixed times** (at every multiple of the
+  interval, whatever its age: a package on fixed dates), **Inspect on condition** (inspected, and replaced when the
   chance of failing before the next inspection is too high) or **Proof test**
   (its failures stay hidden until a test finds them).
 - **Every**: how often. A replacement can be given in **running** time, such
-  as every 500 running hours. It's turned into calendar time through the duty,
-  and the row shows the result. With no duty, the row asks for one rather than
-  guess.
+  as every 500 running hours. It's turned into calendar time through **Runs**,
+  and the row shows the result. With **Runs** blank, the row asks for it rather
+  than guess.
 - **Takes**: how long the task takes the block off-line. Blank means no
   downtime.
 - **Cost**: per task. A range such as **300–700** is drawn afresh each time.

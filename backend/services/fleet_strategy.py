@@ -267,3 +267,58 @@ def renewals(dist, ages, uses, rates, periods: int, items, settings: dict, run_t
         **summary,
     }
     return out
+
+
+# ---- First-failure and repairable forecasts: the same block, from counts ----------
+#
+# The renewals forecast has its own simulation to read years and costs from.
+# The first-failures forecast (exact, Poisson-binomial) and the repairable one
+# (Poisson, or simulated over the fit) carry their own year ranges, worked out
+# by the forecast itself; here they become the same ``strategy`` block the card
+# and the CSV read, so every forecast shows its years and, with the cost of a
+# failure, what failures cost.
+
+COUNT_KINDS = ("first_failures", "repairable")
+
+
+def count_years(periods: int, period_days: Optional[float]) -> Optional[list[list[int]]]:
+    """The periods (0-based) in each year from now, or None (see :func:`_years`)."""
+    return _years(periods, period_days)
+
+
+def from_counts(kind: str, forecast: dict, groups: Optional[list[list[int]]], yearly_intervals,
+                period_days: Optional[float], failure_cost: Optional[float]) -> dict:
+    """``strategy`` for a forecast that counts failures only: ``kind`` is
+    first_failures or repairable. ``forecast`` has the totals, per period
+    (with ``per_period_interval``); ``yearly_intervals`` one ``[lo, hi]`` per
+    year of ``groups``. A count's cost is the count times the cost of a
+    failure, so its range is the count's range times that cost."""
+    def block(expected: float, interval) -> dict:
+        lo, hi = (interval or [expected, expected])[:2]
+        failures = {"expected": float(expected), "interval": [float(lo), float(hi)]}
+        row = {"failures": failures, "planned": {"expected": 0.0, "interval": [0.0, 0.0]}, "parts": dict(failures)}
+        if failure_cost is not None:
+            row["cost"] = {"expected": float(expected) * failure_cost,
+                           "interval": [float(lo) * failure_cost, float(hi) * failure_cost]}
+        return row
+
+    per = forecast.get("per_period") or []
+    bands = forecast.get("per_period_interval") or [None] * len(per)
+    out = {
+        "kind": kind,
+        "replace_at": None,
+        "failure_cost": failure_cost,
+        "planned_cost": None,
+        "catch_up": 0,
+        "total": block(forecast.get("expected", 0.0), forecast.get("interval")),
+        "per_period": [{"period": k + 1, **block(v, bands[k] if k < len(bands) else None)}
+                       for k, v in enumerate(per)],
+        "yearly": None,
+    }
+    if groups is not None and yearly_intervals is not None:
+        out["yearly"] = [
+            {"year": y + 1, "from_period": g[0] + 1, "to_period": g[-1] + 1,
+             "complete": _full_year(g, period_days),
+             **block(sum(float(per[k]) for k in g), yearly_intervals[y])}
+            for y, g in enumerate(groups)]
+    return out

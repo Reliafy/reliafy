@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import LoadFailed from "../components/LoadFailed.jsx";
 import Plot from "../components/Plot.jsx";
 import { ACCENT, INK, sentence } from "../plotTheme.js";
@@ -8,7 +8,7 @@ import FleetAlertsCard from "../components/FleetAlertsCard.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { useAskText } from "../components/ConfirmProvider.jsx";
 import { changedText, renamePrompt } from "../confirm.js";
-import { getFleet, putFleetItems, renameFleet } from "../api.js";
+import { duplicateFleet, getFleet, putFleetItems, renameFleet } from "../api.js";
 import { fleetForecastCsv } from "../fleetCsv.js";
 import { rangeLevelText } from "../levels.js";
 import Chip from "../components/ui/Chip.jsx";
@@ -21,7 +21,9 @@ import { unitInText } from "../components/unitText.js";
 import { itemsWithoutUsage, usageInputValue } from "../fleetUsage.js";
 import ScrollCue from "../components/ui/ScrollCue.jsx";
 import FleetSparesCard from "../components/FleetSparesCard.jsx";
-import FleetStrategyCard, { FleetStrategyFields } from "../components/FleetStrategy.jsx";
+import FleetStrategyCard, { FailureCostField, FleetStrategyFields } from "../components/FleetStrategy.jsx";
+import FleetItemsImport, { runningUnitsLabel, useRunningUnits } from "../components/FleetItemsImport.jsx";
+import { mergeItems, patchSelected, removeSelected } from "../fleetItemsImport.js";
 import { PageTitle } from "../components/usePageTitle.js";
 
 const METHOD_OPTIONS = [
@@ -96,6 +98,13 @@ export default function FleetForecastPage() {
   const askText = useAskText();
   // The assumptions line opens into its form (#311); a new forecast starts open.
   const [editing, setEditing] = useState(false);
+  // Adding items in bulk: "paste", "file" or "model" (the model's running units).
+  const [importMode, setImportMode] = useState(null);
+  // Rows ticked for a change to many at once (indexes into items).
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulk, setBulk] = useState({ current_use: "", rate: "" });
+  const navigate = useNavigate();
+  const runningUnits = useRunningUnits(id, !!fleet && !fleet.read_only && fleet.model_kind !== "alt");
 
   const load = () => {
     getFleet(id)
@@ -106,6 +115,7 @@ export default function FleetForecastPage() {
         setItems(f.items || []);
         setDirty(false);
         setConflict(false);
+        setSelected(new Set());
         setEditing((open) => open || (!f.read_only && !(f.items || []).length));
       })
       .catch((e) => setError(e.message));
@@ -166,7 +176,26 @@ export default function FleetForecastPage() {
     setItems((xs) => [...xs, { name: "", current_use: 0, rate: null, ...(repairable ? { next_service_at: null } : {}) }]);
     setDirty(true);
   };
-  const removeItem = (idx) => { setItems((xs) => xs.filter((_, i) => i !== idx)); setDirty(true); };
+  const removeItem = (idx) => { setItems((xs) => xs.filter((_, i) => i !== idx)); setSelected(new Set()); setDirty(true); };
+  const replaceItems = (next) => { setItems(next); setSelected(new Set()); setDirty(true); };
+  // The model's running units: straight in when the forecast has none yet,
+  // else a preview to add them or replace the items.
+  const takeModelUnits = () => {
+    if (items.length === 0 && runningUnits?.items?.length) replaceItems(mergeItems([], runningUnits.items));
+    else setImportMode("model");
+  };
+  const toggle = (idx) => setSelected((sel) => {
+    const next = new Set(sel);
+    if (next.has(idx)) next.delete(idx); else next.add(idx);
+    return next;
+  });
+  const allSelected = items.length > 0 && selected.size === items.length;
+  const setForSelected = (key) => {
+    const raw = bulk[key];
+    if (key === "current_use" && raw === "") return;
+    replaceItems(patchSelected(items, selected, { [key]: raw === "" ? null : raw }));
+    setSelected(new Set(selected));
+  };
 
   const onSave = async () => {
     setSaving(true);
@@ -184,6 +213,15 @@ export default function FleetForecastPage() {
       else setError(err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const onDuplicate = async () => {
+    try {
+      const copy = await duplicateFleet(id);
+      navigate(`/forecasts/${copy.id}`);
+    } catch (err) {
+      setError(err.message);
     }
   };
 
@@ -297,6 +335,12 @@ export default function FleetForecastPage() {
           <>
             <ShareButton collection="fleets" artifactId={fleet.id} name={fleet.name} readOnly={readOnly} className="ovm-item" />
             {!readOnly && <button className="ovm-item" onClick={onRename}>Rename</button>}
+            {(!readOnly || fleet.is_sample) && (
+              <button className="ovm-item" onClick={onDuplicate} disabled={dirty}
+                      title={dirty ? "Save first: the copy is of the saved forecast" : "A copy to change for another scenario"}>
+                Duplicate
+              </button>
+            )}
           </>
         }
       >
@@ -361,6 +405,14 @@ export default function FleetForecastPage() {
 
           {!repairable && !byConditions && !single && (
             <FleetStrategyFields settings={settings} unit={unit} readOnly={readOnly} onSetting={setSetting} />
+          )}
+          {(repairable || byConditions || single) && (
+            <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap" }}>
+              <FailureCostField settings={settings} readOnly={readOnly} onSetting={setSetting} />
+              <p className="muted-line" style={{ margin: 0, flex: "1 1 220px" }}>
+                With the cost of a failure, the forecast adds what failures cost each year.
+              </p>
+            </div>
           )}
 
           {fields.length > 0 && (
@@ -524,20 +576,80 @@ export default function FleetForecastPage() {
       <div className="card" style={{ marginTop: "1rem" }}>
         <CardHeader
           title="Items"
+          subtitle={items.length > 0 ? `${items.length} item${items.length === 1 ? "" : "s"}` : undefined}
           actions={!readOnly && items.length > 0 && (
-            <button className="secondary sm" onClick={addItem}><PlusIcon /> Add item</button>
+            <div className="fleet-items-tools">
+              {!importMode && runningUnits?.running > 0 && (
+                <button className="secondary sm" onClick={takeModelUnits}>{runningUnitsLabel(runningUnits)}</button>
+              )}
+              {!importMode && <button className="secondary sm" onClick={() => setImportMode("paste")}>Paste or upload</button>}
+              <button className="secondary sm" onClick={addItem}><PlusIcon /> Add item</button>
+            </div>
           )}
         />
+        {!readOnly && (
+          <FleetItemsImport mode={importMode} onMode={setImportMode} existing={items} onApply={replaceItems}
+                            unit={unit} fields={fields} repairable={repairable} warranty={showService}
+                            defaultRate={settings.default_rate} periodLabel={settings.period_label || "months"}
+                            runningUnits={runningUnits} />
+        )}
         {items.length === 0 ? (
-          <div className="fleet-items-empty">
-            <p className="muted-line">No items yet. Add each in-service unit with its accumulated use.</p>
-            {!readOnly && <button onClick={addItem}><PlusIcon /> Add item</button>}
-          </div>
+          !importMode && (
+            <div className="fleet-items-empty">
+              <p className="muted-line">
+                No items yet. Paste a list from Excel, upload a file{runningUnits?.running ? ", use the units in the model's data" : ""}, or
+                add each in-service unit with its accumulated use.
+              </p>
+              {!readOnly && (
+                <div className="fleet-items-tools" style={{ justifyContent: "flex-start" }}>
+                  {runningUnits?.running > 0 && <button onClick={takeModelUnits}>{runningUnitsLabel(runningUnits)}</button>}
+                  <button className={runningUnits?.running ? "secondary" : undefined} onClick={() => setImportMode("paste")}>
+                    Paste from Excel
+                  </button>
+                  <button className="secondary" onClick={() => setImportMode("file")}>Upload file</button>
+                  <button className="secondary" onClick={addItem}><PlusIcon /> Add item</button>
+                </div>
+              )}
+            </div>
+          )
         ) : (
+          <>
+          {!readOnly && selected.size > 0 && (
+            <div className="fleet-bulk-bar" role="group" aria-label="Change the selected items" data-testid="fleet-bulk-bar">
+              <b>{selected.size} selected</b>
+              <label className="login-field">
+                <span>Current use{unit ? ` (${unit})` : ""}</span>
+                <input type="number" inputMode="decimal" min="0" step="any" value={bulk.current_use}
+                       onChange={(e) => setBulk((b) => ({ ...b, current_use: e.target.value }))}
+                       onKeyDown={(e) => e.key === "Enter" && setForSelected("current_use")} />
+              </label>
+              <button className="secondary sm" onClick={() => setForSelected("current_use")} disabled={bulk.current_use === ""}>
+                Set
+              </button>
+              <label className="login-field">
+                <span>Own rate a {settingsWord}</span>
+                <input type="number" inputMode="decimal" min="0" step="any" value={bulk.rate} placeholder="blank: fleet's"
+                       onChange={(e) => setBulk((b) => ({ ...b, rate: e.target.value }))}
+                       onKeyDown={(e) => e.key === "Enter" && setForSelected("rate")} />
+              </label>
+              <button className="secondary sm" onClick={() => setForSelected("rate")}>Set</button>
+              <button className="secondary sm danger" onClick={() => replaceItems(removeSelected(items, selected))}>
+                Remove {selected.size}
+              </button>
+              <button className="secondary sm" onClick={() => setSelected(new Set())}>Clear</button>
+            </div>
+          )}
           <ScrollCue className="fleet-items-scroll" data-wt="fleet-items">
             <table className={"fleet-items" + (repairable ? " repairable" : "")}>
               <thead>
                 <tr>
+                  {!readOnly && (
+                    <th className="fleet-items-sel">
+                      <input type="checkbox" aria-label="Select all items" checked={allSelected}
+                             ref={(el) => { if (el) el.indeterminate = selected.size > 0 && !allSelected; }}
+                             onChange={() => setSelected(allSelected ? new Set() : new Set(items.map((_, i) => i)))} />
+                    </th>
+                  )}
                   <th>Item</th>
                   <th className="num" style={{ width: 90 }}
                       title="From the simulation, to 2 significant figures: items with the same inputs can still differ slightly.">
@@ -559,7 +671,13 @@ export default function FleetForecastPage() {
                 {items.map((it, idx) => {
                   const r = perItem[it.id] || {};
                   return (
-                    <tr key={it.id || idx}>
+                    <tr key={it.id || idx} className={selected.has(idx) ? "selected" : undefined}>
+                      {!readOnly && (
+                        <td className="fleet-items-sel">
+                          <input type="checkbox" checked={selected.has(idx)} onChange={() => toggle(idx)}
+                                 aria-label={`Select ${it.name || "item"}`} />
+                        </td>
+                      )}
                       <td>
                         {readOnly ? (
                           <span className="fleet-item-name">{it.name}</span>
@@ -657,6 +775,7 @@ export default function FleetForecastPage() {
               </tbody>
             </table>
           </ScrollCue>
+          </>
         )}
         {hideProb && (
           <p className="rs-note">Every item is more than 95% likely to fail within the horizon.</p>

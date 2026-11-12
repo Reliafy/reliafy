@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import DemoTestResult from "./DemoTestResult.jsx";
 import DemoShapeSource, { fmtBeta } from "./DemoShapeSource.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
+import { TestPlanPythonButton } from "./TestPlanShared.jsx";
 import { demonstrationTest, getModel } from "../api.js";
 import { betaSource, bLabel } from "../requirement.js";
 import { formatNumber } from "../format.js";
@@ -276,7 +277,10 @@ export default function DemonstrationTest({ initial = null }) {
         <DemoTestResult
           result={result}
           actions={inputs && (
-            <SaveAnalysisButton kind="demonstration_test" inputs={inputs} defaultName={defaultName} />
+            <>
+              <SaveAnalysisButton kind="demonstration_test" inputs={inputs} defaultName={defaultName} />
+              <TestPlanPythonButton kind="demonstration" inputs={inputs} />
+            </>
           )}
         />
       )}

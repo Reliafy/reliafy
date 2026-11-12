@@ -718,17 +718,20 @@ TOPOLOGY: Table = {
         Its ends don't change: disconnect and connect again."""),
     "disconnect": ("interface_id", "", "Remove a connection (its id is in the position's connections)."),
     "reconnect": ("interface_id", "", "Put a removed connection back as it was."),
-    "create_group": ("member_ids", "name k mode standby", """Positions doing the same job where k of them are
-        enough (two pumps, either will do: k = 1, the default; duty and standby: mode standby). Record it while
-        building the register: generate_rbd and impact depend on it. mode active (default) or standby (the others
-        wait; standby cold, warm or hot)."""),
-    "update_group": ("group_id", "name k mode standby add remove",
-                     "Rename it, change k or mode, add / remove members."),
+    "create_group": ("member_ids", "name k mode standby start_probability dormancy", """Positions doing the same
+        job where k of them are enough (two pumps, either will do: k = 1, the default; duty and standby: mode
+        standby). Record it while building the register: generate_rbd, build_rbd and impact depend on it. mode
+        active (default) or standby (the others wait; standby cold, warm or hot; start_probability: the chance a
+        waiting one starts, cold; dormancy: how fast a warm one ages waiting, 0-1). One set per position."""),
+    "update_group": ("group_id", "name k mode standby add remove start_probability dormancy",
+                     "Rename it, change k, mode or standby, add / remove members, or its start_probability / "
+                     "dormancy (-1 clears one)."),
     "set_duty": ("group_id position_id", "", "Which member of a standby group runs now (a duty / standby swap)."),
     "retire_group": ("group_id", "reason", "Take a redundancy group out of use (kept in the history)."),
     "restore_group": ("group_id", "", "Bring a retired group back with its members."),
     "generate_rbd": ("position_id", "", """Generate (or regenerate) an RBD for a system position from the
-        positions inside it: connections wire the blocks, groups become k of n, blocks take their class's
+        positions inside it: connections wire the blocks, groups become k of n (or one standby block), blocks
+        take their class's
         fitted model (placeholders otherwise, listed in notes). Saved as a normal RBD: analyse rbd."""),
 }
 
@@ -2512,7 +2515,9 @@ def register() -> None:
                              standby: Literal["cold", "warm", "hot"] | None = None,
                              group_id: str | None = None, add: list[str] | None = None,
                              remove: list[str] | None = None, position_id: str | None = None,
-                             clear_realised_by: bool | None = None, reason: str | None = None) -> dict[str, Any]:
+                             clear_realised_by: bool | None = None, reason: str | None = None,
+                             start_probability: float | None = None,
+                             dormancy: float | None = None) -> dict[str, Any]:
         """How positions depend on each other: connections (what passes from one to another) and
         redundancy groups (k of n will do). They drive impact (maintenance get.impact) and the RBD
         generate_rbd makes from a system."""
@@ -2531,10 +2536,13 @@ def register() -> None:
             return run(lambda: (m.retire_group(group_id, reason or ""), {"retired": group_id})[1])
         if action == "restore_group":
             return run(m.restore_group, group_id)
+        clear = lambda v: "" if v is not None and v < 0 else v  # noqa: E731 - -1 clears a setting
         if action == "create_group":
-            return run(m.create_group, name or "", member_ids, _d(k, 1), _d(mode, "active"), _d(standby, "cold"))
+            return run(m.create_group, name or "", member_ids, _d(k, 1), _d(mode, "active"), _d(standby, "cold"),
+                       start_probability, dormancy)
         if action == "update_group":
-            return run(m.update_group, group_id, name, k, mode, standby, add or [], remove or [])
+            return run(m.update_group, group_id, name, k, mode, standby, add or [], remove or [],
+                       clear(start_probability), clear(dormancy))
         if action == "set_duty":
             return run(m.set_duty, group_id, position_id)
         return run(rbd_derive.save, m, _db(), position_id)

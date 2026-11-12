@@ -63,7 +63,7 @@ export default function ComparisonPlan() {
   const [confidence, setConfidence] = useState("90");
   const [oneSided, setOneSided] = useState(false);
   const [unit, setUnit] = useState("hours");
-  const { result, error, loading, run } = usePlan("comparison");
+  const { result, inputs, error, loading, run } = usePlan("comparison");
   const rate = kind === "rate_ratio";
   const solve = rate ? rrSolve : lrSolve;
 
@@ -196,7 +196,7 @@ export default function ComparisonPlan() {
       {error && <div className="error">{error}</div>}
       {result && (
         <>
-          <PlanAnswer result={result} stats={stats} tone={tone} note={result.note || null} />
+          <PlanAnswer kind="comparison" inputs={inputs} result={result} stats={stats} tone={tone} note={result.note || null} />
           <Curve result={result} />
           <Assumptions items={result.assumptions} />
         </>

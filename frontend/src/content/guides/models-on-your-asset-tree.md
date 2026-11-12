@@ -163,7 +163,7 @@ Only a position with none of these gets a placeholder, flagged: the row warns
 until each has a model, and a placeholder inside a sub-system is named with
 its path (Propulsion › ESC 1). Each block's tooltip, and the RBD row's panel,
 say where its model came from. They're wired by their connections and
-redundancy groups, in series where there are none. A repairable diagram can't
+redundancy sets (below), in series where there are none. A repairable diagram can't
 take sub-systems: its **Maintenance plan** names them and offers **Expand
 sub-systems**, which puts each one's blocks into the diagram wired as they
 were inside it, so the tasks on those positions reach the plan. The diagram
@@ -195,7 +195,7 @@ off-line (its LSA), what it costs each time and its work package. The tasks
 are read each time the diagram is shown or calculated; nothing is copied into
 the diagram. In the builder's **Maintenance plan** those rows are read only,
 with **Edit in the tree**; a position with no tasks runs to failure, with
-**Add a task in the tree**. The diagram keeps only its own settings: duty, crew
+**Add a task in the tree**. The diagram keeps only its own settings: how much of the time a block runs (**Runs**), crew
 priority, and under **More** what a task can't say (an on-condition
 replacement's threshold, cost and time off-line). What nothing says (a cost, a
 repair time) is left blank and flagged. A saved simulation run before a task
@@ -203,11 +203,39 @@ changed says it's out of date, and isn't rerun until you ask. The position's
 Maintenance tab lists the RBDs that use its tasks. Blocks drawn by hand keep
 their own plan.
 
-Blocks built from the tree are in series unless the tree says otherwise, so
-the Calculator may note that like blocks ("Motor 1" to "Motor 4") are in
+### Positions that back each other up
+
+Blocks built from the tree are in series unless the tree says otherwise. To say
+two or more positions inside one back each other up, open the position's
+**⋯** menu on the **Modelling** (or **Missions**) tab and choose **RBD ›
+Redundancy inside…**. It fills the table area beside the tree, with no dialog:
+tick the positions, then say how they back each other up:
+
+- **Any of them can do the job**: all run at once, and any *k* of them are
+  enough (two pumps, either will do: 1 of 2).
+- **Duty and standby**: *k* run and the others wait to take over. Say how they
+  wait: **Cold** (off, not ageing), **Warm** (idling, ageing at the share of
+  the running rate you give) or **Hot** (running). For cold standby, give the
+  chance a waiting one starts when it's switched in (blank: it always does).
+
+**Mark the set** saves it, and each member shows a small badge in the tree
+("1 of 2", or "Standby set"; hover for the set). A position is in one set at
+most. **Edit** and **Remove…** change a set later; it stays in the history.
+
+**Build from what's inside…** then wires each set as redundancy, never in
+series: an "any of them" set as a k-of-n vote; a standby set of identical
+single positions (one life model, nothing inside them) as one standby block,
+with its switch-start chance and ageing while waiting; any other standby set
+(pump sets with a pump and a motor inside each, say) as a vote whose members
+each run their share of the time (two taking turns: **Runs** 50% each, in the
+Maintenance plan). A diagram that's still in series as first built is rewired
+from the sets by **Rebuild from what's inside…** (the pane offers it), each
+block keeping what you set on it; one you've rewired by hand is left alone.
+A mission built from the tree is wired the same way.
+
+The Calculator may still note that like blocks ("Motor 1" to "Motor 4") are in
 series. Several such notes fold into one line; open it to see each group, and
-make a group redundant in the builder only if the system can run without one
-of them.
+mark them as a set only if the system can run without one of them.
 
 The RBD row shows the system's MTBF and B10, and its panel lists every block
 with its model and the position it came from; type an age to see the

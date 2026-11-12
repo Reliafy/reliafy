@@ -313,6 +313,29 @@ def create_fleet(db, name: str, model_id: str, owner_id: str, model_kind: str | 
     return fleet
 
 
+def duplicate_fleet(db, source: Fleet, owner_id: str, name: str | None = None) -> Fleet:
+    """A copy of ``source`` (its model, settings and items, each item with a
+    new id) owned by ``owner_id``: another scenario to change and compare.
+    Meter-reading state stays with the original."""
+    name = (name or "").strip() or f"{source.name} (copy)"
+    items = []
+    for it in source.items or []:
+        copy = {k: v for k, v in it.items() if k not in ESTIMATE_KEYS}
+        copy["id"] = uuid.uuid4().hex
+        items.append(copy)
+    fleet = Fleet(
+        id=uuid.uuid4().hex,
+        name=name[:200],
+        owner_id=owner_id,
+        model_id=source.model_id,
+        model_kind=source.model_kind,
+        settings=dict(source.settings or {}),
+        items=items,
+    )
+    db.fleets.insert_one(to_doc(fleet))
+    return fleet
+
+
 def list_fleets(db, owner_id, hidden=frozenset(), shared=frozenset()) -> list[Fleet]:
     return [
         from_doc(Fleet, d)
@@ -448,12 +471,14 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
     uses = rates * periods  # projected additional use over the whole horizon
 
     if method == "single":
+        groups = fleet_strategy.count_years(periods, period_days(base["period_label"]))
         try:
             out = {**base, **_forecast_single(
                 dist, ages, rates, periods, items, item_periods=item_periods, unit=base["unit"],
-                limits=_period_limits(settings, items, ages, rates, periods))}
+                limits=_period_limits(settings, items, ages, rates, periods), year_groups=groups)}
         except StrategyError as exc:
             return {"status": "stale", "reason": client_message(exc)}
+        _add_count_years(out, "first_failures", groups, settings)
     else:
         try:
             out = {**base, **fleet_strategy.renewals(dist, ages, uses, rates, periods, items, settings,
@@ -469,6 +494,14 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
         opts = {**spares_opts, "_replace_at": replace_at} if replace_at else spares_opts
         out["spares"] = _spares_or_reason(opts, method, dist, ages, rates, periods, base["period_label"])
     return out
+
+
+def _add_count_years(out: dict, kind: str, groups, settings: dict) -> None:
+    """A first-failures or repairable forecast's years and, with the cost of a
+    failure, its cost: the ``strategy`` block the renewals forecast has."""
+    out["strategy"] = fleet_strategy.from_counts(
+        kind, out, groups, out.pop("yearly_interval", None), period_days(out.get("period_label")),
+        settings.get("failure_cost"))
 
 
 # ---- Regression and ALT fleets (#234) ----------------------------------------------
@@ -613,16 +646,18 @@ def _compute_covariate(db, fleet: Fleet, owners, model, item_periods: bool, spar
         Z = np.array([[row[n] for n in names] for row in rows], dtype=float).reshape(len(items), len(names))
     else:
         Z = pd.DataFrame(rows, columns=names)
+    groups = fleet_strategy.count_years(periods, period_days(base["period_label"]))
     try:
         out = {**base, **_forecast_single(
             live, ages, rates, periods, items, Z=Z, item_periods=item_periods, unit=info["unit"],
-            limits=_period_limits(settings, items, ages, rates, periods))}
+            limits=_period_limits(settings, items, ages, rates, periods), year_groups=groups)}
     except StrategyError as exc:
         return {**base, "status": "stale", "reason": client_message(exc)}
     except Exception as exc:  # noqa: BLE001 - SurPyval refusing these values
         reason = client_reason(exc, "the model refused these values", where="fleet forecast")
         return {**base, "status": "stale",
                 "reason": f"The linked model couldn't be evaluated at these items' conditions: {reason}"}
+    _add_count_years(out, "first_failures", groups, settings)
     if notes:
         out["warnings"] = [*notes, *(out.get("warnings") or [])]
     for row, values, (rate, basis) in zip(out["per_item"], rows, chosen):
@@ -724,7 +759,7 @@ def _rows(Z, keep):
 
 
 def _forecast_single(model, ages, rates, periods, items, *, Z=None, limits=None,
-                     item_periods: bool = False, unit: str = "") -> dict:
+                     item_periods: bool = False, unit: str = "", year_groups=None) -> dict:
     """First failures (each item fails at most once) from ``surpyval.forecast``:
     expected failures with an exact Poisson-binomial P5–P95 interval, the same
     per period, and each item's chance of failing (#234)."""
@@ -780,6 +815,8 @@ def _forecast_single(model, ages, rates, periods, items, *, Z=None, limits=None,
         "per_period": [float(v) for v in period_expected],
         "per_period_interval": [[float(a), float(b)] for a, b in zip(period_lower, period_upper)],
     }
+    if year_groups is not None:
+        out["yearly_interval"] = _window_intervals(prob, year_groups)
     if warranty:
         out["out_of_warranty"] = int((limits <= 0).sum())
     if n_doomed:
@@ -792,6 +829,30 @@ def _forecast_single(model, ages, rates, periods, items, *, Z=None, limits=None,
             f"Check the current use is in the model's unit{f' ({unit_in_text(unit)})' if unit else ''}."
         ]
     return out
+
+
+def _pmf_quantile(pmf, q: float) -> float:
+    """The smallest count whose cumulative chance reaches ``q``."""
+    cdf = np.cumsum(pmf)
+    return float(min(int(np.searchsorted(cdf, q - 1e-12)), len(pmf) - 1))
+
+
+def _window_intervals(prob, groups) -> list[list[float]]:
+    """Each window's exact P5–P95 count of first failures: ``prob`` is each
+    item's chance (items × periods) of failing by the end of every period,
+    ``groups`` the periods (0-based) in each window. An item fails in a window
+    with its chance by the window's end less its chance by the start; the
+    count is Poisson-binomial over the items."""
+    prob = np.asarray(prob, dtype=float)
+    if not prob.size:
+        return [[0.0, 0.0] for _ in groups]
+    windows = []
+    for g in groups:
+        start = prob[:, g[0] - 1] if g[0] > 0 else np.zeros(prob.shape[0])
+        windows.append(np.clip(prob[:, g[-1]] - start, 0.0, 1.0))
+    pmfs = spares.bernoulli_sum_pmfs(np.array(windows))
+    lo, hi = (1.0 - INTERVAL_LEVEL) / 2, 1.0 - (1.0 - INTERVAL_LEVEL) / 2
+    return [[_pmf_quantile(pmf, lo), _pmf_quantile(pmf, hi)] for pmf in pmfs]
 
 
 def _forecast_renewals(dist, ages, uses, rates, periods, items, *, weights=None) -> dict:
@@ -1124,7 +1185,9 @@ def _compute_recurrent(db, fleet: Fleet, owners, spares_opts=None) -> dict:
     ages = np.array([float(it["current_use"]) for it in items])
     rates = np.array([rate for rate, _basis in chosen])
     services = [it.get("next_service_at") for it in items]
-    out = {**base, **forecast_repairable(live, ages, rates, periods, items, services)}
+    groups = fleet_strategy.count_years(periods, period_days(base["period_label"]))
+    out = {**base, **forecast_repairable(live, ages, rates, periods, items, services, year_groups=groups)}
+    _add_count_years(out, "repairable", groups, settings)
     for row, (rate, basis) in zip(out["per_item"], chosen):
         row["rate_used"] = rate
         row["rate_basis"] = basis
@@ -1150,7 +1213,8 @@ def _poisson_interval(mean) -> np.ndarray:
 _FORECAST_GROUPS = 16  # kept for callers and tests; every rate is now one vectorised pass
 
 
-def forecast_repairable(model, ages, rates, periods: int, items, services=None, names=None) -> dict:
+def forecast_repairable(model, ages, rates, periods: int, items, services=None, names=None,
+                        year_groups=None) -> dict:
     """Expected failures of repairable items under a recurrent-event fit.
 
     A minimal-repair (Poisson-process) model: item ``i`` at age ``a_i`` using
@@ -1169,7 +1233,8 @@ def forecast_repairable(model, ages, rates, periods: int, items, services=None, 
     k = ages.size
     names = list(names) if names is not None else [it.get("name") for it in items]
     renewal = type(model).__name__ == "RenewalModel"
-    core = (rf.renewal_forecast if renewal else rf.nhpp_forecast)(model, ages, rates, periods, names=names)
+    core = (rf.renewal_forecast if renewal else rf.nhpp_forecast)(model, ages, rates, periods, names=names,
+                                                                  year_groups=year_groups)
     per_item = []
     for i, it in enumerate(items):
         row = {"id": it["id"], **core["per_item"][i]}
@@ -1197,6 +1262,7 @@ def forecast_repairable(model, ages, rates, periods: int, items, services=None, 
         "per_period_interval": core["per_period_interval"],
         "interval_method": core["interval_method"],
         "units": core["units"],
+        **({"yearly_interval": core["yearly_interval"]} if core.get("yearly_interval") is not None else {}),
     }
 
 

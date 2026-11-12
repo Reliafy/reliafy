@@ -1628,7 +1628,13 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
         existing = None
         if old_link is not None:
             existing = fetch("rbd", old_link["model_id"])
-            if existing is not None:
+            if existing is not None and built.get("redundancy") and _unrewired(existing.graph or {}):
+                # Still in series as first built, and the tree now says which positions back each
+                # other up: wired as the tree says, each block keeping what was set on it.
+                graph = _rewired(existing.graph or {}, graph, resolve)
+                built["notes"].insert(0, "Rewired from the redundancy sets marked in the tree ("
+                                      + ", ".join(g["name"] for g in built["redundancy"]) + ").")
+            elif existing is not None:
                 graph = _add_new_blocks(existing.graph or {}, built["graph"], resolve)
         name = existing.name if existing is not None else f"{p['name']} (from the tree)"
         rbd = rbds_service.save_rbd(db, name, graph, owner_id or m.org, rbd_id=existing.id if existing else None)
@@ -1777,7 +1783,7 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
     elif kids:
         graph, built, _, _, _ = _tree_graph(m, db, owners, hidden, position_id)
         notes, placeholders = built["notes"], built["placeholders"]
-        if rbd_missions.all_in_series(graph):
+        if rbd_missions.all_in_series(graph) and not built.get("redundancy"):
             # The tree doesn't say which positions are redundant: said on the mission until it's rewired.
             owner["built_in_series"] = True
     else:
@@ -1847,6 +1853,36 @@ def blockable_positions(m, db, owners, hidden, links: list) -> list[str]:
         if x["model_type"] == "model" and d.kind in ("distribution", "regression"):
             out.append(x["position_id"])
     return sorted(set(out))
+
+
+def _unrewired(graph: dict) -> bool:
+    """A diagram still wired as a first build with nothing redundant: every block in series."""
+    from backend.services import rbd_missions
+
+    return rbd_missions.all_in_series(graph) and not any(
+        n.get("type") in ("knode", "standby", "parallel") for n in graph.get("nodes") or [])
+
+
+def _rewired(old: dict, fresh: dict, resolve) -> dict:
+    """``fresh`` (the tree's wiring, normalised) with each block's settings from ``old`` where it
+    was there (its model, repair, costs, planned work, Runs share), the diagram's own settings
+    (repairable, crews, costs) kept."""
+    from backend.services.rbd_graph import normalize_graph, wrap_layout
+
+    had = {n.get("id"): n for n in old.get("nodes") or [] if isinstance(n, dict)}
+    nodes = []
+    for n in fresh.get("nodes") or []:
+        before = had.get(n.get("id"))
+        if before is not None and before.get("type") == n.get("type") == "component":
+            data = {**(n.get("data") or {}), **(before.get("data") or {})}
+            if (n.get("data") or {}).get("duty") and not (before.get("data") or {}).get("duty"):
+                data["duty"] = n["data"]["duty"]
+            n = {**n, "data": data}
+        nodes.append({k: v for k, v in n.items() if k != "position"})
+    keep = {k: v for k, v in old.items() if k not in ("nodes", "edges")}
+    out = normalize_graph({**keep, "nodes": nodes, "edges": fresh.get("edges") or []}, resolve_saved_model=resolve)
+    out["nodes"] = wrap_layout(out["nodes"])
+    return out
 
 
 def _add_new_blocks(old: dict, fresh: dict, resolve) -> dict:

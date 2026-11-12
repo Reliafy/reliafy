@@ -2092,6 +2092,13 @@ export function downloadPublicRbdPython(token, unlock) {
   }, (u, o) => fetch(u, o));
 }
 
+// The same download for a publicly linked model (life, repairable, degradation).
+export function downloadPublicModelPython(token, unlock) {
+  return downloadFile(`/api/public/${encodeURIComponent(token)}/export.py`, "model.py", {
+    headers: unlockHeaders(unlock),
+  }, (u, o) => fetch(u, o));
+}
+
 // ---- Personal API tokens ------------------------------------------------------
 
 export function listApiTokens() {
@@ -2198,6 +2205,21 @@ export function putFleetItems(id, settings, items, expectedUpdatedAt) {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ settings, items, expected_updated_at: expectedUpdatedAt || null }),
+  });
+}
+
+// The units still running in the fleet's model's data (a repairable model's
+// systems), as items to add; nothing is saved.
+export function getFleetRunningUnits(id) {
+  return request(`/api/fleet/fleets/${id}/running-units`);
+}
+
+// A copy of a forecast (items and settings) for another scenario.
+export function duplicateFleet(id, name) {
+  return request(`/api/fleet/fleets/${id}/duplicate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name || null }),
   });
 }
 
@@ -2990,6 +3012,15 @@ export function setGroupDuty(groupId, positionId) {
 export function retireRedundancyGroup(groupId) {
   return postJson(`/api/maintenance/groups/${groupId}/retire`, {});
 }
+// Rename a redundancy set, change k, mode or standby, add / remove members, or how a standby one
+// takes over ({start_probability, dormancy}: "" clears one).
+export function updateRedundancyGroup(groupId, body) {
+  return patchJson(`/api/maintenance/groups/${groupId}`, body);
+}
+// The positions inside one and the redundancy sets among them (the Explorer's Redundancy pane).
+export function getRedundancyInside(positionId) {
+  return request(`/api/maintenance/positions/${positionId}/redundancy`);
+}
 export function getPositionImpact(id) {
   return request(`/api/maintenance/positions/${id}/impact`);
 }
@@ -3412,6 +3443,33 @@ export function predictJointUnit(id, body) {
 // fit_from_df from the data it was fitted to. Free for every viewer.
 export function downloadJointPython(id) {
   return downloadFile(`/api/joint/models/${encodeURIComponent(id)}/export.py`, "condition-based-risk.py");
+}
+
+// Download as Python for the other model kinds: a script that refits the model
+// with SurPyval from its data (embedded) and prints the page's numbers. Free for
+// every viewer. kind: "life" (non-repairable, regression and time-varying
+// covariate models), "recurrent", "alt" or "degradation".
+const PYTHON_EXPORT_PATHS = {
+  life: (id) => `/api/models/${id}/export.py`,
+  recurrent: (id) => `/api/recurrent/models/${id}/export.py`,
+  alt: (id) => `/api/alt/models/${id}/export.py`,
+  degradation: (id) => `/api/degradation/models/${id}/export.py`,
+};
+
+export function downloadModelPython(kind, id) {
+  const path = PYTHON_EXPORT_PATHS[kind];
+  if (!path) return Promise.reject(new Error(`No Python download for ${kind} models.`));
+  return withEvent(downloadFile(path(encodeURIComponent(id)), "model.py"), "model_export_python");
+}
+
+// A test plan as Python: the same inputs the calculator was given, as a
+// SurPyval script that works the plan out and prints it.
+export function downloadTestPlanPython(kind, body) {
+  return withEvent(downloadFile(`/api/test-planning/${encodeURIComponent(kind)}/export.py`, "test_plan.py", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }), "test_plan_export_python");
 }
 
 // ---- time to the limit (a watched band's trend, fitted with a degradation process) ----

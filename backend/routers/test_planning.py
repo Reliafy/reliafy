@@ -141,3 +141,39 @@ def simulate(
         "job": {"job_id": job["_id"], "status": job["status"],
                 "queue_position": rbd_jobs_service.queue_position(session, job), "kind": kind_},
     })
+
+
+# The demonstration test's inputs (its calculator is /api/strategy/demonstration-test).
+_DEMONSTRATION_FIELDS = ("method", "reliability", "confidence", "mission_time", "failures", "test_multiple", "shape",
+                         "units", "mtbf", "design_reliability", "design_mtbf", "unit", "producer_risk", "b_life",
+                         "shape_interval", "shape_model", "failure_terminated")
+
+
+@router.post("/{kind}/export.py")
+def export_python(kind: str, body: dict = Body(default={}), user: dict = Depends(get_current_user)):
+    """Download as Python: a SurPyval script that works out this plan (the
+    calculator's inputs, as its body) and prints it. Free, like the plans.
+    ``kind``: demonstration, sequential, life, accelerated or comparison."""
+    from backend.routers.rbds import python_download
+    from backend.services import test_plan_export
+
+    fields = _DEMONSTRATION_FIELDS if kind == "demonstration" else _FIELDS.get(kind)
+    if fields is None:
+        return JSONResponse(status_code=404, content={
+            "detail": f"No such test plan: choose one of {', '.join(test_plan_export.KINDS)}."})
+    if not isinstance(body, dict):
+        return JSONResponse(status_code=422, content={"detail": "The body must be a JSON object."})
+    unknown = sorted(set(body) - set(fields))
+    if unknown:
+        return JSONResponse(status_code=422, content={
+            "detail": f"Unknown field{'s' if len(unknown) > 1 else ''}: {', '.join(unknown)}."})
+    try:
+        filename, source = test_plan_export.export_python(kind, body)
+    except StrategyError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except (TypeError, ValueError) as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc, "Invalid inputs.")})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Test plan export (%s) failed", kind)
+        return JSONResponse(status_code=500, content={"detail": "Export failed. The error has been logged."})
+    return python_download(filename, source)

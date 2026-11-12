@@ -79,6 +79,8 @@ NEW_ACTIONS = {
     ("change", "fault_tree_delete"),
     # Named phased missions on an RBD, with covariate values per phase (Nov 2026).
     ("analyse", "rbd_mission"), ("change", "rbd_mission"),
+    # Download as Python for every model kind, as the RBD's (Nov 2026).
+    ("analyse", "model_export_python"),
 }
 NEW_HEAVY = {"analyse.fault_tree"}
 NEW_TEXT = {"get.maintainability_prediction", "list.maintainability_predictions",
@@ -228,7 +230,8 @@ def test_the_listed_tools_are_small(env):
     reliability prediction actions, Nov 2026, after shortening the shared
     args and guide text; 7,972 with the user libraries' seven actions, after
     trimming the tool intros, titles and the replacement one-liners; 7,988 with the missions' analyse and
-    change rbd_mission, after shortening the analyse and guide intros) and
+    change rbd_mission, after shortening the analyse and guide intros; 7,981 with analyse model_export_python,
+    after shortening the analyse intro again) and
     about 1,000 for the instructions (3,663 before)."""
     from backend import mcp_server
 

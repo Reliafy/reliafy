@@ -295,6 +295,15 @@ its bounds (within about 30% when the record has none, and the result says
 so). One library counts as one saved item on the Free plan, however many
 records it holds.
 
+## Run it yourself in Python
+
+**Download as Python**, first in the model page's **⋯** menu, gives a script that refits the model with
+SurPyval on your own computer. It holds the data the model was fitted to, makes the same fit the app made
+(the same method, censoring, options and units) and prints the numbers on the page: the parameters with
+their 90% intervals, and the B-lives and mean life with their 90% lower bounds. The first lines of the script
+say which SurPyval version to install. It's free for everyone who can open the model, including from a
+public link.
+
 ## Where to go next
 
 Name the model in the "This fit isn't saved yet" bar above the result and

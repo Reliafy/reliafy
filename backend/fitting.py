@@ -3222,16 +3222,21 @@ def _randomness_verdict(distribution_id: str, params: list[dict]) -> dict | None
     return block
 
 
-def _fit_regression(
+def regression_inputs(
     distribution: str,
     df: pd.DataFrame,
     mapping: dict,
     covariates: Optional[list],
     formula: Optional[str],
-    covariate_units: Optional[dict] = None,
     cox_opts: Optional[dict] = None,
     frailty_family: Optional[str] = None,
 ) -> dict:
+    """What a regression fit hands SurPyval: ``{"fitter", "df", "mapping",
+    "fit_kwargs", "cox_kwargs", "cox_opts", "interval"}`` — the fitter, the
+    data frame as prepared (inspection rows read, text covariates as
+    categories) and the ``fit_from_df`` keywords. Shared by the fit and by
+    Download as Python, so the script makes the very same call. Raises
+    :class:`FitError`."""
     entry = REGRESSION_MODELS[distribution]
     fitter = more_models.frailty_fitter(distribution, frailty_family) if entry.get("frailty") else entry["fitter"]
     mapping = {k: v for k, v in mapping.items() if v}
@@ -3276,6 +3281,25 @@ def _fit_regression(
             fit_kwargs["Z_cols"] = list(covariates)
     cox_kwargs = regression_diagnostics.cox_fit_kwargs(cox_opts)
     fit_kwargs = more_models.regression_fit_kwargs(distribution, mapping, fit_kwargs)
+
+    return {"entry": entry, "fitter": fitter, "df": df, "mapping": mapping, "fit_kwargs": fit_kwargs,
+            "cox_kwargs": cox_kwargs, "cox_opts": cox_opts, "interval": interval}
+
+
+def _fit_regression(
+    distribution: str,
+    df: pd.DataFrame,
+    mapping: dict,
+    covariates: Optional[list],
+    formula: Optional[str],
+    covariate_units: Optional[dict] = None,
+    cox_opts: Optional[dict] = None,
+    frailty_family: Optional[str] = None,
+) -> dict:
+    inputs = regression_inputs(distribution, df, mapping, covariates, formula, cox_opts, frailty_family)
+    entry, fitter, df, mapping = inputs["entry"], inputs["fitter"], inputs["df"], inputs["mapping"]
+    fit_kwargs, cox_kwargs, cox_opts, interval = (inputs["fit_kwargs"], inputs["cox_kwargs"],
+                                                  inputs["cox_opts"], inputs["interval"])
 
     try:
         with collect_warnings() as caught:

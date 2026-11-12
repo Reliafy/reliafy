@@ -8,7 +8,7 @@ import { Field, useSendOnce } from "./MaintenanceParts.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { costWhere, fromRcm, fromText, money, SOURCE_WORDS } from "../lsaTab.js";
 import { taskUnits } from "../maintenanceSubjects.js";
-import { tooLong } from "../maintenanceText.js";
+import { AGE_NOTE, tooLong } from "../maintenanceText.js";
 import { explorerHere } from "../products.js";
 import { workspaceCurrency } from "../money.js";
 
@@ -27,7 +27,7 @@ import { workspaceCurrency } from "../money.js";
 
 const KINDS = [
   ["", "Routine work (lubricate, clean, adjust, inspect)"],
-  ["fixed_interval", "Replace or restore at the interval"],
+  ["fixed_interval", "Replace at age (every … since it was last done)"],
   ["failure_finding", "Check a hidden function (failure-finding)"],
   ["on_condition", "Check condition"],
 ];
@@ -160,6 +160,7 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
         <Field label="What kind of task">
           <select value={f.outcome} onChange={set("outcome")}>{KINDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
         </Field>
+        {f.outcome === "fixed_interval" && <p className="lib-date mt-note">{AGE_NOTE}</p>}
         {rcm ? (
           <p className="lib-date mt-note">
             From the RCM: its failure modes and why it&apos;s done are on the <Link to={rcmPath}>RCM tab</Link>.

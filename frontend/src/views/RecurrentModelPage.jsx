@@ -4,10 +4,11 @@ import ErrorBoundary from "../components/ErrorBoundary.jsx";
 import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
-import { getRecurrentModel, deleteRecurrentModel, renameRecurrentModel } from "../api.js";
+import { getRecurrentModel, deleteRecurrentModel, downloadModelPython, renameRecurrentModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import ModelFrame from "../components/model/ModelFrame.jsx";
+import DownloadPythonItem from "../components/model/DownloadPythonItem.jsx";
 import useTabParam from "../components/model/useTabParam.js";
 import { itemName } from "../components/LibRows.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
@@ -16,7 +17,7 @@ import { recurrentAnswer, recurrentTabs } from "../recurrentResults.js";
 import { PageTitle } from "../components/usePageTitle.js";
 
 // A saved repairable (recurrent-event) model in the model frame: the answer
-// line, Share, the ⋯ menu (rename, delete) and the result's tabs, the open one in
+// line, Share, the ⋯ menu (Download as Python, rename, delete) and the result's tabs, the open one in
 // the address (?tab=).
 export default function RecurrentModelPage() {
   const { id } = useParams();
@@ -68,6 +69,7 @@ export default function RecurrentModelPage() {
       )}
       menu={model && (
         <>
+          <DownloadPythonItem download={() => downloadModelPython("recurrent", model.id)} onError={setError} />
           {!model.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
           <button className="ovm-item danger" onClick={onDelete}>
             {model.read_only ? "Remove from my view" : "Delete"}

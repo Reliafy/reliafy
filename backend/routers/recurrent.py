@@ -246,6 +246,27 @@ def get_model(model_id: str, session=Depends(get_session), ctx: AccessCtx = Depe
     return JSONResponse(content={**_model_summary(doc, ctx), "spec": doc.spec, "results": doc.results})
 
 
+@router.get("/recurrent/models/{model_id}/export.py")
+def export_python(model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)):
+    """Download as Python: a script that refits the model with SurPyval from
+    the events it was fitted to (embedded) and prints the page's numbers.
+    Free for anyone who can view the model."""
+    from backend.routers.rbds import python_download
+    from backend.services import recurrent_export
+
+    doc, _ = access_service.fetch_readable(session, "recurrent_models", RecurrentModelDoc, model_id, ctx)
+    if doc is None or doc.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        filename, source = recurrent_export.export_python(session, doc, [*ctx.read_owners, doc.owner_id])
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to export recurrent model %s as Python", model_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to export. The error has been logged."})
+    return python_download(filename, source)
+
+
 @router.patch("/recurrent/models/{model_id}")
 def rename_model(
     model_id: str, name: str = Body(..., embed=True),

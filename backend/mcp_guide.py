@@ -154,8 +154,9 @@ model (saved_model_id; same time unit).
 - Repairable diagrams (repairable=true, analysed for availability): every block needs a repair model. Blocks \
 may carry costs, preventive (age / block / condition replacement), inspection (hidden failures found by proof \
 tests: offset staggers, coverage + full_test for partial tests), maintenance_group, crew_priority, \
-repair_quality (Kijima: simulated figures), duty (0-1, the share of the time it runs: its model is then a life \
-in operating time; intervals stay on the clock); the diagram repair_crews, safety_function + target_sil (needs proof \
+repair_quality (Kijima: simulated figures), duty (0-1, the share of the time it runs, shown as 'Runs X% of \
+the time': its model is then a life in operating time; intervals stay on the clock); the diagram repair_crews, \
+safety_function + target_sil (needs proof \
 tests), costs (downtime_rate, horizon, discount_rate) and production (capacity demand). Common cause: \
 common_cause_beta on a stage, or edit add_ccf (mgl for 3+ members).
 - Non-repairable extras: phases (a phased mission), network (an undirected two-terminal network), \
@@ -354,7 +355,8 @@ simulated from its state), and the range carries the fit's uncertainty; covariat
 - Strategy (renewals fleets): strategy = {strategy: run_to_failure or age, replace_at (model units), failure_cost, \
 planned_cost} (or the fleet's saved one) adds forecast.strategy: total, per_period and yearly, each with failures, \
 planned replacements, parts and (priced) cost, with 90% ranges. Items already past replace_at are replaced in period \
-1 (catch_up). Spares then count planned replacements too. Compare run to failure and age with two calls.
+1 (catch_up). Spares then count planned replacements too. Compare run to failure and age with two calls. First-failures and recurrent fleets carry forecast.strategy too (kind first_failures or repairable): failures and, with the fleet's failure_cost, cost, per period and per year with their 90% ranges.
+- use_model_data=true forecasts the units still running in the model's own data (its suspensions at their ages; a repairable model's systems at the end of their records) instead of the saved items; nothing is saved.
 - Spares: fleet_forecast with spares = {lead_time (in the fleet's periods), service_level (default 0.95), review, \
 per_failure, stock, unit_cost} (or the fleet's saved spares settings) adds spares: hold (the stock for that chance \
 of no stock-out over the lead time plus review), reorder_at, risk_at_stock, hold_cost, the same per period, and \
@@ -431,7 +433,9 @@ whether simulation is included. It, guide, get kind upgrade_link, change upload_
 - When a tool says a limit or the plan stops it, tell the user plainly what it says — the limit, when it \
 resets, how to upgrade — and don't retry. Calls refused that way aren't counted.
 - Without Pro, fit locally with SurPyval (pip install surpyval; 0 = failed, 1 = still running) and save the \
-parameters with change model_save; run a diagram's simulation locally with analyse rbd_export_python.
+parameters with change model_save; run a diagram's simulation locally with analyse rbd_export_python. \
+analyse model_export_python gives any saved model as a script that refits it locally (free); the plan_* \
+actions take python=true for the plan's script.
 - get kind upgrade_link gives the user a Stripe payment link to open themselves; nothing is charged until they complete \
 it. Never say an upgrade has happened."""),
 
