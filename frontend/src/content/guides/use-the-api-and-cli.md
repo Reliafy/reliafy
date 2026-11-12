@@ -90,8 +90,8 @@ reliafy upload bearings.csv --name "Bearings" --x-col hours --c-col censored --u
 ```
 
 Columns you don't name are guessed, and the answer's `reading` says how
-(`source: guessed`): check it, and change it with `reliafy change
-dataset_update`. Every model built from the dataset, in the app or with
+(`source: guessed`): check it, and change it with
+`reliafy change dataset_update`. Every model built from the dataset, in the app or with
 `dataset_id` and no columns over the API, reads it that way.
 
 Every other tool works the same way: `reliafy tools` lists them, and
