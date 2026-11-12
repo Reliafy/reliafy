@@ -5,6 +5,7 @@ import LifeAside from "./LifeSummary.jsx";
 import Plot from "./Plot.jsx";
 import { DATA_INK, fitLine } from "../plotTheme.js";
 import "./MoreModels.css";
+import { valueAxisTitle } from "../lifeData.js";
 
 // Royston-Parmar's curve over the data (#179). The semi-parametric and
 // shared-frailty regressions' tables and group effect are in the model
@@ -40,7 +41,7 @@ export function FlexibleSurvival({ result, split = null, name = null, modelId = 
             data={traces}
             layout={{
               height: 470,
-              xaxis: { title: { text: result.unit ? `Time (${result.unit})` : "Time" }, rangemode: "tozero" },
+              xaxis: { title: { text: valueAxisTitle(result.unit) }, rangemode: "tozero" },
               yaxis: hazard
                 ? { title: { text: "Hazard rate, h(t)" }, rangemode: "tozero" }
                 : { title: { text: "Reliability, R(t)" }, range: [0, 1.02] },

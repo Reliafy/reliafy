@@ -1,27 +1,24 @@
 // Run with: node --test src/
-// The Data step's one table (DataMapper): the first reading of the walkthrough
-// sheets, the "Read as" line, issues by column, and the same fit request as
-// before for the same mapping.
+// The Data step's selectors (ColumnMapper: x with its range xl to xr, c, n,
+// tl, failure mode): the first reading of the walkthrough sheets, where each
+// issue is shown, and the same fit request as before for the same mapping.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  EMPTY_MAPPING, columnFacts, dataQuestions, dataStepIssues, dataStepNotes, dataStepProblems, guessUnitNames,
-  keptChoices, mappingFields, readAsParts, roleGroups, rolesOf, setRole, startingMapping, statusSummary,
+  EMPTY_MAPPING, columnFacts, dataQuestions, dataStepIssues, dataStepNotes, dataStepProblems, issueRow,
+  keptChoices, mappingFields, setMappingField, startingMapping, statusCodesOnly, statusSummary,
 } from "./lifeData.js";
-import { unitNoun } from "./datasetGuess.js";
 import { SHEETS } from "./dataStepSheets.js";
 
 const start = (name, saved = null) => {
   const csv = SHEETS[name];
   const facts = columnFacts(csv);
-  const g = startingMapping(saved, csv.columns, facts, csv.n_rows);
-  const idColumn = guessUnitNames(csv.columns, facts, csv.n_rows, g.mapping);
-  return { csv, facts, ...g, idColumn };
+  return { csv, facts, ...startingMapping(saved, csv.columns, facts, csv.n_rows) };
 };
-const readAs = ({ csv, facts, mapping, unit, idColumn }, inspection = false) => readAsParts({
-  mapping, facts, nRows: csv.n_rows, unit, idColumn, inspection,
-  summary: inspection ? null : statusSummary(mapping, facts, csv.n_rows),
-}).join(" · ");
+const counts = ({ csv, facts, mapping }) => {
+  const s = statusSummary(mapping, facts, csv.n_rows);
+  return s && `${s.failed} failed, ${s.running} running`;
+};
 const clean = (s) => dataStepIssues(s.mapping, s.facts, s.csv.n_rows, s.unit).length === 0
   && dataQuestions(s.mapping, s.facts, s.csv.columns, s.csv.n_rows).length === 0;
 
@@ -32,9 +29,10 @@ test("the seal sheet: Status is failed / running and Failure mode the mode, blan
   assert.deepEqual(s.mapping.c_map, { Running: 1, Failed: 0 });
   assert.equal(s.mapping.e, "Failure mode");
   assert.equal(s.unit, "Hours");
-  assert.equal(s.idColumn, "Seal");
   assert.ok(clean(s), "nothing to settle");
-  assert.equal(readAs(s), "80 seals · 37 failed (22 Wear, 15 Installation) · 43 still running · times in hours");
+  assert.equal(counts(s), "37 failed, 43 running");
+  // Status holds words, so c shows how each was read (Failed → 0, Running → 1), not the 1 = failed tick.
+  assert.equal(statusCodesOnly(s.facts.Status.values), false);
 });
 
 test("a saved reading that no longer reads cleanly gives way to a fresh guess", () => {
@@ -55,73 +53,64 @@ test("a saved reading that no longer reads cleanly gives way to a fresh guess", 
 });
 
 test("the walkthrough sheets read as their owners meant", () => {
-  assert.equal(readAs(start("w01")), "34 seals · 19 failed · 15 still running · times in hours");
-  assert.equal(readAs(start("w11")), "60 bearings · 35 failed · 25 still running · times in hours");
-  assert.equal(readAs(start("w11coded")), "60 bearings · 35 failed · 25 still running · times in hours");
-  assert.equal(readAs(start("w12wear")),
-    "80 seals · 37 failed (22 Wear, 15 Installation) · 43 still running · times in hours");
+  assert.equal(counts(start("w01")), "19 failed, 15 running");
+  assert.equal(counts(start("w11")), "35 failed, 25 running");
+  assert.equal(counts(start("w11coded")), "35 failed, 25 running");
+  assert.equal(counts(start("w12wear")), "37 failed, 43 running");
   for (const name of ["w01", "w11", "w11coded", "w12wear", "w13"]) assert.ok(clean(start(name)), name);
 });
 
-test("W02: Failed (1=yes) is read 1 = failed, the Units column converts the day rows, the blank row is named on its column", () => {
+test("W02: Failed (1=yes) is read 1 = failed, the Units column converts the day rows, each issue sits by its selector", () => {
   const s = start("w02");
   assert.equal(s.mapping.c, "Failed (1=yes)");
   assert.equal(s.mapping.c_invert, true);
   assert.equal(s.mapping.u, "Units");
+  // A 0/1 column: c shows "0 = failed, 1 = running" with "my column uses 1 = failed" ticked.
+  assert.equal(statusCodesOnly(s.facts["Failed (1=yes)"].values), true);
   const issues = dataStepIssues(s.mapping, s.facts, s.csv.n_rows, s.unit);
   assert.deepEqual(issues.map((i) => i.col), ["Time in service", "Failed (1=yes)"]);
-  assert.match(readAs(s), /times in hours · 4 rows converted from days · 1 = failed, 0 = still running/);
+  assert.deepEqual(issues.map((i) => issueRow(i, s.mapping)), ["x", "c"]);
+  assert.match(issues[0].text, /^1 row has no value in “Time in service”/);
 });
 
-test("W13: inspection times, the status words and the late-entry column are all read", () => {
+test("W13: inspection ranges, the status words and the late-entry column are all read", () => {
   const s = start("w13");
   assert.equal(s.mapping.xl, "Last good check (h)");
   assert.equal(s.mapping.xr, "Found failed at (h)");
   assert.equal(s.mapping.tl, "Entered at (h)");
   assert.equal(s.mapping.c, "Status");
   assert.equal(s.mapping.x, "");
-  assert.match(readAs(s), /times in hours · 20 entered late$/);
+  assert.equal(s.unit, "Hours");
+  assert.ok(clean(s));
 });
 
-test("issues name their column; one about no column has none", () => {
+test("each issue is shown beside the selector it concerns; one about no column beside x", () => {
   const facts = columnFacts(SHEETS.seals);
   const none = dataStepIssues({ ...EMPTY_MAPPING }, facts, 80);
-  assert.deepEqual(none, [{ col: null, text: "Pick the column that holds the time to failure or removal." }]);
+  assert.deepEqual(none, [{ col: null, text: "Pick x: the column with the value when each unit failed or was removed." }]);
+  assert.equal(issueRow(none[0], EMPTY_MAPPING), "x");
   const m = { ...EMPTY_MAPPING, x: "Hours", c: "Failure mode" };
   const issues = dataStepIssues(m, facts, 80);
-  assert.ok(issues.length >= 2 && issues.every((i) => i.col === "Failure mode"));
+  assert.ok(issues.length >= 2 && issues.every((i) => issueRow(i, m) === "c"));
   assert.deepEqual(dataStepProblems(m, facts, 80), issues.map((i) => i.text));
+  const e = { ...EMPTY_MAPPING, x: "Hours", c: "Status", c_map: { Failed: 0, Running: 1 }, e: "Failure mode", tl: "Hours" };
+  assert.deepEqual(dataStepIssues(e, facts, 80).map((i) => issueRow(i, e)), ["e"]);
 });
 
-test("each column has one role, set in its heading: a role moves, the id is words only", () => {
-  const s = start("seals");
-  let state = { mapping: s.mapping, covariates: [], idColumn: s.idColumn };
-  assert.deepEqual(rolesOf(s.csv.columns, state.mapping, [], state.idColumn),
-    { Seal: "id", Hours: "x", Status: "c", "Failure mode": "e" });
-  // Failure mode as the status: Status loses it, and the meanings are guessed afresh.
-  state = setRole(state, "Failure mode", "c", s.facts);
-  assert.equal(state.mapping.c, "Failure mode");
-  assert.equal(state.mapping.e, "");
-  assert.deepEqual(rolesOf(s.csv.columns, state.mapping, [], state.idColumn).Status, "");
-  // A covariate, then ignored.
-  state = setRole(state, "Status", "cov", s.facts);
-  assert.deepEqual(state.covariates, ["Status"]);
-  state = setRole(state, "Status", "", s.facts);
-  assert.deepEqual(state.covariates, []);
-  // The id moves to another column, and the old one is ignored.
-  state = setRole(state, "Hours", "id", s.facts);
-  assert.equal(state.idColumn, "Hours");
-  assert.equal(state.mapping.x, "");
-  // Never sent: the request carries no id.
-  assert.ok(!mappingFields(state.mapping).some(([k]) => k === "id"));
-});
-
-test("the role list keeps every role the old screen had, the usual ones first", () => {
-  const g = roleGroups({ covariates: true, failureMode: true });
-  assert.deepEqual(g.common, ["", "id", "x", "c", "e", "cov"]);
-  assert.deepEqual(g.more, ["n", "xl", "xr", "tl", "tr", "u"]);
-  assert.deepEqual(roleGroups({ timeVarying: "intervals" }).common, ["", "i", "xl", "xr", "c"]);
-  assert.deepEqual(roleGroups({ timeVarying: "timeline", covariates: true }).common, ["", "i", "x", "c", "cov"]);
+test("the words never assume time: a column of volts is a value like any other", () => {
+  const csv = {
+    columns: ["Insulator", "Breakdown (kV)", "Broke down"], n_rows: 20, preview: [["IN-01", 41.5, "Yes"]],
+    n_unique: [20, 20, 2], dtypes: ["str", "float64", "str"], blanks: [0, 0, 0],
+    values: [null, null, { Yes: 14, No: 6 }], whole: [null, false, null],
+  };
+  const facts = columnFacts(csv);
+  const m = { ...EMPTY_MAPPING, x: "Insulator" };
+  assert.match(dataStepProblems(m, facts, 20)[0], /not numbers\. Pick the column with the values/);
+  for (const t of [...dataStepProblems({ ...EMPTY_MAPPING }, facts, 20), ...dataStepProblems(m, facts, 20)]) {
+    assert.doesNotMatch(t, /\btimes?\b/, t);
+  }
+  const v = { ...EMPTY_MAPPING, x: "Breakdown (kV)" };
+  assert.deepEqual(dataStepProblems(v, facts, 20), []);
 });
 
 // What the fit request carried for each sheet before this screen (the old
@@ -153,26 +142,36 @@ test("the same mapping sends the same fit request as before", () => {
   }
 });
 
-test("picking each column's role by hand rebuilds the same request", () => {
+test("picking each selector by hand rebuilds the same request", () => {
   for (const name of Object.keys(SHEETS)) {
     const s = start(name);
-    const roles = rolesOf(s.csv.columns, s.mapping, [], s.idColumn);
-    let state = { mapping: { ...EMPTY_MAPPING }, covariates: [], idColumn: "" };
-    for (const col of s.csv.columns) if (roles[col]) state = setRole(state, col, roles[col], s.facts);
-    assert.deepEqual(mappingFields(state.mapping), mappingFields(s.mapping), name);
-    assert.equal(state.idColumn, s.idColumn, name);
+    let m = { ...EMPTY_MAPPING };
+    for (const f of ["x", "xl", "xr", "c", "n", "tl", "e"]) if (s.mapping[f]) m = setMappingField(m, f, s.mapping[f], s.facts);
+    // The per-row unit column is set from its question ("Convert them?").
+    if (s.mapping.u) m = { ...m, u: s.mapping.u };
+    assert.deepEqual(mappingFields(m), mappingFields(s.mapping), name);
   }
 });
 
-test("units are named from the column that names them", () => {
-  assert.equal(unitNoun("Seal"), "seals");
-  assert.equal(unitNoun("Seal ID"), "seals");
-  assert.equal(unitNoun("Idler No."), "idlers");
-  assert.equal(unitNoun("Pump tag"), "pumps");
-  assert.equal(unitNoun("Battery"), "batteries");
-  assert.equal(unitNoun("Serial number"), "units");
-  assert.equal(unitNoun(""), "units");
-  assert.equal(unitNoun("Seal", 1), "seal");
+test("x and a range together: x where filled, the range where x is blank, all sent", () => {
+  const csv = SHEETS.mixed;
+  const facts = columnFacts(csv);
+  const g = startingMapping(null, csv.columns, facts, csv.n_rows);
+  // The guess reads the range; picking x keeps it.
+  assert.equal(g.mapping.xl, "Last good (cycles)");
+  assert.equal(g.mapping.xr, "Found failed (cycles)");
+  const m = setMappingField(g.mapping, "x", "Cycles", facts);
+  assert.equal(m.xl, "Last good (cycles)");
+  // Blanks in x are the range rows, not a problem.
+  assert.deepEqual(dataStepIssues(m, facts, csv.n_rows, "Cycles"), []);
+  const sent = mappingFields(m);
+  assert.deepEqual(sent.filter(([k]) => ["x", "xl", "xr"].includes(k)),
+    [["x", "Cycles"], ["xl", "Last good (cycles)"], ["xr", "Found failed (cycles)"]]);
+  // Only one of the pair is a problem beside x.
+  const half = { ...m, xr: "" };
+  const issues = dataStepIssues(half, facts, csv.n_rows);
+  assert.equal(issues[0].text, "Pick both xl and xr for the range, or neither.");
+  assert.equal(issueRow(issues[0], half), "x");
 });
 
 test("W02 fixed: the time column that names its unit wins, and the Units column (the other time's) is left alone", () => {
@@ -187,26 +186,22 @@ test("W02 fixed: the time column that names its unit wins, and the Units column 
 
 test("a corrected copy of the same file keeps the choices made on the first", () => {
   const first = start("w02");
-  const chosen = { mapping: { ...first.mapping, c_invert: false }, unit: "Hours", covariates: [], idColumn: "Idler No." };
+  const chosen = { mapping: { ...first.mapping, c_invert: false }, unit: "Hours", covariates: [] };
   const kept = keptChoices(chosen, SHEETS.w02fixed.columns);
   assert.equal(kept.mapping.x, "Time in service");
   assert.equal(kept.mapping.c_invert, false);
-  assert.equal(kept.idColumn, "Idler No.");
   // A file without a column the choices use starts afresh.
   assert.equal(keptChoices(chosen, SHEETS.seals.columns), null);
   assert.equal(keptChoices(null, SHEETS.w02.columns), null);
 });
 
-test("wholly blank rows are said to be skipped, and times of 0 or less are noted on the time column", () => {
+test("values of 0 or less are noted beside x, without stopping the fit", () => {
   const s = start("seals");
-  const parts = readAsParts({ mapping: s.mapping, facts: s.facts, nRows: 80, unit: "Hours",
-    summary: statusSummary(s.mapping, s.facts, 80), idColumn: "Seal", blankRows: 1 });
-  assert.equal(parts[parts.length - 1], "1 blank row skipped");
   const facts = columnFacts({ ...SHEETS.seals, nonpositive: [null, 2, null, null] });
   const notes = dataStepNotes(s.mapping, facts);
   assert.equal(notes.length, 1);
-  assert.equal(notes[0].col, "Hours");
-  assert.match(notes[0].text, /^2 rows have a time of 0 or less in “Hours”/);
+  assert.equal(issueRow(notes[0], s.mapping), "x");
+  assert.match(notes[0].text, /^2 rows have a value of 0 or less in “Hours”/);
   // A note, not a problem: Kaplan-Meier still fits them.
   assert.equal(dataStepIssues(s.mapping, facts, 80, "Hours").length, 0);
 });
@@ -227,4 +222,21 @@ test("a saved reading of rows whose covariates change over time keeps its item c
   const kept = startingMapping(saved, cols, facts, 96);
   assert.equal(kept.mapping.i, "pump");
   assert.ok(kept.from);
+});
+
+test("tl and tr: the observation window is sent as the earlier screens sent it, beside its own selector", () => {
+  const s = start("window");
+  assert.equal(s.mapping.tl, "Entered at (h)");
+  // tr is picked by hand; a blank tr on a row is no limit, so its blanks are fine.
+  const m = setMappingField(s.mapping, "tr", "Observed until (h)", s.facts);
+  assert.deepEqual(dataStepIssues(m, s.facts, s.csv.n_rows, "Hours"), []);
+  assert.deepEqual(mappingFields(m), [
+    ["x", "Hours"], ["c", "Status"], ["tl", "Entered at (h)"], ["tr", "Observed until (h)"],
+    ["c_invert", "0"], ["c_map", '{"Failed":0,"Running":1}'],
+  ]);
+  // A text column as tr is a problem beside tr.
+  const bad = { ...m, tr: "Pump" };
+  const issues = dataStepIssues(bad, s.facts, s.csv.n_rows, "Hours");
+  assert.equal(issues.length, 1);
+  assert.equal(issueRow(issues[0], bad), "tr");
 });

@@ -468,6 +468,8 @@ def data_reading_endpoint(
     n: str | None = Form(default=None),
     xl: str | None = Form(default=None),
     xr: str | None = Form(default=None),
+    tl: str | None = Form(default=None),
+    tr: str | None = Form(default=None),
     c_invert: str | None = Form(default=None),
     c_map: str | None = Form(default=None),
     session=Depends(get_session),
@@ -477,7 +479,7 @@ def data_reading_endpoint(
     failed at a known time, between two times (inspection data), at their
     first look, and units still running, counted the way the fit will count
     them. ``notes`` says where the reading rests on a guess."""
-    mapping = {k: v for k, v in {"x": x, "c": c, "n": n, "xl": xl, "xr": xr}.items() if v}
+    mapping = {k: v for k, v in {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr}.items() if v}
     try:
         if dataset_id:
             dataset = datasets_service.get_dataset(session, dataset_id, owner_id=user["uid"])

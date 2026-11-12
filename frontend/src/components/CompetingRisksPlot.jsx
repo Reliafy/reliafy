@@ -1,6 +1,7 @@
 import Plot from "./Plot.jsx";
 import { COLORWAY, DATA_INK, NEUTRAL_BAND_FILL, bandPair } from "../plotTheme.js";
 import { ciPct } from "../levels.js";
+import { valueAxisTitle } from "../lifeData.js";
 
 // Each failure mode's colour, in the fit's order (most failures first).
 export const causeColor = (i) => COLORWAY[i % COLORWAY.length];
@@ -82,7 +83,7 @@ export default function CompetingRisksPlot({ result, unit, stacked = true, downl
       layout={{
         height: 340,
         hovermode: "x unified",
-        xaxis: { title: { text: unit ? `Time (${unit})` : "Time" }, rangemode: "tozero" },
+        xaxis: { title: { text: valueAxisTitle(unit) }, rangemode: "tozero" },
         yaxis: { title: { text: "Chance of failing" }, range: [0, ymax], tickformat: ".0%" },
         showlegend: true,
         ...(shapes ? { shapes } : {}),

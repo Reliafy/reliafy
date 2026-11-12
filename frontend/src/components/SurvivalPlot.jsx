@@ -4,6 +4,7 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { bandPair, fitLine } from "../plotTheme.js";
 import "./NonParametric.css";
 import { levelPct } from "../levels.js";
+import { valueAxisTitle } from "../lifeData.js";
 
 // The band choices (#85): pointwise holds at each time on its own; the two
 // simultaneous bands hold for the whole curve at once. ``lv``: "90%", the
@@ -47,7 +48,7 @@ export default function SurvivalPlot({ estimate, unit, download = null, fill = f
         data={traces}
         layout={{
           height: 340,
-          xaxis: { title: { text: unit ? `Time (${unit})` : "Time" }, rangemode: "tozero" },
+          xaxis: { title: { text: valueAxisTitle(unit) }, rangemode: "tozero" },
           yaxis: { title: { text: "Reliability, R(t)" }, range: [0, 1.02] },
           showlegend: hasBand,
         }}

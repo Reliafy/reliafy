@@ -41,10 +41,12 @@ hours,censored
 2000,1
 ```
 
-When you fit, set that column's heading to **Failed or still running** in the
-Data step. The heading lists each value it finds with its number of rows, and
-you mark each one **Failed** or **Still running** — so a file that uses `1` for a failure,
-or words like `failed` and `running`, works as it is. That's the whole change,
+When you fit, choose that column for **c** (*failed or still running*) in the
+Data step. Reliafy reads `0` as failed and `1` as still running; if your file
+uses `1` for a failure, tick **my column uses 1 = failed**. A column of words
+such as `Failed` and `Running` is read for you, and the line under **c** shows
+how (*Failed → 0, Running → 1*), with a switch to flip any one. So a file works
+as it is. That's the whole change,
 and it will often move your fitted life substantially.
 
 The sample pump model is exactly this case: 25 pumps, 18 failed and 7 still
@@ -64,10 +66,9 @@ something already broken. You know it failed *between* the last two inspections,
 but not when.
 
 Recording the inspection date as the failure time systematically overstates
-life. Instead, give both bounds. In the Data step, set one column's heading to
-**Earliest failure time (inspection)** and the other's to **Latest failure time
-(inspection)** (under **Less common** in the list); they're used *instead of* a
-single time:
+life. Instead, give both bounds. In the Data step, on the **x** row, choose the
+columns for the range: **xl** (the last value it was seen working) **to xr**
+(the value it was found failed). A row with no **x** is read from its range:
 
 ```
 xl,xr
@@ -80,6 +81,11 @@ uncertainty rather than pretending the failure happened at the moment you looked
 
 Two columns named like `last_ok_hours` and `found_failed_hours` (or `xl` and
 `xr`, earliest and latest, lower and upper) are read this way for you.
+
+A sheet can mix the two: an exact value in **x** on some rows, and **x** left
+blank with a range on others. Map all three and each row is read on its own. A
+row with **x** *and* both range cells filled says two things at once, so it is
+left out of the fit, and the step says how many rows and which ones.
 
 ### Units that passed their last inspection
 
@@ -121,9 +127,14 @@ warranty expired never appear. Or you started recording in 2020, so anything tha
 failed before then is absent. Your sample isn't representative, and a model that
 doesn't know this will be biased.
 
-In the same **Less common** part of a column's list, choose **Observed from
-(late entry)** and **Observed until** for those columns, and the fit
-corrects for the observation window.
+In the Data step, choose the column for **tl** (*late entry: observed only from
+this value*) and, when records also stop, the column for **tr** (*observed only
+up to this value*), and the fit corrects for the observation window. Both are in
+the same unit as **x**, and each row has its own: a blank cell is no limit on
+that row. A column named like *Entered at (h)* is read as late entry from the
+start. A row whose value is above its **tr**, a unit still running at its
+**tr**, or a **tr** below its **tl** is shown beside **tr** with the rows, to
+correct before the fit.
 
 ## Counts
 
