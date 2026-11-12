@@ -17,9 +17,9 @@ import { explorerPath } from "../assetTree.js";
 //   Risk now     the running units' risk (highest first) and the chosen unit
 //                in words; under them its updating prediction (its survival
 //                from now and its reading's path). The table and the charts
-//                are the shared ones (model/RiskTable.jsx); where the account
-//                has the Explorer, this tab is left out (`riskNow`) and the
-//                Explorer's class fleet shows risk now instead
+//                are the shared ones (model/RiskTable.jsx). Always shown: where
+//                positions on the asset tree use the model (`onPositions`), a
+//                line adds a link to the Explorer's class fleet as well
 //   Calculator   enter a unit (age, covariates, readings so far) and predict;
 //                before that, a new unit's survival with typical covariates
 //   Effects      what changes the risk: the hazard ratios, charted and in words
@@ -248,11 +248,12 @@ function JointData({ results }) {
   );
 }
 
-// `riskNow: false` (the model's own page, where the account has the Explorer):
-// no Risk now tab; a line says where risk now is.
-export default function JointResultView({ results, modelId, name, tab: wanted = undefined, onTab = null, riskNow = true }) {
+// `onPositions` (the model's own page, where positions on the asset tree use the
+// model): a line above the tabs links to the Explorer, where those positions are
+// scored too. Risk now for the model's own running units stays either way.
+export default function JointResultView({ results, modelId, name, tab: wanted = undefined, onTab = null, onPositions = false }) {
   const r = results || {};
-  const tabs = modelTabs({ ...r, kind: "joint" }, { riskNow });
+  const tabs = modelTabs({ ...r, kind: "joint" });
   const [own, setOwn] = useState(() => resolveTab(tabs, wanted));
   const tab = resolveTab(tabs, wanted !== undefined && onTab ? wanted : own);
   const setTab = (id) => { setOwn(id); onTab?.(id); };
@@ -286,12 +287,12 @@ export default function JointResultView({ results, modelId, name, tab: wanted = 
       tabs={tabs}
       value={tab}
       onChange={setTab}
-      before={(!r.fit_ok || !riskNow) && (
+      before={(!r.fit_ok || onPositions) && (
         <>
-          {!riskNow && (
+          {onPositions && (
             <p className="hint mf-before joint-risk-moved">
-              Risk now is in the Explorer: <Link to={explorerPath("classes")}>arrange it by Classes</Link> and
-              choose a class to see its positions, highest risk first.
+              Positions on your asset tree use this model too: see their risk in
+              the <Link to={explorerPath("classes")}>Explorer, arranged by Classes</Link>.
             </p>
           )}
           {!r.fit_ok && (

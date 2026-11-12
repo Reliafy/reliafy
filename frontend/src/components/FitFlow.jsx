@@ -29,11 +29,11 @@ import { answerParts } from "../modelFrame.js";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { TvcToggle } from "./TvcColumns.jsx";
 import { guessTvc, tvcMapping, tvcProblems, tvcSummaryParts, tvcUnit } from "../tvcData.js";
-import { guessUnit, isNumeric } from "../datasetGuess.js";
+import { guessUnit, isNumeric, timeUnitOf } from "../datasetGuess.js";
 import {
   EMPTY_MAPPING, columnFacts, guessMapping, isSimplePaste, statusSummary, summaryParts,
   dataStepProblems, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped, mappingWords,
-  dataQuestions, answerQuestion,
+  dataQuestions, answerQuestion, flagWords, unitColumnWords, unitCounts,
 } from "../lifeData.js";
 import { RequiredUnit } from "./Units.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
@@ -281,7 +281,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     const questions = dataQuestions(g.mapping, facts, cols.columns, cols.n_rows);
     return {
       words: mappingWords(g.mapping, facts, g.unit),
-      problems: dataStepProblems(g.mapping, facts, cols.n_rows),
+      problems: dataStepProblems(g.mapping, facts, cols.n_rows, g.unit),
       summary: status && !questions.length ? summaryParts(status) : [],
       questions,
     };
@@ -378,7 +378,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const facts = useMemo(() => (csv ? columnFacts(csv) : {}), [csv]);
   const problems = useMemo(
     () => (!csv ? [] : tvc ? tvcProblems(mapping, facts, tvc, hasCovariates ? 1 : 0)
-      : dataStepProblems(mapping, facts, csv.n_rows)),
+      : dataStepProblems(mapping, facts, csv.n_rows, unit)),
     [csv, mapping, facts, tvc, hasCovariates, unit]
   );
   // Covariates over time on or off, or the rows' layout changed (#60).
@@ -394,6 +394,11 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   );
   const answer = (q, yes) => {
     const next = answerQuestion(mapping, q, yes, facts, answered);
+    if (yes && q.field === "u" && !timeUnitOf(unit)) {
+      const counts = unitCounts(q.column, facts) || {};
+      const common = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (common) setUnit(common);
+    }
     setMapping(next.mapping);
     setAnswered(next.answered);
   };
@@ -431,7 +436,10 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // Most units still running often means the sheet's flags are 1 = failed:
   // say so on the Data step, with the same flip the column mapper uses.
   const swapped = flagsLookSwapped(mapping, summary);
-  const swapFlags = () => setMapping((m) => ({ ...m, c_invert: !m.c_invert }));
+  const swapFlags = () => {
+    if (mapping.c) setAnswered((a) => [...a, `flags:${mapping.c}`]);
+    setMapping((m) => ({ ...m, c_invert: !m.c_invert }));
+  };
 
   // Cox PH's own options travel with a Cox fit only.
   const familyOpts = frailtyFitOptions(options.find((d) => d.id === distribution), fitOpts);
@@ -830,7 +838,13 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               <ColumnMapper
                 columns={csv.columns}
                 mapping={mapping}
-                onChange={setMapping}
+                onChange={(next) => {
+                  // Meanings set by hand answer the which-way-round question.
+                  if (next.c && next.c === mapping.c && (next.c_invert !== mapping.c_invert || next.c_map !== mapping.c_map)) {
+                    setAnswered((a) => [...a, `flags:${next.c}`]);
+                  }
+                  setMapping(next);
+                }}
                 unit={unit}
                 onUnitChange={setUnit}
                 renderUnit={() => <RequiredUnit value={unit} onChange={setUnit} listId="x-units" />}
@@ -888,6 +902,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             </p>
           ) : summary ? (
             <p className="ds-summary" role="status">
+              <span className="ds-summary-note">Read as: </span>
               {summaryParts(summary, { inspection }).map((part, i) => {
                 const [num, ...rest] = part.split(" ");
                 return (
@@ -897,6 +912,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                   </span>
                 );
               })}
+              {flagWords(mapping, facts) && (
+                <span className="ds-summary-note"> · {flagWords(mapping, facts)}</span>
+              )}
               {!mapping.c && (
                 <span className="ds-summary-note">
                   {simple ? " · every value is a time to failure"
@@ -907,6 +925,11 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               )}
             </p>
           ) : null}
+          {problems.length === 0 && !tvc && unitColumnWords(mapping, facts, unit)?.note && (
+            <p className="ds-flag-notice" role="status">
+              <span>{unitColumnWords(mapping, facts, unit).note}</span>
+            </p>
+          )}
           {problems.length === 0 && questions.map((q) => (
             <div className="ds-flag-notice" role="group" aria-label="A question about this file" key={q.id}>
               <span>{q.text}</span>

@@ -206,9 +206,9 @@ test("the summary says what's used and what's ignored", () => {
 });
 
 test("covariates are offered only where the model takes them; Ignore always", () => {
-  assert.deepEqual(roleChoices(), ["x", "c", "n", "xl", "xr", "tl", "tr", ""]);
+  assert.deepEqual(roleChoices(), ["x", "c", "n", "xl", "xr", "tl", "tr", "u", ""]);
   assert.deepEqual(roleChoices({ covariates: true, failureMode: true }),
-                   ["x", "c", "n", "xl", "xr", "tl", "tr", "e", "cov", ""]);
+                   ["x", "c", "n", "xl", "xr", "tl", "tr", "u", "e", "cov", ""]);
   assert.deepEqual(roleChoices({ timeVarying: "intervals", covariates: true }), ["i", "xl", "xr", "c", "cov", ""]);
   for (const opts of [{}, { covariates: true }, { timeVarying: "timeline" }]) {
     assert.equal(roleChoices(opts).at(-1), "");

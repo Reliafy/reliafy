@@ -224,3 +224,10 @@ export function paramGroups(params) {
   }
   return groups;
 }
+
+// Whether a saved condition and life model scores positions on the asset tree:
+// some position links it (`links` from GET /api/maintenance/position-models).
+// Then its page adds a link to the Explorer beside its own Risk now tab.
+export function usedOnPositions(links, modelId) {
+  return !!modelId && (links || []).some((l) => l?.model_type === "model" && l?.model_id === modelId);
+}

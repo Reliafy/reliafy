@@ -1359,6 +1359,7 @@ def options_from_form(
     c_map: Optional[str] = None,
     criterion: Optional[str] = None,
     frailty_family: Optional[str] = None,
+    u_col: Optional[str] = None,
 ) -> Optional[dict]:
     """Build an options dict from HTML-form string fields (both fit routers).
     ``c_map`` is a JSON object of status words to censor codes."""
@@ -1397,6 +1398,8 @@ def options_from_form(
         opts[CRITERION_KEY] = str(criterion).strip()
     if frailty_family and str(frailty_family).strip():
         opts[more_models.FAMILY_KEY] = str(frailty_family).strip()
+    if u_col and str(u_col).strip():
+        opts["u_col"] = str(u_col).strip()  # unit_column.UNIT_COLUMN_KEY
     return opts if any(opts.values()) else None
 
 
@@ -1713,6 +1716,16 @@ def fit(
         # The failure-mode and group columns (#177) are read by competing risks only.
         mapping = competing_risks.plain_mapping(mapping)
     options = dict(options or {})
+    # A column giving each row's time unit (hrs / days): every time to ``unit`` first.
+    from backend import unit_column  # local: it imports services that import this module
+
+    u_col = options.pop(unit_column.UNIT_COLUMN_KEY, None)
+    unit_conversion = None
+    if u_col:
+        try:
+            df, unit_conversion = unit_column.convert(df, mapping, str(u_col), unit)
+        except ValueError as exc:
+            raise FitError(str(exc)) from exc
     c_invert = bool(options.pop(CENSOR_INVERT_KEY, False)) and bool(mapping.get("c"))
     c_map = options.pop(CENSOR_MAP_KEY, None) if mapping.get("c") else None
     options.pop(CENSOR_MAP_KEY, None)
@@ -1792,6 +1805,16 @@ def fit(
         result["options"] = {**(result.get("options") or {}), CENSOR_INVERT_KEY: True}
     if c_map:
         result["options"] = {**(result.get("options") or {}), CENSOR_MAP_KEY: c_map}
+    if unit_conversion:
+        result["options"] = {**(result.get("options") or {}), unit_column.UNIT_COLUMN_KEY: unit_conversion["column"]}
+        result["unit_conversion"] = unit_conversion
+        if unit_conversion["note"]:
+            result["warnings"] = [*(result.get("warnings") or []), unit_conversion["note"]]
+    else:
+        # A column says the rows are in different units, and nothing read it.
+        ignored = unit_column.ignored_warning(df, mapping, unit)
+        if ignored:
+            result["warnings"] = [*(result.get("warnings") or []), ignored]
     # The data in words, "5 failed, 7 running" (#303), kept with a saved model.
     from backend.services import model_split  # local: services import this module
 

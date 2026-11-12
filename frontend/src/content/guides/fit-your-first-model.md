@@ -92,8 +92,17 @@ words. You only need the ones your data has:
   **Still running**. For the sample *Pump field returns*, `0` is 18 failures and
   `1` is 7 pumps still running. If most units come out as still running, the
   step says so and offers **Swap the flags**: many spreadsheets use `1` for
-  failed.
+  failed. A header that says which way round it is, such as *Failed (1=yes)*,
+  *failure (y/n)* or *1 = failed*, is read that way; when the header doesn't
+  say, the step asks, with the failures and still-running counts both ways.
+  The line under the columns then reads, for example, *Read as: 10 failures,
+  16 still running · 1 = failed, 0 = still running*.
 - **Count** — if one row represents several identical units.
+- **Unit of each row** — a column that says each row's unit, such as *hrs* on
+  most rows and *days* on a few. Every time is converted to the **Unit** below
+  before the fit (the most common one to start with), and the step says how
+  many rows were converted. If such a column is left unused, the step asks
+  first, and a fit made without it says so on **Diagnostics**.
 - **Failure mode** — when units fail in more than one way: each mode is treated as a competing risk (see [competing risks](/guides/competing-risks)).
 - Under **Advanced: interval and truncated data**, the earliest and latest
   possible failure time (for failures found at an inspection, used *instead of*

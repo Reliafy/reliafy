@@ -223,7 +223,9 @@ function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distr
 // ``c_map`` ({"Failed": 0, "Running": 1}: a status column of words), sent as
 // JSON when it has entries (#291).
 function appendMapping(form, mapping) {
-  const { c_invert, c_map, ...columns } = mapping || {};
+  // ``u``: a column of per-row units, sent as the ``u_col`` fit option.
+  const { c_invert, c_map, u, ...columns } = mapping || {};
+  if (u) form.append("u_col", u);
   for (const [field, column] of Object.entries(columns)) {
     if (column) form.append(field, column);
   }
@@ -445,7 +447,7 @@ export function createModelFromParams(name, distribution, params, { unit, extras
 // Refit a saved model in place with an edited spec (same dataset, same id --
 // everything referencing the model sees the updated fit).
 export function updateModelFit(id, { distribution, mapping, covariates, covariateUnits, formula, unit, fitOptions } = {}) {
-  const { c_invert, c_map, ...columns } = mapping || {};
+  const { c_invert, c_map, u, ...columns } = mapping || {};
   // Covariate units (#265): omitted keeps the model's own.
   const units = covariateUnits === undefined ? undefined : Object.fromEntries(
     (covariates || []).map((c) => [c, String(covariateUnits[c] || "").trim()]).filter(([, u]) => u)
@@ -458,6 +460,7 @@ export function updateModelFit(id, { distribution, mapping, covariates, covariat
       mapping: columns,
       c_invert: !!(columns.c && c_invert),
       c_map: columns.c && c_map && Object.keys(c_map).length ? c_map : null,
+      u_col: u || null,
       covariates: covariates || [],
       formula: formula || null,
       unit: unit || null,

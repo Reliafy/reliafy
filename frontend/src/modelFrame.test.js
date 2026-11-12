@@ -31,9 +31,11 @@ test("every kind of model gets the approved tabs, in order", () => {
     ["Effects", "Calculator", "Model characteristics", "Diagnostics", "Data"]);
   // Condition and life: no Fleet tab.
   assert.deepEqual(labels(modelTabs({ kind: "joint" })), ["Risk now", "Calculator", "Effects", "Diagnostics", "Data"]);
-  // Where the Explorer shows risk now (by Classes), the model's page leaves its tab out.
-  assert.deepEqual(labels(modelTabs({ kind: "joint" }, { riskNow: false })), ["Calculator", "Effects", "Diagnostics", "Data"]);
-  assert.equal(resolveTab(modelTabs({ kind: "joint" }, { riskNow: false }), "risk"), "calc");
+  // Risk now stays for every account, Maintenance on or off: the Explorer scores only
+  // positions on the asset tree, so a dataset's own running units are scored here.
+  assert.deepEqual(labels(modelTabs({ kind: "joint" }, { riskNow: false })), ["Risk now", "Calculator", "Effects", "Diagnostics", "Data"]);
+  assert.equal(resolveTab(modelTabs({ kind: "joint" }), "risk"), "risk");
+  assert.equal(resolveTab(modelTabs({ kind: "joint" }), undefined), "risk");
 });
 
 test("a tab that doesn't apply is left out, and a one-view model has none", () => {
@@ -102,9 +104,9 @@ test("other kinds answer in their own terms", () => {
   const sure = answerParts({ kind: "joint", risk: [{ id: "P-19", risk: [0.5, 0.9999] }],
     horizons: { labels: ["30 days", "90 days"] } });
   assert.deepEqual(sure, ["highest risk: unit P-19, > 99.9% in the next 90 days"]);
-  // ... and not at all where the page has no Risk now tab to show it in.
+  // ... for every account: the Risk now tab it points to is always there.
   assert.deepEqual(answerParts({ kind: "joint", risk: [{ id: "P-19", risk: [0.5, 0.9999] }],
-    horizons: { labels: ["30 days", "90 days"] } }, { riskNow: false }), []);
+    horizons: { labels: ["30 days", "90 days"] } }, { riskNow: false }), ["highest risk: unit P-19, > 99.9% in the next 90 days"]);
   const reg = answerParts({ kind: "regression", distribution: "Weibull PH", ratio_label: "hazard ratio", unit: "Hours",
     coefficients: [{ name: "temp_C", value: 0.138, ci: [0.093, 0.183] }, { name: "load", value: 0.5, ci: [-1, 2] }],
     validation: { available: true, concordance: { value: 0.868 } }, n: 32 });

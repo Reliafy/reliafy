@@ -1,6 +1,6 @@
 import Select from "./Select.jsx";
 import { isNumeric } from "../datasetGuess.js";
-import { assignRole, columnRoles, countProblem, roleChoices, roleLabel, roleSummary } from "../lifeData.js";
+import { assignRole, columnRoles, countProblem, roleChoices, roleLabel, roleSummary, unitCounts } from "../lifeData.js";
 
 // Every column and what it's for (#434): the fields above pick a column per
 // role; this lists each column with its role, so one that isn't a time, a
@@ -21,7 +21,8 @@ export default function ColumnRoles({ columns, mapping, covariates, facts = {}, 
     return list.map((r) => {
       if (r === "") return { value: "", label: "Ignore this column" };
       const why = r === "n" ? countProblem(facts[col])
-        : r === "cov" && !isNumeric(facts[col]?.dtype) ? "text: use a formula" : null;
+        : r === "cov" && !isNumeric(facts[col]?.dtype) ? "text: use a formula"
+        : r === "u" && !unitCounts(col, facts) ? "not time units" : null;
       const hint = why === "decimals" ? "has decimals" : why;
       return { value: r, label: roleLabel(r, timeVarying), ...(why && r !== role ? { hint, disabled: true } : {}) };
     });
