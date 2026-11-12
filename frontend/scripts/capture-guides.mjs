@@ -831,9 +831,8 @@ async function main() {
     // --- Covariates: ticking them, the PH coefficients, a changing-load schedule ---
     { file: "cov-01-covariates.png", url: "/models/new?dataset=sample-ds-seal-alt", settle: 1500,
       async act(page) {
-        await page.getByText("Advanced (regression): covariates").click(); await wait(400);
-        await page.locator(".cov-chip", { hasText: "temp_C" }).click();
-        await page.locator(".cov-chip", { hasText: "load" }).click(); await wait(500);
+        // The covariates come from the dataset's reading (Z): a regression starts with every one ticked.
+        await page.getByRole("radio", { name: /Regression on Z/ }).click(); await wait(500);
         await page.locator(".cov-chip", { hasText: "temp_C" }).evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 420));
         await wait(500);
       } },

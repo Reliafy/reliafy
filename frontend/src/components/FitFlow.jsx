@@ -43,7 +43,9 @@ import ReadingSummary, { ReadingChange } from "./ReadingSummary.jsx";
 import { useDatasetReading } from "../useDatasetReading.js";
 import { datasetReading, detailColumns, fitFromReading, readingIssues } from "../datasetReading.js";
 
-const STEPS = ["Source", "Data", "Model", "Result"];
+// The steps shown (``n``: the flow's own step; 2, the old column step, is gone:
+// a dataset's reading says which column is which).
+const STEPS = [{ n: 1, label: "Source" }, { n: 3, label: "Model" }, { n: 4, label: "Result" }];
 // Where the data comes from: a saved dataset first (most users have one), then typed or pasted values, then a file.
 const SOURCES = [
   { value: "saved", label: "Saved data" },
@@ -611,13 +613,12 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
   const stepper = (
     <div className="steps">
-      {STEPS.map((label, i) => {
-        const n = i + 1;
+      {STEPS.map(({ n, label }, i) => {
         return (
           <span className="step-wrap" key={label}>
             {i > 0 && <span className="sep" />}
             <span className={`step${step === n ? " active" : ""}`} aria-current={step === n ? "step" : undefined}>
-              <span className="dot">{n}</span>
+              <span className="dot">{i + 1}</span>
               <span className="step-label">{label}</span>
             </span>
           </span>

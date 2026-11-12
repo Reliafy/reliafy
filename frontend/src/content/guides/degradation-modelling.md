@@ -50,12 +50,14 @@ being deliberate about, because everything downstream is expressed relative to i
 
 Go to **Modelling → Models → Degradation → New model** and pick your dataset under **Saved
 data** (datasets of readings come first; the rest are greyed out, with the reason), or upload a
-file. The **Data** step uses the same selectors as the other fits, with
-only the three a degradation fit reads: **i** (*which item each reading belongs
+file (it's saved as a dataset first, through **New dataset**). There is no
+column step: the dataset's reading gives the three a degradation fit reads,
+shown in one line with **Change**: **i** (*which item each reading belongs
 to*), **x** (*when the reading was taken*) with its unit, and **m** (*the
 measured value*) with its unit, so the outputs are labelled properly. There is
 no **c**: an item's readings simply stop. Anything that needs settling (an item
-column with only one item, items read only once) is said beside its selector. A dataset that holds life data with its **Measurements** (readings on
+column with only one item, items read only once) is said under that line, with
+**Change the reading**. A dataset that holds life data with its **Measurements** (readings on
 the same units; see [condition and life](/guides/condition-based-risk)) is read
 here by its measurements.
 
