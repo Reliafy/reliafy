@@ -5,8 +5,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  EMPTY_MAPPING, columnFacts, dataQuestions, dataStepIssues, dataStepProblems, guessUnitNames, mappingFields,
-  readAsParts, roleGroups, rolesOf, setRole, startingMapping, statusSummary,
+  EMPTY_MAPPING, columnFacts, dataQuestions, dataStepIssues, dataStepNotes, dataStepProblems, guessUnitNames,
+  keptChoices, mappingFields, readAsParts, roleGroups, rolesOf, setRole, startingMapping, statusSummary,
 } from "./lifeData.js";
 import { unitNoun } from "./datasetGuess.js";
 import { SHEETS } from "./dataStepSheets.js";
@@ -131,7 +131,6 @@ const BEFORE = {
   seals: [["x", "Hours"], ["c", "Status"], ["e", "Failure mode"], ["c_invert", "0"], ["c_map", '{"Running":1,"Failed":0}']],
   w01: [["x", "Run hours"], ["c", "Status"], ["c_invert", "0"], ["c_map", '{"Failed":0,"Running":1}']],
   w02: [["u_col", "Units"], ["x", "Time in service"], ["c", "Failed (1=yes)"], ["c_invert", "1"]],
-  w02fixed: [["u_col", "Units"], ["x", "Time in service"], ["c", "Failed (1=yes)"], ["c_invert", "1"]],
   w11: [["x", "Run hours"], ["c", "Status"], ["c_invert", "0"], ["c_map", '{"Failed":0,"Removed, OK":1}']],
   w11coded: [["x", "Run hours"], ["c", "Status"], ["c_invert", "0"], ["c_map", '{"Failed":0,"Removed, OK":1}']],
   w12wear: [["x", "Hours"], ["c", "Status"], ["e", "Failure mode"], ["c_invert", "0"], ["c_map", '{"Running":1,"Failed":0}']],
@@ -143,6 +142,7 @@ test("the same mapping sends the same fit request as before", () => {
   for (const [name, fields] of Object.entries(BEFORE)) {
     const s = start(name);
     const sent = mappingFields(s.mapping);
+    if (name === "w02fixed") continue; // an intended change: see the W02 test
     if (name === "w13") {
       // The one intended change: the late-entry column is now guessed.
       assert.deepEqual(sent.filter(([k]) => k !== "tl"), fields, name);
@@ -173,4 +173,58 @@ test("units are named from the column that names them", () => {
   assert.equal(unitNoun("Serial number"), "units");
   assert.equal(unitNoun(""), "units");
   assert.equal(unitNoun("Seal", 1), "seal");
+});
+
+test("W02 fixed: the time column that names its unit wins, and the Units column (the other time's) is left alone", () => {
+  const s = start("w02fixed");
+  assert.equal(s.mapping.x, "Hours in service");
+  assert.equal(s.mapping.u, "");
+  assert.equal(s.unit, "Hours");
+  assert.equal(dataQuestions(s.mapping, s.facts, s.csv.columns, s.csv.n_rows).length, 0);
+  // The original sheet, with no unit in its time column's name, still converts by Units.
+  assert.equal(start("w02").mapping.u, "Units");
+});
+
+test("a corrected copy of the same file keeps the choices made on the first", () => {
+  const first = start("w02");
+  const chosen = { mapping: { ...first.mapping, c_invert: false }, unit: "Hours", covariates: [], idColumn: "Idler No." };
+  const kept = keptChoices(chosen, SHEETS.w02fixed.columns);
+  assert.equal(kept.mapping.x, "Time in service");
+  assert.equal(kept.mapping.c_invert, false);
+  assert.equal(kept.idColumn, "Idler No.");
+  // A file without a column the choices use starts afresh.
+  assert.equal(keptChoices(chosen, SHEETS.seals.columns), null);
+  assert.equal(keptChoices(null, SHEETS.w02.columns), null);
+});
+
+test("wholly blank rows are said to be skipped, and times of 0 or less are noted on the time column", () => {
+  const s = start("seals");
+  const parts = readAsParts({ mapping: s.mapping, facts: s.facts, nRows: 80, unit: "Hours",
+    summary: statusSummary(s.mapping, s.facts, 80), idColumn: "Seal", blankRows: 1 });
+  assert.equal(parts[parts.length - 1], "1 blank row skipped");
+  const facts = columnFacts({ ...SHEETS.seals, nonpositive: [null, 2, null, null] });
+  const notes = dataStepNotes(s.mapping, facts);
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].col, "Hours");
+  assert.match(notes[0].text, /^2 rows have a time of 0 or less in “Hours”/);
+  // A note, not a problem: Kaplan-Meier still fits them.
+  assert.equal(dataStepIssues(s.mapping, facts, 80, "Hours").length, 0);
+});
+
+test("inspection data never offers every row is a failure", () => {
+  const csv = SHEETS.w13;
+  const facts = columnFacts(csv);
+  const m = { ...EMPTY_MAPPING, xl: "Last good check (h)", xr: "Found failed at (h)" };
+  const q = dataQuestions(m, facts, csv.columns, csv.n_rows).find((x) => x.id === "status:Status");
+  assert.equal(q.no, "No: a blank “Found failed at (h)” is a unit still running");
+});
+
+test("a saved reading of rows whose covariates change over time keeps its item column", () => {
+  const cols = ["pump", "start_h", "stop_h", "censored", "load_pct"];
+  const saved = { mapping: { i: "pump", xl: "start_h", xr: "stop_h", c: "censored" }, options: {}, unit: "Hours" };
+  const facts = columnFacts({ columns: cols, dtypes: ["str", "int64", "int64", "int64", "int64"],
+    blanks: [0, 0, 0, 0, 0], values: [null, null, null, { 0: 25, 1: 71 }, null], n_rows: 96 });
+  const kept = startingMapping(saved, cols, facts, 96);
+  assert.equal(kept.mapping.i, "pump");
+  assert.ok(kept.from);
 });

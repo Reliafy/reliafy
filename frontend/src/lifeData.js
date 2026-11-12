@@ -4,6 +4,7 @@
 import {
   CONVERTIBLE_UNITS, flagHeaderMeaning, guessIdColumn, guessIntervalPair, guessLateEntry, guessLifeColumns,
   guessStatusMeaning, guessUnit, guessUnitColumn, isNumeric, likelyStatusColumns, timeUnitOf, unitNoun,
+  unitlessTimeName,
 } from "./datasetGuess.js";
 
 // ``e`` names each failure's mode and ``g`` the groups to compare (#177):
@@ -35,7 +36,7 @@ export function mappingFields(mapping) {
 // when the server didn't say); ``decimal``: a value from the preview that
 // isn't one, for a message.
 export function columnFacts(csv) {
-  const { columns = [], dtypes, blanks, values, n_unique: nUnique, whole, preview = [] } = csv || {};
+  const { columns = [], dtypes, blanks, values, n_unique: nUnique, whole, nonpositive, preview = [] } = csv || {};
   return Object.fromEntries(
     columns.map((name, i) => {
       const sample = preview.map((r) => r[i]).filter((v) => v !== null && v !== "");
@@ -44,6 +45,7 @@ export function columnFacts(csv) {
       return [name, {
         dtype, blanks: blanks?.[i] ?? 0, values: values?.[i] ?? null, nUnique: nUnique?.[i] ?? null, sample: sample[0],
         whole: whole?.[i] ?? (decimal !== undefined ? false : undefined), decimal,
+        nonpositive: nonpositive?.[i] ?? null,
       }];
     })
   );
@@ -268,7 +270,8 @@ export function savedMapping(saved, columns) {
   const m = saved?.mapping;
   if (!m || !(m.x || m.xl)) return null;
   const have = new Set(columns || []);
-  const fields = Object.entries(m).filter(([k, v]) => k in EMPTY_MAPPING && typeof v === "string" && v);
+  // ``i``: the item column of rows whose covariates change over time (#60).
+  const fields = Object.entries(m).filter(([k, v]) => (k in EMPTY_MAPPING || k === "i") && typeof v === "string" && v);
   if (!fields.length || fields.some(([, v]) => !have.has(v))) return null;
   const opts = saved.options || {};
   return {
@@ -287,7 +290,7 @@ export function guessMapping(columns, facts) {
   const pair = guessIntervalPair(cols, [g.c, g.n].filter(Boolean));
   const times = pair ? { x: "", ...pair } : { x: g.x };
   // A column of per-row units ("hrs" / "days"): converted to the most common.
-  const mixed = guessUnitColumn(cols, [g.c, g.n, g.x, pair?.xl, pair?.xr].filter(Boolean));
+  const mixed = !pair && unitColumnIsAnothers(g.x, columns, facts) ? null : guessUnitColumn(cols, [g.c, g.n, g.x, pair?.xl, pair?.xr].filter(Boolean));
   // A text column named for the failure mode or cause ("Failure mode") beside
   // a status column is the failure mode: fitted as competing risks (one time
   // per unit only). Without a status column its blanks are asked about
@@ -322,6 +325,22 @@ export function startingMapping(saved, columns, facts, nRows) {
   return { ...kept, from: kept.from || "the last model" };
 }
 
+// The choices made on the file loaded before, kept for a corrected copy of
+// it loaded next: when every column they name is in the new file (and they
+// name a time), { mapping, unit, covariates, idColumn }; null otherwise.
+export function keptChoices(previous, columns) {
+  const m = previous?.mapping;
+  if (!m || !(m.x || m.xl || m.i)) return null;
+  const have = new Set(columns || []);
+  const named = [...Object.values(m).filter((v) => typeof v === "string" && v), ...(previous.covariates || []),
+    ...(previous.idColumn ? [previous.idColumn] : [])];
+  if (named.some((c) => !have.has(c))) return null;
+  return {
+    mapping: { ...m }, unit: previous.unit || "", covariates: [...(previous.covariates || [])],
+    idColumn: previous.idColumn || "", tvc: previous.tvc || null,
+  };
+}
+
 // The column naming each unit, for the words only (see guessIdColumn).
 export function guessUnitNames(columns, facts, nRows, mapping, covariates = []) {
   const used = [...Object.values(mapping || {}).filter((v) => typeof v === "string" && v), ...covariates];
@@ -352,7 +371,7 @@ function lateCount(column, facts) {
 // where it has one (shown bold). ``summary``: the failed / running split
 // (statusSummary, or the server's reading for inspection data), null when it
 // can't be told yet; ``idColumn``: the column naming each unit.
-export function readAsParts({ mapping, facts, nRows, unit, summary, idColumn = "", inspection = false }) {
+export function readAsParts({ mapping, facts, nRows, unit, summary, idColumn = "", inspection = false, blankRows = 0 }) {
   const parts = [];
   const total = summary ? summary.failed + summary.running + summary.left + summary.interval
     : nRows - (facts[mapping.x]?.blanks || 0);
@@ -384,7 +403,16 @@ export function readAsParts({ mapping, facts, nRows, unit, summary, idColumn = "
   }
   const flags = flagWords(mapping, facts);
   if (flags) parts.push(flags);
+  if (blankRows) parts.push(`${plural(blankRows, "blank row", "blank rows")} skipped`);
   return parts;
+}
+
+// Is a column of per-row units another time column's? True when the time
+// column names its unit ("Hours in service") and another numeric column is a
+// time without one ("Time in service"): the units describe that one.
+function unitColumnIsAnothers(x, columns, facts) {
+  if (!x || !guessUnit(x)) return false;
+  return (columns || []).some((c) => c !== x && isNumeric(facts[c]?.dtype) && unitlessTimeName(c));
 }
 
 // A unit column's rows by unit, from its few values: { Hours: 22, Days: 4 }
@@ -447,7 +475,9 @@ export function dataQuestions(mapping, facts, columns, nRows, answered = []) {
 
 // A column of mixed per-row units that nothing uses: every time would be read in one unit.
 function unitQuestion(mapping, facts, columns) {
-  if (mapping.u) return null;
+  // A time column that names its unit ("Hours in service") is in that unit;
+  // a column of per-row units then belongs to another time column.
+  if (mapping.u || unitColumnIsAnothers(mapping.x, columns, facts)) return null;
   const used = Object.values(mapping).filter((v) => typeof v === "string" && v);
   const mixed = guessUnitColumn((columns || []).map((name) => ({ name, ...facts[name] })), used);
   if (!mixed) return null;
@@ -476,11 +506,14 @@ function otherQuestions(mapping, facts, columns, nRows, answered) {
   }
   const status = likely.status.find((c) => !mode || c.name !== mode.name);
   if (status) {
+    // Inspection data reads a blank latest time as still running, so "No"
+    // there never means every row failed.
+    const interval = mapping.xl && mapping.xr;
     out.push({
       id: `status:${status.name}`, field: "c", column: status.name,
       text: `“${status.name}” looks like it says which units failed, but it isn't being used. Does it?`,
       yes: `Yes: use “${status.name}”`,
-      no: "No: every row is a failure",
+      no: interval ? `No: a blank “${mapping.xr}” is a unit still running` : "No: every row is a failure",
     });
   }
   return out.filter((q) => !answered.includes(q.id));
@@ -603,6 +636,18 @@ export function summaryParts(s, { inspection = false } = {}) {
 // ``unit``: the fit's unit, which a column of per-row units converts to.
 export function dataStepProblems(mapping, facts, nRows, unit = undefined) {
   return dataStepIssues(mapping, facts, nRows, unit).map((i) => i.text);
+}
+
+// What may stop some fits without stopping all, said on its column: a time
+// of 0 or less, which Kaplan-Meier takes but a Weibull refuses. [{ col, text }].
+export function dataStepNotes(mapping, facts) {
+  const n = facts[mapping.x]?.nonpositive;
+  if (!mapping.x || !n || mapping.xl || mapping.xr) return [];
+  return [{
+    col: mapping.x,
+    text: `${plural(n, "row has", "rows have")} a time of 0 or less in “${mapping.x}”. A distribution such as Weibull can't fit `
+      + `${n === 1 ? "it" : "them"}: correct or remove ${n === 1 ? "that row" : "those rows"}, or use a non-parametric estimate.`,
+  }];
 }
 
 // The same, each with the column it comes from (``col``; null when it is

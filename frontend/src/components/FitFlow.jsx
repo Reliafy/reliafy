@@ -32,7 +32,7 @@ import { isNumeric, timeUnitOf } from "../datasetGuess.js";
 import {
   EMPTY_MAPPING, columnFacts, isSimplePaste, startingMapping, statusSummary, summaryParts,
   dataStepProblems, dataStepIssues, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped, mappingWords,
-  dataQuestions, answerQuestion, unitCounts, readAsParts, guessUnitNames,
+  dataQuestions, answerQuestion, unitCounts, readAsParts, guessUnitNames, keptChoices, dataStepNotes,
 } from "../lifeData.js";
 import { RequiredUnit } from "./Units.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
@@ -60,11 +60,15 @@ const PASTED = PASTED_FILE;
 const datasetColumns = (full) => ({
   columns: full.preview_columns || [],
   preview: full.preview || [],
-  n_rows: full.n_rows,
+  // Wholly blank rows are skipped by every fit, so they aren't counted.
+  n_rows: full.n_rows - (full.blank_rows || 0),
+  blank_rows: full.blank_rows || 0,
   n_unique: full.n_unique,
   dtypes: full.dtypes,
   blanks: full.blanks,
   values: full.values,
+  whole: full.whole,
+  nonpositive: full.nonpositive,
 });
 
 // The paste parser lives in lifeData.js (unit-tested there).
@@ -126,7 +130,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [loading, setLoading] = useState(false);
   const [dragging, setDragging] = useState(false);
   // An Excel workbook becomes a CSV of the chosen sheet before anything else.
-  const { toCsv, modal: sheetModal } = useSpreadsheet();
+  // Part of the source step, not a modal over it.
+  const { toCsv, modal: sheetModal } = useSpreadsheet({ inline: true });
   const inputRef = useRef(null);
 
   // Step 4 (Result): the fit, a name, and the save action.
@@ -223,8 +228,22 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // them (the guided first run fits straight away).
   // ``saved``: a dataset's ``last_mapping``, how its newest model read the
   // columns (the status words, the late-entry column): used when it fits.
-  const loadColumns = (cols, simplePaste = false, saved = null) => {
+  // ``previous``: the choices made on the file loaded before; a corrected copy
+  // of it (every column they name still there) keeps them.
+  const loadColumns = (cols, simplePaste = false, saved = null, previous = null) => {
     const facts = columnFacts(cols);
+    const again = simplePaste ? null : keptChoices(previous, cols.columns);
+    if (again) {
+      setCsv(cols);
+      setMapping(again.mapping);
+      setTvc(again.tvc);
+      setUnit(again.unit);
+      setSimple(false);
+      setCovariates(again.covariates);
+      setIdColumn(again.idColumn);
+      setKeptFrom("the file you loaded before");
+      return { mapping: again.mapping, unit: again.unit };
+    }
     // The saved reading when it still reads cleanly, else a fresh guess (startingMapping).
     const g = startingMapping(simplePaste ? null : saved, cols.columns, facts, cols.n_rows);
     const kept = g.from ? g : null;
@@ -232,7 +251,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       // A pasted flag column is 0 = failed, 1 = still running, as the paste box says.
       ? { ...EMPTY_MAPPING, x: "time", c: cols.columns.includes("censored") ? "censored" : "" }
       : g.mapping;
-    setKeptFrom(kept ? kept.from || "the last model" : null);
+    setKeptFrom(kept ? `“${kept.from || "the last model"}”, the last model fitted to this dataset` : null);
     // Start and stop rows of items (#60): fit their covariates over time.
     const timeVarying = simplePaste ? null
       : kept ? (kept.mapping.i ? "intervals" : null) : guessTvc(cols.columns, facts, cols.n_rows);
@@ -275,7 +294,10 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     setLoading(true);
     try {
       const cols = await getColumns(use);
-      loadColumns(cols, isSimplePaste(cols.columns) && use.name === PASTED);
+      // A corrected copy of the file loaded before keeps the choices made on it.
+      const previous = csv && file && file.name !== PASTED && !simple
+        ? { mapping, unit, covariates: advanced ? [] : covariates, idColumn, tvc } : null;
+      loadColumns(cols, isSimplePaste(cols.columns) && use.name === PASTED, null, previous);
       setStep(2);
     } catch (err) {
       setError(err.message);
@@ -476,7 +498,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const readParts = !csv ? [] : tvc
     ? [...tvcSummaryParts(mapping, facts, csv.n_rows, tvc), "covariates change over time"]
     : [
-      ...readAsParts({ mapping, facts, nRows: csv.n_rows, unit, summary, idColumn, inspection }),
+      ...readAsParts({ mapping, facts, nRows: csv.n_rows, unit, summary, idColumn, inspection, blankRows: csv.blank_rows || 0 }),
       ...(simple && !mapping.c ? ["every value is a time to failure"] : []),
       ...(!simple && hasCovariates ? [advanced ? "covariates from a formula" : `${covariates.length} ${covariates.length === 1 ? "covariate" : "covariates"}`] : []),
     ];
@@ -848,7 +870,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             </div>
           )}
 
-          {source === "upload" && (
+          {source === "upload" && !sheetModal && (
           <div
             className={`dropzone${dragging ? " dragging" : ""}`}
             onClick={() => inputRef.current?.click()}
@@ -928,7 +950,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             </div>
           </div>
           {keptFrom && (
-            <p className="muted-line" role="status">Columns read as for “{keptFrom}”, the last model fitted to this dataset.</p>
+            <p className="muted-line" role="status">Columns read as for {keptFrom}.</p>
           )}
           {generalIssues.length > 0 && (
             <ul className="ds-problems" role="status">
@@ -974,6 +996,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                 covariatesAllowed={!advanced}
                 failureMode
                 issues={issues}
+                notes={tvc ? [] : dataStepNotes(mapping, facts)}
                 asides={asides}
                 onChange={(next, { meanings }) => {
                   // Meanings set by hand answer the which-way-round question.

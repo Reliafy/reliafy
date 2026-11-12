@@ -10070,3 +10070,21 @@ main.content:focus { outline: none; }
 .rcm-on-tree { margin-bottom: 16px; }
 .rcm-on-tree-list { margin: 8px 0 0; padding-left: 18px; }
 .rcm-on-tree-list li { margin: 4px 0; overflow-wrap: anywhere; }
+
+/* A workbook's sheet chosen in the fit flow's source step, not in a modal. */
+.xl-inline-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  min-width: 0;
+}
+.xl-inline-title { margin: 0; font-size: var(--fs-16); font-weight: 600; overflow-wrap: anywhere; }
+.xl-inline-actions { margin: 0; justify-content: flex-end; flex-wrap: wrap; }
+/* A phone: the header-row picker takes the panel's width, never more. */
+.xl-picker .xl-inline { max-width: 100%; min-width: 0; flex-wrap: wrap; }
+.xl-picker .xl-inline .select-wrap, .xl-picker .xl-inline > div { min-width: 0; max-width: 100%; flex: 1 1 12rem; }
+.xl-picker .xl-inline button { max-width: 100%; }

@@ -138,6 +138,18 @@ Under **Less common** in the same list:
 switches: covariates that change over time, and covariates written as a
 formula.
 
+A few things the step does for you:
+
+- **Blank rows** (a gap left in a sheet) are skipped, and **Read as** says how
+  many.
+- A **time of 0 or less** is noted on the time column: Kaplan–Meier takes it,
+  but a distribution such as Weibull can't, so correct or remove those rows.
+- Load a **corrected copy** of the same file (go **Back** and upload it again)
+  and the columns are read as you set them on the first, as long as every
+  column you used is still there.
+- An **Excel workbook** asks which sheet and header row to use right in the
+  first step, before the table.
+
 On a phone the headings stack above the rows, one card per column, and the rows
 scroll sideways inside their own box.
 

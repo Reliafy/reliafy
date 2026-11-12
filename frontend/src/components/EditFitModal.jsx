@@ -4,7 +4,7 @@ import DataMapper from "./DataMapper.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import CoxOptions from "./CoxOptions.jsx";
 import { getDataset, getDistributions, updateModelFit } from "../api.js";
-import { EMPTY_MAPPING, columnFacts, dataStepIssues, guessUnitNames } from "../lifeData.js";
+import { EMPTY_MAPPING, columnFacts, dataStepIssues, dataStepNotes, guessUnitNames } from "../lifeData.js";
 import { TvcToggle } from "./TvcColumns.jsx";
 import { tvcMapping, tvcProblems } from "../tvcData.js";
 import { frailtyFitOptions, groupProblem, withGroup } from "../moreModels.js";
@@ -49,11 +49,11 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
         const cols = d.preview_columns || [];
         const f = columnFacts({
           columns: cols, preview: d.preview || [], n_unique: d.n_unique,
-          dtypes: d.dtypes, blanks: d.blanks, values: d.values,
+          dtypes: d.dtypes, blanks: d.blanks, values: d.values, whole: d.whole, nonpositive: d.nonpositive,
         });
         setColumns(cols);
         setRows((d.preview || []).slice(0, 5));
-        setNRows(d.n_rows || 0);
+        setNRows((d.n_rows || 0) - (d.blank_rows || 0));
         setFacts(f);
         if (!spec.mapping?.i) setIdColumn(guessUnitNames(cols, f, d.n_rows || 0, mapping, spec.covariates || []));
       })
@@ -151,6 +151,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
             timeVarying={tvc}
             covariatesAllowed={!advanced}
             issues={issues}
+            notes={tvc ? [] : dataStepNotes(mapping, facts)}
             onChange={(next) => {
               setMapping(next.mapping);
               if (!advanced) setCovariates(next.covariates);

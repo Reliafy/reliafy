@@ -106,6 +106,9 @@ const words = (name) =>
 
 // A time to failure or removal: hours, cycles, km, age… in the name.
 const TIME_WORDS = /\b(hours?|hrs?|hr|time|times|age|cycles?|km|kms|kilomet(?:re|er)s?|miles?|mileage|odometer|days?|weeks?|months?|years?|minutes?|mins?|starts?|operations?|landings?|shots?|runtime|duration|life|ttf|tbf|mtbf)\b/i;
+// A column named like a time with no unit in its name ("Time in service").
+export const unitlessTimeName = (name) => TIME_WORDS.test(words(name)) && !guessUnit(name);
+
 // A failed / still-running flag: status, failed, censor, event, suspended…
 const STATUS_WORDS = /\b(status|state|fail|failed|failure|failures|censor|censored|censoring|cens|event|events|suspend|suspended|suspension|suspensions|running|outcome|survived|alive|dead)\b/i;
 // …but not a failure *mode*, cause or date.
@@ -229,7 +232,9 @@ export function guessLifeColumns(columns) {
   // A late-entry column ("Entered at (h)") is never the time, however numeric.
   const numeric = columns.filter((col) => isNumeric(col.dtype) && col.name !== c && col.name !== n
     && !LATE_ENTRY.test(words(col.name)));
+  // A header that carries its unit ("Hours in service") beats a bare "Time in service".
   const x =
+    numeric.find((col) => TIME_WORDS.test(words(col.name)) && guessUnit(col.name)) ||
     numeric.find((col) => TIME_WORDS.test(words(col.name))) ||
     numeric.find((col) => !ID_WORDS.test(words(col.name))) ||
     numeric[0];

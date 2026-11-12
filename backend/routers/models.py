@@ -188,6 +188,9 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
         "blanks": preview.get("blanks"),
         "values": preview.get("values"),
         "whole": preview.get("whole"),
+        "nonpositive": preview.get("nonpositive"),
+        # Wholly blank rows, skipped by every fit (n_rows still counts them).
+        "blank_rows": preview.get("blank_rows", 0),
         "models": [_model_summary(m, ctx) for m in models],
         # How the newest model read the columns: a new fit from here starts there.
         "last_mapping": _last_mapping(models, dataset.columns),

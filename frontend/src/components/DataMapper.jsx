@@ -18,6 +18,7 @@ import { COMMON_UNITS } from "./Units.jsx";
 // never sent with the fit. ``onChange({ mapping, covariates, idColumn },
 // { col, role, meanings })``: ``meanings`` when a status value's meaning was
 // set by hand. ``issues``: [{ col, text }] (lifeData.dataStepIssues);
+// ``notes``: [{ col, text }] that don't stop the fit (lifeData.dataStepNotes);
 // ``asides``: { col: node } shown under a column's heading (a question to
 // answer). On a phone the role pickers stack above the rows, which scroll
 // inside their card.
@@ -50,7 +51,7 @@ function UnitPick({ value, onChange, id }) {
 export default function DataMapper({
   columns, rows = [], facts = {}, mapping, covariates = [], idColumn = "", onChange,
   unit, onUnitChange, covUnits = {}, onCovUnit, timeVarying = null, covariatesAllowed = false,
-  failureMode = false, issues = [], asides = {},
+  failureMode = false, issues = [], notes = [], asides = {},
 }) {
   const phone = usePhone();
   const roles = rolesOf(columns, mapping, covariates, idColumn);
@@ -115,6 +116,9 @@ export default function DataMapper({
     }
     for (const i of issues.filter((x) => x.col === col)) {
       out.push(<p key={i.text} className="dm-issue" role="status">{i.text}</p>);
+    }
+    for (const n of notes.filter((x) => x.col === col)) {
+      out.push(<p key={n.text} className="dm-issue dm-note" role="status">{n.text}</p>);
     }
     if (asides[col]) out.push(<div key="aside" className="dm-aside">{asides[col]}</div>);
     return out;
