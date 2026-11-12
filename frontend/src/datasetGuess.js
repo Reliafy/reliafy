@@ -249,31 +249,6 @@ export function guessLateEntry(columns, exclude = []) {
   return columns.find((c) => isNumeric(c.dtype) && !exclude.includes(c.name) && LATE_ENTRY.test(words(c.name)))?.name || "";
 }
 
-// The column that names each unit ("Seal", "Seal ID", "Idler No."): a column
-// the mapping doesn't use whose every value differs (one row per unit), named
-// like an id, or else the first such text column. It's only for the words
-// ("80 seals"): nothing is sent with the fit. "" when there is none.
-const NAME_WORDS = /\b(id|ids|no|number|serial|sn|tag|asset|unit|item|equipment|name|ref|reference)\b/i;
-export function guessIdColumn(columns, nRows, exclude = []) {
-  const pool = columns.filter((c) => !exclude.includes(c.name) && !c.blanks
-    && (c.nUnique == null ? !isNumeric(c.dtype) && NAME_WORDS.test(words(c.name)) : c.nUnique === nRows));
-  return (pool.find((c) => NAME_WORDS.test(words(c.name))) || pool.find((c) => !isNumeric(c.dtype)))?.name || "";
-}
-
-// What the units are called, from the column that names them: "Seal" →
-// "seals", "Idler No." → "idlers", "Pump tag" → "pumps"; "units" otherwise.
-const NAME_TOKENS = new Set(["id", "ids", "no", "number", "serial", "sn", "tag", "code", "name", "ref", "reference", "of", "the"]);
-export function unitNoun(column, n = 2) {
-  const tokens = words(column).toLowerCase().split(/\s+/).filter((t) => t && /^[a-z]+$/.test(t) && !NAME_TOKENS.has(t));
-  const one = tokens[tokens.length - 1];
-  if (!one || one.length < 2) return n === 1 ? "unit" : "units";
-  if (n === 1) return one;
-  if (/s$/.test(one)) return one;
-  if (/[^aeiou]y$/.test(one)) return `${one.slice(0, -1)}ies`;
-  if (/(ch|sh|x|z)$/.test(one)) return `${one}es`;
-  return `${one}s`;
-}
-
 // Inspection data: the two times a failure lies between, by their names —
 // "last ok" and "found failed", earliest / latest, lower / upper, shortest /
 // longest, xl / xr. Null when no two numeric columns pair up (two usage

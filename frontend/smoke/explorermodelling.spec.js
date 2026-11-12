@@ -523,7 +523,7 @@ test("Fit a life model… through each Data choice on a class of two positions",
   await headPick(page, "Life model", "Fit a life model…");
   const dialog = page.getByRole("region", { name: "Fit a life model" });
   await expect(dialog.getByRole("status")).toContainText("A plain fit (maximum likelihood) to 2 failures and 1 suspension in this position's history");
-  await expect(dialog.locator(".fit2-numbers thead")).toContainText("95% confidence bounds");
+  await expect(dialog.locator(".fit2-numbers thead")).toContainText("90% confidence bounds");
   await dialog.getByRole("combobox", { name: "Data" }).selectOption("class");
   await expect(dialog).toContainText(`2 positions of ${klass}: 5 failures, 2 suspensions`);
   await expect(dialog.getByRole("status")).toContainText("5 failures and 2 suspensions in the class");

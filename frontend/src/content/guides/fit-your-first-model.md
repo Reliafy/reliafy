@@ -83,75 +83,64 @@ on the dataset's page, on its **Measurements** tab, and feed a
 
 ## Mapping the columns
 
-The **Data** step is one table: your file's first rows, with a list in each
-column's heading saying what that column is. Reliafy fills them in from the
-column names and values, so for most files you only check them.
+The **Data** step shows your file's first rows, then one selector for each
+thing a fit can use. Each is labelled with SurPyval's name for it (**x**, **c**,
+**n**, **xl**, **xr**, **tl**) and a few plain words. Reliafy fills them in from
+the column names and values, so for most files you only check them, then press
+**Next**.
 
-At the top, **Read as** says what will be fitted, the answer first, for example
-*80 seals · 37 failed (22 Wear, 15 Installation) · 43 still running · times in
-hours*. If that's right, press **Next**. If something needs settling, the
-heading of the column it comes from says what, and the note beside **Next** says
-where to look.
+![The Data step: the first rows, then x, c, n, tl and failure mode](/guides/img/fit-04-data-step.png)
 
-![The Data step: each column's role in its heading, and what will be fitted above the table](/guides/img/fit-04-data-step.png)
+- **x** — *the value when it failed or was removed*. Required, unless every row
+  is a range (below). It needn't be time: days, operating hours, cycles,
+  kilometres, volts or a load all work. Beside it, the **unit** (pick one or
+  type your own; guessed from the column name where it can be), or **no unit**
+  if the values really have none. The unit flows through to every chart and
+  result, so it stops you comparing a model in hours against one in cycles
+  later on.
+- **where x is blank, a range: xl to xr** — for failures found at an
+  inspection: **xl** is the last value the unit was seen working, **xr** the
+  value it was found failed (blank **xr**: still running). Map only the range
+  when every row is one; map **x** as well when some rows have an exact value
+  and others only a range, and each row is read on its own. A row with **x**
+  *and* both range cells filled is left out of the fit, with a warning on the
+  **x** row saying how many and which.
+- **c** — *failed or still running*: `0` = failed, `1` = still running. If your
+  column uses `1` for a failure, tick **my column uses 1 = failed**. A header
+  that says which way round it is, such as *Failed (1=yes)*, is read that way;
+  when it doesn't say, the step asks, with the failures and still-running
+  counts both ways. A column of words (*Failed*, *Running*) is read for you,
+  and the line under **c** shows how, for example *Failed → 0, Running → 1*,
+  with a switch to flip any one. For the sample *Pump field returns*, `0` is 18
+  failures and `1` is 7 pumps still running; if most units come out as still
+  running, the step offers **Swap the flags**.
+- **n** — *how many units the row stands for*, if one row represents several
+  identical units.
+- **tl** — *late entry*: the value each unit was first observed at, for units
+  already in service when records began. A column named like *Entered at (h)*
+  is read this way from the start.
+- **failure mode** — *optional, competing risks*: when units fail in more than
+  one way, each mode is treated as a competing risk (see
+  [competing risks](/guides/competing-risks)). A blank mode on a unit still
+  running is normal.
 
-The usual choices in a heading:
+Anything that needs settling is said beside the selector it concerns, and when
+**Next** is greyed the reason is beside it. A column that says each row's unit,
+such as *hrs* on most rows and *days* on a few, is offered under the unit:
+every value is converted to the unit before the fit.
 
-- **Unit name or id** — the column naming each unit (*Seal*, *Pump tag*). It
-  only gives the words in **Read as** (*80 seals*); it isn't used in the fit.
-- **Time to failure or removal** — the failure or censoring time. Required. Its
-  heading also holds the **Unit** (guessed from the column name where it can
-  be), or **No unit** if the times really have none. The unit flows through to
-  every chart and result, so it stops you comparing a model in hours against
-  one in cycles later on.
-- **Failed or still running** — the censoring column. Its heading lists the
-  values it finds, with how many rows have each, and you mark each one
-  **Failed** or **Still running**. For the sample *Pump field returns*, `0` is
-  18 failures and `1` is 7 pumps still running. If most units come out as still
-  running, the heading says so and offers **Swap the flags**: many spreadsheets
-  use `1` for failed. A header that says which way round it is, such as
-  *Failed (1=yes)*, *failure (y/n)* or *1 = failed*, is read that way; when the
-  header doesn't say, the heading asks, with the failures and still-running
-  counts both ways.
-- **Failure mode** — when units fail in more than one way: each mode is treated
-  as a competing risk (see [competing risks](/guides/competing-risks)). A blank
-  mode on a unit still running is normal.
-- **Covariate** — a column a failure depends on, such as load or temperature,
-  with an optional unit (see [covariates](/guides/covariates-and-regression)).
-- **Ignore this column** — anything else, such as notes or a cost.
-
-Under **Less common** in the same list:
-
-- **Count** — if one row represents several identical units.
-- **Earliest** and **Latest failure time (inspection)** — for failures found at
-  an inspection, used *instead of* a single time.
-- **Observed from (late entry)** and **Observed until** — when each unit was
-  observed from and until (truncation). A column named like *Entered at (h)* is
-  read as late entry from the start.
-- **Time unit of each row** — a column that says each row's unit, such as
-  *hrs* on most rows and *days* on a few. Every time is converted to the unit
-  under the time column before the fit, and **Read as** says how many rows were
-  converted. If such a column is left unused, its heading asks first, and a fit
-  made without it says so on **Diagnostics**.
-
-**More options**, under the table, explains these and holds the rarer
-switches: covariates that change over time, and covariates written as a
-formula.
+Under **Advanced (regression): covariates**, tick the columns a failure depends
+on, such as load or temperature (see
+[covariates](/guides/covariates-and-regression)).
 
 A few things the step does for you:
 
-- **Blank rows** (a gap left in a sheet) are skipped, and **Read as** says how
-  many.
-- A **time of 0 or less** is noted on the time column: Kaplan–Meier takes it,
-  but a distribution such as Weibull can't, so correct or remove those rows.
+- **Blank rows** (a gap left in a sheet) are skipped.
+- A **value of 0 or less** is noted beside **x**: Kaplan–Meier takes it, but a
+  distribution such as Weibull can't, so correct or remove those rows.
 - Load a **corrected copy** of the same file (go **Back** and upload it again)
   and the columns are read as you set them on the first, as long as every
   column you used is still there.
-- An **Excel workbook** asks which sheet and header row to use right in the
-  first step, before the table.
-
-On a phone the headings stack above the rows, one card per column, and the rows
-scroll sideways inside their own box.
 
 ## Choosing a distribution
 

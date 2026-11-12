@@ -13,6 +13,8 @@ test("fit and save a Weibull model from a sample dataset", async ({ page, proble
   await expectHealthy(page, problems, { label: "fitted model", chart: true });
 
   await page.getByRole("button", { name: "Save this model", exact: true }).click();
+  // Not named yet: Save asks for a name, starting from the default.
+  await page.getByRole("dialog", { name: "Name this model" }).getByRole("button", { name: "Save model", exact: true }).click();
   await page.waitForURL(/\/models\/m\/[0-9a-f]{32}$/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: /Weibull/ })).toBeVisible();
   await expectHealthy(page, problems, { label: "saved model", chart: true });
@@ -27,9 +29,8 @@ test("data with covariates that change over time fits a non-repairable model", a
   await page.getByRole("button", { name: "Fit a non-repairable model with covariates that change over time" }).click();
   await expect(page).toHaveURL(/\/models\/new\?dataset=sample-ds-pump-load/);
   // The Data step opens with start and stop rows mapped.
-  await expect(page.getByText("Start of the row", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "What “start_h” is" })).toContainText("Start of the row");
-  await expect(page.getByRole("combobox", { name: "What “stop_h” is" })).toContainText("End of the row");
+  await expect(page.getByRole("combobox", { name: "Start of the row" })).toContainText("start_h");
+  await expect(page.getByRole("combobox", { name: "End of the row" })).toContainText("stop_h");
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByText(/Covariates change over time/)).toBeVisible();
   await page.getByRole("button", { name: "Fit Weibull PH" }).click();
@@ -216,20 +217,18 @@ async function uploadAndFit(page) {
   });
   await expect(page.getByText("Your first row looks like data, so we've treated it as data.")).toBeVisible();
   await expect(page.getByText(/raw\.csv · 8 rows/)).toBeVisible();
-  // One table: each column's role in its heading, and the answer first above it.
-  await expect(page.getByRole("combobox", { name: "What “col 1” is" })).toContainText("Time to failure or removal");
-  await expect(page.getByText(/Read as:/)).toBeVisible();
+  // One selector per input, labelled x, c, n…: col 1 is read as x.
+  await expect(page.getByRole("combobox", { name: "x", exact: true })).toContainText("col 1");
 
-  // The column of decimals is offered as a count only with the reason, and can't be picked.
-  await page.getByRole("combobox", { name: "What “col 2” is" }).click();
-  const count = page.getByRole("option", { name: /^Count/ });
+  // The column of decimals is offered as n (a count) only with the reason, and can't be picked.
+  await page.getByRole("combobox", { name: "n", exact: true }).click();
+  const count = page.getByRole("option", { name: /^col 2/ });
   await expect(count).toBeDisabled();
   await expect(count).toContainText("has decimals");
-  await expect(page.getByRole("option", { name: "Ignore this column" })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  // No unit can be guessed from "col 1": the Read as line says so, but Next is never blocked.
-  await expect(page.getByText(/no time unit yet/)).toBeVisible();
+  // No unit can be guessed from "col 1": the unit box is empty, but Next is never blocked.
+  await expect(page.getByRole("combobox", { name: "Unit of the values" })).toHaveValue("");
   await expect(page.getByRole("button", { name: "Next" })).toBeEnabled();
   await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Fit Weibull" }).click();
@@ -251,6 +250,7 @@ test("a headerless CSV is detected, fitted and saved with its data in one click"
   await uploadAndFit(page);
   await expectHealthy(page, problems, { label: "fitted headerless CSV", chart: true });
   await page.getByRole("button", { name: "Save this model and its data" }).click();
+  await page.getByRole("dialog", { name: "Name this model" }).getByRole("button", { name: "Save model and data" }).click();
   await expectSavedWithData(page);
   await expectHealthy(page, problems, { label: "saved model", chart: true });
 });

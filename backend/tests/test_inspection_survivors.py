@@ -86,7 +86,7 @@ def test_survivors_are_not_read_as_failures(reference):
     assert _b10(wrong) > reference["b10"] * 1.2
     # ... which the reading says before the fit, rather than passing in silence.
     notes = fitting.reading_notes(_coded(), _MAP)
-    assert len(notes) == 1 and notes[0].startswith("15 rows have the same earliest and latest time")
+    assert len(notes) == 1 and notes[0].startswith("15 rows have the same earliest and latest value")
     assert fitting.reading_notes(_coded(), {**_MAP, "c": "censor_code"}) == []
     assert fitting.reading_notes(_blank(), _MAP) == []
 
@@ -126,10 +126,10 @@ def test_rows_coded_already_pass_through_untouched():
 
 
 @pytest.mark.parametrize("xl, xr, c, says", [
-    ([np.nan, 1.0], [np.nan, 2.0], None, "Row 1 has no time in 'last_ok' or 'found_failed'"),
-    ([5.0, 1.0], [2.0, 2.0], None, "In row 1 the earliest time ('last_ok') is after the latest"),
-    ([1.0, 1.0], [2.0, 2.0], [1, 2], "Row 1 is marked still running but has two different times"),
-    ([1.0, 1.0], [np.nan, 2.0], [2, 2], "Row 1 is marked as an interval but has only one time"),
+    ([np.nan, 1.0], [np.nan, 2.0], None, "Row 1 has no value in 'last_ok' or 'found_failed'"),
+    ([5.0, 1.0], [2.0, 2.0], None, "In row 1 the earliest value ('last_ok') is after the latest"),
+    ([1.0, 1.0], [2.0, 2.0], [1, 2], "Row 1 is marked still running but has two different values"),
+    ([1.0, 1.0], [np.nan, 2.0], [2, 2], "Row 1 is marked as an interval but has only one value"),
 ])
 def test_rows_that_cannot_be_read_are_refused_in_plain_words(xl, xr, c, says):
     with pytest.raises(FitError) as err:

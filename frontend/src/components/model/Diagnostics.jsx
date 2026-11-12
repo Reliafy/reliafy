@@ -19,9 +19,10 @@ import { termName } from "../../modelFrame.js";
 import { countsSummary, curveSummary, hazardShape, oddUnits, ppSummary } from "../../modelFrame.js";
 import { unitInText } from "../unitText.js";
 import { levelPct } from "../../levels.js";
+import { valueAxisTitle } from "../../lifeData.js";
 
 const fmt5 = (v) => formatNumber(v, { sig: 5 });
-const tAxis = (unit) => ({ title: { text: unit ? `Time (${unit})` : "Time" }, rangemode: "tozero" });
+const tAxis = (unit) => ({ title: { text: valueAxisTitle(unit) }, rangemode: "tozero" });
 const SMALL = { margin: { t: 6, r: 10, b: 40, l: 50 } };
 
 // ---- The column beside the checks --------------------------------------------
