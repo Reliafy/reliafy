@@ -476,3 +476,91 @@ def test_random_devices_retries_and_reordering_never_double_and_always_settle(se
     closes = sum(1 for o in applied if o["command"] == "work_orders.close")
     assert closes == sum(1 for j in jobs if m.work_order(j)["status"] == "closed")
     _same_after_rebuild(m)
+
+
+# ---- the asset trees in the pack (a phone browses them with no signal) ----------------
+
+
+def _plant(m):
+    """A site with a pump station: a pump with a motor fitted, a spare in the store,
+    an item with no home, and a point read three times."""
+    site = m.create_location("North site")
+    store = m.create_location("Store", parent_id=site["id"])
+    pump = m.create_position("Pump station 1", tag="PS-1", location_id=site["id"])
+    motor = m.create_position("Drive motor", tag="M-01", parent_id=pump["id"], position_class="Motor")
+    m.fit(motor["id"], new_item={"name": "WEG 30 kW", "serial": "SN-77"})
+    spare = m.create_item("Spare motor", serial="SN-99")
+    m.place_item(spare["id"], store["id"])
+    loose = m.create_item("Old gearbox")
+    point = m.add_point(motor["id"], "Bearing temperature", kind="condition", unit="°C")
+    for i, value in enumerate((61, 64, 70)):
+        m.record_reading(point["id"], value, at=f"2026-11-0{i + 1}T08:00:00+10:00")
+    wo = m.open_work_order(motor["id"], "Bearing running hot")
+    return {"site": site, "store": store, "pump": pump, "motor": motor, "spare": spare, "loose": loose,
+            "point": point, "wo": wo}
+
+
+def test_the_tree_is_every_position_once_flat_and_lean(m):
+    p = _plant(m)
+    tree = sync.device_tree(m)
+    rows = {r["id"]: r for r in tree["positions"]}
+    assert set(rows) == {p["pump"]["id"], p["motor"]["id"]}
+    motor = rows[p["motor"]["id"]]
+    assert motor["parent_id"] == p["pump"]["id"] and motor["tag"] == "M-01" and motor["position_class"] == "Motor"
+    assert motor["item"]["name"] == "WEG 30 kW" and motor["item"]["serial"] == "SN-77"
+    assert motor["open_work"] == 1
+    pump = rows[p["pump"]["id"]]
+    assert pump["parent_id"] is None and pump["location_id"] == p["site"]["id"]
+    assert "item" not in pump and "open_work" not in pump and "position_class" not in pump   # empty: left out
+    assert {(x["name"], x["parent_id"]) for x in tree["locations"]} == {("North site", None),
+                                                                        ("Store", p["site"]["id"])}
+    assert tree["spares"] == [{"id": p["spare"]["id"], "name": "Spare motor", "location_id": p["store"]["id"],
+                               "serial": "SN-99"}]
+    assert [x["name"] for x in tree["unhomed"]] == ["Old gearbox"]
+
+
+def test_a_pack_with_the_tree_carries_where_the_work_is_and_what_is_kept(m):
+    p = _plant(m)
+    plain = sync.pack(m, {})
+    assert "tree" not in plain and "assets" not in plain           # an older phone's pack is as it was
+    out = sync.pack(m, {"tree": True, "keep": [p["spare"]["id"], p["site"]["id"], "gone-id"]})
+    assert len(out["tree"]["positions"]) == 2
+    assets = out["assets"]
+    assert set(assets) == {p["spare"]["id"], p["site"]["id"], p["motor"]["id"]}   # kept, then the work's
+    motor = assets[p["motor"]["id"]]
+    assert motor["kind"] == "position" and [x["name"] for x in motor["path"]] == ["Pump station 1"]
+    assert motor["item"]["serial"] == "SN-77" and motor["location"]["name"] == "North site"
+    temp = motor["readings"][0]
+    assert temp["name"] == "Bearing temperature" and temp["reading"] == 70
+    assert [r["value"] for r in temp["recent"]] == [70, 64, 61]                    # newest first
+    spare = assets[p["spare"]["id"]]
+    assert spare["kind"] == "item" and spare["serial"] == "SN-99" and spare["location"]["name"] == "Store"
+    assert assets[p["site"]["id"]]["kind"] == "location"
+    with pytest.raises(Invalid):
+        sync.pack(m, {"tree": True, "keep": ["x"] * (sync.MAX_DETAILS + 1)})
+    with pytest.raises(Invalid):
+        sync.pack(m, {"tree": True, "keep": "all"})
+
+
+def test_the_tree_stays_a_sensible_size(m):
+    """At the workspace's cap of positions (20,000) the tree must still be a download a
+    phone can take: measured here on 1,500 positions, a few hundred with items fitted."""
+    import gzip
+    import json
+
+    from backend.maintenance.service import MAX_POSITIONS
+
+    site = m.create_location("Mine site")
+    lines = [m.create_position(f"Conveyor CV-{i:02d}", tag=f"CV-{i:02d}", location_id=site["id"]) for i in range(30)]
+    for i in range(1470):
+        pos = m.create_position(f"Idler set {i:04d}", tag=f"ID-{i:04d}", parent_id=lines[i % 30]["id"],
+                                position_class="Idler set")
+        if i % 5 == 0:
+            m.fit(pos["id"], new_item={"name": "Idler 152 mm", "serial": f"IS-{i:05d}"})
+    tree = sync.device_tree(m)
+    assert len(tree["positions"]) == 1500
+    raw = json.dumps(tree, separators=(",", ":")).encode()
+    per_position = len(raw) / 1500
+    assert per_position < 200, per_position                      # about 3 to 4 MB at the cap
+    assert per_position * MAX_POSITIONS < 4_000_000
+    assert len(gzip.compress(raw, 6)) < len(raw) / 4               # and well under 1 MB over the wire

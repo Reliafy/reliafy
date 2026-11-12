@@ -549,8 +549,132 @@ def pack(m: Maintenance, body: dict | None = None) -> dict:
     parts = [{k: p.get(k) for k in ("id", "part_number", "name", "unit", "manufacturer")}
              for p in m.s.nodes(m.org, "Part") if not p.get("retired")]
     parts.sort(key=lambda p: str(p.get("part_number") or "").lower())
-    return {"unchanged": False, "briefs": briefs, "work_orders": full, "gone": gone, "more": more, "parts": parts,
-            **stamp}
+    out = {"unchanged": False, "briefs": briefs, "work_orders": full, "gone": gone, "more": more, "parts": parts,
+           **stamp}
+    if body.get("tree"):
+        keep = body.get("keep") or []
+        if not isinstance(keep, list) or len(keep) > MAX_DETAILS or any(not isinstance(k, str) for k in keep):
+            raise Invalid(f"keep is a list of at most {MAX_DETAILS} ids.")
+        out["tree"] = device_tree(m)
+        # The things the device can open in full with no signal: those kept on it, then where
+        # its work is (each work order's position, or its item or location).
+        at_work = []
+        for wo in full:
+            for ref in (wo.get("position"), wo.get("subject")):
+                if isinstance(ref, dict) and ref.get("id"):
+                    at_work.append(ref["id"])
+        out["assets"] = device_details(m, list(dict.fromkeys([*keep, *at_work]))[:MAX_DETAILS])
+    return out
+
+
+#: Things a pack carries in full (kept on the phone, plus where the open work is).
+MAX_DETAILS = 200
+#: Readings and photos per thing in full: enough to see the trend and what it looks like.
+DETAIL_READINGS = 5
+DETAIL_PHOTOS = 20
+
+
+def _lean(d: dict) -> dict:
+    """Empty fields left out (a big register stays small over the wire)."""
+    return {k: v for k, v in d.items() if v not in (None, "", [], {}, 0, False)}
+
+
+def device_tree(m: Maintenance) -> dict:
+    """The asset trees as a device keeps them to browse with no signal: every live
+    position once, flat (id, name, parent_id; when set: tag, position_class,
+    location_id (set on it), carried_by, the item fitted now {id, name, serial} and
+    open_work (its own open work orders and its item's)), the locations (id, name,
+    parent_id), the items placed at one (spares) and the items with no home. The
+    same read as the app's tree pane (Maintenance._tree_read), with only what a row
+    shows: at the workspace's cap of positions it's a few MB before compression."""
+    read = m._tree_read()
+    positions = []
+    for pid, r in read["positions"].items():
+        item = r["item"]
+        positions.append({"id": pid, "name": r["name"], "parent_id": r["parent_id"], **_lean({
+            "tag": r["tag"], "position_class": r["position_class"], "location_id": r["location_id"],
+            "carried_by": r["carried_by"],
+            "item": item and _lean({k: item.get(k) for k in ("id", "name", "serial")}),
+            "open_work": (r["status"] or {}).get("open_work"),
+        })})
+    locations = [{"id": x["id"], "name": x["name"], "parent_id": x["parent_id"]} for x in read["locations"]]
+    spares = [{"id": x["id"], "name": x["name"], "location_id": x["location_id"], **_lean({"serial": x["serial"]})}
+              for x in read["spares"]]
+    unhomed = [{"id": x["id"], "name": x["name"], **_lean({"serial": x["serial"]})} for x in read["unhomed"]]
+    return {"positions": positions, "locations": locations, "spares": spares, "unhomed": unhomed}
+
+
+def _readings(m: Maintenance, node_id: str) -> list[dict]:
+    """A position's or item's measurement points, each with its latest few readings, newest first."""
+    out = []
+    for p in m._points_on(node_id):
+        recent = sorted((r for r in p.get("readings") or [] if r.get("status") in (None, "ok", "correction")),
+                        key=lambda r: str(r.get("at") or ""), reverse=True)[:DETAIL_READINGS]
+        out.append({k: p.get(k) for k in ("id", "name", "kind", "unit", "reading", "read_at", "status")}
+                   | {"recent": [{"at": r.get("at"), "value": r.get("value")} for r in recent]})
+    return out
+
+
+def _photos(m: Maintenance, node_id: str) -> list[dict]:
+    """A thing's photos, newest first."""
+    found = [{k: p.get(k) for k in ("id", "caption", "taken_on", "uploaded_on")} for p in m.photos_of(node_id)]
+    return list(reversed(found))[:DETAIL_PHOTOS]
+
+
+def device_details(m: Maintenance, ids: list[str]) -> dict:
+    """Positions, items and locations in full enough to open with no signal: name, the
+    path down to it, class, where it is, the item fitted (a position) or where it's
+    fitted (an item), the latest readings and the photos. Ids that are gone are left out."""
+    from backend.maintenance import class_fleet
+
+    classes = class_fleet.item_class_ids(m)
+    class_names: dict[str, str | None] = {}
+
+    def class_of(item_id: str | None) -> str | None:
+        cid = item_id and classes.get(item_id)
+        if not cid:
+            return None
+        if cid not in class_names:
+            node = m.s.node(m.org, cid)
+            class_names[cid] = node and node.get("name")
+        return class_names[cid]
+
+    out: dict[str, dict] = {}
+    for node_id in ids:
+        node = m.s.node(m.org, node_id)
+        if node is None or node.get("retired") or node["label"] not in ("Position", "Item", "Location"):
+            continue
+        if node["label"] == "Position":
+            current = next((f for f in m._fitments_at(node_id) if f.get("to") is None), None)
+            item = current and m._fitment_view(current)["item"]
+            loc = m._location_view(node_id)
+            out[node_id] = {
+                "id": node_id, "kind": "position", "name": node["name"], "tag": node.get("tag", ""),
+                "position_class": node.get("position_class", ""), "description": node.get("description", ""),
+                "path": m._position_path(node_id),
+                "location": loc and {k: loc.get(k) for k in ("id", "name", "display", "inherited")},
+                "item": item and {**{k: item.get(k) for k in ("id", "name", "serial", "part_number", "manufacturer",
+                                                               "model")}, "item_class": class_of(item.get("id"))},
+                "readings": _readings(m, node_id), "photos": _photos(m, node_id),
+                "item_readings": _readings(m, item["id"]) if item else [],
+                "item_photos": _photos(m, item["id"]) if item else [],
+            }
+        elif node["label"] == "Item":
+            where = m.whereabouts(node_id)
+            loc = where["location"]
+            out[node_id] = {
+                "id": node_id, "kind": "item", "name": node.get("name", ""),
+                **{k: node.get(k, "") for k in ("serial", "part_number", "manufacturer", "model")},
+                "item_class": class_of(node_id),
+                "fitted_to": loc and loc.get("position"),
+                "location": loc and {k: loc.get(k) for k in ("id", "name", "display")},
+                "readings": _readings(m, node_id), "photos": _photos(m, node_id),
+            }
+        else:
+            brief = m._location_brief(node)
+            out[node_id] = {"id": node_id, "kind": "location", "name": node["name"],
+                            "path": brief["path"], "display": brief["display"], "photos": _photos(m, node_id)}
+    return out
 
 
 def applied(m: Maintenance, op_id: str) -> dict | None:
@@ -559,5 +683,5 @@ def applied(m: Maintenance, op_id: str) -> dict | None:
     return m.s.node(m.org, op_node_id(str(op_id).lower()), "SyncOp")
 
 
-__all__ = ["COMMANDS", "MAX_OPS", "OPEN_STATUSES", "Malformed", "Push", "applied", "pack", "photo_id_for", "push",
-           "push_photo", "read_op"]
+__all__ = ["COMMANDS", "MAX_DETAILS", "MAX_OPS", "OPEN_STATUSES", "Malformed", "Push", "applied", "device_details",
+           "device_tree", "pack", "photo_id_for", "push", "push_photo", "read_op"]
