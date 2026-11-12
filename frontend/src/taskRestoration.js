@@ -71,3 +71,48 @@ export function restorationBody(task, f) {
   if (fixed && !same(task?.older_than ?? null, older)) body.older_than = older;
   return body;
 }
+
+// ---- one failure mode's own restoration (the RCM's task details) ---------------------------
+// A fixed-interval task serving several failure modes leaves the item as the task says, unless
+// a mode's decision says otherwise for itself (task.restoration_set with failure_mode_id). The
+// RCM's task row reads both: `restoration` (the task's own) and `restorations` {modeId: …}.
+
+// Words for a stored restoration, as the server's restoration.words gives them.
+export function restorationWords(r) {
+  if (!r || r.kind === "as_new") return "As new";
+  const pctTaken = Number(((1 - Number(r.q || 0)) * 100).toPrecision(4));
+  const what = r.kind === "kijima1" ? "of the age gained since the last task" : "of its age";
+  let out = `Restores ${pctTaken}% ${what}`;
+  if (r.replace_every) out += ` · every ${r.replace_every}th task a full replacement`.replace(/ 2th/, " 2nd").replace(/ 3th/, " 3rd");
+  return out;
+}
+
+// The form for one mode: {kind: "task" (no own: as the task says) | as_new | kijima1 | kijima2, restores}.
+export function modeRestorationForm(task, modeId) {
+  const mine = task?.restorations?.[modeId];
+  if (!mine) return { kind: "task", restores: "" };
+  if (mine.kind === "as_new") return { kind: "as_new", restores: "" };
+  return { kind: mine.kind, restores: pct(mine.q) };
+}
+
+// What's wrong with the mode's form (null: nothing).
+export function modeRestorationProblem(f) {
+  if (f.kind !== "kijima1" && f.kind !== "kijima2") return null;
+  const x = Number(f.restores);
+  if (String(f.restores).trim() === "" || !Number.isFinite(x) || x < 0 || x > 100) return "Say how much of its age the task takes away: 0% to 100%.";
+  return null;
+}
+
+// The PATCH body for the task: the mode's own restoration, or {failure_mode_id} alone to clear it
+// (the task's own then stands for this mode too). The task's every-Nth replacement is kept.
+export function modeRestorationBody(task, modeId, f) {
+  if (f.kind === "task") return { restoration: { failure_mode_id: modeId } };
+  if (f.kind === "as_new") return { restoration: { kind: "as_new", failure_mode_id: modeId } };
+  const out = { kind: f.kind, q: Number((1 - Number(f.restores) / 100).toPrecision(6)), failure_mode_id: modeId };
+  const own = task?.restoration;
+  if (own?.replace_every && Number(f.restores) < 100) {
+    out.replace_every = own.replace_every;
+    if (own.replacement_cost != null) out.replacement_cost = own.replacement_cost;
+  }
+  return { restoration: out };
+}

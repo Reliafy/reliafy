@@ -5904,6 +5904,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                  "instructions": t.get("instructions") or "",
                  "shared_with": shares(t["id"]) if shares else 0}
                 | ({"position_id": t["position_id"]} if t.get("position_id") else {})
+                # What it leaves the item as (restoration.py): the task's own, and any failure
+                # mode's decision's own, so the RCM can show and change one mode's.
+                | ({"restoration": t["restoration"]} if t.get("restoration") else {})
+                | ({"restorations": t["restorations"]} if t.get("restorations") else {})
                 | Maintenance._calendar_due(t) for t in tasks]
 
     @staticmethod
@@ -6299,6 +6303,58 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 "truncated": truncated, "total_positions": len(order)}
 
     # ---- tasks and when they're due ------------------------------------------------
+
+    @staticmethod
+    def _name_stem(name: str) -> str:
+        """A position's name without its last token when that token only tells identical
+        positions apart ("Pump A", "Pump 2", "Pump #2", "Pump-B" → "pump")."""
+        text = " ".join(str(name or "").lower().split())
+        return re.sub(r"(?:[\s\-_#]+(?:[a-z]|\d+[a-z]?)|\d+[a-z]?)$", "", text).strip() or text
+
+    def task_twins(self, task_id: str) -> dict:
+        """The same task on identical positions (Nov 2026: change a pump's interval, and its
+        twin keeps the old one): live tasks with the same name on other positions of the same
+        position class, or, where it has no class, on positions inside the same parent whose
+        names differ only in their last letter or number. Each with its interval and unit, so
+        the page can offer to bring them in line. {task, twins: [{id, name, interval, unit,
+        outcome, position {id, name, path}, same}]}; same: its interval and unit match."""
+        task = self._get(str(task_id or ""), "Task")
+        here = _subject(self.s, self.org, task)
+        out = {"task": {"id": task["id"], "name": task["name"], "interval": task.get("interval"),
+                        "unit": task.get("unit")}, "twins": []}
+        if not here or here["label"] != "Position":
+            return out
+        cls = (here.get("position_class") or "").strip().lower()
+        parent = self._parent(here["id"])
+        stem = self._name_stem(here["name"])
+        want = " ".join(str(task["name"] or "").lower().split())
+
+        def alike(p: dict) -> bool:
+            if p["id"] == here["id"] or p.get("retired"):
+                return False
+            if cls:
+                return (p.get("position_class") or "").strip().lower() == cls
+            if (p.get("position_class") or "").strip():
+                return False
+            mine = self._parent(p["id"])
+            return bool(parent and mine and mine["id"] == parent["id"] and stem != " ".join(p["name"].lower().split())
+                        and self._name_stem(p["name"]) == stem)
+
+        for p in self.s.nodes(self.org, "Position"):
+            if not alike(p):
+                continue
+            for t in self._tasks_on(p["id"]):
+                if " ".join(str(t["name"] or "").lower().split()) != want:
+                    continue
+                path = [x["name"] for x in self._position_path(p["id"])]
+                out["twins"].append({
+                    "id": t["id"], "name": t["name"], "interval": t.get("interval"), "unit": t.get("unit"),
+                    "outcome": t.get("outcome"),
+                    "position": {"id": p["id"], "name": p["name"], "path": " › ".join(path + [p["name"]])},
+                    "same": t.get("interval") == task.get("interval") and t.get("unit") == task.get("unit")})
+        out["twins"].sort(key=lambda x: x["position"]["path"].lower())
+        out["twins"] = out["twins"][:MAX_LIST]
+        return out
 
     def _tasks_on(self, position_id: str) -> list[dict]:
         return [t for t in self.s.inn(self.org, position_id, "ON") if t["label"] == "Task" and not t.get("retired")]

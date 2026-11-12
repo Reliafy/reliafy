@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { madeTask } from "../taskStart.js";
 import { VIEW_PARAMS } from "../measurementsTab.js";
 import {
   MEAS_TABLE_COLS, MEAS_TREE_HEAD, MeasCell, MeasDialogs, MeasSide, measPhoneRow, measRowActions, retireMeasurement, useTreeMeasurements,
@@ -1742,11 +1743,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   }, [paneOpen]);
   // The dialog stays open (Apply saying "Saving…") until the server has it;
   // a refusal shows in the dialog, with everything as it was typed.
-  const saveDecision = async (answer) => {
-    await ops.decide(deciding, answer);
+  // A cost typed for a new task goes on the task the decision made (where the Maintenance
+  // tab and the RCM's worth-doing test read it).
+  const saveDecision = async ({ cost, ...answer }) => {
+    const before = [...(deciding.ref.tasks || []), ...(deciding.ref.decision?.tasks || [])].map((t) => t.id);
+    const out = await ops.decide(deciding, answer);
+    const made = cost != null ? madeTask(before, out, answer.decision?.task) : null;
+    if (made) await ops.editTask(made.id, { cost });
     setDeciding(null);
-    say("Saved the decision.");
+    say(cost != null && !made ? "Saved the decision. No task was made, so the cost wasn't kept." : "Saved the decision.");
   };
+  const loadDecisionTasks = useCallback(() => (deciding ? ops.modeTasks(deciding) : Promise.resolve({ available: [] })), [deciding]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (key, force) => {
     setLevelBy((l) => ({ ...l, [mode]: null }));
@@ -2783,7 +2790,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       )}
       {deciding && options && (
         <DecisionModal options={options} mode={deciding.ref} onSave={saveDecision} onClose={() => setDeciding(null)} limits
-                       workings={workingsFor(rcm, deciding.ref.id)} />
+                       workings={workingsFor(rcm, deciding.ref.id)} loadTasks={loadDecisionTasks} />
       )}
     </div>
   );

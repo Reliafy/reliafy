@@ -2691,6 +2691,10 @@ export function cancelWorkOrder(id, reason) {
 export function updateMaintenanceTask(id, body) {
   return patchJson(`/api/maintenance/tasks/${id}`, body);
 }
+// The same task (by name) on identical positions, with their intervals ({task, twins}).
+export function getTaskTwins(id) {
+  return request(`/api/maintenance/tasks/${encodeURIComponent(id)}/twins`);
+}
 // The condition points a task's trigger can watch ({points: [{id, name, unit,
 // alarm_above, alarm_below, on: {id, name}}]}), nearest first.
 export function getTaskTriggerPoints(id) {

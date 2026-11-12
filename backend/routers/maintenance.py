@@ -1122,6 +1122,14 @@ def set_trade_rate(body: dict = Body(...), m: Maintenance = Depends(maintenance_
     return _run(m.set_trade_rate, body.get("trade"), body.get("rate"))
 
 
+@router.get("/tasks/{task_id}/twins")
+def task_twins(task_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The same task (by name) on identical positions: the same position class, or with no class
+    the same parent and a name that differs only in its last letter or number. Each with its
+    interval and unit and whether they match this task's (same)."""
+    return _run(m.task_twins, task_id)
+
+
 @router.get("/tasks/{task_id}/lsa")
 def task_lsa(task_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """One task's LSA page: the task with its resources, the failure modes it serves,
