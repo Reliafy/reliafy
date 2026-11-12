@@ -65,7 +65,7 @@ export function publicRoutes() {
 export const hasParam = (path) => path.includes("/:");
 
 // Fill a route's parameter: "/models/m/:id" + "abc" -> "/models/m/abc".
-// A route with two parameters (the library's /models/library/:source/:record) takes an id
+// A route with two parameters (a handbook record's /libraries/:source/:record) takes an id
 // "source/record", one part each.
 export const fill = (path, id) => {
   const n = (path.match(/:\w+/g) || []).length;
@@ -99,12 +99,13 @@ export const DETAIL_IDS = {
   "/strategy/analyses/:id": ["/api/strategy/analyses", list("analyses")],
   // A reliability prediction (the sample parts count).
   "/predictions/:id": ["/api/predictions", list("predictions")],
-  // The reliability data library under Models: a source, and a record of it (its id "source:code").
-  "/models/library/:source": ["/api/library/sources", list("sources")],
-  "/models/library/:source/:record": ["/api/library/search?page_size=12",
+  // Libraries: one library (yours, shared, public or a built-in handbook, whose page lists its records).
+  "/libraries/:id": ["/api/libraries", list("libraries")],
+  // A built-in handbook's record (its id "source:code").
+  "/libraries/:source/:record": ["/api/library/search?page_size=12",
     (body) => (body.results || []).map((r) => ({ ...r, id: r.id.replace(":", "/") }))],
   // An NRC/INL component (its id "source:component:slug").
-  "/models/library/:source/components/:component": ["/api/library/components?source=nrc-inl-2020",
+  "/libraries/:source/components/:component": ["/api/library/components?source=nrc-inl-2020",
     (body) => (body.components || []).map((c) => ({ ...c, id: `${c.source}/${c.id.split(":").pop()}` }))],
   // A maintainability prediction: the sample quadcopter's.
   "/maintainability/:id": ["/api/maintainability/predictions", list("predictions")],

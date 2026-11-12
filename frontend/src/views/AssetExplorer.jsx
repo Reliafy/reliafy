@@ -1340,7 +1340,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     }
     if (id === "model-attach-rbd-open") return openRbd(position, builtRbdLink(pmodels.links, pid)?.model_id);
     if (id === "model-attach-rbd-rebuild") return askRebuild(position, builtRbdLink(pmodels.links, pid));
-    // Add to a library…: the position's life model in use (else its first) snapshotted into a data library.
+    // Add to library…: the position's life model in use (else its first) snapshotted into a data library.
     if (id === "model-attach-to-library") return setModelModal({ kind: "to-library", position, link: lifeModelOf(pmodels.links, pid) });
     return setModelModal({ kind: id.slice(13), position });
   };

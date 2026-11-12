@@ -6,8 +6,8 @@ import {
 } from "./libraryModels.js";
 
 test("the three levels' addresses", () => {
-  assert.equal(sourcePath("nrc-inl-2020"), "/models/library/nrc-inl-2020");
-  assert.equal(recordPath("nrc-inl-2020:mov-fto"), "/models/library/nrc-inl-2020/mov-fto");
+  assert.equal(sourcePath("nrc-inl-2020"), "/libraries/nrc-inl-2020");
+  assert.equal(recordPath("nrc-inl-2020:mov-fto"), "/libraries/nrc-inl-2020/mov-fto");
   assert.equal(recordIdOf("nrc-inl-2020", "mov-fto"), "nrc-inl-2020:mov-fto");
 });
 
@@ -26,7 +26,7 @@ test("a component's address", () => {
   assert.ok(isComponentId("nrc-inl-2020:component:motor-driven-pump-normally-standby"));
   assert.ok(!isComponentId("nrc-inl-2020:mdp-fts-ns"));
   assert.equal(componentPath("nrc-inl-2020:component:motor-driven-pump-normally-standby"),
-    "/models/library/nrc-inl-2020/components/motor-driven-pump-normally-standby");
+    "/libraries/nrc-inl-2020/components/motor-driven-pump-normally-standby");
   assert.equal(componentIdOf("nrc-inl-2020", "pipe-service-water"), "nrc-inl-2020:component:pipe-service-water");
 });
 

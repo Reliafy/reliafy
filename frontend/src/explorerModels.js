@@ -258,7 +258,7 @@ export function rowActions(r, { viewOnly = null } = {}) {
     // A covariate model (NSWC-11, ALT, PH): which covariates are fixed here, the rest set in an RBD.
     bindingOf(link) ? { id: "model-bind", label: "Fix covariates at this position…", ...off } : null,
     // A life model (not an RBD or a prediction) can be snapshotted into one of the user's data libraries.
-    isLifeModelLink(link) ? { id: "model-to-library", label: "Add to a library…", ...off } : null,
+    isLifeModelLink(link) ? { id: "model-to-library", label: "Add to library…", ...off } : null,
     // Typed-in parameters (Assumed): changed in place, without unlinking and entering them again.
     link.model?.entered ? { id: "model-params-edit", label: "Edit parameters…", ...off } : null,
     rbd ? null : { id: "model-replace", label: "Replace with…", ...off },
@@ -396,7 +396,7 @@ export function attachGroups({ positionClass = "", hasPrediction = false, hasLif
         ...(positionClass || viewOnly ? {} : { disabled: true, reason: "This position has no class" }) },
       { id: "model-attach-params", label: "Enter parameters…", ...off },
       // The position's life model (the one in use) snapshotted into one of the user's own libraries.
-      { id: "model-attach-to-library", label: "Add to a library…", ...off,
+      { id: "model-attach-to-library", label: "Add to library…", ...off,
         ...(hasLifeModel || viewOnly ? {} : { disabled: true, reason: "This position has no life model yet" }) },
     ] },
     { id: "model-group-rbd", label: "RBD", items: [

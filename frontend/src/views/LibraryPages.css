@@ -1,4 +1,4 @@
-/* The reliability data library under Models (LibraryPages.jsx). */
+/* Libraries: the built-in handbooks' pages (LibraryPages.jsx) and the user's own (Libraries.jsx). */
 .lib-sources { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
 .lib-source { color: inherit; text-decoration: none; display: flex; flex-direction: column; gap: 6px; }
 .lib-source:hover { border-color: var(--acc); }
@@ -22,8 +22,6 @@
 .evidence-option.off { opacity: 0.6; }
 /* "Yours" and "Published" in sentence case, as every other list's sections. */
 .lib-section { font-size: var(--fs-14); font-weight: 600; color: var(--muted); margin: 18px 0 8px; }
-.lib-look { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow: auto; }
-.lib-look li { display: flex; flex-direction: column; gap: 2px; }
 .lib-notes { white-space: pre-wrap; }
 
 /* A covariate source (NSWC-11): its intro, the Navy's statement, and a record's formula and factors. */
@@ -32,3 +30,42 @@
 .lib-h3 { font-size: 1rem; margin: 1rem 0 0.4rem; }
 .lib-cov-mode + .lib-cov-mode { border-top: 1px solid var(--line2); }
 .lib-view { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Libraries (Libraries.jsx, PublicLibraryPage.jsx, components/LibraryEntries.jsx): the cards, a
+   library's about block, its entries (each opening in place) and the Sharing panel. */
+.lib-card-purpose { margin: 0; color: var(--muted); }
+.lib-sources .lib-h { overflow-wrap: anywhere; }
+.lib-about { display: flex; flex-direction: column; gap: 8px; }
+.lib-dl { display: grid; gap: 6px; margin: 0; }
+.lib-dl > div { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: 8px; }
+.lib-dl dt { color: var(--muted); }
+.lib-dl dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 480px) { .lib-dl > div { grid-template-columns: 1fr; gap: 0; } }
+.lib-entries { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.lib-entry { border-top: 1px solid var(--line2); padding: 10px 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; scroll-margin-top: 72px; }
+.lib-entry:first-child { border-top: 0; }
+.lib-entry-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.lib-entry-name { font-weight: 600; text-align: left; min-height: 32px; overflow-wrap: anywhere; }
+.lib-caret { display: inline-block; width: 1em; }
+.lib-entry-line { margin: 0; overflow-wrap: anywhere; }
+.lib-headline { font-variant-numeric: tabular-nums; }
+.lib-entry-actions, .lib-owner { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.lib-use { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.lib-tick { display: inline-flex; gap: 6px; align-items: center; font-size: var(--fs-13); min-height: 32px; }
+.lib-made { margin: 0; flex-basis: 100%; }
+.lib-signin { display: inline-flex; align-items: center; min-height: 32px; font-size: var(--fs-13); }
+.lib-detail { padding: 6px 0 0 1.2em; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.lib-detail-line { margin: 0; color: var(--muted); }
+.lib-share { display: flex; flex-direction: column; gap: 10px; }
+.lib-share fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.lib-share legend { font-weight: 600; margin-bottom: 4px; }
+.lib-share-choice { display: flex; gap: 8px; align-items: flex-start; min-height: 32px; }
+.lib-share-choice input { margin-top: 3px; }
+.lib-ws { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.lib-ws li { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line2); border-radius: 6px; padding: 2px 4px 2px 8px; max-width: 100%; }
+.lib-ws code { overflow-wrap: anywhere; }
+.libs-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.libs-row > input { flex: 1 1 200px; min-width: 0; }
+.lib-builtin-links { margin: 0 0 10px; }
+.lib-preview-note { margin: 0; }
+.lib-quiet { margin: 0; color: var(--muted); font-size: var(--fs-13); overflow-wrap: anywhere; }

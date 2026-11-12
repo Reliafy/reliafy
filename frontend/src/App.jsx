@@ -30,6 +30,7 @@ import { ConfirmProvider } from "./components/ConfirmProvider.jsx";
 import { WorkspaceProvider } from "./WorkspaceProvider.jsx";
 import { AUTH_DISABLED } from "./firebase.js";
 import { installTelemetry, trackEvent } from "./telemetry.js";
+import { publicLibraryId, showsPublicLibrary } from "./libraries.js";
 
 // The authenticated app (and its heavyweight dependencies — Plotly, the RBD
 // canvas) is a separate chunk: marketing/blog/learn visitors never download
@@ -42,6 +43,8 @@ const AppShell = lazy(() => import("./AppShell.jsx"));
 // it pulls in the charting components, which marketing pages don't need.
 const PublicArtifact = lazy(() => import("./views/PublicArtifact.jsx"));
 const OAuthConsent = lazy(() => import("./views/OAuthConsent.jsx"));
+// A library's page as anyone sees it (/libraries/:id signed out, or ?as=public).
+const PublicLibraryPage = lazy(() => import("./views/PublicLibraryPage.jsx"));
 
 // Gate the app shell behind authentication: while auth initialises show a
 // spinner; if signed out, redirect to /login.
@@ -50,6 +53,32 @@ function RequireAuth({ children }) {
   if (loading) return <div className="auth-loading">Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
   return children;
+}
+
+// The app behind sign-in, except a library's own address (/libraries/:id), which anyone may
+// open: signed out (or with ?as=public, the owner's "Preview as public") it is the standalone
+// public page, like a share page; signed in, the app's own page. Every other address still
+// needs sign-in.
+function AppOrPublicLibrary() {
+  const { user, loading } = useAuth();
+  const { pathname, search } = useLocation();
+  const id = publicLibraryId(pathname);
+  if (id && !loading && showsPublicLibrary(pathname, search, !!user)) {
+    return (
+      <Suspense fallback={<div className="auth-loading">Loading…</div>}>
+        <PublicLibraryPage id={id} preview={!!user} />
+      </Suspense>
+    );
+  }
+  return (
+    <RequireAuth>
+      <WorkspaceProvider>
+        <Suspense fallback={<div className="auth-loading">Loading…</div>}>
+          <AppShell />
+        </Suspense>
+      </WorkspaceProvider>
+    </RequireAuth>
+  );
 }
 
 // A new page opens at the top (#309): the router keeps the window's scroll
@@ -142,18 +171,7 @@ export default function App() {
                 </Suspense>
               }
             />
-            <Route
-              path="/*"
-              element={
-                <RequireAuth>
-                  <WorkspaceProvider>
-                    <Suspense fallback={<div className="auth-loading">Loading…</div>}>
-                      <AppShell />
-                    </Suspense>
-                  </WorkspaceProvider>
-                </RequireAuth>
-              }
-            />
+            <Route path="/*" element={<AppOrPublicLibrary />} />
           </Routes>
           </ConfirmProvider>
         </AuthProvider>
