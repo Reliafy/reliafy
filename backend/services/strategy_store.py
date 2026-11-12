@@ -23,7 +23,13 @@ from backend.services.strategy import StrategyError
 from backend.units import unit_in_text, with_unit
 
 KINDS = ("optimal_replacement", "compare_two", "failure_finding", "demonstration_test",
-         "on_condition_interval", "failure_finding_interval")
+         "on_condition_interval", "failure_finding_interval", "calendar_replacement")
+
+# The shutdown-calendar calculator's inputs (the endpoint body shape), as saved.
+CALENDAR_INPUTS = (
+    "unit", "today", "opportunities", "failure_cost", "anytime_cost", "max_age", "method", "horizon_months",
+    "extras",
+)
 
 # The RCM interval calculators' inputs (backend/services/rcm_intervals.py), as saved.
 ON_CONDITION_INPUTS = (
@@ -70,6 +76,8 @@ def compute(kind: str, inputs: dict) -> dict:
             inputs.get("unplanned_cost"),
             unit=inputs.get("unit"),
             extras=inputs.get("extras"),
+            use_per_year=inputs.get("use_per_year"),
+            units=inputs.get("units"),
         )
     if kind == "compare_two":
         return strategy_service.compare_two(
@@ -82,6 +90,9 @@ def compute(kind: str, inputs: dict) -> dict:
             inputs.get("target_availability"),
             unit=inputs.get("unit"),
             extras=inputs.get("extras"),
+            test_duration=inputs.get("test_duration"),
+            test_cost=inputs.get("test_cost"),
+            renewed_at_test=inputs.get("renewed_at_test", True),
         )
     if kind == "on_condition_interval":
         from backend.services import rcm_intervals
@@ -92,6 +103,18 @@ def compute(kind: str, inputs: dict) -> dict:
 
         return rcm_intervals.failure_finding_interval(
             **{k: inputs.get(k) for k in FAILURE_FINDING_INPUTS if k in inputs})
+    if kind == "calendar_replacement":
+        from backend.services import strategy_calendar
+
+        if str(inputs.get("method") or "dp").strip().lower() == "sampling":
+            raise StrategyError("A saved shutdown-calendar answer is the exact one: run it with an exact method "
+                                "(the sampled one can't be recomputed the same way), then save.")
+        if not inputs.get("today"):
+            raise StrategyError("A saved shutdown-calendar answer needs its date (today), so the plan's dates "
+                                "stay as they were.")
+        return strategy_calendar.calendar_replacement(
+            inputs.get("distribution_id"), inputs.get("params") or [],
+            **{k: inputs.get(k) for k in CALENDAR_INPUTS if k in inputs})
     if kind == "demonstration_test":
         return strategy_service.demonstration_test(
             **{k: inputs[k] for k in DEMO_INPUTS if k in inputs}
@@ -170,6 +193,9 @@ def headline(doc: StrategyAnalysis) -> str:
         return f"Check every ~{strategy_service.fmt_num(i)}{unit}" if i is not None else "Failure finding"
     if doc.kind == "demonstration_test":
         return demonstration_headline(r)
+    if doc.kind == "calendar_replacement":
+        text = str(r.get("recommendation") or "Shutdown calendar")
+        return text.split(". ")[0].rstrip(".") + "."
     if doc.kind in ("on_condition_interval", "failure_finding_interval"):
         rec = r.get("recommended")
         if not rec:

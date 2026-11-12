@@ -40,6 +40,7 @@ from backend.services import access
 from backend.services import alt as alt_service
 from backend.services import models as models_service
 from backend.services import recurrent as recurrent_service
+from backend.services import fleet_strategy
 from backend.services import spares
 from backend.services.strategy import _model_from_params, StrategyError
 from backend.units import unit_in_text
@@ -157,6 +158,11 @@ def _clean_settings(settings) -> dict:
     spares_settings = _clean_spares(settings.get("spares"))
     if spares_settings:
         out["spares"] = spares_settings
+    # Run to failure or planned replacement at an age, with prices: only when set.
+    try:
+        out.update(fleet_strategy.clean({**settings, "method": method}))
+    except fleet_strategy.StrategyInputError as exc:
+        raise FleetValidationError(str(exc)) from None
     return out
 
 
@@ -449,12 +455,19 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
         except StrategyError as exc:
             return {"status": "stale", "reason": client_message(exc)}
     else:
-        out = {**base, **_forecast_renewals(dist, ages, uses, rates, periods, items)}
+        try:
+            out = {**base, **fleet_strategy.renewals(dist, ages, uses, rates, periods, items, settings,
+                                                     _forecast_renewals, period_days(base["period_label"]))}
+        except fleet_strategy.StrategyInputError as exc:
+            return {"status": "stale", "reason": str(exc)}
     for row, (rate, basis) in zip(out["per_item"], chosen):
         row["rate_used"] = rate
         row["rate_basis"] = basis  # "estimated" | "manual" | "default"
     if spares_opts:
-        out["spares"] = _spares_or_reason(spares_opts, method, dist, ages, rates, periods, base["period_label"])
+        # Under planned replacement the parts needed include the planned ones.
+        replace_at = (out.get("strategy") or {}).get("replace_at") if method == "renewals" else None
+        opts = {**spares_opts, "_replace_at": replace_at} if replace_at else spares_opts
+        out["spares"] = _spares_or_reason(opts, method, dist, ages, rates, periods, base["period_label"])
     return out
 
 
@@ -979,7 +992,12 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
     starts = np.arange(periods, dtype=float)
     bounds = [(s, s + protect) for s in starts] + ([(s, s + lead_len) for s in starts] if lead_len is not None else [])
 
-    if method == "renewals":
+    if method == "renewals" and opts.get("_replace_at"):
+        events = fleet_strategy.simulate(model, ages, rates, (periods - 1) + protect, float(opts["_replace_at"]))
+        demand = [spares.Demand.from_samples(spares.window_demand(events, a, b) * per) for a, b in bounds]
+        basis = (f"From {events['sims']:,} simulated runs, counting planned replacements at age "
+                 f"{opts['_replace_at']:g} as well as failures.")
+    elif method == "renewals":
         events = _renewal_events(model, ages, rates, (periods - 1) + protect)
         demand = [spares.Demand.from_samples(spares.window_demand(events, a, b) * per) for a, b in bounds]
         basis = f"From {events['sims']:,} simulated runs, counting replacements that fail again."

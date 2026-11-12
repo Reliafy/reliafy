@@ -6121,7 +6121,10 @@ def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None
         r = m.results or {}
         # The fit's offset / LFP fraction / zero inflation, as the app's
         # calculators pass them: without them the answer is for another model.
-        return {"distribution_id": r.get("distribution_id") or m.distribution_id, "params": _plain_params(r),
+        # Each parameter's fitted interval rides along, so the answers carry their bounds and ranges.
+        params = [{**p, **({"ci": q["ci"]} if isinstance(q.get("ci"), list) else {})}
+                  for p, q in zip(_plain_params(r), r.get("params") or [])]
+        return {"distribution_id": r.get("distribution_id") or m.distribution_id, "params": params,
                 "extras": r.get("extras") or None, "unit": unit or r.get("unit") or ""}
     if not distribution_id or not params:
         raise ToolError("Give a model_id, or distribution_id + params.")
@@ -6218,14 +6221,19 @@ def optimal_replacement(
     params: _PARAMS = None,
     unit: _UNIT = None,
     include_curve: _INCLUDE_CURVE = False,
+    use_per_year: Annotated[Optional[float], Field(gt=0, description="Use a unit runs a year (model units): adds "
+                                                                     "yearly, the saving a year.")] = None,
+    units: Annotated[Optional[float], Field(gt=0, description="Units in the fleet: the saving a year for all.")] = None,
 ) -> dict[str, Any]:
     """The cost-optimal age-replacement interval for a component with a known life
-    model; beneficial=false means run to failure is cheaper. For a saved Weibull fitted to data,
-    shape_uncertainty answers at each end of β's 90% interval: relay uncertainty_note when present."""
+    model; beneficial=false means run to failure is cheaper; block is the block-replacement alternative. For a saved
+    Weibull fitted to data, shape_uncertainty answers at each end of β's 90% interval: relay uncertainty_note when
+    present."""
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
     costs = {"planned_cost": planned_cost, "unplanned_cost": unplanned_cost}
-    out = strategy_store.compute("optimal_replacement", {**inputs, **costs})
+    out = strategy_store.compute("optimal_replacement", {**inputs, **costs, "use_per_year": use_per_year,
+                                                         "units": units})
     out.update(_shape_uncertainty(db, user["uid"], model_id, inputs, costs, out))
     return _maybe_curve(out, include_curve)
 
@@ -6347,13 +6355,19 @@ def failure_finding_interval(
     distribution_id: _DIST_ID = None,
     params: _PARAMS = None,
     unit: _UNIT = None,
+    test_duration: Annotated[Optional[float], Field(ge=0, description="Time off-line per test (model units).")] = None,
+    test_cost: Annotated[Optional[float], Field(ge=0, description="Cost per test.")] = None,
+    renewed_at_test: Annotated[bool, Field(description="Each test renews the device (overhauled or replaced); "
+                                                       "false: a working one is left as it was.")] = True,
 ) -> dict[str, Any]:
     """The proof-test interval keeping a hidden protective function (relief valve,
-    trip, standby unit) at a target availability. For a saved Weibull fitted to data, shape_uncertainty answers at
+    trip, standby unit) at a target availability, from the model's curve; interval_bound is the cautious 90%
+    one-sided end. For a saved Weibull fitted to data, shape_uncertainty answers at
     each end of β's interval: relay uncertainty_note (the shorter interval is the safe side)."""
     user, db = _caller(ctx), _db()
     inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
-    target = {"target_availability": target_availability}
+    target = {"target_availability": target_availability, "test_duration": test_duration, "test_cost": test_cost,
+              "renewed_at_test": renewed_at_test}
     out = strategy_store.compute("failure_finding", {**inputs, **target})
     out.update(_ffi_shape_uncertainty(db, user["uid"], model_id, inputs, target, out))
     return out
@@ -7157,6 +7171,11 @@ def fleet_forecast(
         "How many replacement parts to hold, in the fleet's periods: {lead_time, service_level? (default 0.95), "
         "review?, per_failure?, stock?, unit_cost?, repairable? with turnaround?}. Default: the fleet's saved "
         "spares settings."))] = None,
+    strategy: Annotated[dict[str, Any] | None, Field(description=(
+        "What-if maintenance strategy for a renewals fleet: {strategy: run_to_failure or age, replace_at? (the age, "
+        "model units; items already past it are replaced in period 1), failure_cost?, planned_cost?}. Adds "
+        "forecast.strategy: failures, planned replacements, parts and cost per period and per year with 90% "
+        "ranges. Default: the fleet's saved strategy."))] = None,
 ) -> dict[str, Any]:
     """A fleet's live failure forecast: expected failures over the horizon with a P5-P95 (90%)
     range, per period and per item (the top 20 unless include_items; item_probabilities adds each item's chance by
@@ -7169,6 +7188,9 @@ def fleet_forecast(
         raise ToolError("Fleet not found.")
     try:
         opts = fleet_service._clean_spares({**((fleet.settings or {}).get("spares") or {}), **(spares or {})})
+        if strategy:
+            fleet = fleet.model_copy(update={"settings": fleet_service._clean_settings(
+                {**(fleet.settings or {}), **strategy})})
     except fleet_service.FleetValidationError as exc:
         raise ToolError(str(exc)) from None
     forecast = fleet_service.compute(db, fleet, [*owners, fleet.owner_id], item_periods=item_probabilities,

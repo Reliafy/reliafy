@@ -148,7 +148,10 @@ def _strategy(payload: dict) -> list[str]:
     _add(lines, "Planned cost", num(r.get("planned_cost")))
     _add(lines, "Unplanned cost", num(r.get("unplanned_cost")))
     _add(lines, "Check interval", _with_unit(r.get("interval"), unit))
-    _add(lines, "Target availability", pct(r.get("target_availability")))
+    _add(lines, "Check interval, cautious (90% one-sided)", _with_unit((r.get("interval_bound") or {}).get("interval"),
+                                                                       unit))
+    # A target as typed: 99.5% never reads as 100%.
+    _add(lines, "Target availability", pct(r.get("target_availability"), 10))
     return lines
 
 

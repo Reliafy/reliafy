@@ -311,8 +311,8 @@ def _library_message(text: str) -> str:
         return ("Some units of this model never fail, so the calculation needs the oldest age to consider: "
                 "enter a maximum age.")
     if "integration" in text.lower() and "any day" in text.lower():
-        return ("The continuous-time method works only with no replacement between shuts: clear the 'any day' "
-                "cost, or use the grid method.")
+        return ("The continuous-time method works only with no replacement between shuts: clear \"Replacing between "
+                "shuts costs\" (anytime_cost), or use the grid method.")
     if "sampling" in text.lower() and "date" in text.lower():
         return "Sampling is for repeating shuts with a very long cycle; shuts on given dates use the grid method."
     return text
@@ -695,11 +695,27 @@ def calendar_replacement(distribution_id: str, params: list, **kwargs) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _next_outages(inp: _Inputs) -> tuple[list[tuple[float, float]], list[dict], Optional[dict]]:
-    """The next shut of each kind from today, as (time from now, price), with
-    its name and date; and a shut falling today, if one does."""
+#: How many coming shuts "One unit now" weighs, at most, and how unlikely the
+#: part must be to still be working before later ones are left out.
+_NEXT_SHUTS = 24
+_NEXT_FAR = 1e-3
+
+
+def _next_outages(inp: _Inputs, age: float = 0.0) -> tuple[list[tuple[float, float]], list[dict], Optional[dict]]:
+    """The coming shuts from today, as (time from now, price), with each
+    one's name and date; and a shut falling today, if one does.
+
+    Every shut up to the time the part (``age`` old today) is still working
+    with a chance of 0.1% is a choice, at most :data:`_NEXT_SHUTS` of them,
+    the soonest first: the next shut, the one after, and on, so the cheapest
+    of them (the one the long-run rule picks too) is always on the list."""
     horizon = add_months(inp.today, 12 * 25)
-    outages, labels, today_shut = [], [], None
+    try:
+        alive = float(np.ravel(inp.model.sf(age))[0])
+        far = float(np.ravel(inp.model.qf(1.0 - _NEXT_FAR * alive))[0]) - age if alive > 0 else math.inf
+    except Exception:  # noqa: BLE001 - no quantile function (an LFP fit): the horizon alone limits it
+        far = math.inf
+    found, today_shut = [], None
     seen = set()
     for s in inp.specs:
         dates = _occurrences(s, inp.today, horizon)
@@ -707,16 +723,17 @@ def _next_outages(inp: _Inputs) -> tuple[list[tuple[float, float]], list[dict], 
             if today_shut is None or s["cost"] < today_shut["price"]:
                 today_shut = {"kind": s["name"], "price": s["cost"], "date": dates[0].isoformat()}
             dates = dates[1:]
-        if not dates:
-            continue
-        d = dates[0]
-        t = inp.model_time(d)
-        if t <= 0 or (t, s["cost"]) in seen:
-            continue
-        seen.add((t, s["cost"]))
-        outages.append((t, s["cost"]))
-        labels.append({"kind": s["name"], "date": d.isoformat(), "time": t, "price": s["cost"]})
-    return outages, labels, today_shut
+        for i, d in enumerate(dates):
+            t = inp.model_time(d)
+            if t <= 0 or (t, s["cost"]) in seen:
+                continue
+            if i > 0 and t > far:
+                break  # the part is all but certain to be gone by then
+            seen.add((t, s["cost"]))
+            found.append((t, s["cost"], {"kind": s["name"], "date": d.isoformat(), "time": t, "price": s["cost"]}))
+    found.sort(key=lambda f: f[0])
+    found = found[:_NEXT_SHUTS]
+    return [(t, c) for t, c, _ in found], [lb for _, _, lb in found], today_shut
 
 
 def calendar_next(distribution_id: str, params: list, *, age, now_cost=None, **kwargs) -> dict:
@@ -728,7 +745,7 @@ def calendar_next(distribution_id: str, params: list, *, age, now_cost=None, **k
     inp = _Inputs(distribution_id, params, **kwargs)
     a = _number(age, "The unit's age")
     policy, notes = inp.policy()
-    outages, labels, today_shut = _next_outages(inp)
+    outages, labels, today_shut = _next_outages(inp, a)
     if now_cost in (None, ""):
         if today_shut is not None:
             now = today_shut["price"]
@@ -749,6 +766,7 @@ def calendar_next(distribution_id: str, params: list, *, age, now_cost=None, **k
             found = part.optimal_next_replacement(a, now_cost=now, scheduled_outages=outages, policy=policy)
     except (ValueError, TypeError, NotImplementedError) as exc:
         raise StrategyError(str(exc)) from None
+    alive_now = max(float(np.ravel(inp.model.sf(a))[0]), 1e-300)
     choices = []
     for c in found.choices:
         if c.kind == "planned" and inp.anytime_cost is None:
@@ -760,6 +778,8 @@ def calendar_next(distribution_id: str, params: list, *, age, now_cost=None, **k
             if match:
                 row.update(label=f"At the {match['kind']} on {say_date(match['date'])}", shut=match["kind"],
                            date=match["date"])
+            # The chance it fails before that shut (and is replaced at the failure price instead).
+            row["fail_chance"] = _finite(1.0 - float(np.ravel(inp.model.sf(a + c.time))[0]) / alive_now)
         elif c.kind == "now":
             row.update(label="Replace now", date=inp.today.isoformat())
         elif c.kind == "planned":

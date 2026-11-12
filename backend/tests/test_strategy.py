@@ -1,5 +1,7 @@
 """Tests for the Strategy decision tools (optimal replacement, compare-two, failure finding)."""
 
+import math
+
 import numpy as np
 import pytest
 
@@ -97,7 +99,10 @@ def test_failure_finding_math_and_validation():
     from backend.services.strategy import StrategyError, failure_finding
 
     r = failure_finding("exponential", [{"name": "failure_rate", "value": 0.001}], 0.99, "hours")
-    assert abs(r["interval"] - 20.0) < 1e-9  # 2 * (1-0.99) * 1000
+    # Exact for a constant rate: 1 - (1 - exp(-λT)) / (λT) = 0.01; the shortcut 2(1 - A)MTTF gives 20.
+    lam, t = 0.001, r["interval"]
+    assert 1 - (1 - math.exp(-lam * t)) / (lam * t) == pytest.approx(0.01, rel=1e-9)
+    assert t == pytest.approx(20.13, abs=0.01) and r["shortcut_interval"] == pytest.approx(20.0)
     assert r["mttf"] == 1000.0
 
     with _pytest.raises(StrategyError):
@@ -146,7 +151,7 @@ def test_saved_analyses_roundtrip_and_isolation(monkeypatch):
          "target_availability": 0.99, "unit": "hours"},
         "user-a",
     )
-    assert abs(ffi.results["interval"] - 175.2) < 0.1
+    assert abs(ffi.results["interval"] - 176.4) < 0.1  # exact; 2(1 - A)MTTF would say 175.2
     assert "Check every" in strategy_store.headline(ffi)
 
 

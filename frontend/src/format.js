@@ -32,6 +32,15 @@ export function formatPercent(fraction, { sig = 2 } = {}) {
   return `${formatNumber(p, { sig })}%`;
 }
 
+// A target percentage as it was typed: 0.995 → "99.5%", 0.9999 → "99.99%"
+// (formatPercent rounds 99.5 to "100%", which restates the target).
+export function formatTarget(fraction) {
+  if (fraction == null || fraction === "") return MISSING;
+  const p = Number(fraction) * 100;
+  if (!Number.isFinite(p)) return MISSING;
+  return `${Number(p.toPrecision(10))}%`;
+}
+
 // A plural unit read for exactly one: "hours" → "hour", "flight hours" →
 // "flight hour", "Kilometres" → "Kilometre". Only the last word changes, and
 // only a plain word of four or more letters ending in a single "s"; anything

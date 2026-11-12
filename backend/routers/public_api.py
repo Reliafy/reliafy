@@ -289,7 +289,8 @@ def api_failure_finding(
     """Failure-finding inspection interval for a hidden (protective) function.
 
     Body: ``distribution_id``, ``params``, ``target_availability``, optional
-    ``unit``.
+    ``unit``, ``test_duration`` (model units off-line per test), ``test_cost``
+    and ``renewed_at_test`` (default true: each test renews the device).
     """
     return _strategy("failure_finding", body, user["uid"])
 

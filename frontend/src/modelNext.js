@@ -20,6 +20,7 @@ export function nextStepsFor(result) {
   const block = kind === "distribution" || kind === "regression";
   return {
     replacement: parametric,
+    failureFinding: parametric,
     fleet: block && !result?.tvc,
     test: kind === "distribution" || kind === "nonparametric" || kind === "flexible" || kind === "discrete",
     rbd: block && !result?.tvc,
@@ -30,12 +31,14 @@ export function nextStepsFor(result) {
 // dialog lists both), in the order they're offered.
 export const STEP_LABELS = {
   replacement: "Find the best replacement interval",
+  failureFinding: "Set a test interval (hidden failure)",
   fleet: "Forecast a fleet",
   test: "Plan a demonstration test",
   rbd: "Add to an RBD",
 };
 export const STEP_WHAT = {
   replacement: "The age to replace at for the lowest cost, from this model and your planned and failure costs.",
+  failureFinding: "How often to test a protective device whose failure stays hidden until it's needed.",
   fleet: "How many failures a fleet will see over a horizon, and the spares to hold.",
   test: "How many units to test, and for how long, to show a reliability target.",
   rbd: "This model as a block in a reliability block diagram: a new one or one of yours.",
@@ -55,6 +58,7 @@ const withModel = (path, id, extra = {}) => {
 // The tool pages, opened with the saved model ``id`` chosen.
 export function nextStepLink(step, id, { unit = "" } = {}) {
   if (step === "replacement") return withModel("/strategy/replacement", id);
+  if (step === "failureFinding") return withModel("/strategy/failure-finding", id);
   if (step === "fleet") return withModel("/forecasts", id, { new: "1" });
   if (step === "test") return withModel("/strategy/test-planning", id, unit ? { unit } : {});
   return null;
