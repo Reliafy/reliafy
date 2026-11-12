@@ -920,7 +920,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             {byMode
               ? hasCovariates
                 ? `Failure modes from “${mapping.e}”, with covariates — choose a regression by mode.`
-                : `Failure modes from “${mapping.e}” — they are fitted as competing risks. To fit every failure as one, set “${mapping.e}” to Ignore on the Data step.`
+                : `Failure modes from “${mapping.e}” — they are fitted as competing risks. To fit every failure as one, change the reading so it has no failure mode.`
               : tvc
               ? "Covariates change over time — choose a regression model. Each item's covariates follow its rows."
               : hasCovariates

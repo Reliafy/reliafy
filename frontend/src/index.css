@@ -10100,3 +10100,4 @@ main.content:focus { outline: none; }
   .reading-z-item { width: 100%; }
   .reading-summary-actions .link, .reading-summary-actions button, .reading-z-pick { min-height: 44px; }
 }
+.fit-reading { margin-bottom: var(--sp-3); }

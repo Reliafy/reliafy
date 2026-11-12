@@ -169,7 +169,7 @@ export function altStressIssues(stress, nStress, lifeModel, map) {
   const out = [];
   stress.slice(0, nStress).forEach((s, j) => {
     if (!s.col) out.push({ stress: j, text: `Pick the column for stress ${j + 1}.` });
-    else if (used.has(s.col)) out.push({ stress: j, text: `“${s.col}” is mapped on the Data step: pick another column.` });
+    else if (used.has(s.col)) out.push({ stress: j, text: `“${s.col}” has a role in the dataset's reading: pick another column.` });
     else if (stress.slice(0, j).some((o) => o.col === s.col)) out.push({ stress: j, text: "Pick a different column for each stress." });
     if (j === 0 && isThermal(lifeModel) && !["°C", "K", "°F"].includes(String(s.unit || "").trim())) {
       out.push({ stress: 0, text: "Pick the temperature's unit (°C, K or °F): this model needs absolute temperature, so °C and °F are converted to kelvin before the fit." });
