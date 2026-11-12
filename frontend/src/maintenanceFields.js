@@ -103,3 +103,21 @@ export function fileSizeText(bytes) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / 1048576).toFixed(1)} MB`;
 }
+
+// A life-data row's outcome in words: how the failure is known when it's known another
+// way than a removal (a failure report, or a check that found it failed).
+export function lifeOutcomeText(row, fmt = (d) => d) {
+  if (row?.found_failed) {
+    const good = row.found_failed.last_good;
+    return `found failed ${fmt(row.found_failed.on)}: failed ${good ? `after the good check of ${fmt(good)}` : "some time since it went in"}`;
+  }
+  if (row?.report) return `failed ${fmt(row.failed_on)} (${row.report.label})`;
+  return row?.status || "";
+}
+
+// What a row's days column means when it's a range.
+export function daysTitle(row) {
+  if (row?.found_failed) return "Failed some time between the last good check and the finding: the shortest and longest life";
+  if (row?.xl != null) return "The dates are known only roughly: the shortest and longest life they allow";
+  return undefined;
+}

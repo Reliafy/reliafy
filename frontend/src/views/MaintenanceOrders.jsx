@@ -7,6 +7,7 @@ import {
   listDueTasks,
   listMaintenanceLocations,
   listMaintenanceWorkOrders,
+  raisePackageVisit,
   setMaintenanceSettings,
 } from "../api.js";
 import { SectionHeader } from "../components/SectionPage.jsx";
@@ -245,7 +246,23 @@ function DueTab({ rows, horizon, onHorizon, onCreated, onError }) {
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [made, setMade] = useState(null);
+  const [raising, setRaising] = useState(null);
+  const [raised, setRaised] = useState(null);
   const shown = (rows || []).filter((t) => matches(query, t.name, t.subject?.name, t.package?.name));
+  // One package's visit on its own: nothing else that's due is raised.
+  const raise = async (pkg) => {
+    setRaising(pkg.id);
+    setRaised(null);
+    try {
+      const out = await raisePackageVisit(pkg.id);
+      setRaised({ ...out, name: pkg.name });
+      onCreated?.();
+    } catch (e) {
+      onError?.(e.message);
+    } finally {
+      setRaising(null);
+    }
+  };
   const plan = createPlan(rows || []);
   const create = async () => {
     setCreating(true);
@@ -271,6 +288,13 @@ function DueTab({ rows, horizon, onHorizon, onCreated, onError }) {
           </div>
         )}
       </div>
+      {raised && (
+        <p className="lib-date" role="status">
+          {raised.raised ? "Raised " : "Already open: "}
+          <Link to={workOrderPath(raised.work_order.id)}>#{raised.work_order.number}</Link> for {raised.name}
+          {raised.lines_added ? `, with ${raised.lines_added} more ${raised.lines_added === 1 ? "line" : "lines"}` : ""}.
+        </p>
+      )}
       {made != null && (
         <p className="lib-date" role="status">
           {made === 0 ? "No new work orders: everything due has one." : `${made} work order${made === 1 ? "" : "s"} created.`}
@@ -303,6 +327,12 @@ function DueTab({ rows, horizon, onHorizon, onCreated, onError }) {
                       {g.package.active === false && <span className="lib-date"> · paused</span>}</>
                     : "Not in a package"}
                   <span className="lib-date"> · {g.tasks.length} {g.tasks.length === 1 ? "task" : "tasks"}</span>
+                  {g.package && g.package.active !== false && !g.tasks.every((t) => t.open_work_order) && (
+                    <button type="button" className="secondary sm maint-group-btn" disabled={raising === g.package.id}
+                            onClick={() => raise(g.package)}>
+                      {raising === g.package.id ? "Raising…" : "Raise this visit"}
+                    </button>
+                  )}
                 </th>
               </tr>
               {g.tasks.map((t) => (

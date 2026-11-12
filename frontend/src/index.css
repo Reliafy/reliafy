@@ -2278,6 +2278,16 @@ select.ctl { padding-right: 30px; }
   border-radius: 50%; background: var(--danger); color: var(--on-fill); font-size: 10px; font-weight: 700; line-height: 1;
 }
 
+/* A value that's allowed but probably not what was meant: the same shape as an error, amber. */
+.field-warning {
+  display: flex; align-items: flex-start; gap: 6px; margin: 0;
+  font-size: var(--fs-12); font-weight: 500; line-height: 1.4; color: var(--warn);
+}
+.field-warning::before {
+  content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
+  border-radius: 50%; background: var(--warn); color: var(--on-fill); font-size: 10px; font-weight: 700; line-height: 1;
+}
+
 /* Controls joined into one: comparator + value + unit, interval + unit. */
 .ctl-group {
   display: flex; align-items: stretch; min-width: 0; max-width: 100%;

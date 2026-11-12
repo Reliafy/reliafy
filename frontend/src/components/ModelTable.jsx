@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   createModelFromParams, getMaintenancePosition, getPositionModel, linkPositionModel, listAltModels, listDegradationModels, listModels,
-  listPositionModels, listRbds, listRecurrentModels, unlinkPositionModel,
+  listPositionModels, listRbds, listRecurrentModels, unlinkPositionModel, updateModelParams,
 } from "../api.js";
 import Chip from "./ui/Chip.jsx";
 import Field from "./ui/Field.jsx";
@@ -17,7 +17,8 @@ import { ACCENT, BAND_FILL } from "../plotTheme.js";
 import { saveErrorText } from "../confirm.js";
 import { explorerHere } from "../products.js";
 import {
-  MODEL_COLUMNS, b10Text, boundsLabel, countsText, fmt, forText, headline, meanText, rowActions, unitWord, usedText, withBounds,
+  MODEL_COLUMNS, b10Text, boundsLabel, countsText, enteredParams, enteredStart, exponentialLabel, fmt, forText, headline,
+  implausibleExponential, meanText, rowActions, unitOne, unitWord, usedText, withBounds,
 } from "../explorerModels.js";
 import "./MeasurementTable.css";
 import "./ModelTable.css";
@@ -416,27 +417,44 @@ export function NewRbdModal({ position, hasInside = false, hasModel = false, onC
 
 // "Enter parameters…" (Life model ›): a model from numbers you have (a data sheet, a handbook,
 // a vendor's figures), saved to Models through the usual save from parameters and attached here.
+// An exponential is given as an MTBF (a handbook's figure) or a failure rate, the unit shown, and a
+// figure that can't be what was meant says so. With `link` (Edit parameters… on a row whose model
+// was typed in), the same form changes that model's numbers in place.
 const PARAMS = {
   weibull: [["alpha", "Characteristic life (alpha)"], ["beta", "Shape (beta)"]],
-  exponential: [["failure_rate", "Failure rate (per unit of time)"]],
+  exponential: [["failure_rate", "Failure rate"]],
   lognormal: [["mu", "mu (log of the median)"], ["sigma", "sigma (spread)"]],
   normal: [["mu", "Mean (mu)"], ["sigma", "Standard deviation (sigma)"]],
   gamma: [["alpha", "alpha (shape)"], ["beta", "beta (rate)"]],
 };
-export function ParamsModal({ position, onClose, onDone }) {
-  const [distribution, setDistribution] = useState("weibull");
-  const [values, setValues] = useState({});
-  const [unit, setUnit] = useState("hours");
-  const [name, setName] = useState(`${position.name} (entered)`);
+const PARAM_UNITS = ["hours", "days", "weeks", "months", "years", "cycles"];
+export function ParamsModal({ position, link = null, onClose, onDone }) {
+  const entered = link?.model?.entered || null;
+  const [distribution, setDistribution] = useState(entered?.distribution && PARAMS[entered.distribution] ? entered.distribution : "weibull");
+  const [values, setValues] = useState(() => (entered ? enteredStart(entered) : {}));
+  const [unit, setUnit] = useState(() => {
+    const u = String(entered?.unit || "hours").toLowerCase();
+    return PARAM_UNITS.includes(u) ? u : "hours";
+  });
+  // An exponential's figure: an MTBF (what handbooks give) or a failure rate.
+  const [expAs, setExpAs] = useState("mtbf");
+  const [name, setName] = useState(link ? (link.model?.name || link.name || "") : `${position.name} (entered)`);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const names = PARAMS[distribution];
-  const ok = name.trim() && names.every(([k]) => Number(values[k]) > 0 || (k === "mu" && Number.isFinite(Number(values[k])) && values[k] !== ""));
+  const ok = (link || name.trim()) && names.every(([k]) => Number(values[k]) > 0 || (k === "mu" && Number.isFinite(Number(values[k])) && values[k] !== ""));
+  const odd = distribution === "exponential" ? implausibleExponential(expAs, values.failure_rate, unit) : null;
   const save = async () => {
     setBusy(true);
     setFailed(null);
+    const params = enteredParams(distribution, names, values, expAs);
     try {
-      const model = await createModelFromParams(name.trim(), distribution, names.map(([k]) => ({ name: k, value: Number(values[k]) })), { unit });
+      if (link) {
+        const model = await updateModelParams(link.model_id, { distribution, params, unit });
+        onDone(null, `Changed ${model.name}'s parameters: everything using it now takes them.`);
+        return;
+      }
+      const model = await createModelFromParams(name.trim(), distribution, params, { unit });
       const made = await linkPositionModel(position.id, { model_id: model.id, model_type: "model" });
       onDone(made, `Saved ${model.name} and attached it to ${position.name}.`);
     } catch (e) {
@@ -445,14 +463,20 @@ export function ParamsModal({ position, onClose, onDone }) {
     }
   };
   return (
-    <Modal title="Enter parameters" onClose={onClose} locked={busy} trapFocus className="ml-dialog"
+    <Modal title={link ? "Edit parameters" : "Enter parameters"} onClose={onClose} locked={busy} trapFocus className="ml-dialog"
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-               <button type="button" onClick={save} disabled={busy || !ok} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save and attach"}</button>
+               <button type="button" onClick={save} disabled={busy || !ok} aria-busy={busy || undefined}>
+                 {busy ? "Saving…" : link ? "Save" : "Save and attach"}
+               </button>
              </>
            )}>
-      <p className="rw-fhelp">A life model from numbers you have: a data sheet, a handbook or the vendor’s figures. It’s saved to Models (with no data behind it, so its row says Assumed) and attached to {position.name}.</p>
+      <p className="rw-fhelp">
+        {link
+          ? `${name || "This model"}'s parameters were typed in. Change them here: every position, RBD block and calculation that uses it takes the new numbers.`
+          : `A life model from numbers you have: a data sheet, a handbook or the vendor’s figures. It’s saved to Models (with no data behind it, so its row says Assumed) and attached to ${position.name}.`}
+      </p>
       <div className="ml-row">
         <Field label="Distribution">
           <Select value={distribution} onChange={(e) => { setDistribution(e.target.value); setValues({}); }}>
@@ -462,18 +486,35 @@ export function ParamsModal({ position, onClose, onDone }) {
         </Field>
         <Field label="Unit">
           <Select value={unit} onChange={(e) => setUnit(e.target.value)}>
-            {["hours", "days", "weeks", "months", "years", "cycles"].map((x) => <option key={x} value={x}>{x}</option>)}
+            {PARAM_UNITS.map((x) => <option key={x} value={x}>{x}</option>)}
           </Select>
         </Field>
       </div>
+      {distribution === "exponential" && (
+        <Field label="Give it as" as="fieldset">
+          <div className="ml-modes">
+            <label className="ml-mode">
+              <input type="radio" name="exp-as" checked={expAs === "mtbf"}
+                     onChange={() => { setExpAs("mtbf"); setValues({}); }} />
+              MTBF ({unit} between failures)
+            </label>
+            <label className="ml-mode">
+              <input type="radio" name="exp-as" checked={expAs === "rate"}
+                     onChange={() => { setExpAs("rate"); setValues({}); }} />
+              Failure rate (failures per {unitOne(unit)})
+            </label>
+          </div>
+        </Field>
+      )}
       <div className="ml-row">
         {names.map(([k, label]) => (
-          <Field key={k} label={label}>
+          <Field key={k} label={distribution === "exponential" ? exponentialLabel(expAs, unit) : label}>
             <TextInput inputMode="decimal" value={values[k] || ""} onChange={(e) => setValues((v) => ({ ...v, [k]: e.target.value }))} />
           </Field>
         ))}
       </div>
-      <Field label="Name"><TextInput value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      {odd && <p className="field-warning" role="status">{odd}</p>}
+      {!link && <Field label="Name"><TextInput value={name} onChange={(e) => setName(e.target.value)} /></Field>}
       {failed && <p className="field-error" role="alert">{failed}</p>}
     </Modal>
   );

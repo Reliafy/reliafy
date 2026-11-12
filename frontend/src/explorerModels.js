@@ -244,6 +244,8 @@ export function rowActions(r, { viewOnly = null } = {}) {
     bindingOf(link) ? { id: "model-bind", label: "Fix covariates at this position…", ...off } : null,
     // A life model (not an RBD or a prediction) can be snapshotted into one of the user's data libraries.
     isLifeModelLink(link) ? { id: "model-to-library", label: "Add to a library…", ...off } : null,
+    // Typed-in parameters (Assumed): changed in place, without unlinking and entering them again.
+    link.model?.entered ? { id: "model-params-edit", label: "Edit parameters…", ...off } : null,
     rbd ? null : { id: "model-replace", label: "Replace with…", ...off },
     { id: "model-unlink", label: "Unlink…", ...off },
   ].filter(Boolean);
@@ -410,3 +412,48 @@ export function builtRbdLink(links, positionId) {
 // The position items that make sense on the Modelling tab, after the groups: Rename… only
 // (Focus › and Pin this branch are added by the page); the rest stay on Summary and RCM.
 export const MODEL_POSITION_ITEMS = ["tree-rename"];
+
+// Enter parameters › Exponential: given as an MTBF (what a handbook or data sheet gives) or as a
+// failure rate, in the model's unit. A handbook MTBF typed where a rate was asked for (90,000 as
+// 90,000 failures an hour) made a part that fails every 0.04 s.
+const ONE = { hours: "hour", days: "day", weeks: "week", months: "month", years: "year", cycles: "cycle" };
+export const unitOne = (unit) => ONE[unit] || String(unit || "unit").replace(/s$/, "");
+
+export function exponentialLabel(expAs, unit) {
+  return expAs === "rate" ? `Failure rate (failures per ${unitOne(unit)})` : `MTBF (mean ${unit || "time"} between failures)`;
+}
+
+// The parameters saved, by name (SurPyval's): an exponential's MTBF turned into its failure rate.
+export function enteredParams(distribution, names, values, expAs = "mtbf") {
+  return names.map(([k]) => {
+    const v = Number(values[k]);
+    if (distribution === "exponential" && k === "failure_rate" && expAs !== "rate") return { name: k, value: v > 0 ? 1 / v : v };
+    return { name: k, value: v };
+  });
+}
+
+// A typed-in exponential that can't be what was meant: a rate of one or more failures per unit of
+// time (an MTBF typed as a rate, most likely), or an MTBF under one unit. Words, or null.
+export function implausibleExponential(expAs, value, unit) {
+  const v = Number(value);
+  if (!(v > 0) || !Number.isFinite(v)) return null;
+  const one = unitOne(unit);
+  const fmtN = (x) => Number(x.toPrecision(3)).toLocaleString("en-AU", { maximumSignificantDigits: 3 });
+  if (expAs === "rate" && v >= 1) {
+    return `${fmtN(v)} failures every ${one} is an MTBF of ${fmtN(1 / v)} ${unit}. If ${fmtN(v)} is the MTBF, choose MTBF above.`;
+  }
+  if (expAs !== "rate" && v < 1) {
+    return `An MTBF under one ${one} means it fails more than once every ${one}. If ${fmtN(v)} is a failure rate, choose Failure rate above.`;
+  }
+  return null;
+}
+
+// Edit parameters…: the form's starting values from a row's entered model (an exponential shown as
+// its MTBF).
+export function enteredStart(entered) {
+  const values = Object.fromEntries(Object.entries(entered?.params || {}).map(([k, v]) => [k, v == null ? "" : String(v)]));
+  if (entered?.distribution === "exponential" && Number(values.failure_rate) > 0) {
+    values.failure_rate = String(Number((1 / Number(values.failure_rate)).toPrecision(6)));
+  }
+  return values;
+}

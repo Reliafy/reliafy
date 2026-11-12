@@ -444,6 +444,15 @@ export function createModelFromParams(name, distribution, params, { unit, extras
   );
 }
 
+// Change a model saved from parameters in place (same id): a typed-in figure put right.
+export function updateModelParams(id, { distribution, params, unit } = {}) {
+  return request(`/api/models/${encodeURIComponent(id)}/params`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ distribution, params, unit: unit || null }),
+  });
+}
+
 // Refit a saved model in place with an edited spec (same dataset, same id --
 // everything referencing the model sees the updated fit).
 export function updateModelFit(id, { distribution, mapping, covariates, covariateUnits, formula, unit, fitOptions } = {}) {
@@ -1137,6 +1146,16 @@ export function analyzeSavedRbd(id, tMax) {
 // Check whether an (unsaved) graph is a valid, analytically solvable RBD.
 // Returns { valid, analytic, can_calculate, errors, warnings,
 // non_analytic_nodes }.
+// A graph with its sub-system blocks expanded into their own blocks, wired as inside them (what a
+// repairable diagram needs). Nothing is saved: {graph, expanded, notes}.
+export function expandRbdSubsystems(graph) {
+  return request("/api/rbds/expand-subsystems", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph }),
+  });
+}
+
 export function validateRbd(graph) {
   return request("/api/rbds/validate", {
     method: "POST",
@@ -2495,6 +2514,11 @@ export function addCorrectiveAction(id, body) {
   return postJson(`/api/maintenance/failure-reports/${id}/actions`, body);
 }
 
+// A corrective work order for one corrective action, on the report's position, linked to it.
+export function raiseActionWorkOrder(id, aid) {
+  return postJson(`/api/maintenance/failure-reports/${id}/actions/${aid}/work-order`, {});
+}
+
 export function updateCorrectiveAction(id, aid, body) {
   return jsonMethod("PATCH", `/api/maintenance/failure-reports/${id}/actions/${aid}`, body);
 }
@@ -3468,6 +3492,11 @@ export function updatePackage(id, body) {
   });
 }
 // change: pause ({reason, until?, full_visit?}), resume, retire ({reason?}) or restore.
+// Raise one package's next visit now, on its own: {work_order, raised, lines_added, package}.
+export function raisePackageVisit(id) {
+  return postJson(`/api/maintenance/packages/${encodeURIComponent(id)}/raise`, {});
+}
+
 export function changePackage(id, change, body = {}) {
   return postJson(`/api/maintenance/packages/${encodeURIComponent(id)}/${change}`, body);
 }

@@ -70,7 +70,11 @@ items. Under **Life model**:
 - **Assign a saved model…** links a model from your library, or a sample.
 - **From the class…** links the model fitted to the position's class.
 - **Enter parameters…** saves a model from numbers you have (a data sheet, a
-  handbook) and attaches it.
+  handbook) and attaches it. An exponential takes an MTBF (what handbooks
+  give) or a failure rate, in the unit you pick; a figure that can't be what
+  you meant (more than one failure an hour, an MTBF under an hour) says so. A
+  model entered this way has **Edit parameters…** on its row's **⋯**, which
+  changes its numbers wherever it's used.
 - **From the data library…** attaches a published record (Models ›
   Library). Every input a record needs before it gives a rate is one of its
   **covariates**, and they open in **Fix covariates** beside the tree: a
@@ -159,7 +163,10 @@ Only a position with none of these gets a placeholder, flagged: the row warns
 until each has a model, and a placeholder inside a sub-system is named with
 its path (Propulsion › ESC 1). Each block's tooltip, and the RBD row's panel,
 say where its model came from. They're wired by their connections and
-redundancy groups, in series where there are none. The diagram
+redundancy groups, in series where there are none. A repairable diagram can't
+take sub-systems: its **Maintenance plan** names them and offers **Expand
+sub-systems**, which puts each one's blocks into the diagram wired as they
+were inside it, so the tasks on those positions reach the plan. The diagram
 opens in the RBD builder, filling the table area beside the tree, with the
 whole diagram in view (a long chain is folded into rows); edit its blocks and
 connections there and **Save**, just as on the diagram's own page. **×** or Esc

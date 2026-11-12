@@ -3500,7 +3500,11 @@ class Preventive(BaseModel):
         "age = replaced at this age (a failure restarts the clock); block = at every multiple of the interval; "
         "condition = inspected every interval (in no time) and replaced when its chance of failing before the "
         "next inspection exceeds threshold."))
-    interval: float = Field(gt=0, description="Replacement interval (age/block) or inspection interval (condition).")
+    interval: Optional[float] = Field(None, gt=0, description=(
+        "Replacement interval (age/block) or inspection interval (condition). Give this or operating_interval."))
+    operating_interval: Optional[float] = Field(None, gt=0, description=(
+        "Instead of interval: the interval in the block's operating time, turned into the diagram's clock "
+        "through the block's duty (needs duty)."))
     duration: Optional[float] = Field(None, ge=0, description="Time off-line per replacement; 0/omit = instant.")
     cost: Optional[Cost] = Field(None, description="Per replacement.")
     threshold: Optional[float] = Field(None, ge=0, le=1, description=(

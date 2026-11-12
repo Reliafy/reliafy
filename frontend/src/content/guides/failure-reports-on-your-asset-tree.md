@@ -58,6 +58,12 @@ operational, non-operational, or hidden), so a report can be compared with
 what the RCM expected of that failure mode. Pick the failure mode from the
 position's own list, or describe a new one.
 
+A report counts in the position's life data straight away: the item fitted
+then is counted as failed on the day the report gives, even before it's
+replaced. When a work order later replaces it for the same failure, that ends
+the same life, so the failure is never counted twice. A rejected report doesn't
+count. The report's facts say which item it counts against.
+
 ## Follow the loop
 
 The report opens with its stage shown across the top. Each stage has a card
@@ -68,9 +74,12 @@ under the facts, and the card for the current stage is open.
 - **Investigation** — write what was found, pick a root cause category and say
   the cause in a line. The *whys* are a short list: add one each time you ask
   why, up to seven.
-- **Corrective actions** — add each action with its owner and due date. If it
-  becomes a work order, note the number in the work order field. Mark an
-  action **Done** when it is, or **Drop** it if it isn't needed after all.
+- **Corrective actions** — add each action with its owner and due date. Pick
+  the work order that carries it out, or use **Raise work order** on the action
+  to open a corrective work order on the position, linked both ways (the work
+  order names the report). A number kept in another system goes in the
+  reference box. Mark an action **Done** when it is, or **Drop** it if it isn't
+  needed after all.
 - **Verification** — say whether the action worked. Beside it Reliafy shows
   the repeat check: whether the same position has failed again since the
   action was done, and whether it was the same failure mode.

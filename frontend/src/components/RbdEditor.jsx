@@ -34,7 +34,7 @@ import RbdMaintenancePlan from "./RbdMaintenancePlan.jsx";
 import { applyBlockExtras } from "./RbdBlockCosts.jsx";
 import ValidationPanel, { emptyStatus, graphSignature } from "./RbdValidation.jsx";
 import {
-  saveRbd, getRbd, validateRbd, downloadRbdPython, PYTHON_EXPORT_TIP, downloadRbdJson, JSON_EXPORT_TIP,
+  saveRbd, getRbd, validateRbd, expandRbdSubsystems, downloadRbdPython, PYTHON_EXPORT_TIP, downloadRbdJson, JSON_EXPORT_TIP,
 } from "../api.js";
 import { registerRbdCanvas } from "../rbdBridge.js";
 import { normalizeRbdGraph } from "../rbdGraph.js";
@@ -1162,6 +1162,14 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     fitWhenMeasured(norm.nodes);
   }, [setNodes, setEdges, fitWhenMeasured]);
 
+  // Expand the sub-system blocks into their own blocks, wired as inside them (the server reads each
+  // sub-system's RBD): what a repairable diagram and its Maintenance plan need. Unsaved until Save.
+  const expandSubsystems = useCallback(async () => {
+    const got = await expandRbdSubsystems(saveGraph);
+    if (got.expanded?.length) applyGraph(got.graph);
+    return got.notes || [];
+  }, [saveGraph, applyGraph]);
+
   // Put a redundancy design (Design tab) on the canvas as it is — unsaved, and
   // keeping the user's layout — clearing the id counter past any new ids.
   const applyDesign = useCallback((graph) => {
@@ -2286,6 +2294,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         onClose={() => togglePlan(false)}
         tree={treePlan}
         onTreeLink={pane?.onOpenFull || null}
+        onExpand={expandSubsystems}
       />
     )}
     </div>

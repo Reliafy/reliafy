@@ -804,6 +804,24 @@ def export_rbd_json(
     )
 
 
+@router.post("/rbds/expand-subsystems")
+def expand_subsystems(
+    graph: dict = Body(..., embed=True),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """An (unsaved) graph with each sub-system block replaced by its own blocks, wired as inside it
+    (rbd_flatten.py): what a repairable diagram needs. Nothing is saved: {graph, expanded, notes}."""
+    from backend.services import rbd_flatten
+    from backend.services.rbd_graph import GraphError
+
+    try:
+        out = rbd_flatten.expand_saved(session, graph, ctx.read_owners)
+    except (rbd_flatten.FlattenError, GraphError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return JSONResponse(content=out)
+
+
 @router.post("/rbds/validate")
 def validate_graph(
     graph: dict = Body(..., embed=True),

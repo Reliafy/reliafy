@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { changePackage, getPackage, updatePackage } from "../api.js";
+import { changePackage, getPackage, raisePackageVisit, updatePackage } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import LoadFailed from "../components/LoadFailed.jsx";
 import TablePane from "../components/TablePane.jsx";
@@ -100,7 +100,15 @@ export default function MaintenancePackage() {
       <div className={"pkg-page" + (editing && !phone ? " is-editing" : "")}>
         <div className="pkg-main">
           <Details pkg={pkg} />
-          <NextVisits pkg={pkg} today={today} />
+          <NextVisits pkg={pkg} today={today} onRaise={async () => {
+            try {
+              const out = await raisePackageVisit(pkg.id);
+              setPkg(await getPackage(pkg.id));
+              setSaid(`${out.raised ? "Raised" : "Already open:"} work order #${out.work_order.number} for this visit.`);
+            } catch (e) {
+              setSaid(e.message);
+            }
+          }} />
           <Tasks pkg={pkg} />
           <WorkOrders pkg={pkg} navigate={navigate} />
         </div>
@@ -157,11 +165,21 @@ function Details({ pkg }) {
   );
 }
 
-function NextVisits({ pkg, today }) {
+function NextVisits({ pkg, today, onRaise }) {
   const visits = pkg.next_visits || [];
+  const [busy, setBusy] = useState(false);
+  // Raise the next visit's work order now, on its own (nothing else that's due).
+  const canRaise = pkg.status === "active" && !pkg.parent && visits.length > 0 && !visits[0].open_work_order;
   return (
     <section className="card">
-      <div className="maint-head"><h2>{visits[0]?.open_work_order ? "Open and next visits" : "Next visits"}</h2></div>
+      <div className="maint-head maint-wrap"><h2>{visits[0]?.open_work_order ? "Open and next visits" : "Next visits"}</h2>
+        {canRaise && (
+          <button type="button" className="secondary sm" disabled={busy}
+                  onClick={async () => { setBusy(true); await onRaise(); setBusy(false); }}>
+            {busy ? "Raising…" : `Raise the ${fmtDate(visits[0].on)} visit now`}
+          </button>
+        )}
+      </div>
       {visits.length === 0 ? (
         <p className="lib-date">
           {pkg.status === "paused" ? "None while it's paused."

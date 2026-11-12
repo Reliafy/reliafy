@@ -118,7 +118,8 @@ def test_merge_reads_the_task_and_keeps_only_the_diagrams_own_settings(m, db):
     out = tp.apply(graph, tp.plans_for_graph(m, rbd, graph))
     da, dbb = _block_of(out, "Pump A")["data"], _block_of(out, "Pump B")["data"]
     assert da["preventive"] == {"policy": "age", "interval": 4383.0, "opportunity": 2000}
-    assert da["duty"] == 0.5 and da["crew_priority"] == 2 and "tree_settings" not in da
+    assert da["duty"] == 0.5 and da["crew_priority"] == 2
+    assert da["tree_settings"] == {"opportunity": 2000, "threshold": 0.1}  # kept: merging again is the same
     assert da["tree_plan"]["position_id"] == a
     assert "preventive" not in dbb and dbb["tree_plan"] == {"position_id": b, "task_id": None}  # no tasks: run to failure
     # The diagram itself is untouched.
@@ -198,6 +199,37 @@ def test_rest_plan_and_calculation_read_the_tasks(api):
     res = api.post("/api/rbds/analyze", json={"graph": graph, "rbd_id": rbd_id, "simulate": False})
     assert res.status_code == 200, res.text
     assert res.json()["tree_plan"]["tasks"].keys() == {task["id"]}
+
+
+@pytest.mark.parametrize("outcome,settings,where", [
+    ("on_condition", {"threshold": 0.05, "cost": 4500, "duration": 8}, "preventive"),
+    ("failure_finding", {"offset": 100, "coverage": 0.9, "full_test": 8766}, "inspection"),
+    ("fixed_interval", {"opportunity": 2000}, "preventive"),
+])
+def test_the_diagrams_own_settings_survive_save_and_calculate(api, outcome, settings, where):
+    """The browser calculates the diagram merged with the tree (rbdTreePlan.js) and the server
+    merges what it's sent once more: the diagram's own settings for a tree-linked block (an
+    on-condition threshold, a proof test's coverage, an early-renewal age) must survive both, or
+    Calculate refuses ("set the replacement threshold") though they're saved."""
+    _, a, rbd_id, graph = _rest_station(api)
+    api.post(f"{M}/positions/{a}/tasks", json={"name": "The task", "interval": 6, "unit": "months",
+                                               "outcome": outcome, "cost": 500})
+    block = _block_of(graph, "Pump A")
+    block["data"]["tree_settings"] = settings
+    if outcome == "fixed_interval":
+        block["data"]["maintenance_group"] = "Shut"
+    assert api.post("/api/rbds", json={"id": rbd_id, "name": "Station", "graph": graph}).status_code == 200
+    saved = api.get(f"/api/rbds/{rbd_id}").json()["graph"]
+    assert _block_of(saved, "Pump A")["data"]["tree_settings"] == settings
+    plan = api.post(f"{M}/rbd-tree-plan", json={"rbd_id": rbd_id}).json()
+    sent = tp.apply(saved, plan)  # what the browser sends: already merged
+    server = tp.apply(sent, plan)  # what the server then calculates
+    got = _block_of(server, "Pump A")["data"][where]
+    assert {k: got.get(k) for k in settings} == settings
+    assert server == sent
+    res = api.post("/api/rbds/analyze", json={"graph": sent, "rbd_id": rbd_id, "simulate": False})
+    assert res.status_code == 200, res.text
+    assert "set the replacement threshold" not in res.text.lower()
 
 
 def test_a_saved_simulation_says_when_the_tasks_it_used_have_changed(api):
@@ -312,4 +344,137 @@ def test_new_blank_rbd_on_a_leaf(m, db):
     task = m.create_task(leaf, "Replace the seal", 6, "months", outcome="fixed_interval")
     plans = tp.plans_for_graph(m, one["model_id"], graph)
     assert plans["blocks"][blk["id"]]["used"] == task["id"]
+    _same_after_rebuild(m)
+
+
+# ---- Sub-systems expanded into a repairable diagram (Nov 2026) ----------------------------------
+
+def _pump_station(m, db):
+    """A station: a valve, and two pump sets each holding a pump and a motor (each with a model)."""
+    station = m.create_position("Station")["id"]
+    valve = m.create_position("Valve", parent_id=station)["id"]
+    pm.link_saved(m, db, OWNERS, set(), valve, "model", SAMPLE)
+    out = {"station": station, "valve": valve}
+    for s in "AB":
+        pset = m.create_position(f"Pump set {s}", parent_id=station)["id"]
+        for part in ("Pump", "Motor"):
+            pid = m.create_position(f"{part} {s}", parent_id=pset)["id"]
+            pm.link_saved(m, db, OWNERS, set(), pid, "model", SAMPLE)
+            out[f"{part} {s}"] = pid
+        out[f"set {s}"] = pset
+    return out
+
+
+def _resolver(db):
+    from backend.services import rbds as rbds_service
+
+    return lambda sid: (lambda d: d.graph if d else None)(rbds_service.get_rbd(db, sid, OWNERS + [ORG]))
+
+
+def test_expanding_sub_systems_keeps_the_figures(m, db):
+    """Expanded, a diagram works out exactly as it did with its sub-system blocks: each pump set
+    (pump and motor in series) stays in series, and the sets stay as wired around them."""
+    from backend.services import rbd_flatten
+    from backend.services import rbds as rbds_service
+
+    ids = _pump_station(m, db)
+    link = pm.build_rbd(m, db, OWNERS, set(), ids["station"])
+    graph = _graph(db, link["model_id"])
+    # Wire the two pump sets in parallel after the valve.
+    by = {n["data"]["label"]: n["id"] for n in graph["nodes"] if n["type"] in ("component", "subsystem")}
+    ins = next(n["id"] for n in graph["nodes"] if n["type"] == "input")
+    outs = next(n["id"] for n in graph["nodes"] if n["type"] == "output")
+    graph["edges"] = [{"source": ins, "target": by["Valve"]}, {"source": by["Valve"], "target": by["Pump set A"]},
+                      {"source": by["Valve"], "target": by["Pump set B"]}, {"source": by["Pump set A"], "target": outs},
+                      {"source": by["Pump set B"], "target": outs}]
+    flat, expanded = rbd_flatten.expand(graph, _resolver(db))
+    assert sorted(expanded) == ["Pump set A", "Pump set B"]
+    assert not any(n["type"] == "subsystem" for n in flat["nodes"])
+    assert {n["data"]["label"] for n in flat["nodes"] if n["type"] == "component"} == {
+        "Valve", "Pump A", "Motor A", "Pump B", "Motor B"}
+    before = rbds_service.analyze_graph(db, graph, OWNERS + [ORG], at_times=[5000.0])
+    after = rbds_service.analyze_graph(db, flat, OWNERS + [ORG], at_times=[5000.0])
+    assert after["at"]["sf"][0] == pytest.approx(before["at"]["sf"][0], rel=1e-9)
+    assert after["mttf"] == pytest.approx(before["mttf"], rel=1e-6)
+
+
+def test_a_sub_system_feeding_a_vote_stays_one_input(m, db):
+    """Two parallel branches inside a sub-system feeding a 1-of-2 vote outside: a junction keeps it
+    one input, so the vote counts what it counted before."""
+    from backend.services import rbd_flatten
+
+    def comp(nid):
+        return {"id": nid, "type": "component", "data": {"label": nid, "model": {
+            "distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 0.01}]}}}
+
+    sub = {"unit": "hours", "nodes": [{"id": "i", "type": "input"}, {"id": "o", "type": "output"}, comp("x"), comp("y")],
+           "edges": [{"source": "i", "target": "x"}, {"source": "i", "target": "y"},
+                     {"source": "x", "target": "o"}, {"source": "y", "target": "o"}]}
+    top = {"unit": "hours", "nodes": [{"id": "in", "type": "input"}, {"id": "out", "type": "output"}, comp("z"),
+                                      {"id": "s", "type": "subsystem", "data": {"label": "Set", "rbd": {"id": "sub"}}},
+                                      {"id": "v", "type": "knode", "data": {"label": "2 of 2", "n": 2, "k": 2}}],
+           "edges": [{"source": "in", "target": "s"}, {"source": "in", "target": "z"}, {"source": "s", "target": "v"},
+                     {"source": "z", "target": "v"}, {"source": "v", "target": "out"}]}
+    flat, _ = rbd_flatten.expand(top, lambda sid: sub if sid == "sub" else None)
+    vote = next(n for n in flat["nodes"] if n["id"] == "v")
+    assert vote["data"]["k"] == 2
+    assert sorted(e["source"] for e in flat["edges"] if e["target"] == "v") == ["s-out", "z"]
+    with pytest.raises(rbd_flatten.FlattenError, match="isn't there"):
+        rbd_flatten.expand(top, lambda sid: None)
+
+
+def test_expanded_into_a_repairable_diagram_the_tasks_inside_reach_the_plan(api):
+    """A natural tree (pump sets holding a pump and a motor) built into a repairable diagram: once
+    its sub-systems are expanded, Pump A's overhaul is Pump A's block's plan, and the task says
+    which diagram uses it."""
+    station = api.post(f"{M}/positions", json={"name": "Station"}).json()["id"]
+    pumps = {}
+    for s in "AB":
+        pset = api.post(f"{M}/positions", json={"name": f"Pump set {s}", "parent_id": station}).json()["id"]
+        for part in ("Pump", "Motor"):
+            pid = api.post(f"{M}/positions", json={"name": f"{part} {s}", "parent_id": pset}).json()["id"]
+            api.post(f"{M}/positions/{pid}/models", json={"model_id": SAMPLE})
+            pumps[f"{part} {s}"] = pid
+    link = api.post(f"{M}/positions/{station}/models", json={"build_rbd": True}).json()
+    rbd = api.get(f"/api/rbds/{link['model_id']}").json()
+    graph = {**rbd["graph"], "repairable": True}
+    assert {n["type"] for n in graph["nodes"]} >= {"subsystem"}
+    check = api.post("/api/rbds/validate", json={"graph": graph}).json()
+    assert any("Expand it into its own blocks" in e for e in check.get("errors") or [])
+    got = api.post("/api/rbds/expand-subsystems", json={"graph": graph})
+    assert got.status_code == 200, got.text
+    flat = got.json()["graph"]
+    assert flat["repairable"] and "repair time" in " ".join(got.json()["notes"])
+    for n in flat["nodes"]:
+        if n["type"] == "component":
+            n["data"]["repair"] = {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 0.1}]}
+    assert api.post("/api/rbds", json={"id": rbd["id"], "name": rbd["name"], "graph": flat}).status_code == 200
+    task = api.post(f"{M}/positions/{pumps['Pump A']}/tasks", json={
+        "name": "Overhaul pump", "interval": 12000, "unit": "hours", "outcome": "fixed_interval"}).json()
+    plan = api.post(f"{M}/rbd-tree-plan", json={"rbd_id": rbd["id"]}).json()
+    labels = {b: next(n["data"]["label"] for n in flat["nodes"] if n["id"] == b) for b in plan["blocks"]}
+    assert sorted(labels.values()) == ["Motor A", "Motor B", "Pump A", "Pump B"]
+    row = next(r for b, r in plan["blocks"].items() if labels[b] == "Pump A")
+    assert row["used"] == task["id"] and row["plan"]["task"] == "age" and 12000.0 in (row["plan"]["interval"], row["plan"]["operating_interval"])
+    uses = api.get(f"{M}/rbd-plan-uses", params={"task_ids": task["id"]}).json()["uses"]
+    assert [(u["rbd"]["id"], u["block"]["label"]) for u in uses] == [(rbd["id"], "Pump A")]
+    assert api.post("/api/rbds/validate", json={"graph": flat}).json()["valid"] is True
+
+
+def test_an_rcm_task_named_as_one_on_the_position_is_that_task_with_its_cost(m):
+    """Decided with the name of a task already on the position, the decision takes that task (its
+    cost, LSA and package with it) rather than adding a second one with no cost."""
+    pump = m.create_position("Pump A")["id"]
+    overhaul = m.create_task(pump, "Overhaul pump", 10000, "hours")
+    m.set_task_cost(overhaul["id"], 6500)
+    fn = m.add_function(pump, "Deliver 120 L/s")["id"]
+    ff = m.add_functional_failure(fn, "Delivers less")["id"]
+    mode = m.add_failure_mode(pump, "Impeller wears", functional_failure_id=ff)["id"]
+    m.decide_failure_mode(mode, "operational", {"outcome": "fixed_interval", "task": "overhaul  Pump",
+                                                "interval": 14800, "interval_unit": "hours"})
+    tasks = m._tasks_on(pump)
+    assert [t["id"] for t in tasks] == [overhaul["id"]]
+    view = m._task_view(tasks[0])
+    assert view["cost"]["amount"] == 6500 and view["interval"] == 14800
+    assert tp.task_kind(m, tasks[0]) == "fixed_interval"
     _same_after_rebuild(m)

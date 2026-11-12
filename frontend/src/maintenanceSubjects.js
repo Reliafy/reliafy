@@ -103,3 +103,41 @@ export function replaceRecordText(action, wo, modeName = "") {
   }
   return `Records a planned replacement: ${what} ends without a failure. Life fits count it as still running (a suspension).`;
 }
+
+// Where one close-form action is recorded: the work order's own position ("" ), or a
+// position inside it (the seal inside the pump whose check this is). Returns what the
+// form shows for it: what's fitted, its failure modes and parts, and its name.
+export function closeTarget(wo, where) {
+  const inside = (wo?.inside_positions || []).find((p) => p.id === where);
+  if (inside) {
+    return {
+      id: inside.id, name: inside.label || inside.name, fitted: inside.fitted || null,
+      failure_modes: inside.failure_modes || [], class_failure_modes: inside.class_failure_modes || [],
+      suggested_parts: inside.parts_list || [], position: { id: inside.id, name: inside.label || inside.name },
+      subject: { kind: "position", name: inside.label || inside.name },
+    };
+  }
+  return {
+    id: "", name: wo?.position?.name || wo?.subject?.name || "", fitted: wo?.fitted || null,
+    failure_modes: wo?.failure_modes || [], class_failure_modes: wo?.class_failure_modes || [],
+    suggested_parts: wo?.suggested_parts || [], position: wo?.position, subject: wo?.subject,
+  };
+}
+
+// A replacement's new item as the API takes it: sent whenever a name or a serial is typed,
+// so a serial typed with no name is kept (the server names the item after what it replaces).
+export function newItemBody(action) {
+  if (action?.kind !== "replace") return null;
+  const name = (action.new_name || "").trim();
+  const serial = (action.new_serial || "").trim();
+  return name || serial ? { name, serial } : null;
+}
+
+// What an inspection that found it failed records, in words, before closing.
+export function foundFailedText(target) {
+  const item = target?.fitted?.item?.name;
+  const where = target?.name ? ` at ${target.name}` : "";
+  if (!target?.fitted) return `Nothing is fitted${where}, so no life is marked failed.`;
+  return `Records ${item || "the fitted item"}${where} as failed some time between its last good check and this ` +
+    "finding. Life fits count it as a failure in that interval.";
+}

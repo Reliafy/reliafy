@@ -6,7 +6,7 @@ import {
   MODEL_CHIPS, rangeBound, MODEL_POSITION_ITEMS, MODEL_USUAL, attachGroups, attachedFor, b10Text, boundsLabel, countsText, inUseWords, fmt, graftModels, headline, isModelRow, meanText, modelKey,
   openForModels, predictionAssign, predictionWords, rollupText, rowActions, usedText, withBounds,
   isLifeModelLink, lifeModelOf, builtRbdLink,
-  opensInPane,
+  opensInPane, enteredParams, enteredStart, exponentialLabel, implausibleExponential,
 } from "./explorerModels.js";
 
 const DATA = {
@@ -257,4 +257,28 @@ test("a fitted B-life with a prior reads as a one-sided credible bound", () => {
   assert.equal(rangeBound({ point: 582.37, lower: 467.25, upper: null, bound: "lower" }), "≥ 467");
   assert.equal(rangeBound({ median: 13140, lower: 9239, upper: 24970 }), "9,239–24,970");
   assert.equal(rangeBound({ median: 1 }), null);
+});
+
+// Enter parameters › Exponential: an MTBF or a failure rate, and a figure that can't be meant.
+test("an exponential is entered as an MTBF or a rate; an MTBF typed as a rate is flagged", () => {
+  const names = [["failure_rate", "Failure rate"]];
+  assert.deepEqual(enteredParams("exponential", names, { failure_rate: "90000" }, "mtbf"), [{ name: "failure_rate", value: 1 / 90000 }]);
+  assert.deepEqual(enteredParams("exponential", names, { failure_rate: "0.0001" }, "rate"), [{ name: "failure_rate", value: 0.0001 }]);
+  assert.deepEqual(enteredParams("weibull", [["alpha"], ["beta"]], { alpha: "60000", beta: "1.5" }), [{ name: "alpha", value: 60000 }, { name: "beta", value: 1.5 }]);
+  assert.match(implausibleExponential("rate", "90000", "hours"), /90,000 failures every hour is an MTBF of 0\.0000111 hours/);
+  assert.equal(implausibleExponential("rate", "0.0000111", "hours"), null);
+  assert.equal(implausibleExponential("mtbf", "90000", "hours"), null);
+  assert.match(implausibleExponential("mtbf", "0.5", "days"), /under one day/);
+  assert.equal(exponentialLabel("rate", "hours"), "Failure rate (failures per hour)");
+  assert.equal(exponentialLabel("mtbf", "hours"), "MTBF (mean hours between failures)");
+  // Edit parameters…: an exponential starts as its MTBF.
+  assert.deepEqual(enteredStart({ distribution: "exponential", params: { failure_rate: 1 / 90000 } }), { failure_rate: "90000" });
+  assert.deepEqual(enteredStart({ distribution: "weibull", params: { alpha: 60000, beta: 1.5 } }), { alpha: "60000", beta: "1.5" });
+});
+
+test("a typed-in model's row offers Edit parameters…", () => {
+  const r = (model) => ({ ref: { link: { id: "l", model_type: "model", role: "assigned", in_use: true, model } } });
+  const ids = (x) => rowActions(x).map((a) => a.id);
+  assert.ok(ids(r({ kind: "Exponential", entered: { distribution: "exponential", params: {} } })).includes("model-params-edit"));
+  assert.ok(!ids(r({ kind: "Weibull" })).includes("model-params-edit"));
 });

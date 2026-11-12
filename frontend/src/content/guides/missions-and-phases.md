@@ -38,15 +38,24 @@ above it: a gimbal's own missions are flown on the gimbal's own RBD.
 
 ## Add a mission
 
-On the position's **⋯** menu, choose **Add a mission**. Reliafy builds the
-mission an RBD of its own from what's inside the position, the same way
+On the position's **⋯** menu, choose **Add a mission**. A position with an RBD
+of its own gives the mission a copy of it, wired as it is there: parallel
+trains, standby and k-out-of-n stay as they are (a repairable RBD's repairs and
+planned work are left out: a mission doesn't repair). Without one, Reliafy
+builds the mission's RBD from what's inside the position, the same way
 **Build an RBD from what's inside…** does: each block takes the model in use
 at its position, and a position with none gets a placeholder block, flagged,
-never a made-up figure. It's saved once, named after the position and the
-mission ("Pump station — Mission 1"). A position with nothing inside starts
-from a copy of its own RBD or, without one, is a single block: the position's
-own model in use. A position with nothing inside and no model can't have a
-mission yet: give it a model on the **Modelling** tab first.
+never a made-up figure. The tree doesn't say which positions are redundant, so
+blocks with no connections go in series, and the mission says so (**Check the
+wiring**) until you wire its RBD otherwise. It's saved once, named after the
+position and the mission ("Pump station — Mission 1"). A position with nothing
+inside and no RBD is a single block: the position's own model in use. A
+position with nothing inside and no model can't have a mission yet: give it a
+model on the **Modelling** tab first.
+
+The answer says why it has no bound: a mission is worked out from each block's
+model at its point values. A mission too large to work out exactly is
+simulated, and the range shown (90%, two-sided) is the simulation's own precision.
 
 Under **Modelling → System models → RBDs**, a mission's RBD has a **Mission**
 label and says which mission and position it belongs to.

@@ -200,16 +200,28 @@ def _children(m: Maintenance, position_id: str) -> list[dict]:
     return [c for c in m.s.inn(m.org, position_id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
 
 
+def _below(m: Maintenance, position_id: str, depth: int = 6) -> list[dict]:
+    """The live positions further inside ``position_id`` than its children (grandchildren on)."""
+    out, level = [], _children(m, position_id)
+    for _ in range(depth - 1):
+        level = [g for c in level for g in _children(m, c["id"])]
+        if not level:
+            break
+        out += level
+    return out
+
+
 def block_positions(m: Maintenance, position_id: str, blocks: list[dict]) -> dict:
     """{block id: position} for the diagram's blocks that stand for a position inside
     ``position_id`` (or for that position itself): a block built from it (its id), else one with
-    the position's name."""
+    the position's name. A block built from a position further inside (a sub-system's block, once
+    the sub-system is expanded into the diagram) is matched by its id."""
     from backend.maintenance import rbd_derive
 
     me = m.s.node(m.org, position_id, "Position")
     # A position's own one-block diagram (New blank RBD, one block for itself) reads its own tasks.
     kids = _children(m, position_id) + ([me] if me else [])
-    by_bid = {rbd_derive._bid(c["id"]): c for c in kids}
+    by_bid = {rbd_derive._bid(c["id"]): c for c in _below(m, position_id)} | {rbd_derive._bid(c["id"]): c for c in kids}
     by_name: dict = {}
     for c in kids:
         by_name.setdefault(" ".join(str(c.get("name") or "").split()).casefold(), c)
@@ -270,8 +282,12 @@ def plans_for_graph(m: Maintenance, rbd_id: str, graph: dict) -> dict:
 def merge(data: dict, row: dict) -> dict:
     """A tree-linked block's data for calculation: its own plan replaced by its position's task
     (none: it runs to failure), with the diagram's own settings for it (``tree_settings``), and
-    ``tree_plan`` naming where it came from. The same rule as frontend/src/rbdTreePlan.js."""
-    out = {k: v for k, v in copy.deepcopy(data or {}).items() if k not in ("preventive", "inspection", "tree_settings")}
+    ``tree_plan`` naming where it came from. The same rule as frontend/src/rbdTreePlan.js.
+
+    ``tree_settings`` stays on the result, so merging again gives the same data: the browser sends
+    the diagram as it calculates it (already merged), and the server reads the tree once more.
+    Dropping them there lost every on-condition, proof-test and early-renewal setting."""
+    out = {k: v for k, v in copy.deepcopy(data or {}).items() if k not in ("preventive", "inspection")}
     plan = (row or {}).get("plan")
     out["tree_plan"] = {"position_id": row["position"]["id"], "task_id": row.get("used")}
     if not plan:
@@ -394,9 +410,15 @@ def rbds_using_tasks(m: Maintenance, db, owners, hidden, task_ids) -> list[dict]
         on = [x for x in m.s.out(m.org, tid, "ON") if x["label"] == "Position"]
         if not on:
             continue
-        up = [x for x in m.s.out(m.org, on[0]["id"], "PART_OF") if x["label"] == "Position"]
-        if up:
-            by_parent.setdefault(up[0]["id"], set()).add(tid)
+        # The positions above it, nearest first: a diagram on any of them may hold its block (a
+        # sub-system expanded into its parent's diagram puts a grandchild's block there).
+        here = on[0]["id"]
+        for _ in range(6):
+            up = [x for x in m.s.out(m.org, here, "PART_OF") if x["label"] == "Position"]
+            if not up:
+                break
+            here = up[0]["id"]
+            by_parent.setdefault(here, set()).add(tid)
     out = []
     for parent_id, tids in by_parent.items():
         for link in m.position_models(parent_id):
