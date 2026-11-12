@@ -3803,27 +3803,7 @@ export function fitDatasetWithPrior(body) {
   });
 }
 
-// ---- The user's own data libraries (backend/library/user.py) ------------------------------
-const libJson = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export function listMyLibraries() {
-  return request("/api/library/mine");
-}
-export function createLibrary({ name, description = "", notes = "" }) {
-  return request("/api/library/mine", libJson("POST", { name, description, notes }));
-}
-export function updateLibrary(libraryId, changes) {
-  return request(`/api/library/mine/${encodeURIComponent(libraryId)}`, libJson("PATCH", changes));
-}
-export function deleteLibrary(libraryId) {
-  return request(`/api/library/mine/${encodeURIComponent(libraryId)}`, { method: "DELETE" });
-}
-// A saved life model added to a library as a record (a snapshot of it now, the model linked).
-export function addModelToLibrary(libraryId, { modelId, label, equipmentType, failureMode, notes }) {
-  return request(`/api/library/mine/${encodeURIComponent(libraryId)}/records`, libJson("POST", {
-    model_id: modelId, label: label || null, equipment_type: equipmentType || "other", failure_mode: failureMode || "",
-    notes: notes || "",
-  }));
-}
+// A record of one of the user's earlier libraries (backend/library/user.py) taken out of it.
 export function removeLibraryRecord(libraryId, recordId) {
   return request(`/api/library/mine/${encodeURIComponent(libraryId)}/records/${encodeURIComponent(recordId)}`,
     { method: "DELETE" });
@@ -3860,4 +3840,60 @@ export function deleteMission(rbdId, missionId) {
 // The chance of completing it, per phase, and each phase's weakest block; `phases`: unsaved edits.
 export function calculateMission(rbdId, missionId, phases = null) {
   return request(`${missionPath(rbdId, missionId)}/calculate`, asJson("POST", phases ? { phases } : {}));
+}
+
+// ---- Libraries (backend/routers/libraries.py): the user's own libraries of data and models,
+// shared with workspaces or published, beside the built-in handbooks. Reads work signed out
+// (public libraries only); writes need sign-in.
+const libsPath = (id = null, rest = "") =>
+  `/api/libraries${id ? `/${encodeURIComponent(id)}` : ""}${rest}`;
+const libEntryPath = (id, entryId, rest = "") => libsPath(id, `/entries/${encodeURIComponent(entryId)}${rest}`);
+// {libraries: [card], signed_in, workspace_id, licences: [{id, name}]}
+export function listLibraries() {
+  return request(libsPath());
+}
+// {entries: [entry + library], builtin: [card]}; type "data" | "model".
+export function listLibraryEntries(type, q = "") {
+  const params = new URLSearchParams();
+  if (type) params.set("type", type);
+  if (q) params.set("q", q);
+  const s = params.toString();
+  return request(`${libsPath(null, "/entries")}${s ? `?${s}` : ""}`);
+}
+export function getLibrary(id) {
+  return request(libsPath(id));
+}
+export function getLibraryEntry(id, entryId) {
+  return request(libEntryPath(id, entryId));
+}
+// {name, description?, source?, citation?, notes?}
+export function createLibrary(body) {
+  return request(libsPath(), asJsonBody("POST", body));
+}
+export function updateLibrary(id, changes) {
+  return request(libsPath(id), asJsonBody("PATCH", changes));
+}
+// {visibility, workspaces?, licence?, source?, citation?, rights_confirmed?}
+export function setLibraryVisibility(id, body) {
+  return request(libsPath(id, "/visibility"), asJsonBody("PUT", body));
+}
+export function deleteLibrary(id) {
+  return request(libsPath(id), { method: "DELETE" });
+}
+// {dataset_id} or {model_id, collection}: a snapshot of it now. -> {entry, library}
+export function addLibraryEntry(id, body) {
+  return request(libsPath(id, "/entries"), asJsonBody("POST", body));
+}
+export function removeLibraryEntry(id, entryId) {
+  return request(libEntryPath(id, entryId), { method: "DELETE" });
+}
+export function refreshLibraryEntry(id, entryId) {
+  return request(libEntryPath(id, entryId, "/refresh"), asJsonBody("POST", {}));
+}
+// {name?, with_dataset?} -> {dataset: {id, name, url, reused} | null, model: {id, name, url} | null}
+export function copyLibraryEntry(id, entryId, body = {}) {
+  return request(libEntryPath(id, entryId, "/use"), asJsonBody("POST", body));
+}
+function asJsonBody(method, body) {
+  return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) };
 }

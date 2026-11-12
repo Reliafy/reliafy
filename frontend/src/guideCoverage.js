@@ -21,7 +21,7 @@ export const GUIDE_COVERAGE = [
   { feature: "Condition and life (remaining life from readings)", href: "/models/joint" },
   { feature: "Per-demand (one-shot) models", href: "/models/new?mode=perdemand" },
   { feature: "Maintainability prediction", href: "/maintainability" },
-  { feature: "The reliability data library (published rates as models)", href: "/models/library" },
+  { feature: "Libraries: your data and models to share or publish, and the built-in handbooks", href: "/libraries" },
   // Data.
   { feature: "Data (datasets)", href: "/data" },
   // System modelling.

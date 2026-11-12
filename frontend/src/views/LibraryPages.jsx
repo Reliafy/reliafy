@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { deleteLibrary, getLibraryComponent, getLibraryComponents, getLibraryRecord, getLibrarySources, removeLibraryRecord, searchLibrary } from "../api.js";
+import { getLibraryComponent, getLibraryComponents, getLibraryRecord, getLibrarySources, removeLibraryRecord, searchLibrary } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import Plot from "../components/Plot.jsx";
 import { Select, TextInput } from "../components/ui/Controls.jsx";
 import Chip from "../components/ui/Chip.jsx";
-import { LibraryFormDialog, LibraryLookup, UseAsModelDialog, UseAsPriorDialog } from "../components/LibraryParts.jsx";
-import { StorageCapNotice } from "../components/StorageCap.jsx";
-import { ShowMe } from "../components/SectionPage.jsx";
+import { UseAsModelDialog, UseAsPriorDialog } from "../components/LibraryParts.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { ACCENT } from "../plotTheme.js";
 import { formatDate } from "../dates.js";
@@ -19,17 +17,17 @@ import {
 } from "../libraryModels.js";
 import "./LibraryPages.css";
 
-// The reliability data library under Models, three levels (and an NRC/INL source's components:
+// The built-in handbooks under Libraries (moved from Models › Library, 13 Nov 2026), three levels (and an NRC/INL source's components:
 // an equipment type in one pooling group, its failure modes together, each with its own page) (Derryn, 9 Nov 2026): the libraries
 // (each source: what it covers, how many records, its basis and licence, the reference), one
 // library's records (filters, sort, and each record's Use as a model… / Use as a prior…), and one
 // record (its distribution written out and plotted, its units, basis, full reference and notes).
-// The user's own libraries (Derryn, 9 Nov: "a way to build a library") show first, as "Yours":
-// the same pages, plus New library…, Edit, Delete and, on a record, Remove from library.
+// The user's own libraries have their own page (views/Libraries.jsx, LibraryPage), which shows this
+// one's LibrarySource for a handbook. A record of an earlier library of the user's keeps its page
+// here, with Remove from library.
 
 const crumbsFor = (source, record) => [
-  { label: "Models", to: "/models" },
-  ...(source || record ? [{ label: "Library", to: LIBRARY_PATH }] : []),
+  { label: "Libraries", to: LIBRARY_PATH },
   ...(record && source ? [{ label: source.short_name || source.name, to: sourcePath(source.id) }] : []),
 ];
 
@@ -66,78 +64,13 @@ function Actions({ rec, inline = false }) {
   );
 }
 
-// A library's card on the sources page: a published source, or one of the user's own.
-function SourceCard({ s }) {
-  return (
-    <Link to={sourcePath(s.id)} className="card lib-source">
-      <h2 className="lib-h">{s.name}</h2>
-      <p>{s.description || (s.mine ? "No description yet." : "")}</p>
-      <p className="lib-facts">
-        <Chip>{s.records} {s.records === 1 ? "record" : "records"}</Chip>
-        {s.mine ? <Chip>Yours</Chip> : <Chip>{BASIS[s.basis] || s.basis}</Chip>}
-        {s.licence?.name && <Chip>{s.licence.name}</Chip>}
-      </p>
-      {!s.mine && <p className="rim-tquiet">{s.title}{s.report ? ` (${s.report})` : ""}{s.year ? `, ${s.year}` : ""}</p>}
-    </Link>
-  );
-}
-
-// /models/library: the libraries (yours, then the published ones), and a search across them all.
-export function LibraryHome() {
-  const { sources, error, reload } = useSources();
-  const [making, setMaking] = useState(false);
-  const navigate = useNavigate();
-  const mine = (sources || []).filter((s) => s.mine);
-  const published = (sources || []).filter((s) => !s.mine);
-  return (
-    <div className="app">
-      <PageHeader crumbs={crumbsFor()} title="Library"
-                  meta={(
-                    <span className="sh-purpose">
-                      <span className="sh-purpose-text" title="Published failure rates and probabilities, and libraries of your own models, each with its uncertainty and its source, to use as a model or a prior.">Published failure rates and probabilities, and libraries of your own models, each with its uncertainty and its source, to use as a model or a prior.</span>
-                      <ShowMe help={{ guide: "fit-your-first-model" }} />
-                    </span>
-                  )}
-                  primary={<button type="button" onClick={() => setMaking(true)}>New library…</button>} />
-      {error && <div className="card error">{error}</div>}
-      <StorageCapNotice kind="libraries" one="data library" many="data libraries" refreshKey={sources} />
-      <section className="card" aria-label="Search every library">
-        <h2 className="lib-h">Know the record you want?</h2>
-        <LibraryLookup label="Records" />
-      </section>
-      {sources === null && !error && <div className="card empty">Loading…</div>}
-      {sources !== null && (
-        <section aria-labelledby="lib-yours">
-          <h2 id="lib-yours" className="lib-section">Yours</h2>
-          {mine.length === 0 ? (
-            <div className="card empty">
-              <p>No libraries of your own yet. A library holds snapshots of your saved life models, to use as models or priors.</p>
-              <p><button type="button" onClick={() => setMaking(true)}>New library…</button></p>
-            </div>
-          ) : <div className="lib-sources">{mine.map((s) => <SourceCard key={s.id} s={s} />)}</div>}
-        </section>
-      )}
-      {published.length > 0 && (
-        <section aria-labelledby="lib-published">
-          <h2 id="lib-published" className="lib-section">Published</h2>
-          <div className="lib-sources">{published.map((s) => <SourceCard key={s.id} s={s} />)}</div>
-        </section>
-      )}
-      {making && <LibraryFormDialog onClose={() => setMaking(false)} onDone={(lib) => { setMaking(false); reload(); navigate(sourcePath(lib.id)); }} />}
-    </div>
-  );
-}
-
-// /models/library/:source: every record of one library, with its filters and sort. One of the user's
-// own libraries adds Edit… and Delete….
-export function LibrarySource() {
-  const { source: sourceId } = useParams();
-  const { sources, error, reload } = useSources();
-  const navigate = useNavigate();
-  const confirm = useConfirm();
+// /libraries/:id for a built-in handbook: every record of it, with its filters and sort. LibraryPage
+// passes ``sourceId``; the address's :source or :id serves otherwise.
+export function LibrarySource({ sourceId: given = null }) {
+  const params = useParams();
+  const sourceId = given || params.source || params.id;
+  const { sources, error } = useSources();
   const source = (sources || []).find((s) => s.id === sourceId);
-  const [editing, setEditing] = useState(false);
-  const [deleteError, setDeleteError] = useState(null);
   const [rows, setRows] = useState(null);
   const [q, setQ] = useState("");
   const [equipment, setEquipment] = useState("");
@@ -182,46 +115,15 @@ export function LibrarySource() {
     }
     return [...counts].map(([text, n]) => ({ text, all: n === shown.length }));
   }, [shown]);
-  const mine = !!source?.mine;
-  const canEdit = mine && !source.read_only;
   // A library of covariate models (NSWC-11) lists each component's parts or failure modes instead.
   const covariateRows = useMemo(() => (shown.some(isCovariate) ? modeRows(shown.filter(isCovariate)) : null), [shown]);
-  const onDelete = async () => {
-    const ok = await confirm({
-      title: `Delete ${source.name}?`,
-      body: `Its ${source.records} ${source.records === 1 ? "record goes" : "records go"} with it. The models the records came from stay.`,
-      confirmLabel: "Delete the library",
-    });
-    if (!ok) return;
-    try {
-      await deleteLibrary(source.id);
-      navigate(LIBRARY_PATH);
-    } catch (e) {
-      setDeleteError(e.message);
-    }
-  };
-  const meta = source ? (mine
-    ? [`${source.records} ${source.records === 1 ? "record" : "records"}`, source.description].filter(Boolean).join(" · ")
-    : `${source.records} records · ${BASIS[source.basis] || source.basis} · ${source.licence?.name || ""}`) : null;
+  const meta = source ? `${source.records} records · ${BASIS[source.basis] || source.basis} · ${source.licence?.name || ""}` : null;
   return (
     <div className="app">
       <PageHeader crumbs={crumbsFor(source || { id: sourceId })} title={source?.name || sourceId} meta={meta}
-                  primary={canEdit ? (
-                    <span className="lib-actions">
-                      <button type="button" className="secondary" onClick={() => setEditing(true)}>Edit…</button>
-                      <button type="button" className="secondary danger" onClick={onDelete}>Delete…</button>
-                    </span>
-                  ) : null} />
+                  badges={<Chip>Built-in</Chip>} />
       {error && <div className="card error">{error}</div>}
-      {deleteError && <div className="card error" role="alert">{deleteError}</div>}
-      {mine && source.notes && <section className="card"><h2 className="lib-h">Notes</h2><p className="lib-notes">{source.notes}</p></section>}
-      {!mine && source?.disclaimer && <CovariateSourceIntro source={source} />}
-      {mine && rows !== null && rows.length === 0 && (
-        <div className="card empty">
-          <p>No records yet. Open one of your <Link to="/models/life">non-repairable models</Link> and choose <strong>Add to a library…</strong> from its ⋯ menu,
-            or do the same on a position’s life model in the Explorer’s Modelling tab.</p>
-        </div>
-      )}
+      {source?.disclaimer && <CovariateSourceIntro source={source} />}
       {comps?.length > 0 && (
         <div className="lib-view" role="group" aria-label="Show">
           <button type="button" className={view === "records" ? "" : "secondary"} aria-pressed={view === "records"} onClick={() => setView("records")}>Records</button>
@@ -268,7 +170,6 @@ export function LibrarySource() {
         )}
       </section>
       )}
-      {editing && <LibraryFormDialog library={source} onClose={() => setEditing(false)} onDone={() => { setEditing(false); reload(); }} />}
     </div>
   );
 }
@@ -305,7 +206,7 @@ function ComponentTable({ comps, q, setQ }) {
   );
 }
 
-// /models/library/:source/components/:component: a component's failure modes (each a record, with
+// /libraries/:source/components/:component: a component's failure modes (each a record, with
 // what sets it off and whether it's added), how they combine in words, and Try it: its chance of
 // failing over a period of demands, running hours and calendar hours, in the shared calculator.
 export function LibraryComponent() {
@@ -498,7 +399,7 @@ function CovariateRecord({ rec, d, source }) {
   );
 }
 
-// /models/library/:source/:record: one record.
+// /libraries/:source/:record: one record.
 export function LibraryRecord() {
   const { source: sourceId, record } = useParams();
   const id = recordIdOf(sourceId, record);

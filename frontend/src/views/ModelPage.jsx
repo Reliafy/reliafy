@@ -5,6 +5,7 @@ import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx"
 import ResultView from "../components/ResultView.jsx";
 import EditFitModal from "../components/EditFitModal.jsx";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
+import FromLibrary from "../components/FromLibrary.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { compareModel, getModel, deleteModel, downloadModelPython, renameModel } from "../api.js";
 import DownloadPythonItem from "../components/model/DownloadPythonItem.jsx";
@@ -71,9 +72,9 @@ export default function ModelPage() {
 
   // A competing-risks fit (#177) is refitted from the wizard, not edited here.
   const canEdit = model && !model.read_only && model.dataset_id && model.kind !== "competing_risks";
-  // A parametric life model can be added to one of the user's data libraries (a snapshot of it now);
-  // the server says why not for anything else (an offset, a mixture, covariates).
-  const canAddToLibrary = model && model.kind === "distribution";
+  // Any model can be added to a library of the user's (a copy of it now), whatever its kind: fitted,
+  // from parameters, from a handbook or a prior. Never added automatically.
+  const canAddToLibrary = !!model;
   const results = model?.results;
   const split = results?.split || null;
   const title = model ? itemName(model) : "Model";
@@ -107,13 +108,18 @@ export default function ModelPage() {
           <DownloadPythonItem download={() => downloadModelPython("life", model.id)} onError={setError} />
           {!model.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
           {canEdit && <button className="ovm-item" onClick={() => setEditing(true)}>Edit fit</button>}
-          {canAddToLibrary && <button className="ovm-item" onClick={() => setAdding(true)}>Add to a library…</button>}
+          {canAddToLibrary && <button className="ovm-item" onClick={() => setAdding(true)}>Add to library…</button>}
           <button className="ovm-item danger" onClick={onDelete}>
             {model.read_only ? "Remove from my view" : "Delete"}
           </button>
         </>
       )}
-      notice={error && <div className="card error mf-notice" role="alert">{error}</div>}
+      notice={(error || model?.from_library) && (
+        <>
+          {model?.from_library && <FromLibrary from={model.from_library} className="mf-notice" />}
+          {error && <div className="card error mf-notice" role="alert">{error}</div>}
+        </>
+      )}
     >
       {model ? (
         // A model this page can't draw shows a card here, not the whole-app error page.
@@ -132,7 +138,7 @@ export default function ModelPage() {
       ) : missing ? <ModelNotFound id={id} kind="life" />
         : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
       {editModal}
-      {adding && model && <AddToLibraryDialog modelId={model.id} modelName={itemName(model)} onClose={() => setAdding(false)} />}
+      {adding && model && <AddToLibraryDialog modelId={model.id} modelName={itemName(model)} collection="models" onClose={() => setAdding(false)} />}
       <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );

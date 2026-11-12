@@ -10101,3 +10101,6 @@ main.content:focus { outline: none; }
   .reading-summary-actions .link, .reading-summary-actions button, .reading-z-pick { min-height: 44px; }
 }
 .fit-reading { margin-bottom: var(--sp-3); }
+
+/* A copy made from a library says where it came from (components/FromLibrary.jsx). */
+.from-library { margin: 4px 0 0; color: var(--muted); font-size: var(--fs-13); overflow-wrap: anywhere; }
