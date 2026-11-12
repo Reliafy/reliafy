@@ -1,0 +1,66 @@
+/* RbdMaintenancePlan.jsx: the repairable RBD's maintenance plan, under the canvas. The table
+   scrolls inside its own box (maint-scroll), so nothing moves the page sideways on a phone. */
+.rbd-plan {
+  border-top: 1px solid var(--line);
+  padding: 12px 14px 4px;
+  background: var(--surf);
+  min-width: 0;
+}
+.rbd-plan-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.rbd-plan-head h3 { margin: 0; font-size: var(--fs-16); font-weight: 600; }
+.rbd-plan-counts { font-size: var(--fs-13); flex: 1 1 200px; }
+.rbd-plan-btns { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+
+/* Duty, prominently: a one-line explanation that opens to the detail. */
+.rbd-plan-duty { margin: 10px 0 6px; padding: 8px 12px; border-radius: var(--r-sm); background: var(--surf-2);
+  font-size: var(--fs-13); line-height: 1.45; }
+.rbd-plan-duty summary { cursor: pointer; }
+.rbd-plan-duty p { margin: 6px 0 2px; max-width: 72ch; }
+
+.rbd-plan-filter { margin: 6px 0; font-size: var(--fs-13); }
+.rbd-plan-filter button.link { font-size: inherit; }
+.rbd-plan-empty, .rbd-plan-note { font-size: var(--fs-13); margin: 6px 0 8px; }
+
+.rbd-plan-scroll { margin: 6px 0 0; }
+.rbd-plan-table { margin-bottom: 4px; min-width: 860px; }
+.rbd-plan-table th, .rbd-plan-table td { text-align: left; vertical-align: top; padding: 0.4rem 0.45rem; white-space: nowrap; }
+.rbd-plan-table thead th { font-size: var(--fs-13); }
+.rbd-plan-table .rbd-plan-name { display: table-cell; max-width: 14rem; overflow: hidden; text-overflow: ellipsis;
+  font-weight: 600; padding-top: 0.7rem; }
+.rbd-plan-table input, .rbd-plan-table select { font-size: var(--fs-13); padding: 4px 6px; min-height: 32px; margin: 0; }
+.rbd-plan-table select { max-width: 12rem; }
+.rbd-plan-num { width: 5.5rem; }
+.rbd-plan-pct { width: 3.6rem; }
+.rbd-plan-cost { width: 7rem; }
+.rbd-plan-group { width: 8rem; }
+.rbd-plan-basis { min-width: 8.5rem; }
+.rbd-plan-with-suffix { display: inline-flex; align-items: center; gap: 4px; }
+.rbd-plan-table small { display: block; font-size: var(--fs-12, 0.75rem); margin-top: 2px; }
+.rbd-plan-table input.is-invalid { border-color: var(--danger); }
+/* Duty is the first thing after the name: tinted, so it reads as part of the block. */
+.rbd-plan-table td.rbd-plan-duty-cell { background: color-mix(in srgb, var(--acc) 6%, transparent); }
+.rbd-plan-block + .rbd-plan-block tr:first-child > * { border-top: 1px solid var(--line); }
+.rbd-plan-block tr:not(:last-child) > * { border-bottom: 0; }
+.rbd-plan-extra td { padding-top: 0; }
+.rbd-plan-fields { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 2px 0 6px; white-space: normal; }
+.rbd-plan-field { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-13); }
+.rbd-plan-problem td { color: var(--warn, var(--danger)); font-size: var(--fs-13); white-space: normal; padding-top: 0; }
+.rbd-plan-more { min-height: 32px; }
+
+/* With the plan open the canvas gives up some height, so both are in view. */
+.rbd-builder.has-plan:not(.is-full) .rbd-canvas { height: 46vh; min-height: 300px; }
+.rbd-builder.is-full.has-plan { display: flex; flex-direction: column; }
+.rbd-builder.is-full.has-plan .rbd-plan { max-height: 45vh; overflow: auto; flex: none; }
+
+@media (max-width: 600px) {
+  .rbd-plan { padding: 10px 10px 4px; }
+  .rbd-plan-btns { margin-left: 0; }
+  .rbd-plan-table input, .rbd-plan-table select { font-size: var(--fs-16); min-height: 40px; }
+  .rbd-plan-more { min-height: 40px; }
+}
+
+/* The plan sits over nothing: a zoomed-in diagram stays inside its canvas. */
+.rbd-builder.has-plan .rbd-canvas { overflow: hidden; }
+.rbd-plan { position: relative; z-index: 1; }
+/* A note or settings row under a block stays in view when the table scrolls sideways on a phone. */
+.rbd-plan-pin { position: sticky; left: 0; display: inline-block; max-width: min(100%, calc(100vw - 72px)); white-space: normal; }

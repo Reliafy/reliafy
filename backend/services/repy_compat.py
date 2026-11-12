@@ -91,6 +91,20 @@ def chain_probabilities(rbd, working_nodes, broken_nodes):
     return _chain_probabilities(rbd, working_nodes, broken_nodes)
 
 
+def long_run_node_availability(rbd, working_nodes=(), broken_nodes=()) -> dict:
+    """Each node's long-run availability with the pinned nodes forced (from
+    the crews' Markov chain when limited crews couple the blocks), as the
+    exact cost breakdown takes them."""
+    import numpy as np
+
+    working, broken = set(working_nodes or ()), set(broken_nodes or ())
+    if rbd._crews_couple():
+        probabilities, weights = chain_probabilities(rbd, working, broken)
+        return {n: float(weights @ probabilities[n]) for n in rbd.nodes}
+    probs = rbd._probabilities_with_overrides(rbd.node_availability(), working, broken)
+    return {n: float(np.atleast_1d(np.asarray(v, dtype=float))[0]) for n, v in probs.items()}
+
+
 def block_cycle(rbd, node):
     """A block-replaced (or replaced-on-condition) component's renewal cycle."""
     from repyability.rbd._long_run import _block_cycle

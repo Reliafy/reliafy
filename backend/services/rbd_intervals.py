@@ -222,7 +222,7 @@ def _schedule(opts: dict, found: dict) -> str:
 
 def _none_message(found: dict) -> str:
     return ("No block has scheduled replacement by age or proof tests to choose intervals for: give one a "
-            "preventive schedule (age replacement) or proof tests (double-click it → Cost & maintenance).")
+            "preventive schedule (age replacement) or proof tests (set it in the builder's Maintenance plan).")
 
 
 def _chosen(opts: dict, found: dict, schedule: str) -> list[dict]:
@@ -231,7 +231,7 @@ def _chosen(opts: dict, found: dict, schedule: str) -> list[dict]:
         what = "age replacement" if schedule == "replacement" else "proof tests"
         raise AnalysisError(f"No block has {what} to choose intervals for: give one a "
                             + ("preventive schedule (age replacement)" if schedule == "replacement"
-                               else "proof test") + " (double-click it → Cost & maintenance).")
+                               else "proof test") + " (set it in the builder's Maintenance plan).")
     if opts.get("blocks"):
         by_id = {r["id"]: r for r in rows}
         missing = [b for b in opts["blocks"] if b not in by_id]
@@ -421,7 +421,7 @@ def _friendly(exc: Exception, labels: dict, safety: bool, min_av, max_cost, unit
         return AnalysisError(
             "Nothing is priced, so no interval costs more than another: give the blocks' "
             + ("proof tests a cost" if safety else "replacements, repairs or tests costs")
-            + " (double-click a block → Cost & maintenance), or set the system downtime cost.")
+            + " (the builder's Maintenance plan, or double-click a block for its costs), or set the system downtime cost.")
     if "repeat together only after" in text:
         return AnalysisError("These intervals line up again only after too many tests to average over: choose "
                              "intervals that are multiples of one another (monthly, quarterly, yearly…).")
@@ -445,7 +445,15 @@ def apply_plan(graph: dict, rows: list[dict]) -> dict:
             if row.get("never"):
                 data.pop("preventive", None)
             else:
-                data["preventive"] = {**data["preventive"], "interval": float(row["interval"])}
+                new = {**data["preventive"], "interval": float(row["interval"])}
+                if new.get("operating_interval") is not None:
+                    # Given in operating time: kept so, through the block's duty.
+                    duty = data.get("duty")
+                    if isinstance(duty, (int, float)) and not isinstance(duty, bool) and 0 < duty <= 1:
+                        new["operating_interval"] = float(row["interval"]) * float(duty)
+                    else:
+                        new.pop("operating_interval")
+                data["preventive"] = new
         elif isinstance(data.get("inspection"), dict):
             new = {**data["inspection"], "interval": float(row["interval"])}
             if row.get("offset"):

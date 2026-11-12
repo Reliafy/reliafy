@@ -9134,6 +9134,10 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
   margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: 1px solid var(--line2);
 }
 .rbd-dlg-sec > h3 { margin: 0; font-size: var(--fs-16); font-weight: 600; color: var(--ink); }
+/* The block's planned work in words; edited in the Maintenance plan (RbdMaintenancePlan.jsx). */
+.rbd-dlg-plan { align-items: flex-start; }
+.rbd-dlg-plan-sum { margin: 0; font-size: var(--fs-14); line-height: 1.45; }
+.rbd-dlg-plan > p.muted { margin: 0; font-size: var(--fs-13); }
 .rbd-dlg-sec .param-fields, .rbd-dlg-fold-body .param-fields { margin-top: 0; }
 .rbd-dlg-sec .hint, .rbd-dlg-fold-body .hint { margin: 0; }
 .rbd-dlg-sec .rbd-instant-repair { margin: 0; }
@@ -9237,6 +9241,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .rbd-costs .alt-metric small { font-size: var(--fs-12); font-weight: 400; }
 .rbd-avail-bar-fill.cost { background: var(--cat-teal); }
 .rbd-avail-bar-fill.planned { background: var(--cat-amber); }
+.rbd-split-sub { font-size: var(--fs-13); color: var(--muted); font-weight: 600; margin-top: 4px; }
 .rbd-costs-table td, .rbd-costs-table th { font-variant-numeric: tabular-nums; }
 .rbd-costs-table th:first-child { text-align: left; }
 .rbd-costs-table tr.changed td { font-weight: 600; }

@@ -99,6 +99,7 @@ def component(script, data: dict, label: str, var: str, life: str, repair: str) 
     try:
         group = rm.maintenance_group(data, label)
         priority = rm.crew_priority(data, label)
+        duty = rm.duty_fraction(data, label)
     except AnalysisError as exc:
         script.missing(var, str(exc), label)
         return
@@ -106,6 +107,9 @@ def component(script, data: dict, label: str, var: str, life: str, repair: str) 
         entries.append(f'"group": {_lit(group)}')
     if priority is not None:
         entries.append(f'"priority": {_num(priority)}')
+    if duty is not None and duty < 1.0:
+        # Its life is in operating time; it runs this share of the time.
+        entries.append(f'"duty": {_num(duty)}')
     from backend.services import rbd_repair_quality
 
     try:

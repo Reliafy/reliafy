@@ -30,6 +30,7 @@ import RbdDesignPanel from "./RbdDesignPanel.jsx";
 import RbdTargets from "./RbdTargets.jsx";
 import RbdCostsModal from "./RbdCostsModal.jsx";
 import RbdCrewsModal from "./RbdCrewsModal.jsx";
+import RbdMaintenancePlan from "./RbdMaintenancePlan.jsx";
 import { applyBlockExtras } from "./RbdBlockCosts.jsx";
 import ValidationPanel, { emptyStatus, graphSignature } from "./RbdValidation.jsx";
 import {
@@ -418,6 +419,8 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   }, []);
   const [ccfCtx, setCcfCtx] = useState(null); // { members, beta, groupId? } for the modal
   // ?tab=outages is the page's: in the Explorer, ?tab= is the Explorer's own.
+  // The Maintenance plan (repairable): a table under the canvas, the one place planned work is edited.
+  const [planOpen, setPlanOpen] = useState(false);
   const [tab, setTab] = useState(() => (embedded ? "builder" : initialTab())); // 'builder' | 'calc' | 'tree' | 'design' | 'targets' | 'outages'
   // The canvas fills the frame; the result tabs scroll with the page (#311).
   useEffect(() => { onTab?.(tab); }, [onTab, tab]);
@@ -1470,6 +1473,25 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     [nodes]
   );
   const labelFor = (id) => nodes.find((n) => n.id === id)?.data?.label || id;
+  // The Maintenance plan: open it (on one block, from its dialog), edit a block's data in it, and
+  // fit the diagram again once the canvas has given the plan its room.
+  const refitSoon = useCallback(() => {
+    window.setTimeout(() => fitView(fitOptionsFor(wrapper.current?.clientWidth || window.innerWidth, embedded)), 80);
+  }, [fitView, embedded]);
+  const togglePlan = useCallback((on) => {
+    setPlanOpen((was) => (typeof on === "boolean" ? on : !was));
+    refitSoon();
+  }, [refitSoon]);
+  const openPlanFor = useCallback((id) => {
+    setNodes((nds) => nds.map((n) => (n.selected === (n.id === id) ? n : { ...n, selected: n.id === id })));
+    togglePlan(true);
+  }, [setNodes, togglePlan]);
+  const setPlanNode = useCallback((id, data) => {
+    setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data } : n)));
+  }, [setNodes]);
+  const clearSelection = useCallback(() => {
+    setNodes((nds) => nds.map((n) => (n.selected ? { ...n, selected: false } : n)));
+  }, [setNodes]);
   // A network's connections are drawn without arrows (#160).
   const flowEdges = useMemo(() => (network ? undirectedEdges(edges) : edges), [network, edges]);
 
@@ -1509,7 +1531,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     <Tabs tabs={RBD_TABS} value={tab} onChange={setTab} label="Diagram views" className="rbd-tabs" />
     <div
       ref={builderRef}
-      className={"rbd-builder" + (full ? " is-full" : "") + builderWidthClass(builderW)}
+      className={"rbd-builder" + (full ? " is-full" : "") + (planOpen && repairable ? " has-plan" : "") + builderWidthClass(builderW)}
       style={{ display: tab === "builder" ? undefined : "none" }}
       role={full ? "region" : undefined}
       aria-label={full ? "Diagram editor, full screen" : undefined}
@@ -1588,6 +1610,12 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         {repairable && policies.safety_function && (
           <Chip onClick={() => setModal("safety")} title="The SIL this function must meet. Click to change it.">
             {policies.target_sil ? `Target SIL ${policies.target_sil}` : "Set a target SIL"}
+          </Chip>
+        )}
+        {repairable && (
+          <Chip tone={planOpen ? "accent" : "neutral"} onClick={() => togglePlan()} aria-pressed={planOpen}
+                title="Every block's planned work and duty in one table, under the diagram" data-wt="rbd-plan-chip">
+            Maintenance plan
           </Chip>
         )}
         {/* Common-cause groups: a chip that drops the list beneath it. */}
@@ -1708,6 +1736,12 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
             </button>
           )}
           {repairable && (
+            <button className="ovm-item" role="menuitemcheckbox" aria-checked={planOpen} onClick={() => togglePlan()}
+                    title="Every block's planned work and duty in one table, under the diagram">
+              Maintenance plan{planOpen ? " ✓" : ""}
+            </button>
+          )}
+          {repairable && (
             <button
               className="ovm-item"
               onClick={() => setModal("costs")}
@@ -1753,10 +1787,10 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       {full && <FullScreenButton ref={fullBtnRef} full onClick={toggleFull} />}
     </div>
     <div
-      className={"rbd-canvas" + (canvasH && !full ? " is-sized" : "")}
+      className={"rbd-canvas" + (canvasH && !full && !(planOpen && repairable) ? " is-sized" : "")}
       data-wt="rbd-canvas"
       ref={wrapper}
-      style={canvasH && !full ? { height: canvasH } : undefined}
+      style={canvasH && !full && !(planOpen && repairable) ? { height: canvasH } : undefined}
     >
       <ReactFlow
         nodes={nodes}
@@ -2073,6 +2107,9 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
             setModalNodeId(null);
           }}
           onSubmit={setNodeModel}
+          onEditPlan={repairable && nodes.find((n) => n.id === modalNodeId)?.type === "component"
+            ? (payload) => { const id = modalNodeId; setNodeModel(payload); openPlanFor(id); }
+            : null}
         />
       )}
       {modal === "ccf" && ccfCtx && (
@@ -2188,6 +2225,19 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         />
       )}
     </div>
+    {planOpen && repairable && (
+      <RbdMaintenancePlan
+        nodes={nodes}
+        unit={rbdUnit}
+        crews={!!policies.repair_crews}
+        groupNames={groupNames}
+        selected={selectedComponentIds}
+        onChange={setPlanNode}
+        onShowAll={clearSelection}
+        onCrewsAndGroups={() => setModal("crews")}
+        onClose={() => togglePlan(false)}
+      />
+    )}
     </div>
     <div
       className="rbd-calc-panel"

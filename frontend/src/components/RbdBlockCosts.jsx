@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { unitInText } from "./unitText.js";
 import { unitAbbr } from "./rbdModelText.js";
-import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { costLabel, workspaceCurrency } from "../money.js";
 
-// A repairable block's costs and maintenance (#99, #100, #156, #157), edited in
-// the block dialog's Maintenance (or Proof test) and Costs sections (#314).
+// A repairable block's costs and maintenance (#99, #100, #156, #157). The block
+// dialog edits its costs and crew priority here; its planned work (schedule,
+// group, duty) is edited in the diagram's Maintenance plan
+// (RbdMaintenancePlan.jsx, rbdMaintenancePlan.js) and passes through untouched.
 // Stored on the node as
 //   data.costs      = {repair, replace, downtime, acquisition}   (numbers, optional)
 //   data.preventive = {policy: "age"|"block", interval, duration, cost,
@@ -29,12 +30,6 @@ const COSTS = [
   { key: "replace", label: "Parts cost", per: "per failure", ranged: true, help: "The spare part or replacement unit, charged at every failure." },
   { key: "downtime", label: "Block downtime", per: "per {u}", help: "Charged while this block is down, even if the system is up (a degraded-mode penalty). System-wide lost production is set on the diagram." },
   { key: "acquisition", label: "Purchase price", per: "once", help: "Buying the unit: counted in the total cost of ownership and the cheapest design, not the running cost." },
-];
-
-const KINDS = [
-  { id: "none", label: "None" },
-  { id: "preventive", label: "Scheduled replacement" },
-  { id: "inspection", label: "Hidden failures, proof-tested" },
 ];
 
 const str = (v) => (v == null ? "" : String(v));
@@ -109,7 +104,9 @@ function toExtras(s, mode = "component") {
   const costs = {};
   for (const c of COSTS) if (!costBlank(s.costs[c.key])) costs[c.key] = costValue(s.costs[c.key]);
   const priority = numOrNull(s.priority);
-  if (mode === "standby") {
+  // "costs": a block whose planned work is edited in the Maintenance plan, not here (D5): only its
+  // costs and crew priority, so its schedule, group and duty stay exactly as they are.
+  if (mode === "standby" || mode === "costs") {
     return { costs: Object.keys(costs).length ? costs : null, crew_priority: priority };
   }
   const schedule = {
@@ -148,7 +145,7 @@ function problems(s, mode = "component") {
     if (p) out.push(p);
   }
   if (!isBlank(s.priority) && !Number.isFinite(Number(s.priority))) out.push("The crew priority must be a number.");
-  if (mode === "standby") return out;
+  if (mode === "standby" || mode === "costs") return out;
   if (s.kind !== "none") {
     const condition = s.kind === "preventive" && s.policy === "condition";
     const what = s.kind === "inspection" ? "test" : condition ? "inspection" : "replacement";
@@ -205,30 +202,6 @@ function Field({ label, hint, value, onChange, title, min = "0", max }) {
   );
 }
 
-function TextField({ label, hint, value, onChange, title, list }) {
-  return (
-    <label className="param-field rbd-cost-field" title={title}>
-      <span>{label}</span>
-      <input type="text" value={value} placeholder="—" list={list} aria-label={label}
-             onChange={(e) => onChange(e.target.value)} />
-      {hint && <small>{hint}</small>}
-    </label>
-  );
-}
-
-const POLICIES = [
-  ["age", "Age replacement"],
-  ["block", "Block replacement"],
-  ["condition", "Condition-based"],
-];
-const POLICY_HINTS = {
-  age: "Replaced as new once it reaches the interval's age; a failure restarts the clock.",
-  block: "Replaced at every multiple of the interval, whatever its age (skipped while it's down).",
-  condition:
-    "Inspected every interval while running (in no time), and replaced when its chance of failing before " +
-    "the next inspection is above the threshold. Figures are numerical, not simulated.",
-};
-
 // A cost that may be a single value or a min–max range (drawn uniformly).
 function CostField({ label, hint, cost, onChange, title }) {
   const mean = cost.range && !costProblem(cost, label) && !costBlank(cost)
@@ -281,15 +254,6 @@ export function costsSummary({ s }) {
   const set = COSTS.filter((c) => !costBlank(s.costs[c.key])).map((c) => c.label.toLowerCase());
   return set.length ? set.join(", ") : "optional";
 }
-export function maintenanceSummary({ s }, unit = "") {
-  const u = unit ? ` ${unitInText(unit)}` : "";
-  const condition = s.kind === "preventive" && s.policy === "condition";
-  const what = s.kind === "inspection" ? "proof test" : condition ? "condition-based" : s.kind === "preventive" ? "scheduled replacement" : null;
-  const parts = [what && positive(s.interval) ? `${what} every ${fmt(s.interval)}${u}` : what];
-  if (s.kind !== "inspection" && s.group.trim()) parts.push(`group “${s.group.trim()}”`);
-  return parts.filter(Boolean).join(", ") || "none";
-}
-
 // The block's costs (all optional; per-failure costs can be a range).
 export function CostFields({ ctl, unit = "" }) {
   const { s, update } = ctl;
@@ -322,96 +286,6 @@ export function PriorityField({ ctl }) {
              title="When every repair crew is busy, waiting jobs are taken highest priority first, then in the order they fell due."
              value={s.priority} onChange={(v) => update({ priority: v })} />
     </div>
-  );
-}
-
-// Scheduled replacement or proof tests, and the maintenance group.
-export function MaintenanceFields({ ctl, unit = "", groups = [] }) {
-  const { s, update } = ctl;
-  const condition = s.kind === "preventive" && s.policy === "condition";
-  const what = s.kind === "preventive" ? (condition ? "inspection" : "replacement") : "test";
-
-  return (
-    <>
-      <div className="rbd-maint-head">
-        <SegmentedControl
-          label="Maintenance"
-          value={s.kind}
-          onChange={(kind) => update({ kind })}
-          options={KINDS.map((k) => ({ value: k.id, label: k.label }))}
-        />
-      </div>
-      {s.kind === "preventive" && (
-        <>
-          <SegmentedControl
-            label="Replacement policy"
-            className="rbd-costs-policy"
-            value={s.policy}
-            onChange={(policy) => update({ policy })}
-            options={POLICIES.map(([id, label]) => ({ value: id, label }))}
-          />
-          <p className="hint">{POLICY_HINTS[s.policy] || POLICY_HINTS.age}</p>
-        </>
-      )}
-      {s.kind === "inspection" && (
-        <p className="hint">
-          A failure stays hidden — the block is down but nobody knows — until the next proof test
-          finds it; its repair starts then. Any life distribution; exact figures need instant tests
-          and repairs, otherwise they're simulated.
-        </p>
-      )}
-      {s.kind !== "none" && (
-        <div className="param-fields">
-          <Field label={`${what === "test" ? "Test" : what === "inspection" ? "Inspect" : "Replace"} every`}
-                 hint={unit || "time"}
-                 value={s.interval} onChange={(v) => update({ interval: v })} />
-          {condition && (
-            <Field label="Replace above" hint="P(fails before next inspection), e.g. 0.05" max="1"
-                   title="Replaced at an inspection when its chance of failing before the next one, given its age, is above this."
-                   value={s.threshold} onChange={(v) => update({ threshold: v })} />
-          )}
-          <Field label="Takes" hint={s.durationModel && isBlank(s.duration) ? "a distribution (set elsewhere)" : `${unit || "time"} · blank = instant`}
-                 title={`How long the block is off-line for each ${condition ? "replacement" : what} (a planned outage).`}
-                 value={s.duration} onChange={(v) => update({ duration: v })} />
-          <CostField label={`Cost per ${condition ? "replacement" : what}`} hint="optional" cost={s.cost}
-                     onChange={(v) => update({ cost: v })} />
-          {condition && (
-            <CostField label={costLabel("Cost per inspection", workspaceCurrency())} hint="optional" cost={s.inspectionCost}
-                       onChange={(v) => update({ inspectionCost: v })} />
-          )}
-        </div>
-      )}
-      {s.kind === "inspection" && (
-        <div className="param-fields">
-          <Field label="First test at" hint={`${unit || "time"} · stagger redundant channels`}
-                 title="When the first proof test falls (0 to less than the interval). Testing redundant channels at different times lowers the PFDavg."
-                 value={s.offset} onChange={(v) => update({ offset: v })} />
-          <Field label="Coverage" hint="share of failures a test finds · blank = all" max="1"
-                 title="An imperfect proof test finds only this fraction of failures; the rest stay hidden until a full test."
-                 value={s.coverage} onChange={(v) => update({ coverage: v })} />
-          {partialCoverage(s) && (
-            <Field label="Full test every" hint={`${unit || "time"} · a multiple of the test interval`}
-                   title="A full proof test (e.g. at a turnaround) finds every failure."
-                   value={s.fullTest} onChange={(v) => update({ fullTest: v })} />
-          )}
-        </div>
-      )}
-      {s.kind !== "inspection" && (
-        <div className="param-fields">
-          <TextField label="Maintenance group" hint="blocks in a group share a set-up cost" list="rbd-maint-groups"
-                     title="Blocks maintained together: each stop of the group (a failure or replacement of a member) is charged the group's set-up cost once. Set the cost under Crews and groups."
-                     value={s.group} onChange={(v) => update({ group: v })} />
-          {s.kind === "preventive" && s.policy === "age" && s.group.trim() && (
-            <Field label="Renew early from age" hint={`${unit || "time"} · at a stop of its group`}
-                   title="Opportunistic maintenance: when its group stops, it is renewed too if at least this old (0 to the interval)."
-                   value={s.opportunity} onChange={(v) => update({ opportunity: v })} />
-          )}
-          <datalist id="rbd-maint-groups">
-            {groups.map((g) => <option value={g} key={g} />)}
-          </datalist>
-        </div>
-      )}
-    </>
   );
 }
 
@@ -460,6 +334,7 @@ export function maintenanceChips(data, unit) {
       title: cbm
         ? `Inspected every ${fmt(pm.interval)}${u}, replaced when P(failing before the next inspection) > ${pm.threshold}`
         : `Scheduled ${pm.policy === "block" ? "block" : "age"} replacement every ${fmt(pm.interval)}${u}`
+          + (pm.operating_interval != null ? ` (${fmt(pm.operating_interval)}${u} of running time)` : "")
           + (pm.opportunity != null ? `, renewed early from age ${fmt(pm.opportunity)}${u} at a group stop` : ""),
     });
   }
@@ -473,6 +348,14 @@ export function maintenanceChips(data, unit) {
       key: "test",
       text: `⏱ ${fmt(test.interval)}${u}${notes.length ? " *" : ""}`,
       title: `Hidden failures, proof-tested every ${fmt(test.interval)}${u}${notes.length ? ` (${notes.join("; ")})` : ""}`,
+    });
+  }
+  if (data.duty != null && Number(data.duty) > 0 && Number(data.duty) < 1) {
+    const pct = Number((Number(data.duty) * 100).toPrecision(3));
+    out.push({
+      key: "duty",
+      text: `▷ ${pct}%`,
+      title: `Duty: runs ${pct}% of the time. Its life is in running time, stretched onto the calendar.`,
     });
   }
   if (data.maintenance_group) {
