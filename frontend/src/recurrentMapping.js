@@ -65,6 +65,8 @@ export function savedRecurrentMapping(saved, columns) {
                ...(z.length ? { z } : {}) },
     unit: saved.unit || "",
     from: saved.model_name || "",
+    // A dataset split from a sheet with others: the sheet's name (no model yet).
+    ...(saved.split_from != null && !saved.model_name ? { split: saved.split_from } : {}),
   };
 }
 
