@@ -676,7 +676,7 @@ parts from the U.S. Navy's NSWC-11 handbook: a base rate × condition factors,
 each input with the handbook's limits; CDNSWC and the Navy did not take part in
 or approve Reliafy), not your own equipment's data;
 show each record's `licence.attribution` with its numbers. In the app the
-library is under Models › Library (`/models/library`, one page per source and
+library's handbooks are built-in, read-only libraries under Libraries (`/libraries`, one page per source and
 per record). Its **Use as a model…** is `POST /api/models/from-library`
 (`record_id`, a record or component id; `covariates`; `name?`: an exponential model under them, counted against the Free
 plan's saved models; `length_ft` is the old name of the pipe's length) and **Use as a prior…** on a dataset is `POST
@@ -708,42 +708,51 @@ the constant rate −ln(R) ÷ calendar hours come with it. `GET /api/library/use
 records behind the user's latest library models. The record format
 and the sources: [library.md](library.md).
 
-**Libraries of your own.** A saved model is in no library until it's added.
-A library (a name, one line on what it holds, notes or licence text shown
-with every record) belongs to the workspace like any saved item and counts
-as one item toward the Free plan's storage limit, whatever it holds. Adding
-a model takes a snapshot of it then (its distribution, parameters with their
-bounds, unit, sample sizes and how it was fitted) as a record of kind `life`,
-with `model_id` kept as a link: a later refit doesn't change the record. Only
-parametric non-repairable life models go in (Weibull, exponential,
-lognormal, normal, gamma; a Bayesian update of one too); anything else is
-refused in words. Signed-in reads of `/api/library/sources`, `/search` and
-`/records/{id}` include your libraries (marked `mine`), first on a tie, and
-aren't cached; a user record's `block_model` carries the parameters'
-`bounds`, and its detail a `library` and a `model_link`.
+**Libraries.** A library holds datasets and models, each a **snapshot** taken
+when it was added (a dataset's rows, measurements and reading; a model's whole
+saved document), so later edits in the workspace don't change it; the owner
+can take a new one with *Update from the original* (the entry's `version` goes
+up). Nothing is added unless someone asks. A model needn't be fitted to data
+(from parameters, a handbook, a published source: its `basis_text` says which);
+a model whose dataset is also in the library names it (`fitted_on`). A
+library belongs to one workspace and counts as one saved item toward the Free
+plan's storage limit, whatever it holds. It is **private** (its workspace),
+**shared with workspaces** (their IDs: a personal workspace's is the user id, a
+team's the team id; read-only for them) or **public** (anyone can read it,
+signed out too). Making it public needs a licence (`public-domain`, `cc0`,
+`cc-by-4.0` or `own-cc-by-4.0`: your own data under CC BY 4.0), a source or
+citation, and `rights_confirmed: true`. Only the owner changes a library;
+anyone who can read it can **use** an entry: a copy in their own workspace
+(counted as that dataset or model) whose `from_library` names the library,
+entry and version. The built-in handbooks are listed as read-only public
+libraries. Reads take an optional sign-in and are never cached.
 
 | Call | Does |
 |---|---|
-| `GET /api/library/mine` | Your libraries, newest first, with record counts and the equipment types a record can take. |
-| `POST /api/library/mine` | Make one: `name`, `description?`, `notes?`. 402 past the Free limit. |
-| `PATCH /api/library/mine/{id}` | Rename it, or change `description` or `notes`. |
-| `DELETE /api/library/mine/{id}` | Delete it and its records (the models stay). |
-| `POST /api/library/mine/{id}/records` | Add a saved model: `model_id`, `label?` (default the model's name), `equipment_type?` (default `other`), `failure_mode?`, `notes?`. |
-| `DELETE /api/library/mine/{id}/records/{record_id}` | Take a record out (the model stays). |
+| `GET /api/libraries` | Every library you can see: yours, shared with you, public (others', then the built-in handbooks); with your `workspace_id` and the `licences`. |
+| `GET /api/libraries/entries?type=data\|model&q=` | Every dataset (or model) in any library you can see. |
+| `GET /api/libraries/{id}` | One library with its entries. |
+| `GET /api/libraries/{id}/entries/{entry_id}` | One entry: a dataset's first 50 rows and reading, a model's parameters. |
+| `POST /api/libraries` | Make one: `name`, `description?`, `notes?`, `source?`, `citation?`. 402 past the Free limit. |
+| `PATCH /api/libraries/{id}` | Change `name`, `description`, `notes`, `source` or `citation`. |
+| `PUT /api/libraries/{id}/visibility` | `visibility` (`private`, `workspaces`, `public`), `workspaces?`, `licence?`, `source?`, `citation?`, `rights_confirmed?`. |
+| `DELETE /api/libraries/{id}` | Delete it and its entries (what they were taken from, and copies, stay). |
+| `POST /api/libraries/{id}/entries` | Add `dataset_id`, or `model_id` with `collection?` (`models`, `recurrent_models`, `alt_models`); `source?`: the entry's own source. |
+| `DELETE /api/libraries/{id}/entries/{entry_id}` | Take an entry out. |
+| `POST /api/libraries/{id}/entries/{entry_id}/refresh` | Update from the original. |
+| `POST /api/libraries/{id}/entries/{entry_id}/use` | Copy it into your workspace: `name?`, `with_dataset?` (a model's dataset too, when it's in the library). |
 
-The same over MCP and `/api/v1`: `list kind libraries`, `get kind library`
-(`id`: the library with its records) and the `change` actions
-`library_create` (`name`, `description?`, `notes?`), `library_update`
-(`library_id`, `name?`, `description?`, `notes?`), `library_delete`
-(`library_id`), `library_add_model` (`library_id`, `model_id`, `label?`,
-`equipment_type?`, `failure_mode?`, `notes?`) and `library_remove_record`
-(`library_id`, `record_id`); on the command line
-`reliafy change library_create --name "Site pumps"` and
-`reliafy change library_add_model --library-id … --model-id …`. A user record works like any other in **Use as
-a model…** (a model of the record's family with its parameters and bounds)
-and **Use as a prior…** (each parameter about its value, between the record's
-bounds, or within about 30% when the record has none; the fit is in the
-record's family and unit).
+The older `/api/library/mine` calls still work for life-model records. Over
+MCP and `/api/v1`: `list kind libraries` (`scope?`), `get kind library` (`id`,
+`entry_id?`) and the `change` actions `library_create`, `library_update` (also
+`visibility`, `workspaces`, `licence`, `source`, `citation`,
+`rights_confirmed`), `library_delete`, `library_add` (`library_id`,
+`dataset_id` or `model_id`, `model_collection?`, `source?`), `library_remove`
+and `library_use` (`library_id`, `entry_id`); on the command line `reliafy
+change library_create --name "Site pumps"` and `reliafy change library_add
+--library-id … --model-id …`. A life-model entry is also a record of kind
+`life` in the library search: **Use as a model…** and **Use as a prior…**
+work on it as on any other.
 
 ### Reliability prediction (a parts count)
 

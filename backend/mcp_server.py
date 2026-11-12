@@ -111,6 +111,7 @@ from backend import recurrent_models
 from backend import storage
 from backend.fitting import FitError
 from backend.library import service as library_service
+from backend.library import entries as lib_entries
 from backend.library import user as user_library
 from backend.mcp_actions import Table, check, choice
 from backend.mcp_actions import describe as describe_actions
@@ -855,6 +856,7 @@ ONE_OF = {
     ("analyse", "next_replacement"): "model_id or params, age, shuts, failure_cost",
     ("analyse", "prediction"): "lines or product_id",
     ("change", "prediction_save"): "name, lines or product_id",
+    ("change", "library_add"): "library_id, dataset_id or model_id",
 }
 #: Kept short: tools/list is capped at 8,000 characters (test_mcp_tools.py); it appears on every tool.
 ARGS_HELP = "Args: see guide(action='<tool>.<action>')."
@@ -9101,14 +9103,19 @@ def _my_libraries(ctx: Context) -> Optional[dict]:
     return user_library.mine(_db(), _owners(user["uid"]))
 
 
-# ---- A user's own data libraries (backend/library/user.py) --------------------------------
+# ---- Libraries: shareable collections of dataset and model snapshots (backend/library/entries.py) ----
 
 _LibraryId = Annotated[str, Field(max_length=64, description="A library id (list kind libraries).")]
+_EntryId = Annotated[str, Field(max_length=120, description="An entry's id (get kind library).")]
 _LibraryName = Annotated[str, Field(min_length=1, max_length=user_library.MAX_NAME, description="The library's name.")]
 _LibraryDescription = Annotated[Optional[str], Field(max_length=user_library.MAX_DESCRIPTION,
                                                      description="One line on what it holds.")]
 _LibraryNotes = Annotated[Optional[str], Field(max_length=user_library.MAX_NOTES,
-                                               description="Notes or licence text shown with every record.")]
+                                               description="Notes shown with the library.")]
+_LibrarySource = Annotated[Optional[str], Field(max_length=lib_entries.MAX_SOURCE,
+                                                description="Where the data comes from (who published it).")]
+_LibraryCitation = Annotated[Optional[str], Field(max_length=lib_entries.MAX_CITATION,
+                                                  description="How to cite it.")]
 
 
 def _library_call(fn, *args, **kwargs):
@@ -9117,99 +9124,178 @@ def _library_call(fn, *args, **kwargs):
     except user_library.LibraryError as exc:
         raise ToolError(str(exc)) from None
     except user_library.LibraryNotFound:
-        raise ToolError("Library not found: list kind libraries gives the user's own.") from None
+        raise ToolError("Not found: get kind library lists a library's entries; list kind libraries the "
+                        "libraries.") from None
 
 
-def _library_brief(lib: dict) -> dict:
-    return {**lib, "url": _url(f"/models/library/{lib['id']}")}
+def _with_urls(out: dict) -> dict:
+    """A library (or card) with its address in full."""
+    return {**out, "url": _url(out["url"])} if out.get("url") else out
 
 
-def _library_record_brief(rec: dict) -> dict:
-    return {**library_service.brief(rec, {"sources": {rec["source"]: {"mine": True, "short_name": ""}}, "records": []}),
-            "url": _url(f"/models/library/{rec['source']}/{rec['id'].split(':', 1)[1]}")}
+def _library_out(db, uid: str, lib: dict) -> dict:
+    principals = _owners(uid)
+    rel = lib_entries.relation(lib, uid, principals)
+    return _with_urls(lib_entries.library_out(db, lib, rel, lib.get("owner_id") == uid, principals))
 
 
-def list_libraries(ctx: Context) -> dict[str, Any]:
-    """The user's own data libraries: id, name, description, how many records."""
-    user, db = _caller(ctx), _db()
-    return {"libraries": [_library_brief(lib) for lib in user_library.list_libraries(db, user["uid"])]}
-
-
-def get_library(ctx: Context, library_id: _LibraryId) -> dict[str, Any]:
-    """One of the user's libraries with its records (each a saved life model's snapshot: distribution, parameters
-    and bounds, unit, mean life, B10; get kind library_record gives one in full)."""
-    user, db = _caller(ctx), _db()
-    lib = user_library.get_library(db, library_id, _owners(user["uid"]))
+def _visible_library(db, uid: str, library_id: str) -> dict:
+    lib = lib_entries.get_visible(db, library_id, _owners(uid))
     if lib is None:
-        raise ToolError("Library not found: list kind libraries gives the user's own.")
-    records = user_library.records_of(db, lib["_id"])
-    return {**_library_brief(user_library.brief(lib, len(records))),
-            "records": [_library_record_brief(r) for r in records]}
+        raise ToolError("Library not found: list kind libraries gives the ones you can see.")
+    return lib
+
+
+def _own_library(db, uid: str, library_id: str) -> dict:
+    lib = _visible_library(db, uid, library_id)
+    if lib.get("owner_id") != uid:
+        raise ToolError("Only the library's owner can change it: change library_use copies an entry instead.")
+    return lib
+
+
+def list_libraries(ctx: Context, scope: Annotated[Optional[Literal["yours", "shared", "public"]], Field(
+        description="Only these (default: every library you can see, the built-in handbooks last).")] = None
+                   ) -> dict[str, Any]:
+    """The libraries the user can see: theirs, those shared with their workspace, and public ones (other people's
+    and the built-in handbooks), each with what it holds (datasets, models), visibility and licence."""
+    user, db = _caller(ctx), _db()
+    rows = lib_entries.list_cards(db, _owners(user["uid"]), user["uid"], lambda owner: owner == user["uid"])
+    rows = [r for r in rows if scope is None or r["relation"] == scope]
+    return {"libraries": [_with_urls(r) for r in rows], "workspace_id": user["uid"]}
+
+
+def get_library(ctx: Context, library_id: _LibraryId, entry_id: Annotated[Optional[str], Field(
+        max_length=120, description="One entry in full (a dataset's first rows and reading, a model's "
+                                    "parameters).")] = None) -> dict[str, Any]:
+    """A library with its entries: datasets (rows, reading summary) and models (kind, distribution, headline
+    B10 with its 90% lower bound, the dataset it was fitted on when that is in the library, or where it came
+    from). A built-in handbook's records: list kind library with its id as source."""
+    user, db = _caller(ctx), _db()
+    built = lib_entries.builtin_out(library_id)
+    if built is not None:
+        if entry_id:
+            raise ToolError("A built-in handbook's records: get kind library_record.")
+        return _with_urls(built)
+    lib = _visible_library(db, user["uid"], library_id)
+    if entry_id:
+        return _library_call(lib_entries.entry_detail, db, lib, entry_id, lib.get("owner_id") == user["uid"],
+                             _owners(user["uid"]))
+    return _library_out(db, user["uid"], lib)
 
 
 def create_library(ctx: Context, name: _LibraryName, description: _LibraryDescription = None,
-                   notes: _LibraryNotes = None) -> dict[str, Any]:
-    """A new, empty data library of the user's own (one saved item toward the Free plan's limit); change
-    library_add_model fills it."""
+                   notes: _LibraryNotes = None, source: _LibrarySource = None,
+                   citation: _LibraryCitation = None) -> dict[str, Any]:
+    """A new, private, empty library (one saved item toward the Free plan's limit); change library_add fills it."""
     user, db = _caller(ctx), _db()
-    _cap(db, user, user_library.COLLECTION, "data libraries")
-    lib = _library_call(user_library.create, db, user["uid"], name, description or "", notes or "")
-    return {"saved": True, "library_id": lib["id"], **_library_brief(lib)}
+    _cap(db, user, user_library.COLLECTION, "libraries")
+    lib = _library_call(lib_entries.create, db, user["uid"], name, description or "", notes or "", source or "",
+                        citation or "")
+    return {"saved": True, "library_id": lib["_id"], **_library_out(db, user["uid"], lib)}
 
 
 def update_library(ctx: Context, library_id: _LibraryId, name: Annotated[Optional[str], Field(
         min_length=1, max_length=user_library.MAX_NAME, description="A new name.")] = None,
-                   description: _LibraryDescription = None, notes: _LibraryNotes = None) -> dict[str, Any]:
-    """Rename one of the user's libraries, or change its description or notes."""
+                   description: _LibraryDescription = None, notes: _LibraryNotes = None,
+                   source: _LibrarySource = None, citation: _LibraryCitation = None,
+                   visibility: Annotated[Optional[Literal["private", "workspaces", "public"]], Field(description=(
+                       "private (your workspace), workspaces (also the workspaces given, read-only) or public "
+                       "(anyone; needs licence, citation or source, and rights_confirmed)."))] = None,
+                   workspaces: Annotated[Optional[list[str]], Field(description=(
+                       "Workspace IDs to share with (each workspace's owner sees its ID in Libraries)."))] = None,
+                   licence: Annotated[Optional[Literal["public-domain", "cc0", "cc-by-4.0", "own-cc-by-4.0"]], Field(
+                       description="For public: own-cc-by-4.0 is the user's own data under CC BY 4.0.")] = None,
+                   rights_confirmed: Annotated[Optional[bool], Field(description=(
+                       "For public: the user says they have the right to publish it. Ask them; never assume."))] = None,
+                   ) -> dict[str, Any]:
+    """Rename one of the user's libraries, change its description, notes, source or citation, or who sees it."""
     user, db = _caller(ctx), _db()
-    lib = _library_call(user_library.update, db, library_id, user["uid"], name=name, description=description, notes=notes)
-    return {"saved": True, "library_id": lib["id"], **_library_brief(lib)}
+    lib = _own_library(db, user["uid"], library_id)
+    if any(v is not None for v in (name, description, notes)) or (visibility is None and (source or citation)):
+        lib = _library_call(lib_entries.update, db, lib, name=name, description=description, notes=notes,
+                            source=source if visibility is None else None,
+                            citation=citation if visibility is None else None)
+    if visibility is not None:
+        lib = _library_call(lib_entries.set_visibility, db, lib, visibility, workspaces=workspaces, licence=licence,
+                            source=source, citation=citation, rights_confirmed=rights_confirmed)
+    elif workspaces is not None or licence is not None:
+        raise ToolError("Give visibility with workspaces or licence.")
+    return {"saved": True, "library_id": lib["_id"], **_library_out(db, user["uid"], lib)}
 
 
 def delete_library(ctx: Context, library_id: _LibraryId) -> dict[str, Any]:
-    """Permanently delete one of the user's libraries and its records (the models they came from stay). Only on
-    the user's explicit request, confirmed by name."""
+    """Permanently delete one of the user's libraries and its entries (the datasets and models they were taken from
+    stay). Only on the user's explicit request, confirmed by name."""
     user, db = _caller(ctx), _db()
-    removed = _library_call(user_library.delete, db, library_id, user["uid"])
-    return {"deleted": True, "library_id": library_id, "records_removed": removed}
+    lib = _own_library(db, user["uid"], library_id)
+    return {"deleted": True, "library_id": library_id, "entries_removed": lib_entries.delete(db, lib)}
 
 
-def library_add_model(
+def library_add(
     ctx: Context, library_id: _LibraryId,
-    model_id: Annotated[str, Field(max_length=64, description="One of the user's saved non-repairable life models "
-                                                              "(Weibull, exponential, lognormal, normal or gamma).")],
+    dataset_id: Annotated[Optional[str], Field(max_length=64, description="A saved dataset to add.")] = None,
+    model_id: Annotated[Optional[str], Field(max_length=64, description=(
+        "A saved model to add: fitted, from parameters, from a handbook or a Bayesian update; its data "
+        "isn't needed."))] = None,
+    model_collection: Annotated[Literal["models", "recurrent_models", "alt_models"], Field(description=(
+        "The model's kind: models (non-repairable), recurrent_models (repairable), alt_models."))] = "models",
+    source: Annotated[Optional[str], Field(max_length=lib_entries.MAX_CITATION, description=(
+        "The entry's own published source or citation, if it has one."))] = None,
     label: Annotated[Optional[str], Field(max_length=user_library.MAX_LABEL,
-                                          description="The record's name (default: the model's).")] = None,
-    equipment_type: Annotated[Optional[str], Field(description="e.g. pump, valve (list kind library_sources lists "
-                                                               "them); other if none fits.")] = None,
+                                          description="The entry's name (default: the model's).")] = None,
+    equipment_type: Annotated[Optional[str], Field(description="A life model's equipment type, e.g. pump (list kind "
+                                                               "library_sources lists them).")] = None,
     failure_mode: Annotated[Optional[str], Field(max_length=user_library.MAX_LABEL,
-                                                 description="The failure mode the model is for, in words.")] = None,
-    notes: _LibraryNotes = None,
+                                                 description="A life model's failure mode, in words.")] = None,
 ) -> dict[str, Any]:
-    """Add a saved life model to one of the user's libraries as a record: a snapshot of the model now (distribution,
-    parameters with their bounds, unit, sample sizes, how it was fitted), with the model linked. A later refit
-    doesn't change the record."""
+    """Add a snapshot of a dataset (its rows and reading) or a saved model to one of the user's libraries. Later
+    edits in the workspace don't change it; nothing is ever added unasked."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
-    model = models_service.get_model(db, model_id, _owners(uid))
-    if model is None:
-        raise ToolError("Model not found: list kind models gives the user's own.")
-    rec = _library_call(user_library.add_model, db, library_id, uid, model, label=label,
-                        equipment_type=equipment_type or "other", failure_mode=failure_mode or "", notes=notes or "")
-    return {"saved": True, "library_id": library_id, "record_id": rec["id"], "record": _library_record_brief(rec)}
+    lib = _own_library(db, uid, library_id)
+    if bool(dataset_id) == bool(model_id):
+        raise ToolError("Give dataset_id or model_id (one of them).")
+    if dataset_id:
+        ds = datasets_service.get_dataset(db, dataset_id, uid)
+        if ds is None:
+            raise ToolError("Dataset not found: list kind datasets gives the user's own.")
+        doc = _library_call(lib_entries.add_dataset, db, lib, ds, _owners(uid), frozenset(), source or "")
+    else:
+        mdoc = db[model_collection].find_one({"_id": model_id, "owner_id": {"$in": _owners(uid)}})
+        if mdoc is None:
+            raise ToolError("Model not found: list kind models gives the user's own.")
+        doc = _library_call(lib_entries.add_model, db, lib, model_collection, mdoc, _owners(uid), source or "",
+                            label=label, equipment_type=equipment_type or "other", failure_mode=failure_mode or "")
+    out = _library_out(db, uid, lib)
+    entry = next((e for e in out["entries"] if e["id"] == doc["_id"]), None)
+    return {"saved": True, "library_id": library_id, "entry_id": doc["_id"], "entry": entry}
 
 
-def library_remove_record(ctx: Context, library_id: _LibraryId,
-                          record_id: Annotated[str, Field(max_length=120, description="The record's id (get kind library).")]
-                          ) -> dict[str, Any]:
-    """Take a record out of one of the user's libraries (the model it came from stays)."""
+def library_remove(ctx: Context, library_id: _LibraryId, entry_id: _EntryId) -> dict[str, Any]:
+    """Take an entry out of one of the user's libraries (what it was taken from stays)."""
     user, db = _caller(ctx), _db()
-    out = _library_call(user_library.remove_record, db, record_id, user["uid"])
-    if out["library_id"] != library_id:
-        raise ToolError("That record isn't in that library.")
-    return out
+    lib = _own_library(db, user["uid"], library_id)
+    _library_call(lib_entries.remove, db, lib, entry_id)
+    return {"removed": True, "library_id": library_id, "entry_id": entry_id}
 
 
+def library_use(ctx: Context, library_id: _LibraryId, entry_id: _EntryId,
+                name: Annotated[Optional[str], Field(max_length=user_library.MAX_NAME,
+                                                     description="The copy's name (default: the entry's).")] = None,
+                with_dataset: Annotated[bool, Field(description=(
+                    "A model entry: also copy the dataset it was fitted on, when that is in the library."))] = False,
+                ) -> dict[str, Any]:
+    """Copy a library entry into the user's workspace as their own dataset or model (counts as that saved item);
+    the copy records the library, entry and version it came from."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    lib = _visible_library(db, uid, library_id)
+    doc = _library_call(lib_entries.entry_doc, db, lib, entry_id)
+    for kind, n in lib_entries.what_use_makes(db, lib, doc, with_dataset).items():
+        if n:
+            _cap(db, user, kind, "saved datasets" if kind == "datasets" else "saved models")
+    out = _library_call(lib_entries.use, db, lib, entry_id, uid, name, with_dataset)
+    return {"saved": True, **{k: (_with_urls(v) if v else None) for k, v in out.items()}}
 
 
 # ---- Reliability prediction: a parts count (backend/services/reliability_prediction) ---------
@@ -9751,8 +9837,9 @@ _A = {  # new tool -> {action: the function it runs}
         "library_create": _act(create_library),
         "library_update": _act(update_library),
         "library_delete": _act(delete_library),
-        "library_add_model": _act(library_add_model),
-        "library_remove_record": _act(library_remove_record),
+        "library_add": _act(library_add),
+        "library_remove": _act(library_remove),
+        "library_use": _act(library_use),
     },
     "report_problem": {
         "report": _act(report_problem_report),
@@ -9767,7 +9854,7 @@ _action_tool("get", _READ, "Read one item", "kind",
              docs={"id": "The item's id (a job's job_id, an upload's upload_id, a library record's id, a maintainability "
                          "prediction's id)."})
 _action_tool("list", _READ, "List items", "kind",
-             "The user's items of one kind (with samples), what changed, the data library.",
+             "The user's items of one kind (with samples), what changed, libraries.",
              _A["list"])
 _action_tool("analyse", _READ, "Analyse", "action",
              "Every calculation (life, repairable, plans, RBDs); saves nothing.", _A["analyse"], docs={

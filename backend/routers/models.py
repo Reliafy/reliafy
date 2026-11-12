@@ -64,6 +64,7 @@ def _model_summary(model, ctx: AccessCtx) -> dict:
         "created_at": model.created_at.isoformat(),
         "dataset_id": model.dataset_id,
         "is_sample": samples_service.is_sample(model.owner_id),
+        **({"from_library": model.from_library} if model.from_library else {}),
         "read_only": not access_service.can_write(ctx, model.owner_id),
         "updated_by": (model.updated_by or {}).get("name"),
         # Randomness verdict (weibull beta CI / exponential), used when picking
@@ -130,6 +131,7 @@ def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0) -> dict:
         "measurements": _measurements_summary(dataset),
         "created_at": dataset.created_at.isoformat(),
         "is_sample": samples_service.is_sample(dataset.owner_id),
+        **({"from_library": dataset.from_library} if dataset.from_library else {}),
         "read_only": not access_service.can_write(ctx, dataset.owner_id),
     }
 

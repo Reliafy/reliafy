@@ -240,8 +240,8 @@ def test_one_library_is_one_saved_item_on_free(web):
     assert first.status_code == 200
     over = web.post("/api/library/mine", json={"name": "Two"})
     assert over.status_code == 402 and over.json()["code"] == "cap"
-    assert over.json()["detail"] == ("You've reached the free-plan limit of 1 data library. "
-                                     "Upgrade to Pro for unlimited data libraries.")
+    assert over.json()["detail"] == ("You've reached the free-plan limit of 1 library. "
+                                     "Upgrade to Pro for unlimited libraries.")
     # Records inside it don't count: several models go in, and editing is still allowed.
     for i in range(3):
         m = _params_model(web, f"M{i}")
@@ -274,33 +274,54 @@ def test_signed_out_reads_stay_public_and_cached(monkeypatch):
 def test_the_library_actions_over_mcp(env):  # noqa: F811
     pro = env.oauth[PRO]
     lib = _ok(_call(pro, "change", {"action": "library_create", "args": {"name": "Agent's library", "description": "Made over MCP"}}))
-    assert lib["saved"] and lib["url"].endswith(f"/models/library/{lib['library_id']}")
+    assert lib["saved"] and lib["url"].endswith(f"/libraries/{lib['library_id']}") and lib["visibility"] == "private"
     lid = lib["library_id"]
-    listed = _ok(_call(pro, "list", {"kind": "libraries"}))
+    listed = _ok(_call(pro, "list", {"kind": "libraries", "args": {"scope": "yours"}}))
     assert [x["name"] for x in listed["libraries"]] == ["Agent's library"]
+    everything = _ok(_call(pro, "list", {"kind": "libraries"}))["libraries"]
+    assert {x["id"] for x in everything if x["builtin"]} == {"mil-hdbk-217f-n2", "nswc-11", "nrc-inl-2020"}
     model = _ok(_call(pro, "change", {"action": "model_save", "args": {"name": "Saved W", "distribution": "weibull",
                                                                          "params": WEIBULL, "unit": "hours"}}))
-    added = _ok(_call(pro, "change", {"action": "library_add_model", "args": {
+    added = _ok(_call(pro, "change", {"action": "library_add", "args": {
         "library_id": lid, "model_id": model["model_id"], "failure_mode": "Seal leak", "equipment_type": "pump"}}))
-    assert added["saved"] and added["record"]["label"] == "Saved W: Seal leak" and added["record"]["kind"] == "life"
-    assert added["record"]["url"].endswith(f"/models/library/{lid}/{added['record_id'].split(':', 1)[1]}")
+    assert added["saved"] and added["entry"]["type"] == "model"
+    assert added["entry"]["model"]["basis_text"] == "From parameters" and added["entry"]["model"]["fitted_on"] is None
     got = _ok(_call(pro, "get", {"kind": "library", "args": {"id": lid}}))
-    assert got["records"][0]["id"] == added["record_id"] and got["records"] and got["name"] == "Agent's library"
-    # The record is found by the library search and read in full like a published one.
+    assert got["entries"][0]["id"] == added["entry_id"] and got["name"] == "Agent's library"
+    one = _ok(_call(pro, "get", {"kind": "library", "args": {"id": lid, "entry_id": added["entry_id"]}}))
+    assert [p["name"] for p in one["model"]["params"]] == ["alpha", "beta"]
+    # A life model entry is found by the library search and read in full like a published record.
     found = _ok(_call(pro, "list", {"kind": "library", "args": {"query": "seal leak"}}))
-    assert found["results"][0]["id"] == added["record_id"]
-    full = _ok(_call(pro, "get", {"kind": "library_record", "args": {"id": added["record_id"]}}))
+    assert found["results"][0]["id"] == added["entry_id"]
+    full = _ok(_call(pro, "get", {"kind": "library_record", "args": {"id": added["entry_id"]}}))
     assert full["library"]["id"] == lid and full["model_link"]["exists"] is True
     renamed = _ok(_call(pro, "change", {"action": "library_update", "args": {"library_id": lid, "name": "Pumps"}}))
     assert renamed["name"] == "Pumps"
-    # A model that isn't a life model is refused in words; another user's library isn't found.
-    msg = _err(_call(pro, "change", {"action": "library_add_model", "args": {"library_id": lid, "model_id": "nope"}}))
+    # Public needs a licence, a citation and the user's word; then anyone can read it.
+    msg = _err(_call(pro, "change", {"action": "library_update", "args": {"library_id": lid, "visibility": "public"}}))
+    assert "a licence" in msg and "source or citation" in msg and "right to publish" in msg
+    pub = _ok(_call(pro, "change", {"action": "library_update", "args": {
+        "library_id": lid, "visibility": "public", "licence": "own-cc-by-4.0", "citation": "Our pump records, 2025",
+        "rights_confirmed": True}}))
+    assert pub["visibility"] == "public" and pub["licence"]["id"] == "own-cc-by-4.0"
+    free = env.oauth[FREE]
+    seen = _ok(_call(free, "get", {"kind": "library", "args": {"id": lid}}))
+    assert seen["can_edit"] is False and seen["relation"] == "public"
+    assert "Only the library's owner" in _err(_call(free, "change", {"action": "library_remove", "args": {
+        "library_id": lid, "entry_id": added["entry_id"]}}))
+    copied = _ok(_call(free, "change", {"action": "library_use", "args": {"library_id": lid, "entry_id": added["entry_id"]}}))
+    assert copied["model"]["name"] == "Saved W" and copied["dataset"] is None
+    mine = env.db.models.find_one({"_id": copied["model"]["id"]})
+    assert mine["owner_id"] == FREE and mine["from_library"]["entry_id"] == added["entry_id"]
+    # Errors in words; another user can't see a private library.
+    msg = _err(_call(pro, "change", {"action": "library_add", "args": {"library_id": lid, "model_id": "nope"}}))
     assert "Model not found" in msg
-    assert "Library not found" in _err(_call(env.oauth[FREE], "get", {"kind": "library", "args": {"id": lid}}))
-    removed = _ok(_call(pro, "change", {"action": "library_remove_record", "args": {"library_id": lid, "record_id": added["record_id"]}}))
+    _ok(_call(pro, "change", {"action": "library_update", "args": {"library_id": lid, "visibility": "private"}}))
+    assert "Library not found" in _err(_call(free, "get", {"kind": "library", "args": {"id": lid}}))
+    removed = _ok(_call(pro, "change", {"action": "library_remove", "args": {"library_id": lid, "entry_id": added["entry_id"]}}))
     assert removed["removed"]
     gone = _ok(_call(pro, "change", {"action": "library_delete", "args": {"library_id": lid}}))
-    assert gone["deleted"] and _ok(_call(pro, "list", {"kind": "libraries"}))["libraries"] == []
+    assert gone["deleted"] and _ok(_call(pro, "list", {"kind": "libraries", "args": {"scope": "yours"}}))["libraries"] == []
 
 
 def test_the_free_cap_over_mcp_and_rest(env, monkeypatch):  # noqa: F811
@@ -309,7 +330,7 @@ def test_the_free_cap_over_mcp_and_rest(env, monkeypatch):  # noqa: F811
     free = env.oauth[FREE]
     assert _ok(_call(free, "change", {"action": "library_create", "args": {"name": "One"}}))["saved"]
     msg = _err(_call(free, "change", {"action": "library_create", "args": {"name": "Two"}}))
-    assert "limit of 1 saved data libraries" in msg and UPGRADE in msg
+    assert "limit of 1 librar" in msg and UPGRADE in msg
     assert _ok(_call(free, "get", {"kind": "account"}))["storage"]["libraries"] == {"used": 1, "limit": 1}
     # REST is the MCP action.
     monkeypatch.setattr(billing, "api_access_allowed", lambda db, user: True)
@@ -319,6 +340,6 @@ def test_the_free_cap_over_mcp_and_rest(env, monkeypatch):  # noqa: F811
     client = TestClient(app)
     headers = {"Authorization": f"Bearer {token}"}
     r = client.post("/api/v1/change/library_create", json={"name": "Three"}, headers=headers)
-    assert r.status_code >= 400 and "limit of 1 saved data libraries" in r.text
+    assert r.status_code >= 400 and "limit of 1 librar" in r.text
     r = client.post("/api/v1/list/libraries", json={}, headers=headers)
-    assert r.status_code == 200 and [x["name"] for x in r.json()["libraries"]] == ["One"]
+    assert r.status_code == 200 and [x["name"] for x in r.json()["libraries"] if not x["builtin"]] == ["One"]
