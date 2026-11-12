@@ -1,0 +1,473 @@
+{
+ "seals": {
+  "x": "Hours",
+  "xl": "",
+  "xr": "",
+  "c": "Status",
+  "n": "",
+  "tl": "",
+  "tr": "",
+  "i": "",
+  "m": "",
+  "e": "Failure mode",
+  "u": "",
+  "c_invert": false,
+  "c_map": {
+   "Running": 1,
+   "Failed": 0
+  },
+  "all_failed": false,
+  "unit": "Hours",
+  "m_unit": "",
+  "z": [],
+  "z_units": {},
+  "not_used": [
+   "Seal"
+  ]
+ },
+ "w01": {
+  "x": "Run hours",
+  "xl": "",
+  "xr": "",
+  "c": "Status",
+  "n": "",
+  "tl": "",
+  "tr": "",
+  "i": "Pump tag",
+  "m": "",
+  "e": "",
+  "u": "",
+  "c_invert": false,
+  "c_map": {
+   "Failed": 0,
+   "Running": 1
+  },
+  "all_failed": false,
+  "unit": "Hours",
+  "m_unit": "",
+  "z": [
+   "Site"
+  ],
+  "z_units": {},
+  "not_used": [
+   "Seal ID",
+   "Notes"
+  ]
+ },
+ "w02": {
+  "x": "Time in service",
+  "xl": "",
+  "xr": "",
+  "c": "Failed (1=yes)",
+  "n": "",
+  "tl": "",
+  "tr": "",
+  "i": "Idler No.",
+  "m": "",
+  "e": "",
+  "u": "Units",
+  "c_invert": true,
+  "c_map": null,
+  "all_failed": false,
+  "unit": "Hours",
+  "m_unit": "",
+  "z": [
+   "Conveyor"
+  ],
+  "z_units": {},
+  "not_used": [
+   "Comment"
+  ]
+ },
+ "w02fixed": {
+  "x": "Hours in service",
+  "xl": "",
+  "xr": "",
+  "c": "Failed (1=yes)",
+  "n": "",
+  "tl": "",
+  "tr": "",
+  "i": "Idler No.",
+  "m": "",
+  "e": "",
+  "u": "",
+  "c_invert": true,
+  "c_map": null,
+  "all_failed": false,
+  "unit": "Hours",
+  "m_unit": "",
+  "z": [
+   "Conveyor",
+   "Time in service"
+  ],
+  "z_units": {},
+  "not_used": [
+   "Units",
+   "Comment"
+  ]
+ },
+ "w11": {
+  "x": "Run hours",
+  "xl": "",
+  "xr": "",
+  "c": "Status",
+  "n": "",
+  "tl": "",
+  "tr": "",
+  "i": "",
+  "m": "",
+  "e": "",
+  "u": "",
+  "c_invert": false,
+  "c_map": {
+   "Failed": 0,
+   "Removed, OK": 1
+  },
+  "all_failed": false,
+  "unit": "Hours",
+  "m_unit": "",
+  "z": [
+   "Supplier"
+  ],
+  "z_units": {},
+  "not_used": [
+   "Bearing"
+  ]
+ },
+ "w11coded": {
+  "x": "Run hours",
+  "xl": "",
+  "xr": "",
+  "c": "Status",
+  "n": "",
+  "tl": "",
+  "tr": "",
+  "i": "",
+  "m": "",
+  "e": "",
+  "u": "",
+  "c_invert": false,
+  "c_map": {
+   "Failed": 0,
+   "Removed, OK": 1
+  },
+  "all_failed": false,
+  "unit": "Hours",
+  "m_unit": "",
+  "z": [
+   "Supplier"
+  ],
+  "z_units": {},
+  "not_used": [
+   "Bearing",
+   "Censored"
+  ]
+ },
+ "w12wear": {
+  "x": "Hours",
+  "xl": "",
+  "xr": "",
+  "c": "Status",
+  "n": "",
+  "tl": "",
+  "tr": "",
+  "i": "",
+  "m": "",
+  "e": "Failure mode",
+  "u": "",
+  "c_invert": false,
+  "c_map": {
+   "Running": 1,
+   "Failed": 0
+  },
+  "all_failed": false,
+  "unit": "Hours",
+  "m_unit": "",
+  "z": [
+   "Wear failure"
+  ],
+  "z_units": {},
+  "not_used": [
+   "Seal"
+  ]
+ },
+ "w13": {
+  "x": "",
+  "xl": "Last good check (h)",
+  "xr": "Found failed at (h)",
+  "c": "Status",
+  "n": "",
+  "tl": "Entered at (h)",
+  "tr": "",
+  "i": "Unit",
+  "m": "",
+  "e": "",
+  "u": "",
+  "c_invert": false,
+  "c_map": {
+   "Found failed": 0,
+   "OK at last check": 1
+  },
+  "all_failed": false,
+  "unit": "Hours",
+  "m_unit": "",
+  "z": [],
+  "z_units": {},
+  "not_used": []
+ },
+ "mixed": {
+  "x": "",
+  "xl": "Last good (cycles)",
+  "xr": "Found failed (cycles)",
+  "c": "Status",
+  "n": "",
+  "tl": "",
+  "tr": "",
+  "i": "Unit",
+  "m": "",
+  "e": "",
+  "u": "",
+  "c_invert": false,
+  "c_map": {
+   "Failed": 0,
+   "Running": 1
+  },
+  "all_failed": false,
+  "unit": "Cycles",
+  "m_unit": "",
+  "z": [
+   "Cycles"
+  ],
+  "z_units": {},
+  "not_used": []
+ },
+ "window": {
+  "x": "Hours",
+  "xl": "",
+  "xr": "",
+  "c": "Status",
+  "n": "",
+  "tl": "Entered at (h)",
+  "tr": "Observed until (h)",
+  "i": "Pump",
+  "m": "",
+  "e": "",
+  "u": "",
+  "c_invert": false,
+  "c_map": {
+   "Failed": 0,
+   "Running": 1
+  },
+  "all_failed": false,
+  "unit": "Hours",
+  "m_unit": "",
+  "z": [],
+  "z_units": {},
+  "not_used": []
+ },
+ "w15": {
+  "x": "pump_failure_hours",
+  "xl": "",
+  "xr": "",
+  "c": "",
+  "n": "",
+  "tl": "",
+  "tr": "observed_to_hours",
+  "i": "truck",
+  "m": "",
+  "e": "",
+  "u": "",
+  "c_invert": false,
+  "c_map": null,
+  "all_failed": false,
+  "unit": "Hours",
+  "m_unit": "",
+  "z": [],
+  "z_units": {},
+  "not_used": []
+ },
+ "w16": {
+  "x": "failure_hours",
+  "xl": "",
+  "xr": "",
+  "c": "",
+  "n": "",
+  "tl": "",
+  "tr": "records_end_hours",
+  "i": "compressor",
+  "m": "",
+  "e": "",
+  "u": "",
+  "c_invert": false,
+  "c_map": null,
+  "all_failed": false,
+  "unit": "Hours",
+  "m_unit": "",
+  "z": [],
+  "z_units": {},
+  "not_used": []
+ },
+ "w17": {
+  "x": "failure_hours",
+  "xl": "",
+  "xr": "",
+  "c": "",
+  "n": "",
+  "tl": "",
+  "tr": "trial_end_hours",
+  "i": "unit",
+  "m": "",
+  "e": "failure_mode",
+  "u": "",
+  "c_invert": false,
+  "c_map": null,
+  "all_failed": false,
+  "unit": "Hours",
+  "m_unit": "",
+  "z": [
+   "site"
+  ],
+  "z_units": {},
+  "not_used": []
+ },
+ "w18": {
+  "x": "hours",
+  "xl": "",
+  "xr": "",
+  "c": "status",
+  "n": "",
+  "tl": "",
+  "tr": "",
+  "i": "unit",
+  "m": "",
+  "e": "",
+  "u": "",
+  "c_invert": false,
+  "c_map": {
+   "failed": 0,
+   "suspended": 1
+  },
+  "all_failed": false,
+  "unit": "Hours",
+  "m_unit": "",
+  "z": [
+   "temp_C",
+   "temp_K"
+  ],
+  "z_units": {},
+  "not_used": [
+   "censored"
+  ]
+ },
+ "w19": {
+  "x": "km",
+  "xl": "",
+  "xr": "",
+  "c": "",
+  "n": "",
+  "tl": "",
+  "tr": "",
+  "i": "pad",
+  "m": "thickness_mm",
+  "e": "",
+  "u": "",
+  "c_invert": false,
+  "c_map": null,
+  "all_failed": false,
+  "unit": "Kilometres",
+  "m_unit": "",
+  "z": [],
+  "z_units": {},
+  "not_used": []
+ },
+ "w03life": {
+  "x": "age_days",
+  "xl": "",
+  "xr": "",
+  "c": "running",
+  "n": "",
+  "tl": "",
+  "tr": "",
+  "i": "pump",
+  "m": "",
+  "e": "",
+  "u": "",
+  "c_invert": false,
+  "c_map": null,
+  "all_failed": false,
+  "unit": "Days",
+  "m_unit": "",
+  "z": [
+   "high_load"
+  ],
+  "z_units": {},
+  "not_used": []
+ },
+ "w03reads": {
+  "x": "age_days",
+  "xl": "",
+  "xr": "",
+  "c": "",
+  "n": "",
+  "tl": "",
+  "tr": "",
+  "i": "pump",
+  "m": "vibration_mm_s",
+  "e": "",
+  "u": "",
+  "c_invert": false,
+  "c_map": null,
+  "all_failed": false,
+  "unit": "Days",
+  "m_unit": "",
+  "z": [],
+  "z_units": {},
+  "not_used": []
+ },
+ "w24life": {
+  "x": "age_days",
+  "xl": "",
+  "xr": "",
+  "c": "running",
+  "n": "",
+  "tl": "",
+  "tr": "",
+  "i": "",
+  "m": "",
+  "e": "",
+  "u": "",
+  "c_invert": false,
+  "c_map": null,
+  "all_failed": false,
+  "unit": "Days",
+  "m_unit": "",
+  "z": [
+   "high_load"
+  ],
+  "z_units": {},
+  "not_used": [
+   "bearing"
+  ]
+ },
+ "w24reads": {
+  "x": "age_days",
+  "xl": "",
+  "xr": "",
+  "c": "",
+  "n": "",
+  "tl": "",
+  "tr": "",
+  "i": "bearing",
+  "m": "vibration_mm_s",
+  "e": "",
+  "u": "",
+  "c_invert": false,
+  "c_map": null,
+  "all_failed": false,
+  "unit": "Days",
+  "m_unit": "",
+  "z": [],
+  "z_units": {},
+  "not_used": []
+ }
+}

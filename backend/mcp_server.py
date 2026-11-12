@@ -115,6 +115,7 @@ from backend.library import user as user_library
 from backend.mcp_actions import Table, check, choice
 from backend.mcp_actions import describe as describe_actions
 from backend.services import access as access_service
+from backend.services import dataset_reading
 from backend.services import alt as alt_service
 from backend.services import joint as joint_service
 from backend.services import availability_answer
@@ -1586,7 +1587,8 @@ _FitInvert = Annotated[bool, Field(
                 "Reliafy flips the 0/1 flags before fitting (-1 and 2 are left as is).")]
 _FitDataset = Annotated[Optional[str], Field(
     description="A saved dataset (list kind datasets) instead of inline data.")]
-_FitTimeCol = Annotated[Optional[str], Field(description="Dataset column holding the times (required with dataset_id).")]
+_FitTimeCol = Annotated[Optional[str], Field(description=(
+    "Dataset column holding the times. Omit to use the dataset's reading (get kind dataset shows it)."))]
 _FitCensorCol = Annotated[Optional[str], Field(description="Dataset column holding the censoring flags (0 = failed, "
                                                              "1 = running, -1 = left-censored, 2 = "
                                                              "interval-censored).")]
@@ -1816,6 +1818,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                         "drop it, or switch to that form.")
 
     dataset = None
+    reading_options: dict[str, Any] = {}
     if data is not None:
         if not data:
             raise ToolError("`data` is empty.")
@@ -1837,14 +1840,33 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         if dataset is None:
             raise ToolError("Dataset not found.")
         names = [c["name"] for c in dataset.columns]
-        if not time_column:
-            raise ToolError(f"Say which column holds the times (time_column). Columns: {', '.join(names)}.")
-        times = {"xl": time_column, "xr": time_right_column} if time_right_column else {"x": time_column}
         # group_column is a shared frailty's Group by (#179) or competing risks' groups (#177).
         frailty = (fitting.REGRESSION_MODELS.get(dist) or {}).get("frailty")
-        mapping = {**times, "c": censor_column, "n": count_column, "tl": trunc_left_column,
-                   "tr": trunc_right_column, "i": id_column, "e": cause_column,
-                   ("group" if frailty else "g"): group_column}
+        if not time_column:
+            # No columns named: the dataset's reading says which is which.
+            reading, _ = dataset_reading.for_dataset_db(db, dataset, _owners(uid))
+            mapping, from_reading = dataset_reading.life_mapping(reading)
+            if not (mapping.get("x") or mapping.get("xl")):
+                raise ToolError(f"Say which column holds the times (time_column), or set the dataset's reading "
+                                f"(change dataset_update x_col). Columns: {', '.join(names)}.")
+            if competing_risks.is_competing_risks(dist) and reading.get("e") and not cause_column:
+                mapping["e"] = reading["e"]
+            if covariates is None and dist in fitting.REGRESSION_MODELS and reading.get("z"):
+                covariates = list(reading["z"])
+            mapping.update({k: v for k, v in (("c", censor_column), ("n", count_column), ("tl", trunc_left_column),
+                                              ("tr", trunc_right_column), ("i", id_column), ("e", cause_column),
+                                              ("group" if frailty else "g", group_column)) if v})
+            if from_reading.get("c_map") and not censor_column:
+                reading_options = {fitting.CENSOR_MAP_KEY: from_reading["c_map"]}
+            elif from_reading.get("c_invert") and not censor_column:
+                c_invert = True
+            if from_reading.get("u_col"):
+                reading_options = {**reading_options, "u_col": from_reading["u_col"]}
+        else:
+            times = {"xl": time_column, "xr": time_right_column} if time_right_column else {"x": time_column}
+            mapping = {**times, "c": censor_column, "n": count_column, "tl": trunc_left_column,
+                       "tr": trunc_right_column, "i": id_column, "e": cause_column,
+                       ("group" if frailty else "g"): group_column}
         mapping = {k: v for k, v in mapping.items() if v}
         for col in [*mapping.values(), *(covariates or [])]:
             if col not in names:
@@ -1866,7 +1888,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
                         "covariates) or to competing risks (with causes / cause_column) — choose one of "
                         "those, or drop the group column.")
     # Flags sent as codes are read as they are: an interval row is flagged 2.
-    options: dict[str, Any] = {fitting.STRICT_INTERVALS_KEY: True}
+    options: dict[str, Any] = {fitting.STRICT_INTERVALS_KEY: True, **reading_options}
     if c_invert:
         if "c" not in mapping:
             raise ToolError("c_invert flips censoring flags — pass `censored` (or censor_column) too.")
@@ -1901,7 +1923,11 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
     options = options or None
 
     # #60: rows are stretches of an item's life, not units — no per-row counts.
-    checks = _censor_checks(df, {k: v for k, v in mapping.items() if k != "c"} if id_column else mapping,
+    counted = df
+    if reading_options.get(fitting.CENSOR_MAP_KEY) and mapping.get("c"):
+        # Status words from the reading: counted as the fit reads them.
+        counted = fitting.map_censor_column(df, mapping["c"], reading_options[fitting.CENSOR_MAP_KEY])
+    checks = _censor_checks(counted, {k: v for k, v in mapping.items() if k != "c"} if id_column else mapping,
                             c_invert, censor_column)
     if not save:
         result = fitting.fit(dist, df, mapping, covariates=covariates, unit=unit, options=options,
@@ -3261,6 +3287,49 @@ def split_dataset(
             **_dataset_parts(ds)}
 
 
+def _col(what: str):
+    return Annotated[Optional[str], Field(description=f"The column holding {what}.")]
+
+
+_RX = _col("x, the value when each unit failed or was removed (hours, cycles, km…)")
+_RXL = _col("the start of x's range (where x is blank), with xr_col")
+_RXR = _col("the end of x's range (where x is blank), with xl_col")
+_RC = _col("the status: failed or still running (0 = failed, 1 = still running, -1, 2; or words with c_meanings)")
+_RN = _col("how many units each row stands for")
+_RTL = _col("late entry: each row observed only from this value")
+_RTR = _col("each row observed only up to this value")
+_RI = _col("which item (unit, pump, tag) each row belongs to")
+_RM = _col("a measured value (readings)")
+_RE = _col("each failure's mode")
+_RZ = Annotated[Optional[list[str]], Field(description=(
+    "The covariates (Z). Omit for the default: every column not given a role, less ids, dates, free text and "
+    "one-value columns."))]
+_RNotUsed = Annotated[Optional[list[str]], Field(description="Columns read as nothing (not covariates).")]
+_RMeanings = Annotated[Optional[dict[str, int]], Field(description=(
+    "What each value of c_col means: {value: 0 failed | 1 still running | -1 | 2}, e.g. "
+    "{\"Failed\": 0, \"Running\": 1}. 0/1 codes need none (c_invert flips a 1 = failed column)."))]
+_RInvert = Annotated[Optional[bool], Field(description="c_col's 0/1 codes use 1 = failed.")]
+_RAllFailed = Annotated[Optional[bool], Field(description="No status column: every row is a failure.")]
+_RUnit = Annotated[Optional[str], Field(description="x's unit (hours, cycles, km, any unit).")]
+_RMUnit = Annotated[Optional[str], Field(description="m's unit (mm, %, mm/s…).")]
+_RZUnits = Annotated[Optional[dict[str, str]], Field(description="Units of covariates, {column: unit} (optional).")]
+
+
+def _reading_given(**kw) -> dict:
+    """The reading fields a call named (None left out), in the reading's keys."""
+    keys = {"x_col": "x", "xl_col": "xl", "xr_col": "xr", "c_col": "c", "n_col": "n", "tl_col": "tl",
+            "tr_col": "tr", "i_col": "i", "m_col": "m", "e_col": "e", "z_cols": "z", "not_used": "not_used",
+            "c_meanings": "c_map", "c_invert": "c_invert", "all_failed": "all_failed", "unit": "unit",
+            "m_unit": "m_unit", "z_units": "z_units"}
+    return {keys[k]: v for k, v in kw.items() if v is not None}
+
+
+def _reading_out(reading: dict, source: str) -> dict:
+    """A reading for an MCP caller: its fields with words, and where it came from."""
+    keep = {k: v for k, v in reading.items() if v not in ("", None, [], {}, False) and k != "guessed"}
+    return {**keep, "source": source, "summary": dataset_reading.summary(reading)}
+
+
 def upload_dataset(
     ctx: Context,
     name: Annotated[str, Field(min_length=1, description="A short name for the dataset.")],
@@ -3277,9 +3346,14 @@ def upload_dataset(
     dataset_col: Annotated[Optional[str], Field(description=(
         "Split the sheet by this column: one dataset per value, named by the value (\"<value> – <name>\" if "
         "taken), the column itself left out; rows with no value are left out. Returns datasets, a list."))] = None,
+    x_col: _RX = None, xl_col: _RXL = None, xr_col: _RXR = None, c_col: _RC = None, n_col: _RN = None,
+    tl_col: _RTL = None, tr_col: _RTR = None, i_col: _RI = None, m_col: _RM = None, e_col: _RE = None,
+    z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
+    all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
 ) -> dict[str, Any]:
     """Save a dataset from CSV text (csv) or a file sent with change upload_create (upload_id; an .xlsx
-    needs sheet); returns its id, columns and a preview. Censoring columns: 0 = failed, 1 = still running."""
+    needs sheet), with its reading (which column is x, c, n, …, Z); returns its id, columns, a preview and
+    the reading. Columns not named are guessed and the reading says so. Censoring: 0 = failed, 1 = running."""
     user, db = _caller(ctx), _db()
     if (csv is None) == (upload_id is None):
         raise ToolError("Give either csv (text) or upload_id (a file sent through change upload_create) — exactly one.")
@@ -3303,35 +3377,69 @@ def upload_dataset(
         apply = guess == 0 if no_header is None else bool(no_header)
         if apply and no_header is None:
             hint = fitting.HEADER_HINT
+    data = datasets_service.normalize_pasted(text, apply)
+    given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
+                           tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, z_cols=z_cols,
+                           not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed,
+                           unit=unit, m_unit=m_unit, z_units=z_units)
+    reading = _upload_reading(data, given, split)
     if split:
-        return _split_upload(db, user, name.strip(), datasets_service.normalize_pasted(text, apply), split,
-                             upload, guess, hint)
-    ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(text, apply),
-                                         user["uid"])
+        return _split_upload(db, user, name.strip(), data, split, upload, guess, hint, reading)
+    try:
+        ds, _ = datasets_service.create_or_reuse(db, name.strip(), data, user["uid"], reading=reading,
+                                                 keep_reading=bool(reading.get("guessed")))
+    except dataset_reading.ReadingError as exc:
+        raise ToolError(str(exc)) from None
     if upload is not None:
         uploads_service.delete(db, upload["_id"])
     out = {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
            "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/data/{ds.id}"),
-           "header_guess": guess}
+           "header_guess": guess,
+           "reading": _reading_out(*dataset_reading.for_dataset(ds))}
     if hint:
         out["hint"] = hint
     return out
 
 
-def _split_upload(db, user, name: str, data: bytes, column: str, upload, guess, hint) -> dict[str, Any]:
+def _upload_reading(data: bytes, given: dict, split: str) -> dict:
+    """The reading an upload keeps: what the call named over the guess (the
+    guess marked so when nothing was named). Refused only when x can't be told."""
+    try:
+        base = dataset_reading.guess_for_bytes(data)
+    except FitError as exc:
+        raise ToolError(str(exc)) from None
+    reading = dataset_reading.merged(base, given) if given else base
+    if split:
+        reading = dataset_reading.drop_column(reading, split)
+    if not (reading.get("x") or reading.get("xl")):
+        try:
+            cols = fitting.preview(data)["columns"]
+        except FitError:
+            cols = []
+        raise ToolError("Couldn't tell which column holds x, the value when each unit failed or was removed: "
+                        f"name it with x_col. Columns: {', '.join(cols)}.")
+    if not given:
+        reading["guessed"] = True
+    return reading
+
+
+def _split_upload(db, user, name: str, data: bytes, column: str, upload, guess, hint,
+                  reading: dict | None = None) -> dict[str, Any]:
     """upload_dataset with dataset_col: one dataset per value of the column, all or nothing against the cap."""
     try:
         wanted = datasets_service.count_new_parts(db, data, column, user["uid"])
         if wanted:
             _cap(db, user, "datasets", "datasets", n=wanted)
-        made, blank = datasets_service.create_split(db, data, column, user["uid"], name)
-    except FitError as exc:
+        made, blank = datasets_service.create_split(db, data, column, user["uid"], name, reading=reading,
+                                                    keep_reading=bool((reading or {}).get("guessed")))
+    except (FitError, dataset_reading.ReadingError) as exc:
         raise ToolError(str(exc)) from None
     if upload is not None:
         uploads_service.delete(db, upload["_id"])
     out = {"datasets": [{"id": d.id, "name": d.name, "n_rows": d.n_rows, "url": _url(f"/data/{d.id}"),
                          **({"reused": True} if reused else {})} for d, reused in made],
-           "columns": [c["name"] for c in made[0][0].columns], "header_guess": guess}
+           "columns": [c["name"] for c in made[0][0].columns], "header_guess": guess,
+           "reading": _reading_out(*dataset_reading.for_dataset(made[0][0]))}
     if blank:
         out["left_out"] = f"{blank} row{'' if blank == 1 else 's'} with no {column} left out."
     if hint:
@@ -3406,6 +3514,11 @@ def get_dataset(
         "next_offset": end if end < total else None,
         "url": _url(f"/data/{ds.id}"),
     }
+    if part != "measurements":
+        try:
+            out["reading"] = _reading_out(*dataset_reading.for_dataset_db(db, ds, _owners(user["uid"])))
+        except Exception:  # noqa: BLE001 - the rows still answer
+            pass
     if ds.measurements is not None and part != "measurements":
         out["measurements"] = {"n_rows": ds.measurements.n_rows,
                                "columns": [c["name"] for c in ds.measurements.columns],
@@ -8669,21 +8782,43 @@ def update_dataset(
     dataset_id: Annotated[str, Field(description="One of the user's own dataset ids (list kind datasets).")],
     name: _NewName = None,
     notes: _NewNotes = None,
+    x_col: _RX = None, xl_col: _RXL = None, xr_col: _RXR = None, c_col: _RC = None, n_col: _RN = None,
+    tl_col: _RTL = None, tr_col: _RTR = None, i_col: _RI = None, m_col: _RM = None, e_col: _RE = None,
+    z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
+    all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
 ) -> dict[str, Any]:
-    """Rename one of the user's own datasets or set its notes; never the data, never a sample."""
+    """Rename one of the user's own datasets, set its notes, or change its reading (x_col, c_col, …, z_cols:
+    later fits use it; models already made keep theirs); never the data, never a sample."""
     user, db = _caller(ctx), _db()
     uid = user["uid"]
-    name, notes = _details(name, notes)
+    given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
+                           tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, z_cols=z_cols,
+                           not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed,
+                           unit=unit, m_unit=m_unit, z_units=z_units)
+    if name is None and notes is None and not given:
+        raise ToolError("Nothing to change: give name, notes, or the reading (x_col, c_col, …, z_cols).")
+    if name is not None or notes is not None:
+        name, notes = _details(name, notes)
     ds = datasets_service.get_dataset(db, dataset_id, _owners(uid))
     if ds is None:
         raise ToolError("Dataset not found.")
     if samples_service.is_sample(ds.owner_id):
         raise ToolError(f"“{ds.name}” is a shared sample dataset, not yours — it can't be renamed or annotated.")
-    ds = datasets_service.update_details(db, ds.id, uid, name=name, notes=notes)
-    if ds is None:
-        raise ToolError("Dataset not found.")
-    return {"updated": _changed(name, notes), "dataset_id": ds.id, "name": ds.name, "notes": ds.notes,
-            "url": _url(f"/data/{ds.id}")}
+    if name is not None or notes is not None:
+        ds = datasets_service.update_details(db, ds.id, uid, name=name, notes=notes)
+        if ds is None:
+            raise ToolError("Dataset not found.")
+    out = {"updated": _changed(name, notes) if (name is not None or notes is not None) else [],
+           "dataset_id": ds.id, "name": ds.name, "notes": ds.notes, "url": _url(f"/data/{ds.id}")}
+    if given:
+        current, _ = dataset_reading.for_dataset_db(db, ds, _owners(uid))
+        try:
+            ds = datasets_service.set_reading(db, ds, dataset_reading.merged(current, given), uid)
+        except dataset_reading.ReadingError as exc:
+            raise ToolError(str(exc)) from None
+        out["updated"] = [*out["updated"], "reading"]
+        out["reading"] = _reading_out(*dataset_reading.for_dataset(ds))
+    return out
 
 
 # ---------------------------------------------------------------------------
