@@ -14,9 +14,11 @@
 // plain note (the backend does the same, and is the judge).
 import { hoursPerUnit, unitAbbr } from "./components/rbdModelText.js";
 
-// What the library supports today. Kijima restoration and shutdowns come with a later RePyability
-// release: their columns and rows appear only once these say so, never as placeholders.
+// What the installed library takes, when the server doesn't say (a tree plan carries its own
+// `supports`, found by capability). Restoration and shutdowns saved in the tree before the library
+// takes them are shown with PENDING_WORDS and calculated with what it can (as new, no shutdowns).
 export const PLAN_SUPPORTS = Object.freeze({ restoration: ["as_new"], shutdowns: false });
+export const PENDING_WORDS = "Saved — used in results once the next library update is in.";
 export const RESTORATIONS = { as_new: "As new", kijima1: "Kijima I", kijima2: "Kijima II" };
 
 export const TASKS = [

@@ -130,3 +130,30 @@ def fault_tree_conditioned(tree, t):
     if not isinstance(occurred, dict) or not isinstance(not_occurred, dict):
         raise TypeError("FaultTree._conditioned: unexpected result")
     return top, occurred, not_occurred
+
+
+_PLAN_SUPPORTS: Optional[dict] = None
+
+
+def plan_supports() -> dict:
+    """What the installed RePyability takes in a repairable diagram's maintenance plan, found by
+    capability (not by version: ``dev`` builds keep the last release's version string):
+    ``restoration`` (Kijima restoration on a preventive task, with ``replace_every`` and
+    ``replacement_cost``) and ``shutdowns`` (``RepairableRBD(shutdowns=...)`` with tasks bound
+    to a shut and ``older_than``)."""
+    global _PLAN_SUPPORTS
+    if _PLAN_SUPPORTS is None:
+        try:
+            from repyability.rbd import _spec
+
+            restoration = hasattr(_spec, "_validate_restoration")
+        except ImportError:
+            restoration = False
+        try:
+            from repyability.rbd.repairable_rbd import RepairableRBD
+
+            shutdowns = hasattr(RepairableRBD, "SHUTDOWN_KEYS")
+        except ImportError:
+            shutdowns = False
+        _PLAN_SUPPORTS = {"restoration": restoration, "shutdowns": shutdowns}
+    return dict(_PLAN_SUPPORTS)

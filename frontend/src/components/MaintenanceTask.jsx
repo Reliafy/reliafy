@@ -11,6 +11,7 @@ import { taskUnits } from "../maintenanceSubjects.js";
 import { tooLong } from "../maintenanceText.js";
 import { explorerHere } from "../products.js";
 import { workspaceCurrency } from "../money.js";
+import { restorationBody, restorationForm, restorationProblem, RESTORE_CHOICES } from "../taskRestoration.js";
 
 // A task on the Explorer's Maintenance tab, in the panel beside the tree (never a dialog):
 // "Add task" (?addtask=<the row>) and a task opened from the table (?mtask=<id>), each with
@@ -42,6 +43,7 @@ function startFrom(task) {
     outcome: task?.outcome || "", source: task && !fromRcm(task) ? task.source : "manual", reference: task?.reference || "",
     cost: task?.cost?.typed != null ? String(task.cost.typed) : "",
     modes: new Set((task?.failure_modes || []).map((m) => m.id)),
+    ...restorationForm(task),
   };
 }
 
@@ -96,8 +98,9 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
   const flip = (id) => setF((x) => { const m = new Set(x.modes); if (m.has(id)) m.delete(id); else m.add(id); return { ...x, modes: m }; });
   const missing = task?.cost?.lsa?.missing_rates?.filter((t) => t !== "no trade") || [];
+  const restoreProblem = f.outcome === "fixed_interval" ? restorationProblem(f) : null;
   const can = ready && !!f.name.trim() && !tooLong(f.name) && Number(f.interval) > 0 && validMoney(f.cost)
-    && Object.values(rates).every(validMoney);
+    && Object.values(rates).every(validMoney) && !restoreProblem;
   const subject = { kind: row.type === "loc" ? "location" : "position", id: row.key, name: row.ref?.name };
 
   const send = useSendOnce(async () => {
@@ -110,6 +113,8 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
         ...(ids.length && subject.kind === "position" ? { failure_mode_ids: ids } : {}),
       });
       if (f.cost !== "") await updateMaintenanceTask(made.id, { cost: Number(f.cost) });
+      const extra = restorationBody(null, f);
+      if (Object.keys(extra).length) await updateMaintenanceTask(made.id, extra);
       onDone(`Added ${made.name}.`, made.id);
       return;
     }
@@ -117,6 +122,9 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
       ...fields, ...(rcm ? {} : { source: f.source, reference: f.reference }),
       ...((task.cost?.typed ?? null) !== num(f.cost) ? { cost: num(f.cost) } : {}),
     });
+    // What it leaves the item as, how it's counted, its age at a shutdown: after its kind is saved.
+    const extra = restorationBody(task, f);
+    if (Object.keys(extra).length) await updateMaintenanceTask(task.id, extra);
     if (!rcm) {
       const had = new Set((task.failure_modes || []).map((m) => m.id));
       for (const id of ids) if (!had.has(id)) await linkTaskFailureMode(task.id, id);
@@ -160,6 +168,9 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
         <Field label="What kind of task">
           <select value={f.outcome} onChange={set("outcome")}>{KINDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
         </Field>
+        {f.outcome === "fixed_interval" && (
+          <RestorationFields f={f} setF={setF} task={task} problem={restoreProblem} />
+        )}
         {rcm ? (
           <p className="lib-date mt-note">
             From the RCM: its failure modes and why it&apos;s done are on the <Link to={rcmPath}>RCM tab</Link>.
@@ -209,6 +220,75 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
         {!adding && !rcm && <button type="button" className="link mt-retire" onClick={retire} disabled={send.busy}>Retire…</button>}
       </div>
     </form>
+  );
+}
+
+// What a replace-or-restore task leaves the item as (as new, or part of its age taken away, with
+// every Nth task a full replacement), whether its interval counts running hours, and its age limit
+// at a shutdown. A repairable RBD built on the position reads these (its Maintenance plan).
+function RestorationFields({ f, setF, task, problem }) {
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
+  const r = task?.restoration;
+  const calendar = ["days", "weeks", "months", "years"].includes(f.unit);
+  return (
+    <fieldset className="mt-restore">
+      <legend>What it leaves the item as</legend>
+      <Field label="After the task">
+        <select value={f.restoreKind} onChange={set("restoreKind")}>
+          {RESTORE_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </Field>
+      {f.restoreKind !== "as_new" && (
+        <div className="maint-row mt-restore-row">
+          <Field label="Restores (% of the age)">
+            <input type="number" inputMode="decimal" min="0" max="100" step="any" value={f.restores} onChange={set("restores")}
+                   placeholder="e.g. 70" />
+          </Field>
+          <Field label="Every Nth task is a full replacement (optional)">
+            <input type="number" inputMode="numeric" min="2" max="100" step="1" value={f.replaceEvery} onChange={set("replaceEvery")}
+                   placeholder="e.g. 3" />
+          </Field>
+          {f.replaceEvery !== "" && (
+            <Field label={`Replacement cost (${workspaceCurrency()}, optional)`}>
+              <input type="number" inputMode="decimal" min="0" step="any" value={f.replacementCost} onChange={set("replacementCost")} />
+            </Field>
+          )}
+        </div>
+      )}
+      <p className="lib-date mt-note" role="note">
+        {f.restoreKind === "as_new"
+          ? "The item is as good as new after each task (replaced, or fully overhauled)."
+          : `An overhaul that takes away ${f.restores || "X"}% of ${f.restoreKind === "kijima1" ? "the age gained since the last task" : "its whole age"}: 100% is as good as new, 0% as old as before.`}
+        {f.replaceEvery !== "" && f.replacementCost === "" ? " With no replacement cost, a replacement is charged nothing until you set one." : ""}
+      </p>
+      {r?.source === "decision" && (
+        <p className="lib-date mt-note" role="note">
+          Its failure modes&apos; decisions set this for themselves ({r.by_mode.map((x) => `${x.text}: ${x.words}`).join("; ")}).
+          {r.conflict ? " They disagree: an RBD takes the least restoring." : ""} Saving here sets it for every failure mode it serves.
+        </p>
+      )}
+      {calendar && (
+        <>
+          <label className="mt-mode">
+            <input type="checkbox" checked={f.runningHours} onChange={set("runningHours")} /> Counted in running hours
+          </label>
+          <p className="lib-date mt-note">
+            Every {f.interval || "N"} {f.unit} of running, not of the calendar. An RBD turns it into calendar time through the
+            block&apos;s duty; its due dates here stay on the calendar.
+          </p>
+        </>
+      )}
+      <div className="maint-row mt-restore-row">
+        <Field label="At a shutdown, only if older than (optional)">
+          <input type="number" inputMode="decimal" min="0" step="any" value={f.olderThan} onChange={set("olderThan")} placeholder="—" />
+        </Field>
+        <Field label="Unit">
+          <select value={f.olderUnit} onChange={set("olderUnit")}>{["days", "weeks", "months", "years"].map((u) => <option key={u} value={u}>{u}</option>)}</select>
+        </Field>
+      </div>
+      <p className="lib-date mt-note">Used when its work package is a shutdown: the item is replaced at a shut only once it&apos;s that old.</p>
+      {problem && <p className="field-error" role="alert">{problem}</p>}
+    </fieldset>
   );
 }
 

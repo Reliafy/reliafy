@@ -78,3 +78,16 @@
 .rbd-plan-subs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 8px 12px;
   border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: var(--r-sm, 8px); font-size: var(--fs-13); min-width: 0; }
 .rbd-plan-subs p { margin: 0; flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+
+/* Saved in the tree, not in the results until the library takes it (restoration, shutdowns). */
+.rbd-plan-pending { color: var(--warn); font-style: italic; }
+.rbd-plan-table small.rbd-plan-pending { display: block; white-space: normal; max-width: 12rem; }
+/* The duty a running-hours meter suggests, beside the block's own. */
+.rbd-plan-proposal { display: block; font-size: var(--fs-12, 0.75rem); color: var(--muted); }
+.rbd-plan-proposal button.link { font-size: inherit; margin-left: 6px; min-height: 24px; }
+/* Shutdowns read from the tree. */
+.rbd-plan-shuts { margin: 8px 0; font-size: var(--fs-13); line-height: 1.45; }
+.rbd-plan-shuts h4 { margin: 0 0 4px; font-size: var(--fs-14, 0.875rem); font-weight: 600; }
+.rbd-plan-shuts ul { margin: 0; padding-left: 1.1rem; }
+.rbd-plan-shuts li { overflow-wrap: anywhere; }
+.rbd-plan-table td.rbd-plan-restores { white-space: normal; min-width: 11rem; max-width: 16rem; }

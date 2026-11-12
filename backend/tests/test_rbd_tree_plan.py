@@ -70,7 +70,7 @@ def test_a_fixed_interval_task_is_an_age_replacement_in_the_diagrams_unit(m, db)
     assert row["used"] == task["id"] and row["position"]["name"] == "Pump A"
     assert row["plan"] == {"task": "age", "interval": 6 * 730.5, "operating_interval": None, "duration": 8.0,
                            "cost": 1200, "inspection_cost": None, "group": None}
-    assert row["restoration"]["kind"] == "as_new" and "Kijima" in row["restoration"]["note"]
+    assert row["restoration"]["kind"] == "as_new" and row["restoration"]["words"] == "As new"
     assert row["tasks"][0]["crew"] == "Fitter ×2 · 8 h of labour"
     assert "No repair time" in row["repair_missing"]  # never invented
     # Pump B has no tasks: it runs to failure.

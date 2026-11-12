@@ -1091,6 +1091,17 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
         if "cost" in body:
             # What it costs each time, typed (null: its LSA's figure again).
             view = m.set_task_cost(task_id, body["cost"])
+        if "restoration" in body:
+            # What a fixed-interval task leaves the item as (null: as new); failure_mode_id inside it:
+            # that mode's decision only.
+            given = dict(body["restoration"] or {})
+            view = m.set_task_restoration(task_id, given or None, failure_mode_id=given.pop("failure_mode_id", None))
+        if "basis" in body:
+            # operating: its interval counts running hours; calendar or null: by its unit.
+            view = m.set_task_basis(task_id, body["basis"])
+        if "older_than" in body:
+            # At a shutdown, only on an item older than {value, unit} (null: every shut).
+            view = m.set_task_older_than(task_id, body["older_than"])
         if view is None:
             raise Invalid("Nothing to change.")
         return view
@@ -2571,19 +2582,30 @@ _PACKAGE_FIELDS = ("name", "timing", "every", "unit", "weekday", "nth", "day", "
 def create_package(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """On exactly one of position_id or location_id, or a layer on parent_id; tasks: task ids or
     {task_id, visit_rule, every_nth, suppresses}."""
-    return _run(m.create_package, body.get("name"), body.get("position_id"), body.get("location_id"),
-                body.get("parent_id"), body.get("timing") or "fixed", body.get("every", 1),
-                body.get("unit") or "weeks", body.get("weekday"), body.get("nth"), body.get("day"),
-                body.get("anchor"), body.get("tolerance"), body.get("tolerance_unit"), body.get("trade", ""),
-                body.get("notes", ""), body.get("tasks"), body.get("season"))
+    def go():
+        m.check_shutdown(body.get("shutdown"))
+        made = m.create_package(body.get("name"), body.get("position_id"), body.get("location_id"),
+                                body.get("parent_id"), body.get("timing") or "fixed", body.get("every", 1),
+                                body.get("unit") or "weeks", body.get("weekday"), body.get("nth"), body.get("day"),
+                                body.get("anchor"), body.get("tolerance"), body.get("tolerance_unit"),
+                                body.get("trade", ""), body.get("notes", ""), body.get("tasks"), body.get("season"))
+        # A shutdown: its visits are planned outages (shutdowns.py).
+        return m.set_package_shutdown(made["id"], body["shutdown"]) if body.get("shutdown") else made
+    return _run(go)
 
 
 @router.patch("/packages/{package_id}")
 def update_package(package_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Change its name, cadence, tolerance, trade, notes, or members' visit rules (tasks);
     clear_pattern true removes its pattern."""
-    return _run(m.update_package, package_id, clear_pattern=bool(body.get("clear_pattern")),
-                season=body["season"] if "season" in body else ..., **{k: body.get(k) for k in _PACKAGE_FIELDS})
+    def go():
+        if "shutdown" in body:
+            m.check_shutdown(body["shutdown"])
+        out = m.update_package(package_id, clear_pattern=bool(body.get("clear_pattern")),
+                               season=body["season"] if "season" in body else ..., **{k: body.get(k) for k in _PACKAGE_FIELDS})
+        # shutdown: its visits are planned outages; null makes it an ordinary package again.
+        return m.set_package_shutdown(package_id, body["shutdown"]) if "shutdown" in body else out
+    return _run(go)
 
 
 @router.post("/{kind}/{target_id}/out-of-service")

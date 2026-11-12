@@ -4,11 +4,12 @@ import { CloseIcon } from "./icons.jsx";
 import { unitAbbr } from "./rbdModelText.js";
 import { costLabel, workspaceCurrency } from "../money.js";
 import {
-  RESTORATIONS, TASKS, costText, dutyText, dutyWords, fmt, hasDuty, intervalBasis, operatingAllowed, parseCost,
+  PENDING_WORDS, RESTORATIONS, TASKS, costText, dutyText, dutyWords, fmt, hasDuty, intervalBasis, operatingAllowed, parseCost,
   parseDuty, parseNumber, planColumns, planCounts, planRows, rowProblems, schedule, setCrewPriority, setDuty,
   setGroup, setInterval, setIntervalBasis, setScheduleField, setTask, taskLabel, taskOf, toCalendar,
 } from "../rbdMaintenancePlan.js";
 import { mergeTreeData, setTreeSetting, treeRowProblems, treeTaskPath } from "../rbdTreePlan.js";
+import { packagePath } from "../maintenanceOrders.js";
 import "../views/Maintenance.css";
 import "./RbdMaintenancePlan.css";
 
@@ -112,6 +113,7 @@ export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, gr
         </div>
       )}
       {expanding.said && !subsystems.length && <p className="rbd-plan-tree" role="status">{expanding.said}</p>}
+      {tree?.shutdowns?.length > 0 && <Shutdowns shutdowns={tree.shutdowns} unit={u} onTreeLink={onTreeLink} />}
       {selected.length > 0 && (
         <p className="rbd-plan-filter">
           Showing the {filtered.length === 1 ? "selected block" : `${filtered.length} selected blocks`}.{" "}
@@ -151,7 +153,9 @@ export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, gr
         </div>
       )}
       <p className="muted rbd-plan-note">
-        Every task leaves the block as good as new.{" "}
+        {restoring(tree)
+          ? `Results take every task as leaving the block as good as new until the next library update; the restorations saved in the tree are used then. `
+          : "Every task leaves the block as good as new. "}
         {standby ? "Standby groups take no planned work, so they aren't listed. " : ""}
         Times are in {unit ? unit.toLowerCase() : "the diagram's unit"}; the Calculator splits downtime and cost into planned and unplanned.
       </p>
@@ -283,6 +287,10 @@ function PlanRow({ row, unit, u, crews, listId, open, onToggle, onChange }) {
 
 const RESTORE_WORDS = { as_new: RESTORATIONS.as_new };
 
+// Whether a tree-linked block's task restores it only partly while the results can't use it yet.
+const restoring = (tree) => Object.values(tree?.blocks || {}).some((b) => b.restoration && b.restoration.kind !== "as_new"
+  && !(b.plan && b.plan.restoration));
+
 // A block standing for a position: its maintenance is its position's task, read from the tree and
 // shown, not edited, here ("Edit in the tree"); the RBD's own settings for it (duty, crew priority,
 // and under More what the task can't say) are edited as on any row.
@@ -300,6 +308,9 @@ function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, 
   const extras = plan && (plan.task === "condition" || plan.task === "test" || plan.task === "age");
   const num = (v, suffix = u) => (v == null ? <span className="muted">—</span> : <>{fmt(v)}{suffix ? ` ${suffix}` : ""}</>);
   const others = tree.tasks.filter((t) => !t.used);
+  const pending = tree.pending || [];
+  const pendingRestoration = tree.restoration && tree.restoration.kind !== "as_new" && pending.length > 0
+    && !(tree.plan && tree.plan.restoration);
   return (
     <tbody className={"rbd-plan-block is-tree" + (problems.length ? " has-problem" : "")}>
       <tr>
@@ -317,6 +328,7 @@ function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, 
             <span aria-hidden="true">%</span>
           </span>
           <small className="muted">{hasDuty(data) && data.duty < 1 ? dutyWords(data.duty, unit).replace(/^Runs \S+ of the time · /, "") : "all the time"}</small>
+          <DutyProposal proposal={tree.duty_proposal} data={data} name={name} onChange={onChange} />
         </td>
         <td className="rbd-plan-tree-task">
           {plan ? (
@@ -349,9 +361,13 @@ function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, 
             </>
           ) : plan.cost == null ? <span className="muted">—</span> : fmt(plan.cost)}
         </td>
-        <td>
-          {tree.restoration ? <span title={tree.restoration.note}>{RESTORE_WORDS[tree.restoration.kind] || tree.restoration.kind}</span>
-            : <span className="muted">—</span>}
+        <td className="rbd-plan-restores">
+          {tree.restoration ? (
+            <>
+              <span title={tree.restoration.note}>{tree.restoration.words || RESTORE_WORDS[tree.restoration.kind] || tree.restoration.kind}</span>
+              {pendingRestoration && <small className="rbd-plan-pending" title={PENDING_WORDS}>saved · calculated as new for now</small>}
+            </>
+          ) : <span className="muted">—</span>}
         </td>
         <td>
           {plan?.group ? <span title="From the task's work package">{plan.group}</span>
@@ -392,6 +408,7 @@ function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, 
             {others.length > 0 && <span className="muted"> · also on {pos.name}, not modelled: {others.map((t) => t.name).join(", ")}</span>}
             {[...tree.flags, ...tree.notes.filter((n) => !/a block takes one today/.test(n)), ...(tree.repair_missing ? [tree.repair_missing] : [])]
               .map((t) => <span key={t} className="rbd-plan-flag"> {t}</span>)}
+            {pending.map((t) => <span key={t} className="rbd-plan-pending"> {t}</span>)}
           </span>
         </td>
       </tr>
@@ -401,6 +418,52 @@ function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, 
         </tr>
       )}
     </tbody>
+  );
+}
+
+// The duty the position's running-hours meter suggests ("Runs 25% of the time"): a proposal beside
+// the block's own, applied only when the user says so.
+function DutyProposal({ proposal, data, name, onChange }) {
+  if (!proposal) return null;
+  const same = hasDuty(data) ? Math.abs(Number(data.duty) - proposal.duty) < 0.0005 : proposal.duty >= 0.9995;
+  return (
+    <small className="rbd-plan-proposal" title={`${proposal.words}, ${proposal.basis}`}>
+      Meter: {proposal.percent}%
+      {!same && (
+        <button type="button" className="link" onClick={() => onChange(setDuty(data, proposal.duty))}
+                aria-label={`${name}: use the meter's duty, ${proposal.words.toLowerCase()}`}>Use</button>
+      )}
+    </small>
+  );
+}
+
+// The shutdowns on the diagram's position or inside it (work packages that are shutdowns, read from
+// the tree like the tasks): when, how long, what they take down, and the blocks done at each.
+function Shutdowns({ shutdowns, unit, onTreeLink }) {
+  return (
+    <div className="rbd-plan-shuts" role="group" aria-label="Shutdowns">
+      <h4>Shutdowns</h4>
+      <ul>
+        {shutdowns.map((s) => {
+          const path = packagePath(s.package.id);
+          return (
+            <li key={s.package.id}>
+              <Link to={path} onClick={(e) => onTreeLink?.(e, path)}><strong>{s.name}</strong></Link>
+              {" "}<span className="muted">on {s.position.name} · {s.when}{s.next ? ` · next ${s.next}` : ""} · {s.words}</span>
+              <span className="muted">
+                {" · takes down "}{s.scope ? (s.scope.length ? s.scope.map((b) => b.label).join(", ") : "no block here") : "the whole system"}
+                {s.spec ? ` (${fmt(s.spec.duration)} ${unit} each time)` : ""}
+              </span>
+              {s.blocks.length > 0 && (
+                <span className="muted"> · done at it: {s.blocks.map((b) => b.label + (b.older_than ? ` (if older than ${b.older_than.value} ${b.older_than.unit})` : "")).join(", ")}</span>
+              )}
+              {s.flags.map((f) => <span key={f} className="rbd-plan-flag"> {f}</span>)}
+              {s.pending && <span className="rbd-plan-pending"> {s.pending} Until then the results have no shutdowns.</span>}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 

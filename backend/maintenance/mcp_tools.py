@@ -85,6 +85,19 @@ Trigger = Annotated[dict[str, Any] | None, Field(description=(
 
 
 # A task's LSA record: what doing it needs (Maintenance.set_task_resources).
+Restoration = Annotated[dict[str, Any] | None, Field(description=(
+    "update: what a fixed-interval task leaves the item as: {kind: as_new | kijima1 (takes away a share of "
+    "the age since the last task) | kijima2 (of its whole age), q (0 as good as new to 1 as bad as old) or "
+    "restores (the %), replace_every? (every Nth task a full replacement), replacement_cost?, "
+    "failure_mode_id? (that mode's decision only)}; {} clears it."))]
+OlderThan = Annotated[dict[str, Any] | None, Field(description=(
+    "update: at a shutdown, do it only on an item older than {value, unit (days/weeks/months/years)}; "
+    "{} clears it."))]
+Shutdown = Annotated[dict[str, Any] | None, Field(description=(
+    "create/update: the package is a shutdown, its visits planned outages: {duration_hours, cost?, scope? "
+    "(position ids inside it; default the whole position), idle_ageing? (default true), dates? (in place of "
+    "the cadence)}; {} makes it an ordinary package."))]
+
 Resources = Annotated[dict[str, Any] | None, Field(description=(
     "Sections, each optional: labour [{trade, people, hours}] (hours per person), tools [{name, qty?, note?, "
     "point_id? (the measuring point or channel it reads)}], spares [{part_id? | name, qty}], consumables [{name, "
@@ -461,7 +474,7 @@ TASKS: Table = {
         or a reading past a limit). maintenance guide topic plan has examples."""),
     "update": ("task_id", "name interval unit also_interval also_unit point_id last_done_reading instructions "
                "checklist failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade "
-               "while_stored include_positions trigger clear_trigger start cost clear_cost", """Rename it or change its interval, second limit (also_interval 0
+               "while_stored include_positions trigger clear_trigger start cost clear_cost restoration basis older_than", """Rename it or change its interval, second limit (also_interval 0
         removes it), measurement (point_id, last_done_reading), instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
         true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
         or include_positions, or its trigger (clear_trigger true: the interval alone again), or when it next
@@ -533,10 +546,11 @@ PACKAGES: Table = {
         and trade, each with a ready create and warnings; weekday: longer cadences as layers on the shortest.
         Saves nothing: show the user."""),
     "create": ("name", "position_id location_id parent_id timing every unit weekday nth day anchor tolerance "
-               "tolerance_unit trade notes tasks season", """A package on exactly one of position_id or location_id, or
+               "tolerance_unit trade notes tasks season shutdown", """A package on exactly one of position_id or location_id, or
         a layer on parent_id. Timing, cadence and visit rules: maintenance guide topic plan."""),
     "update": ("package_id", "name timing every unit weekday nth day clear_pattern anchor tolerance tolerance_unit "
-               "trade notes tasks season", "Change it; tasks: members' visit rules; season {} clears it."),
+               "trade notes tasks season shutdown", "Change it; tasks: members' visit rules; season {} clears it; "
+               "shutdown: its visits are planned outages ({} clears it)."),
     "add_task": ("package_id task_id", "visit_rule every_nth suppresses", "A task into it (one package each)."),
     "remove_task": ("package_id task_id", "", "Take a task out: it's raised on its own again."),
     "pause": ("package_id reason", "until full_visit", """Pause it until a date (back by itself then; none:
@@ -1620,7 +1634,9 @@ def register() -> None:
                                       "interval_unit, task_id?, evidence?, on_found?}, ...] instead of outcome, "
                                       "task and interval (a member's evidence, else the decision's, is checked "
                                       "for it). on_found: what's done when an on_condition or failure_finding "
-                                      "check finds it ('Replace the bearing'; left out: kept). notes: deprecated, "
+                                      "check finds it ('Replace the bearing'; left out: kept). restoration (a "
+                                      "fixed_interval decision or member): what its task leaves the item as, "
+                                      "as tasks.update's. notes: deprecated, "
                                       "added to the mode's notes and rationale (one place: update notes)."))] = None,
                                   cause_id: str | None = None, task_id: str | None = None,
                                   name: str | None = None, interval: float | None = None,
@@ -1795,7 +1811,11 @@ def register() -> None:
                           clear_trigger: bool | None = None, resources: Resources = None,
                           cost: Annotated[float | None, Field(description=(
                               "update: what the task costs each time it's done (typed), e.g. 180."))] = None,
-                          clear_cost: bool | None = None,
+                          clear_cost: bool | None = None, restoration: Restoration = None,
+                          basis: Annotated[Literal["calendar", "operating"] | None, Field(description=(
+                              "update: operating counts its interval in running hours (an RBD puts it on "
+                              "the calendar through the block's duty); calendar (default)."))] = None,
+                          older_than: OlderThan = None,
                           trade_rates: Annotated[dict[str, float | None] | None, Field(description=(
                               "set_resources: hourly rates by trade, e.g. {'Fitter': 95}; null clears "
                               "one."))] = None,
@@ -1826,6 +1846,13 @@ def register() -> None:
                                      None if clear_trigger else trigger if trigger is not None else ..., start=start)
                 if clear_cost or cost is not None:
                     view = m.set_task_cost(task_id, None if clear_cost else cost)
+                if restoration is not None:
+                    given = dict(restoration)
+                    view = m.set_task_restoration(task_id, given, failure_mode_id=given.pop("failure_mode_id", None))
+                if basis is not None:
+                    view = m.set_task_basis(task_id, basis)
+                if older_than is not None:
+                    view = m.set_task_older_than(task_id, older_than)
                 return view
             return run(update)
         if action == "link":
@@ -2070,7 +2097,7 @@ def register() -> None:
             = None,
             season: Annotated[dict[str, Any] | None, Field(description=(
                 "Active only part of the year: {months: [10, 11, 12, 1, 2, 3]} or {start: 'MM-DD', end: 'MM-DD'}; "
-                "update: {} for all year."))] = None) -> dict[str, Any]:
+                "update: {} for all year."))] = None, shutdown: Shutdown = None) -> dict[str, Any]:
         """Work packages: tasks done together on one visit (the weekly check), raising one work order per
         visit, with layers adding lines on some visits (the first Saturday of the month). How-to: maintenance
         guide topic plan (making them) and run (their work orders)."""
@@ -2078,13 +2105,21 @@ def register() -> None:
         if action == "propose":
             return run(m.propose_packages, position_id, location_id, weekday)
         if action == "create":
-            return run(m.create_package, name, position_id, location_id, parent_id, _d(timing, "fixed"),
-                       _d(every, 1), _d(unit, "weeks"), weekday, nth, day, anchor, tolerance, tolerance_unit,
-                       trade or "", notes or "", tasks, season)
+            def create():
+                m.check_shutdown(shutdown)  # refused before the package is made
+                made = m.create_package(name, position_id, location_id, parent_id, _d(timing, "fixed"),
+                                        _d(every, 1), _d(unit, "weeks"), weekday, nth, day, anchor, tolerance,
+                                        tolerance_unit, trade or "", notes or "", tasks, season)
+                return m.set_package_shutdown(made["id"], shutdown) if shutdown else made
+            return run(create)
         if action == "update":
-            return run(m.update_package, package_id, name, timing, every, unit, weekday, nth, day,
-                       bool(clear_pattern), anchor, tolerance, tolerance_unit, trade, notes, tasks,
-                       ... if season is None else season)
+            def update():
+                m.check_shutdown(shutdown)
+                out = m.update_package(package_id, name, timing, every, unit, weekday, nth, day,
+                                       bool(clear_pattern), anchor, tolerance, tolerance_unit, trade, notes, tasks,
+                                       ... if season is None else season)
+                return m.set_package_shutdown(package_id, shutdown) if shutdown is not None else out
+            return run(update)
         if action == "add_task":
             return run(m.add_package_task, package_id, task_id, visit_rule, every_nth, suppresses)
         if action == "remove_task":

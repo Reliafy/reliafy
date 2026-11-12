@@ -136,6 +136,13 @@ function Details({ pkg }) {
         {pkg.tolerance?.amount ? <><dt>On time within</dt><dd>{pkg.tolerance.amount} {unitWord(pkg.tolerance.amount, pkg.tolerance.unit)} after the visit date</dd></> : null}
         {pkg.season?.text && <><dt>Season</dt><dd>{pkg.season.text}</dd></>}
         {pkg.trade && <><dt>Trade</dt><dd>{pkg.trade}</dd></>}
+        {pkg.shutdown && (
+          <><dt>Shutdown</dt><dd>
+            {pkg.shutdown.words[0].toUpperCase() + pkg.shutdown.words.slice(1)}
+            {pkg.shutdown.scope ? ` · takes down ${pkg.shutdown.scope.map((x) => x.name).join(", ")}` : pkg.subject ? ` · takes down all of ${pkg.subject.name}` : ""}
+            {pkg.shutdown.dates ? ` · on ${pkg.shutdown.dates.join(", ")}` : ""}
+          </dd></>
+        )}
         {wo && (
           <><dt>Open visit</dt><dd>
             <Link to={workOrderPath(wo.id)}>#{wo.number}</Link> for {fmtDate(wo.visit_on)}
@@ -357,6 +364,28 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
               </select>
             </Field>
           </div>
+        )}
+        {!layer && pkg.subject?.kind === "position" && (
+          <fieldset className="pkg-rules pkg-shut">
+            <legend>Shutdown</legend>
+            <label className="mt-mode">
+              <input type="checkbox" checked={form.shutdown} onChange={(e) => setForm((f) => ({ ...f, shutdown: e.target.checked }))} />
+              {" "}Each visit is a shutdown: it takes {pkg.subject?.name || "the position"} off-line
+            </label>
+            {form.shutdown && (
+              <>
+                <div className="pk-dialog-row">
+                  <Field label="Off-line for (hours)"><input type="number" min="0" step="any" inputMode="decimal" value={form.shutHours} onChange={set("shutHours")} placeholder="e.g. 72" /></Field>
+                  <Field label="Cost each shut (optional)"><input type="number" min="0" step="any" inputMode="decimal" value={form.shutCost} onChange={set("shutCost")} /></Field>
+                </div>
+                <label className="mt-mode">
+                  <input type="checkbox" checked={form.shutIdle} onChange={(e) => setForm((f) => ({ ...f, shutIdle: e.target.checked }))} />
+                  {" "}Items not worked on keep ageing during the shut
+                </label>
+                <p className="lib-date">Its tasks are the work done at each shut. A repairable RBD on {pkg.subject?.name || "the position"} reads it as a planned outage.</p>
+              </>
+            )}
+          </fieldset>
         )}
         <Field label="Trade (optional)" text={form.trade}><input value={form.trade} maxLength={200} onChange={set("trade")} placeholder="e.g. Fitter" /></Field>
         <Field label="Notes (optional)" text={form.notes} max={2000}>
