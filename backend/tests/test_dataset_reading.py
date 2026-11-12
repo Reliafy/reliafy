@@ -188,10 +188,10 @@ def test_an_older_dataset_gets_a_reading_on_read_and_is_never_rewritten(web):
     assert fresh["reading"]["x"] == "Age (h)" and fresh["reading"]["c"] == "Status"
     # Fitted once: its newest model's reading.
     client.post("/api/models", data={"name": "M", "distribution": "weibull", "dataset_id": d["id"],
-                                     "x": "Age (h)", "c": "Status", "c_map": json.dumps({"Failed": 1, "Running": 1})})
+                                     "x": "Age (h)", "c": "Status", "c_map": json.dumps({"Failed": 0, "Running": 0})})
     later = client.get(f"/api/datasets/{d['id']}").json()
     assert later["reading_source"] == "last_model"
-    assert later["reading"]["c_map"] == {"Failed": 1, "Running": 1}
+    assert later["reading"]["c_map"] == {"Failed": 0, "Running": 0}
     assert db.datasets.find_one({"_id": d["id"]}) == before
 
 

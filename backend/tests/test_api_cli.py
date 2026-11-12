@@ -196,6 +196,12 @@ def test_cli_fit_upload_import_push_ingest(server, capsys):
     code, out, _ = run(capsys, "upload", str(data), "--name", "Bearings", "--json")
     assert code == 0 and json.loads(out)["n_rows"] == 5
     dataset_id = json.loads(out)["id"]
+    assert json.loads(out)["reading"]["source"] == "guessed"
+    # The reading named on the command line: kept, not guessed.
+    code, out, _ = run(capsys, "upload", str(data), "--name", "Bearings read", "--x-col", "hours",
+                       "--z-cols", "", "--unit", "hours", "--json")
+    assert code == 0 and json.loads(out)["reading"]["source"] == "saved", out
+    assert json.loads(out)["reading"]["x"] == "hours"
     # The same command adds a file as a dataset's measurements (its readings).
     wear = tmp / "wear.csv"
     wear.write_text("unit,hours,wear\nB1,100,0.2\nB1,200,0.5\nB2,100,0.1\n")

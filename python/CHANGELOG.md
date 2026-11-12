@@ -4,6 +4,14 @@
 
 Needs a server on the release that has it.
 
+- **Datasets keep their reading** (which column is x, c, n, xl/xr, tl, tr,
+  i, m, e, s and the covariates Z): `change dataset_upload` (and `reliafy
+  upload`, with `--x-col`, `--c-col`, … `--z-cols`, `--unit`) takes it;
+  columns left out are guessed and the answer's `reading` says how
+  (`source: guessed`). `change dataset_update` changes it, `get kind
+  dataset` returns it, and `analyse fit` / `change model_fit` with a
+  `dataset_id` and no `time_column` fit from it.
+
 - **The asset tree as a sheet** (Reliafy Maintenance): `reliafy maintenance
   list.tree` (`position_id` for a branch, `format csv`) gives one row per
   position with its path, tag, class, location and fitted item; `reliafy
