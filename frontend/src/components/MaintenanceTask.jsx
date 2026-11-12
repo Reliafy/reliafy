@@ -8,7 +8,7 @@ import { Field, useSendOnce } from "./MaintenanceParts.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { costWhere, fromRcm, fromText, money, SOURCE_WORDS } from "../lsaTab.js";
 import { taskUnits } from "../maintenanceSubjects.js";
-import { tooLong } from "../maintenanceText.js";
+import { AGE_NOTE, tooLong } from "../maintenanceText.js";
 import { explorerHere } from "../products.js";
 import { workspaceCurrency } from "../money.js";
 import { restorationBody, restorationForm, restorationProblem, RESTORE_CHOICES } from "../taskRestoration.js";
@@ -28,7 +28,7 @@ import { restorationBody, restorationForm, restorationProblem, RESTORE_CHOICES }
 
 const KINDS = [
   ["", "Routine work (lubricate, clean, adjust, inspect)"],
-  ["fixed_interval", "Replace or restore at the interval"],
+  ["fixed_interval", "Replace at age (every … since it was last done)"],
   ["failure_finding", "Check a hidden function (failure-finding)"],
   ["on_condition", "Check condition"],
 ];
@@ -168,6 +168,7 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
         <Field label="What kind of task">
           <select value={f.outcome} onChange={set("outcome")}>{KINDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
         </Field>
+        {f.outcome === "fixed_interval" && <p className="lib-date mt-note">{AGE_NOTE}</p>}
         {f.outcome === "fixed_interval" && (
           <RestorationFields f={f} setF={setF} task={task} problem={restoreProblem} />
         )}
@@ -274,7 +275,7 @@ function RestorationFields({ f, setF, task, problem }) {
           </label>
           <p className="lib-date mt-note">
             Every {f.interval || "N"} {f.unit} of running, not of the calendar. An RBD turns it into calendar time through the
-            block&apos;s duty; its due dates here stay on the calendar.
+            block&apos;s Runs %; its due dates here stay on the calendar.
           </p>
         </>
       )}

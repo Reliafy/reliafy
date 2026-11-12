@@ -123,6 +123,11 @@ for a requirement written as a reliability ("R ≥ 95% over 2,000 hours"), or th
 **MTBF (constant rate)** test type for an MTBF requirement. **Solve for** can
 also give the test time per unit for a number of units you already have.
 
+## Run the plan in Python
+
+Each test plan has a **Download as Python** button under its answer: a script that works the plan out with
+SurPyval's test-planning functions from the inputs you gave, and prints the same numbers.
+
 ## Other kinds of test
 
 A demonstration test answers one question: *does it meet the target?* The other

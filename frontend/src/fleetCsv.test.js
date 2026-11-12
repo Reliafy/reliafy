@@ -17,3 +17,22 @@ test("the forecast CSV has no floating-point noise: 4 significant figures", () =
   assert.ok(lines.includes("fleet_expected,3.881"));
   assert.ok(lines.includes("1,0.8012,0,2"));
 });
+
+test("a first-failures forecast's CSV has its years: failures and cost, with ranges", () => {
+  const block = (e, lo, hi) => ({ expected: e, interval: [lo, hi] });
+  const row = (e, lo, hi) => ({ failures: block(e, lo, hi), planned: block(0, 0, 0), parts: block(e, lo, hi),
+                                cost: block(e * 100, lo * 100, hi * 100) });
+  const text = fleetForecastCsv({
+    items: [], forecast: {
+      expected: 9.5, interval: [7, 12],
+      strategy: { kind: "first_failures", total: row(9.5, 7, 12), per_period: [{ period: 1, ...row(1, 0, 3) }],
+                  yearly: [{ year: 1, from_period: 1, to_period: 12, ...row(6.2, 4, 8) },
+                           { year: 2, from_period: 13, to_period: 24, ...row(3.3, 1, 6) }] },
+    },
+  });
+  const lines = text.split("\n");
+  assert.ok(lines.includes("strategy,first_failures"));
+  assert.ok(lines.includes("year,from_period,to_period,failures,failures_p5,failures_p95,cost,cost_p5,cost_p95"));
+  assert.ok(lines.includes("1,1,12,6.2,4,8,620,400,800"));
+  assert.ok(lines.includes("2,13,24,3.3,1,6,330,100,600"));
+});

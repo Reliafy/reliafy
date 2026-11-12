@@ -2306,6 +2306,14 @@ def _duty_changed(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["group_id"], {"duty": p["position_id"], "duty_since": p["on"]})
 
 
+def _group_standby_set(s: GraphStore, org: str, p: dict) -> None:
+    """group.standby_set (Nov 2026): how a standby set's spare takes over: the chance it starts
+    when switched in (start_probability) and, warm, how fast it ages while waiting (dormancy, a
+    share of the running rate). None clears one."""
+    s.patch_node(org, p["group_id"], {"start_probability": p.get("start_probability"),
+                                      "dormancy": p.get("dormancy")})
+
+
 def stock_id(part_id: str, location_id: str) -> str:
     return f"stock-{part_id[:12]}-{location_id[:12]}"
 
@@ -2746,6 +2754,7 @@ PROJECTORS = {
     "group.member_removed": _group_member(False),
     "group.retired": _flag("retired"),
     "duty.changed": _duty_changed,
+    "group.standby_set": _group_standby_set,
     "position.rbd_linked": _patch,
     "condition_point.added": _point_added,
     "condition_point.updated": _patch,
@@ -13209,10 +13218,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         self._get(position_id, "Position")
         return {"downstream": self._interfaces(position_id, "FROM"), "upstream": self._interfaces(position_id, "TO")}
 
-    def create_group(self, name, member_ids, k=1, mode="active", standby="cold") -> dict:
+    def create_group(self, name, member_ids, k=1, mode="active", standby="cold", start_probability=None,
+                     dormancy=None) -> dict:
         """A redundancy group: positions doing the same job where k of them are enough
         (two pumps, either will do: k = 1). mode 'standby': the others wait to take over
-        (standby cold, warm or hot)."""
+        (standby cold, warm or hot); start_probability: the chance a waiting one starts when
+        switched in; dormancy: how fast a warm one ages while it waits (a share of the running
+        rate, 0 to 1). A position is in one group at most."""
         members = [self._get(pid, "Position") for pid in dict.fromkeys(_list(member_ids, "positions"))]
         if len(members) < 2:
             raise Invalid("A redundancy group needs at least two positions.")
@@ -13224,15 +13236,54 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             raise Invalid(f"k (how many are needed) is 1 to {len(members) - 1} for {len(members)} positions.")
         if mode not in ("active", "standby") or standby not in ("cold", "warm", "hot"):
             raise Invalid("mode is active or standby; standby is cold, warm or hot.")
+        for m in members:
+            self._not_in_another_group(m)
+        switching = self._standby_settings(start_probability, dormancy)
         gid = new_id()
         self._emit("group.created", {"id": gid, "name": _text(name, "group's name") or
                                      " / ".join(m["name"] for m in members), "k": k, "mode": mode,
                                      "standby": standby, "on": self.today()})
         for m in members:
             self._emit("group.member_added", {"group_id": gid, "position_id": m["id"]})
+        if switching:
+            self._emit("group.standby_set", {"group_id": gid, **switching})
         return self.group(gid)
 
-    def update_group(self, group_id: str, name=None, k=None, mode=None, standby=None, add=(), remove=()) -> dict:
+    def _not_in_another_group(self, position: dict, group_id: str | None = None) -> None:
+        """A position stands in one redundancy group at most: two would wire it twice."""
+        for g in self.s.out(self.org, position["id"], "IN_GROUP"):
+            if g["label"] == "RedundancyGroup" and not g.get("retired") and g["id"] != group_id:
+                raise Invalid(f"{position['name']} is already in the redundancy set {g['name']}: take it out of "
+                              "that one first.")
+
+    @staticmethod
+    def _standby_settings(start_probability=None, dormancy=None, current: dict | None = None) -> dict:
+        """The group.standby_set payload for the values given ('' clears one; None leaves it as it
+        is), or {} when nothing changes."""
+        current = current or {}
+        out = {"start_probability": current.get("start_probability"), "dormancy": current.get("dormancy")}
+        for key, value, what in (("start_probability", start_probability,
+                                  "The chance a standby one starts when switched in"),
+                                 ("dormancy", dormancy, "How fast a warm standby one ages while it waits")):
+            if value is None:
+                continue
+            if value == "":
+                out[key] = None
+                continue
+            try:
+                x = float(value)
+            except (TypeError, ValueError):
+                raise Invalid(f"{what} is a number from 0 to 1 (0.98 for 98%).") from None
+            low_ok = x > 0 if key == "start_probability" else x >= 0
+            if not (low_ok and x <= 1) or x != x:
+                span = "above 0 and at most" if key == "start_probability" else "from 0 to"
+                raise Invalid(f"{what} is a number {span} 1 (0.98 for 98%).")
+            out[key] = x
+        changed = {k: v for k, v in out.items() if v != current.get(k)}
+        return out if changed else {}
+
+    def update_group(self, group_id: str, name=None, k=None, mode=None, standby=None, add=(), remove=(),
+                     start_probability=None, dormancy=None) -> dict:
         g = self._get(group_id, "RedundancyGroup")
         if g.get("retired"):
             raise Invalid("That group was retired: restore it first.")
@@ -13242,8 +13293,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         except (TypeError, ValueError):
             raise Invalid("k (how many are needed) is a whole number.")
         members = {m["id"] for m in self._members(group_id)}
+        after = (members | set(add or [])) - set(remove or [])
+        if len(after) < 2:
+            raise Invalid("A redundancy group needs at least two positions: retire it instead.")
+        if not 1 <= new_k < len(after):
+            raise Invalid(f"k (how many are needed) must be 1 to {len(after) - 1}.")
         for pid in add or []:
-            self._get(pid, "Position")
+            if pid not in members:
+                self._not_in_another_group(self._get(pid, "Position"), group_id)
+        switching = self._standby_settings(start_probability, dormancy, g)
+        for pid in add or []:
             if pid not in members:
                 self._emit("group.member_added", {"group_id": group_id, "position_id": pid})
                 members.add(pid)
@@ -13262,12 +13321,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             if standby not in ("cold", "warm", "hot"):
                 raise Invalid("standby is cold, warm or hot.")
             changes["standby"] = standby
-        if not 1 <= new_k < max(len(members), 2):
-            raise Invalid(f"k (how many are needed) must be 1 to {len(members) - 1}.")
         if k is not None:
             changes["k"] = new_k
         if changes:
             self._emit("group.updated", {"id": group_id, "changes": changes})
+        if switching:
+            self._emit("group.standby_set", {"group_id": group_id, **switching})
         return self.group(group_id)
 
     def set_duty(self, group_id: str, position_id: str) -> dict:
@@ -13303,7 +13362,30 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         members = sorted(self._members(group_id), key=lambda m: m["name"].lower())
         return {"id": group_id, "name": g["name"], "k": g["k"], "n": len(members), "mode": g["mode"],
                 "standby": g["standby"], "duty": g.get("duty"), "retired": bool(g.get("retired")),
+                "start_probability": g.get("start_probability"), "dormancy": g.get("dormancy"),
                 "members": [{"id": m["id"], "name": m["name"]} for m in members]}
+
+    def redundancy_inside(self, position_id: str) -> dict:
+        """The Explorer's redundancy sets on a position (Nov 2026): the positions one level inside
+        it, and the live redundancy groups among them (each with its members inside; a member
+        elsewhere is listed under ``outside``). Building an RBD from the position wires each set
+        as k of n, or as a standby block (rbd_derive)."""
+        p = self._get(position_id, "Position")
+        kids = sorted([c for c in self.s.inn(self.org, position_id, "PART_OF")
+                       if c["label"] == "Position" and not c.get("retired")], key=lambda c: c["name"].lower())
+        ids = {c["id"] for c in kids}
+        sets, seen = [], set()
+        for c in kids:
+            for g in self.groups_of(c["id"]):
+                if g["id"] in seen:
+                    continue
+                seen.add(g["id"])
+                inside = [m for m in g["members"] if m["id"] in ids]
+                sets.append({**g, "members": inside, "outside": [m for m in g["members"] if m["id"] not in ids]})
+        in_set = {m["id"]: s_["id"] for s_ in sets for m in s_["members"]}
+        return {"position": {"id": p["id"], "name": p["name"]},
+                "children": [{"id": c["id"], "name": c["name"], "set_id": in_set.get(c["id"])} for c in kids],
+                "sets": sets}
 
     def groups_of(self, position_id: str) -> list[dict]:
         return [self.group(g["id"]) for g in self.s.out(self.org, position_id, "IN_GROUP")
@@ -13966,9 +14048,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         def lean(d: dict | None) -> dict | None:
             return {k: v for k, v in d.items() if v} or None if d else None
 
+        sets = self._redundancy_marks()
         positions = []
         for pid, r in rows.items():
             row = {"id": pid, "name": r["name"], "parent_id": r["parent_id"]}
+            if pid in sets:  # in a redundancy set: the tree's badge
+                row["redundancy"] = sets[pid]
             for key in ("tag", "position_class", "location_id", "location", "carried_by"):
                 if r[key]:
                     row[key] = r[key]
@@ -13995,6 +14080,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
 
         return {"today": self.today(), "positions": positions, "locations": [thing(x) for x in read["locations"]],
                 "spares": [thing(x) for x in read["spares"]], "unhomed": [thing(x) for x in read["unhomed"]]}
+
+    def _redundancy_marks(self) -> dict:
+        """{position id: {id, name, k, n, mode, standby}} for every member of a live redundancy group."""
+        out = {}
+        for g in self.s.nodes(self.org, "RedundancyGroup"):
+            if g.get("retired"):
+                continue
+            members = [m for m in self.s.inn(self.org, g["id"], "IN_GROUP") if m["label"] == "Position"]
+            mark = {"id": g["id"], "name": g.get("name") or "", "k": g.get("k") or 1, "n": len(members),
+                    "mode": g.get("mode") or "active", "standby": g.get("standby") or "cold"}
+            for m in members:
+                out.setdefault(m["id"], mark)
+        return out
 
     def position(self, id: str) -> dict:
         p = self._get(id, "Position")

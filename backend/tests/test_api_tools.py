@@ -287,6 +287,17 @@ def test_maintenance_tools_only_for_its_users(maint):
     assert not any("/maintenance/" in p for p in spec_b["paths"] if p != "/api/v1/maintenance/photos")
 
 
+def test_maintenance_redundancy_set_with_its_switching_over_rest(maint):
+    """topology.create_group / update_group take how a standby one takes over (-1 clears one)."""
+    a = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump A"}).json()["id"]
+    b = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump B"}).json()["id"]
+    g = maint.post("/api/v1/maintenance/topology.create_group", {
+        "member_ids": [a, b], "mode": "standby", "standby": "cold", "start_probability": 0.97}).json()
+    assert g["start_probability"] == 0.97
+    g = maint.post("/api/v1/maintenance/topology.update_group", {"group_id": g["id"], "start_probability": -1}).json()
+    assert g["start_probability"] is None
+
+
 def test_maintenance_names_over_the_limit_say_what_to_do(maint):
     pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Filter"}).json()
     r = maint.post("/api/v1/maintenance/tasks.create", {"position_id": pos["id"], "name": "x" * 397, "interval": 1})

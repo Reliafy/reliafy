@@ -67,7 +67,7 @@ export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, gr
         <h3>Maintenance plan</h3>
         <span className="rbd-plan-counts muted">
           {counts.planned} of {counts.blocks} block{counts.blocks === 1 ? "" : "s"} with planned work
-          {counts.withDuty ? ` · ${counts.withDuty} with a duty` : ""}
+          {counts.withDuty ? ` · ${counts.withDuty} running part of the time` : ""}
           {counts.problems ? ` · ${counts.problems} to finish` : ""}
         </span>
         <div className="rbd-plan-btns">
@@ -80,11 +80,11 @@ export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, gr
         </div>
       </div>
       <details className="rbd-plan-duty">
-        <summary><strong>Duty</strong> is the share of the time a block runs. Set it when its life is in running hours.</summary>
+        <summary><strong>Runs</strong> is the share of the time a block runs. Set it when its life is in running hours.</summary>
         <p>
-          A block with a duty ages only while it runs, so its life is stretched onto the calendar: a pump that runs
+          A block that runs part of the time ages only while it runs, so its life is stretched onto the calendar: a pump that runs
           25% of the time lasts four times as long in calendar time. Planned work given in running time (every
-          500 running hours) is turned into calendar time through the duty; without a duty it can't be, and the
+          500 running hours) is turned into calendar time through it; with Runs blank it can't be, and the
           row says so. Repairs and planned work still take calendar time. Leave it blank for a block that runs
           all the time, or whose life was measured in calendar time.
         </p>
@@ -128,9 +128,9 @@ export default function RbdMaintenancePlan({ nodes, unit = "", crews = false, gr
             <thead>
               <tr>
                 <th scope="col">Block</th>
-                <th scope="col" title="The share of the time it runs (blank: all the time)">Duty</th>
+                <th scope="col" title="Runs X% of the time: the share of the time it runs (blank: all the time)">Runs</th>
                 <th scope="col">Task</th>
-                <th scope="col" title="How often: on the calendar, or in running time through the duty">Every</th>
+                <th scope="col" title="How often: on the calendar, or in running time through Runs">Every</th>
                 <th scope="col" title="How long it takes the block off-line (blank: no downtime)">Takes</th>
                 <th scope="col" title="Per task; a range like 300–700 is drawn afresh each time">{costLabel("Cost", workspaceCurrency())}</th>
                 <th scope="col" title="What the task leaves the block as">Restores</th>
@@ -187,7 +187,7 @@ function PlanRow({ row, unit, u, crews, listId, open, onToggle, onChange }) {
         <th scope="row" className="calc-row-label rbd-plan-name">{name}</th>
         <td className="rbd-plan-duty-cell">
           <span className="rbd-plan-with-suffix">
-            <DraftInput value={dutyText(data.duty)} parse={parseDuty} placeholder="100" label={`${name}: duty, % of the time it runs`}
+            <DraftInput value={dutyText(data.duty)} parse={parseDuty} placeholder="100" label={`${name}: runs, % of the time`}
                         onCommit={(v) => onChange(setDuty(data, v))} className="rbd-plan-num rbd-plan-pct" />
             <span aria-hidden="true">%</span>
           </span>
@@ -323,7 +323,7 @@ function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, 
         </th>
         <td className="rbd-plan-duty-cell">
           <span className="rbd-plan-with-suffix">
-            <DraftInput value={dutyText(data.duty)} parse={parseDuty} placeholder="100" label={`${name}: duty, % of the time it runs`}
+            <DraftInput value={dutyText(data.duty)} parse={parseDuty} placeholder="100" label={`${name}: runs, % of the time`}
                         onCommit={(v) => onChange(setDuty(data, v))} className="rbd-plan-num rbd-plan-pct" />
             <span aria-hidden="true">%</span>
           </span>
@@ -421,8 +421,8 @@ function TreeRow({ row, tree, unit, u, crews, listId, open, onToggle, onChange, 
   );
 }
 
-// The duty the position's running-hours meter suggests ("Runs 25% of the time"): a proposal beside
-// the block's own, applied only when the user says so.
+// The Runs % the position's running-hours meter suggests ("Runs 25% of the time"): a proposal beside
+// the block's own (data.duty), applied only when the user says so.
 function DutyProposal({ proposal, data, name, onChange }) {
   if (!proposal) return null;
   const same = hasDuty(data) ? Math.abs(Number(data.duty) - proposal.duty) < 0.0005 : proposal.duty >= 0.9995;
@@ -431,7 +431,7 @@ function DutyProposal({ proposal, data, name, onChange }) {
       Meter: {proposal.percent}%
       {!same && (
         <button type="button" className="link" onClick={() => onChange(setDuty(data, proposal.duty))}
-                aria-label={`${name}: use the meter's duty, ${proposal.words.toLowerCase()}`}>Use</button>
+                aria-label={`${name}: set Runs from the meter, ${proposal.words.toLowerCase()}`}>Use</button>
       )}
     </small>
   );

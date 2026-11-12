@@ -873,6 +873,30 @@ def model_validation(
     return JSONResponse(content=models_service.ensure_validation(session, model))
 
 
+@router.get("/models/{model_id}/export.py")
+def export_model_python(
+    model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+):
+    """Download as Python: a script that refits the model with SurPyval from
+    the data it was fitted to (embedded) and prints the numbers on its page.
+    Free for anyone who can view the model."""
+    from backend.routers.rbds import python_download
+    from backend.services import model_export
+
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if model is None or model.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        filename, source = model_export.export_python(session, model)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to export model %s as Python", model_id)
+        return JSONResponse(status_code=500,
+                            content={"detail": "Couldn't build the script. The error has been logged."})
+    return python_download(filename, source)
+
+
 @router.put("/models/{model_id}/fit")
 def update_model_fit(
     model_id: str,

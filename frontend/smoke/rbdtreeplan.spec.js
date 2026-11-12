@@ -43,7 +43,7 @@ for (const [w, h, label] of [[1440, 900, "desktop"], [400, 860, "phone"]]) {
     const plan = page.getByRole("region", { name: "Maintenance plan" });
     await expect(plan.getByText(/take their maintenance from\s+that position's tasks/)).toBeVisible({ timeout: 15_000 });
     const rowA = plan.locator("tbody.is-tree", { hasText: `Pump A ${tag}` });
-    await expect(rowA.getByText("Replace on age")).toBeVisible();
+    await expect(rowA.getByText("Replace at age")).toBeVisible();
     await expect(rowA.getByText("“Replace the seal”")).toBeVisible();
     await expect(rowA.getByRole("link", { name: "Edit in the tree" })).toHaveAttribute("href", new RegExp(`sel=${a.id}.*tab=maintenance`));
     // Read only: no task picker on a tree row; duty is still the diagram's.

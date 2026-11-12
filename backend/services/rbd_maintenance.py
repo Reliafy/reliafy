@@ -217,7 +217,7 @@ def duty_fraction(data: dict, label: str) -> Optional[float]:
     x = _number(value, "duty (the share of the time it runs)", label, positive=True)
     if x > 1.0:
         raise AnalysisError(
-            f"“{label}”: the duty is the share of the time it runs, from just above 0 to 1 (100%).")
+            f"“{label}”: Runs (duty) is the share of the time it runs, from just above 0 to 1 (100%).")
     return x
 
 
@@ -233,8 +233,8 @@ def calendar_interval(pm: dict, data: dict, label: str) -> Optional[float]:
     if duty is None:
         raise AnalysisError(
             f"“{label}”: its scheduled maintenance is every {hours:g} in operating time, but the block "
-            "has no duty, so there is no way to turn that into calendar time. Set its duty (the share "
-            "of the time it runs) in the Maintenance plan, or give the interval in calendar time.")
+            "has no Runs share (duty), so there is no way to turn that into calendar time. Set how much of the "
+            "time it runs (Runs %) in the Maintenance plan, or give the interval in calendar time.")
     return hours / duty
 
 

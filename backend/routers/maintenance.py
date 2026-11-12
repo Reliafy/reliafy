@@ -1764,13 +1764,23 @@ def disconnect(interface_id: str, m: Maintenance = Depends(maintenance_write)) -
 @router.post("/groups")
 def create_group(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.create_group, body.get("name", ""), body.get("member_ids") or [], body.get("k", 1),
-                body.get("mode") or "active", body.get("standby") or "cold")
+                body.get("mode") or "active", body.get("standby") or "cold", body.get("start_probability"),
+                body.get("dormancy"))
 
 
 @router.patch("/groups/{group_id}")
 def update_group(group_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Rename a redundancy set, change k, mode or standby, add / remove members, or set how a
+    standby one takes over (start_probability, dormancy: '' clears one)."""
     return _run(m.update_group, group_id, body.get("name"), body.get("k"), body.get("mode"), body.get("standby"),
-                body.get("add") or [], body.get("remove") or [])
+                body.get("add") or [], body.get("remove") or [], body.get("start_probability"),
+                body.get("dormancy"))
+
+
+@router.get("/positions/{position_id}/redundancy")
+def redundancy_inside(position_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The Explorer's Redundancy pane: the positions inside one, and the redundancy sets among them."""
+    return _run(m.redundancy_inside, position_id)
 
 
 @router.post("/groups/{group_id}/duty")

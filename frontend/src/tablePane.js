@@ -27,6 +27,14 @@ export const TABLE_PANES = {
       confirmLabel: "Discard the prediction", cancelLabel: "Keep predicting",
     },
   },
+  // Which positions inside one back each other up (?redundancy=<position id>; Modelling and Missions).
+  redundancy: {
+    param: "redundancy",
+    discard: {
+      title: "Discard this redundancy set?", body: "The set you're marking isn't saved.",
+      confirmLabel: "Discard it", cancelLabel: "Keep editing",
+    },
+  },
   // A covariate model with some covariates fixed at a position (?bind=<source>:<ref>&on=<position>).
   bind: {
     param: "bind",

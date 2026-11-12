@@ -117,8 +117,9 @@ move_photo fixes one added to the wrong place.
 5. Spares: maintenance parts.create, stock (receive at a store location), add_to_position (the position's parts \
 list; critical spares with min_on_hand).
 6. Topology, as you build: maintenance topology.connect for what feeds what (supply, power, signal), and \
-create_group for positions that back each other up (duty and standby, 'either one is enough': k = 1). \
-generate_rbd and impact rely on it.
+create_group for positions that back each other up (duty and standby, 'either one is enough': k = 1; \
+mode standby with standby cold/warm/hot, start_probability, dormancy for warm). One set per position. \
+generate_rbd, build_rbd, missions and impact rely on it.
 7. Meters and condition: maintenance measurements.add_point (counter: run hours, cycles; condition: vibration, \
 temperature, with alarm limits; setting: a value someone sets, such as a chlorinator's output % or a pump \
 timer's hours a day, held until the next change, never alarmed or due, range_min / range_max as a sanity check), \
@@ -486,7 +487,9 @@ the app. It compares designs early; it never says how the item will fail in serv
 - An RBD: every position can have a life model, an RBD or a prediction. models.link with build_rbd true makes \
 a new RBD whose blocks are the positions one level inside, each taking its model in use (a saved model, or its \
 own RBD as a sub-system); one with none gets a placeholder flagged placeholder=true (never invented data: say \
-which and ask for their models). Wired by connections and redundancy groups, in series where there are none. \
+which and ask for their models). Wired by connections and redundancy groups (active: k of n; standby: one \
+standby block when its members are identical single positions, else k of n with each running k/n of the time), \
+in series where there are none. A rebuild of a diagram still all in series rewires it from the groups. \
 A position has one built RBD: build_rbd where it has one makes nothing and returns that row (existing=true). \
 build_rbd with replace_link_id (its RBD row) rebuilds into the same diagram, adding new positions and keeping \
 edits. rbd_id links an existing RBD as it is. The row reports the system MTBF and B10 (exact analysis; analyse \
@@ -533,7 +536,8 @@ answer "what if we hold 4?". Read off the simulated demand; one site. Set a part
 (or repairable with turnaround_days: the pool covers the repair turnaround) with maintenance parts.update; without \
 a lead time 30 days is assumed and said.
 - maintenance topology.generate_rbd, position_id = a system position: a reliability block diagram from the \
-positions inside it (connections wire the blocks, redundancy groups become k of n, each block takes its class's \
+positions inside it (connections wire the blocks, redundancy groups become k of n or a standby block, each \
+block takes its class's \
 fitted model or a placeholder, listed in notes). It's saved as a normal RBD: analyse rbd analyses it.
 - maintenance get.impact, id = a position: what loses its supply downstream if it fails, and whether \
 redundancy covers it.

@@ -70,7 +70,7 @@ test("settings and what's left to set", () => {
   assert.match(treeRowProblems({}, cond)[0], /threshold/);
   assert.deepEqual(treeRowProblems({ tree_settings: { threshold: 0.1 } }, cond), []);
   const running = row({ ...AGE, interval: null, operating_interval: 500 });
-  assert.match(treeRowProblems({}, running)[0], /duty/);
+  assert.match(treeRowProblems({}, running)[0], /Runs %/);
   assert.deepEqual(treeRowProblems({ duty: 0.25 }, running), []);
 });
 
@@ -91,7 +91,7 @@ test("the block dialog shows the tree's task, as the plan and the Calculator use
   const tree = row(AGE, { tasks: [{ id: "t1", name: "Replace the seal", used: true }] });
   const words = treeBlockPlan(data, tree, "hours");
   assert.doesNotMatch(words.summary, /Run to failure/);
-  assert.match(words.summary, /^Replace on age every 4,383/);
+  assert.match(words.summary, /^Replace at age every 4,383/);
   assert.equal(words.source, "From the tree: “Replace the seal” on Pump A");
   assert.equal(words.editLabel, "Edit in the tree");
   assert.match(words.editPath, /tab=maintenance/);

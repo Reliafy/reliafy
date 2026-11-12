@@ -182,7 +182,7 @@ def match_systems(names, effects: dict | None) -> list:
 
 # ---- Minimal-repair fleet forecast --------------------------------------------------
 
-def nhpp_forecast(model, ages, rates, periods: int, names=None, draws: int = DRAWS) -> dict:
+def nhpp_forecast(model, ages, rates, periods: int, names=None, draws: int = DRAWS, year_groups=None) -> dict:
     """Failures of repairable items over ``periods`` under a Poisson-process
     fit: each item at age ``a`` using ``r`` a period expects
     ``w·(Λ(a + k·r) − Λ(a))`` within ``k`` periods, ``w`` its rate factor
@@ -207,6 +207,7 @@ def nhpp_forecast(model, ages, rates, periods: int, names=None, draws: int = DRA
         base = np.asarray(model.cif(grid.ravel()), dtype=float).reshape(grid.shape)
     base = np.nan_to_num(base - base[:, :1], nan=0.0, posinf=0.0)      # cumulative, from 0
     effects = unit_effects(model)
+    yearly = None
     matched = match_systems(names, effects)
     factor = np.array([effects["systems"][m]["factor"] if m else 1.0 for m in matched])
     cum = base[:, 1:] * factor[:, None]
@@ -233,12 +234,17 @@ def nhpp_forecast(model, ages, rates, periods: int, names=None, draws: int = DRA
         lo, hi = _quantiles(totals[:, -1])
         p_lo, p_hi = _quantiles(counts)
         method = "simulated"
+        if year_groups is not None:
+            yearly = [[float(v) for v in _quantiles(counts[:, g].sum(axis=1))] for g in year_groups]
     else:
         lo, hi = (poisson.ppf(q, max(expected, 1e-300)) if expected > 0 else 0.0 for q in (levels.Q_LOW, levels.Q_HIGH))
         ends = [np.where(per_period > 0, poisson.ppf(q, np.maximum(per_period, 1e-300)), 0.0)
                 for q in (levels.Q_LOW, levels.Q_HIGH)]
         p_lo, p_hi = ends
         method = "poisson"
+        if year_groups is not None:
+            yearly = [[float(poisson.ppf(q, mu)) if mu > 0 else 0.0 for q in (levels.Q_LOW, levels.Q_HIGH)]
+                      for mu in (float(per_period[g].sum()) for g in year_groups)]
 
     per_item = []
     for i in range(k):
@@ -257,6 +263,7 @@ def nhpp_forecast(model, ages, rates, periods: int, names=None, draws: int = DRA
         "per_item": per_item,
         "interval_method": method,
         "units": _units_note(effects, n_matched, k, method),
+        "yearly_interval": yearly,
     }
 
 
@@ -391,7 +398,7 @@ def _renewal_means(model, horizons, rows, ages, items: int, seed) -> tuple[np.nd
     return out, var
 
 
-def renewal_forecast(model, ages, rates, periods: int, names=None) -> dict:
+def renewal_forecast(model, ages, rates, periods: int, names=None, year_groups=None) -> dict:
     """Failures of repairable items over ``periods`` under an imperfect-
     repair fit, by simulation. An item named as a system in the model's data
     starts from where that system's history leaves it (its age at the end of
@@ -454,6 +461,15 @@ def renewal_forecast(model, ages, rates, periods: int, names=None) -> dict:
     lo, hi = _nb_quantiles(totals[-1], totals[-1] * sim_disp + param_var[-1])
     period_param = np.diff(np.concatenate([[0.0], np.sqrt(param_var)])) ** 2
     p_lo, p_hi = _nb_quantiles(per_period, per_period * sim_disp + period_param)
+    yearly = None
+    if year_groups is not None:
+        # Each year as the periods are read: its mean, the simulation's spread
+        # and the fit's, from the cumulative spread at the year's two ends.
+        sd = np.sqrt(param_var)
+        means = np.array([float(per_period[g].sum()) for g in year_groups])
+        fit_var = np.array([(sd[g[-1]] - (sd[g[0] - 1] if g[0] > 0 else 0.0)) ** 2 for g in year_groups])
+        y_lo, y_hi = _nb_quantiles(means, means * sim_disp + fit_var)
+        yearly = [[float(a), float(b)] for a, b in zip(np.atleast_1d(y_lo), np.atleast_1d(y_hi))]
     per_item = []
     for i in range(k):
         mu = float(cum[i, -1])
@@ -479,6 +495,7 @@ def renewal_forecast(model, ages, rates, periods: int, names=None) -> dict:
         "per_item": per_item,
         "interval_method": "simulated",
         "units": {"matched": n_matched, "spread": None, "text": text},
+        "yearly_interval": yearly,
     }
 
 

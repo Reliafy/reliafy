@@ -4,10 +4,11 @@ import ErrorBoundary from "../components/ErrorBoundary.jsx";
 import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
-import { getRecurrentModel, deleteRecurrentModel } from "../api.js";
+import { getRecurrentModel, deleteRecurrentModel, downloadModelPython } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import ModelFrame from "../components/model/ModelFrame.jsx";
+import DownloadPythonItem from "../components/model/DownloadPythonItem.jsx";
 import useTabParam from "../components/model/useTabParam.js";
 import { itemName } from "../components/LibRows.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
@@ -16,7 +17,7 @@ import { recurrentAnswer, recurrentTabs } from "../recurrentResults.js";
 import { PageTitle } from "../components/usePageTitle.js";
 
 // A saved repairable (recurrent-event) model in the model frame: the answer
-// line, Share, the ⋯ menu (delete) and the result's tabs, the open one in
+// line, Share, the ⋯ menu (Download as Python, delete) and the result's tabs, the open one in
 // the address (?tab=).
 export default function RecurrentModelPage() {
   const { id } = useParams();
@@ -58,9 +59,12 @@ export default function RecurrentModelPage() {
         <ShareButton collection="recurrent_models" artifactId={model.id} name={model.name} readOnly={model.read_only} />
       )}
       menu={model && (
-        <button className="ovm-item danger" onClick={onDelete}>
-          {model.read_only ? "Remove from my view" : "Delete"}
-        </button>
+        <>
+          <DownloadPythonItem download={() => downloadModelPython("recurrent", model.id)} onError={setError} />
+          <button className="ovm-item danger" onClick={onDelete}>
+            {model.read_only ? "Remove from my view" : "Delete"}
+          </button>
+        </>
       )}
       notice={error && <div className="card error mf-notice" role="alert">{error}</div>}
     >

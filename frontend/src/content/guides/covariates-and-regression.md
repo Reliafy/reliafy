@@ -216,6 +216,11 @@ Save the model and it can drive a block in a
 values to run at. In a non-repairable diagram it can take a schedule of them
 over the mission instead.
 
+## Run it yourself in Python
+
+**Download as Python**, first in the model page's **⋯** menu, gives a script that refits a regression model (or one with covariates that change over time) with
+SurPyval from its data and prints the numbers on the page. It's free for everyone who can open the model.
+
 ## Where to go next
 
 - For failure modes as well as covariates, see

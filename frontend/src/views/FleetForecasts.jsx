@@ -2,7 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import Modal from "../components/Modal.jsx";
 import Select from "../components/Select.jsx";
-import { listFleets, createFleet, deleteFleet, listModels, listAltModels, listRecurrentModels } from "../api.js";
+import { listFleets, createFleet, deleteFleet, getFleet, listModels, listAltModels, listRecurrentModels } from "../api.js";
+import { CardHeader } from "../components/ui/Card.jsx";
+import ScrollCue from "../components/ui/ScrollCue.jsx";
+import { MAX_COMPARE, compareRows } from "../fleetCompare.js";
+import { workspaceCurrency } from "../money.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
@@ -30,6 +34,55 @@ function expectedCell(f) {
 
 const HELP = { walkthrough: "fleet", guide: "forecast-fleet-failures-and-spares" };
 
+// 2–4 ticked forecasts side by side (a pane above the list, not a dialog):
+// failures, the spares answer and cost, each as its forecast page shows it.
+function FleetCompare({ ids, onClear }) {
+  const [loaded, setLoaded] = useState({});
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    let live = true;
+    ids.filter((id) => !loaded[id]).forEach((id) => {
+      getFleet(id).then((f) => live && setLoaded((m) => ({ ...m, [id]: f })))
+        .catch((e) => live && setError(e.message));
+    });
+    return () => { live = false; };
+    // loaded is read to skip ones already fetched
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ids.join(",")]);
+  const fleets = ids.map((id) => loaded[id]).filter(Boolean);
+  const { columns, rows } = compareRows(fleets, workspaceCurrency());
+  return (
+    <div className="card fleet-compare" data-testid="fleet-compare">
+      <CardHeader
+        title={`Comparing ${ids.length} forecasts`}
+        subtitle="Each as saved, from its own model, items and settings. Ranges are 90%."
+        actions={<button className="secondary sm" onClick={onClear}>Close</button>}
+      />
+      {error && <div className="card error">{error}</div>}
+      {fleets.length < ids.length ? <p className="muted-line">Loading…</p> : (
+        <ScrollCue className="table-scroll">
+          <table className="mini-table">
+            <thead>
+              <tr>
+                <th><span className="sr-only">Figure</span></th>
+                {columns.map((c, j) => <th key={ids[j]} className="num"><Link to={`/forecasts/${ids[j]}`}>{c}</Link></th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.label}>
+                  <th scope="row">{r.label}</th>
+                  {r.values.map((v, j) => <td key={ids[j]} className="num">{v}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollCue>
+      )}
+    </div>
+  );
+}
+
 // Decisions › Forecasts: the failure forecasts, one row per fleet with its live
 // expected-failure headline, then (with Reliafy Maintenance) the position
 // classes' forecasts from their own pooled history.
@@ -50,6 +103,12 @@ export default function FleetForecasts() {
   const [hiddenCovariate, setHiddenCovariate] = useState(0);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
+  // Forecasts ticked to compare (ids, in the order ticked), and whether the pane is open.
+  const [ticked, setTicked] = useState([]);
+  const [comparing, setComparing] = useState(false);
+  const tick = (id) => {
+    setTicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id].slice(-MAX_COMPARE)));
+  };
 
   const refresh = useCallback(() => {
     listFleets()
@@ -167,6 +226,21 @@ export default function FleetForecasts() {
       )}
 
       {has.maintenance && <div className="recent-models-head home-card"><h2>Fleets</h2></div>}
+      {ticked.length > 0 && !comparing && (
+        <div className="fleet-bulk-bar" data-testid="fleet-compare-bar">
+          <b>{ticked.length} ticked</b>
+          <span className="muted-line" style={{ margin: 0 }}>
+            {ticked.length < 2 ? "Tick another forecast to compare them." : `Compare up to ${MAX_COMPARE} side by side.`}
+          </span>
+          <button className="sm" disabled={ticked.length < 2} onClick={() => setComparing(true)}>
+            Compare {ticked.length}
+          </button>
+          <button className="secondary sm" onClick={() => setTicked([])}>Clear</button>
+        </div>
+      )}
+      {comparing && ticked.length >= 2 && (
+        <FleetCompare ids={ticked} onClear={() => { setComparing(false); setTicked([]); }} />
+      )}
       <SectionList
         rows={fleets}
         noun={["forecast", "forecasts"]}
@@ -177,6 +251,7 @@ export default function FleetForecasts() {
           action: newForecast,
         }}
         head={[
+          <th key="c" style={{ width: 36 }}><span className="sr-only">Compare</span></th>,
           <th key="f" style={{ width: "34%" }}>Forecast</th>,
           <th key="i" className="lib-opt" style={{ width: 80 }}>Items</th>,
           <th key="e">Expected failures</th>,
@@ -185,6 +260,10 @@ export default function FleetForecasts() {
         ]}
         render={(f) => (
           <tr key={f.id} className="lib-row" onClick={rowOpen(navigate, pathOf(f.id))}>
+            <td className="fleet-items-sel" onClick={(e) => e.stopPropagation()}>
+              <input type="checkbox" checked={ticked.includes(f.id)} onChange={() => { tick(f.id); setComparing(false); }}
+                     aria-label={`Compare ${itemName(f)}`} title="Tick 2–4 forecasts to compare them" />
+            </td>
             <td>
               <div className="lib-name">
                 <RowLink to={pathOf(f.id)}>{itemName(f)}</RowLink>

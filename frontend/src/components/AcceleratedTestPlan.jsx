@@ -202,7 +202,7 @@ export default function AcceleratedTestPlan({ modelId = null, useStress: carried
       {error && <div className="error">{error}</div>}
       {result && (
         <>
-          <PlanAnswer
+          <PlanAnswer kind="accelerated" inputs={inputs}
             result={result}
             stats={stats}
             tone={result.warnings?.length ? "caveat" : "neutral"}
