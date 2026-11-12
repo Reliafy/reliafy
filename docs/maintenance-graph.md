@@ -1200,6 +1200,26 @@ how. Each task carries its LSA record: what doing it needs.
 - **Copies.** Copying a position copies its tasks' records, less the tools'
   `point_id` (the copy has no points yet).
 
+## A task's cost each time
+
+One figure per task, kept with the task on its position, so the RCM reads it
+rather than asking for it again (`backend/maintenance/task_costs.py`).
+
+- **Typed:** `task.cost_set {id, cost}` sets the task node's `cost` (a number;
+  `null` clears it). It stands in place of the LSA's figure.
+- **From the LSA:** each labour line's people × hours at its trade's hourly rate
+  (a line with no trade takes the task's), plus spares at their part's
+  `unit_cost` and consumables' `cost`. `trade.rate_set {id, trade, rate}` puts
+  a `TradeRate` node (id from the trade's name, case and spacing aside, so a
+  trade has one rate; `rate: null` clears it). What can't be priced is listed
+  (`missing_rates`, `missing_prices`) and the figure is marked partial.
+- **Reads:** every task view and task-table row has `cost` {amount, source
+  (`typed` | `lsa` | null), typed, lsa}. A failure mode's tasks in the RCM
+  reads carry `cost` {amount, source, complete}. A decision whose linked
+  saved calculation (on-condition, failure-finding, optimal replacement) used
+  another figure for its task than the task has now gets `cost_changed`; the
+  decision keeps its saved figures until it's calculated again.
+
 ## Settings, and readings taken at a work order
 
 Some things on a position aren't measured but **set**: a chlorinator's output %,

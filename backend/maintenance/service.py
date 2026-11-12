@@ -70,6 +70,7 @@ from backend.maintenance.rcm_delete import RcmDeleteOps
 from backend.maintenance.position_models import PROJECTORS as _POSITION_MODEL_PROJECTORS
 from backend.maintenance.position_models import PositionModelOps
 from backend.maintenance.captures import PROJECTORS as _CAPTURE_PROJECTORS
+from backend.maintenance import task_costs as _task_costs
 from backend.maintenance.captures import CaptureOps
 
 logger = logging.getLogger(__name__)
@@ -5910,6 +5911,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             if (member.get("evidence") or {}).get("type") == "working":
                 member["working"] = self._working_ref(member["evidence"].get("id"))
         brief = self._tasks_brief(tasks, shares)
+        # What each task costs each time (Nov 2026): the RCM reads the task's own figure, and
+        # says where it came from, rather than asking for it again.
+        costs = {}
+        for t in tasks:
+            cost = self._task_cost(t)
+            costs[t["id"]] = {"amount": cost["amount"], "source": cost["source"],
+                              "complete": cost["source"] == "typed" or cost["lsa"]["complete"]}
+        for row in [*brief, *((decision or {}).get("tasks") or [])]:
+            if row.get("id") in costs:
+                row["cost"] = dict(costs[row["id"]])
         # A task raised by an event: the worksheet shows "on event: …" in place of its interval.
         triggers = {t["id"]: self._trigger_view(t.get("trigger")) for t in tasks if t.get("trigger")}
         if triggers:
@@ -6366,6 +6377,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # What doing it needs (its LSA record: labour, tools, spares, consumables, access, method).
             "resources": self._resources_view(task),
         }
+        # What it costs each time it's done (typed on it, or from its LSA at trade rates).
+        out["cost"] = self._task_cost(task, out["resources"])
         if on_event and not open_wo:
             out["status"] = "Waiting for the event"
         if subject and subject["label"] == "Item":
@@ -9928,7 +9941,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                          "on_event": _on_event_only(task), "trade": task.get("trade", ""),
                          "next_due": view["next_due"], "overdue": bool(view["overdue"]), "package": pkg,
                          "why_not": why_not, "resources": view["resources"],
-                         "instructions": task.get("instructions") or ""})
+                         "instructions": task.get("instructions") or "",
+                         # Where it came from: an RCM decision's (no source of its own) or added
+                         # directly (manual, oem, statutory, other, with its reference).
+                         "source": view["source"], "reference": view["reference"],
+                         "cost": view["cost"]})
         rows.sort(key=lambda r: (r["subject"]["name"].lower(), r["name"].lower(), r["id"]))
         # A product's design (or one of its design locations): its programme, packaged on the built items.
         return {"scope": self._subject_brief(scope), "tasks": rows[:limit], "total": len(rows),
@@ -10750,12 +10767,73 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             self._emit("task.resources_set", {"id": task_id, "resources": record or None})
         return self._task_view(self._get(task_id, "Task"))
 
+    # ---- what a task costs each time (Nov 2026, task_costs.py) ----------------------------
+
+    def _trade_rates(self) -> dict:
+        """{trade key: {trade, rate}}: the workspace's hourly rates, read once per read."""
+        if "trade_rates" not in self._memo:
+            self._memo["trade_rates"] = _task_costs.rates_map(self.s.nodes(self.org, "TradeRate"))
+        return self._memo["trade_rates"]
+
+    def _task_cost(self, task: dict, resources: dict | None = None) -> dict:
+        """A task's cost per occurrence and where it came from (task_costs.cost_of)."""
+        return _task_costs.cost_of(task, resources if resources is not None else self._resources_view(task),
+                                   self._trade_rates())
+
+    def task_cost(self, task_id: str) -> dict:
+        """One task's cost per occurrence ({task_id, name, amount, source, typed, lsa})."""
+        task = self._get(str(task_id or ""), "Task")
+        return {"task_id": task["id"], "name": task["name"], **self._task_cost(task)}
+
+    def set_task_cost(self, task_id: str, cost) -> dict:
+        """What the task costs each time it's done, typed (a quote, a service's price): it stands
+        in place of its LSA's figure. None or '' clears it, and the LSA's figure is used again."""
+        task = self._get(task_id, "Task")
+        if task.get("retired"):
+            raise Invalid("That task has been retired.")
+        value = None if cost in (None, "") else round(_number(cost, "task's cost", 0, MAX_AMOUNT), 2)
+        if value != task.get("cost"):
+            self._emit("task.cost_set", {"id": task_id, "cost": value})
+        return self._task_view(self._get(task_id, "Task"))
+
+    def trade_rates(self) -> list[dict]:
+        """Every trade's hourly rate, and the trades the LSA records use that have none yet:
+        [{trade, rate (None: not set), tasks (how many live tasks' labour uses it)}], A–Z."""
+        rates = self._trade_rates()
+        used: dict[str, dict] = {}
+        for task in self.s.nodes(self.org, "Task"):
+            if task.get("retired"):
+                continue
+            for line in (task.get("resources") or {}).get("labour") or []:
+                trade = line.get("trade") or task.get("trade") or ""
+                if not trade.strip():
+                    continue
+                row = used.setdefault(_task_costs.trade_key(trade), {"trade": trade.strip(), "tasks": set()})
+                row["tasks"].add(task["id"])
+        out = {k: {"trade": v["trade"], "rate": v["rate"], "tasks": 0} for k, v in rates.items()}
+        for k, v in used.items():
+            out.setdefault(k, {"trade": v["trade"], "rate": None, "tasks": 0})["tasks"] = len(v["tasks"])
+        return sorted(out.values(), key=lambda r: r["trade"].lower())
+
+    def set_trade_rate(self, trade, rate) -> dict:
+        """A trade's hourly rate, for every task whose labour uses it (None or '' clears it)."""
+        name = " ".join(_text(trade, "trade", required=True).split())
+        value = None if rate in (None, "") else round(_number(rate, "hourly rate", 0, MAX_AMOUNT), 2)
+        key = _task_costs.trade_key(name)
+        current = self._trade_rates().get(key)
+        if value is not None and current is None:
+            self._quota("TradeRate", _task_costs.MAX_TRADE_RATES, what="trade rates")
+        if (current or {}).get("rate") != value or (current and current["trade"] != name and value is not None):
+            self._emit("trade.rate_set", {"id": _task_costs.trade_rate_id(self.org, name), "trade": name,
+                                          "rate": value})
+        return {"trade": name, "rate": value}
+
     def _resources_view(self, task: dict) -> dict:
         """A task's LSA record as read: every section (empty when not set), part and
         point names looked up, and the totals: labour_hours (people × hours, summed),
         people, materials_cost (spares at their part's unit cost plus consumables'
-        costs, where known) and cost_estimate (labour at a trade rate: blank, as the
-        workspace keeps no trade rates)."""
+        costs, where known) and cost_estimate (blank: a task's cost, labour at trade rates
+        included, is its ``cost``, task_costs.py)."""
         r = task.get("resources") or {}
         spares = []
         for line in r.get("spares") or []:
@@ -14675,5 +14753,7 @@ PROJECTORS.update(_RCM_DELETE_PROJECTORS)
 PROJECTORS.update(_POSITION_MODEL_PROJECTORS)
 # Field reports (Nov 2026, captures.py): notes, photos and sound from the field.
 PROJECTORS.update(_CAPTURE_PROJECTORS)
+# What a task costs each time (typed, or from its LSA at trade rates; Nov 2026, task_costs.py).
+PROJECTORS.update(_task_costs.PROJECTORS)
 
 PROJECTION_VERSION = 5

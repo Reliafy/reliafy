@@ -35,6 +35,9 @@ def resolve(db, worksheet: dict, owner_id, hidden=frozenset()) -> dict:
             if mode.get("needs_review"):
                 rollup["needs_review"] += 1
             resolved = rcm_decisions.resolve_decision(decision, fetch)
+            changes = cost_changes(mode, decision, fetch)
+            if changes:
+                resolved = {**resolved, "cost_changed": changes}
             status = resolved.get("status")
             if status in rollup and status not in ("modes", "decided", "needs_review"):
                 rollup[status] += 1
@@ -91,7 +94,39 @@ def mode_status(db, mode: dict, owner_id, hidden=frozenset()) -> dict:
     if not decision:
         return mode
     fetch = rcm_decisions.evidence_fetcher(db, owner_id, hidden)
-    return {**mode, "decision": {**decision, **rcm_decisions.resolve_decision(decision, fetch)}}
+    resolved = rcm_decisions.resolve_decision(decision, fetch)
+    changes = cost_changes(mode, decision, fetch)
+    return {**mode, "decision": {**decision, **resolved, **({"cost_changed": changes} if changes else {})}}
+
+
+def cost_changes(mode: dict, decision: dict, fetch) -> list[dict]:
+    """Where a saved interval calculation linked as evidence used a task cost that the task no
+    longer has (Nov 2026: the task's cost lives on the task, task_costs.py). The decision keeps
+    its saved figures until the calculation is run again; this only says the cost has moved:
+    [{task_id, task, used, now, analysis_id}]."""
+    from backend.maintenance.task_costs import COST_INPUT, changed_since
+
+    tasks = {t["id"]: t for t in mode.get("tasks") or []}
+    pairs = [(decision.get("evidence"), decision.get("task_id"))]
+    pairs += [(m.get("evidence"), m.get("task_id")) for m in decision.get("outcomes") or []]
+    out, seen = [], set()
+    for evidence, task_id in pairs:
+        if not evidence or evidence.get("type") != "strategy_analysis" or not task_id:
+            continue
+        key = (evidence.get("id"), task_id)
+        if key in seen or task_id not in tasks:
+            continue
+        seen.add(key)
+        analysis = fetch("strategy_analysis", evidence.get("id"))
+        field = COST_INPUT.get(getattr(analysis, "kind", None)) if analysis is not None else None
+        if not field:
+            continue
+        used = (getattr(analysis, "inputs", None) or {}).get(field)
+        now = (tasks[task_id].get("cost") or {}).get("amount")
+        if changed_since(used, now):
+            out.append({"task_id": task_id, "task": tasks[task_id].get("name"), "used": float(used),
+                        "now": now, "analysis_id": evidence.get("id")})
+    return out
 
 
 def evidence_refs(decision) -> list[tuple[str, str]]:

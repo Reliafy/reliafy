@@ -87,6 +87,14 @@ export function lsaLead(r, { design = false, viewOnly = null } = {}) {
   return [write(LSA_PACKAGE, viewOnly)];
 }
 
+// The Maintenance tab's own for a row: Add task… (it opens in the panel beside the tree,
+// never a dialog). A position or a place.
+export const MAINT_ADD_TASK = { id: "maint-add-task", label: "Add task…" };
+export function maintenanceLead(r, { viewOnly = null } = {}) {
+  if (!r || (r.type !== "pos" && r.type !== "loc")) return [];
+  return [write(MAINT_ADD_TASK, viewOnly)];
+}
+
 // The menu with Pin this branch (or Show whole tree) added: after the
 // changes, before Delete.
 export function withPin(items, pin) {

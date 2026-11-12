@@ -324,6 +324,9 @@ const TreeDetail = forwardRef(function TreeDetail({
           ? null
           : shown === "lsa"
           ? <Suspense fallback={loading}><LsaPanel row={row} today={today} onMenu={onMenu} /></Suspense>
+          // The Maintenance tab: the same table of tasks, every task on the row (LsaPanel's "maintenance" variant).
+          : shown === "maintenance"
+          ? <Suspense fallback={loading}><LsaPanel key="maintenance" row={row} today={today} onMenu={onMenu} variant="maintenance" /></Suspense>
           : shown === "signals"
           ? <SignalsPanel row={row} onMenu={onMenu} />
           : shown === "parts"

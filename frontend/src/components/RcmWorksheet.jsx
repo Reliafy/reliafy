@@ -29,6 +29,7 @@ import RcmModeTasks, { RcmTaskSections, StepLabel, removeTaskFromMode } from "./
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { getTaskLsa } from "../api.js";
 import { explorerHere } from "../products.js";
+import { costWhere, money } from "../lsaTab.js";
 import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
 import RcmNotes from "./RcmNotes.jsx";
@@ -1341,6 +1342,22 @@ function TaskLogistics({ taskId, positionId }) {
           {" · "}
           <Link to={explorerHere(location.pathname, location.search, { sel: positionId, tab: "lsa", task: taskId })}
                 title="How it's done: its instructions, labour, tools, spares and method">Open in LSA</Link>
+        </p>
+      </div>
+      {/* What it costs each time (Nov 2026): the task's own figure on its position, typed or from
+          its LSA. The RCM reads it here and in its calculators; it's set on the Maintenance tab. */}
+      <StepLabel>Cost each time</StepLabel>
+      <div className="rw-sc rim-tcell" role="group" aria-label="Cost each time">
+        <p className="rim-tline">
+          <span className="rim-tquiet">
+            {!here ? "Reading…" : state.error ? "—"
+              : state.data?.task?.cost?.amount != null ? `${money(state.data.task.cost.amount)}. ${costWhere(state.data.task.cost)}` : costWhere(state.data?.task?.cost)}
+          </span>
+          {" · "}
+          <Link to={explorerHere(location.pathname, location.search, { sel: positionId, tab: "maintenance", mtask: taskId })}
+                title="Set what it costs each time on the Maintenance tab: the one place for the figure">
+            {here && state.data?.task?.cost?.amount != null ? "Change" : "Set it"}
+          </Link>
         </p>
       </div>
     </section>
